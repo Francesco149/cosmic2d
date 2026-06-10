@@ -32,14 +32,15 @@ actively maintained. Perf goes to PAL kernels by design (D001).
 
 ## D003 — vendored Lua gets a fixed string-hash seed
 
-**Decision**: patch `makeseed` in lstate.c to a constant.
+**Decision**: define `luai_makeseed(L)` to a constant at compile time (PAL
+Makefile, `-D` flag — lstate.c's seed block is `#if !defined` guarded), so
+the vendored source stays pristine and version bumps reapply for free.
 **Why**: stock 5.4 mixes ASLR addresses into the string hash seed, so
 table iteration order varies run-to-run; with a fixed seed, same-binary runs
 are reproducible even when someone accidentally order-depends. The iron rule
 (never depend on hash order in sim) still stands — pointer-keyed tables and
 cross-platform builds still vary.
-**Revisit**: never (cheap insurance); the patch is 3 lines, reapplied on Lua
-version bumps.
+**Revisit**: never (cheap insurance).
 
 ## D004 — SDL3 as the platform substrate, SDL_GPU (Vulkan) as first backend
 
