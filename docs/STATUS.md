@@ -4,88 +4,90 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-10
-**Milestone**: M1 — draw + state + determinism: **DONE** (`nix run .#test`
-green). Next: M2 — UI core + console.
+**Milestone**: M2 — UI core + console: **DONE** (`nix run .#test` green,
+4 goldens). Next: M3 — sandbox platformer v0.
 
 ## What works right now
 
-Everything from M0 (boot, windowed + headless live sessions, crash
-parachute, hot reload), plus the full M1 stack:
+Everything from M0/M1 (boot, live sessions, hot reload, parachute, PAL
+draw/state/input/trace stack, determinism kit, goldens), plus the M2 stack:
 
-- **PAL API v2** (additive): `pal.draw_quads` bulk path (12 f32/quad,
-  frozen layout), `pal.png_read`, `pal.hash` (fnv1a-64),
-  `pal.buf_delta1`/`buf_apply_delta1` (frozen XOR-run codec, versioned
-  kernel), `pal.quit(code)`/`pal.quitting`/`pal.exit_on_error`, buf views
-  grew i8/i16. API table in ARCHITECTURE.
-- **Module system**: boot.lua = thin shim; `pt.require` retains chunk
-  sources (= D012 bundles via `pt.modules()`), hot-reloads in place with
-  table identity preserved, watches everything for the parachute.
-  `pt.restore_bundle`/`pt.adopt_disk` run snapshot code vs disk code.
-- **State model**: `pt.state` — doc tree + canonical binary serializer
-  (D016), PSNP snapshots (code bundle + all named buffers + doc), restore
-  verified incl. PRNG stream position and buffer create/free/resize.
-  `pt.sim` buffer: frame counter + xoshiro state (layout frozen).
-- **Determinism kit**: `pt.rand` (xoshiro256++, bit-identical to reference
-  C, state in pt.sim), `pt.math` (fdlibm-style sin/cos/tan/atan/atan2/
-  asin/acos/exp2, ~1-2 ulp, pure IEEE ops), `pt.ease` (31 name-addressable
-  curves, D020 — names are sim-state safe, functions are not).
-- **Input**: `pt.input` action map; frozen 10-byte per-frame records;
-  pressed/released edges live in the `pt.input` buffer (snapshot-correct);
-  sticky taps; quit interceptable via `game.on_quit` (M0 debt cleared).
-- **Text/gfx**: baked spleen 5x8 + 8x16 atlases (committed, BSD-2),
-  `pt.text.draw/measure`, `pt.gfx` camera/parallax layers + PNG textures
-  + sprites.
-- **Traces (D014)**: `--record` writes PTRC (snapshot + per-frame input
-  records & state deltas + keyframes + code epochs on mid-record reload);
-  `--verify` is the golden runner — re-sims inputs, byte-compares every
-  frame, reports first divergent frame/buffer/bytes, exit 0/1. Verified:
-  divergence localization works (corrupted input record pinpointed to the
-  byte), epochs replay, bundle code beats disk code (old goldens stay
-  green after sim changes — observed in production this session).
-- **Tests**: `nix run .#test` = packaged console (packages.pettan) running
-  selftest (22k checks: PRNG KATs, trig/exp2 accuracy sweeps, serializer/
-  snapshot/input/ease invariants, pixel-exact glyph render) + byte-exact
-  replay of 3 committed goldens (sandbox pre-ease, sandbox_ease, churn
-  fixture covering buffer create/free/resize + doc churn). ALL GREEN.
-- **Sandbox demo**: 1024-particle playground — PRNG + pt.math + eased
-  speed/fade knobs in the doc tree + input actions (arrows/wasd push,
-  space/click bursts, esc quits) + parallax starfield + HUD. ~1.1ms/frame
-  sim cost at ~280 live particles (lavapipe). Montage + font preview on
-  llm-feed.
+- **PAL API v3** (additive): `pal.log_lines` (C-owned 256-line ring —
+  survives VM reboots, so boot errors reach the console), `pal.text_input`
+  + `{type="text"}` utf-8 events (IME commits split at glyph boundaries),
+  `pal.frame_stats` (last-present quads/segs/vbytes + live texture/buffer
+  counts). Table in ARCHITECTURE.
+- **pt.ui** (D021): immediate-mode core — id-path widget state (survives
+  reload, never snapshot), one-frame capture latency event filtering
+  (up-events always pass), hot/active/focus, clip-stack scroll regions
+  with wheel + thumb drag, virtualized lists, weighted rows, collapsing
+  headings, label/button/checkbox/slider/drag-number/text-input (utf-8
+  editing), `canvas` + `hit` escape hatches, style table. Iron rule:
+  pt.ui never touches buffers/doc/PRNG.
+- **pt.console**: grave-toggled drop-down (eased slide) over the running
+  game — log scrollback from the pal ring with color coding, substring
+  filter, REPL input with history, stick-to-bottom, PageUp/Down. Mouse
+  below the console still reaches the game (tune knobs live). ` and F3
+  engine-reserved until M4.
+- **pt.repl + EVAL records** (D022): console commands drain at the start
+  of the next sim frame and are recorded as EVAL chunks; verify re-executes
+  them — knob-tweaking sessions replay byte-exact. Env sugar (`doc`,
+  `game`) with _G shielded from bare assignments. `print` joins the log.
+- **Error containment** (D023): game require/init/step/draw guarded in
+  live sessions; errors pause the sim, stop recording (trace valid up to
+  last good frame), auto-open the console with a banner; REPL drains
+  immediately while paused. Resume on any successful reload; entry-load
+  failures retry until the file parses. `--frames`/`--verify` stay
+  fail-fast. Verified live both ways (mid-run error + boot syntax error).
+- **pt.perf**: F3 overlay — 180-tick frame graph vs 16.7 ms budget line,
+  sim/draw split, frame_stats, buffer/texture/Lua-heap numbers.
+- **projects/uigallery**: living pt.ui reference shaped like the M4
+  inspector (searchable virtualized selectable list + property sections).
+  The PLAN risk-gate review ("could Godot's inspector be built on this?")
+  passed — gaps are additive widgets, recorded in D021.
+- **Tests**: selftest now 22142 checks (+ui interaction via synthetic
+  events, +repl exec semantics, +console toggle/error logic); golden
+  suite grew tests/traces/evalfix.ptrace (EVAL records end-to-end,
+  tamper-tested). ALL GREEN.
 
 ## Verified
 
-- Agent-verified this session: everything above (selftest, golden suite,
-  live reload/parachute/epoch sessions, visual inspection of demo/fonts).
-- Human-verified: M0 windowed smoothness ("on point"). M1 windowed feel
-  (input actions, bursts) NOT yet human-tested — needs a windowed run.
+- Agent-verified this session: full suite, containment soak tests
+  (error→pause→edit→resume; boot-fail→retry→resume), console/perf/gallery
+  screenshots inspected + pushed to llm-feed (console over particles,
+  perf overlay, gallery).
+- Human-verified: M1 windowed feel — **"feels good"** (2026-06-10). Human
+  notes a Windows-native build will feel even smoother → that's M7,
+  roadmap unchanged. M2 windowed feel (typing in the console, history,
+  filter, error flow, F3) not yet human-tested.
 
-## Next step (M2 — UI core + console; see PLAN.md)
+## Next step (M3 — sandbox platformer v0; see PLAN.md)
 
-1. Panel/widget core (stacks, scroll, collapse, search, text input) —
-   review API against "could Godot's inspector be built on this?" before
-   building further (PLAN risk list).
-2. Log console + Lua REPL panel (pal.log ring buffer already exists C-side;
-   needs a `pal.log_tail` getter or engine-side ring).
-3. Error overlay routed through the console (replace magenta screen);
-   Lua errors should never kill the session once the console exists.
-4. Perf panel: frame graph + draw stats (needs pal.* counters — additive).
-5. Text input events (additive input record type per D018 revisit note).
+1. Tilemap: render from a named buffer (bulk quad path) + AABB collide.
+2. Character controller: run/jump/variable height/one-way platforms
+   (MapleStory vocabulary; feel knobs in the doc tree from day one).
+3. Props with grab/throw (no rotation yet), camera follow with knobs.
+4. Particles v0 + parallax reuse from sandbox; squash & stretch hooks.
+5. First real game-feel build — montage + windowed human check; knobs
+   tunable live through the new console.
 
 ## Known small items / debts
 
 - Windowed mode requires cwd = repo root (fix at M10 packaging).
-- Freed-buffer husks leak by design; texture re-creates leak on VM reboot
-  (live-reload-leaks pillar; inspector cleans up in M4).
-- Trace recorder buffers in memory, writes at stop — fine for short
-  recordings; M5 ring-trace replaces it (D019 revisit note).
-- Recording survives quit paths but not crashes (M5 ring-trace fixes).
-- `pt.require` bundle restore leaves modules loaded by newer code present
-  (unreferenced) — harmless, revisit if it ever confuses the inspector.
+- Freed-buffer husks + texture re-create leaks on VM reboot persist by
+  design (inspector cleans up in M4).
+- Trace recorder buffers in memory; M5 ring-trace replaces it (D019).
+- Sim-visible text input records (a game asking the player to type) still
+  deferred per D018 note — console needed none of it (EVAL records cover
+  the dev path); revisit when a game wants it.
+- Console scrollback timestamps colored with their line (dim-timestamp
+  polish possible); console line wrap = none (long lines clip; filter
+  finds them).
+- repl env caveat (D022): pre-recording env assignments don't travel.
 
 ## Open questions for the human
 
-- None blocking. When convenient: run `bin/pettan projects/sandbox`
-  windowed and judge the feel (push the emitter, spam space bursts, click
-  around; the speed/fade curves are doc knobs — edit projects/sandbox/
-  main.lua's knob defaults live to taste).
+- None blocking. When convenient: windowed run — open the console with `,
+  type a few commands (try `doc.knobs.gravity = 400`), arrow-key history,
+  filter box, break the sandbox on purpose (edit main.lua to a typo while
+  it runs) and watch it pause + resume on fix; F3 for the perf graph.

@@ -66,11 +66,21 @@ to revisit; this file describes *what is*. Keep it current when code changes.
 
 ### Error containment (no typo death spirals)
 
-- The C loop pcalls the tick. On error: the traceback goes to the log, the
-  PAL enters **error state** — it keeps the window alive, shows the failure
-  (magenta clear + message in M0; routed into the console UI from M2), and
-  polls the watch list (`pal.watch_add`ed files) every 250 ms.
-- When a watched file changes, the PAL **reboots the Lua VM from scratch**.
+Two nets, engine first (D023):
+
+- **Engine containment** (live sessions; `--frames`/`--verify` stay
+  fail-fast): pt.main runs require/init/step/draw guarded. A game error
+  logs the traceback, pauses the sim, stops any active recording (the trace
+  stays valid up to the last good frame) and opens the console with an
+  error banner; the REPL drains immediately while paused, so state can be
+  inspected mid-autopsy. Any successful hot reload resumes (re-running the
+  reload-idempotent `game.init`); if the entry itself never loaded, the
+  require is retried every poll until the file parses. Game errors never
+  kill the session (M2 exit criterion).
+- **C parachute** (engine bugs): the C loop pcalls the tick. On error: the
+  traceback goes to the log, the PAL enters **error state** — window alive,
+  magenta clear, watch list (`pal.watch_add`ed files) polled every 250 ms.
+  When a watched file changes, the PAL **reboots the Lua VM from scratch**.
   Named buffers live on the C side, so sim state survives the reboot.
 - Inside a healthy session, the *engine* (not the PAL) hot-reloads edited
   modules itself; the PAL watch list is only the crash parachute.
@@ -143,7 +153,7 @@ What this buys:
 Cosmetic state (particles, camera shake) is still deterministic sim state —
 pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
 
-### Concrete M1 formats (v1, all little-endian)
+### Concrete M1/M2 formats (v1, all little-endian)
 
 Source of truth for byte layouts: the headers of `engine/pt/chunk.lua`,
 `state.lua`, `input.lua`, `trace.lua`. Summary:
@@ -168,10 +178,12 @@ Source of truth for byte layouts: the headers of `engine/pt/chunk.lua`,
 - **Trace** (`PTRC`): HEAD (keyframe interval, project, action names), SNAP
   (full starting snapshot), per-frame FRAM (input record + per-buffer
   records: kind 0 = `delta1` vs previous frame, 1 = created/resized with
-  full bytes, 2 = freed + canonical doc bytes when changed), KEYF every N
-  frames (code-less snapshot, cross-checked on verify), EPOC (changed
-  sources on mid-recording hot reload, applied at the same frame on
-  replay), TAIL (frame count). v1 lists every buffer every frame.
+  full bytes, 2 = freed + canonical doc bytes when changed), EVAL before a
+  FRAM (console commands drained at the start of that sim frame — D022;
+  verify re-executes them via pt.repl.exec, delta playback ignores them),
+  KEYF every N frames (code-less snapshot, cross-checked on verify), EPOC
+  (changed sources on mid-recording hot reload, applied at the same frame
+  on replay), TAIL (frame count). v1 lists every buffer every frame.
 - **Engine sim buffers**: `pt.sim` = `[0]` i64 frame counter, `[8..39]`
   xoshiro256++ s0..s3, rest reserved. `pt.input` = documented in input.lua.
 
@@ -250,9 +262,38 @@ fragment samplers set 2 / uniforms set 3.
 ## Input
 
 PAL delivers raw events (`pal.poll_events()`): key scancode up/down, mouse,
-window. The engine folds them into **actions** via the rebindable action map
+window, utf-8 text (while `pal.text_input` is on). The engine UI sees raw
+events first (`pt.ui.frame` filters what the game may sample — see UI
+below); the rest are folded into **actions** via the rebindable action map
 (project + user bindings); the sim reads actions only. Gamepad later = new
 event types + map entries, zero sim changes.
+
+## Engine UI (pt.ui — M2)
+
+Immediate mode: panels and widgets are plain function calls every frame;
+the only retained state is a per-id table (scroll offsets, collapse flags,
+text cursors) keyed by a hierarchical id path (`push_id`/`pop_id`).
+**Dev/render class by iron rule**: pt.ui never touches named buffers, the
+doc tree or pt.rand — UI chrome state survives hot reload (module table),
+resets on VM reboot, and is never recorded. What a widget *edits* (a doc
+knob, say) is the caller's write.
+
+- Frame protocol: `ui.frame(events)` at tick start returns the events the
+  game may see, filtered by last tick's capture flags (one-frame imgui
+  latency); key/button **ups always pass** so games never see stuck keys.
+  Widgets run during the draw phase; `ui.frame_end()` resolves hover
+  (topmost = drawn last) and the next tick's captures.
+- Core: clip-stack scroll regions (wheel innermost-wins + draggable thumb),
+  virtualized fixed-row lists, weighted row columns, collapsing headings,
+  `canvas` (raw rect) and `hit` (invisible button) escape hatches for
+  custom widgets. Style table centralizes colors/metrics.
+- Built on it: **pt.console** (` toggle: log scrollback from the pal ring,
+  filter, REPL line → pt.repl, error banner) and **pt.perf** (F3: frame
+  graph vs 16.7 ms budget, sim/draw split, `pal.frame_stats`). ` and F3
+  are engine-reserved keys until M4's play-mode lockdown.
+- The console REPL is deterministic-by-construction: commands queue and
+  drain at the start of the next sim frame, and recordings store them as
+  EVAL records (D022) — a knob-tweaking session replays byte-exact.
 
 ## Audio (M6 sketch, kept in mind from day one)
 
@@ -276,11 +317,13 @@ pettan2d/
   engine/
     boot.lua           thin shim: module system + handoff to pt.main
     pt/                engine modules (main, state, input, rand, math,
-                       ease, gfx, text, trace, chunk; assets/ = baked fonts)
+                       ease, gfx, text, trace, chunk, ui, console, repl,
+                       perf; assets/ = baked fonts)
   projects/
     sandbox/           the stock cartridge (M1: particle playground)
     selftest/          engine invariants cartridge (PRNG KATs, trig
-                       accuracy, serializer/snapshot/input round-trips)
+                       accuracy, serializer/snapshot/input/ui round-trips)
+    uigallery/         living pt.ui reference, shaped like the M4 inspector
   tools/               dev scripts (bake_spleen, feed helpers)
   tests/
     traces/            golden traces (replay-forever, contract rule 6)

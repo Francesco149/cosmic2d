@@ -273,3 +273,72 @@ sense (UI animation M2, camera/feel knobs M3, tweens when they land).
 become knobs → parametric registrations (`register("back:2.5", …)`) or a
 small curve-descriptor table in the doc tree.
 
+## D021 — engine UI is immediate-mode with dev-side state only (M2)
+
+**Context**: pillar 5 demands panels that scale to a Godot-class inspector;
+the engine is hot-reload-first and deterministic-first, so a retained
+widget tree would fight both (lifecycle across reloads; UI state leaking
+into snapshots).
+**Decision**: pt.ui is an immediate-mode core: widgets are per-frame calls;
+the only retained state is a per-id table keyed by hierarchical id paths,
+living on the module (survives hot reload, resets on VM reboot, never
+snapshot). Interaction = classic hot/active/focus with one-frame capture
+latency; the game receives only events the UI didn't capture, and
+up-events always pass (no stuck keys). Iron rule: pt.ui never touches
+buffers/doc/PRNG. ` (console) and F3 (perf) are engine-reserved keys until
+M4 play-mode lockdown. **Inspector review gate (PLAN risk list) passed**
+via projects/uigallery, an inspector-shaped dogfood: searchable +
+virtualized + selectable lists, collapsing sections, drag numbers,
+sliders, checkboxes, text fields all compose; identified gaps — enum
+dropdown, color field, multi-select, tooltips, drag-reorder — are
+additive widgets, not architecture.
+**Snapshot story**: none by construction; what a widget edits (doc knobs)
+is the caller's write and the caller's snapshot story.
+**Revisit if**: M4 docking/z-order outgrows draw-order hover resolution
+(then: explicit z-ordered panel registry feeding the same hover model), or
+per-frame Lua garbage from UI shows in the perf panel (then: rect/id
+caching inside pt.ui, API unchanged).
+
+## D022 — console evals are recorded sim inputs (EVAL records, M2)
+
+**Context**: the console REPL pokes sim state mid-session; D014 traces
+must stay an oracle. Deltas alone would keep *replay* correct but verify
+(re-sim) would diverge at the first poke — and a knob-tuning session is
+exactly what we want to record and share.
+**Decision**: pt.repl is the single eval path: submits queue, the queue
+drains at the START of the next sim frame (before input applies), and the
+recorder writes drained commands as EVAL v1 chunks before that frame's
+FRAM. Verify re-executes them via the same pt.repl.exec at the same point.
+Replay-without-re-sim ignores EVALs (their effects are in the deltas). A
+contained game error stops an active recording so the trace stays valid up
+to the last good frame. Golden: tests/traces/evalfix.ptrace (doc poke,
+buffer creation, an erroring command), tamper-tested.
+**Snapshot story**: commands are data in the trace; the code they call
+travels in bundles (D012). Caveat (documented in pt/repl.lua): repl env
+variables assigned before recording starts don't travel — keep
+trace-relevant state in the doc tree.
+**Revisit if**: games want player-facing text entry in the *sim* (then:
+the additive text input record type from D018's note — distinct from this,
+which is dev-console only), or eval bursts bloat traces (unlikely; they're
+strings).
+
+## D023 — game errors pause, never kill (M2)
+
+**Context**: M2 exit criterion "Lua errors never kill the session"; the
+M0 magenta screen threw away the session's visual context and the C
+parachute rebooted the whole VM for any game typo.
+**Decision**: pt.main guards require/init/step/draw in live sessions. On
+error: traceback to the log, sim paused (no stepping, no game.draw),
+recording stopped, console auto-opens with a banner; the REPL drains
+immediately while paused so the wreckage is inspectable. Resume = any
+successful hot reload (re-runs reload-idempotent init); boot failures
+retry the entry require each poll. Capped/verify runs (`--frames`,
+`--verify`) keep exit-on-error fail-fast semantics — CI must die loudly.
+The C parachute remains for engine bugs only.
+**Snapshot story**: pausing touches no sim state; a half-mutated frame
+from the failed step stays as-is for inspection and is never recorded.
+**Revisit if**: pause-the-world proves wrong for some games (then: a
+project opt-in to keep stepping other systems), or M5's ring trace wants
+the error frame captured for time-machine autopsy (then: record the
+half-frame behind a marker chunk).
+
