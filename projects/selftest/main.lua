@@ -380,6 +380,60 @@ local function t_text()
   check(w == 20 and h == 16, "measure multi-line")
 end
 
+-- ---- pt.repl: exec semantics (the deterministic console path, D022) ----
+
+local function t_repl()
+  local repl = pt.require("pt.repl")
+
+  local function tail_after(fn)
+    local before = pal.log_lines(0)
+    local last = #before > 0 and before[#before].seq or 0
+    fn()
+    local lines = {}
+    for _, l in ipairs(pal.log_lines(last)) do lines[#lines + 1] = l.text end
+    return lines
+  end
+
+  -- expression: echo + result
+  local out = tail_after(function() check(repl.exec("1+1"), "repl: expr ok") end)
+  check(out[1] == "> 1+1" and out[2] == "= 2",
+        "repl: expr echo ('" .. tostring(out[1]) .. "', '"
+        .. tostring(out[2]) .. "')")
+  -- multiple returns
+  out = tail_after(function() repl.exec("1, 'a'") end)
+  check(out[2] == "= 1, a", "repl: multi-return echo")
+  -- statement: no result line
+  out = tail_after(function()
+    check(repl.exec("pt.state.doc.t_repl = 7"), "repl: statement ok")
+  end)
+  check(#out == 1, "repl: statement has no = line")
+  check(state.doc.t_repl == 7, "repl: statement hit the doc tree")
+  -- env sugar reads + protected writes
+  check(repl.exec("doc.t_repl = doc.t_repl + 1") and state.doc.t_repl == 8,
+        "repl: doc sugar")
+  repl.exec("state = 5") -- bare assignment lands in env, not _G
+  check(_G.state == nil and repl.env.state == 5, "repl: env shields globals")
+  repl.env.state = nil
+  state.doc.t_repl = nil
+  -- errors caught, logged, survivable
+  out = tail_after(function()
+    check(not repl.exec("error('x')"), "repl: runtime error returns false")
+  end)
+  check(out[2] and out[2]:find("^! "), "repl: error echoed")
+  check(not repl.exec("syntax ]]"), "repl: syntax error returns false")
+  -- queue order + drain
+  repl.queue = {}
+  repl.submit("pt.state.doc.t_q = 'a'")
+  repl.submit("pt.state.doc.t_q = pt.state.doc.t_q .. 'b'")
+  check(#repl.queue == 2, "repl: submits queue")
+  local drained = repl.drain()
+  check(#drained == 2 and #repl.queue == 0, "repl: drain empties queue")
+  check(state.doc.t_q == "ab", "repl: drain executes in order")
+  check(repl.drain() == nil, "repl: idle drain is nil")
+  state.doc.t_q = nil
+  check(repl.history[#repl.history]:find("t_q"), "repl: history records")
+end
+
 -- ---- pt.ui: interaction logic via synthetic events (headless-safe; the
 -- 64x64 gfx target is live, so widgets really draw — logic is what we
 -- assert, pixels are the glyph test's job) ----
@@ -600,6 +654,7 @@ function game.init()
   t_snapshot()
   t_input()
   t_text()
+  t_repl()
   t_ui()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))

@@ -79,7 +79,16 @@ function M.boot()
   M.state = pt.require("pt.state")
   M.input = pt.require("pt.input")
   M.ui = pt.require("pt.ui")
+  M.repl = pt.require("pt.repl")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
+
+  -- the console is the engine's output surface: print joins the log stream
+  print = function(...)
+    local n = select("#", ...)
+    local parts = {}
+    for i = 1, n do parts[i] = tostring(select(i, ...)) end
+    pal.log(table.concat(parts, "  "))
+  end
 
   M.entry = (proj.entry or "main.lua"):gsub("%.lua$", ""):gsub("/", ".")
   M.game = pt.require(M.entry)
@@ -115,15 +124,17 @@ local function poll_reload(now)
   if M.trace and #changed > 0 then M.trace.on_code_change(changed) end
 end
 
--- one sim frame: sample (or accept) an input record, apply, step, count;
--- state is recorded post-step pre-draw, so a draw that mutates sim state
--- shows up as a verify divergence on the next frame
+-- one sim frame: drain queued console evals (recorded — D022), then sample
+-- (or accept) an input record, apply, step, count; state is recorded
+-- post-step pre-draw, so a draw that mutates sim state shows up as a
+-- verify divergence on the next frame
 local function sim_step(events)
+  local evals = M.repl.drain()
   local rec = M.input.collect(events)
   M.input.apply(rec)
   M.game.step()
   M.state.advance_frame()
-  if M.args.record then M.trace.record_frame(rec) end
+  if M.args.record then M.trace.record_frame(rec, evals) end
   return rec
 end
 

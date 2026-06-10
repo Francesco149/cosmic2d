@@ -12,6 +12,11 @@
 --                kind 1 = created/resized this frame (payload = full bytes)
 --                kind 2 = freed this frame (payload empty)
 --              u8 doc kind: 0 = unchanged, 1 = changed (then s4 canon bytes)
+--   EVAL v1  console commands drained at the START of the next FRAM's sim
+--            frame, before its input record applies (D022): u32 n,
+--            n * s4 command. Verify re-executes them via pt.repl.exec at
+--            the same point; replay-without-re-sim can ignore them (their
+--            effects are inside the deltas)
 --   KEYF v1  code-less snapshot of the state right after the preceding FRAM
 --            (seek accelerator; the verifier cross-checks it)
 --   EPOC v1  mid-recording hot reload: u32 n, n * (s4 name, s4 path,
@@ -27,6 +32,7 @@ local M = select(2, ...) or {}
 local chunk = pt.require("pt.chunk")
 local state = pt.require("pt.state")
 local input = pt.require("pt.input")
+local repl = pt.require("pt.repl")
 
 local pack, unpack = string.pack, string.unpack
 
@@ -73,9 +79,14 @@ function M.record_start(path, opts)
 end
 
 -- called after each sim step (post-advance, pre-draw) with that step's
--- input record
-function M.record_frame(input_record)
+-- input record and the console commands drained at its start (or nil)
+function M.record_frame(input_record, evals)
   if not rec then return end
+  if evals and #evals > 0 then
+    local ep = { pack("<I4", #evals) }
+    for _, cmd in ipairs(evals) do ep[#ep + 1] = pack("<s4", cmd) end
+    rec.w.chunk("EVAL", 1, table.concat(ep))
+  end
   local recs = {}
   local seen = {}
   for _, b in ipairs(sorted_buf_list()) do
@@ -204,10 +215,23 @@ function M.verify(path, game)
 
   local frame = 0
   local tail_frames
+  local pending_evals = {}
 
   for _, c in ipairs(chunks) do
-    if c.tag == "FRAM" and c.version == 1 then
+    if c.tag == "EVAL" and c.version == 1 then
+      local n, pos = unpack("<I4", c.payload)
+      for _ = 1, n do
+        local cmd
+        cmd, pos = unpack("<s4", c.payload, pos)
+        pending_evals[#pending_evals + 1] = cmd
+      end
+    elseif c.tag == "FRAM" and c.version == 1 then
       frame = frame + 1
+      -- recorded console evals ran at the start of this sim frame (D022)
+      if #pending_evals > 0 then
+        for _, cmd in ipairs(pending_evals) do repl.exec(cmd) end
+        pending_evals = {}
+      end
       local p = c.payload
       local irec, pos = unpack("<s4", p)
       input.apply(irec)
