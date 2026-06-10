@@ -64,6 +64,9 @@ function M.boot()
     vsync = not args.no_vsync,
   }
 
+  M.state = pt.require("pt.state")
+  pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
+
   M.entry = (proj.entry or "main.lua"):gsub("%.lua$", ""):gsub("/", ".")
   M.game = pt.require(M.entry)
   M.game.init()
@@ -99,12 +102,14 @@ function M.tick()
 
   if M.args.headless then
     M.game.step(input)
+    M.state.advance_frame()
   else
     M.acc = M.acc + (M.last and now - M.last or SIM_DT)
     M.last = now
     if M.acc > 4 * SIM_DT then M.acc = 4 * SIM_DT end -- stall clamp
     while M.acc >= SIM_DT do
       M.game.step(input)
+      M.state.advance_frame()
       input = {}
       M.acc = M.acc - SIM_DT
     end

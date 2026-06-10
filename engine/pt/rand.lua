@@ -42,6 +42,17 @@ function M.seed(n)
   end
 end
 
+-- seed only if the state is virgin (all-zero would make xoshiro degenerate);
+-- a restored snapshot or a persisting buffer keeps its stream position
+function M.ensure_seeded(n)
+  local b = buf()
+  for i = 0, 3 do
+    if b:i64(S0 + 8 * i) ~= 0 then return false end
+  end
+  M.seed(n)
+  return true
+end
+
 -- next raw 64-bit draw (full-range signed integer in Lua terms)
 function M.u64()
   local b = buf()

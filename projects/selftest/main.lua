@@ -6,6 +6,7 @@
 
 local rand = pt.require("pt.rand")
 local m = pt.require("pt.math")
+local state = pt.require("pt.state")
 
 local game = {}
 local checks = 0
@@ -132,12 +133,128 @@ local function t_atan_sweep()
   check(m.asin(1.0000001) == m.asin(1), "asin clamps overdrive")
 end
 
+-- ---- pt.state: canonical serializer ----
+
+local function deep_equal(a, b)
+  if a == b then
+    -- distinguish 1 vs 1.0 (different canonical bytes, both must round-trip)
+    return type(a) ~= "number" or math.type(a) == math.type(b)
+  end
+  if type(a) ~= "table" or type(b) ~= "table" then return false end
+  local n = 0
+  for k, v in pairs(a) do
+    if not deep_equal(v, b[k]) then return false end
+    n = n + 1
+  end
+  for _ in pairs(b) do n = n - 1 end
+  return n == 0
+end
+
+local function t_canon()
+  local doc = {
+    name = "he\0llo", count = 42, ratio = 0.5, on = true, off = false,
+    [1] = "one", [2] = 2.0, [-3] = { nested = { 7, 8, 9 }, neg = -0.0 },
+    inf = math.huge, big = 0x7fffffffffffffff,
+  }
+  local bytes = state.canon(doc)
+  check(deep_equal(state.parse(bytes), doc), "canon round-trip")
+  check(state.canon(state.parse(bytes)) == bytes, "canon is a fixpoint")
+  -- key order independence
+  local x1, x2 = {}, {}
+  x1.a = 1; x1.b = 2; x1[10] = 3; x1[2] = 4
+  x2[2] = 4; x2.b = 2; x2[10] = 3; x2.a = 1
+  check(state.canon(x1) == state.canon(x2), "canonical key order")
+  -- type distinctions
+  check(state.canon(1) ~= state.canon(1.0), "integer vs float bytes")
+  check(state.canon(0.0) ~= state.canon(-0.0), "-0.0 bits preserved")
+  local nz = state.parse(state.canon(-0.0))
+  check(1.0 / nz < 0, "-0.0 round-trips")
+  -- rejections
+  check(not pcall(state.canon, { bad = 0 / 0 }), "NaN rejected")
+  check(not pcall(state.canon, { fn = print }), "function rejected")
+  check(not pcall(state.canon, { [1.5] = 1 }), "fractional key rejected")
+  check(not pcall(state.canon, { [true] = 1 }), "boolean key rejected")
+  local cyc = {}
+  cyc.self = cyc
+  check(not pcall(state.canon, cyc), "cycle rejected")
+  local shared = { x = 1 }
+  check(not pcall(state.canon, { a = shared, b = shared }), "alias rejected")
+end
+
+-- ---- pt.state: snapshot round-trip ----
+
+local function t_snapshot()
+  local sim = pal.buf("pt.sim", 64)
+  rand.seed(777)
+  sim:i64(0, 1234) -- pretend we're at frame 1234
+
+  local b1 = pal.buf("selftest.b1", 128)
+  for i = 0, 127 do b1:u8(i, (i * 7 + 3) % 256) end
+  local b1_bytes = b1:str(0, 128)
+
+  state.doc.player = { x = 10, y = 20.5, name = "pet" }
+  state.doc.flags = { true, false, true }
+
+  local snap = state.snapshot()
+  local epoch_before = pt.code_epoch
+
+  -- wreck everything the snapshot should put back
+  sim:i64(0, 9999)
+  rand.seed(1)
+  b1:fill(0, 128, 0xee)
+  state.doc.player = nil
+  state.doc.junk = { 1, 2, 3 }
+  local b2 = pal.buf("selftest.b2", 32)
+  b2:fill(0, 32, 0xaa)
+
+  state.restore(snap)
+
+  check(state.frame() == 1234, "frame counter restored")
+  check(b1:str(0, 128) == b1_bytes, "buffer bytes restored")
+  check(state.doc.player and state.doc.player.y == 20.5
+        and state.doc.player.name == "pet", "doc tree restored")
+  check(state.doc.junk == nil, "post-snapshot doc junk gone")
+  local have = {}
+  for _, b in ipairs(pal.buf_list()) do have[b.name] = b.size end
+  check(have["selftest.b2"] == nil, "post-snapshot buffer freed by restore")
+  check(have["selftest.b1"] == 128, "snapshot buffer present")
+  -- prng stream position restored: same next draw as right after seed(777)
+  rand.seed(777)
+  local expect_draw = rand.u64()
+  state.restore(snap)
+  check(rand.u64() == expect_draw, "prng stream position restored")
+
+  check(pt.code_epoch > epoch_before, "restore bumps code epoch")
+  check(#pt.reload() == 0, "disk reload paused while on bundle code")
+  pt.adopt_disk()
+  pal.buf_free("selftest.b1")
+end
+
+-- ---- code bundle restore (D012): bundle source replaces running code ----
+
+local function t_bundle()
+  local knob = pt.require("knob")
+  check(knob.value == 1, "knob module baseline")
+  pt.restore_bundle({
+    { name = "knob", path = "projects/selftest/knob.lua",
+      source = "return { value = 2 }" },
+  })
+  check(knob.value == 2, "bundle code re-executed into the same table")
+  check(pt.require("knob") == knob, "module identity preserved")
+  local changed = pt.adopt_disk()
+  check(knob.value == 1, "adopt_disk returns to disk code")
+  check(#changed == 1 and changed[1] == "knob", "adopt reports the reload")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
   t_rand_dist()
   t_trig_sweep()
   t_atan_sweep()
+  t_canon()
+  t_snapshot()
+  t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
