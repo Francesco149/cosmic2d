@@ -713,6 +713,115 @@ local function t_console()
   ui.blur()
 end
 
+-- ---- pt.tilemap: header/cells + the AABB mover (M3) ----
+
+local function t_tilemap()
+  local tilemap = pt.require("pt.tilemap")
+  local T = { [1] = { solid = true }, [2] = { oneway = true } }
+
+  -- 12x8 cells of 16px: floor along the bottom, a wall column, a plank
+  local tm = tilemap.new{ name = "selftest.map", w = 12, h = 8, tile = 16,
+                          tiles = T }
+  check(tm.buf:u32(0) == 12 and tm.buf:u32(4) == 8 and tm.buf:u32(8) == 16,
+        "tilemap: header written")
+  check(tm.pw == 192 and tm.ph == 128, "tilemap: pixel size")
+  tm:fill(0, 7, 12, 1, 1) -- floor row
+  tm:fill(6, 4, 1, 3, 1) -- wall column x=6, rows 4..6
+  tm:fill(2, 5, 3, 1, 2) -- one-way plank row 5, x 2..4
+  tm:set(9, 2, 1) -- lone ceiling block for the head-bonk test
+  check(tm:get(6, 5) == 1 and tm:get(3, 5) == 2 and tm:get(0, 0) == 0,
+        "tilemap: get/set/fill")
+  check(tm:solid_at(100, 116) and tm:solid_at(100, 100)
+        and not tm:solid_at(90, 100), "tilemap: solid_at")
+  check(tm:solid_at(-1, 0) and tm:solid_at(193, 0) and tm:solid_at(0, 129)
+        and not tm:solid_at(0, -50), "tilemap: oob walls + open sky")
+
+  -- re-new with same shape keeps cells (init idempotence)
+  tm = tilemap.new{ name = "selftest.map", w = 12, h = 8, tile = 16, tiles = T }
+  check(tm:get(6, 5) == 1, "tilemap: re-new keeps cells")
+  -- open() adopts by header
+  local tm2 = tilemap.open("selftest.map", T)
+  check(tm2.w == 12 and tm2.h == 8 and tm2.tile == 16 and tm2:get(3, 5) == 2,
+        "tilemap: open reads header")
+
+  local body_w, body_h = 10, 14
+  local stand = 112 - body_h -- bottom exactly on the floor top
+
+  -- X: run right into the wall (wall left face at 96)
+  local nx, ny, hit = tm:move(60, stand, body_w, body_h, 40, 0)
+  check(nx == 96 - body_w and ny == stand and hit.right and not hit.left,
+        "tilemap: clamp right at wall (" .. nx .. ")")
+  -- X: from the other side (wall right face at 112)
+  nx, ny, hit = tm:move(130, stand, body_w, body_h, -40, 0)
+  check(nx == 112 and hit.left, "tilemap: clamp left at wall")
+  -- X: body above the wall passes freely
+  nx, ny, hit = tm:move(60, 30, body_w, body_h, 40, 0)
+  check(nx == 100 and not hit.right, "tilemap: free run above wall")
+  -- X: body straddling two rows hits a wall present in either
+  nx, ny, hit = tm:move(60, 58, body_w, body_h, 40, 0) -- rows 3..4, wall in 4
+  check(nx == 96 - body_w and hit.right, "tilemap: partial row overlap blocks")
+  -- X: huge step cannot tunnel through the wall column
+  nx, ny, hit = tm:move(0, stand, body_w, body_h, 1000, 0)
+  check(nx == 96 - body_w and hit.right, "tilemap: no x tunneling")
+
+  -- Y: fall and land on the floor (top at 112)
+  nx, ny, hit = tm:move(20, 60, body_w, body_h, 0, 200)
+  check(ny == stand and hit.down and not hit.oneway,
+        "tilemap: land on floor, no y tunneling")
+  -- Y: standing on the boundary stays put under small gravity
+  nx, ny, hit = tm:move(20, stand, body_w, body_h, 0, 0.25)
+  check(ny == stand and hit.down, "tilemap: standing is stable")
+  -- Y: head bonk on the lone ceiling block (underside at 48)
+  nx, ny, hit = tm:move(146, 60, body_w, body_h, 0, -30)
+  check(ny == 48 and hit.up, "tilemap: head bonk clamps (" .. ny .. ")")
+
+  -- one-way plank (row 5, top at 80, x cells 2..4 = px 32..80)
+  -- land from above
+  nx, ny, hit = tm:move(40, 50, body_w, body_h, 0, 60)
+  check(ny == 80 - body_h and hit.down and hit.oneway,
+        "tilemap: land on one-way")
+  -- jump up through it: rising never collides with one-ways
+  nx, ny, hit = tm:move(40, 90, body_w, body_h, 0, -40)
+  check(ny == 50 and not hit.up, "tilemap: rise through one-way")
+  -- walk across it sideways: never blocks horizontally
+  nx, ny, hit = tm:move(20, 80 - body_h, body_w, body_h, 30, 0)
+  check(nx == 50 and not hit.right, "tilemap: one-way never blocks x")
+  -- drop through with opts.drop
+  nx, ny, hit = tm:move(40, 80 - body_h, body_w, body_h, 0, 10,
+                        { drop = true })
+  check(ny == 80 - body_h + 10 and not hit.down, "tilemap: drop-through")
+  -- starting below the plank top (inside its cell) falls freely
+  nx, ny, hit = tm:move(40, 82, body_w, body_h, 0, 10)
+  check(ny == 92 and not hit.down, "tilemap: below plank top, no snag")
+
+  -- walking off a ledge: columns clear of the plank -> no support
+  nx, ny, hit = tm:move(8, 80 - body_h, body_w, body_h, 0, 0.25)
+  check(not hit.down and ny > 80 - body_h, "tilemap: ledge gives no support")
+  check(tm:grounded(40, 80 - body_h, body_w, body_h),
+        "tilemap: grounded probe on plank")
+  check(not tm:grounded(40, 60, body_w, body_h), "tilemap: airborne probe")
+
+  -- map borders: walls left/right/below even with empty cells
+  nx, ny, hit = tm:move(4, 20, body_w, body_h, -30, 0)
+  check(nx == 0 and hit.left, "tilemap: left border wall")
+  nx, ny, hit = tm:move(170, 20, body_w, body_h, 30, 0)
+  check(nx == 192 - body_w and hit.right, "tilemap: right border wall")
+  -- above the map is open: rising out and falling back is free
+  nx, ny, hit = tm:move(20, 4, body_w, body_h, 0, -40)
+  check(ny == -36 and not hit.up, "tilemap: open sky above")
+
+  -- diagonal: x resolves before y (slides along the wall, then lands)
+  nx, ny, hit = tm:move(60, 90, body_w, body_h, 60, 30)
+  check(nx == 96 - body_w and ny == 112 - body_h and hit.right and hit.down,
+        "tilemap: axis-separated diagonal")
+
+  -- live resize: different shape rebuilds zeroed with the new header
+  tm = tilemap.new{ name = "selftest.map", w = 8, h = 12, tile = 16, tiles = T }
+  check(tm.buf:u32(0) == 8 and tm.buf:u32(4) == 12 and tm:get(6, 5) == 0,
+        "tilemap: resize rebuilds")
+  pal.buf_free("selftest.map")
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -744,6 +853,7 @@ function game.init()
   t_repl()
   t_ui()
   t_console()
+  t_tilemap()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
