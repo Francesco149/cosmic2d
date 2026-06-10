@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 1
+#define PAL_VERSION_API 2
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -66,6 +66,8 @@ typedef struct {
   /* core */
   bool quit;
   bool error_state;
+  bool exit_on_error; /* capped/verify runs: lua error = exit(1), no parachute */
+  int exit_code;
   int argc;
   char **argv;
   lua_State *L;

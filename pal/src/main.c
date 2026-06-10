@@ -45,8 +45,14 @@ static bool boot_lua(void) {
 }
 
 static void enter_error_state(const char *msg) {
-  pal_log("=== LUA ERROR ===\n%s\n=== edit a watched file to reload ===",
-          msg ? msg : "(unknown)");
+  pal_log("=== LUA ERROR ===\n%s", msg ? msg : "(unknown)");
+  if (G.exit_on_error) {
+    pal_log("exit_on_error set; quitting with code 1");
+    G.exit_code = 1;
+    G.quit = true;
+    return;
+  }
+  pal_log("=== edit a watched file to reload ===");
   G.error_state = true;
 }
 
@@ -158,6 +164,12 @@ int main(int argc, char **argv) {
   }
 
   if (!boot_lua()) {
+    /* boot.lua sets exit_on_error before loading game code in capped runs;
+     * the flag outlives the failed VM, so init-time crashes exit cleanly */
+    if (G.exit_on_error) {
+      pal_log("exit_on_error set; quitting with code 1");
+      return 1;
+    }
     G.error_state = true;
     if (!G.gfx_up) {
       /* nothing to show and nothing to watch yet: bail */
@@ -177,5 +189,5 @@ int main(int argc, char **argv) {
   if (G.L) lua_close(G.L);
   /* deliberately skip GPU/buffer teardown: the OS reclaims faster than we
    * can, and exit paths stay trivially correct */
-  return 0;
+  return G.exit_code;
 }

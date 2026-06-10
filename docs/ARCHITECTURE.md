@@ -309,7 +309,7 @@ binary incompatible, in either direction (D015).
 | `pal.log(s)` | dev | timestamped stderr + ring buffer for console |
 | `pal.time_ns()` | render-only | monotonic; **never** in sim logic |
 | `pal.sleep_ms(n)` | dev | paces interactive headless sessions |
-| `pal.quit()` | — | request loop exit |
+| `pal.quit([code])` | — | request loop exit; `code` = process exit code (default 0) |
 | `pal.gfx_init{w,h,scale,title,headless,vsync}` | — | once at boot |
 | `pal.begin_frame(r,g,b,a)` | render | clear internal target, reset batch |
 | `pal.quad(x,y,w,h, r,g,b,a [,tex,u0,v0,u1,v1])` | render | pixels, top-left origin |
@@ -326,5 +326,16 @@ binary incompatible, in either direction (D015).
 | `pal.poll_events()` | input | array of event tables, drained each tick |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |
 
-Everything else (bulk draw, snapshot save/load helpers, audio, kernels) lands
-in M1+ and gets documented here when it does.
+### PAL API v2 additions (M1)
+
+| fn | class | notes |
+| --- | --- | --- |
+| `pal.draw_quads(tex, buf, count [,byte_off])` | render | bulk path: `count` quads of 12 f32 LE (`x,y,w,h, u0,v0,u1,v1, r,g,b,a`, colors 0..1 clamped, same rounding as `pal.quad`) from a buffer view; camera/clip apply. Layout **frozen** |
+| `pal.png_read(bytes)` | dev/asset | decode PNG (vendored stb) → `pixels, w, h` (RGBA8); `nil, err` on failure |
+| `pal.hash(s)` | sim | fnv1a-64 of a string (same fn as `buf:hash()`); content addressing for code bundles |
+| `pal.buf_delta1(prev, cur)` | sim | **versioned kernel** (contract rule 4): sparse XOR delta of two equal-size views. Format frozen: runs of `{u32 off LE, u32 len LE, len XOR bytes}`; a run ends at the last differing byte followed by ≥8 equal bytes; `""` = identical |
+| `pal.buf_apply_delta1(view, delta)` | sim | XOR runs into view (self-inverse: applying twice undoes); errors on malformed/OOB runs |
+| `pal.exit_on_error(b)` | dev | when set, a Lua error exits the process with code 1 instead of parachuting (capped runs, golden verify) |
+
+Everything else (snapshot save/load helpers, audio, kernels) lands in M1+ and
+gets documented here when it does.

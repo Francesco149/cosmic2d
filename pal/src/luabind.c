@@ -6,6 +6,7 @@
 
 #include "lauxlib.h"
 #include "lualib.h"
+#include "stb/stb_image.h"
 #include "stb/stb_image_write.h"
 
 #define BUFVIEW_MT "pal.buf"
@@ -17,11 +18,13 @@ typedef struct {
 
 /* ---------- buffer views ---------- */
 
-static BufView *checkview(lua_State *L) {
-  BufView *v = luaL_checkudata(L, 1, BUFVIEW_MT);
+static BufView *checkview_at(lua_State *L, int idx) {
+  BufView *v = luaL_checkudata(L, idx, BUFVIEW_MT);
   if (!v->b->alive) luaL_error(L, "buffer was freed");
   return v;
 }
+
+static BufView *checkview(lua_State *L) { return checkview_at(L, 1); }
 
 static uint8_t *view_span(lua_State *L, BufView *v, lua_Integer off,
                           lua_Integer len) {
@@ -176,7 +179,89 @@ static int l_buf_list(lua_State *L) {
   return 1;
 }
 
+/* delta codec v1 — FROZEN (stability contract rule 4: versioned kernel).
+ * delta = concatenated runs of { u32 off LE, u32 len LE, len XOR bytes };
+ * a run extends to the last differing byte that is followed by fewer than
+ * 8 equal bytes; runs are emitted in ascending offset order; identical
+ * buffers yield the empty string. apply is XOR, hence self-inverse. */
+#define DELTA1_GAP 8
+
+static void put_u32le(uint8_t *p, uint32_t v) {
+  p[0] = (uint8_t)(v & 0xff);
+  p[1] = (uint8_t)((v >> 8) & 0xff);
+  p[2] = (uint8_t)((v >> 16) & 0xff);
+  p[3] = (uint8_t)((v >> 24) & 0xff);
+}
+
+static uint32_t get_u32le(const uint8_t *p) {
+  return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+         ((uint32_t)p[3] << 24);
+}
+
+static int l_buf_delta1(lua_State *L) {
+  BufView *prev = checkview_at(L, 1);
+  BufView *cur = checkview_at(L, 2);
+  if (prev->b->size != cur->b->size)
+    return luaL_error(L, "buf_delta1: size mismatch (%I vs %I)",
+                      (lua_Integer)prev->b->size, (lua_Integer)cur->b->size);
+  const uint8_t *p = prev->b->data, *c = cur->b->data;
+  size_t n = prev->b->size;
+  luaL_Buffer B;
+  luaL_buffinit(L, &B);
+  size_t i = 0;
+  while (i < n) {
+    if (p[i] == c[i]) {
+      i++;
+      continue;
+    }
+    size_t start = i, last = i, eq = 0;
+    for (size_t j = i + 1; j < n && eq < DELTA1_GAP; j++) {
+      if (p[j] != c[j]) {
+        last = j;
+        eq = 0;
+      } else {
+        eq++;
+      }
+    }
+    uint8_t hdr[8];
+    put_u32le(hdr, (uint32_t)start);
+    put_u32le(hdr + 4, (uint32_t)(last - start + 1));
+    luaL_addlstring(&B, (const char *)hdr, 8);
+    for (size_t k = start; k <= last; k++)
+      luaL_addchar(&B, (char)(p[k] ^ c[k]));
+    i = last + 1;
+  }
+  luaL_pushresult(&B);
+  return 1;
+}
+
+static int l_buf_apply_delta1(lua_State *L) {
+  BufView *v = checkview_at(L, 1);
+  size_t len;
+  const uint8_t *d = (const uint8_t *)luaL_checklstring(L, 2, &len);
+  size_t pos = 0;
+  while (pos < len) {
+    if (pos + 8 > len)
+      return luaL_error(L, "buf_apply_delta1: truncated run header");
+    uint32_t off = get_u32le(d + pos), rl = get_u32le(d + pos + 4);
+    pos += 8;
+    if (rl == 0 || (size_t)off + rl > v->b->size || pos + rl > len)
+      return luaL_error(L, "buf_apply_delta1: bad run (off=%I len=%I)",
+                        (lua_Integer)off, (lua_Integer)rl);
+    for (uint32_t k = 0; k < rl; k++) v->b->data[off + k] ^= d[pos + k];
+    pos += rl;
+  }
+  return 0;
+}
+
 /* ---------- core ---------- */
+
+static int l_hash(lua_State *L) {
+  size_t len;
+  const char *s = luaL_checklstring(L, 1, &len);
+  lua_pushinteger(L, (lua_Integer)pal_buf_hash((const uint8_t *)s, len));
+  return 1;
+}
 
 static int l_log(lua_State *L) {
   pal_log("%s", luaL_checkstring(L, 1));
@@ -189,8 +274,13 @@ static int l_time_ns(lua_State *L) {
 }
 
 static int l_quit(lua_State *L) {
-  (void)L;
+  G.exit_code = (int)luaL_optinteger(L, 1, 0);
   G.quit = true;
+  return 0;
+}
+
+static int l_exit_on_error(lua_State *L) {
+  G.exit_on_error = lua_toboolean(L, 1);
   return 0;
 }
 
@@ -269,6 +359,34 @@ static int l_quad(lua_State *L) {
   return 0;
 }
 
+/* bulk quad path: count quads of 12 f32 LE each (x,y,w,h, u0,v0,u1,v1,
+ * r,g,b,a — colors 0..1, clamped, same rounding as pal.quad) read from a
+ * buffer view at byte_off. layout FROZEN (stability contract rule 5). */
+static int l_draw_quads(lua_State *L) {
+  check_gfx(L);
+  int tex = (int)luaL_checkinteger(L, 1);
+  BufView *v = checkview_at(L, 2);
+  lua_Integer count = luaL_checkinteger(L, 3);
+  lua_Integer off = luaL_optinteger(L, 4, 0);
+  if (count < 0) return luaL_error(L, "draw_quads: negative count");
+  if (off < 0 || (size_t)(off + count * 48) > v->b->size)
+    return luaL_error(L, "draw_quads: out of bounds (off=%I count=%I size=%I)",
+                      off, count, (lua_Integer)v->b->size);
+  const uint8_t *p = v->b->data + off;
+  for (lua_Integer i = 0; i < count; i++, p += 48) {
+    float q[12];
+    memcpy(q, p, 48);
+    uint32_t rgba = 0;
+    for (int ch = 0; ch < 4; ch++) {
+      float f = q[8 + ch];
+      f = f < 0 ? 0 : (f > 1 ? 1 : f);
+      rgba |= (uint32_t)(f * 255.0f + 0.5f) << (8 * ch);
+    }
+    pal_gfx_quad(q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7], rgba, tex);
+  }
+  return 0;
+}
+
 static int l_clip(lua_State *L) {
   check_gfx(L);
   if (lua_gettop(L) == 0) {
@@ -316,6 +434,24 @@ static int l_png_write(lua_State *L) {
   if (!stbi_write_png(path, w, h, 4, data, w * 4))
     return luaL_error(L, "png_write: failed writing %s", path);
   return 0;
+}
+
+static int l_png_read(lua_State *L) {
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+  int w, h, comp;
+  stbi_uc *pix = stbi_load_from_memory((const stbi_uc *)data, (int)len, &w,
+                                       &h, &comp, 4);
+  if (!pix) {
+    lua_pushnil(L);
+    lua_pushstring(L, stbi_failure_reason());
+    return 2;
+  }
+  lua_pushlstring(L, (const char *)pix, (size_t)w * h * 4);
+  stbi_image_free(pix);
+  lua_pushinteger(L, w);
+  lua_pushinteger(L, h);
+  return 3;
 }
 
 static int l_tex_create(lua_State *L) {
@@ -475,15 +611,19 @@ static const luaL_Reg pal_funcs[] = {
     {"time_ns", l_time_ns},
     {"sleep_ms", l_sleep_ms},
     {"quit", l_quit},
+    {"exit_on_error", l_exit_on_error},
+    {"hash", l_hash},
     {"gfx_init", l_gfx_init},
     {"gfx_size", l_gfx_size},
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
+    {"draw_quads", l_draw_quads},
     {"clip", l_clip},
     {"camera", l_camera},
     {"present", l_present},
     {"read_pixels", l_read_pixels},
     {"png_write", l_png_write},
+    {"png_read", l_png_read},
     {"tex_create", l_tex_create},
     {"tex_free", l_tex_free},
     {"poll_events", l_poll_events},
@@ -491,6 +631,8 @@ static const luaL_Reg pal_funcs[] = {
     {"buf", l_buf},
     {"buf_free", l_buf_free},
     {"buf_list", l_buf_list},
+    {"buf_delta1", l_buf_delta1},
+    {"buf_apply_delta1", l_buf_apply_delta1},
     {"read_file", l_read_file},
     {"write_file", l_write_file},
     {"list_dir", l_list_dir},
