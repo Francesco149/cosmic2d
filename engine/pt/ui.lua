@@ -371,8 +371,13 @@ end
 -- Content height is measured as widgets advance the inner cursor; the
 -- scrollbar appears when content overflows. Wheel scrolls when hovered
 -- (innermost region wins).
+-- NOTE id scoping: the scroll-state helpers below (scroll_get/set,
+-- scroll_at_bottom, scroll_to_bottom) resolve ids in the CALLER's scope —
+-- call them with the same local id, OUTSIDE the begin/end pair (the region
+-- pushes its own segment for its children's ids).
 function M.begin_scroll(id, h, opts)
   opts = opts or {}
+  local seg = id
   id = qid(id)
   local st = M.style
   local s = widget_state(id)
@@ -386,7 +391,7 @@ function M.begin_scroll(id, h, opts)
   }
   scroll_stack[#scroll_stack + 1] = { id = id, rect = r,
                                       start_cy = r.y - s.scroll }
-  M.push_id(id)
+  M.push_id(seg)
   return inner_w
 end
 
@@ -402,6 +407,7 @@ function M.end_scroll()
   local s = widget_state(sc.id)
   local r = sc.rect
   s.content_h = l.cy - sc.start_cy
+  s.view_h = r.h
   local max_scroll = math.max(0, s.content_h - r.h)
   if s.want_bottom then
     s.scroll = max_scroll
@@ -454,10 +460,11 @@ function M.scroll_set(id, v)
 end
 
 -- is the region scrolled to (within one row of) the bottom?
+-- h defaults to the region's height as of its last end_scroll.
 function M.scroll_at_bottom(id, h)
   local s = M.s[qid(id)]
   if not s or not s.content_h then return true end
-  local max_scroll = math.max(0, s.content_h - h)
+  local max_scroll = math.max(0, s.content_h - (h or s.view_h or 0))
   return s.scroll >= max_scroll - M.style.row_h
 end
 
@@ -658,9 +665,11 @@ local SC = { ret = 40, esc = 41, backspace = 42, tab = 43,
              home = 74, kend = 77, delete = 76 }
 
 -- single-line text field. Returns text, changed, submitted.
--- opts: hint (placeholder), keep_focus (stay focused after enter, for
--- consoles), id (when label-less), on_key(scancode) -> true to consume
--- (history navigation etc; called for non-editing keys while focused).
+-- opts: hint (shown while empty), keep_focus (stay focused after enter),
+-- take_focus (grab the keyboard whenever free + sticky: outside clicks
+-- don't blur — console-style), on_key(scancode, text) — called for
+-- non-editing keys while focused; returning a string replaces the text
+-- with the cursor at its end (history navigation).
 function M.text_input(id, txt, opts)
   opts = opts or {}
   txt = txt or ""
@@ -696,21 +705,26 @@ function M.text_input(id, txt, opts)
       s.cursor = s.cursor + #ins
       changed = true
     end
-    -- editing keys (with key repeat)
+    -- editing keys (with key repeat); anything else goes to opts.on_key,
+    -- which may return replacement text the widget adopts (history nav)
     for _, k in ipairs(M.inp.keys) do
       if k.down then
         local c = k.scancode
-        if c == SC.backspace and s.cursor > 1 then
-          local p = utf8_prev(txt, s.cursor)
-          txt = txt:sub(1, p - 1) .. txt:sub(s.cursor)
-          s.cursor, changed = p, true
-        elseif c == SC.delete and s.cursor <= #txt then
-          txt = txt:sub(1, s.cursor - 1) .. txt:sub(utf8_next(txt, s.cursor))
-          changed = true
-        elseif c == SC.left and s.cursor > 1 then
-          s.cursor = utf8_prev(txt, s.cursor)
-        elseif c == SC.right and s.cursor <= #txt then
-          s.cursor = utf8_next(txt, s.cursor)
+        if c == SC.backspace then
+          if s.cursor > 1 then
+            local p = utf8_prev(txt, s.cursor)
+            txt = txt:sub(1, p - 1) .. txt:sub(s.cursor)
+            s.cursor, changed = p, true
+          end
+        elseif c == SC.delete then
+          if s.cursor <= #txt then
+            txt = txt:sub(1, s.cursor - 1) .. txt:sub(utf8_next(txt, s.cursor))
+            changed = true
+          end
+        elseif c == SC.left then
+          if s.cursor > 1 then s.cursor = utf8_prev(txt, s.cursor) end
+        elseif c == SC.right then
+          if s.cursor <= #txt then s.cursor = utf8_next(txt, s.cursor) end
         elseif c == SC.home then
           s.cursor = 1
         elseif c == SC.kend then
@@ -721,14 +735,21 @@ function M.text_input(id, txt, opts)
         elseif c == SC.esc then
           M.focus = nil
         elseif opts.on_key then
-          opts.on_key(c)
+          local rep = opts.on_key(c, txt)
+          if type(rep) == "string" and rep ~= txt then
+            txt = rep
+            s.cursor = #txt + 1
+            changed = true
+          end
         end
       end
     end
   end
 
-  -- click elsewhere blurs (any click that didn't land on us)
-  if focused and M.inp.clicked[1] and not mouse_in(r.x, r.y, r.w, r.h) then
+  -- click elsewhere blurs — except sticky (take_focus) fields, which hold
+  -- the keyboard until something else claims it (filter box, escape)
+  if focused and M.inp.clicked[1] and not mouse_in(r.x, r.y, r.w, r.h)
+     and not opts.take_focus then
     M.focus = nil
   end
   focused = M.focus == id
@@ -747,7 +768,7 @@ function M.text_input(id, txt, opts)
                  focused and st.accent or st.panel_edge)
     push_clip(r.x + 2, r.y, r.w - 4, r.h)
     local ty = r.y + (r.h - st.gh) // 2
-    if #txt == 0 and opts.hint and not focused then
+    if #txt == 0 and opts.hint then
       M.text(r.x + 3, ty, opts.hint, st.text_dim)
     else
       M.text(r.x + 3 - s.sx, ty, txt, st.text)

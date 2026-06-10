@@ -58,8 +58,14 @@ draw/state/input/trace stack, determinism kit, goldens), plus the M2 stack:
   perf overlay, gallery).
 - Human-verified: M1 windowed feel — **"feels good"** (2026-06-10). Human
   notes a Windows-native build will feel even smoother → that's M7,
-  roadmap unchanged. M2 windowed feel (typing in the console, history,
-  filter, error flow, F3) not yet human-tested.
+  roadmap unchanged.
+- Human-verified M2 windowed (2026-06-11): **"feels great... right
+  direction, ui primitives seem solid"** + three bugs flagged, all fixed
+  + regression-tested same day: up-arrow history (console clobbered the
+  on_key replacement), hint flash / blur-on-log-click (take_focus fields
+  are sticky now; hint shows whenever empty), no autoscroll (scroll
+  helpers hit a phantom id when called inside the region's scope — see
+  the scoping note on ui.begin_scroll).
 
 ## Next step (M3 — sandbox platformer v0; see PLAN.md)
 
@@ -84,10 +90,12 @@ draw/state/input/trace stack, determinism kit, goldens), plus the M2 stack:
   polish possible); console line wrap = none (long lines clip; filter
   finds them).
 - repl env caveat (D022): pre-recording env assignments don't travel.
+- UI feel wishlist (human, 2026-06-11): inertial scrolling with a bouncy/
+  elastic edge for scroll regions — pt.ease infra is there; schedule with
+  the M4 editor polish pass (pillar 4 applies to editor chrome too).
 
 ## Open questions for the human
 
-- None blocking. When convenient: windowed run — open the console with `,
-  type a few commands (try `doc.knobs.gravity = 400`), arrow-key history,
-  filter box, break the sandbox on purpose (edit main.lua to a typo while
-  it runs) and watch it pause + resume on fix; F3 for the perf graph.
+- None blocking, M2 human-verified. Console history/autoscroll/focus
+  fixes (2026-06-11) would benefit from a quick re-check next windowed
+  run, but selftest + screenshots cover them.

@@ -128,25 +128,24 @@ end
 
 local hist_pos -- nil = live line (module-local: resets on reload, harmless)
 
-local function nav_history(dir)
+-- returns the replacement input text (adopted by ui.text_input via the
+-- on_key return), or nil for no change
+local function nav_history(dir, current)
   local h = repl.history
-  if #h == 0 then return end
+  if #h == 0 then return nil end
   if hist_pos == nil then
-    if dir > 0 then return end
-    M.stash = M.input_text
+    if dir > 0 then return nil end
+    M.stash = current
     hist_pos = #h
   else
     hist_pos = hist_pos + dir
     if hist_pos > #h then
       hist_pos = nil
-      M.input_text = M.stash or ""
-      ui.text_cursor("in", #M.input_text + 1)
-      return
+      return M.stash or ""
     end
     if hist_pos < 1 then hist_pos = 1 end
   end
-  M.input_text = h[hist_pos]
-  ui.text_cursor("in", #M.input_text + 1)
+  return h[hist_pos]
 end
 
 -- ---- the per-tick frame (pt.main calls this after the game draws) ----
@@ -199,31 +198,31 @@ function M.frame()
              { color = st.text_dim })
   end
 
-  -- log region fills everything above the input row
+  -- log region fills everything above the input row. Stick-to-bottom is
+  -- decided HERE, outside the region, where "log" resolves to the region's
+  -- own id (see the scoping note on ui.begin_scroll).
   local pad = st.pad
-  local log_h = ch - (ui.cursor_y() - y0) - st.row_h - pad * 2
+  local log_h = math.max(8, ch - (ui.cursor_y() - y0) - st.row_h - pad * 2)
   local lines = visible_lines()
-  ui.begin_scroll("log", log_h, { bg = st.track })
-  if M.want_bottom then
+  if M.want_bottom or (M.appended and ui.scroll_at_bottom("log")) then
     ui.scroll_to_bottom("log")
     M.want_bottom = nil
-  elseif M.appended and ui.scroll_at_bottom("log", log_h) then
-    ui.scroll_to_bottom("log")
   end
+  M.appended = false
+  ui.begin_scroll("log", log_h, { bg = st.track })
   ui.list(#lines, ui.style.gh + 1, function(i, x, y, w, rh)
     ui.text(x + 1, y, lines[i], line_color(lines[i]))
   end)
   ui.end_scroll()
-  M.appended = false
 
-  -- input line ("> " prompt drawn by hint when empty)
+  -- input line; on_key returns replacement text for history navigation
   local txt, _, submitted = ui.text_input("in", M.input_text, {
     hint = "lua (enter runs at next sim frame; up/down history)",
     keep_focus = true,
     take_focus = M.open,
-    on_key = function(sc)
-      if sc == KEY.up then nav_history(-1)
-      elseif sc == KEY.down then nav_history(1)
+    on_key = function(sc, cur)
+      if sc == KEY.up then return nav_history(-1, cur)
+      elseif sc == KEY.down then return nav_history(1, cur)
       elseif sc == KEY.pageup then
         ui.scroll_set("log", ui.scroll_get("log") - (log_h - st.row_h))
       elseif sc == KEY.pagedown then

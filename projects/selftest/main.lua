@@ -549,6 +549,25 @@ local function t_ui()
   pass({ kd(41) }, ti_body) -- escape blurs
   check(not ui.capturing_keys(), "ui: escape blurs")
 
+  -- on_key replacement adoption + sticky take_focus
+  local tv2 = ""
+  local function ti2_body()
+    tv2 = ui.text_input("in2", tv2, {
+      take_focus = true,
+      on_key = function(sc, cur)
+        if sc == 82 then return "swapped:" .. cur end
+      end,
+    })
+  end
+  pass({}, ti2_body) -- grabs the free keyboard
+  check(ui.capturing_keys(), "ui: take_focus grabs free keyboard")
+  pass({ tx("ab") }, ti2_body)
+  pass({ kd(82) }, ti2_body)
+  check(tv2 == "swapped:ab", "ui: on_key replacement adopted ('" .. tv2 .. "')")
+  pass({ bd(20, 40), bu(20, 40) }, ti2_body) -- click far from the field
+  check(ui.capturing_keys(), "ui: sticky focus survives outside click")
+  ui.blur()
+
   -- scroll region + virtualized list
   local calls, first_row
   local function sc_body()
@@ -658,6 +677,37 @@ local function t_console()
   check(con.open == true, "console: escape can't dismiss an error")
   con.clear_error()
   check(not con.paused, "console: clear_error unpauses")
+
+  -- history: up/up/down/down ends back on the live line (regression:
+  -- human-found — the console used to clobber on_key's replacement text)
+  local repl = pt.require("pt.repl")
+  con.toggle(true)
+  for _ = 1, 15 do pass({}) end -- open + focused via take_focus
+  repl.submit("cmd_one()")
+  repl.submit("cmd_two()")
+  repl.queue = {} -- history fodder only; nothing should execute
+  pass({ kd(82) }) -- up
+  check(con.input_text == "cmd_two()",
+        "console: up recalls last ('" .. con.input_text .. "')")
+  pass({ kd(82) })
+  check(con.input_text == "cmd_one()", "console: up walks older")
+  pass({ kd(81) }) -- down
+  check(con.input_text == "cmd_two()", "console: down walks newer")
+  pass({ kd(81) })
+  check(con.input_text == "", "console: down past end restores live line")
+
+  -- autoscroll: new lines land with the view pinned at the bottom
+  -- (regression: human-found — want-bottom used to hit a phantom id when
+  -- requested inside the region's own scope)
+  for i = 1, 40 do pal.log("spamline " .. i) end
+  pass({})
+  local s = ui.s["console/log"]
+  check(s and s.content_h and s.view_h and s.content_h > s.view_h,
+        "console: scrollback overflows the region")
+  check(s.scroll == s.content_h - s.view_h and s.scroll > 0,
+        "console: autoscrolled to newest (scroll=" .. tostring(s.scroll)
+        .. " content=" .. tostring(s.content_h) .. ")")
+
   con.toggle(false)
   for _ = 1, 15 do pass({}) end -- slide shut; release the keyboard
   ui.blur()
