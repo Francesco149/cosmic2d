@@ -1,0 +1,13 @@
+# build output (committed deliberately at release packaging, M10)
+/bin/
+*.o
+*.obj
+*.exe.stackdump
+
+# nix
+/result
+/.direnv/
+
+# scratch
+/tmp/
+/tests/out/
