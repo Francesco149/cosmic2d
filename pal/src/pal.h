@@ -1,0 +1,142 @@
+/* pal.h — platform abstraction layer context. One process = one console. */
+#ifndef PAL_H
+#define PAL_H
+
+#include <SDL3/SDL.h>
+#include <stdbool.h>
+#include <stdint.h>
+
+#include "lua.h"
+
+#define PAL_MAX_TEX 256
+#define PAL_MAX_EVENTS 256
+#define PAL_MAX_WATCH 64
+#define PAL_VERT_BYTES 20 /* x f32, y f32, u f32, v f32, rgba u8x4 */
+
+typedef enum {
+  PAL_EV_QUIT,
+  PAL_EV_KEY,
+  PAL_EV_MOTION,
+  PAL_EV_BUTTON,
+  PAL_EV_WHEEL,
+} PalEventType;
+
+typedef struct {
+  PalEventType type;
+  int a;       /* key: scancode | button: index */
+  bool down;   /* key/button */
+  bool repeat; /* key */
+  float x, y;  /* motion/button: internal coords | wheel: scroll */
+} PalEvent;
+
+/* named buffers: C-owned so they survive Lua VM reboots (the state model
+ * depends on this — see docs/ARCHITECTURE.md "State model") */
+typedef struct PalBuf {
+  char *name; /* NULL = anonymous (Lua-GC-owned scratch) */
+  uint8_t *data;
+  size_t size;
+  bool alive;
+  struct PalBuf *next;
+} PalBuf;
+
+typedef struct {
+  SDL_GPUTexture *tex;
+  int w, h;
+  bool used;
+} PalTexture;
+
+typedef struct {
+  int tex;
+  bool has_clip;
+  SDL_Rect clip;
+  uint32_t first, count; /* vertex range */
+} PalSeg;
+
+typedef struct {
+  char *path;
+  int64_t mtime;
+} PalWatch;
+
+typedef struct {
+  /* core */
+  bool quit;
+  bool error_state;
+  int argc;
+  char **argv;
+  lua_State *L;
+
+  /* gfx */
+  bool gfx_up;
+  bool headless;
+  int iw, ih, scale; /* internal target size, initial window scale */
+  SDL_Window *win;
+  SDL_GPUDevice *dev;
+  SDL_GPUTexture *target; /* internal render target (iw x ih RGBA8) */
+  SDL_GPUSampler *sampler;
+  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit;
+  SDL_GPUBuffer *vbuf;
+  SDL_GPUTransferBuffer *tbuf;
+  uint32_t gpubuf_cap; /* bytes in vbuf/tbuf */
+  SDL_GPUTransferBuffer *readback;
+
+  /* current letterbox layout (for mouse mapping), updated each present */
+  float lay_ox, lay_oy, lay_s;
+
+  /* batch accumulation (CPU side, flushed at present) */
+  float clear[4];
+  uint8_t *verts;
+  uint32_t vcount, vcap; /* in vertices */
+  PalSeg *segs;
+  uint32_t seg_count, seg_cap;
+  float cam_x, cam_y;
+  bool clip_on;
+  SDL_Rect clip;
+
+  PalTexture texs[PAL_MAX_TEX];
+
+  /* events (C queue -> drained by pal.poll_events) */
+  PalEvent events[PAL_MAX_EVENTS];
+  int event_count;
+
+  PalBuf *bufs;
+
+  /* crash-parachute watch list (checked only in error state) */
+  PalWatch watch[PAL_MAX_WATCH];
+  int watch_count;
+} Pal;
+
+extern Pal G;
+
+/* main.c */
+void pal_log(const char *fmt, ...);
+
+/* gfx.c */
+typedef struct {
+  int w, h, scale;
+  const char *title;
+  bool headless, vsync;
+} PalGfxConfig;
+bool pal_gfx_init(const PalGfxConfig *cfg);
+void pal_gfx_begin(float r, float g, float b, float a);
+void pal_gfx_quad(float x, float y, float w, float h, float u0, float v0,
+                  float u1, float v1, uint32_t rgba, int tex);
+void pal_gfx_clip(bool on, int x, int y, int w, int h);
+bool pal_gfx_present(void);
+/* read_begin maps last-rendered internal target pixels (RGBA8, top-left
+ * origin, tightly packed); caller must read_end before any other gfx call */
+const void *pal_gfx_read_begin(size_t *len);
+void pal_gfx_read_end(void);
+int pal_gfx_tex_create(const void *pixels, int w, int h);
+bool pal_gfx_tex_free(int id);
+
+/* buf.c */
+PalBuf *pal_buf_get(const char *name, size_t size, const char **err);
+PalBuf *pal_buf_anon(size_t size);
+bool pal_buf_free_named(const char *name);
+void pal_buf_destroy(PalBuf *b); /* anonymous only, from Lua __gc */
+uint64_t pal_buf_hash(const uint8_t *p, size_t len);
+
+/* luabind.c */
+void pal_lua_register(lua_State *L);
+
+#endif
