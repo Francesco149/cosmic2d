@@ -17,6 +17,7 @@ local state = pt.require("pt.state")
 local input = pt.require("pt.input")
 local text = pt.require("pt.text")
 local gfx = pt.require("pt.gfx")
+local ease = pt.require("pt.ease")
 
 local W, H = pal.gfx_size()
 local DT = 1.0 / 60.0
@@ -57,7 +58,8 @@ function game.init()
   end
   local d = state.doc
   d.knobs = d.knobs or { gravity = 170.0, drag = 1.6, accel = 420.0,
-                         trickle = 2, burst = 44, bounce = 0.78 }
+                         trickle = 2, burst = 44, bounce = 0.78,
+                         speed_curve = "quad_in", fade_curve = "cubic_out" }
   input.map({
     { "left", input.key.left, input.key.a },
     { "right", input.key.right, input.key.d },
@@ -70,10 +72,13 @@ end
 
 local function spawn(x, y, n, kick)
   local cur = sim:u32(16)
+  local speed_curve = state.doc.knobs.speed_curve or "quad_in"
   for _ = 1, n do
     local o = cur * PSTRIDE
     local a = rand.float() * m.tau
-    local sp = 24.0 + rand.float() * 110.0 + kick
+    -- eased speed distribution: most particles slow, a fast tail (denser
+    -- core, longer streaks — feel knob, swap the curve name live)
+    local sp = ease.mix(24.0, 134.0, rand.float(), speed_curve) + kick
     parts:f32(o, x)
     parts:f32(o + 4, y)
     parts:f32(o + 8, m.cos(a) * sp)
@@ -167,13 +172,14 @@ function game.draw()
 
   gfx.layer(1)
   -- particles via the bulk path: pack live ones into the scratch buffer
+  local fade_fn = ease.get(state.doc.knobs.fade_curve or "cubic_out")
   local n = 0
   for i = 0, NPART - 1 do
     local o = i * PSTRIDE
     local life = parts:f32(o + 16)
     if life > 0 then
       local q = n * 48
-      local fade = m.clamp(life, 0, 1)
+      local fade = fade_fn(m.clamp(life, 0, 1))
       local h0 = parts:f32(o + 20)
       scratch:f32(q, parts:f32(o) - 1)
       scratch:f32(q + 4, parts:f32(o + 4) - 1)

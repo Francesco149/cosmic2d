@@ -230,6 +230,69 @@ local function t_snapshot()
   pal.buf_free("selftest.b1")
 end
 
+-- ---- pt.math.exp2 + pt.ease ----
+
+local function t_exp2()
+  check(m.exp2(0) == 1.0 and m.exp2(10) == 1024.0 and m.exp2(-3) == 0.125,
+        "exp2 exact at integers")
+  local worst = 0
+  local x = -20.0
+  while x <= 10.0 do
+    local rel = math.abs(m.exp2(x) / (2.0 ^ x) - 1.0)
+    if rel > worst then worst = rel end
+    x = x + 0.00037
+  end
+  check(worst < 1e-12, "exp2 sweep accuracy (worst rel " .. worst .. ")")
+  check(not pcall(m.exp2, 0 / 0), "exp2 NaN guard")
+  check(m.exp2(-2000) == 0.0, "exp2 deep underflow is zero")
+end
+
+local function t_ease()
+  local ease = pt.require("pt.ease")
+  local names = ease.names()
+  check(#names == 31, "expected curve count (got " .. #names .. ")")
+  for _, name in ipairs(names) do
+    local f = ease.get(name)
+    check(f(0.0) == 0.0 and f(1.0) == 1.0, name .. " endpoints pinned")
+    check(f(-1.0) == 0.0 and f(2.0) == 1.0, name .. " clamps outside [0,1]")
+  end
+  -- monotone families rise monotonically
+  for _, fam in ipairs({ "linear", "quad_in", "cubic_out", "quart_inout",
+                         "quint_in", "sine_inout", "expo_in", "expo_out",
+                         "circ_in" }) do
+    local f = ease.get(fam)
+    local prev = 0.0
+    for i = 1, 200 do
+      local v = f(i / 200.0)
+      check(v >= prev - 1e-12, fam .. " monotone at " .. i)
+      prev = v
+    end
+  end
+  -- inout curves hit ~0.5 at the midpoint
+  for _, fam in ipairs({ "quad", "cubic", "sine", "expo", "bounce" }) do
+    local v = ease.get(fam .. "_inout")(0.5)
+    check(math.abs(v - 0.5) < 1e-9, fam .. "_inout midpoint")
+  end
+  -- character checks: back overshoots low early, elastic rings over 1
+  check(ease.back_in(0.2) < 0.0, "back_in undershoots")
+  local rang = false
+  for i = 1, 99 do
+    if ease.elastic_out(i / 100.0) > 1.0 then rang = true end
+  end
+  check(rang, "elastic_out overshoots past 1")
+  -- bounce stays in range
+  for i = 0, 100 do
+    local v = ease.bounce_out(i / 100.0)
+    check(v >= -1e-12 and v <= 1.0 + 1e-12, "bounce_out in range")
+  end
+  -- registry: by-name (sim-state friendly) and custom registration
+  check(ease.mix(10, 20, 0.5, "linear") == 15.0, "mix by name")
+  check(ease.mix(10, 20, 2.0, "linear") == 20.0, "mix clamps t")
+  check(not pcall(ease.get, "nope"), "unknown easing errors")
+  ease.register("selftest_step", function(t) return t < 0.5 and 0.0 or 1.0 end)
+  check(ease.get("selftest_step")(0.7) == 1.0, "custom curve registered")
+end
+
 -- ---- pt.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -340,6 +403,8 @@ function game.init()
   t_trig_sweep()
   t_atan_sweep()
   t_canon()
+  t_exp2()
+  t_ease()
   t_snapshot()
   t_input()
   t_text()

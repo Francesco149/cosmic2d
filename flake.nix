@@ -63,11 +63,7 @@
               echo "== selftest =="
               ./bin/pettan projects/selftest --headless --frames 1 || fail=1
               for t in tests/traces/*.ptrace; do
-                name=$(basename "$t" .ptrace)
-                case "$name" in
-                  sandbox) proj=projects/sandbox ;;
-                  *) proj=tests/cartridges/$name ;;
-                esac
+                proj=$(cat "''${t%.ptrace}.project") # sidecar names the cartridge
                 echo "== verify $t ($proj) =="
                 ./bin/pettan "$proj" --verify "$t" || fail=1
               done

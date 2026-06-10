@@ -200,6 +200,48 @@ function M.acos(x)
   return M.atan2(sqrt((1.0 - x) * (1.0 + x)), x)
 end
 
+-- ---- exp2 ----
+-- 2^x for x <= 1024: exact integer part via 2^n scaling, fractional part by
+-- degree-10 Taylor of 2^r = e^(r ln2) on [-0.5, 0.5] (truncation ~2e-13,
+-- plenty for easing/audio envelopes, fully deterministic).
+local E2_1 = 6.93147180559945286227e-01 -- ln2^k / k!
+local E2_2 = 2.40226506959100694072e-01
+local E2_3 = 5.55041086648215761801e-02
+local E2_4 = 9.61812910762847687873e-03
+local E2_5 = 1.33335581464284432841e-03
+local E2_6 = 1.54035303933816087761e-04
+local E2_7 = 1.52527338040598393887e-05
+local E2_8 = 1.32154867901443073910e-06
+local E2_9 = 1.01780860092396985990e-07
+local E2_10 = 7.05491162080112170462e-09
+
+local function exp2_frac(r) -- 2^r on [-0.5, 0.5]
+  return 1.0 + r * (E2_1 + r * (E2_2 + r * (E2_3 + r * (E2_4 + r *
+         (E2_5 + r * (E2_6 + r * (E2_7 + r * (E2_8 + r *
+         (E2_9 + r * E2_10)))))))))
+end
+
+local function pow2i(n) -- exact 2^n for integer n in [-1074, 1023]
+  if n >= 0 then
+    if n <= 62 then return (1 << n) * 1.0 end
+    local v = (1 << 62) * 1.0
+    for _ = 1, n - 62 do v = v * 2.0 end
+    return v
+  end
+  local v = 1.0
+  for _ = 1, -n do v = v * 0.5 end
+  return v
+end
+
+function M.exp2(x)
+  if x ~= x then error("pt.math.exp2: NaN", 2) end
+  if x > 1024.0 then error("pt.math.exp2: overflow (x > 1024)", 2) end
+  if x < -1074.0 then return 0.0 end
+  local n = floor(x + 0.5)
+  local r = x - n
+  return exp2_frac(r) * pow2i(math.tointeger(n))
+end
+
 -- exact IEEE; provided here so sim code can grab everything from pt.math
 M.sqrt = math.sqrt
 M.floor = math.floor
