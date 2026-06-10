@@ -292,6 +292,31 @@ local function t_input()
   input.apply(input.collect({ key(79, false) }))
 end
 
+-- ---- pt.text: glyph pixels land exactly in their cell ----
+
+local function t_text()
+  local text = pt.require("pt.text")
+  pal.begin_frame(0, 0, 0, 1)
+  text.draw(3, 5, "A")
+  pal.present()
+  local pix = pal.read_pixels()
+  local white_in, white_out = 0, 0
+  for y = 0, 63 do
+    for x = 0, 63 do
+      local r = pix:byte((y * 64 + x) * 4 + 1)
+      if r ~= 0 then
+        local inbox = x >= 3 and x < 8 and y >= 5 and y < 13
+        if inbox then white_in = white_in + 1 else white_out = white_out + 1 end
+      end
+    end
+  end
+  -- spleen 'A' = rows 60,90,90,F0,90,90 -> 14 lit pixels
+  check(white_in == 14, "glyph pixel count (got " .. white_in .. ")")
+  check(white_out == 0, "no pixels outside the glyph cell (got " .. white_out .. ")")
+  local w, h = text.measure("ab\ncdef")
+  check(w == 20 and h == 16, "measure multi-line")
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -317,6 +342,7 @@ function game.init()
   t_canon()
   t_snapshot()
   t_input()
+  t_text()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
