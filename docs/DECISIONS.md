@@ -129,3 +129,25 @@ need a toolchain for (.spv shaders, baked fonts) are committed. SDL3 itself
 comes from nixpkgs (linux) / official prebuilt (windows packaging, M7).
 **Why**: self-contained pillar; nix flake pins the rest for dev.
 **Revisit**: per dependency, in this log.
+
+## D012 — snapshots embed the code bundle (human call, 2026-06-10)
+
+**Context**: code is live-editable, so a snapshot's state trajectory is only
+reproducible together with the exact sources that produced it.
+**Decision**: every snapshot carries a content-addressed bundle of all
+loaded sources (engine + project); traces reference bundles per code epoch
+(mid-recording reloads start a new epoch). Restore executes bundle code, not
+disk code; adopting disk code is an explicit separate operation. The M1
+module loader retains chunk sources to make this cheap.
+**Snapshot story**: this *is* the snapshot story for code itself.
+**Revisit if**: bundle size hurts (then: store per-file hashes against a
+repo-wide content store instead of inline copies).
+
+## D013 — headless is a full live session, minus the window
+
+**Decision**: `--headless` without `--frames` paces to ~60 Hz, polls hot
+reload, and supports the crash parachute — identical behavior to windowed
+except no window/swapchain. Capped runs (`--frames N`) free-run with reload
+polling off (deterministic captures).
+**Why**: the agent runs live verification (reload, parachute, soak tests)
+without popping windows on the human's desktop; goldens stay deterministic.

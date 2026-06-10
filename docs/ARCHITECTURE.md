@@ -75,11 +75,20 @@ instead, all sim state lives in things the PAL can snapshot byte-exactly:
    the engine for snapshots and hashing. Convenient but slower — bulk data
    belongs in buffers.
 
-A **snapshot** = all named buffers + serialized doc tree + frame counter.
-Restore = load those back; Lua code (stateless logic over state it can
-re-derive) just continues. Rewind = snapshot ring (every N frames) + input
-trace replay from the nearest snapshot to the exact target frame —
-emulator-style, and it makes the timeline scrubber cheap.
+A **snapshot** = all named buffers + serialized doc tree + frame counter
+**+ the code bundle**: a content-addressed copy of every loaded source file
+(engine + project). Code is live-editable, so state alone doesn't pin the
+trajectory — restoring or rewinding against newer code would silently
+diverge. The engine module loader retains the source text of every chunk it
+loads to make this cheap; bundles dedupe by content hash, and an input trace
+references the bundle(s) it was recorded against (a mid-recording reload
+starts a new code epoch in the trace). Restore runs code **from the bundle**,
+not from disk; "adopt current disk code instead" is an explicit, separate
+operation.
+
+Rewind = snapshot ring (every N frames) + input trace replay from the
+nearest snapshot to the exact target frame — emulator-style, and it makes
+the timeline scrubber cheap.
 
 Cosmetic state (particles, camera shake) is still deterministic sim state —
 pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
@@ -210,6 +219,7 @@ startup project + mode for end-user shipping.
 | `pal.argv`, `pal.platform` | dev | argv after binary name; "linux"/"windows" |
 | `pal.log(s)` | dev | timestamped stderr + ring buffer for console |
 | `pal.time_ns()` | render-only | monotonic; **never** in sim logic |
+| `pal.sleep_ms(n)` | dev | paces interactive headless sessions |
 | `pal.quit()` | — | request loop exit |
 | `pal.gfx_init{w,h,scale,title,headless,vsync}` | — | once at boot |
 | `pal.begin_frame(r,g,b,a)` | render | clear internal target, reset batch |

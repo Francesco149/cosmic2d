@@ -194,6 +194,11 @@ static int l_quit(lua_State *L) {
   return 0;
 }
 
+static int l_sleep_ms(lua_State *L) {
+  SDL_Delay((Uint32)luaL_checkinteger(L, 1));
+  return 0;
+}
+
 /* ---------- gfx ---------- */
 
 static void check_gfx(lua_State *L) {
@@ -468,6 +473,7 @@ static int l_watch_add(lua_State *L) {
 static const luaL_Reg pal_funcs[] = {
     {"log", l_log},
     {"time_ns", l_time_ns},
+    {"sleep_ms", l_sleep_ms},
     {"quit", l_quit},
     {"gfx_init", l_gfx_init},
     {"gfx_size", l_gfx_size},

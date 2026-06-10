@@ -1,7 +1,9 @@
 -- boot.lua — M0 minimal engine bootstrap.
 -- Run from the repo root: bin/pettan [project_dir] [flags]
---   --headless        no window; tick = exactly one sim step (lockstep)
---   --frames N        quit after N ticks (headless testing)
+--   --headless        no window; tick = exactly one sim step (lockstep).
+--                     without --frames it paces to ~60Hz and hot-reloads,
+--                     i.e. a full live session minus the window
+--   --frames N        quit after N ticks (headless testing; free-runs)
 --   --shot PATH       write a PNG of the internal target before quitting
 --   --no-vsync
 -- The real module system, input map and state layer land in M1; this file
@@ -85,7 +87,8 @@ function pt_tick()
   end
 
   local now = pal.time_ns()
-  if not args.headless then maybe_reload(now) end
+  -- skip reload polling only for capped runs (deterministic captures)
+  if not args.frames then maybe_reload(now) end
 
   if args.headless then
     game.step(input)
@@ -110,5 +113,7 @@ function pt_tick()
       pal.log("shot: " .. args.shot)
     end
     pal.quit()
+  elseif args.headless then
+    pal.sleep_ms(16) -- interactive headless session: don't spin the CPU
   end
 end
