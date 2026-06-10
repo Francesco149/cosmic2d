@@ -325,6 +325,14 @@ function M.canvas(h)
   return lay_next(h)
 end
 
+-- raw interaction on a caller-drawn rect (selectable list rows etc):
+-- returns clicked, hot, held. The invisible-button primitive.
+function M.hit(id, x, y, w, h)
+  id = qid(id)
+  local clicked, held = behave_button(id, x, y, w, h)
+  return clicked, M.hot == id, held
+end
+
 -- ---- panels ----
 
 -- fixed-rect panel: bg, optional title band, content layout with padding.
