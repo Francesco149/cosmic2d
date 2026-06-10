@@ -508,6 +508,12 @@ void pal_lua_register(lua_State *L) {
   lua_pop(L, 1);
 
   luaL_newlib(L, pal_funcs);
+  lua_createtable(L, 0, 2);
+  lua_pushinteger(L, PAL_VERSION_MAJOR);
+  lua_setfield(L, -2, "major");
+  lua_pushinteger(L, PAL_VERSION_API);
+  lua_setfield(L, -2, "api");
+  lua_setfield(L, -2, "version");
 #ifdef _WIN32
   lua_pushstring(L, "windows");
 #else

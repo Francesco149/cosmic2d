@@ -55,7 +55,8 @@ pal.watch_add(entry)
 
 local game = loadchunk(entry)
 game.init()
-pal.log("booted " .. args.project .. " (" .. W .. "x" .. H .. ")")
+pal.log(("booted %s (%dx%d) on pal %d/api%d %s"):format(args.project, W, H,
+  pal.version.major, pal.version.api, pal.platform))
 
 local SIM_DT = math.tointeger(1e9 // 60)
 local acc, last = 0, nil

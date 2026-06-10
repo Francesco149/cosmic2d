@@ -243,11 +243,69 @@ startup project + mode for end-user shipping.
   document every function's semantics + determinism class
   (sim-safe / render-only / dev-only) in this file as it grows.
 
+### The PAL stability contract
+
+The PAL is the console's hardware spec. Traces bundle the code that recorded
+them (D012), so engine/game evolution can never invalidate a trace — the only
+thing that can is a PAL whose primitives behave differently. Therefore the
+PAL surface gets constitutional treatment from day one, and **1.0 freezes
+it**: after 1.0 there is almost never a change that makes traces and a PAL
+binary incompatible, in either direction (D015).
+
+1. **Mechanism, not policy.** pal.* moves bytes, pixels, samples and events;
+   *meaning* lives in Lua, which travels inside traces. When a primitive
+   could either "do something smart" or "expose the dumb stable thing",
+   expose the dumb stable thing — policy in C is what creates breaking
+   pressure later.
+2. **Additive evolution only after 1.0.** New functions may appear; an
+   existing name never changes semantics, argument meaning, or determinism
+   class. Better semantics = new name; the old name keeps working forever.
+   Old PAL + newer engine Lua works whenever the engine doesn't need a new
+   primitive — and says so clearly when it does (rule 7).
+3. **Experimental namespace.** Post-1.0, new primitives are born as
+   `pal.x_<name>`; promotion to `pal.<name>` is the freeze event. The trace
+   recorder warns when sim code touched `x_` primitives. (Pre-1.0,
+   everything is implicitly experimental — breaking is free *now*, which is
+   why base semantics get declared now, while it's cheap to fix them.)
+4. **Versioned kernels.** Every future C kernel that touches sim state
+   (physics solve, particle update, synth voices, delta codec) is born with
+   a version in its name (e.g. `"aabb_solve@1"`). Improvements ship as
+   `@2`; `@1` stays callable forever, because old code bundles call the
+   kernel they were recorded against. Kernels are pure state-in/state-out
+   by construction.
+5. **Frozen base semantics** (declared now):
+   - little-endian for all multi-byte data — a big-endian port swaps inside
+     the PAL, never in engine code or stored data;
+   - IEEE-754 binary32/64; Lua **5.4 language semantics** (vendored — a Lua
+     version bump is a constitutional event, expected never);
+   - the pal.buf view model: flat bytes, current accessor/bounds semantics;
+   - `buf:hash()` is fnv1a-64 forever (new algorithms get new names);
+   - trace/snapshot containers: tagged chunks, each chunk format
+     version-stamped, unknown chunks skippable — readers read what they
+     know and never guess;
+   - input scancodes: SDL/USB-HID numbering;
+   - scene draw semantics: pixel-space quads, raw-byte colors (D009),
+     src-alpha-over blend, nearest sampling. Integer-aligned opaque quads
+     with integer uvs render exactly; subpixel coverage is stable per
+     backend and pinned by per-platform pixel goldens, not cross-backend
+     exact.
+6. **Compatibility is enforced, not promised.** Every golden trace ever
+   recorded lives in `tests/` forever and must replay byte-exact on every
+   future PAL build — the suite *is* the contract's test, and a PAL change
+   that breaks an old trace is by definition a bug (no statute of
+   limitations). Pre-1.0 breaks are allowed but each one deliberately
+   regenerates goldens and gets a DECISIONS entry.
+7. **Feature detection, loud refusal.** Engine code checks
+   `pal.version.api` / function presence and refuses with a clear
+   "needs PAL api >= N" message; it never silently degrades sim-relevant
+   behavior.
+
 ### PAL API v0 (M0 scope)
 
 | fn | class | notes |
 | --- | --- | --- |
 | `pal.argv`, `pal.platform` | dev | argv after binary name; "linux"/"windows" |
+| `pal.version` | — | `{major, api}`; see stability contract rule 7 |
 | `pal.log(s)` | dev | timestamped stderr + ring buffer for console |
 | `pal.time_ns()` | render-only | monotonic; **never** in sim logic |
 | `pal.sleep_ms(n)` | dev | paces interactive headless sessions |

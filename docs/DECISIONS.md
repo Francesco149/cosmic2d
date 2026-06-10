@@ -171,3 +171,23 @@ keeps it dependency-free.
 **Revisit if**: trace size hurts for long sessions (then: smarter entropy
 coding behind the same record structure), or draw stops being a pure
 function of state (would break replay-without-re-sim; don't let it).
+
+## D015 — the PAL freezes at 1.0 (human call, 2026-06-10)
+
+**Context**: after 1.0 there should almost never be a breaking change that
+makes traces and a PAL binary incompatible. D012 already makes engine/game
+code travel inside traces, so the PAL contract is the *single* remaining
+compatibility surface — engine evolution can't break a trace, only a PAL
+semantic change can.
+**Decision**: the PAL surface is governed by the "PAL stability contract"
+(ARCHITECTURE.md): mechanism-not-policy layering, additive-only evolution
+post-1.0, `pal.x_*` experimental namespace, versioned C kernels
+(`name@N`, old versions callable forever), frozen base semantics declared
+now (little-endian, IEEE-754, Lua 5.4, fnv1a-64, tagged version-stamped
+chunks, HID scancodes, draw semantics), eternal golden suite as enforcement,
+and `pal.version` feature detection with loud refusal.
+**Why**: the seed's own pillar ("engine upgrades should not need to touch
+the low-level binaries") extended to recorded data; PICO-8-style longevity
+requires the hardware spec to be boring and eternal.
+**Revisit**: individual rules may grow teeth pre-1.0; the freeze itself is
+constitutional and not up for revision after 1.0.

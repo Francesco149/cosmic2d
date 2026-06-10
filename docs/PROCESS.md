@@ -87,6 +87,21 @@ Ask (via the conversation, optionally with a feed push) when:
 - something needs the Windows side or a tool install (UAC is fine).
 Otherwise: decide, log it in DECISIONS.md if it's binding, and proceed.
 
+## Touching the PAL (stability contract checklist)
+
+Before changing anything under `pal/` (full contract in ARCHITECTURE.md):
+
+1. Is it additive? Changing an existing primitive's semantics is allowed
+   pre-1.0 only, needs a DECISIONS entry, and deliberately regenerates
+   goldens. Post-1.0: new name instead, old name works forever.
+2. Does it touch sim state? Then it's a versioned kernel (`name@N`) and its
+   determinism class goes in the API table.
+3. Bump `PAL_VERSION_API` on additions; engine code feature-detects, never
+   assumes.
+4. Run the entire golden suite — every trace ever recorded must still
+   replay byte-exact. An old trace breaking is a bug in the change, period.
+5. Update the PAL API table in ARCHITECTURE.md in the same commit.
+
 ## Determinism discipline (summary; full rules in ARCHITECTURE.md)
 
 Sim code: no wall clock, no `math.random`, no libm trig, no hash-order
