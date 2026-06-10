@@ -3,7 +3,7 @@
 -- convention; see boot.lua header).
 --
 -- Flags: [project_dir] --headless --frames N --shot PATH --no-vsync
---        --record PATH --verify PATH
+--        --record PATH --verify PATH --eval CODE
 --   --headless        no window; tick = exactly one sim step (lockstep).
 --                     Without --frames it paces to ~60Hz with hot reload +
 --                     parachute: a full live session minus the window (D013)
@@ -14,6 +14,11 @@
 --   --verify PATH     golden runner: replay the trace's inputs against its
 --                     starting snapshot (bundle code) and byte-compare every
 --                     frame; exit 0 on byte-exact, 1 + first divergence not
+--   --eval CODE       queue a console command for the first sim frame
+--                     (repeatable, runs in order). Same path as typing it
+--                     into the console: drains at frame start, recorded as
+--                     an EVAL record (D022) — so headless recordings can
+--                     flip doc switches (e.g. game.demo(1)) replayably
 --
 -- Error containment (D023): in live sessions (everything except --frames /
 -- --verify), game errors never kill the session. A failing require / init /
@@ -49,6 +54,10 @@ local function parse_args()
     elseif arg == "--verify" then
       i = i + 1
       a.verify = argv[i] or error("--verify needs a path")
+    elseif arg == "--eval" then
+      i = i + 1
+      a.evals = a.evals or {}
+      a.evals[#a.evals + 1] = argv[i] or error("--eval needs code")
     elseif arg:sub(1, 2) ~= "--" then a.project = arg
     else error("unknown flag: " .. arg) end
     i = i + 1
@@ -157,6 +166,9 @@ function M.boot()
   if args.record then
     M.trace = pt.require("pt.trace")
     M.trace.record_start(args.record, { project = args.project })
+  end
+  if args.evals then -- after record_start: the drain lands in frame 1
+    for _, code in ipairs(args.evals) do M.repl.submit(code) end
   end
 end
 
