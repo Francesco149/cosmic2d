@@ -320,6 +320,11 @@ function M.cursor_y()
   return lay().cy
 end
 
+-- reserve a rect in the layout for custom drawing (graphs, swatches)
+function M.canvas(h)
+  return lay_next(h)
+end
+
 -- ---- panels ----
 
 -- fixed-rect panel: bg, optional title band, content layout with padding.

@@ -116,6 +116,7 @@ function M.boot()
   M.ui = pt.require("pt.ui")
   M.repl = pt.require("pt.repl")
   M.console = pt.require("pt.console")
+  M.perf = pt.require("pt.perf")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
@@ -225,6 +226,7 @@ local function step_guarded(events)
 end
 
 function M.tick()
+  local t0 = pal.time_ns()
   local events = pal.poll_events()
   for _, e in ipairs(events) do
     if e.type == "quit" then
@@ -243,6 +245,7 @@ function M.tick()
   -- reload polling off in capped runs (deterministic captures)
   if not M.args.frames then poll_reload(now) end
 
+  local sim_t0 = pal.time_ns()
   if M.game_err then
     -- paused on the autopsy table: no stepping, repl runs immediately
     M.repl.drain()
@@ -259,14 +262,19 @@ function M.tick()
       M.acc = M.acc - SIM_DT
     end
   end
+  local draw_t0 = pal.time_ns()
 
   if M.game_err or not guarded(M.game.draw) then
     -- no game frame to show: dark backdrop (also resets a half-built batch)
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
-  M.console.frame()
+  M.perf.frame()
+  M.console.frame() -- after perf: console drops over everything
   M.ui.frame_end()
+  local present_t0 = pal.time_ns()
   pal.present()
+  M.perf.note((pal.time_ns() - t0) / 1e6, (draw_t0 - sim_t0) / 1e6,
+              (present_t0 - draw_t0) / 1e6)
 
   M.ticks = M.ticks + 1
   if M.args.frames and M.ticks >= M.args.frames then
