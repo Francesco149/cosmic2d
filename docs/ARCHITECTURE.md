@@ -398,5 +398,14 @@ binary incompatible, in either direction (D015).
 | `pal.exit_on_error(b)` | dev | when set, a Lua error exits the process with code 1 instead of parachuting (capped runs, golden verify) |
 | `pal.quitting()` | dev | true once quit was requested — pt.main flushes recordings on any quit path |
 
-Everything else (snapshot save/load helpers, audio, kernels) lands in M1+ and
+### PAL API v3 additions (M2)
+
+| fn | class | notes |
+| --- | --- | --- |
+| `pal.log_lines(after_seq)` | dev | ring of the last 256 `pal.log` lines (C-owned: survives VM reboots, so boot/parachute errors reach the console). Returns `{seq=,t=,text=}` entries newer than `after_seq`, oldest first; a gap (first seq > after_seq+1) means the ring overwrote under flood |
+| `pal.text_input(on)` | dev | enable/disable text events (SDL text input: layout + IME aware). Headless no-op |
+| event `{type="text", text=utf8}` | input | delivered between key events while text input is on; long IME commits split at utf-8 boundaries (≤39 bytes/event) |
+| `pal.frame_stats()` | dev | `{quads, segs, vbytes}` from the last present + live `{textures, bufs, buf_bytes}` counts |
+
+Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.

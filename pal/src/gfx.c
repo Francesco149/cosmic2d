@@ -283,6 +283,9 @@ bool pal_gfx_present(void) {
   if (!cmd) { pal_log("gfx: acquire cmd: %s", SDL_GetError()); return false; }
 
   uint32_t bytes = G.vcount * PAL_VERT_BYTES;
+  G.stat_quads = G.vcount / 6;
+  G.stat_segs = G.seg_count;
+  G.stat_vbytes = bytes;
   if (bytes) {
     if (bytes > G.gpubuf_cap) {
       uint32_t cap = G.gpubuf_cap ? G.gpubuf_cap : 4096 * 6 * PAL_VERT_BYTES;

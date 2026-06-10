@@ -271,6 +271,30 @@ static int l_log(lua_State *L) {
   return 0;
 }
 
+/* pal.log_lines(after_seq) -> array of {seq=, t=, text=}: ring entries newer
+ * than after_seq, oldest first. Under log floods the ring overwrites; callers
+ * detect a gap when the first returned seq > after_seq + 1. */
+static int l_log_lines(lua_State *L) {
+  uint64_t after = (uint64_t)luaL_optinteger(L, 1, 0);
+  uint64_t lo = G.log_seq > PAL_LOG_RING ? G.log_seq - PAL_LOG_RING : 0;
+  if (after < lo) after = lo;
+  lua_createtable(L, (int)(G.log_seq - after), 0);
+  int out = 1;
+  for (uint64_t s = after + 1; s <= G.log_seq; s++) {
+    PalLogLine *line = &G.log_ring[(s - 1) % PAL_LOG_RING];
+    if (line->seq != s) continue; /* already overwritten mid-iteration */
+    lua_createtable(L, 0, 3);
+    lua_pushinteger(L, (lua_Integer)line->seq);
+    lua_setfield(L, -2, "seq");
+    lua_pushnumber(L, line->t);
+    lua_setfield(L, -2, "t");
+    lua_pushstring(L, line->text);
+    lua_setfield(L, -2, "text");
+    lua_rawseti(L, -2, out++);
+  }
+  return 1;
+}
+
 static int l_time_ns(lua_State *L) {
   lua_pushinteger(L, (lua_Integer)SDL_GetTicksNS());
   return 1;
@@ -533,6 +557,12 @@ static int l_poll_events(lua_State *L) {
       lua_pushnumber(L, e->y);
       lua_setfield(L, -2, "dy");
       break;
+    case PAL_EV_TEXT:
+      lua_pushstring(L, "text");
+      lua_setfield(L, -2, "type");
+      lua_pushstring(L, e->text);
+      lua_setfield(L, -2, "text");
+      break;
     }
     lua_rawseti(L, -2, i + 1);
   }
@@ -543,6 +573,45 @@ static int l_poll_events(lua_State *L) {
 static int l_scancode_name(lua_State *L) {
   lua_pushstring(L,
                  SDL_GetScancodeName((SDL_Scancode)luaL_checkinteger(L, 1)));
+  return 1;
+}
+
+/* pal.text_input(on): enable/disable text events (utf-8, layout/IME aware).
+ * No-op headless: text events only exist where a window does. */
+static int l_text_input(lua_State *L) {
+  if (G.win) {
+    if (lua_toboolean(L, 1))
+      SDL_StartTextInput(G.win);
+    else
+      SDL_StopTextInput(G.win);
+  }
+  return 0;
+}
+
+/* pal.frame_stats() -> counters from the last present + live resource counts */
+static int l_frame_stats(lua_State *L) {
+  lua_createtable(L, 0, 6);
+  lua_pushinteger(L, G.stat_quads);
+  lua_setfield(L, -2, "quads");
+  lua_pushinteger(L, G.stat_segs);
+  lua_setfield(L, -2, "segs");
+  lua_pushinteger(L, G.stat_vbytes);
+  lua_setfield(L, -2, "vbytes");
+  int ntex = 0;
+  for (int i = 0; i < PAL_MAX_TEX; i++)
+    if (G.texs[i].used) ntex++;
+  lua_pushinteger(L, ntex);
+  lua_setfield(L, -2, "textures");
+  lua_Integer nbuf = 0, buf_bytes = 0;
+  for (PalBuf *b = G.bufs; b; b = b->next) {
+    if (!b->alive || !b->name) continue;
+    nbuf++;
+    buf_bytes += (lua_Integer)b->size;
+  }
+  lua_pushinteger(L, nbuf);
+  lua_setfield(L, -2, "bufs");
+  lua_pushinteger(L, buf_bytes);
+  lua_setfield(L, -2, "buf_bytes");
   return 1;
 }
 
@@ -616,6 +685,7 @@ static int l_watch_add(lua_State *L) {
 
 static const luaL_Reg pal_funcs[] = {
     {"log", l_log},
+    {"log_lines", l_log_lines},
     {"time_ns", l_time_ns},
     {"sleep_ms", l_sleep_ms},
     {"quit", l_quit},
@@ -637,6 +707,8 @@ static const luaL_Reg pal_funcs[] = {
     {"tex_free", l_tex_free},
     {"poll_events", l_poll_events},
     {"scancode_name", l_scancode_name},
+    {"text_input", l_text_input},
+    {"frame_stats", l_frame_stats},
     {"buf", l_buf},
     {"buf_free", l_buf_free},
     {"buf_list", l_buf_list},

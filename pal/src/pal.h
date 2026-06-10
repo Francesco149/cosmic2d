@@ -11,12 +11,15 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 2
+#define PAL_VERSION_API 3
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
 #define PAL_MAX_WATCH 64
 #define PAL_VERT_BYTES 20 /* x f32, y f32, u f32, v f32, rgba u8x4 */
+#define PAL_EV_TEXT_MAX 40 /* utf-8 bytes per text event (longer commits split) */
+#define PAL_LOG_RING 256
+#define PAL_LOG_LINE_MAX 480 /* bytes kept per line (longer lines truncate) */
 
 typedef enum {
   PAL_EV_QUIT,
@@ -24,6 +27,7 @@ typedef enum {
   PAL_EV_MOTION,
   PAL_EV_BUTTON,
   PAL_EV_WHEEL,
+  PAL_EV_TEXT,
 } PalEventType;
 
 typedef struct {
@@ -32,7 +36,16 @@ typedef struct {
   bool down;   /* key/button */
   bool repeat; /* key */
   float x, y;  /* motion/button: internal coords | wheel: scroll */
+  char text[PAL_EV_TEXT_MAX]; /* text: utf-8, NUL-terminated */
 } PalEvent;
+
+/* log ring: every pal_log line lands here (C-owned, survives VM reboots) so
+ * the engine console can show boot/parachute errors too */
+typedef struct {
+  uint64_t seq; /* 1-based, monotonically increasing, 0 = empty slot */
+  double t;     /* seconds since process start */
+  char text[PAL_LOG_LINE_MAX];
+} PalLogLine;
 
 /* named buffers: C-owned so they survive Lua VM reboots (the state model
  * depends on this — see docs/ARCHITECTURE.md "State model") */
@@ -98,6 +111,13 @@ typedef struct {
   float cam_x, cam_y;
   bool clip_on;
   SDL_Rect clip;
+
+  /* last-present counters (pal.frame_stats) */
+  uint32_t stat_quads, stat_segs, stat_vbytes;
+
+  /* log ring (pal.log_lines) */
+  PalLogLine log_ring[PAL_LOG_RING];
+  uint64_t log_seq;
 
   PalTexture texs[PAL_MAX_TEX];
 

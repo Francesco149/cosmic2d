@@ -14,12 +14,15 @@
 Pal G;
 
 void pal_log(const char *fmt, ...) {
+  double t = (double)SDL_GetTicksNS() / 1e9;
+  PalLogLine *line = &G.log_ring[G.log_seq % PAL_LOG_RING];
   va_list ap;
   va_start(ap, fmt);
-  fprintf(stderr, "[pal %8.3f] ", (double)SDL_GetTicksNS() / 1e9);
-  vfprintf(stderr, fmt, ap);
-  fputc('\n', stderr);
+  vsnprintf(line->text, sizeof line->text, fmt, ap);
   va_end(ap);
+  line->seq = ++G.log_seq;
+  line->t = t;
+  fprintf(stderr, "[pal %8.3f] %s\n", t, line->text);
 }
 
 static int msgh(lua_State *L) {
@@ -125,6 +128,23 @@ static void pump_events(void) {
       push_event(
           (PalEvent){.type = PAL_EV_WHEEL, .x = e.wheel.x, .y = e.wheel.y});
       break;
+    case SDL_EVENT_TEXT_INPUT: {
+      /* split long IME commits into PAL_EV_TEXT_MAX-1 byte chunks, never
+       * inside a utf-8 sequence (continuation bytes are 10xxxxxx) */
+      const char *s = e.text.text;
+      size_t len = s ? strlen(s) : 0;
+      while (len > 0) {
+        size_t n = len < PAL_EV_TEXT_MAX - 1 ? len : PAL_EV_TEXT_MAX - 1;
+        while (n > 0 && n < len && ((unsigned char)s[n] & 0xc0) == 0x80) n--;
+        PalEvent ev = {.type = PAL_EV_TEXT};
+        memcpy(ev.text, s, n);
+        ev.text[n] = '\0';
+        push_event(ev);
+        s += n;
+        len -= n;
+      }
+      break;
+    }
     }
   }
 }
