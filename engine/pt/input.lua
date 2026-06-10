@@ -192,7 +192,10 @@ M.key = {
   ["6"] = 35, ["7"] = 36, ["8"] = 37, ["9"] = 38, ["0"] = 39,
   ret = 40, escape = 41, backspace = 42, tab = 43, space = 44,
   minus = 45, equals = 46,
+  grave = 53, -- engine-reserved: console toggle (M2)
   f1 = 58, f2 = 59, f3 = 60, f4 = 61, f5 = 62, f6 = 63,
+  insert = 73, home = 74, pageup = 75, delete = 76, ["end"] = 77,
+  pagedown = 78,
   right = 79, left = 80, down = 81, up = 82,
   lctrl = 224, lshift = 225, lalt = 226,
 }

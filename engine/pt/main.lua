@@ -78,6 +78,7 @@ function M.boot()
 
   M.state = pt.require("pt.state")
   M.input = pt.require("pt.input")
+  M.ui = pt.require("pt.ui")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   M.entry = (proj.entry or "main.lua"):gsub("%.lua$", ""):gsub("/", ".")
@@ -134,6 +135,8 @@ function M.tick()
       if M.game.on_quit then M.game.on_quit() else pal.quit() end
     end
   end
+  -- engine UI sees raw events; the game sees what the UI didn't capture
+  events = M.ui.frame(events)
 
   local now = pal.time_ns()
   -- reload polling off in capped runs (deterministic captures)
@@ -153,6 +156,7 @@ function M.tick()
   end
 
   M.game.draw()
+  M.ui.frame_end()
   pal.present()
 
   M.ticks = M.ticks + 1

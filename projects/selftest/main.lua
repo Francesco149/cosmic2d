@@ -380,6 +380,198 @@ local function t_text()
   check(w == 20 and h == 16, "measure multi-line")
 end
 
+-- ---- pt.ui: interaction logic via synthetic events (headless-safe; the
+-- 64x64 gfx target is live, so widgets really draw — logic is what we
+-- assert, pixels are the glyph test's job) ----
+
+local function t_ui()
+  local ui = pt.require("pt.ui")
+  ui.s = {} -- isolate from any earlier state
+  ui.focus, ui.hot, ui.active = nil, nil, nil
+  ui.cap_mouse, ui.cap_keys = false, false
+
+  local function mo(x, y) return { type = "motion", x = x, y = y } end
+  local function bd(x, y) return { type = "button", button = 1, down = true, x = x, y = y } end
+  local function bu(x, y) return { type = "button", button = 1, down = false, x = x, y = y } end
+  local function kd(sc) return { type = "key", scancode = sc, down = true, rep = false } end
+  local function ku(sc) return { type = "key", scancode = sc, down = false, rep = false } end
+  local function tx(s) return { type = "text", text = s } end
+
+  -- one ui pass: ingest events, run body inside a standard panel, finish.
+  -- Returns the events that would have reached the game, plus body results.
+  local got
+  local function pass(events, body)
+    local out = ui.frame(events)
+    pal.begin_frame(0, 0, 0, 1)
+    got = {}
+    ui.begin_panel("t", 2, 2, 60, 58)
+    body()
+    ui.end_panel()
+    ui.frame_end()
+    return out
+  end
+
+  -- button: hover (frame 1) -> press (2) -> release (3) = one click
+  local function button_body()
+    got.clicked = ui.button("go")
+  end
+  pass({ mo(20, 10) }, button_body) -- panel pad 4: button strip y 6..16
+  check(not got.clicked, "ui: no click on hover")
+  check(ui.capturing_mouse(), "ui: mouse over panel captures")
+  local out = pass({ bd(20, 10) }, button_body)
+  check(not got.clicked, "ui: no click on press")
+  check(#out == 0, "ui: captured press never reaches the game")
+  pass({ bu(20, 10) }, button_body)
+  check(got.clicked, "ui: click on release while hot")
+  pass({}, button_body)
+  check(not got.clicked, "ui: click is an edge")
+
+  -- release outside = no click
+  pass({ mo(20, 10) }, button_body)
+  pass({ bd(20, 10) }, button_body)
+  pass({ mo(200, 200), bu(200, 200) }, button_body)
+  check(not got.clicked, "ui: release outside cancels")
+
+  -- checkbox toggles on click
+  local cb = false
+  local function cb_body()
+    local changed
+    cb, changed = ui.checkbox("opt", cb)
+    got.changed = changed
+  end
+  pass({ mo(20, 10) }, cb_body)
+  pass({ bd(20, 10) }, cb_body)
+  pass({ bu(20, 10) }, cb_body)
+  check(cb == true and got.changed, "ui: checkbox toggled")
+
+  -- slider: press at track left = min, drag to track right = max
+  -- (panel content x=6 w=52; label 45% = 23px -> track x=29 w=29)
+  local sv = 50
+  local function sl_body()
+    sv = ui.slider("s", sv, 0, 100)
+  end
+  pass({ mo(40, 10) }, sl_body)
+  pass({ bd(31, 10) }, sl_body)
+  check(sv == 0, "ui: slider hits min (got " .. sv .. ")")
+  pass({ mo(56, 10) }, sl_body)
+  check(sv == 100, "ui: slider drag to max (got " .. sv .. ")")
+  pass({ bu(56, 10) }, sl_body)
+
+  -- text input: click focuses, text inserts, editing keys work
+  local tv, sub = "", false
+  local function ti_body()
+    local s
+    tv, _, s = ui.text_input("in", tv)
+    sub = s
+  end
+  pass({ mo(20, 10) }, ti_body)
+  check(not ui.capturing_keys(), "ui: no key capture unfocused")
+  pass({ bd(20, 10), bu(20, 10) }, ti_body)
+  check(ui.capturing_keys(), "ui: focus captures keys")
+  out = pass({ tx("hey") }, ti_body)
+  check(tv == "hey", "ui: text inserted (got '" .. tv .. "')")
+  check(#out == 0, "ui: text events never reach the game")
+  out = pass({ kd(42) }, ti_body) -- backspace
+  check(tv == "he", "ui: backspace")
+  check(#out == 0, "ui: focused keydown captured")
+  out = pass({ ku(42) }, ti_body)
+  check(#out == 1, "ui: keyup always passes (no stuck keys)")
+  pass({ kd(74) }, ti_body) -- home
+  pass({ tx("t") }, ti_body)
+  check(tv == "the", "ui: insert at cursor after home")
+  pass({ kd(77) }, ti_body) -- end
+  pass({ kd(40) }, ti_body) -- return
+  check(sub, "ui: enter submits")
+  check(not ui.capturing_keys(), "ui: enter blurs without keep_focus")
+
+  -- utf-8: a 2-byte char is one backspace
+  pass({ mo(20, 10) }, ti_body)
+  pass({ bd(20, 10), bu(20, 10) }, ti_body) -- refocus (cursor from click x)
+  pass({ kd(77) }, ti_body) -- end
+  pass({ tx("\xc3\xa9") }, ti_body) -- é
+  check(tv == "the\xc3\xa9", "ui: utf-8 inserted")
+  pass({ kd(42) }, ti_body)
+  check(tv == "the", "ui: backspace removes whole utf-8 char")
+  pass({ kd(41) }, ti_body) -- escape blurs
+  check(not ui.capturing_keys(), "ui: escape blurs")
+
+  -- scroll region + virtualized list
+  local calls, first_row
+  local function sc_body()
+    ui.begin_scroll("log", 22)
+    calls, first_row = 0, nil
+    ui.list(10, 8, function(i) calls = calls + 1; first_row = first_row or i end)
+    ui.end_scroll()
+    got.scroll = ui.scroll_get("log")
+    got.at_bottom = ui.scroll_at_bottom("log", 22)
+  end
+  pass({}, sc_body)
+  check(calls == 3 and first_row == 1, "ui: list draws visible rows only ("
+        .. calls .. " from " .. tostring(first_row) .. ")")
+  check(got.at_bottom == false, "ui: not at bottom at scroll 0")
+  pass({ mo(20, 12) }, sc_body) -- mouse into region (y 6..28)
+  pass({ { type = "wheel", dy = -1 } }, sc_body)
+  pass({}, sc_body)
+  check(got.scroll == 33, "ui: wheel scrolls 3 rows (got " .. got.scroll .. ")")
+  check(first_row == 5, "ui: list window follows scroll (first "
+        .. tostring(first_row) .. ")")
+  local function sc_bottom()
+    ui.scroll_to_bottom("log")
+    sc_body()
+  end
+  pass({}, sc_bottom)
+  pass({}, sc_body)
+  check(got.scroll == 58, "ui: scroll_to_bottom clamps to max (got "
+        .. got.scroll .. ")")
+  check(got.at_bottom == true, "ui: at_bottom after scroll_to_bottom")
+
+  -- row layout: two columns side by side, full width consumed
+  local r1, r2
+  pass({}, function()
+    ui.row({ 1, 1 })
+    r1 = ui.label("a")
+    r2 = ui.label("b")
+  end)
+  check(r1.y == r2.y, "ui: row columns share a baseline")
+  check(r2.x > r1.x and r1.x + r1.w <= r2.x, "ui: columns don't overlap")
+  check(r2.x + r2.w == 6 + 52, "ui: last column reaches the edge")
+
+  -- heading: collapsible + persistent + id-scoped
+  local open_a, x_in, x_out
+  pass({}, function()
+    ui.push_id("A")
+    open_a = ui.heading("sec")
+    x_in = ui.label("c").x
+    if open_a then ui.heading_end() end
+    x_out = ui.label("d").x
+    ui.pop_id()
+  end)
+  check(open_a == true, "ui: heading open by default")
+  check(x_in == 6 + 8 and x_out == 6, "ui: heading indents its content")
+  -- click it shut (heading strip is the first row: y 6..17)
+  local function hb()
+    ui.push_id("A")
+    open_a = ui.heading("sec")
+    if open_a then ui.heading_end() end
+    ui.pop_id()
+    ui.push_id("B")
+    got.open_b = ui.heading("sec")
+    if got.open_b then ui.heading_end() end
+    ui.pop_id()
+  end
+  pass({ mo(20, 10) }, hb)
+  pass({ bd(20, 10) }, hb)
+  pass({ bu(20, 10) }, hb)
+  check(open_a == false, "ui: heading toggles closed")
+  check(got.open_b == true, "ui: same label, different id scope")
+
+  -- blur leftover focus state for later tests
+  ui.blur()
+  pass({}, function() end)
+  check(not ui.capturing_keys(), "ui: no key capture after blur")
+  check(ui.active == nil, "ui: nothing active at rest")
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -408,6 +600,7 @@ function game.init()
   t_snapshot()
   t_input()
   t_text()
+  t_ui()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
