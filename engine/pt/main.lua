@@ -163,9 +163,9 @@ function M.tick()
       pal.log("shot: " .. M.args.shot)
     end
     pal.quit()
-  elseif M.args.headless then
+  elseif M.args.headless and not M.args.frames then
     pal.sleep_ms(16) -- interactive headless session: do not spin the CPU
-  end
+  end -- capped headless runs free-run (D013)
 
   -- flush the recording on ANY quit path (event, frame cap, game-initiated)
   if M.trace and pal.quitting() then M.trace.record_stop() end
