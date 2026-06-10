@@ -287,6 +287,11 @@ static int l_exit_on_error(lua_State *L) {
   return 0;
 }
 
+static int l_quitting(lua_State *L) {
+  lua_pushboolean(L, G.quit);
+  return 1;
+}
+
 static int l_sleep_ms(lua_State *L) {
   SDL_Delay((Uint32)luaL_checkinteger(L, 1));
   return 0;
@@ -614,6 +619,7 @@ static const luaL_Reg pal_funcs[] = {
     {"time_ns", l_time_ns},
     {"sleep_ms", l_sleep_ms},
     {"quit", l_quit},
+    {"quitting", l_quitting},
     {"exit_on_error", l_exit_on_error},
     {"hash", l_hash},
     {"gfx_init", l_gfx_init},

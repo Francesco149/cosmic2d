@@ -147,14 +147,18 @@ local function sorted_buf_list()
   return list
 end
 
-function M.snapshot()
+-- opts.code = false omits the bundle (trace keyframes: the trace's starting
+-- snapshot + epoch records already pin the code)
+function M.snapshot(opts)
   local w = chunk.writer(SNAP_MAGIC)
 
-  local code = {}
-  for _, mod in ipairs(pt.modules()) do
-    code[#code + 1] = pack("<s4s4s4", mod.name, mod.path, mod.source)
+  if not (opts and opts.code == false) then
+    local code = {}
+    for _, mod in ipairs(pt.modules()) do
+      code[#code + 1] = pack("<s4s4s4", mod.name, mod.path, mod.source)
+    end
+    w.chunk("CODE", 1, pack("<I4", #code) .. table.concat(code))
   end
-  w.chunk("CODE", 1, pack("<I4", #code) .. table.concat(code))
 
   local bufs = {}
   for _, b in ipairs(sorted_buf_list()) do
@@ -168,9 +172,8 @@ function M.snapshot()
   return w.result()
 end
 
--- restore from a snapshot blob. Does NOT call game.init(); flows that
--- restore (snapshot load, trace verify) re-run init themselves afterwards.
-function M.restore(blob)
+-- decode a snapshot blob: {code = array|nil, bufs = array, doct = string}
+function M.parse_snapshot(blob)
   local chunks = chunk.read(blob, SNAP_MAGIC)
   local code, bufs, doct
   for _, c in ipairs(chunks) do
@@ -195,9 +198,16 @@ function M.restore(blob)
     end
     -- unknown tags/versions: skipped on purpose (forward compat)
   end
-  if not (code and bufs and doct) then
-    error("snapshot missing CODE/BUFS/DOCT", 0)
-  end
+  if not (bufs and doct) then error("snapshot missing BUFS/DOCT", 0) end
+  return { code = code, bufs = bufs, doct = doct }
+end
+
+-- restore from a snapshot blob. Does NOT call game.init(); flows that
+-- restore (snapshot load, trace verify) re-run init themselves afterwards.
+function M.restore(blob)
+  local snap = M.parse_snapshot(blob)
+  local code, bufs, doct = snap.code, snap.bufs, snap.doct
+  if not code then error("snapshot has no code bundle to restore", 0) end
 
   -- buffers: free what the snapshot doesn't have (or has at another size),
   -- then write contents (creating as needed)
