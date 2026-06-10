@@ -93,8 +93,10 @@ definition of done. Order may flex; pillars don't.
 - **M1 — draw + state + determinism core**: textures + atlas basics, bulk
   quad path, camera/layers, scissor clip, baked bitmap font text, fixed 60 Hz
   sim step, input events → action map, doc-tree + typed-buffer state model,
-  PRNG + deterministic math, snapshot/restore, input trace record/replay,
-  state-hash golden runner (`nix run .#test` green).
+  PRNG + deterministic math, snapshot/restore with code bundles (D012),
+  trace recorder v1 (inputs + per-frame state deltas + keyframes + code
+  epochs, D014), golden runner = re-sim vs recorded deltas with
+  first-divergence report (`nix run .#test` green).
 - **M2 — UI core + console**: panel/widget system (stacks, scroll, collapse,
   search, text input), log console + Lua REPL panel, error overlay routed
   through console, perf panel (frame graph, draw stats). Lua errors never
@@ -106,9 +108,12 @@ definition of done. Order may flex; pillars don't.
 - **M4 — editor mode v0**: editor/play mode switch, map painting, prop
   spawn palette, entity list + inspector (live edit), collider debug draw,
   knobs persisted per project.
-- **M5 — time machine**: snapshot ring buffer + timeline scrubber UI, rewind
-  & resume, trace viewer; golden trace suite wired into `nix flake check`;
-  pixel goldens on pinned lavapipe.
+- **M5 — time machine**: always-on ring trace of the last N seconds,
+  timeline scrubber UI reading state straight from trace deltas (inspect any
+  frame without re-sim), rewind & resume from any scrubbed frame, "save what
+  just happened" trace export, replay playback of shared traces (showcases);
+  golden trace suite wired into `nix flake check`; pixel goldens on pinned
+  lavapipe.
 - **M6 — audio**: FM synth core in PAL (voices × 4-op, envelopes, feedback,
   a few algorithms), patches/sequencing in Lua, sfx hooked into sandbox
   (jump/land/throw), PCM-hash audio goldens.

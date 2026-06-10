@@ -151,3 +151,23 @@ except no window/swapchain. Capped runs (`--frames N`) free-run with reload
 polling off (deterministic captures).
 **Why**: the agent runs live verification (reload, parachute, soak tests)
 without popping windows on the human's desktop; goldens stay deterministic.
+
+## D014 — traces record inputs AND per-frame state deltas (human call, 2026-06-10)
+
+**Context**: traces should be shareable session replays with simple delta
+compression (state + changed scripts only), usable both for showcases and
+for in-engine per-frame state inspection.
+**Decision**: one trace format = starting snapshot + per-frame input records
++ per-frame state deltas (sparse XOR runs vs previous frame) + periodic
+keyframes + code-epoch records on reload (D012). Full layout in
+ARCHITECTURE.md "Traces".
+**Why**: inputs alone need determinism to reconstruct state (useless while
+*debugging* determinism); deltas alone can't drive the golden runner's
+re-sim comparison. Recording both makes the same file a replay, a random
+access debugger timeline, and a determinism oracle that localizes the first
+divergent byte. Per-frame deltas of 2D sim state are small; XOR+run encoding
+keeps it dependency-free.
+**Snapshot story**: keyframes are snapshots; deltas compose between them.
+**Revisit if**: trace size hurts for long sessions (then: smarter entropy
+coding behind the same record structure), or draw stops being a pure
+function of state (would break replay-without-re-sim; don't let it).

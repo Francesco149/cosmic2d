@@ -25,12 +25,12 @@
   the agent runs live tests from now on (verified; no desktop popups).
 - llm-feed has the M0 milestone screenshot ("pettan2d M0: first light").
 
-## Verified vs pending verification
+## Verified
 
 - Agent-verified: rendering correctness (screenshot inspected), determinism,
   reload, parachute, recovery.
-- Human eyes still useful (not blocking): run `bin/pettan projects/sandbox`,
-  judge smoothness/feel of the window; report anything odd.
+- Human-verified: windowed smoothness on dzn/RTX 5060 ("on point",
+  2026-06-10).
 
 ## Next step (M1 — see PLAN.md for full scope)
 
@@ -44,9 +44,12 @@
 3. `pt.math` deterministic trig; input action map over `pal.poll_events`.
 4. Bulk quad path `pal.draw_quads(tex, f32buf, count)` + spleen font bake →
    text rendering (`PETTAN_SPLEEN_DIR` has the BDFs).
-5. Input trace record/replay + state-hash golden runner; wire `nix run .#test`
-   (use lavapipe env; nix-sandbox headless path may need the SDL offscreen
-   fallback that's already in main.c).
+5. Trace recorder v1 (D014): inputs + per-frame state deltas (sparse XOR
+   runs; `pal.buf_delta`/`pal.buf_apply_delta` C kernels) + keyframes + code
+   epochs. Golden runner = re-sim inputs, byte-diff vs recorded deltas,
+   report first divergent frame/bytes; wire `nix run .#test` (lavapipe env;
+   nix-sandbox headless path may need the SDL offscreen fallback already in
+   main.c).
 
 ## Known small items / debts
 

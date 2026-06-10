@@ -86,9 +86,38 @@ starts a new code epoch in the trace). Restore runs code **from the bundle**,
 not from disk; "adopt current disk code instead" is an explicit, separate
 operation.
 
-Rewind = snapshot ring (every N frames) + input trace replay from the
-nearest snapshot to the exact target frame — emulator-style, and it makes
-the timeline scrubber cheap.
+### Traces (the recorded-session artifact)
+
+One file format serves replay sharing, frame-by-frame debugging, and
+regression testing (D014). A **trace** is an append-only stream of frame
+records over a starting snapshot:
+
+- **input record** per frame (compact action/event encoding) — what re-sim
+  needs;
+- **state delta** per frame: bytewise XOR vs the previous frame's named
+  buffers + canonical doc-tree bytes, stored as sparse non-zero runs —
+  what direct inspection needs. Sim state changes little per frame, so
+  this stays small ("simple compression", not a codec dependency);
+- **keyframe** every N frames: full compressed snapshot, so seeking is
+  O(delta-window) instead of O(session);
+- **code epoch record** when a hot reload happens mid-recording: the
+  content-addressed bundle entries for changed files only (D012).
+
+What this buys:
+
+- **Replay/showcase sharing**: a trace plays back by restoring state per
+  frame and calling draw — no re-simulation, so playback works even on a
+  machine/driver where determinism would wobble. Traces live inside the
+  project folder and travel with the zip (v1 assumes the matching project;
+  embedding assets for fully standalone replays is a later option).
+- **Time-machine debugging**: the scrubber random-accesses any frame's full
+  state for inspection without executing game code.
+- **Determinism oracle**: the golden runner re-simulates the input records
+  and byte-diffs each frame against the recorded deltas — the first
+  divergent frame *and the exact bytes* are reported, which is the tool you
+  want when hunting a determinism bug (hashes alone can't localize).
+- **Rewind during play** = an always-on in-memory ring trace of the last N
+  seconds; "save what just happened" exports it.
 
 Cosmetic state (particles, camera shake) is still deterministic sim state —
 pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
@@ -118,9 +147,11 @@ input trace — across runs, machines, and eventually platforms.
   the sample domain derived from the frame counter; PCM out is a pure
   function of (state, commands) → audio goldens hash PCM.
 
-**Testing** (M1+): a golden trace = initial snapshot + input trace + per-frame
-(or checkpoint) state hashes. The runner replays headless and diffs hashes;
-first divergent frame is reported and openable in the timeline scrubber.
+**Testing** (M1+): a golden = a recorded trace checked into `tests/`. The
+runner replays the input records headless and byte-diffs the re-simulated
+state against the trace's recorded deltas frame by frame; the first
+divergent frame (with offending byte ranges) is reported and openable in
+the timeline scrubber.
 Pixel goldens render on **pinned lavapipe** (software Vulkan from the flake)
 so they're machine-independent; dzn/hardware drivers are never golden sources.
 
