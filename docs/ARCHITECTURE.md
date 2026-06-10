@@ -294,6 +294,30 @@ knob, say) is the caller's write.
 - The console REPL is deterministic-by-construction: commands queue and
   drain at the start of the next sim frame, and recordings store them as
   EVAL records (D022) — a knob-tweaking session replays byte-exact.
+  `--eval CODE` (repeatable) queues a line at boot through the same path,
+  so headless capped runs can flip doc switches replayably.
+
+## Tilemaps (pt.tilemap — M3)
+
+A tile grid in a named buffer, self-describing for tools (D024):
+`[0] u32 w | [4] u32 h | [8] u32 tile px | [12] reserved`, then u16 ids
+row-major. `new{name,w,h,tile,tiles}` creates or adopts (same shape keeps
+cells — init stays idempotent; a shape change frees + rebuilds); `open`
+adopts purely from the header. Tile *meaning* is the `tiles` table in
+code (travels in bundles): per id `solid=true` / `oneway=true` + atlas
+`u,v` and optional tint for `tm:draw`, which packs the camera-visible
+window into one bulk `pal.draw_quads` call.
+
+Collision: AABBs are half-open pixel rects; `tm:move(x,y,w,h,dx,dy,opts)`
+sweeps axis-separated (x then y), scanning every cell boundary crossed —
+nothing tunnels at any speed. One-way platforms collide only when a
+falling body enters their row from at-or-above; `opts.drop` disables them
+for down+jump drop-through; they never block sideways or rising movement.
+Outside the map: side/bottom walls, open sky. The mover never ejects an
+already-overlapping AABB (don't spawn inside walls). Pure Lua, pure
+IEEE arithmetic (f64 `+ - * /`, floor/ceil) — deterministic everywhere;
+if profiling ever demands, it migrates down as a versioned PAL kernel
+per the numpy model.
 
 ## Audio (M6 sketch, kept in mind from day one)
 
@@ -318,11 +342,12 @@ pettan2d/
     boot.lua           thin shim: module system + handoff to pt.main
     pt/                engine modules (main, state, input, rand, math,
                        ease, gfx, text, trace, chunk, ui, console, repl,
-                       perf; assets/ = baked fonts)
+                       perf, tilemap; assets/ = baked fonts)
   projects/
-    sandbox/           the stock cartridge (M1: particle playground)
+    sandbox/           the stock cartridge (M3: live-editable platformer —
+                       main/level/player/props/fx/demo/pix modules)
     selftest/          engine invariants cartridge (PRNG KATs, trig
-                       accuracy, serializer/snapshot/input/ui round-trips)
+                       accuracy, serializer/snapshot/input/ui/tilemap)
     uigallery/         living pt.ui reference, shaped like the M4 inspector
   tools/               dev scripts (bake_spleen, feed helpers)
   tests/
@@ -422,8 +447,9 @@ binary incompatible, in either direction (D015).
 | `pal.read_pixels()` | dev/test | internal target → string (RGBA8), post-render |
 | `pal.png_write(path, str, w, h)` | dev | screenshot/golden output |
 | `pal.tex_create(w,h, pixels_str)` / `pal.tex_free(id)` | render | RGBA8; id 0 = builtin white |
-| `pal.buf(name_or_nil, size)` | sim | named = persistent + snapshot; view userdata |
+| `pal.buf(name_or_nil, size)` | sim | named = persistent + snapshot; view userdata; size mismatch with a live name errors |
 | `pal.buf_list()` | sim | iterate named buffers (snapshot/inspector) |
+| `pal.buf_free(name)` | sim | drop a named buffer (restore/resize paths); true if it existed |
 | buf views: `:u8/:i8/:u16/:i16/:u32/:i32/:i64/:f32/:f64(off [,v])`, `:fill`, `:copy`, `:hash`, `:size`, `:str(off,len)`, `:setstr(off,s)` | sim | bounds-checked, error on OOB (i8/i16 added in v2) |
 | `pal.read_file(p)` / `pal.write_file(p,s)` / `pal.list_dir(p)` / `pal.mtime(p)` / `pal.mkdir(p)` | dev/io | engine enforces project-relative paths |
 | `pal.poll_events()` | input | array of event tables, drained each tick |

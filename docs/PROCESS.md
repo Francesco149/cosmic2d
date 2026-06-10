@@ -47,6 +47,9 @@ bin/pettan projects/sandbox --headless --frames 120 --shot /tmp/shot.png
 bin/pettan projects/selftest --headless --frames 1       # 22k engine checks
 bin/pettan <proj> --headless --frames N --record t.ptrace  # capture a trace
 bin/pettan <proj> --verify t.ptrace  # golden runner: byte-exact replay, exit 0/1
+bin/pettan projects/sandbox --headless --frames N --eval "game.demo(1)" \
+  --shot /tmp/s.png     # --eval queues a console line for frame 1 (recorded
+                        # as an EVAL chunk) — drives demos/knobs headlessly
 nix run .#test                      # selftest + all committed goldens (lavapipe)
 ```
 

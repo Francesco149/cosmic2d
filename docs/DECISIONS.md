@@ -342,3 +342,55 @@ project opt-in to keep stepping other systems), or M5's ring trace wants
 the error frame captured for time-machine autopsy (then: record the
 half-frame behind a marker chunk).
 
+
+## D024 — tilemaps are self-describing named buffers (M3)
+
+**Context**: M3 needs a tile world that is sim state (snapshot/trace/
+reboot-proof), renders through the bulk quad path, and that M4's editor
+and inspector can later open without side-channel metadata.
+**Decision**: pt.tilemap stores `w/h/tile-size` as a 16-byte header in
+the buffer itself, u16 ids after; `new` adopts a same-shape buffer
+without touching cells (reload-idempotent init) and rebuilds on shape
+change; `open` adopts from the header alone. Tile *classes* (solid /
+one-way) and looks are a code-side table — meaning travels in code
+bundles (D012), bytes in the buffer. The mover is an axis-separated
+boundary-scanning sweep (no tunneling, no epsilons: half-open rects +
+exact floor/ceil); one-ways collide only on row entry from at-or-above,
+with a `drop` opt for down+jump. OOB = side/bottom walls, open sky.
+Pure Lua / pure IEEE today; a hot map would migrate down as a versioned
+kernel (`tile_move@1`) per the numpy model, semantics frozen by then.
+**Snapshot story**: the buffer is everything; wrapper objects are
+rebuilt glue. The sandbox builds its map at level.lua chunk top-level
+(clear + refill), so editing the level hot-reloads it — and a bundle
+restore re-executes the same build only when the bundle's level code
+actually differs (hash-gated), never stomping restored cells. M4's map
+painting will retire code-built maps (the build becomes a reset action).
+**Revisit if**: maps want layers/flags per cell (then: a header version
+bump + documented cell format v2, additive), or Lua collision shows in
+pt.perf under real load (then: the versioned-kernel path).
+
+## D025 — the demo is sim input: attract mode + --eval (M3)
+
+**Context**: goldens and montages need interesting *input* in headless
+runs, but the sim consumes only input records (D014) and the agent
+can't press keys. Scripted input must replay byte-exact and survive the
+golden contract forever.
+**Decision**: the sandbox ships an attract mode — action states as a
+pure function of (frame - doc.demo_t0) over a literal timeline table in
+demo.lua. No module state, no wall clock: edges derive from f(rel) vs
+f(rel-1), so it's deterministic by construction, travels in code
+bundles, and any real move/jump/grab press hands control back. It's
+enabled by `game.demo(1)` — normally typed in the console, and in
+headless runs injected by the new pt.main `--eval CODE` flag, which
+queues the line through pt.repl at boot so it drains at sim frame 1 and
+records as a D022 EVAL chunk. The platformer golden is exactly that:
+cold boot + one EVAL + 1400 frames of scripted play. Choreography is
+calibrated against default doc.knobs; retuning movement knobs means
+re-choreographing the demo (goldens are unaffected — they replay the
+bundled code and knobs they were recorded with).
+**Snapshot story**: demo on/off + anchor live in the doc tree; the
+script is code. EVAL records carry the activation into traces.
+**Revisit if**: more cartridges want attract scripts (then: a pt.demo
+helper for timeline tables), or choreography maintenance hurts (then:
+waypoint-seeking driver reading sim state — still deterministic, but it
+needs a careful story for mid-trace restores before it's allowed).
