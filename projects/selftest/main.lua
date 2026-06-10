@@ -230,6 +230,68 @@ local function t_snapshot()
   pal.buf_free("selftest.b1")
 end
 
+-- ---- pt.input: records, edges, snapshot consistency ----
+
+local function t_input()
+  local input = pt.require("pt.input")
+  input.map({ { "jump", input.key.space, input.key.up },
+              { "left", input.key.left }, { "right", input.key.right } })
+  check(input.bit_of.jump == 0 and input.bit_of.right == 2,
+        "action bits follow definition order")
+  input.define("left", { input.key.a }) -- rebind keeps the bit
+  check(input.bit_of.left == 1, "rebind keeps bit index")
+  local names = input.actions()
+  check(names[1] == "jump" and names[2] == "left" and names[3] == "right",
+        "actions() in bit order")
+
+  local function key(sc, down)
+    return { type = "key", scancode = sc, down = down, rep = false }
+  end
+
+  -- held key: bit stays across empty collects
+  local rec = input.collect({ key(44, true) })
+  check(rec == string.pack("<I4i2i2I1i1", 1, 0, 0, 0, 0), "record layout")
+  input.apply(rec)
+  check(input.down("jump") and input.pressed("jump"), "press edge")
+  rec = input.collect({})
+  input.apply(rec)
+  check(input.down("jump") and not input.pressed("jump"), "hold, no edge")
+  input.apply(input.collect({ key(44, false) }))
+  check(not input.down("jump") and input.released("jump"), "release edge")
+
+  -- sticky tap: down+up inside one sample window still lands one frame
+  input.apply(input.collect({ key(4, true), key(4, false) }))
+  check(input.down("left") and input.pressed("left"), "sub-frame tap caught")
+  input.apply(input.collect({}))
+  check(input.released("left"), "tap releases next frame")
+
+  -- mouse + buttons + wheel
+  input.apply(input.collect({
+    { type = "motion", x = 12.7, y = -3.2 },
+    { type = "button", button = 1, down = true, x = 12.7, y = -3.2 },
+    { type = "wheel", dx = 0, dy = 1.5 },
+  }))
+  local mx, my = input.mouse()
+  check(mx == 12 and my == -4, "mouse floored to ints")
+  check(input.button_down(1) and input.button_pressed(1), "button edge")
+  check(input.wheel() == 1, "wheel integer step")
+  input.apply(input.collect({ { type = "wheel", dx = 0, dy = 0.5 } }))
+  check(input.wheel() == 1, "wheel fractional carry completes")
+  input.apply(input.collect({}))
+  check(input.wheel() == 0, "wheel resets without events")
+
+  -- snapshot must capture the cur/prev pair so edges replay identically
+  input.apply(input.collect({ key(79, true) })) -- right: pressed edge NOW
+  check(input.pressed("right"), "pre-snapshot press edge")
+  local snap = state.snapshot()
+  input.apply(input.collect({})) -- edge ages into a hold
+  check(not input.pressed("right"), "edge aged")
+  state.restore(snap)
+  pt.adopt_disk()
+  check(input.pressed("right"), "press edge restored from snapshot")
+  input.apply(input.collect({ key(79, false) }))
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -254,6 +316,7 @@ function game.init()
   t_atan_sweep()
   t_canon()
   t_snapshot()
+  t_input()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

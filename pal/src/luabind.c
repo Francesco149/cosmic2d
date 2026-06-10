@@ -54,7 +54,9 @@ static uint8_t *view_span(lua_State *L, BufView *v, lua_Integer off,
 #define PUSH_NUM(L, v) lua_pushnumber(L, (lua_Number)(v))
 
 NUM_ACCESSOR(u8, uint8_t, PUSH_INT, luaL_checkinteger)
+NUM_ACCESSOR(i8, int8_t, PUSH_INT, luaL_checkinteger)
 NUM_ACCESSOR(u16, uint16_t, PUSH_INT, luaL_checkinteger)
+NUM_ACCESSOR(i16, int16_t, PUSH_INT, luaL_checkinteger)
 NUM_ACCESSOR(u32, uint32_t, PUSH_INT, luaL_checkinteger)
 NUM_ACCESSOR(i32, int32_t, PUSH_INT, luaL_checkinteger)
 NUM_ACCESSOR(i64, int64_t, PUSH_INT, luaL_checkinteger)
@@ -131,10 +133,11 @@ static int l_buf_gc(lua_State *L) {
 }
 
 static const luaL_Reg bufview_methods[] = {
-    {"u8", l_buf_u8},   {"u16", l_buf_u16},     {"u32", l_buf_u32},
-    {"i32", l_buf_i32}, {"i64", l_buf_i64},     {"f32", l_buf_f32},
-    {"f64", l_buf_f64}, {"size", l_buf_size},   {"name", l_buf_name},
-    {"fill", l_buf_fill}, {"str", l_buf_str},   {"setstr", l_buf_setstr},
+    {"u8", l_buf_u8},   {"i8", l_buf_i8},       {"u16", l_buf_u16},
+    {"i16", l_buf_i16}, {"u32", l_buf_u32},     {"i32", l_buf_i32},
+    {"i64", l_buf_i64}, {"f32", l_buf_f32},     {"f64", l_buf_f64},
+    {"size", l_buf_size}, {"name", l_buf_name}, {"fill", l_buf_fill},
+    {"str", l_buf_str}, {"setstr", l_buf_setstr},
     {"copy", l_buf_copy}, {"hash", l_buf_hash}, {NULL, NULL}};
 
 static void push_view(lua_State *L, PalBuf *b, bool anon) {

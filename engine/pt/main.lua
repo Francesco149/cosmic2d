@@ -65,6 +65,7 @@ function M.boot()
   }
 
   M.state = pt.require("pt.state")
+  M.input = pt.require("pt.input")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   M.entry = (proj.entry or "main.lua"):gsub("%.lua$", ""):gsub("/", ".")
@@ -89,11 +90,23 @@ local function poll_reload(now)
   end
 end
 
+-- one sim frame: sample (or accept) an input record, apply, step, count.
+-- The record return is the trace recorder's tap-in point.
+local function sim_step(events)
+  local rec = M.input.collect(events)
+  M.input.apply(rec)
+  M.game.step()
+  M.state.advance_frame()
+  return rec
+end
+
 function M.tick()
-  local input = {}
-  for _, e in ipairs(pal.poll_events()) do
-    if e.type == "quit" then pal.quit() return end
-    input[#input + 1] = e
+  local events = pal.poll_events()
+  for _, e in ipairs(events) do
+    if e.type == "quit" then
+      -- game code may intercept (pause menus, save prompts); default quits
+      if M.game.on_quit then M.game.on_quit() else pal.quit() end
+    end
   end
 
   local now = pal.time_ns()
@@ -101,16 +114,14 @@ function M.tick()
   if not M.args.frames then poll_reload(now) end
 
   if M.args.headless then
-    M.game.step(input)
-    M.state.advance_frame()
+    sim_step(events)
   else
     M.acc = M.acc + (M.last and now - M.last or SIM_DT)
     M.last = now
     if M.acc > 4 * SIM_DT then M.acc = 4 * SIM_DT end -- stall clamp
     while M.acc >= SIM_DT do
-      M.game.step(input)
-      M.state.advance_frame()
-      input = {}
+      sim_step(events)
+      events = {} -- catch-up steps see held keys, not fresh events
       M.acc = M.acc - SIM_DT
     end
   end

@@ -321,7 +321,7 @@ binary incompatible, in either direction (D015).
 | `pal.tex_create(w,h, pixels_str)` / `pal.tex_free(id)` | render | RGBA8; id 0 = builtin white |
 | `pal.buf(name_or_nil, size)` | sim | named = persistent + snapshot; view userdata |
 | `pal.buf_list()` | sim | iterate named buffers (snapshot/inspector) |
-| buf views: `:u8/:u16/:i32/:u32/:f32/:f64(off [,v])`, `:fill`, `:copy`, `:hash`, `:size`, `:str(off,len)`, `:setstr(off,s)` | sim | bounds-checked, error on OOB |
+| buf views: `:u8/:i8/:u16/:i16/:u32/:i32/:i64/:f32/:f64(off [,v])`, `:fill`, `:copy`, `:hash`, `:size`, `:str(off,len)`, `:setstr(off,s)` | sim | bounds-checked, error on OOB (i8/i16 added in v2) |
 | `pal.read_file(p)` / `pal.write_file(p,s)` / `pal.list_dir(p)` / `pal.mtime(p)` / `pal.mkdir(p)` | dev/io | engine enforces project-relative paths |
 | `pal.poll_events()` | input | array of event tables, drained each tick |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |
