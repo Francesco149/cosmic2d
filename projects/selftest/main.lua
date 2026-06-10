@@ -626,6 +626,43 @@ local function t_ui()
   check(ui.active == nil, "ui: nothing active at rest")
 end
 
+-- ---- pt.console: toggle/error logic (drawing exercised, not asserted) ----
+
+local function t_console()
+  local ui = pt.require("pt.ui")
+  local con = pt.require("pt.console")
+  local function kd(sc) return { type = "key", scancode = sc, down = true, rep = false } end
+  local function pass(events)
+    ui.frame(events)
+    pal.begin_frame(0, 0, 0, 1)
+    con.frame()
+    ui.frame_end()
+  end
+
+  con.toggle(false)
+  con.clear_error()
+  pass({})
+  local was_open = con.open
+  check(was_open == false, "console: starts closed")
+  pass({ kd(53) }) -- grave
+  check(con.open == true, "console: grave opens")
+  for _ = 1, 15 do pass({}) end -- let it slide fully open
+  check(con.slide == 1.0, "console: slide reaches 1")
+  check(ui.capturing_keys(), "console: open console owns the keyboard")
+  pass({ kd(41) }) -- escape
+  check(con.open == false, "console: escape closes")
+
+  con.notify_error("boom at line 3")
+  check(con.open and con.paused, "console: error opens + pauses")
+  pass({ kd(41) })
+  check(con.open == true, "console: escape can't dismiss an error")
+  con.clear_error()
+  check(not con.paused, "console: clear_error unpauses")
+  con.toggle(false)
+  for _ = 1, 15 do pass({}) end -- slide shut; release the keyboard
+  ui.blur()
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -656,6 +693,7 @@ function game.init()
   t_text()
   t_repl()
   t_ui()
+  t_console()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

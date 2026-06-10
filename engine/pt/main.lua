@@ -14,6 +14,16 @@
 --   --verify PATH     golden runner: replay the trace's inputs against its
 --                     starting snapshot (bundle code) and byte-compare every
 --                     frame; exit 0 on byte-exact, 1 + first divergence not
+--
+-- Error containment (D023): in live sessions (everything except --frames /
+-- --verify), game errors never kill the session. A failing require / init /
+-- step / draw pauses the sim, logs the traceback, and opens the console;
+-- the REPL drains immediately while paused (poke at the wreckage). Any
+-- successful reload — or, for boot failures, the entry finally loading —
+-- clears the error, re-runs init (reload-idempotent by contract) and
+-- resumes. The C parachute stays underneath for engine bugs. A recording
+-- is stopped at the error so the trace stays valid up to the last good
+-- frame.
 
 local M = select(2, ...) or {}
 
@@ -58,9 +68,34 @@ local function load_project(dir)
   return proj
 end
 
+-- ---- error containment (D023) ----
+
+local function enter_error(traceback)
+  pal.log("=== game error ===\n" .. tostring(traceback))
+  M.game_err = tostring(traceback):match("[^\n]*") or "error"
+  if M.trace and M.trace.recording() then
+    M.trace.record_stop() -- trace stays valid up to the last good frame
+    pal.log("[trace] recording stopped by the error")
+  end
+  M.console.notify_error(M.game_err)
+end
+
+-- run a game callback; in contained sessions an error pauses the sim
+-- instead of propagating. Returns true when fn completed.
+local function guarded(fn, ...)
+  if not M.contain then
+    fn(...)
+    return true
+  end
+  local ok, err = xpcall(fn, debug.traceback, ...)
+  if not ok then enter_error(err) end
+  return ok
+end
+
 function M.boot()
   local args = parse_args()
   M.args = args
+  M.contain = not (args.frames or args.verify)
   if args.frames or args.verify then pal.exit_on_error(true) end
   if args.verify then args.headless = true end -- verify never pops a window
 
@@ -80,6 +115,7 @@ function M.boot()
   M.input = pt.require("pt.input")
   M.ui = pt.require("pt.ui")
   M.repl = pt.require("pt.repl")
+  M.console = pt.require("pt.console")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
@@ -91,8 +127,19 @@ function M.boot()
   end
 
   M.entry = (proj.entry or "main.lua"):gsub("%.lua$", ""):gsub("/", ".")
-  M.game = pt.require(M.entry)
-  M.game.init()
+  if M.contain then
+    local ok, game = xpcall(pt.require, debug.traceback, M.entry)
+    if ok then
+      M.game = game
+      guarded(M.game.init)
+    else
+      M.game = nil
+      enter_error(game)
+    end
+  else
+    M.game = pt.require(M.entry)
+    M.game.init()
+  end
 
   M.acc, M.last, M.ticks = 0, nil, 0
   M.reload_at = 0
@@ -115,13 +162,42 @@ end
 local function poll_reload(now)
   if now < M.reload_at then return end
   M.reload_at = now + 250 * 1000000
+
+  -- boot-time failure: the entry never loaded; keep retrying the require
+  -- (covers fixes to the entry or anything in its require chain)
+  if M.game_err and not M.game then
+    local ok, game = xpcall(pt.require, debug.traceback, M.entry)
+    if ok then
+      M.game = game
+      M.game_err = nil
+      M.console.clear_error()
+      pal.log("[resume] entry loaded")
+      guarded(M.game.init)
+    else
+      local first = tostring(game):match("[^\n]*")
+      if first ~= M.last_boot_err then -- don't spam the ring at 4 Hz
+        M.last_boot_err = first
+        pal.log("[retry] " .. first)
+      end
+    end
+    return
+  end
+
   local changed = pt.reload()
-  for _, name in ipairs(changed) do
-    if name == M.entry then
-      M.game.init() -- must be reload-idempotent: named buffers persist
+  if #changed == 0 then return end
+  if M.trace then M.trace.on_code_change(changed) end
+  if M.game_err then
+    M.game_err = nil
+    M.console.clear_error()
+    pal.log("[resume] code reloaded; resuming sim")
+    guarded(M.game.init) -- reload-idempotent by contract
+  else
+    for _, name in ipairs(changed) do
+      if name == M.entry then
+        guarded(M.game.init) -- must be reload-idempotent: buffers persist
+      end
     end
   end
-  if M.trace and #changed > 0 then M.trace.on_code_change(changed) end
 end
 
 -- one sim frame: drain queued console evals (recorded — D022), then sample
@@ -138,12 +214,26 @@ local function sim_step(events)
   return rec
 end
 
+local function step_guarded(events)
+  if not M.contain then
+    sim_step(events)
+    return true
+  end
+  local ok, err = xpcall(sim_step, debug.traceback, events)
+  if not ok then enter_error(err) end
+  return ok
+end
+
 function M.tick()
   local events = pal.poll_events()
   for _, e in ipairs(events) do
     if e.type == "quit" then
       -- game code may intercept (pause menus, save prompts); default quits
-      if M.game.on_quit then M.game.on_quit() else pal.quit() end
+      if M.game and M.game.on_quit and not M.game_err then
+        guarded(M.game.on_quit)
+      else
+        pal.quit()
+      end
     end
   end
   -- engine UI sees raw events; the game sees what the UI didn't capture
@@ -153,20 +243,28 @@ function M.tick()
   -- reload polling off in capped runs (deterministic captures)
   if not M.args.frames then poll_reload(now) end
 
-  if M.args.headless then
-    sim_step(events)
+  if M.game_err then
+    -- paused on the autopsy table: no stepping, repl runs immediately
+    M.repl.drain()
+    M.acc, M.last = 0, nil -- no catch-up pileup across the pause
+  elseif M.args.headless then
+    step_guarded(events)
   else
     M.acc = M.acc + (M.last and now - M.last or SIM_DT)
     M.last = now
     if M.acc > 4 * SIM_DT then M.acc = 4 * SIM_DT end -- stall clamp
     while M.acc >= SIM_DT do
-      sim_step(events)
+      if not step_guarded(events) then break end
       events = {} -- catch-up steps see held keys, not fresh events
       M.acc = M.acc - SIM_DT
     end
   end
 
-  M.game.draw()
+  if M.game_err or not guarded(M.game.draw) then
+    -- no game frame to show: dark backdrop (also resets a half-built batch)
+    pal.begin_frame(0.09, 0.03, 0.07, 1)
+  end
+  M.console.frame()
   M.ui.frame_end()
   pal.present()
 

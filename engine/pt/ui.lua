@@ -657,6 +657,12 @@ function M.text_input(id, txt, opts)
   local s = widget_state(id)
   s.cursor = math.min(s.cursor or #txt + 1, #txt + 1)
 
+  -- consoles etc: own the keyboard whenever nobody else does
+  if opts.take_focus and M.focus == nil then
+    M.focus = id
+    s.cursor = #txt + 1
+  end
+
   behave_button(id, r.x, r.y, r.w, r.h) -- registers hover
   -- focus on press (standard text-field feel), needs last-frame hover
   if M.hot == id and M.inp.clicked[1] and mouse_in(r.x, r.y, r.w, r.h) then
@@ -740,6 +746,12 @@ function M.text_input(id, txt, opts)
   end
 
   return txt, changed, submitted
+end
+
+-- place a text_input's cursor after changing its text externally (history
+-- navigation etc). Call in the same id scope as the widget.
+function M.text_cursor(id, pos)
+  widget_state(qid(id)).cursor = pos
 end
 
 return M
