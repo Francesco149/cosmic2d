@@ -191,3 +191,85 @@ the low-level binaries") extended to recorded data; PICO-8-style longevity
 requires the hardware spec to be boring and eternal.
 **Revisit**: individual rules may grow teeth pre-1.0; the freeze itself is
 constitutional and not up for revision after 1.0.
+
+## D016 — canonical doc serialization is binary and type-tagged (M1)
+
+**Context**: snapshots, trace deltas and hashing all need the doc tree as
+stable bytes; text formats make float round-tripping and key ordering fiddly.
+**Decision**: canonical form v1 (frozen): type-tagged binary, i64/f64 raw LE
+bits, u32-length strings, tables as sorted key/value pairs (integer keys
+ascending, then string keys bytewise). NaN, shared subtables, fractional and
+boolean keys are errors. Spec in ARCHITECTURE "Concrete M1 formats";
+implementation pt/state.lua.
+**Why**: equal trees ⇒ identical bytes (delta/hash-stable), float bits exact
+by construction, ~40 lines each way, no dependencies.
+**Snapshot story**: this IS the doc tree's snapshot encoding.
+**Revisit if**: doc serialization shows in frame profiles (D005 already
+plans the escape: move offenders to buffers).
+
+## D017 — state deltas via pal.buf_delta1 XOR sparse runs (M1)
+
+**Context**: D014 needs per-frame buffer deltas; the codec's exact output
+bytes are recorded in traces forever, so the algorithm must never drift.
+**Decision**: `pal.buf_delta1/buf_apply_delta1` C kernels, version-in-name
+per stability contract rule 4. Format frozen: runs of
+`{u32 off, u32 len, len XOR bytes}`; a run ends at the last differing byte
+followed by ≥8 equal bytes; empty string = identical; apply is self-inverse.
+A better codec someday is `buf_delta2`, and `buf_delta1` stays callable
+forever.
+**Why**: XOR runs are dependency-free, trivially auditable, and self-inverse
+(scrubbing backward through a trace applies the same deltas).
+**Revisit if**: trace sizes hurt → entropy-code *around* the same records
+(container change, not kernel change).
+
+## D018 — input record v1: 10 bytes, sampled actions, sticky taps (M1)
+
+**Context**: the sim must consume identical input live and replayed (D014);
+raw event streams are OS-timing-dependent.
+**Decision**: per sim frame, one frozen 10-byte record (u32 action down-bits
+in definition order, i16 mouse x/y internal px, u8 button bits, i8 wheel
+steps). pt.input.apply() is the only path into sim-visible input state,
+which lives in the `pt.input` named buffer (cur+prev, so pressed/released
+edges are snapshot-consistent). Live sampling adds "sticky tap": a
+press+release inside one sample window still sets the bit for one frame.
+**Why**: record/replay symmetry by construction; edges survive restore;
+sub-frame taps never vanish (feel pillar).
+**Revisit when**: text input lands (M2 console) → additive record type in
+the container, not a change to record v1; gamepad → new bits/axes likewise.
+
+## D019 — snapshot/trace containers: PSNP/PTRC tagged chunks (M1)
+
+**Context**: D012/D014 need concrete file formats with room to grow.
+**Decision**: one chunk grammar (pt/chunk.lua): magic + version-stamped
+tagged chunks, unknown tags skipped, truncation = loud error. PSNP = CODE
+(full bundle) + BUFS (every named buffer) + DOCT. PTRC = HEAD + SNAP +
+per-frame FRAM (input record + per-buffer kind 0 delta / 1 full / 2 freed +
+doc bytes on change) + code-less KEYF every N (cross-checked on verify) +
+EPOC on mid-record reload + TAIL. FRAM v1 lists every buffer every frame
+(~20B/buffer overhead) — simple beats clever until sizes hurt.
+**Why**: matches stability-contract rule 5 (readers read what they know);
+KEYF without CODE because SNAP+EPOCs already pin code (bundle dedup).
+**Revisit if**: per-frame buffer listing dominates trace size (then: a
+set-unchanged flag byte), or long sessions need streaming writes (recorder
+currently buffers in memory and writes once at stop).
+
+## D020 — easing curves are first-class and name-addressable (human call, 2026-06-10)
+
+**Context**: satisfying interactions are a pillar; easing should be
+available everywhere rather than ad-hoc lerps — and "everywhere" includes
+sim state, which cannot hold functions.
+**Decision**: pt.ease ships the standard family (31 curves: linear +
+quad/cubic/quart/quint/sine/expo/circ/back/elastic/bounce × in/out/inout)
+as pure deterministic functions over pt.math (which grew exp2 for
+expo/elastic). Curves are addressable by NAME via a registry — doc knobs,
+timelines and tweens store the name; `pt.ease.register` lets game code add
+curves, and that code travels in bundles (D012), so named curves replay
+exactly. Registered curves are endpoint-pinned (f(≤0)=0, f(≥1)=1 exactly).
+Engine systems that take a duration accept an easing name wherever it makes
+sense (UI animation M2, camera/feel knobs M3, tweens when they land).
+**Why**: feel pillar; by-name is the only serialization-safe plug point.
+**Snapshot story**: names in doc/buffers + registering code in bundles.
+**Revisit if**: curve *parameters* (custom back overshoot, elastic period)
+become knobs → parametric registrations (`register("back:2.5", …)`) or a
+small curve-descriptor table in the doc tree.
+

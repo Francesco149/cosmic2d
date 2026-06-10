@@ -44,13 +44,18 @@ nix develop -c make -C pal          # build → bin/pettan (+ shaders if changed
 bin/pettan projects/sandbox         # run windowed (WSLg window appears on the
                                     #   Windows side; dzn/RTX or lavapipe)
 bin/pettan projects/sandbox --headless --frames 120 --shot /tmp/shot.png
-nix run .#test                      # golden suite (M1+), runs on pinned lavapipe
+bin/pettan projects/selftest --headless --frames 1       # 22k engine checks
+bin/pettan <proj> --headless --frames N --record t.ptrace  # capture a trace
+bin/pettan <proj> --verify t.ptrace  # golden runner: byte-exact replay, exit 0/1
+nix run .#test                      # selftest + all committed goldens (lavapipe)
 ```
 
 - Goldens: `VK_DRIVER_FILES` is forced to the flake's lavapipe ICD by the
-  test runner — never record goldens on hardware drivers (D007).
+  test runner — never record goldens on hardware drivers (D007). State
+  traces are driver-independent (sim is pure CPU); pixel goldens (M5) are
+  not. New golden = trace + `.project` sidecar naming its cartridge dir.
 - The flake only sees **tracked** files: `git add` new files before any
-  `nix develop`/`nix build` if the flake inputs changed.
+  `nix develop`/`nix build`/`nix run .#test` if files were added.
 
 ## Verification loop (how the agent checks its own work)
 

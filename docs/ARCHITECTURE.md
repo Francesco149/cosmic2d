@@ -34,14 +34,35 @@ to revisit; this file describes *what is*. Keep it current when code changes.
 
 ### Boot flow
 
-1. `pettan [project_dir] [flags…]` — C parses nothing except `--help`; argv is
-   handed to Lua as `pal.argv`.
-2. PAL creates the Lua state, loads `engine/boot.lua`, calls `boot()`.
-3. Lua reads `<project>/project.lua` (plain Lua table: name, internal w/h,
-   window scale, entry file, startup mode), calls `pal.gfx_init{…}`, requires
-   the project entry.
+1. `pettan [project_dir] [flags…]` — C parses nothing; argv is handed to Lua
+   as `pal.argv`.
+2. PAL creates the Lua state and runs `engine/boot.lua` — a deliberately thin
+   shim that defines the **pt module system** and hands off to `pt.main`.
+3. `pt.main.boot()` parses flags, reads `<project>/project.lua` (plain table:
+   name, internal w/h, window scale, entry, seed), calls `pal.gfx_init{…}`,
+   requires the project entry module, dispatches `--record`/`--verify` modes.
 4. C loop: each iteration calls the global `pt_tick()` under `pcall`.
    Lua decides everything inside the tick (sim steps, drawing, reload polls).
+
+### The module system (pt.require)
+
+- `pt.*` names map to `engine/pt/` (`pt.math` → `engine/pt/math.lua`) and
+  attach to the `pt` global on load; other names map into the project dir.
+  Dotted-segment validation means module paths can never escape their root.
+- A module file returns a table. The loader **retains every chunk's source
+  text** (`pt.modules()` = the content-addressed D012 bundle) and watches
+  every loaded file for the crash parachute.
+- Hot reload (`pt.reload`, polled by pt.main outside capped runs) re-executes
+  a changed chunk and repopulates the original table in place — references
+  held by other modules stay valid. Chunks are called with
+  `(name, prev_table)`; loop-owning modules like pt.main keep state across
+  their own reload via `local M = select(2, ...) or {}`. Module-local
+  upvalues reset on reload: sim state lives in named buffers / the doc tree.
+- Snapshot restore runs code **from the bundle** (`pt.restore_bundle`) and
+  pauses disk reload until `pt.adopt_disk()` — D012's explicit adoption step.
+- `game.init()` must be **reload-idempotent** (named buffers persist); the
+  same contract makes it restore-safe: every restore is followed by
+  `game.init()`.
 
 ### Error containment (no typo death spirals)
 
@@ -121,6 +142,38 @@ What this buys:
 
 Cosmetic state (particles, camera shake) is still deterministic sim state —
 pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
+
+### Concrete M1 formats (v1, all little-endian)
+
+Source of truth for byte layouts: the headers of `engine/pt/chunk.lua`,
+`state.lua`, `input.lua`, `trace.lua`. Summary:
+
+- **Containers** (pt.chunk): `<magic 4cc>` then chunks of
+  `<tag 4cc, u32 version, u32 len, payload>`; unknown tags/versions are
+  skipped, truncation errors loudly. Snapshot magic `PSNP`, trace `PTRC`.
+- **Canonical doc bytes** (pt.state.canon): type-tagged values — 0x00 nil,
+  0x01/02 false/true, 0x03 i64, 0x04 f64 bits, 0x05 u32-len string,
+  0x06 u32-count table with integer keys ascending then string keys
+  bytewise. NaN, shared subtables, fractional/boolean keys rejected.
+  Equal trees ⇒ identical bytes (hashing + deltas rely on this).
+- **Snapshot** (`PSNP`): CODE (the D012 bundle: name/path/source triples),
+  BUFS (every named buffer, sorted), DOCT (canonical doc bytes). Trace
+  keyframes reuse the format without CODE.
+- **Input record** (pt.input, 10 bytes/frame): u32 action down-bits in
+  definition order (≤32 actions), i16 mouse x/y in internal pixels, u8
+  mouse-button bits, i8 wheel steps. Applied state (cur+prev) lives in the
+  `pt.input` buffer, so edges (pressed/released) are snapshot-consistent.
+  Live sampling has "sticky tap": a sub-frame press+release still lands one
+  frame's bit.
+- **Trace** (`PTRC`): HEAD (keyframe interval, project, action names), SNAP
+  (full starting snapshot), per-frame FRAM (input record + per-buffer
+  records: kind 0 = `delta1` vs previous frame, 1 = created/resized with
+  full bytes, 2 = freed + canonical doc bytes when changed), KEYF every N
+  frames (code-less snapshot, cross-checked on verify), EPOC (changed
+  sources on mid-recording hot reload, applied at the same frame on
+  replay), TAIL (frame count). v1 lists every buffer every frame.
+- **Engine sim buffers**: `pt.sim` = `[0]` i64 frame counter, `[8..39]`
+  xoshiro256++ s0..s3, rest reserved. `pt.input` = documented in input.lua.
 
 ## Determinism (iron rules)
 
@@ -220,11 +273,18 @@ pettan2d/
     vendor/            lua-5.4.x (patched seed), stb headers
     shaders/           *.vert/*.frag GLSL + committed *.spv
     Makefile
-  engine/              Lua engine (boot.lua entry; ui/, editor/ inside)
+  engine/
+    boot.lua           thin shim: module system + handoff to pt.main
+    pt/                engine modules (main, state, input, rand, math,
+                       ease, gfx, text, trace, chunk; assets/ = baked fonts)
   projects/
-    sandbox/           the stock cartridge (project.lua + main.lua + assets)
-  tools/               dev scripts (golden runner, font bake, feed helpers)
-  tests/               traces/ + goldens/
+    sandbox/           the stock cartridge (M1: particle playground)
+    selftest/          engine invariants cartridge (PRNG KATs, trig
+                       accuracy, serializer/snapshot/input round-trips)
+  tools/               dev scripts (bake_spleen, feed helpers)
+  tests/
+    traces/            golden traces (replay-forever, contract rule 6)
+    cartridges/        test fixtures (churn: trace-format edge cases)
   bin/                 built PAL binaries (gitignored until release packaging)
 ```
 
@@ -336,6 +396,7 @@ binary incompatible, in either direction (D015).
 | `pal.buf_delta1(prev, cur)` | sim | **versioned kernel** (contract rule 4): sparse XOR delta of two equal-size views. Format frozen: runs of `{u32 off LE, u32 len LE, len XOR bytes}`; a run ends at the last differing byte followed by ≥8 equal bytes; `""` = identical |
 | `pal.buf_apply_delta1(view, delta)` | sim | XOR runs into view (self-inverse: applying twice undoes); errors on malformed/OOB runs |
 | `pal.exit_on_error(b)` | dev | when set, a Lua error exits the process with code 1 instead of parachuting (capped runs, golden verify) |
+| `pal.quitting()` | dev | true once quit was requested — pt.main flushes recordings on any quit path |
 
 Everything else (snapshot save/load helpers, audio, kernels) lands in M1+ and
 gets documented here when it does.
