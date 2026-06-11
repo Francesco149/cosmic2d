@@ -4,10 +4,11 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-11
-**Milestone**: M3 — sandbox platformer v0 **+ the air kit** (human-requested
-same day): **agent-done** (`nix run .#test` green, 6 goldens; montage,
-hero shot and air-kit stills on llm-feed). Awaiting the human windowed
-feel pass, then knob-dialing together. Next: M4 — editor mode v0.
+**Milestone**: M3 — sandbox platformer v0 + the air kit: **DONE,
+human-verified** ("the control scheme feels good now", 2026-06-11, after
+the G-dive / bare-space-dj rebind). `nix run .#test` green, 6 goldens;
+montage + stills on llm-feed. Deep feel-knob tuning deliberately waits
+for the editor (human call). **Next: M4 — editor mode v0.**
 
 ## What works right now
 
@@ -78,28 +79,29 @@ repl/perf, error containment), plus M3:
 
 ## Verified
 
-- Agent-verified this session: selftest + full golden suite on lavapipe;
-  demo choreography probed numerically (positions/grounded/carry at 30 f
-  intervals) end to end; prop pile settles to rest (stacks of 2–3, all
-  velocities zero); 12-frame montage + hero shot inspected and pushed to
-  llm-feed.
-- Human: **not yet** — M3 exit wants the windowed feel pass (below).
+- Agent-verified: selftest + full golden suite on lavapipe; demo
+  choreography probed numerically end to end; prop pile settles to
+  rest; montage + stills inspected and pushed to llm-feed.
+- Human-verified (2026-06-11): M3 controls/moves windowed — **"the
+  control scheme feels good now"**. Knob tuning deferred to the editor
+  era by the human; defaults stand until then.
 
-## Next step
+## Next step (M4 — editor mode v0; see PLAN)
 
-1. **Human feel pass** (windowed `bin/pettan projects/sandbox`): run,
-   jump heights, drop-through, grab/throw arcs, camera follow, squash &
-   stretch — and the air kit: dive speed/gravity, cancel pop, boost
-   size/window, slide friction, double-jump height. Knobs are
-   console-live (`doc.knobs.dive.boost = 500` etc.) — dial together and
-   bake the keepers into KNOBS in main.lua. `game.demo(1)` is the
-   quickest tour incl. the air-kit finale. (Console fixes from
-   2026-06-11 get a free re-check here.)
-2. Then **M4 — editor mode v0** (PLAN): editor/play mode switch, map
-   painting (retires the code-built map, D024 note), prop spawn palette,
-   entity list + inspector over the doc tree + buffers, collider debug
-   draw, knobs persisted per project. The uigallery dry-run already
-   shaped the widgets; pt.tilemap's header makes maps tool-openable.
+1. Editor/play **mode switch** (` and F3 stay engine-reserved; editor
+   unlock key TBD) — play mode locks editing for shipped zips.
+2. **Map painting**: tile palette + brush over pt.tilemap (the buffer
+   header makes the map tool-openable, D024); retires the code-built
+   map — level.lua's top-level build becomes a "reset level" action.
+3. **Prop spawn palette** (crates first; doc-tree prop defs later).
+4. **Entity list + inspector** over the doc tree and named buffers —
+   uigallery already dry-ran the widget set (search, virtualized lists,
+   collapsing sections, drag numbers); gaps noted in D021 are additive.
+5. **Collider debug draw** (tilemap classes + player/prop AABBs).
+6. **Knobs persisted per project** (file next to project.lua) — this is
+   where the deferred feel-tuning pass happens, knobs through the
+   inspector with the human.
+7. M2 wishlist rides along: inertial/bouncy scroll for editor chrome.
 
 ## Known small items / debts
 
