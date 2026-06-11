@@ -8,9 +8,11 @@
 painting, collider overlay, map.dat; inspector + knobs.dat)
 **human-verified** ("editor loop feels great", "knobs ui feels pretty
 solid"). Increment 3 DONE — **jump-feel curve knobs (D029), dive boost
-cap, editor paint toggle**, all human-requested. 10 goldens + 22241
-selftest checks green; shots on llm-feed. **Next: prop spawn palette**;
-the human tuning session is fully equipped.
+cap, editor paint toggle, dive rule changes** (all human-requested):
+dives spend the dj charge, cancel flips get dive.cancel_grav. 11
+goldens + 22241 selftest checks green; shots on llm-feed. **The human
+is doing the feel dial-in next** ("at least until we have the real
+assets") — then prop spawn palette.
 
 ## What works right now
 
@@ -42,32 +44,45 @@ the air kit, attract demo, --eval) plus M4 so far:
   dive.boost_max caps steering while boosted (stock 900 ≈ old uncapped
   behavior). Props fall under their own knobs.prop.gravity/fall_max.
   The defaults merge prunes retired keys (no dead inspector rows).
+- **Dive rules** (human ask): a dive SPENDS the double-jump charge —
+  no dj out of a dive or its cancel (the space-space chain is gone;
+  landing restores; dj→dive still allowed). The cancel flip-out arc
+  has its own gravity multiplier, dive.cancel_grav (stock 1.0),
+  decoupled from the jump's fall_mul/hang — jump tuning never reshapes
+  the flip; the committed dive keeps dive.grav. Tour byte-identical at
+  stock. demo.lua grew **timeline 2, the kit check** (`game.demo(2)`):
+  choreographed air-move coverage for goldens (hop-dive, jump-cancel,
+  the must-not-fire dj attempt, flop-slide-flip).
 
 ## Verified
 
 - Human-verified: editor loop (increment 1) and the inspector knob UI
   ("pretty solid") — windowed, 2026-06-11.
-- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** + **10
-  goldens** (new: **jumpfeel** 700 f, floaty-curve evals derail the
-  tour; **boostcap** 420 f, demo_t0-offset finale + teleport, cap 360
-  vs 900 confirmed divergent before recording). Stock-default
-  bit-exactness of D029 proven by byte-identical tour PNGs at frames
-  400/900/1500/1650. knobs.dat round trip exercised. 5 shots on
-  llm-feed today (3 inspector + 2 feel-knobs/paint-toggle).
+- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** + **11
+  goldens** (new today: **jumpfeel** 700 f, floaty-curve evals derail
+  the tour; **boostcap** 420 f, demo_t0-offset finale + teleport, cap
+  360 vs 900 confirmed divergent before recording; **divecancel**
+  280 f, kit check + cancel_grav=0.7 — the dj attempt window confirmed
+  airborne frame-by-frame, cancel_grav 0.7 vs 1.0 confirmed
+  divergent). Stock-default bit-exactness of D029 AND the dive rules
+  proven by byte-identical tour PNGs at frames 400/900/1500/1650.
+  knobs.dat round trip exercised. On llm-feed today: 5 shots + the
+  kit-check montage.
 
 ## Next step (M4 continues)
 
-1. **Prop spawn palette** (crates first; doc-tree prop defs later) —
+1. **Human feel dial-in — in progress** ("at least until we have the
+   real assets"): jump_h/apex_t/fall_mul/hang_*, dive.grav/cancel_grav/
+   boost_max + the rest, paint-off mode keeps the mouse safe, save
+   persists to knobs.dat. Carried agenda: cam.look_lerp during boost.
+   AFTER the dial-in: decide whether the tuned knobs.dat ships as the
+   committed stock feel (then defaults in main.lua should be updated to
+   match and the demo tour re-choreographed — D025; goldens are
+   unaffected either way, they bundle code + knobs).
+2. **Prop spawn palette** (crates first; doc-tree prop defs later) —
    the last M4 PLAN bullet. Spawning must be an eval (a
    `game.props.spawn_eval(x, y)`-shaped cartridge command) like paint
    and inspector writes (D026/D027).
-2. **Human feel-tuning session** — fully equipped now: orthogonal jump
-   handles (jump_h/apex_t/fall_mul/hang_*), boost cap, paint-off mode
-   so the mouse can't scribble while tuning, knobs.dat persistence.
-   Carried agenda from M3: knob pass over run/jump/gravity/camera/
-   throw defaults; cam.look_lerp during boost. Retuned defaults mean
-   re-choreographing the demo (D025) — goldens unaffected (bundled
-   code + knobs).
 3. M2 wishlist: inertial/bouncy scroll for editor chrome.
 
 ## Known small items / debts
