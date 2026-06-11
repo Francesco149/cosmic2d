@@ -53,9 +53,34 @@ local KNOBS = {
 
 local cam
 
+local function knob_file()
+  return pt.main.args.project .. "/knobs.dat"
+end
+
+-- tuned knobs persist next to project.lua (knobs.dat: canonical doc bytes
+-- of doc.knobs, like map.dat holds the map buffer). An empty boot — fresh
+-- VM, parachute reboot — seeds doc.knobs from it before the defaults
+-- merge fills gaps; a live doc always wins (hot reloads and snapshot
+-- restores never re-read the file). Boot-time-only read by the D026 rule:
+-- file bytes are not sim input; traces capture knobs via the doc tree.
+local function load_knobs()
+  local bytes = pal.read_file(knob_file())
+  if not bytes then return nil end
+  local ok, t = pcall(state.parse, bytes)
+  if ok and type(t) == "table" then return t end
+  pal.log("[knobs] knobs.dat unreadable; using defaults")
+  return nil
+end
+
+-- pure read of sim state: safe to call directly (editor save button,
+-- or game.save_knobs() in the console after a tuning session)
+function game.save_knobs()
+  return pal.write_file(knob_file(), state.canon(state.doc.knobs))
+end
+
 function game.init()
   local d = state.doc
-  d.knobs = d.knobs or {}
+  d.knobs = d.knobs or load_knobs() or {}
   for group, defaults in pairs(KNOBS) do
     d.knobs[group] = d.knobs[group] or {}
     for key, v in pairs(defaults) do
@@ -106,7 +131,7 @@ function game.init()
         end
         return list
       end,
-      save = level.save,
+      save = function() return level.save() and game.save_knobs() end,
       reset_eval = "game.level.reset()",
     }
   end)

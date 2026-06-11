@@ -20,7 +20,8 @@
 --     colliders = function()        -- optional, for the overlay
 --       return { { x=, y=, w=, h=, kind="player"|"prop"|"held" }, ... }
 --     end,
---     save = function() end,        -- optional: persist map to project
+--     save = function() end,        -- optional: persist project state
+--                                   --   (sandbox: map.dat + knobs.dat)
 --     reset_eval = "game.level.reset()" } -- optional: rebuild command
 --
 -- While editor mode is on, the mouse belongs to the editor (the game sees
@@ -192,9 +193,9 @@ local function toolbar(att, tx, ty)
   if att and att.save then
     if ui.button("save") then
       if att.save() then
-        pal.log("[editor] map saved")
+        pal.log("[editor] saved")
       else
-        pal.log("[editor] map save FAILED")
+        pal.log("[editor] save FAILED")
       end
     end
   else
