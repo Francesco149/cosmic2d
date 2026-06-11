@@ -38,21 +38,23 @@ game.level = level -- console/editor evals reach the map: game.level.reset()
 -- and shed retired ones (renames would linger as dead inspector rows).
 local KNOBS = {
   -- the jump is authored as a curve (D029): jump_h px to the apex in
-  -- apex_t frames (stock 56/24 == the retired jump=280/gravity=700,
-  -- bit-exactly); fall_mul scales gravity on the way down, hang_mul
-  -- inside the apex window (airborne, |vy| <= hang_speed)
-  move = { accel = 1500, decel = 1800, air = 0.55, run = 130,
-           jump_h = 56.0, apex_t = 24.0, fall_mul = 1.0,
-           hang_speed = 0.0, hang_mul = 1.0,
-           cut = 0.45, fall_max = 340, coyote = 6, buffer = 5 },
-  dive = { speed = 270, vy = 50, grav = 0.55, cancel_grav = 1.0,
-           cancel_vy = 150, cancel_slow = 0.45, boost = 400,
-           boost_max = 900.0, boost_win = 9, slide_fric = 4.0,
+  -- apex_t frames; fall_mul scales gravity on the way down, hang_mul
+  -- inside the apex window (airborne, |vy| <= hang_speed). Stock
+  -- values are the human's locked dial-in (2026-06-11): low floaty
+  -- hops with a real hang, glide-class dives (grav 0.09), a tight
+  -- weak boost — placeholder-art feel, revisited with real assets.
+  move = { accel = 1500, decel = 1800, air = 0.55, run = 76,
+           jump_h = 34.6850323, apex_t = 24.0, fall_mul = 1.0,
+           hang_speed = 30.176251, hang_mul = 0.510357681,
+           cut = 0.201668596, fall_max = 340, coyote = 6, buffer = 5 },
+  dive = { speed = 270, vy = 50, grav = 0.092539383, cancel_grav = 1.0,
+           cancel_vy = 150, cancel_slow = 0.45, boost = 135,
+           boost_max = 203.595886, boost_win = 3, slide_fric = 4.0,
            flip_t = 0.35 },
   -- dj.scale rides the jump curve: dj impulse = jump impulse * scale,
-  -- so the second jump tracks the first under tuning. Stock 255/280 ==
-  -- the retired dj.speed over the stock jump impulse (bit-exact)
-  dj = { scale = 255 / 280, buffer = 5, coyote = 6 },
+  -- so the second jump tracks the first under tuning (and stays the
+  -- weaker jump while scale <= 1)
+  dj = { scale = 0.875571135, buffer = 5, coyote = 6 },
   cam = { lerp = 0.10, lerp_y = 0.08, look = 26, look_lerp = 0.05,
           dead = 26 },
   throw = { vx = 260, vy = 200, inherit = 0.6, radius = 28 },
