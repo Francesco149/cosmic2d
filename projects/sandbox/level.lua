@@ -1,11 +1,13 @@
 -- level — the sandbox map: procedural tileset, the tile grid, parallax
--- backdrop. The map is BUILT AT CHUNK TOP-LEVEL, so editing this file while
--- the game runs rebuilds the level in place (clear + refill keeps the
--- rebuild idempotent). The grid itself is sim state in "sandbox.map"
--- (pt.tilemap header + cells); everything else here is render-only or code.
---
--- M4 note: once map painting lands, levels stop being code-built and this
--- top-level build moves behind a "reset level" editor action.
+-- backdrop. Since M4 the map is NOT code-built: whatever "sandbox.map"
+-- buffer exists is adopted as-is (painted state survives hot reloads, VM
+-- reboots and snapshot restores untouched); only when there is no buffer
+-- at all does boot seed one — from map.dat next to project.lua if saved,
+-- else from the procedural build. The build lives on as M.reset(), the
+-- editor's reset button / `game.level.reset()` in the console (an eval,
+-- so it records into traces — D026). M.save() writes map.dat (the raw
+-- self-describing buffer bytes); M.load() is boot-time only, because file
+-- contents are not sim input and would not replay.
 
 local pix = pt.require("pix")
 local tilemap = pt.require("pt.tilemap")
@@ -14,7 +16,7 @@ local gfx = pt.require("pt.gfx")
 local M = {}
 
 local T = 16
-M.W, M.H = 90, 40
+local MAPW, MAPH = 90, 40 -- the procedural layout's shape (reset target)
 
 -- ---- tile classes (collision meaning lives in code, travels in bundles) --
 
@@ -80,12 +82,15 @@ end
 M.tex = build_atlas()
 M.crate_uv = { u = 50, v = 2, w = 12, h = 12 } -- sub-rect in M.tex
 
--- ---- the map (clear + refill: edits to this code apply on hot reload) ----
+-- ---- the map ----
 
-M.tm = tilemap.new{ name = "sandbox.map", w = M.W, h = M.H, tile = T,
-                    tiles = M.tiles }
-do
-  local tm = M.tm
+-- rebuild the procedural layout (frees a foreign-shaped buffer first).
+-- Sim-mutating: live callers go through the eval path (editor reset
+-- button, console `game.level.reset()`); boot seeding calls it directly.
+function M.reset()
+  local tm = tilemap.new{ name = "sandbox.map", w = MAPW, h = MAPH,
+                          tile = T, tiles = M.tiles }
+  M.tm, M.W, M.H = tm, tm.w, tm.h
   tm:clear()
 
   tm:fill(0, 36, 90, 4, STONE) -- the ground slab
@@ -115,14 +120,44 @@ do
   tm:fill(82, 30, 5, 1, PLANK)
 
   -- grass pass: any solid with open air above gets the grassy top
-  for ty = 0, M.H - 1 do
-    for tx = 0, M.W - 1 do
+  for ty = 0, MAPH - 1 do
+    for tx = 0, MAPW - 1 do
       if tm:get(tx, ty) == STONE then
         local above = tm:get(tx, ty - 1)
         local c = M.tiles[above]
         if not (c and c.solid) then tm:set(tx, ty, GRASS) end
       end
     end
+  end
+end
+
+local function map_file()
+  return pt.main.args.project .. "/map.dat"
+end
+
+-- persist the live map next to project.lua (the editor's save button).
+-- Pure read of sim state: safe to call directly, no eval needed.
+function M.save()
+  return tilemap.save("sandbox.map", map_file())
+end
+
+-- adopt a saved map.dat (boot-time only — see the header note)
+function M.load()
+  if not tilemap.load("sandbox.map", map_file()) then return false end
+  local tm = tilemap.open("sandbox.map", M.tiles)
+  M.tm, M.W, M.H = tm, tm.w, tm.h
+  pal.log("[level] map.dat adopted (" .. tm.w .. "x" .. tm.h .. ")")
+  return true
+end
+
+-- adopt whatever map buffer exists (any shape — reloads/reboots/restores
+-- never stomp painted cells); seed only when there is none
+do
+  local ok, tm = pcall(tilemap.open, "sandbox.map", M.tiles)
+  if ok then
+    M.tm, M.W, M.H = tm, tm.w, tm.h
+  elseif not M.load() then
+    M.reset()
   end
 end
 

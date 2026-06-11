@@ -9,6 +9,7 @@
 --   g                mid-air dive; any key cancels it (see player.lua)
 --   e                grab nearest crate / throw it
 --   `                console — poke doc.knobs.* live, game.demo(1)
+--   f1               editor mode — paint the map, collider overlay (M4)
 --   escape           quit
 --
 -- Module split: level (tiles + map + backdrop), player (controller),
@@ -30,6 +31,7 @@ local demo = pt.require("demo")
 local W, H = pal.gfx_size()
 
 local game = {}
+game.level = level -- console/editor evals reach the map: game.level.reset()
 
 -- feel knobs, all live (doc tree -> snapshots, traces, console, M4 panels).
 -- Merged key-by-key so docs from older sessions grow new knobs in place.
@@ -84,6 +86,30 @@ function game.init()
     { "dive", input.key.g },
     { "quit", input.key.escape },
   })
+
+  -- the M4 editor: what to paint, where the camera is, which boxes to
+  -- outline. The getter runs once per editor frame and only reads.
+  pt.editor.attach(function()
+    return {
+      tm = level.tm,
+      atlas = level.tex,
+      camx = cam:f32(0),
+      camy = cam:f32(4),
+      colliders = function()
+        local px, py = player.pos()
+        local list = { { x = px, y = py, w = player.W, h = player.H,
+                         kind = "player" } }
+        for i = 1, props.count() do
+          local x, y, w, h = props.get(i)
+          list[#list + 1] = { x = x, y = y, w = w, h = h,
+                              kind = props.held(i) and "held" or "prop" }
+        end
+        return list
+      end,
+      save = level.save,
+      reset_eval = "game.level.reset()",
+    }
+  end)
 end
 
 -- attract mode: game.demo(1) in the console (or --eval) hands the controls

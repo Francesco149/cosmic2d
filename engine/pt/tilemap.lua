@@ -35,6 +35,8 @@ TM.__index = TM
 -- new{ name=, w=, h=, tile=, tiles= } — create or adopt the named buffer.
 -- An existing buffer with a matching header keeps its cells (init stays
 -- idempotent); a header mismatch (live level resize) frees and rebuilds.
+-- Second return `fresh` is true when the cells did NOT survive (buffer
+-- created or rebuilt) — callers seed a first-boot map only then.
 function M.new(o)
   local w = o.w or error("tilemap.new: w", 2)
   local h = o.h or error("tilemap.new: h", 2)
@@ -55,13 +57,14 @@ function M.new(o)
     -- same byte size but different shape: rebuild
     pal.buf_free(name)
     buf = pal.buf(name, size)
+    existing = nil
   end
   buf:u32(0, w)
   buf:u32(4, h)
   buf:u32(8, tile)
   return setmetatable({ buf = buf, name = name, w = w, h = h, tile = tile,
                         pw = w * tile, ph = h * tile,
-                        tiles = o.tiles or {} }, TM)
+                        tiles = o.tiles or {} }, TM), existing == nil
 end
 
 -- adopt an existing map buffer by name (tools/inspector path): dimensions
@@ -80,6 +83,68 @@ function M.open(name, tiles)
   return setmetatable({ buf = buf, name = name, w = w, h = h, tile = tile,
                         pw = w * tile, ph = h * tile,
                         tiles = tiles or {} }, TM)
+end
+
+-- ---- by-name statics (tools / the editor's eval path) ----
+
+-- poke/peek mutate/read one cell of a map buffer BY NAME, so an edit is a
+-- single self-contained command string. poke is a sim-state mutation: live
+-- tools must route it through pt.repl.submit (the D022 EVAL path) so a
+-- recording replays the edit; calling it directly mid-frame would make an
+-- active trace diverge on verify. OOB is ignored (poke) / 0 (peek), same
+-- as TM:set/get.
+function M.poke(name, tx, ty, id)
+  M.open(name):set(tx, ty, id)
+end
+
+function M.peek(name, tx, ty)
+  return M.open(name):get(tx, ty)
+end
+
+-- save/load a map buffer to/from a file: the raw self-describing bytes
+-- (header + cells). save is a pure read (safe anywhere); load REPLACES the
+-- named buffer from disk — boot-time only by convention: file contents are
+-- not sim input, so a live load would not replay (re-wrap via M.open after).
+function M.save(name, path)
+  local tm = M.open(name)
+  return pal.write_file(path, tm.buf:str(0, tm.buf:size()))
+end
+
+function M.load(name, path)
+  local bytes = pal.read_file(path)
+  if not bytes then return nil, "no file" end
+  if #bytes < HDR then return nil, "truncated header" end
+  local w, h, tile = string.unpack("<I4I4I4", bytes)
+  if w == 0 or h == 0 or tile == 0 or HDR + w * h * 2 ~= #bytes then
+    return nil, "not a tilemap file"
+  end
+  pal.buf_free(name)
+  pal.buf(name, #bytes):setstr(0, bytes)
+  return true
+end
+
+-- walk the supercover cells of the segment (tx0,ty0)->(tx1,ty1), calling
+-- fn(tx,ty) for each INCLUDING both ends: brush drags paint every cell the
+-- cursor crossed even when motion events skip. Integer cells, pure.
+function M.cell_line(tx0, ty0, tx1, ty1, fn)
+  local dx = tx1 > tx0 and tx1 - tx0 or tx0 - tx1
+  local dy = ty1 > ty0 and ty1 - ty0 or ty0 - ty1
+  local sx = tx0 < tx1 and 1 or -1
+  local sy = ty0 < ty1 and 1 or -1
+  local err = dx - dy
+  while true do
+    fn(tx0, ty0)
+    if tx0 == tx1 and ty0 == ty1 then return end
+    local e2 = 2 * err
+    if e2 > -dy then
+      err = err - dy
+      tx0 = tx0 + sx
+    end
+    if e2 < dx then
+      err = err + dx
+      ty0 = ty0 + sy
+    end
+  end
 end
 
 -- ---- cells ----

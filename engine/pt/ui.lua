@@ -201,6 +201,7 @@ function M.frame(events)
   M.next_hot = nil
   wheel_taken = false
   M.force_keys = false
+  M.force_mouse = false
   return out
 end
 
@@ -213,7 +214,8 @@ function M.frame_end()
   for _, p in ipairs(panels) do
     if mouse_in(p.x, p.y, p.w, p.h) then over_panel = true break end
   end
-  M.cap_mouse = over_panel or M.active ~= nil
+  M.over_panel = over_panel -- readable next tick (editor world tools)
+  M.cap_mouse = over_panel or M.active ~= nil or M.force_mouse
   M.cap_keys = M.focus ~= nil or M.force_keys
 
   local want_text = M.focus ~= nil
@@ -227,6 +229,12 @@ end
 -- keyboard even without a focused text widget
 function M.capture_keys()
   M.force_keys = true
+end
+
+-- engine overlays (editor world tools) call this each frame while they own
+-- the mouse everywhere, not just over their panels (brush on the world)
+function M.capture_mouse()
+  M.force_mouse = true
 end
 
 function M.blur()

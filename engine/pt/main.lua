@@ -126,6 +126,7 @@ function M.boot()
   M.repl = pt.require("pt.repl")
   M.console = pt.require("pt.console")
   M.perf = pt.require("pt.perf")
+  M.editor = pt.require("pt.editor")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
@@ -280,6 +281,7 @@ function M.tick()
     -- no game frame to show: dark backdrop (also resets a half-built batch)
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
+  M.editor.frame() -- editor chrome above the game, under perf/console
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything
   M.ui.frame_end()
