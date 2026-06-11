@@ -288,9 +288,16 @@ knob, say) is the caller's write.
   `canvas` (raw rect) and `hit` (invisible button) escape hatches for
   custom widgets. Style table centralizes colors/metrics.
 - Built on it: **pt.console** (` toggle: log scrollback from the pal ring,
-  filter, REPL line → pt.repl, error banner) and **pt.perf** (F3: frame
-  graph vs 16.7 ms budget, sim/draw split, `pal.frame_stats`). ` and F3
-  are engine-reserved keys until M4's play-mode lockdown.
+  filter, REPL line → pt.repl, error banner), **pt.perf** (F3: frame
+  graph vs 16.7 ms budget, sim/draw split, `pal.frame_stats`) and
+  **pt.editor** (F1 — see "Editor" below). `, F3 and F1 are
+  engine-reserved keys; `editor = false` in project.lua (shipped zips)
+  disables all three toggles — the M4 play-mode lockdown — while
+  contained-error banners still open the console programmatically.
+- Editor world tools add two frame-protocol hooks: `ui.capture_mouse()`
+  (this frame's overlay owns ALL mouse downs, panels or not — the game
+  still gets up-events) and `ui.over_panel` (was the mouse on chrome as
+  of the last frame_end, for "clicks on the world, not the toolbar").
 - The console REPL is deterministic-by-construction: commands queue and
   drain at the start of the next sim frame, and recordings store them as
   EVAL records (D022) — a knob-tweaking session replays byte-exact.
@@ -319,6 +326,38 @@ IEEE arithmetic (f64 `+ - * /`, floor/ceil) — deterministic everywhere;
 if profiling ever demands, it migrates down as a versioned PAL kernel
 per the numpy model.
 
+M4 statics (tools): `poke(name,tx,ty,id)` / `peek(name,tx,ty)` edit one
+cell by buffer name — the editor's eval unit (D026; live writes go
+through pt.repl). `save(name,path)` / `load(name,path)` move the raw
+self-describing bytes to/from disk (load is boot-time-only by rule:
+file bytes are not sim input). `cell_line(x0,y0,x1,y1,fn)` walks an
+8-connected Bresenham line (brush drag continuity). `new` returns a
+second value `fresh` — true when cells did not survive (created or
+shape-rebuilt), the "seed a first boot" signal.
+
+## Editor (pt.editor — M4)
+
+Editor mode v0: F1 toggles editor/play chrome over the running game (the
+sim keeps stepping; keyboard stays with the game, the mouse belongs to
+the editor). Dev/render class like all pt.ui chrome (D021) — and by D026
+it owns no sim state and never writes any directly: **every edit is a
+pt.repl submission** (`pt.tilemap.poke(...)` per painted cell, the
+cartridge's `reset_eval` string for the reset button), so editing
+records as D022 EVAL chunks and replays/verifies byte-exact. The
+editpaint golden pins this.
+
+Cartridges opt in from `game.init`: `pt.editor.attach(fn)`, where fn()
+is called once per editor frame and returns the live, read-only surface:
+`{ tm, atlas, camx, camy, colliders(), save, reset_eval }`. The toolbar
+offers tile swatches built from `tm.tiles` + atlas (id 0 = eraser), LMB
+paints / RMB erases with cell-line drag continuity, a collider overlay
+(solid fills / one-way top stripes walked from the visible tm window,
+plus AABB outlines from `colliders()`), and save/reset actions. Map
+persistence: `save` writes the raw tilemap bytes to a file next to
+project.lua (sandbox: map.dat); boot adopts an existing buffer as-is,
+else seeds from the file, else from the cartridge's procedural build
+(sandbox: `game.level.reset()`, also the reset button's eval).
+
 ## Audio (M6 sketch, kept in mind from day one)
 
 PAL owns the audio device and the FM voice inner loop (C, deterministic);
@@ -342,7 +381,7 @@ pettan2d/
     boot.lua           thin shim: module system + handoff to pt.main
     pt/                engine modules (main, state, input, rand, math,
                        ease, gfx, text, trace, chunk, ui, console, repl,
-                       perf, tilemap; assets/ = baked fonts)
+                       perf, tilemap, editor; assets/ = baked fonts)
   projects/
     sandbox/           the stock cartridge (M3: live-editable platformer —
                        main/level/player/props/fx/demo/pix modules)

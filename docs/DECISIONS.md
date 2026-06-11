@@ -394,3 +394,40 @@ script is code. EVAL records carry the activation into traces.
 helper for timeline tables), or choreography maintenance hurts (then:
 waypoint-seeking driver reading sim state — still deterministic, but it
 needs a careful story for mid-trace restores before it's allowed).
+
+## D026 — the editor is a repl client (M4)
+
+**Context**: M4's editor must mutate sim state (paint cells, reset the
+map) under the D014 trace contract: a recording made while editing has
+to verify byte-exact. The editor's own chrome is dev-side by D021, and
+D022 already made console evals recorded sim inputs.
+**Decision**: pt.editor owns no sim state and never writes any
+directly. Every edit is a command string submitted through pt.repl —
+`pt.tilemap.poke("map",x,y,id)` per painted cell (a new by-name static,
+the eval-able edit unit), the cartridge's `reset_eval` for the reset
+button — so edits drain at frame start, record as EVAL chunks, and
+verify re-executes them: an editing session IS a console session.
+Cartridges expose their editable surface with `pt.editor.attach(fn)`;
+the getter returns {tm, atlas, camx/camy, colliders(), save,
+reset_eval} fresh each frame and must only read. F1 toggles editor/play
+(F1 joins ` and F3 as engine-reserved); `editor = false` in project.lua
+is the play-mode lockdown for shipped zips — it disables all three dev
+toggles (contained-error banners still open the console
+programmatically). Map persistence: save writes the raw self-describing
+buffer bytes to map.dat next to project.lua (a pure read, called
+directly); load is boot-time-only by rule, because file bytes are not
+sim input and a live load would not replay. The sandbox map is no
+longer code-built: any existing buffer is adopted as-is (painting
+survives reloads, reboots and restores), an empty boot seeds from
+map.dat or the procedural build, which lives on as game.level.reset().
+**Why**: zero new trace machinery; determinism of editing falls out of
+D022 instead of needing an editor-specific record type. The editpaint
+golden pins it: painted cells steer the attract demo, byte-exact.
+**Snapshot story**: edits travel as EVALs; editor chrome has none
+(D021); map.dat only feeds boot state, which the starting snapshot
+captures.
+**Revisit if**: bulk tools (rect fill, stamps) bloat eval streams
+(then: a batched `poke_run` primitive, still a string), shared-session
+editing wants mouse-as-sim-input (then: the D018 extension path), or
+M10 packaging needs per-surface lockdown granularity instead of one
+flag.

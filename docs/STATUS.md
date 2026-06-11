@@ -4,142 +4,120 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-11
-**Milestone**: M3 — sandbox platformer v0 + the air kit: **DONE,
-human-verified** ("the control scheme feels good now", 2026-06-11, after
-the G-dive / bare-space-dj rebind). `nix run .#test` green, 6 goldens;
-montage + stills on llm-feed. Deep feel-knob tuning deliberately waits
-for the editor (human call). **Next: M4 — editor mode v0.**
+**Milestone**: M4 — editor mode v0: **first increment DONE** (mode
+switch, map painting, collider overlay, map persistence; D026; 7
+goldens green; shots on llm-feed; agent-verified, human check
+requested). **Next: entity list + inspector** (then prop palette,
+knob persistence through the inspector, inertial scroll polish).
 
 ## What works right now
 
-Everything from M0–M2 (boot, live sessions, hot reload, parachute, PAL
+Everything from M0–M3 (boot, live sessions, hot reload, parachute, PAL
 draw/state/input/trace stack, determinism kit, goldens, pt.ui/console/
-repl/perf, error containment), plus M3:
+repl/perf, error containment, pt.tilemap, the platformer sandbox with
+the air kit, attract demo, --eval), plus the M4 increment:
 
-- **pt.tilemap** (D024): tile grids as self-describing named buffers
-  (w/h/tile header + u16 cells), tile classes (solid/one-way) in a code
-  table, camera-windowed bulk rendering, and an axis-separated swept-AABB
-  mover — boundary-scanning (no tunneling), one-ways collide only on row
-  entry from above, `drop` opt for down+jump, OOB = side/bottom walls +
-  open sky. Selftested (+37 checks, 22179 total).
-- **projects/sandbox = the platformer** (the M1 particle playground is
-  retired; it lives on inside the old goldens' code bundles). Modules:
-  `level` (procedural tileset + map built at chunk top-level → editing
-  the level file hot-rebuilds it; parallax mountains/hills/clouds),
-  `player` (MapleStory vocabulary: run accel/decel + air control, jump
-  buffer + coyote, release-cut variable height, drop-through, grab/throw,
-  squash & stretch + land/footfall dust), `props` (crate pit: tilemap
-  collision, bounce/friction, stack-settling pairwise separation, thrown
-  crates shove the pile), `fx` (256-particle pool, dust/spark palettes),
-  `demo` (attract mode, D025), `pix` (procedural placeholder art).
-- **The air kit** (human-requested, A Hat in Time vocabulary; controls:
-  arrows, space jump, **G dive**, e grab):
-  - *Dive*: G in mid-air (its own action; works during coyote too) —
-    forward lunge, boom pop + trail, no steering, facing locked.
-    Uncanceled it lands as a **belly slide** that persists until
-    canceled (slide friction). Mid-air only; disabled while carrying.
-  - *Cancel*: ANY action press during dive/slide — front-flip (tuck
-    frames), slight up-pop, forward momentum slowed, air control back,
-    facing locked until touchdown. Opposite-direction presses cancel too.
-  - *Dive boost*: cancel within `knobs.dive.boost_win` (~150 ms) of the
-    ground — probed ahead while falling, or within the window after
-    touching down — while HOLDING the dive direction: big forward carry
-    (boost trail) that evaporates on touchdown. The gap-crossing tech.
-  - *Double jump*: space again in mid-air (no up), one charge per
-    airtime, own buffer/coyote knobs (`knobs.dj`): an air press within
-    `dj.coyote` of a ledge is still the full ground jump (charge kept);
-    a space press that cancels a dive arms `dj.buffer`, so cancel→dj
-    chains space-space. A charge-less air press buffers the landing
-    jump as before. Dives lock the dj out; diving out of a double jump
-    (or its flip) is allowed.
-  - Interpretation notes for tuning: release-cut applies to the double
-    jump and the cancel pop; a space press shortly before landing
-    double-jumps when the charge is up (eats the landing buffer —
-    standard dj-game behavior; the buffer applies once the charge is
-    spent).
-- **Feel knobs all live** in
-  `doc.knobs.{move,dive,dj,cam,throw,prop,fx,feel}` — tune from the
-  console while playing; knob-merge in init grows new keys into old docs.
-- **Attract mode / demo** (D025): `game.demo(1)` (console or `--eval`)
-  plays a ~28 s scripted tour: left plank tower → balcony → plateau →
-  pillar long-jump → pit dive → crate grab → carry out (full jump over
-  the 2-tile wall) → throw back in from the stair plank → drop-through →
-  return over the pillar → **air-kit finale** (boost dive off the
-  plateau, belly slide + flip, double jump → dive → slide closer). Any
-  real press takes control back. Pure f(frame): replays byte-exact,
-  drives goldens and montages.
-- **pt.main --eval CODE** (repeatable): queues console lines for sim
-  frame 1 via the D022 path — recorded as EVAL chunks, so headless
-  recordings can flip doc switches.
-- **Tests**: `nix run .#test` ALL GREEN — selftest (22179) + 6 goldens
-  (churn, evalfix, sandbox, sandbox_ease, **platformer** [1400 f,
-  pre-dive bundle], **platformer_dive** [1750 f: tour + air-kit finale]).
-  Old goldens keep replaying the code they bundled — D012 doing its job
-  through two sandbox rewrites now.
+- **pt.editor** (D026 — "the editor is a repl client"): F1 toggles
+  editor chrome over the *running* game (sim keeps stepping; keyboard
+  stays with the game, mouse belongs to the editor). It owns no sim
+  state: every edit is a pt.repl submission — `pt.tilemap.poke` per
+  painted cell, the cartridge's `reset_eval` for reset — so editing
+  records as D022 EVAL chunks and **verifies byte-exact** (proven by a
+  record→verify round trip and the new editpaint golden).
+  - Toolbar: tile swatches from the cartridge's tiles table + atlas
+    (id 0 = eraser), LMB paint / RMB erase with 8-connected cell-line
+    drag continuity, hovered-cell ghost, colliders checkbox, save +
+    reset buttons, status (map name/shape, hovered cell).
+  - Collider overlay: solid cells tinted, one-way top stripes, AABB
+    outlines from the cartridge (player cyan / crates orange / held
+    yellow in the sandbox).
+  - Cartridge contract: `pt.editor.attach(fn)` in game.init; fn() runs
+    once per editor frame, read-only, returns {tm, atlas, camx, camy,
+    colliders(), save, reset_eval}.
+  - Play-mode lockdown: `editor = false` in project.lua disables F1
+    AND the ` console / F3 perf toggles (shipped zips); error banners
+    still open the console programmatically.
+- **pt.tilemap M4 statics**: poke/peek by name (the eval edit unit,
+  OOB-inert), save/load of the raw self-describing bytes, cell_line,
+  and `new` returning a `fresh` second value (cells did not survive).
+- **The sandbox map is no longer code-built**: whatever sandbox.map
+  buffer exists is adopted as-is — painting survives hot reloads, VM
+  reboots and snapshot restores. An empty boot seeds from map.dat
+  (next to project.lua, written by the editor's save button via
+  level.save) else the procedural build, which lives on as
+  `game.level.reset()` — the reset button's eval / console command.
+  No map.dat is committed yet: the repo's sandbox boots procedural.
+- **pt.ui additions**: `capture_mouse()` (overlay owns all mouse downs;
+  game still gets ups) and `over_panel` (chrome hit test, one-frame
+  latency like hot/active).
+- **Tests**: `nix run .#test` ALL GREEN — selftest **22208** (+29: fresh
+  flag, poke/peek, save/load round trip, cell_line connectivity) + **7
+  goldens** (churn, evalfix, sandbox, sandbox_ease, platformer,
+  platformer_dive, **editpaint** [500 f: frame-1 pokes build a tower in
+  the demo runway + erase plank cells; the choreography derails against
+  the painted geometry deterministically]).
 
 ## Verified
 
-- Agent-verified: selftest + full golden suite on lavapipe; demo
-  choreography probed numerically end to end; prop pile settles to
-  rest; montage + stills inspected and pushed to llm-feed.
-- Human-verified (2026-06-11): M3 controls/moves windowed — **"the
-  control scheme feels good now"**. Knob tuning deferred to the editor
-  era by the human; defaults stand until then.
+- Agent-verified: full suite green on lavapipe (all 6 pre-M4 goldens
+  byte-exact through the level.lua restructure — D012 bundles); paint →
+  save → fresh-boot-adopts-map.dat loop exercised end to end; collider
+  overlay + painting screenshots inspected and pushed to llm-feed
+  (3 images, 2026-06-11).
+- Human verification PENDING for editor feel — see open questions.
 
-## Next step (M4 — editor mode v0; see PLAN)
+## Next step (M4 continues)
 
-1. Editor/play **mode switch** (` and F3 stay engine-reserved; editor
-   unlock key TBD) — play mode locks editing for shipped zips.
-2. **Map painting**: tile palette + brush over pt.tilemap (the buffer
-   header makes the map tool-openable, D024); retires the code-built
-   map — level.lua's top-level build becomes a "reset level" action.
+1. **Entity list + inspector** over the doc tree and named buffers —
+   uigallery dry-ran the widget set (search, virtualized lists,
+   collapsing sections, drag numbers; D021 gaps are additive). Chosen
+   next because the human's deferred feel-tuning pass wants knob
+   sliders, and knob persistence (item 3) rides on the same panel.
+   Inspector WRITES to sim state must go through the repl path like
+   paint does (D026) — e.g. `doc.knobs.move.run = 142` strings.
+2. **Knobs persisted per project** (file next to project.lua, like
+   map.dat) — then the human tuning session.
 3. **Prop spawn palette** (crates first; doc-tree prop defs later).
-4. **Entity list + inspector** over the doc tree and named buffers —
-   uigallery already dry-ran the widget set (search, virtualized lists,
-   collapsing sections, drag numbers); gaps noted in D021 are additive.
-5. **Collider debug draw** (tilemap classes + player/prop AABBs).
-6. **Knobs persisted per project** (file next to project.lua) — this is
-   where the deferred feel-tuning pass happens, knobs through the
-   inspector with the human.
-7. M2 wishlist rides along: inertial/bouncy scroll for editor chrome.
+4. M2 wishlist: inertial/bouncy scroll for editor chrome.
 
 ## Known small items / debts
 
+- Paint pokes echo as `> pt.tilemap.poke(...)` lines in the console
+  scrollback — long strokes are chatty. Deliberate v0 (it teaches the
+  eval model); add a quiet submit variant if it grates.
+- Paint latency is one sim frame (repl drains at frame start) —
+  imperceptible at 60 Hz.
+- Swatch strip is a single row — fine to ~15 tiles, becomes a palette
+  panel when tilesets grow (M8 procgen will force it).
+- Editor mouse capture is all-or-nothing while editor mode is on: a
+  cartridge that READS the mouse gets nothing in editor mode. Fine
+  until a mouse game exists.
+- Demo choreography assumes the procedural map (D025): on a painted
+  map `game.demo(1)` will happily walk into walls (that's what the
+  editpaint golden is). Reset first if you want the real tour.
 - Windowed mode requires cwd = repo root (fix at M10 packaging).
 - Freed-buffer husks + texture re-create leaks on VM reboot persist by
-  design (inspector cleans up in M4).
+  design (inspector cleans up — next increment).
 - Trace recorder buffers in memory; M5 ring-trace replaces it (D019).
-- Console line wrap = none; dim-timestamp polish possible (M2 note).
 - repl env caveat (D022): pre-recording env assignments don't travel.
-- UI feel wishlist (human, 2026-06-11): inertial/bouncy scroll regions —
-  scheduled with M4 editor polish.
-- Demo choreography is calibrated against default move knobs (D025):
-  retuning movement after the human pass means re-walking the timeline
-  (probe pattern: temp print in game.step at %30 frames) and recording a
-  new golden deliberately (old ones stay, contract rule 6).
-- Player/prop interaction is one-way by design v0: crates never block
-  the player; thrown crates don't hit the player. Revisit when the prop
-  pit gets physics love (post-M10 rotation solver).
-- Belly slide keeps the standing 10x14 hitbox (sprite-only flattening) —
-  no slide-under-gap tech until the cancel pop gets an overhead check
-  (the mover never ejects an embedded box). The map has no low gaps yet.
-- Boost flight distance (~350 px held) is tuned to clear the home
-  stretch; cancel-pop release-cut and boost both interact with
-  move.cut — flag if it feels inconsistent windowed.
-- props separation can squeeze a crate into a wall in pathological piles
-  (positional pushes are mover-clamped, but two crates + wall can still
-  pin); watch for it once map painting lets users build cruel pits.
+- props separation can squeeze a crate into a wall in pathological
+  piles — watch for it now that map painting can build cruel pits.
+- Belly slide keeps the standing hitbox (sprite-only flattening); the
+  map has no low gaps yet, but painting can now make them — slide
+  under a 1-tile gap will NOT fit until the cancel pop gets an
+  overhead check.
 
 ## Open questions for the human
 
-- Feel pass: are run speed (130), jump (280/cut 0.45), gravity (700),
-  camera (lerp 0.10, lookahead 26, deadzone 26), throw (260/200) in the
-  right neighborhood? Squash 0.55 too cartoony or not enough?
-- Air kit interpretation checks (all knobbed, see notes above): a
-  charged air space press double-jumps even right before landing;
-  dives disabled while carrying; dj.coyote = air-press ledge grace as a
-  full jump. Camera lookahead lags the boost — widen cam.look_lerp or
-  leave? (Feel knobs proper wait for the editor, per the human.)
-- Art direction check on the procedural placeholders (tiles, kid sprite,
-  crates, parallax palette) — placeholder-fine, or worth one more pass
-  before M4 screenshots start accumulating?
+- **Try the editor windowed**: F1 → paint/erase/drag feel, swatch
+  clicking, save + reset, then F1 back to play. Is one-frame paint
+  latency invisible as expected? Does the collider overlay read well
+  on top of the art (alpha/colors), or too loud?
+- F1 as the editor key OK? (Esc was taken by sandbox quit; ` and F3
+  stay console/perf. Logged in D026 — cheap to rebind.)
+- Keep the repo's sandbox map procedural for now, or start painting
+  the real stock level once the prop palette + a second tileset pass
+  exist? (map.dat next to project.lua becomes the shipped level the
+  moment it's committed.)
+- Carried from M3 (waiting on the inspector era): feel-knob pass over
+  run/jump/gravity/camera/throw defaults; cam.look_lerp during boost.
