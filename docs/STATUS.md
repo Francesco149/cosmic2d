@@ -4,150 +4,125 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-11
-**Milestone**: M4 — editor mode v0: increments 1+2 (mode switch,
-painting, collider overlay, map.dat; inspector + knobs.dat)
-**human-verified** ("editor loop feels great", "knobs ui feels pretty
-solid"). Increment 3 DONE — **jump-feel curve knobs (D029), dive boost
-cap, editor paint toggle, dive rule changes** (all human-requested):
-dives spend the dj charge, cancel flips get dive.cancel_grav, ONE dive
-per airtime (no dive after a cancel; dead while a boost lasts — no
-infinite chains), dj impulse = dj.scale × the jump curve's. 13 goldens
-+ 22241 selftest checks green; shots on llm-feed. **The human's feel
-dial-in is in progress** (their tuned knobs.dat exists locally,
-uncommitted) — then prop spawn palette.
+**Milestone**: M4 — editor mode v0: increments 1–3 human-verified
+(editor loop, inspector, feel knobs). Increment 4 DONE — **the feel is
+LOCKED IN**: the human's dial-in is the stock KNOBS default
+(canon-hash-verified fold, knobs.dat retired), mantle leniency (D030),
+dive rules finalized (one dive per airtime, dj spends on dive, boost
+cap + lockout, cancel_grav), dj scales the jump curve, and the attract
+tour is **re-choreographed for the locked feel** (platformer_locked,
+2780 f). 15 goldens + 22241 selftest checks green; tour montage on
+llm-feed. **Next: prop spawn palette** (last M4 bullet), then M2
+wishlist inertial scroll.
 
 ## What works right now
 
 Everything from M0–M3 (boot, live sessions, hot reload, parachute, PAL
 draw/state/input/trace stack, determinism kit, goldens, pt.ui/console/
-repl/perf, error containment, pt.tilemap, the platformer sandbox with
-the air kit, attract demo, --eval) plus M4 so far:
+repl/perf, error containment, pt.tilemap, the platformer sandbox)
+plus M4 so far:
 
-- **pt.editor** (D026): F1 editor chrome over the running game; painting
-  as recorded EVAL pokes, collider overlay, swatches, save/reset. NEW:
-  a `paint` checkbox in the swatch row (default on) — off disarms the
-  brush AND releases the world's mouse to the game (panels still
-  capture): inspect/tune without stray clicks editing the map.
-  `editor = false` in project.lua = play-mode lockdown.
-- **pt.inspect** (D027, toolbar `inspect` toggle): searchable state
-  tree over the doc tree + every named buffer; drag-number/checkbox
-  editors, typed buffer lens views (u8..f64), husk free button. Every
-  write is a pt.repl submission — sessions record + verify byte-exact.
-  pt.state.buf_poke/buf_peek are the by-name cell eval unit; pt.ui
-  widgets take opts.rect for virtualized rows.
-- **knobs.dat** (D028): editor save persists doc.knobs (canonical doc
-  bytes) next to project.lua; empty boots seed from it, live doc wins,
-  corrupt file → defaults. Nothing committed: repo boots stock.
-- **Jump-feel curve** (D029, human ask): knobs.move.jump_h (px) +
-  apex_t (frames) derive rise gravity + impulse (stock 56/24 == the
-  retired jump=280/gravity=700 **bit-exactly** — demo tour verified
-  byte-identical through the finale); fall_mul scales falling gravity;
-  hang_speed/hang_mul make a floaty apex window (airborne, non-dive).
-  dive.boost_max caps steering while boosted (stock 900 ≈ old uncapped
-  behavior). Props fall under their own knobs.prop.gravity/fall_max.
-  The defaults merge prunes retired keys (no dead inspector rows).
-- **Dive rules** (human ask): a dive SPENDS the double-jump charge —
-  no dj out of a dive or its cancel (the space-space chain is gone;
-  landing restores; dj→dive still allowed). The cancel flip-out arc
-  has its own gravity multiplier, dive.cancel_grav (stock 1.0),
-  decoupled from the jump's fall_mul/hang — jump tuning never reshapes
-  the flip; the committed dive keeps dive.grav. And the dive button is
-  DEAD while a boost lasts — no boost→dive→boost chains for infinite
-  fast movement; the touchdown that evaporates the boost unlocks it.
-  The dive is from clean air ONLY (dstate 0): no second dive after a
-  cancel — the flip-out state, which persists until touchdown, IS the
-  one-dive-per-airtime lockout (no new buffer field: the player buffer
-  is full at 96 B and growing it errors live sessions). And the dj
-  impulse is **dj.scale × the jump curve's impulse** (stock 255/280 ==
-  the retired dj.speed, bit-exact — verified `280*(255/280) == 255`):
-  the second jump tracks the first under tuning and can't silently
-  out-jump it. game.init migrates an old dj.speed (live doc or
-  knobs.dat) to the equivalent scale against the jump it was tuned
-  with — the human's saved feel is preserved exactly.
-  Tour byte-identical at stock through all of it. demo.lua grew
-  **timeline 2, the kit check** (`game.demo(2)`): choreographed
-  air-move coverage for goldens (hop-dive, jump-cancel, the
-  must-not-fire dj attempt, flop-slide-flip, the boost coda with its
-  mid-boost dead dive press, and coda 2: a high neutral cancel + dead
-  re-dive press, then jump→double-jump for the scaled impulse).
+- **pt.editor** (D026): F1 chrome, paint/erase as EVAL pokes, collider
+  overlay, save/reset, `paint` checkbox (off = brush disarmed + world
+  mouse back to the game). `editor = false` = play-mode lockdown.
+- **pt.inspect** (D027): searchable doc-tree + named-buffer tree with
+  in-place editors (drag numbers, checkboxes, typed u8..f64 buffer lens
+  views, husk free button). Every write is a pt.repl eval — records +
+  verifies byte-exact. pt.state.buf_poke/buf_peek; pt.ui opts.rect.
+- **knobs.dat** (D028): editor save persists doc.knobs; boot seeds from
+  it when the doc is empty. (No file in the repo: the locked values ARE
+  the code defaults now — a knobs.dat would shadow future default
+  changes, so the redundant one was removed post-fold.)
+- **The LOCKED stock feel** (D029 + lock-in): run 76, jump_h 34.685 px
+  / apex_t 24 f with a real apex hang (×0.51 under |vy| 30.2), cut
+  0.20, fall_mul 1.0, glide-class dives (grav ×0.093), boost 135 (cap
+  203.6, window 3), dj.scale 0.8756, prop gravity split from player
+  feel. Placeholder-art feel — revisit with real assets (M9).
+- **Air-kit rules** (human-locked): jump → double jump (dj.scale × the
+  jump impulse) → ONE dive per airtime → one cancel (boost if
+  in-window, holding the dive direction) → touchdown resets the kit.
+  A dive spends the dj charge; the dive button is dead after a cancel
+  or during a boost until you touch ground; the cancel flip has its
+  own gravity (dive.cancel_grav); release-cut applies to both jumps.
+- **Mantle leniency** (D030, knobs.move.mantle = 4 px): a descending
+  near-miss at a lip — overlap or side-bonk flush — lands ON the
+  platform; the synthesized hit.down runs the full touchdown logic.
+  Caveat that matters for choreography AND play: a flush vertical rise
+  gets no mantle (no overlap, no inward motion) — hold INTO the face
+  to drift over the lip, or stack a dj.
+- **The tour v2** (`game.demo(1)`): re-choreographed to SPEAK the
+  locked vocabulary — full-hold tower hops, balcony jump→dj stack,
+  balcony-height glide to the plateau, pillar glide-crash perch, glide
+  into the crate pile, carry + stair throw, drop-through, the slow
+  crate-floor crossing, wall-hugging dj-stack mounts home, glide back,
+  and a glide-cancel / flop-flip / jump→dj→glide finale. ~2730 frames.
+- **Choreography tooling**: `--eval "_G.DEMO_DBG=30"` prints a player
+  track every N frames (x/y/vy/dive/charge/carry; reads+prints only);
+  demo.lua exports TIMELINE/KITCHECK for boundary dumps. The tuning
+  loop that works: telemetry run → align against a Lua boundary dump →
+  fix rows → repeat; settle-dead rows and wall-press overruns are the
+  two re-sync primitives.
 
 ## Verified
 
-- Human-verified: editor loop (increment 1) and the inspector knob UI
-  ("pretty solid") — windowed, 2026-06-11.
-- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** + **12
-  goldens** (new today: **jumpfeel** 700 f, floaty-curve evals derail
-  the tour; **boostcap** 420 f, demo_t0-offset finale + teleport, cap
-  360 vs 900 confirmed divergent before recording; **divecancel**
-  280 f, kit check + cancel_grav=0.7 — the dj attempt window confirmed
-  airborne frame-by-frame, cancel_grav 0.7 vs 1.0 confirmed divergent;
-  **boostlock** 360 f, the kit check's boost coda at stock knobs — the
-  mid-boost dive press confirmed dead by pose + trail + speed in the
-  frame series; **djscale** 520 f, kit-check coda 2 — post-cancel dive
-  press confirmed dead, dj rise + dust confirmed in frames; it opens
-  with a `doc.knobs = {} game.init()` eval so it records stock physics
-  regardless of the local knobs.dat). Stock-default bit-exactness of
-  D029 AND every dive rule proven by byte-identical tour PNGs (tour
-  comparisons now neutralize knobs the same way — the human's
-  knobs.dat loads at every boot since their dial-in started). The
-  dj.speed→scale migration tested live (300 against a 300-impulse
-  jump → scale 1.0, retired key pruned, no file touched). knobs.dat
-  round trip exercised. On llm-feed today: 5 shots + 2 kit-check
-  montages.
+- Human-verified: editor loop, inspector knob UI, and the locked knob
+  values themselves (their dial-in, folded verbatim — canon-hash-equal
+  to their saved knobs.dat before it was retired).
+- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** +
+  **15 goldens** (this session: jumpfeel, boostcap, divecancel,
+  boostlock, djscale, mantle, **platformer_locked** — the full v2 tour,
+  2780 f). The whole dial-in lands bit-exact at stock (tour PNGs
+  byte-identical at every step until the lock-in itself). Tour v2
+  verified beat-by-beat via telemetry + 20-shot montage (on llm-feed).
+- dj.speed→scale migration tested live; mantle A/B verified (0 falls,
+  4 lands) before its golden.
 
 ## Next step (M4 continues)
 
-1. **Human feel dial-in — in progress** ("at least until we have the
-   real assets"): jump_h/apex_t/fall_mul/hang_*, dive.grav/cancel_grav/
-   boost_max + the rest, paint-off mode keeps the mouse safe, save
-   persists to knobs.dat. Carried agenda: cam.look_lerp during boost.
-   AFTER the dial-in: decide whether the tuned knobs.dat ships as the
-   committed stock feel (then defaults in main.lua should be updated to
-   match and the demo tour re-choreographed — D025; goldens are
-   unaffected either way, they bundle code + knobs).
-2. **Prop spawn palette** (crates first; doc-tree prop defs later) —
+1. **Prop spawn palette** (crates first; doc-tree prop defs later) —
    the last M4 PLAN bullet. Spawning must be an eval (a
    `game.props.spawn_eval(x, y)`-shaped cartridge command) like paint
    and inspector writes (D026/D027).
-3. M2 wishlist: inertial/bouncy scroll for editor chrome.
+2. M2 wishlist: inertial/bouncy scroll for editor chrome.
+3. Cleanup candidates while in the area: re-time the kit-check boost
+   coda for the locked knobs (boost_win 3 + glide sink means the old
+   cancel timing no longer boosts — boostlock's bundled copy still
+   verifies forever, but FUTURE kit-check recordings lost that
+   coverage); the finale's "late cancel" boost is currently a plain
+   flip for the same reason (cosmetic).
 
 ## Known small items / debts
 
-- Inspector drags echo one eval per changed frame — chatty on long
-  drags (deliberate v0; quiet submit variant in pt.repl if it grates).
-  Per-frame evals are CORRECT for traces (each value steers its frame).
-- Inspector strings read-only; no add/delete of doc keys; no sliders —
-  bounded sliders want range metadata via the attach surface (D027).
-- Dragging a buffer cell the sim rewrites every frame "fights" (poke at
-  frame start, sim then runs): nudge positions yes, pin velocities no.
-- Freeing a still-written buffer = contained game error + autopsy.
-- Editor mouse capture all-or-nothing only while `paint` is ON now;
-  paint-off hands the world mouse to the game (mouse games playable
-  under the editor).
-- Demo choreography assumes procedural map + STOCK knobs (D025): a
-  painted map, tuned knobs.dat, or knob evals derail `game.demo(1)` —
-  that's what editpaint/inspectpoke/jumpfeel/boostcap goldens ARE.
-- apex_t guarded against 0 (no NaN); negative jump_h floats upward —
-  tuning freedom, not a bug. hang window also shapes double-jump arcs
-  (generic |vy| window) — intended.
+- Kit-check codas are mistimed for the locked knobs (above) — the kit
+  check still runs deterministically; only boost coverage in future
+  recordings is affected.
+- Inspector drags echo one eval per changed frame (correct for traces;
+  quiet submit variant if it grates). Strings read-only; no add/delete;
+  no sliders (range metadata via attach, D027).
+- Dragging a sim-rewritten buffer cell "fights" (live-edit semantics).
+- Demo choreography assumes the procedural map + LOCKED stock knobs
+  (D025): painted maps or knob evals derail it — that's what the
+  derail goldens are. Reset + stock for the real tour.
+- apex_t guarded against 0; negative jump_h floats upward (tuning
+  freedom). Hang shapes dj arcs too (generic |vy| window) — intended.
 - Windowed mode requires cwd = repo root (fix at M10 packaging).
 - Texture re-create leaks on VM reboot persist by design; buffer husks
   have the inspector free button.
 - Trace recorder buffers in memory; M5 ring-trace replaces it (D019).
 - repl env caveat (D022): pre-recording env assignments don't travel.
 - props separation can squeeze a crate into a wall in pathological
-  piles; belly slide keeps the standing hitbox (slide under a painted
-  1-tile gap won't fit until the cancel pop gets an overhead check).
+  piles; belly slide keeps the standing hitbox.
 
 ## Open questions for the human
 
-- **Tune away**: defaults reproduce the old feel exactly; jump_h/apex_t
-  /fall_mul/hang_speed/hang_mul + dive.boost_max are live in the
-  inspector, paint checkbox off keeps the mouse safe, save persists.
-  Typical starting points if you want them: fall_mul 1.4–1.8,
-  hang_speed 40–70, hang_mul 0.4–0.6, boost_max 380–450.
-- Sliders with real ranges for specific knobs (which ones?), or are
-  drag numbers enough for the session?
-- Carried: keep the repo's sandbox map procedural until the prop
-  palette + second tileset exist? (Committing your painted map.dat +
-  tuned knobs.dat makes them the shipped stock level/feel.)
+- **Watch tour v2** (montage on the feed, or `game.demo(1)` after a
+  `game.level.reset()` if your painted map.dat is loaded): does the
+  new choreography read as deliberate showmanship in the locked feel?
+  Beats worth a re-cut are cheap now (telemetry + boundary tooling).
+- Your painted map.dat is still local/uncommitted: commit it as the
+  stock level when the prop palette + second tileset exist, or keep
+  procedural?
+- The finale has no real BOOST beat under the locked knobs (window 3
+  is genuinely hard open-loop). Fine to leave as flip, or want me to
+  hunt a boost-able setup (e.g. a scripted dive from a specific ledge
+  height) for the showcase?

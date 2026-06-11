@@ -525,3 +525,32 @@ them); goldens jumpfeel + boostcap pin the new paths under trace.
 **Revisit if**: other cartridges want the curve (then: a pt-level
 jump-curve helper), or the hang window wants asymmetry (rise-side vs
 fall-side speeds — additive knobs).
+
+## D030 — feel assists are cartridge policy over engine mechanism (M4)
+
+**Context**: the human asked for mantle leniency (a near-miss at a
+platform lip should land on top). The tilemap mover is deliberately
+exact and epsilon-free (D024) and its semantics are golden-pinned —
+assists must not soften the engine's collision truth.
+**Decision**: assists live in the CONTROLLER, not the mover. The
+sandbox player's mantle (knobs.move.mantle px, stock 4): after the
+exact move, a descending player whose feet are within the window below
+a standable top it overlaps — or is flush against, on a side bonk —
+repositions itself onto the lip and synthesizes hit.down, so the
+normal touchdown logic (squash, dive flop, boost evaporation, charge
+restore) runs unchanged. One-way tops count (the assist deliberately
+bypasses the row-entry rule); never while rising or dropping through.
+The pattern generalizes: future assists (step-up, corner shave) are
+cartridge code reading the map through existing primitives.
+**Why**: the mover stays a frozen, trustworthy mechanism; feel policy
+stays hot-tunable cartridge data/code that travels in bundles. The
+choreography work surfaced the structural caveat worth recording: a
+flush rise against a wall gets no mantle (no overlap, no side-bonk
+motion), so scripted wall mounts hold INTO the face — blocked below
+the lip, drifting over it — or stack a double jump for clearance.
+**Snapshot story**: none beyond the knob (doc tree); the assist is
+pure step logic. The mantle golden + platformer_locked pin it.
+**Revisit if**: a second cartridge wants the same assist (then: a
+shared pt-level helper over the tilemap API, still controller-side),
+or assists want engine-side queries the API lacks (add read-only
+queries, never mover behavior).
