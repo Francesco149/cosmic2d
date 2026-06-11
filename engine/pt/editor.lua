@@ -28,6 +28,9 @@
 -- only up-events); the keyboard still reaches the game — walk around
 -- while you paint. LMB paints the selected tile, RMB erases, drags are
 -- cell-line-walked so fast strokes don't skip. F1 returns to play mode.
+-- The `paint` checkbox in the swatch row disarms the brush AND releases
+-- the world's mouse back to the game (chrome still owns its panels) —
+-- inspect and tune without stray clicks editing the map.
 
 local M = select(2, ...) or {}
 
@@ -41,6 +44,7 @@ M.on = M.on or false
 M.sel = M.sel or 1 -- selected tile id; 0 = the eraser
 M.show_col = M.show_col or false
 if M.show_insp == nil then M.show_insp = true end -- the inspector panel
+if M.paint_on == nil then M.paint_on = true end -- brush armed / mouse to game
 
 local floor, ceil = math.floor, math.ceil
 local KEY_F1 = 58
@@ -219,8 +223,11 @@ local function toolbar(att, tx, ty)
       swatch(att, id, x, strip.y)
       x = x + SW + 2
     end
-    ui.text(x + 6, strip.y + (SW - st.gh) // 2,
-            "lmb paint  rmb erase  f1 play", st.text_dim)
+    M.paint_on = ui.checkbox("paint", M.paint_on, {
+      rect = { x + 6, strip.y + (SW - st.row_h) // 2, 50, st.row_h } })
+    ui.text(x + 62, strip.y + (SW - st.gh) // 2,
+            M.paint_on and "lmb paint  rmb erase  f1 play"
+            or "mouse plays the game  f1 play", st.text_dim)
   else
     ui.text(strip.x, strip.y + (SW - st.gh) // 2, "f1 play", st.text_dim)
   end
@@ -248,7 +255,9 @@ function M.frame()
     end
   end
 
-  ui.capture_mouse() -- world clicks are brush strokes, not game input
+  if M.paint_on then
+    ui.capture_mouse() -- world clicks are brush strokes, not game input
+  end -- paint off: the world's mouse plays the game; panels still capture
 
   local tx, ty
   if att and att.tm then
@@ -259,11 +268,13 @@ function M.frame()
       draw_classes(att)
       draw_aabbs(att)
     end
-    if tx then
-      ui.frame_rect(tx * att.tm.tile, ty * att.tm.tile,
-                    att.tm.tile, att.tm.tile, { 1, 1, 1, 0.85 })
+    if M.paint_on then
+      if tx then
+        ui.frame_rect(tx * att.tm.tile, ty * att.tm.tile,
+                      att.tm.tile, att.tm.tile, { 1, 1, 1, 0.85 })
+      end
+      paint(att, tx, ty)
     end
-    paint(att, tx, ty)
   end
 
   toolbar(att, tx, ty)
