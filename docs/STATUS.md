@@ -31,11 +31,12 @@ repl/perf, error containment), plus M3:
   collision, bounce/friction, stack-settling pairwise separation, thrown
   crates shove the pile), `fx` (256-particle pool, dust/spark palettes),
   `demo` (attract mode, D025), `pix` (procedural placeholder art).
-- **The air kit** (human-requested, A Hat in Time vocabulary; controls
-  now arrows-only + space + e-grab):
-  - *Dive*: jump pressed in mid-air (coyote spent) — forward lunge, boom
-    pop + trail, no steering, facing locked. Uncanceled it lands as a
-    **belly slide** that persists until canceled (slide friction).
+- **The air kit** (human-requested, A Hat in Time vocabulary; controls:
+  arrows, space jump, **G dive**, e grab):
+  - *Dive*: G in mid-air (its own action; works during coyote too) —
+    forward lunge, boom pop + trail, no steering, facing locked.
+    Uncanceled it lands as a **belly slide** that persists until
+    canceled (slide friction). Mid-air only; disabled while carrying.
   - *Cancel*: ANY action press during dive/slide — front-flip (tuck
     frames), slight up-pop, forward momentum slowed, air control back,
     facing locked until touchdown. Opposite-direction presses cancel too.
@@ -43,16 +44,18 @@ repl/perf, error containment), plus M3:
     ground — probed ahead while falling, or within the window after
     touching down — while HOLDING the dive direction: big forward carry
     (boost trail) that evaporates on touchdown. The gap-crossing tech.
-  - *Double jump*: up + jump in mid-air, one charge per airtime, own
-    buffer/coyote knobs (`knobs.dj`): up+jump within `dj.coyote` of a
-    ledge is still the full ground jump (charge kept); an up+jump that
-    cancels a dive arms `dj.buffer`, so cancel→dj chains. Dives lock it
-    out; diving out of a double jump (or its flip) is allowed.
+  - *Double jump*: space again in mid-air (no up), one charge per
+    airtime, own buffer/coyote knobs (`knobs.dj`): an air press within
+    `dj.coyote` of a ledge is still the full ground jump (charge kept);
+    a space press that cancels a dive arms `dj.buffer`, so cancel→dj
+    chains space-space. A charge-less air press buffers the landing
+    jump as before. Dives lock the dj out; diving out of a double jump
+    (or its flip) is allowed.
   - Interpretation notes for tuning: release-cut applies to the double
-    jump and the cancel pop; dives are disabled while carrying a crate
-    (press buffers a landing jump instead); a jump pressed shortly
-    before landing now dives instead of buffering — authentic trade-off,
-    revisit if it feels bad windowed.
+    jump and the cancel pop; a space press shortly before landing
+    double-jumps when the charge is up (eats the landing buffer —
+    standard dj-game behavior; the buffer applies once the charge is
+    spent).
 - **Feel knobs all live** in
   `doc.knobs.{move,dive,dj,cam,throw,prop,fx,feel}` — tune from the
   console while playing; knob-merge in init grows new keys into old docs.
@@ -130,10 +133,11 @@ repl/perf, error containment), plus M3:
 - Feel pass: are run speed (130), jump (280/cut 0.45), gravity (700),
   camera (lerp 0.10, lookahead 26, deadzone 26), throw (260/200) in the
   right neighborhood? Squash 0.55 too cartoony or not enough?
-- Air kit interpretation checks (all knobbed, see notes above): dive =
-  jump-in-air means a pre-landing buffered press now dives; dives
-  disabled while carrying; dj.coyote = up+jump ledge grace as a full
-  jump. Camera lookahead lags the boost — widen cam.look_lerp or leave?
+- Air kit interpretation checks (all knobbed, see notes above): a
+  charged air space press double-jumps even right before landing;
+  dives disabled while carrying; dj.coyote = air-press ledge grace as a
+  full jump. Camera lookahead lags the boost — widen cam.look_lerp or
+  leave? (Feel knobs proper wait for the editor, per the human.)
 - Art direction check on the procedural placeholders (tiles, kid sprite,
   crates, parallax palette) — placeholder-fine, or worth one more pass
   before M4 screenshots start accumulating?

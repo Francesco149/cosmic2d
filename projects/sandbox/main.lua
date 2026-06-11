@@ -4,9 +4,10 @@
 -- through them, grab and throw crates, all under a knobbed follow camera
 -- with parallax hills behind. Everything tunes live:
 --
---   arrows / wasd    move (down+jump drops through planks)
---   space            jump (hold for height, release to cut)
---   z / e            grab nearest crate / throw it
+--   arrows           move (down+jump drops through planks)
+--   space            jump (hold for height); again in mid-air: double jump
+--   g                mid-air dive; any key cancels it (see player.lua)
+--   e                grab nearest crate / throw it
 --   `                console — poke doc.knobs.* live, game.demo(1)
 --   escape           quit
 --
@@ -80,12 +81,13 @@ function game.init()
     { "down", input.key.down },
     { "jump", input.key.space },
     { "grab", input.key.e },
+    { "dive", input.key.g },
     { "quit", input.key.escape },
   })
 end
 
 -- attract mode: game.demo(1) in the console (or --eval) hands the controls
--- to the demo script; any real move/jump/grab press takes them back
+-- to the demo script; any real action press takes them back
 function game.demo(on)
   local d = state.doc
   if on == 1 or on == true then
@@ -96,7 +98,7 @@ function game.demo(on)
   end
 end
 
-local ACTIONS = { "left", "right", "up", "down", "jump", "grab" }
+local ACTIONS = { "left", "right", "up", "down", "jump", "grab", "dive" }
 
 local function build_ctl()
   local d = state.doc
@@ -125,6 +127,7 @@ local function build_ctl()
       jump_pressed = dn("jump") and not was("jump"),
       jump_released = was("jump") and not dn("jump"),
       grab_pressed = dn("grab") and not was("grab"),
+      dive_pressed = dn("dive") and not was("dive"),
       any_pressed = any,
     }
   end
@@ -141,6 +144,7 @@ local function build_ctl()
     jump_pressed = input.pressed("jump"),
     jump_released = input.released("jump"),
     grab_pressed = input.pressed("grab"),
+    dive_pressed = input.pressed("dive"),
     any_pressed = any,
   }
 end
@@ -196,7 +200,7 @@ function game.draw()
     text.draw((W - tw) // 2, 24, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
   text.draw(3, H - 11,
-            "arrows * space jump / air dive (press cancels) * up+space double jump * e grab",
+            "arrows * space jump x2 * g air dive (any key cancels) * e grab/throw",
             { r = 0.90, g = 0.88, b = 0.78, a = 0.9 })
 end
 

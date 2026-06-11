@@ -3,8 +3,8 @@
 -- one-way platforms with down+jump drop-through, grab/throw crates, and
 -- the A-Hat-in-Time air kit:
 --
---  * DIVE — jump pressed in mid-air (no up held, coyote spent): a fast
---    forward lunge with a boom pop + trail. No air control, facing locked.
+--  * DIVE — its own button ("dive", G), mid-air only: a fast forward
+--    lunge with a boom pop + trail. No air control, facing locked.
 --    Land without canceling -> belly slide, and you stay on your belly
 --    until the dive is canceled (slide friction brings you to rest).
 --  * CANCEL — pressing ANY action during a dive or slide (the opposite
@@ -15,13 +15,14 @@
 --    ground (before touchdown or just after sliding) while HOLDING the
 --    dive direction: big forward speed + flip + ground-bounce burst. The
 --    boost evaporates the moment you touch the ground (gap-crossing tech).
---  * DOUBLE JUMP — up held + jump pressed in mid-air, one charge per
+--  * DOUBLE JUMP — jump pressed again in mid-air, one charge per
 --    airtime (restored on landing), its own buffer + coyote knobs
---    (knobs.dj): within dj.coyote of walking off a ledge an up+jump is
---    still the full ground jump (charge kept); an up+jump press that
---    cancels a dive arms dj.buffer frames of intent, so cancel->double
---    jump chains. Dives lock out the double jump; diving OUT of a double
---    jump is allowed. Release-cut applies to both jumps.
+--    (knobs.dj): within dj.coyote of walking off a ledge an air press is
+--    still the full ground jump (charge kept); a jump press that cancels
+--    a dive arms dj.buffer frames of intent, so cancel->double jump
+--    chains space-space. A charge-less air press buffers the landing
+--    jump as usual. Dives lock out the double jump; diving OUT of a
+--    double jump is allowed. Release-cut applies to both jumps.
 --
 -- Every number is a doc-tree knob (knobs.move/dive/dj/feel) — tune live.
 --
@@ -139,8 +140,8 @@ function M.step(ctl)
     dstate = 3 -- flip-out: air control back, facing locked until ground
     flip_t = kd.flip_t
     slide_t = 0
-    if ctl.up and press then dj_buf = kj.buffer end -- cancel->dj chain
-    press = false -- the press canceled; it is not also a jump/dive
+    if press then dj_buf = kj.buffer end -- cancel->dj chain (space-space)
+    press = false -- the press canceled; it is not also a jump
   end
 
   -- run: full authority on the ground, k.air of it in the air; dives and
@@ -159,31 +160,37 @@ function M.step(ctl)
     if vx > 0 then vx = m.max(0.0, vx - d) else vx = m.min(0.0, vx + d) end
   end
 
-  -- jump intent routing: ground/coyote jumps buffer as before; in the air
-  -- up+jump is the double jump, a bare jump press is the dive
+  -- jump intent routing: ground/coyote presses buffer as before; an air
+  -- press is the double jump when a charge is there, else it buffers the
+  -- landing jump
   if press then
     if grounded or coyote > 0 then
       jbuf = k.buffer
-    elseif ctl.up and dj_coy > 0 then -- dj's own ledge grace: full jump
+    elseif dj_coy > 0 then -- dj's own ledge grace: still the full jump
       vy = -k.jump
       stretch_t = feel.stretch_t
       coyote, dj_coy = 0, 0
       fx.spawn(x + M.W * 0.5, y + M.H, 3,
                { vx0 = -25, vx1 = 25, vy0 = -35, vy1 = -5,
                  shade0 = 0.3, shade1 = 1.0 })
-    elseif ctl.up and charge > 0 and dstate ~= 1 and dstate ~= 2 then
+    elseif charge > 0 and dstate ~= 1 and dstate ~= 2 then
       dj_buf = kj.buffer -- fires just below
-    elseif carry == 0 and (dstate == 0 or dstate == 3) then
-      -- DIVE (mid-air only; carrying keeps the old buffered-hop behavior)
-      dstate = 1
-      ddir = facing
-      vx = facing * kd.speed
-      vy = m.max(vy, 0.0) + kd.vy
-      flip_t = 0
-      boom(x + M.W * 0.5 - facing * 4, y + M.H * 0.5, facing, 9, true)
     else
       jbuf = k.buffer
     end
+  end
+
+  -- the dive: its own button, mid-air only, locked while carrying; the
+  -- press that canceled a dive never starts the next one
+  if ctl.dive_pressed and not canceled and not grounded and carry == 0
+     and dstate ~= 1 and dstate ~= 2 then
+    dstate = 1
+    ddir = facing
+    vx = facing * kd.speed
+    vy = m.max(vy, 0.0) + kd.vy
+    flip_t = 0
+    jbuf, dj_buf = 0, 0 -- a dive locks out the other air moves
+    boom(x + M.W * 0.5 - facing * 4, y + M.H * 0.5, facing, 9, true)
   end
 
   -- double jump: buffered intent fires as soon as it is legal
