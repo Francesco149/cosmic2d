@@ -98,6 +98,9 @@ local TIMELINE = {
 -- rules fire regardless of knob evals layered on top. Coda: hop-dive,
 -- cancel holding the dive direction in the window (DIVE BOOST), press
 -- dive mid-boost (must NOT start: dead until touchdown), ride it out.
+-- Coda 2: hop-dive, cancel HIGH with a neutral press (never a boost),
+-- press dive again (must NOT start: one dive per airtime), land; then
+-- jump -> double jump (the dj.scale impulse riding the jump curve).
 local KITCHECK = {
   { 20 }, -- settle
   { 18, "right" }, -- run-up
@@ -123,7 +126,20 @@ local KITCHECK = {
   { 6, "left" }, -- cancel holding the dive direction: DIVE BOOST
   { 4, "dive" }, -- dive press mid-boost: dead button (locked till ground)
   { 26, "left" }, -- ride the boost to touchdown (it evaporates there)
-  { 24 }, -- settle, end
+  { 24 }, -- settle
+  -- the cancel-lockout + scaled-dj coda
+  { 16, "right" }, -- turn, run-up
+  { 12, "right", "jump" }, { 4, "right" }, -- hop...
+  { 6, "dive" }, -- ...dive right
+  { 4 }, -- commit, still high
+  { 4, "up" }, -- cancel high, neutral press (never a boost): plain flip
+  { 4, "dive" }, -- dive press post-cancel: dead (one dive per airtime)
+  { 22 }, -- fall, land
+  { 14 }, -- settle
+  { 12, "right", "jump" }, { 6, "right" }, -- full jump...
+  { 10, "right", "jump" }, -- ...DOUBLE JUMP (dj.scale * the jump impulse)
+  { 28, "right" }, -- ride to landing
+  { 20 }, -- bow out
 }
 
 -- is `action` held on relative frame `rel`? (pure; edges derive from

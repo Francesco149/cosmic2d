@@ -49,7 +49,10 @@ local KNOBS = {
            cancel_vy = 150, cancel_slow = 0.45, boost = 400,
            boost_max = 900.0, boost_win = 9, slide_fric = 4.0,
            flip_t = 0.35 },
-  dj = { speed = 255, buffer = 5, coyote = 6 },
+  -- dj.scale rides the jump curve: dj impulse = jump impulse * scale,
+  -- so the second jump tracks the first under tuning. Stock 255/280 ==
+  -- the retired dj.speed over the stock jump impulse (bit-exact)
+  dj = { scale = 255 / 280, buffer = 5, coyote = 6 },
   cam = { lerp = 0.10, lerp_y = 0.08, look = 26, look_lerp = 0.05,
           dead = 26 },
   throw = { vx = 260, vy = 200, inherit = 0.6, radius = 28 },
@@ -89,6 +92,18 @@ end
 function game.init()
   local d = state.doc
   d.knobs = d.knobs or load_knobs() or {}
+  -- migration: the dj impulse became a scale of the jump impulse. A
+  -- live doc or knobs.dat from before carries a tuned dj.speed —
+  -- convert it against the jump curve it was tuned with (the feel is
+  -- preserved exactly); the prune below then drops the retired key
+  do
+    local dj, mv = d.knobs.dj, d.knobs.move
+    if dj and dj.speed and not dj.scale and mv and mv.jump_h
+       and mv.apex_t then
+      dj.scale = dj.speed / (2.0 * mv.jump_h * 60.0
+                             / math.max(mv.apex_t, 0.001))
+    end
+  end
   for group, defaults in pairs(KNOBS) do
     d.knobs[group] = d.knobs[group] or {}
     for key, v in pairs(defaults) do

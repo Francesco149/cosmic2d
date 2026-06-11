@@ -9,11 +9,12 @@ painting, collider overlay, map.dat; inspector + knobs.dat)
 **human-verified** ("editor loop feels great", "knobs ui feels pretty
 solid"). Increment 3 DONE — **jump-feel curve knobs (D029), dive boost
 cap, editor paint toggle, dive rule changes** (all human-requested):
-dives spend the dj charge, cancel flips get dive.cancel_grav, the dive
-is dead while a boost lasts (no infinite boost chains). 12 goldens +
-22241 selftest checks green; shots on llm-feed. **The human is doing
-the feel dial-in next** ("at least until we have the real assets") —
-then prop spawn palette.
+dives spend the dj charge, cancel flips get dive.cancel_grav, ONE dive
+per airtime (no dive after a cancel; dead while a boost lasts — no
+infinite chains), dj impulse = dj.scale × the jump curve's. 13 goldens
++ 22241 selftest checks green; shots on llm-feed. **The human's feel
+dial-in is in progress** (their tuned knobs.dat exists locally,
+uncommitted) — then prop spawn palette.
 
 ## What works right now
 
@@ -53,11 +54,22 @@ the air kit, attract demo, --eval) plus M4 so far:
   the flip; the committed dive keeps dive.grav. And the dive button is
   DEAD while a boost lasts — no boost→dive→boost chains for infinite
   fast movement; the touchdown that evaporates the boost unlocks it.
+  The dive is from clean air ONLY (dstate 0): no second dive after a
+  cancel — the flip-out state, which persists until touchdown, IS the
+  one-dive-per-airtime lockout (no new buffer field: the player buffer
+  is full at 96 B and growing it errors live sessions). And the dj
+  impulse is **dj.scale × the jump curve's impulse** (stock 255/280 ==
+  the retired dj.speed, bit-exact — verified `280*(255/280) == 255`):
+  the second jump tracks the first under tuning and can't silently
+  out-jump it. game.init migrates an old dj.speed (live doc or
+  knobs.dat) to the equivalent scale against the jump it was tuned
+  with — the human's saved feel is preserved exactly.
   Tour byte-identical at stock through all of it. demo.lua grew
   **timeline 2, the kit check** (`game.demo(2)`): choreographed
   air-move coverage for goldens (hop-dive, jump-cancel, the
-  must-not-fire dj attempt, flop-slide-flip, and the boost coda with
-  its mid-boost dead dive press).
+  must-not-fire dj attempt, flop-slide-flip, the boost coda with its
+  mid-boost dead dive press, and coda 2: a high neutral cancel + dead
+  re-dive press, then jump→double-jump for the scaled impulse).
 
 ## Verified
 
@@ -71,10 +83,17 @@ the air kit, attract demo, --eval) plus M4 so far:
   airborne frame-by-frame, cancel_grav 0.7 vs 1.0 confirmed divergent;
   **boostlock** 360 f, the kit check's boost coda at stock knobs — the
   mid-boost dive press confirmed dead by pose + trail + speed in the
-  frame series). Stock-default bit-exactness of D029 AND every dive
-  rule proven by byte-identical tour PNGs at frames 400/900/1500/1650.
-  knobs.dat round trip exercised. On llm-feed today: 5 shots + 2
-  kit-check montages.
+  frame series; **djscale** 520 f, kit-check coda 2 — post-cancel dive
+  press confirmed dead, dj rise + dust confirmed in frames; it opens
+  with a `doc.knobs = {} game.init()` eval so it records stock physics
+  regardless of the local knobs.dat). Stock-default bit-exactness of
+  D029 AND every dive rule proven by byte-identical tour PNGs (tour
+  comparisons now neutralize knobs the same way — the human's
+  knobs.dat loads at every boot since their dial-in started). The
+  dj.speed→scale migration tested live (300 against a 300-impulse
+  jump → scale 1.0, retired key pruned, no file touched). knobs.dat
+  round trip exercised. On llm-feed today: 5 shots + 2 kit-check
+  montages.
 
 ## Next step (M4 continues)
 

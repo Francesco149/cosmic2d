@@ -13,7 +13,8 @@
 --    you touch the ground. The flip-out arc falls under its own gravity
 --    multiplier (knobs.dive.cancel_grav) — decoupled from the jump
 --    curve's fall_mul/hang shaping, so tuning the jump never changes
---    the flip.
+--    the flip. No new dive until you touch the ground (the flip-out
+--    state IS the lockout) — one dive per airtime, like the dj.
 --  * DIVE BOOST — cancel within ~knobs.dive.boost_win frames of the
 --    ground (before touchdown or just after sliding) while HOLDING the
 --    dive direction: big forward speed + flip + ground-bounce burst. The
@@ -29,7 +30,10 @@
 --    buffers the landing jump as usual. Dives SPEND the charge — no
 --    double jump out of a dive or its cancel; landing restores it.
 --    Diving OUT of a double jump is still allowed. Release-cut applies
---    to both jumps.
+--    to both jumps. The impulse is dj.scale times the jump curve's —
+--    a SCALE so the second jump tracks the first under tuning and
+--    never silently out-jumps it (stock 255/280, the retired dj.speed
+--    over the stock jump impulse, bit-exact).
 --
 -- Every number is a doc-tree knob (knobs.move/dive/dj/feel) — tune live.
 --
@@ -202,12 +206,15 @@ function M.step(ctl)
     end
   end
 
-  -- the dive: its own button, mid-air only, locked while carrying — and
-  -- locked while a boost lasts (no infinite boost->dive->boost chains;
-  -- the touchdown that evaporates the boost unlocks it); the press that
-  -- canceled a dive never starts the next one
+  -- the dive: its own button, mid-air only, from clean air ONLY
+  -- (dstate 0): mid-dive and mid-slide can't re-dive, and the cancel
+  -- flip-out (dstate 3, which persists until touchdown) is the
+  -- one-dive-per-airtime lockout — no dive after a cancel, no
+  -- boost->dive->boost chains (`not boosted` kept as belt and
+  -- suspenders), until the ground resets the kit. Locked while
+  -- carrying; the press that canceled a dive never starts the next one
   if ctl.dive_pressed and not canceled and not grounded and carry == 0
-     and not boosted and dstate ~= 1 and dstate ~= 2 then
+     and not boosted and dstate == 0 then
     dstate = 1
     ddir = facing
     vx = facing * kd.speed
@@ -219,10 +226,12 @@ function M.step(ctl)
     boom(x + M.W * 0.5 - facing * 4, y + M.H * 0.5, facing, 9, true)
   end
 
-  -- double jump: buffered intent fires as soon as it is legal
+  -- double jump: buffered intent fires as soon as it is legal; the
+  -- impulse rides the jump curve (v0 * scale: tuning the jump retunes
+  -- the dj with it, and scale <= 1 keeps it the weaker jump)
   if dj_buf > 0 and not grounded and charge > 0
      and dstate ~= 1 and dstate ~= 2 then
-    vy = -kj.speed
+    vy = -v0 * kj.scale
     charge = 0
     dj_buf = 0
     coyote, dj_coy = 0, 0
