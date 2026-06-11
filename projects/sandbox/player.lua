@@ -19,7 +19,9 @@
 --    dive direction: big forward speed + flip + ground-bounce burst. The
 --    boost evaporates the moment you touch the ground (gap-crossing
 --    tech); while it lasts, steering caps speed at knobs.dive.boost_max
---    instead of move.run.
+--    instead of move.run — and the dive button is DEAD: no
+--    boost->dive->boost chains for infinite fast movement; the
+--    touchdown that ends the boost unlocks the dive.
 --  * DOUBLE JUMP — jump pressed again in mid-air, one charge per
 --    airtime (restored on landing), its own buffer + coyote knobs
 --    (knobs.dj): within dj.coyote of walking off a ledge an air press is
@@ -200,10 +202,12 @@ function M.step(ctl)
     end
   end
 
-  -- the dive: its own button, mid-air only, locked while carrying; the
-  -- press that canceled a dive never starts the next one
+  -- the dive: its own button, mid-air only, locked while carrying — and
+  -- locked while a boost lasts (no infinite boost->dive->boost chains;
+  -- the touchdown that evaporates the boost unlocks it); the press that
+  -- canceled a dive never starts the next one
   if ctl.dive_pressed and not canceled and not grounded and carry == 0
-     and dstate ~= 1 and dstate ~= 2 then
+     and not boosted and dstate ~= 1 and dstate ~= 2 then
     dstate = 1
     ddir = facing
     vx = facing * kd.speed

@@ -95,7 +95,9 @@ local TIMELINE = {
 -- flop, slide, flip out (the cancel_grav arc), land; hop back. The
 -- run-up drifts into the left plank tower's airspace, so one-way
 -- landings are part of the exercise; any arc lands somewhere — the
--- rules fire regardless of knob evals layered on top.
+-- rules fire regardless of knob evals layered on top. Coda: hop-dive,
+-- cancel holding the dive direction in the window (DIVE BOOST), press
+-- dive mid-boost (must NOT start: dead until touchdown), ride it out.
 local KITCHECK = {
   { 20 }, -- settle
   { 18, "right" }, -- run-up
@@ -114,6 +116,14 @@ local KITCHECK = {
   { 26 }, -- land
   { 12, "left", "jump" }, { 18, "left" }, -- hop back toward home
   { 24 }, -- bow out
+  -- the boost coda
+  { 12, "left", "jump" }, { 4, "left" }, -- hop...
+  { 6, "dive" }, -- ...dive left
+  { 12 }, -- commit, drop toward the ground
+  { 6, "left" }, -- cancel holding the dive direction: DIVE BOOST
+  { 4, "dive" }, -- dive press mid-boost: dead button (locked till ground)
+  { 26, "left" }, -- ride the boost to touchdown (it evaporates there)
+  { 24 }, -- settle, end
 }
 
 -- is `action` held on relative frame `rel`? (pure; edges derive from

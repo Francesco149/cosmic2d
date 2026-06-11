@@ -9,10 +9,11 @@ painting, collider overlay, map.dat; inspector + knobs.dat)
 **human-verified** ("editor loop feels great", "knobs ui feels pretty
 solid"). Increment 3 DONE — **jump-feel curve knobs (D029), dive boost
 cap, editor paint toggle, dive rule changes** (all human-requested):
-dives spend the dj charge, cancel flips get dive.cancel_grav. 11
-goldens + 22241 selftest checks green; shots on llm-feed. **The human
-is doing the feel dial-in next** ("at least until we have the real
-assets") — then prop spawn palette.
+dives spend the dj charge, cancel flips get dive.cancel_grav, the dive
+is dead while a boost lasts (no infinite boost chains). 12 goldens +
+22241 selftest checks green; shots on llm-feed. **The human is doing
+the feel dial-in next** ("at least until we have the real assets") —
+then prop spawn palette.
 
 ## What works right now
 
@@ -49,25 +50,31 @@ the air kit, attract demo, --eval) plus M4 so far:
   landing restores; dj→dive still allowed). The cancel flip-out arc
   has its own gravity multiplier, dive.cancel_grav (stock 1.0),
   decoupled from the jump's fall_mul/hang — jump tuning never reshapes
-  the flip; the committed dive keeps dive.grav. Tour byte-identical at
-  stock. demo.lua grew **timeline 2, the kit check** (`game.demo(2)`):
-  choreographed air-move coverage for goldens (hop-dive, jump-cancel,
-  the must-not-fire dj attempt, flop-slide-flip).
+  the flip; the committed dive keeps dive.grav. And the dive button is
+  DEAD while a boost lasts — no boost→dive→boost chains for infinite
+  fast movement; the touchdown that evaporates the boost unlocks it.
+  Tour byte-identical at stock through all of it. demo.lua grew
+  **timeline 2, the kit check** (`game.demo(2)`): choreographed
+  air-move coverage for goldens (hop-dive, jump-cancel, the
+  must-not-fire dj attempt, flop-slide-flip, and the boost coda with
+  its mid-boost dead dive press).
 
 ## Verified
 
 - Human-verified: editor loop (increment 1) and the inspector knob UI
   ("pretty solid") — windowed, 2026-06-11.
-- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** + **11
+- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** + **12
   goldens** (new today: **jumpfeel** 700 f, floaty-curve evals derail
   the tour; **boostcap** 420 f, demo_t0-offset finale + teleport, cap
   360 vs 900 confirmed divergent before recording; **divecancel**
   280 f, kit check + cancel_grav=0.7 — the dj attempt window confirmed
-  airborne frame-by-frame, cancel_grav 0.7 vs 1.0 confirmed
-  divergent). Stock-default bit-exactness of D029 AND the dive rules
-  proven by byte-identical tour PNGs at frames 400/900/1500/1650.
-  knobs.dat round trip exercised. On llm-feed today: 5 shots + the
-  kit-check montage.
+  airborne frame-by-frame, cancel_grav 0.7 vs 1.0 confirmed divergent;
+  **boostlock** 360 f, the kit check's boost coda at stock knobs — the
+  mid-boost dive press confirmed dead by pose + trail + speed in the
+  frame series). Stock-default bit-exactness of D029 AND every dive
+  rule proven by byte-identical tour PNGs at frames 400/900/1500/1650.
+  knobs.dat round trip exercised. On llm-feed today: 5 shots + 2
+  kit-check montages.
 
 ## Next step (M4 continues)
 
