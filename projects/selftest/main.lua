@@ -822,6 +822,78 @@ local function t_tilemap()
   pal.buf_free("selftest.map")
 end
 
+-- ---- pt.tilemap M4 statics: fresh flag, poke/peek, save/load, cell_line --
+
+local function t_tilemap_tools()
+  local tilemap = pt.require("pt.tilemap")
+  local T = { [1] = { solid = true } }
+
+  local tm, fresh = tilemap.new{ name = "selftest.map4", w = 6, h = 5,
+                                 tile = 16, tiles = T }
+  check(fresh == true, "tilemap: first new is fresh")
+  tm:set(2, 3, 1)
+  local tm2, fresh2 = tilemap.new{ name = "selftest.map4", w = 6, h = 5,
+                                   tile = 16, tiles = T }
+  check(fresh2 == false and tm2:get(2, 3) == 1,
+        "tilemap: same-shape new adopts, not fresh")
+  local _, fresh3 = tilemap.new{ name = "selftest.map4", w = 5, h = 6,
+                                 tile = 16, tiles = T }
+  check(fresh3 == true, "tilemap: resize is fresh again")
+
+  -- poke/peek by name (the editor's eval unit)
+  tilemap.poke("selftest.map4", 1, 2, 7)
+  check(tilemap.peek("selftest.map4", 1, 2) == 7, "tilemap: poke/peek")
+  tilemap.poke("selftest.map4", -1, 0, 9) -- oob: inert, like TM:set
+  tilemap.poke("selftest.map4", 0, 99, 9)
+  check(tilemap.peek("selftest.map4", -1, 0) == 0
+        and tilemap.peek("selftest.map4", 0, 99) == 0,
+        "tilemap: poke/peek oob is inert")
+
+  -- save/load round trip (raw self-describing bytes)
+  local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/pettan_selftest_map.dat"
+  check(tilemap.save("selftest.map4", tmp) == true, "tilemap: save writes")
+  tilemap.poke("selftest.map4", 1, 2, 1) -- diverge live state from the file
+  check(tilemap.load("selftest.map4", tmp) == true, "tilemap: load ok")
+  local tm4 = tilemap.open("selftest.map4", T)
+  check(tm4.w == 5 and tm4.h == 6 and tm4:get(1, 2) == 7,
+        "tilemap: save/load round trip restores bytes")
+  local ok, err = tilemap.load("selftest.map4", tmp .. ".nope")
+  check(ok == nil and err == "no file", "tilemap: load missing file refused")
+  check(pal.write_file(tmp, "PETTANBOGUS") == true, "selftest tmp writable")
+  ok, err = tilemap.load("selftest.map4", tmp)
+  check(ok == nil and err ~= nil, "tilemap: load garbage refused")
+  check(tilemap.peek("selftest.map4", 1, 2) == 7,
+        "tilemap: refused load leaves the buffer untouched")
+  pal.buf_free("selftest.map4")
+
+  -- cell_line: endpoints inclusive, 8-connected steps, expected lengths
+  local function walk(x0, y0, x1, y1)
+    local cells = {}
+    tilemap.cell_line(x0, y0, x1, y1, function(x, y)
+      cells[#cells + 1] = { x, y }
+    end)
+    return cells
+  end
+  local c = walk(3, 3, 3, 3)
+  check(#c == 1 and c[1][1] == 3 and c[1][2] == 3, "cell_line: single cell")
+  c = walk(0, 0, 4, 0)
+  check(#c == 5 and c[5][1] == 4 and c[5][2] == 0, "cell_line: horizontal")
+  c = walk(2, 5, 2, 1)
+  check(#c == 5 and c[5][2] == 1, "cell_line: vertical up")
+  c = walk(0, 0, 3, 3)
+  check(#c == 4 and c[4][1] == 3 and c[4][2] == 3, "cell_line: diagonal")
+  c = walk(10, 2, -2, 9) -- arbitrary slope through negatives
+  check(c[1][1] == 10 and c[1][2] == 2
+        and c[#c][1] == -2 and c[#c][2] == 9, "cell_line: endpoints exact")
+  for i = 2, #c do
+    local dx = c[i][1] - c[i - 1][1]
+    local dy = c[i][2] - c[i - 1][2]
+    if dx < 0 then dx = -dx end
+    if dy < 0 then dy = -dy end
+    check(dx <= 1 and dy <= 1 and dx + dy >= 1, "cell_line: 8-connected step")
+  end
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -854,6 +926,7 @@ function game.init()
   t_ui()
   t_console()
   t_tilemap()
+  t_tilemap_tools()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

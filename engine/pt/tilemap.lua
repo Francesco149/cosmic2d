@@ -123,9 +123,9 @@ function M.load(name, path)
   return true
 end
 
--- walk the supercover cells of the segment (tx0,ty0)->(tx1,ty1), calling
--- fn(tx,ty) for each INCLUDING both ends: brush drags paint every cell the
--- cursor crossed even when motion events skip. Integer cells, pure.
+-- walk the segment (tx0,ty0)->(tx1,ty1) as an 8-connected Bresenham line,
+-- calling fn(tx,ty) for every cell INCLUDING both ends: brush drags stay
+-- continuous when motion events skip cells. Integer cells, pure.
 function M.cell_line(tx0, ty0, tx1, ty1, fn)
   local dx = tx1 > tx0 and tx1 - tx0 or tx0 - tx1
   local dy = ty1 > ty0 and ty1 - ty0 or ty0 - ty1
