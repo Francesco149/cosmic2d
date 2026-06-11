@@ -47,6 +47,36 @@ function M.advance_frame()
   return f
 end
 
+-- ---- by-name buffer cell pokes (tools / the inspector's eval unit) ----
+
+-- poke/peek one typed cell of a named buffer, so a buffer edit is a single
+-- self-contained command string — pt.tilemap.poke's generic sibling. poke
+-- is a sim-state mutation: live tools must route it through pt.repl.submit
+-- (the D022 EVAL path) so a recording replays the edit. kind is a view
+-- accessor name (u8/i8/u16/i16/u32/i32/i64/f32/f64); a bad kind, an
+-- unknown buffer or an OOB offset all error (contained by the repl).
+local KINDS = { u8 = true, i8 = true, u16 = true, i16 = true, u32 = true,
+                i32 = true, i64 = true, f32 = true, f64 = true }
+
+local function buf_view(name)
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == name then return pal.buf(name, b.size) end
+  end
+  error("no buffer " .. tostring(name), 0)
+end
+
+function M.buf_poke(name, kind, off, v)
+  if not KINDS[kind] then error("bad kind " .. tostring(kind), 0) end
+  local view = buf_view(name)
+  view[kind](view, off, v)
+end
+
+function M.buf_peek(name, kind, off)
+  if not KINDS[kind] then error("bad kind " .. tostring(kind), 0) end
+  local view = buf_view(name)
+  return view[kind](view, off)
+end
+
 -- ---- canonical serializer ----
 
 local function canon_value(v, parts, seen)

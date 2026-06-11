@@ -894,6 +894,51 @@ local function t_tilemap_tools()
   end
 end
 
+-- ---- pt.state.buf_poke/buf_peek (the inspector's buffer eval unit) ----
+
+local function t_buf_poke()
+  local repl = pt.require("pt.repl")
+  pal.buf("selftest.poke", 32)
+
+  state.buf_poke("selftest.poke", "u8", 0, 200)
+  check(state.buf_peek("selftest.poke", "u8", 0) == 200, "buf_poke: u8")
+  state.buf_poke("selftest.poke", "i8", 1, -7)
+  check(state.buf_peek("selftest.poke", "i8", 1) == -7, "buf_poke: i8")
+  state.buf_poke("selftest.poke", "u16", 2, 60000)
+  check(state.buf_peek("selftest.poke", "u16", 2) == 60000, "buf_poke: u16")
+  state.buf_poke("selftest.poke", "i16", 4, -1234)
+  check(state.buf_peek("selftest.poke", "i16", 4) == -1234, "buf_poke: i16")
+  state.buf_poke("selftest.poke", "u32", 8, 4000000000)
+  check(state.buf_peek("selftest.poke", "u32", 8) == 4000000000,
+        "buf_poke: u32")
+  state.buf_poke("selftest.poke", "i32", 12, -77)
+  check(state.buf_peek("selftest.poke", "i32", 12) == -77, "buf_poke: i32")
+  state.buf_poke("selftest.poke", "i64", 16, -3 << 40)
+  check(state.buf_peek("selftest.poke", "i64", 16) == -3 << 40,
+        "buf_poke: i64")
+  state.buf_poke("selftest.poke", "f32", 24, 1.5)
+  check(state.buf_peek("selftest.poke", "f32", 24) == 1.5, "buf_poke: f32")
+  state.buf_poke("selftest.poke", "f64", 24, 0.1)
+  check(state.buf_peek("selftest.poke", "f64", 24) == 0.1, "buf_poke: f64")
+
+  check(not pcall(state.buf_poke, "selftest.poke", "x32", 0, 1),
+        "buf_poke: bad kind errors")
+  check(not pcall(state.buf_poke, "selftest.poke", "u8", 32, 1),
+        "buf_poke: oob errors")
+  check(not pcall(state.buf_peek, "selftest.nosuch", "u8", 0),
+        "buf_peek: unknown buffer errors")
+
+  -- the actual eval form: a self-contained command string through pt.repl
+  check(repl.exec('pt.state.buf_poke("selftest.poke","f32",28,2.25)') == true,
+        "buf_poke: exec as an eval string")
+  check(state.buf_peek("selftest.poke", "f32", 28) == 2.25,
+        "buf_poke: eval landed")
+  check(repl.exec('pt.state.buf_poke("selftest.poke","u8",999,1)') == false,
+        "buf_poke: erroring eval is contained")
+
+  pal.buf_free("selftest.poke")
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -920,6 +965,7 @@ function game.init()
   t_exp2()
   t_ease()
   t_snapshot()
+  t_buf_poke()
   t_input()
   t_text()
   t_repl()
