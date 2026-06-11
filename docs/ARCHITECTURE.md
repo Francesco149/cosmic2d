@@ -99,7 +99,9 @@ instead, all sim state lives in things the PAL can snapshot byte-exactly:
    (`pal.buf_list()`) for snapshot/inspection. Bulk data lives here:
    physics arrays, particle pools, tilemaps, synth state, PRNG state, the
    frame counter. Anonymous buffers (`pal.buf(nil, size)`) are scratch:
-   not persistent, not snapshot.
+   not persistent, not snapshot. `pt.state.buf_poke/buf_peek(name, kind,
+   off[, v])` edit/read one typed cell by buffer name — the tools' eval
+   unit (D027): live writes route through pt.repl like any sim edit.
 2. **The doc tree** — one Lua table of plain data (tables/numbers/strings/
    booleans, no functions/userdata) for irregular state: entity definitions,
    knob values, inventory-ish data. Serialized canonically (sorted keys) by
@@ -286,7 +288,10 @@ knob, say) is the caller's write.
 - Core: clip-stack scroll regions (wheel innermost-wins + draggable thumb),
   virtualized fixed-row lists, weighted row columns, collapsing headings,
   `canvas` (raw rect) and `hit` (invisible button) escape hatches for
-  custom widgets. Style table centralizes colors/metrics.
+  custom widgets. Style table centralizes colors/metrics. Widgets
+  (label/button/checkbox/slider/number) also take `opts.rect` to place
+  explicitly instead of flowing — editors inside virtualized list rows
+  (the inspector's cell views).
 - Built on it: **pt.console** (` toggle: log scrollback from the pal ring,
   filter, REPL line → pt.repl, error banner), **pt.perf** (F3: frame
   graph vs 16.7 ms budget, sim/draw split, `pal.frame_stats`) and
@@ -352,11 +357,32 @@ is called once per editor frame and returns the live, read-only surface:
 offers tile swatches built from `tm.tiles` + atlas (id 0 = eraser), LMB
 paints / RMB erases with cell-line drag continuity, a collider overlay
 (solid fills / one-way top stripes walked from the visible tm window,
-plus AABB outlines from `colliders()`), and save/reset actions. Map
-persistence: `save` writes the raw tilemap bytes to a file next to
-project.lua (sandbox: map.dat); boot adopts an existing buffer as-is,
-else seeds from the file, else from the cartridge's procedural build
-(sandbox: `game.level.reset()`, also the reset button's eval).
+plus AABB outlines from `colliders()`), and save/reset actions.
+
+**The inspector** (pt.inspect, toolbar `inspect` toggle, D027) is the
+M4 entity list + inspector: a searchable tree over exactly what sim
+state can be (D005) — the doc tree and every named buffer. Doc numbers
+drag-edit (magnitude-scaled speed; integers stay integers, floats stay
+floats), booleans toggle, strings are read-only v0, tables collapse;
+searching shows matching leaves flat with full-path labels. Buffers
+expand to a typed lens view (u8..f64 per buffer) of every cell,
+drag-editable, plus a free button (husk cleanup; hidden for `pt.*`
+engine buffers). Reads are direct; **every write is a pt.repl
+submission** — `doc.knobs.move.run = 142.0`,
+`pt.state.buf_poke("sandbox.player","f32",0,920.0)`,
+`pal.buf_free("husk")` — so inspector sessions record and verify like
+console sessions (the inspectpoke golden pins all three shapes). The
+panel also works while a contained error has the sim paused (the repl
+drains immediately): poke the wreckage with a mouse.
+
+Project persistence: `save` persists what the cartridge decides (pure
+reads, called directly). The sandbox writes the raw tilemap bytes to
+map.dat AND `doc.knobs` as canonical doc bytes to knobs.dat (D028),
+both next to project.lua. Boot adopts live state first, then seeds
+from files, then falls back to the procedural build / code defaults
+(sandbox: `game.level.reset()`, also the reset button's eval; the
+knobs defaults merge fills keys the file predates). File reads are
+boot-time-only by rule: file bytes are not sim input.
 
 ## Audio (M6 sketch, kept in mind from day one)
 
@@ -381,7 +407,8 @@ pettan2d/
     boot.lua           thin shim: module system + handoff to pt.main
     pt/                engine modules (main, state, input, rand, math,
                        ease, gfx, text, trace, chunk, ui, console, repl,
-                       perf, tilemap, editor; assets/ = baked fonts)
+                       perf, tilemap, editor, inspect; assets/ = baked
+                       fonts)
   projects/
     sandbox/           the stock cartridge (M3: live-editable platformer —
                        main/level/player/props/fx/demo/pix modules)

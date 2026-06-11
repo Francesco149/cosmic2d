@@ -431,3 +431,62 @@ captures.
 editing wants mouse-as-sim-input (then: the D018 extension path), or
 M10 packaging needs per-surface lockdown granularity instead of one
 flag.
+
+## D027 — the inspector is a state-tree repl client (M4)
+
+**Context**: M4 wants "entity list + inspector (live edit)" under the
+same trace contract as painting (D026). The engine deliberately has no
+entity class: ALL sim state is named buffers + the doc tree (D005), so
+an inspector over exactly those two surfaces IS the entity list — a
+crate is bytes in `sandbox.props`, a feel knob is `doc.knobs.move.run`.
+**Decision**: pt.inspect (a pt.editor panel, toolbar toggle) renders a
+searchable tree of the doc tree and every named buffer. It reads sim
+state directly each frame and writes ONLY by submitting command strings
+through pt.repl: `doc.knobs.move.run = 142.0` (drag numbers /
+checkboxes; literals preserve numeric subtype — floats keep a `.0`
+because the canon serializer tags integers and floats differently),
+`pt.state.buf_poke(name,kind,off,v)` (new by-name static, the generic
+sibling of pt.tilemap.poke; buffers expand to typed u8..f64 lens views
+with drag-editable cells), and `pal.buf_free(name)` (the free button =
+the manual cleanup for reload-orphaned buffer husks PLAN promises;
+hidden for engine `pt.*` buffers). Strings are read-only v0. Drag speed
+scales ~1% of magnitude per pixel; no sliders yet — bounded sliders
+want real range metadata, which arrives with cartridge-supplied
+surfaces (prop-defs era), not heuristics that would cage values.
+pt.ui grew `opts.rect` (explicit widget placement) so editors work
+inside virtualized list rows — a D021 anticipated additive gap.
+**Why**: zero new trace machinery, again: a tuning session records as
+EVAL chunks and verifies byte-exact (inspectpoke golden pins all three
+command shapes). And "entities" fall out of the state model instead of
+becoming a parallel concept; named per-field views can layer on later
+without architecture.
+**Snapshot story**: edits travel as EVALs; panel chrome (expansion,
+lens choices, search) is dev-side per D021 and never recorded.
+**Revisit if**: the tuning pass wants sliders/ranges (then: knob
+metadata on the editor attach surface, additive), buffers want named
+field views (then: cartridge descriptors, same surface), eval echo
+spam from long drags grates (then: a quiet submit variant in pt.repl),
+or string/new-key/delete editing is missed (widgets, not architecture).
+
+## D028 — tuned knobs persist as canonical doc bytes (M4)
+
+**Context**: the doc tree dies with the Lua heap on a VM reboot
+(buffers survive C-side), so a parachute reboot reverted feel tuning to
+code defaults; tuning should also travel inside a shared project zip.
+map.dat (D026) set the file pattern.
+**Decision**: knobs.dat next to project.lua holds
+`pt.state.canon(doc.knobs)` — the frozen D016 encoding, reused as a
+file format. The cartridge owns it (sandbox: `game.save_knobs()`,
+called by the editor save button alongside the map save). Load is
+boot-time-only and only when `doc.knobs` is nil — a live doc always
+wins, so hot reloads and snapshot restores never re-read the file; the
+defaults merge then fills any knobs the file predates. A corrupt file
+logs and falls back to defaults.
+**Why**: canon already round-trips values and numeric subtypes exactly;
+boot-seed-only keeps the D026 iron rule (file bytes are not sim input —
+they only feed boot state, which starting snapshots capture).
+**Snapshot story**: knobs stay ordinary doc state; the file never
+participates after boot.
+**Revisit if**: more doc subtrees want per-project persistence (then: a
+generalized pt.state.persist helper instead of cartridge copies), or
+per-user tuning needs to split from per-project shipping values.
