@@ -4,12 +4,13 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-11
-**Milestone**: M4 — editor mode v0: increment 1 (mode switch, painting,
-collider overlay, map.dat) **human-verified** ("feels great"); increment
-2 DONE — **entity list + inspector (pt.inspect, D027) + knobs persisted
-per project (knobs.dat, D028)**. 8 goldens + 22241 selftest checks
-green; shots on llm-feed. **Next: prop spawn palette** — and the human
-feel-tuning session is now unblocked (knobs persist).
+**Milestone**: M4 — editor mode v0: increments 1+2 (mode switch,
+painting, collider overlay, map.dat; inspector + knobs.dat)
+**human-verified** ("editor loop feels great", "knobs ui feels pretty
+solid"). Increment 3 DONE — **jump-feel curve knobs (D029), dive boost
+cap, editor paint toggle**, all human-requested. 10 goldens + 22241
+selftest checks green; shots on llm-feed. **Next: prop spawn palette**;
+the human tuning session is fully equipped.
 
 ## What works right now
 
@@ -18,82 +19,79 @@ draw/state/input/trace stack, determinism kit, goldens, pt.ui/console/
 repl/perf, error containment, pt.tilemap, the platformer sandbox with
 the air kit, attract demo, --eval) plus M4 so far:
 
-- **pt.editor** (D026): F1 toggles editor chrome over the running game;
-  map painting / erasing as recorded EVAL pokes, collider overlay, tile
-  swatches, save/reset. `editor = false` in project.lua = play-mode
-  lockdown.
-- **pt.inspect** (D027 — toolbar `inspect` checkbox, on by default): the
-  searchable state tree over the doc tree + every named buffer.
-  - Doc numbers drag-edit (speed ~1% of magnitude/px; integers stay
-    integers, floats stay floats — literals keep `.0`), bools toggle,
-    tables collapse, strings read-only v0. Search = flat full-path
-    leaf rows, editors live.
-  - Buffers expand to typed lens views (u8..f64 per buffer), every
-    cell drag-editable; free button = reload-husk cleanup (hidden for
-    `pt.*` engine buffers).
-  - Every write is a pt.repl submission (`doc.knobs.move.run = 142.0`,
-    `pt.state.buf_poke("sandbox.player","f32",0,920.0)`,
-    `pal.buf_free("husk")`) — sessions record + verify byte-exact.
-    Works mid-autopsy too (repl drains while paused).
-- **pt.state.buf_poke/buf_peek**: by-name typed buffer cell access, the
-  generic sibling of pt.tilemap.poke (the inspector's buffer eval unit).
-- **pt.ui opts.rect**: label/button/checkbox/slider/number place at an
-  explicit rect — editors inside virtualized ui.list rows.
-- **knobs.dat** (D028): editor save button (and `game.save_knobs()`)
-  persists doc.knobs as canonical doc bytes next to project.lua; empty
-  boots (fresh VM / parachute reboot) seed from it before the defaults
-  merge; live doc always wins; corrupt file → defaults + log. Tuning
-  now survives reboots and travels with a zip. No knobs.dat (or
-  map.dat) is committed: the repo's sandbox boots stock.
+- **pt.editor** (D026): F1 editor chrome over the running game; painting
+  as recorded EVAL pokes, collider overlay, swatches, save/reset. NEW:
+  a `paint` checkbox in the swatch row (default on) — off disarms the
+  brush AND releases the world's mouse to the game (panels still
+  capture): inspect/tune without stray clicks editing the map.
+  `editor = false` in project.lua = play-mode lockdown.
+- **pt.inspect** (D027, toolbar `inspect` toggle): searchable state
+  tree over the doc tree + every named buffer; drag-number/checkbox
+  editors, typed buffer lens views (u8..f64), husk free button. Every
+  write is a pt.repl submission — sessions record + verify byte-exact.
+  pt.state.buf_poke/buf_peek are the by-name cell eval unit; pt.ui
+  widgets take opts.rect for virtualized rows.
+- **knobs.dat** (D028): editor save persists doc.knobs (canonical doc
+  bytes) next to project.lua; empty boots seed from it, live doc wins,
+  corrupt file → defaults. Nothing committed: repo boots stock.
+- **Jump-feel curve** (D029, human ask): knobs.move.jump_h (px) +
+  apex_t (frames) derive rise gravity + impulse (stock 56/24 == the
+  retired jump=280/gravity=700 **bit-exactly** — demo tour verified
+  byte-identical through the finale); fall_mul scales falling gravity;
+  hang_speed/hang_mul make a floaty apex window (airborne, non-dive).
+  dive.boost_max caps steering while boosted (stock 900 ≈ old uncapped
+  behavior). Props fall under their own knobs.prop.gravity/fall_max.
+  The defaults merge prunes retired keys (no dead inspector rows).
 
 ## Verified
 
-- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241**
-  (+33: buf_poke lenses/errors/eval-string, ui rect placement, inspect
-  path/literal builders incl. keyword keys + float `.0` + inf,
-  built-command exec round trip, read-only render in tree + search
-  modes) + **8 goldens** (new: **inspectpoke**, 600 f — knob eval +
-  buf_poke teleport + husk create/free derail the demo into the crate
-  pit deterministically). knobs.dat save → corrupt → fresh-boot-adopt
-  loop exercised headless. 3 inspector shots on llm-feed (2026-06-11).
-- Human verification PENDING for inspector feel — see open questions.
+- Human-verified: editor loop (increment 1) and the inspector knob UI
+  ("pretty solid") — windowed, 2026-06-11.
+- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** + **10
+  goldens** (new: **jumpfeel** 700 f, floaty-curve evals derail the
+  tour; **boostcap** 420 f, demo_t0-offset finale + teleport, cap 360
+  vs 900 confirmed divergent before recording). Stock-default
+  bit-exactness of D029 proven by byte-identical tour PNGs at frames
+  400/900/1500/1650. knobs.dat round trip exercised. 5 shots on
+  llm-feed today (3 inspector + 2 feel-knobs/paint-toggle).
 
 ## Next step (M4 continues)
 
 1. **Prop spawn palette** (crates first; doc-tree prop defs later) —
-   the last M4 PLAN bullet. Spawning must be an eval (probably a
+   the last M4 PLAN bullet. Spawning must be an eval (a
    `game.props.spawn_eval(x, y)`-shaped cartridge command) like paint
-   and inspect writes.
-2. **Human feel-tuning session** — unblocked: F1 → inspect → drag
-   knobs live, save persists. Carried agenda from M3: knob pass over
-   run/jump/gravity/camera/throw defaults; cam.look_lerp during boost.
-   Retuning movement knobs means re-choreographing the demo (D025) —
-   goldens are unaffected (they replay bundled code + knobs).
+   and inspector writes (D026/D027).
+2. **Human feel-tuning session** — fully equipped now: orthogonal jump
+   handles (jump_h/apex_t/fall_mul/hang_*), boost cap, paint-off mode
+   so the mouse can't scribble while tuning, knobs.dat persistence.
+   Carried agenda from M3: knob pass over run/jump/gravity/camera/
+   throw defaults; cam.look_lerp during boost. Retuned defaults mean
+   re-choreographing the demo (D025) — goldens unaffected (bundled
+   code + knobs).
 3. M2 wishlist: inertial/bouncy scroll for editor chrome.
 
 ## Known small items / debts
 
-- Inspector drags echo one eval per changed frame — long drags are
-  chatty in the console, same family as paint pokes (deliberate v0; a
-  quiet submit variant in pt.repl if it grates). The per-frame evals
-  are CORRECT for traces: each intermediate value steers that frame.
-- Inspector strings read-only; no add/delete of doc keys (console does
-  it). No sliders yet — bounded sliders want real range metadata via
-  the attach surface (D027 revisit), heuristics would cage values.
-- Dragging a buffer cell the sim rewrites every frame "fights" (poke
-  lands at frame start, sim then runs): nudging positions works,
-  pinning velocities doesn't. Live-edit semantics, documented.
-- Freeing a buffer a module still writes = contained game error +
-  console autopsy (free is for orphaned husks; pt.* hidden anyway).
-- Paint pokes still echo per cell; swatch strip still single-row (M8
-  will force a palette panel).
-- Editor mouse capture is all-or-nothing while editor mode is on.
-- Demo choreography assumes procedural map + default knobs (D025):
-  painted maps / tuned knobs derail `game.demo(1)` — that's what the
-  editpaint + inspectpoke goldens ARE. Reset first for the real tour.
+- Inspector drags echo one eval per changed frame — chatty on long
+  drags (deliberate v0; quiet submit variant in pt.repl if it grates).
+  Per-frame evals are CORRECT for traces (each value steers its frame).
+- Inspector strings read-only; no add/delete of doc keys; no sliders —
+  bounded sliders want range metadata via the attach surface (D027).
+- Dragging a buffer cell the sim rewrites every frame "fights" (poke at
+  frame start, sim then runs): nudge positions yes, pin velocities no.
+- Freeing a still-written buffer = contained game error + autopsy.
+- Editor mouse capture all-or-nothing only while `paint` is ON now;
+  paint-off hands the world mouse to the game (mouse games playable
+  under the editor).
+- Demo choreography assumes procedural map + STOCK knobs (D025): a
+  painted map, tuned knobs.dat, or knob evals derail `game.demo(1)` —
+  that's what editpaint/inspectpoke/jumpfeel/boostcap goldens ARE.
+- apex_t guarded against 0 (no NaN); negative jump_h floats upward —
+  tuning freedom, not a bug. hang window also shapes double-jump arcs
+  (generic |vy| window) — intended.
 - Windowed mode requires cwd = repo root (fix at M10 packaging).
 - Texture re-create leaks on VM reboot persist by design; buffer husks
-  now have the inspector free button.
+  have the inspector free button.
 - Trace recorder buffers in memory; M5 ring-trace replaces it (D019).
 - repl env caveat (D022): pre-recording env assignments don't travel.
 - props separation can squeeze a crate into a wall in pathological
@@ -102,13 +100,13 @@ the air kit, attract demo, --eval) plus M4 so far:
 
 ## Open questions for the human
 
-- **Try the inspector windowed** (F1 → inspect): drag-number speed
-  (~1% of value per pixel — too twitchy? too slow near zero?), row
-  density/readability at 480x270, lens strip usability. Is the panel
-  width (186px) right next to the painting viewport?
-- **Tuning session whenever you like**: drag knobs.move/dive/dj/cam
-  live, hit save — knobs.dat keeps it. Want sliders with real ranges
-  for specific knobs first (which ones?), or are drag numbers enough?
+- **Tune away**: defaults reproduce the old feel exactly; jump_h/apex_t
+  /fall_mul/hang_speed/hang_mul + dive.boost_max are live in the
+  inspector, paint checkbox off keeps the mouse safe, save persists.
+  Typical starting points if you want them: fall_mul 1.4–1.8,
+  hang_speed 40–70, hang_mul 0.4–0.6, boost_max 380–450.
+- Sliders with real ranges for specific knobs (which ones?), or are
+  drag numbers enough for the session?
 - Carried: keep the repo's sandbox map procedural until the prop
   palette + second tileset exist? (Committing your painted map.dat +
   tuned knobs.dat makes them the shipped stock level/feel.)

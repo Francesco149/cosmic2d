@@ -344,7 +344,9 @@ shape-rebuilt), the "seed a first boot" signal.
 
 Editor mode v0: F1 toggles editor/play chrome over the running game (the
 sim keeps stepping; keyboard stays with the game, the mouse belongs to
-the editor). Dev/render class like all pt.ui chrome (D021) — and by D026
+the editor — unless the swatch-row `paint` checkbox disarms the brush,
+which hands the world's mouse back to the game while panels keep
+capturing over themselves). Dev/render class like all pt.ui chrome (D021) — and by D026
 it owns no sim state and never writes any directly: **every edit is a
 pt.repl submission** (`pt.tilemap.poke(...)` per painted cell, the
 cartridge's `reset_eval` string for the reset button), so editing

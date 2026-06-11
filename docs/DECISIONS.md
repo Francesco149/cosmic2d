@@ -490,3 +490,38 @@ participates after boot.
 **Revisit if**: more doc subtrees want per-project persistence (then: a
 generalized pt.state.persist helper instead of cartridge copies), or
 per-user tuning needs to split from per-project shipping values.
+
+## D029 — the jump is authored as a curve, not raw physics (M4, human ask)
+
+**Context**: the human's tuning session wants finer jump-feel handles
+than the raw `jump` impulse + `gravity` pair, which couple height and
+duration (change one, both move). The classic parametrization ("build a
+better jump") authors height and timing directly.
+**Decision**: sandbox knobs.move drops `jump`/`gravity` for five
+orthogonal handles: `jump_h` (apex height, px) and `apex_t` (time to
+apex, **frames**) derive rise gravity and the takeoff impulse each step
+— `g = 2*h*3600/t²`, `v0 = 2*h*60/t`, integer-ratio math so the stock
+56 px / 24 f reproduces the retired 280/700 pair **bit-exactly**
+(verified: the demo tour PNG-compares byte-identical through the
+finale); `fall_mul` scales gravity while falling; `hang_speed`/
+`hang_mul` define an apex hang window (airborne, |vy| <= hang_speed,
+non-dive) multiplying on top — floaty peaks and snappy drops without
+touching the rise. Dives keep `dive.grav` over the same base curve;
+`dive.boost_max` (stock 900 ≈ the old unbounded growth) caps steering
+while boosted (the cap engaging was verified divergent before the
+boostcap golden was recorded). Props get their own
+`prop.gravity`/`prop.fall_max` — world gravity for objects, feel curve
+for the player, so tuning the jump never floats the crates. The
+defaults merge in game.init now also **prunes retired keys** inside
+groups KNOBS owns (renames must not linger as dead inspector rows;
+custom top-level groups stay untouched). apex_t is guarded against
+zero (no NaN positions from a dragged-to-zero knob).
+**Why**: orthogonal handles are what live tuning needs; exact-ratio
+defaults keep the calibrated demo choreography (D025) valid without
+re-choreographing; frames are already the codebase's feel unit
+(coyote/buffer).
+**Snapshot story**: knobs remain ordinary doc state (D028 persists
+them); goldens jumpfeel + boostcap pin the new paths under trace.
+**Revisit if**: other cartridges want the curve (then: a pt-level
+jump-curve helper), or the hang window wants asymmetry (rise-side vs
+fall-side speeds — additive knobs).
