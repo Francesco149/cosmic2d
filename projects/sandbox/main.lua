@@ -34,19 +34,26 @@ local game = {}
 game.level = level -- console/editor evals reach the map: game.level.reset()
 
 -- feel knobs, all live (doc tree -> snapshots, traces, console, M4 panels).
--- Merged key-by-key so docs from older sessions grow new knobs in place.
+-- Merged key-by-key so docs from older sessions grow new knobs in place —
+-- and shed retired ones (renames would linger as dead inspector rows).
 local KNOBS = {
+  -- the jump is authored as a curve (D029): jump_h px to the apex in
+  -- apex_t frames (stock 56/24 == the retired jump=280/gravity=700,
+  -- bit-exactly); fall_mul scales gravity on the way down, hang_mul
+  -- inside the apex window (airborne, |vy| <= hang_speed)
   move = { accel = 1500, decel = 1800, air = 0.55, run = 130,
-           gravity = 700, jump = 280, cut = 0.45, fall_max = 340,
-           coyote = 6, buffer = 5 },
+           jump_h = 56.0, apex_t = 24.0, fall_mul = 1.0,
+           hang_speed = 0.0, hang_mul = 1.0,
+           cut = 0.45, fall_max = 340, coyote = 6, buffer = 5 },
   dive = { speed = 270, vy = 50, grav = 0.55, cancel_vy = 150,
-           cancel_slow = 0.45, boost = 400, boost_win = 9,
-           slide_fric = 4.0, flip_t = 0.35 },
+           cancel_slow = 0.45, boost = 400, boost_max = 900.0,
+           boost_win = 9, slide_fric = 4.0, flip_t = 0.35 },
   dj = { speed = 255, buffer = 5, coyote = 6 },
   cam = { lerp = 0.10, lerp_y = 0.08, look = 26, look_lerp = 0.05,
           dead = 26 },
   throw = { vx = 260, vy = 200, inherit = 0.6, radius = 28 },
-  prop = { rest = 0.3, wall_rest = 0.45, fric = 7.0 },
+  prop = { gravity = 700, fall_max = 340, rest = 0.3, wall_rest = 0.45,
+           fric = 7.0 },
   fx = { gravity = 420, drag = 2.2, run_dist = 22 },
   feel = { squash = 0.55, squash_t = 0.16, stretch = 0.4, stretch_t = 0.12 },
 }
@@ -85,6 +92,9 @@ function game.init()
     d.knobs[group] = d.knobs[group] or {}
     for key, v in pairs(defaults) do
       if d.knobs[group][key] == nil then d.knobs[group][key] = v end
+    end
+    for key in pairs(d.knobs[group]) do
+      if defaults[key] == nil then d.knobs[group][key] = nil end
     end
   end
   if d.demo == nil then d.demo = 0 end

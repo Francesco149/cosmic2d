@@ -14,7 +14,9 @@
 --  * DIVE BOOST — cancel within ~knobs.dive.boost_win frames of the
 --    ground (before touchdown or just after sliding) while HOLDING the
 --    dive direction: big forward speed + flip + ground-bounce burst. The
---    boost evaporates the moment you touch the ground (gap-crossing tech).
+--    boost evaporates the moment you touch the ground (gap-crossing
+--    tech); while it lasts, steering caps speed at knobs.dive.boost_max
+--    instead of move.run.
 --  * DOUBLE JUMP — jump pressed again in mid-air, one charge per
 --    airtime (restored on landing), its own buffer + coyote knobs
 --    (knobs.dj): within dj.coyote of walking off a ledge an air press is
@@ -25,6 +27,14 @@
 --    double jump is allowed. Release-cut applies to both jumps.
 --
 -- Every number is a doc-tree knob (knobs.move/dive/dj/feel) — tune live.
+--
+-- The jump curve (D029) is authored in feel terms, not raw physics: rise
+-- gravity and the takeoff impulse derive from knobs.move.jump_h (apex
+-- height, px) and apex_t (time to apex, frames); falling multiplies
+-- gravity by fall_mul, and an apex hang window (airborne, |vy| <=
+-- hang_speed) multiplies by hang_mul on top — floaty peaks, snappy
+-- drops, all five orthogonal. Dives keep their own multiplier (dive.grav)
+-- over the same base curve.
 --
 -- sandbox.player layout (f32 fields):
 --   [0] x | [4] y          AABB top-left (10x14 px body)
@@ -94,6 +104,13 @@ function M.step(ctl)
   local kf = state.doc.knobs.fx
   local tm = level.tm
 
+  -- the derived jump curve (D029): integer-ratio math, so the stock
+  -- 56 px / 24 f reproduces the retired jump=280/gravity=700 pair
+  -- bit-exactly (2*56*3600/24^2 = 700, 2*56*60/24 = 280)
+  local apex_t = m.max(k.apex_t, 0.001) -- a zero apex must not make NaNs
+  local g_rise = 2.0 * k.jump_h * 3600.0 / (apex_t * apex_t)
+  local v0 = 2.0 * k.jump_h * 60.0 / apex_t
+
   local x, y = buf:f32(0), buf:f32(4)
   local vx, vy = buf:f32(8), buf:f32(12)
   local facing = buf:f32(16)
@@ -154,7 +171,8 @@ function M.step(ctl)
   elseif ax ~= 0 then
     if dstate == 0 then facing = ax end -- 3 = flip-out: facing stays locked
     vx = vx + ax * k.accel * (grounded and 1.0 or k.air) * DT
-    if not boosted then vx = m.clamp(vx, -k.run, k.run) end
+    vx = boosted and m.clamp(vx, -kd.boost_max, kd.boost_max)
+         or m.clamp(vx, -k.run, k.run)
   else
     local d = k.decel * (grounded and 1.0 or k.air) * DT
     if vx > 0 then vx = m.max(0.0, vx - d) else vx = m.min(0.0, vx + d) end
@@ -167,7 +185,7 @@ function M.step(ctl)
     if grounded or coyote > 0 then
       jbuf = k.buffer
     elseif dj_coy > 0 then -- dj's own ledge grace: still the full jump
-      vy = -k.jump
+      vy = -v0
       stretch_t = feel.stretch_t
       coyote, dj_coy = 0, 0
       fx.spawn(x + M.W * 0.5, y + M.H, 3,
@@ -214,7 +232,7 @@ function M.step(ctl)
     if ctl.down and grounded and on_oneway then
       drop = 8 -- MapleStory down+jump: fall through the plank
     else
-      vy = -k.jump
+      vy = -v0
       stretch_t = feel.stretch_t
       coyote, dj_coy = 0, 0
       fx.spawn(x + M.W * 0.5, y + M.H, 3,
@@ -228,8 +246,19 @@ function M.step(ctl)
   -- variable height: releasing the key while rising cuts the jump
   if ctl.jump_released and vy < 0 then vy = vy * k.cut end
 
-  local grav_mul = dstate == 1 and kd.grav or 1.0
-  vy = m.min(vy + k.gravity * grav_mul * DT, k.fall_max)
+  -- gravity phases: rising = the curve as-is; falling = fall_mul times
+  -- it; the apex hang window multiplies hang_mul on top. Dives keep
+  -- their own multiplier; on the ground it's just the contact probe
+  local grav_mul
+  if dstate == 1 then
+    grav_mul = kd.grav
+  elseif grounded then
+    grav_mul = 1.0
+  else
+    grav_mul = vy > 0 and k.fall_mul or 1.0
+    if m.abs(vy) <= k.hang_speed then grav_mul = grav_mul * k.hang_mul end
+  end
+  vy = m.min(vy + g_rise * grav_mul * DT, k.fall_max)
 
   local was_grounded = grounded
   local nx, ny, hit = tm:move(x, y, M.W, M.H, vx * DT, vy * DT,

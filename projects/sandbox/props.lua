@@ -98,7 +98,9 @@ end
 function M.step()
   local k = state.doc.knobs
   local tm = level.tm
-  local g, fall_max = k.move.gravity, k.move.fall_max
+  -- props fall under their own world gravity (knobs.prop): the player's
+  -- is a derived feel curve since D029 and must not float the crates
+  local g, fall_max = k.prop.gravity, k.prop.fall_max
   local rest, wall_rest, fric = k.prop.rest, k.prop.wall_rest, k.prop.fric
   local n = M.count()
 
