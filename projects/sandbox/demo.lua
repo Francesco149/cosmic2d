@@ -14,76 +14,121 @@ local M = {}
 
 -- timeline: each row is { duration_frames, "action", "action", ... };
 -- rows run back to back. After the last row the demo just idles.
--- Choreography (world refs: run 2.17 px/f, full jump rises 56 px in 24 f):
--- up the left plank tower to the balcony, big drop, across the plateau,
--- long-jump the pillar, into the crate pit, grab one, carry it out and up
--- a stair plank, throw it back in, drop-through, and run home.
--- A cut hop (13f hold) rises ~47px and covers ~65px ground in ~30 frames;
--- a full hop (20f+ hold) rises 56px and covers ~104px. Run is 2.17 px/f
--- after a ~5f ramp. Hop rows are {13,dir,jump} {17,dir} {settle}.
+-- Choreography against the LOCKED stock knobs (2026-06-11 dial-in).
+-- World refs: run 1.27 px/f; a full hop (hold ~26f, no cut) rises
+-- ~36 px with the apex hang — a 2-row ledge with the 4px mantle; a
+-- jump+dj stack rises ~63 px (3 rows); the dive is a GLIDE: 270 px/s
+-- forward at a ~40 px/s² sink — the fast-travel move. Tour story:
+-- up the plank tower, double-jump to the balcony, glide the lowlands
+-- to the plateau, glide clean over the pillar into the crate pit,
+-- carry a crate out and up a stair plank, throw it back, drop
+-- through, glide home, then the air-kit finale.
 local TIMELINE = {
   -- phase A: up the left plank tower to the balcony
   { 20 }, -- settle
-  { 18, "right" }, -- line up under plank 1
-  { 13, "right", "jump" }, { 17, "right" }, { 6 }, -- onto plank 1 (~199)
-  { 17, "right" }, -- to its right edge
-  { 13, "right", "jump" }, { 17, "right" }, { 6 }, -- onto plank 2 (~295)
-  { 12, "left" }, -- turn around
-  { 13, "left", "jump" }, { 17, "left" }, { 6 }, -- onto plank 3 (~207)
-  { 21, "left" },
-  { 13, "left", "jump" }, { 17, "left" }, { 6 }, -- onto plank 4 (~103)
-  { 18, "jump" }, -- straight up past the balcony lip...
-  { 20, "left" }, -- ...steer left at the apex, land on it
-  { 30 }, -- admire the view
-  -- phase B: big drop, across the plateau, long-jump the pillar, pit dive
-  { 110, "right" }, -- off the balcony edge, big drop, run on
-  { 55, "right" },
-  { 20, "right" }, -- line up on the plateau wall
-  { 13, "right", "jump" }, { 17, "right" }, { 4 }, -- mount the plateau
-  { 66, "right" }, -- across it to the edge
-  { 22, "right", "jump" }, -- full jump: clear the gap to the pillar
-  { 26, "right" }, -- off the pillar
-  { 30, "right" }, -- over the lip, into the pit
-  { 35 }, -- dust settles
-  -- phase C: crate out, crate back in
-  { 16, "right" }, -- to the pile
-  { 5, "grab" }, -- pick one up
-  { 15 },
-  { 52, "right" }, -- carry toward the right wall
-  { 20, "right", "jump" }, { 20, "right" }, { 20 }, -- full jump out (32px wall)
-  { 13, "right", "jump" }, { 17, "right" }, { 6 }, -- up the stair plank
-  { 6, "left" }, -- face the pit
-  { 5, "grab" }, -- THROW
-  { 45 }, -- watch it land
-  -- phase D: drop through, run home
-  { 8, "down", "jump" }, -- drop through the plank
-  { 20 },
-  { 35, "left" }, { 100, "left" }, -- into the pit, across the floor
-  { 20, "left", "jump" }, { 26, "left" }, -- full jump out the left side
-  { 20, "left", "jump" }, { 28, "left" }, -- full jump: clear the pillar
+  { 40, "right" }, -- line up under plank 1
+  { 26, "right", "jump" }, { 26, "right" }, { 8 }, -- onto plank 1
+  { 14, "right" }, -- to its right edge
+  { 26, "right", "jump" }, { 26, "right" }, { 8 }, -- onto plank 2
+  { 16, "left" }, -- turn around
+  { 26, "left", "jump" }, { 26, "left" }, { 8 }, -- onto plank 3
   { 30, "left" },
-  { 13, "left", "jump" }, { 17, "left" }, -- onto the plateau
-  { 58, "left" }, -- across, stop near its left edge
-  -- finale: the air kit
-  { 12, "left", "jump" }, { 4, "left" }, -- hop off the edge...
-  { 8, "dive" }, -- ...DIVE out over the lower ground
-  { 18 }, -- committed drop
-  { 8, "left" }, -- cancel in the window holding left: DIVE BOOST + flip
-  { 30, "left" }, -- ride it out, land (the boost evaporates)
-  { 16 }, -- settle
+  { 26, "left", "jump" }, { 26, "left" }, { 8 }, -- onto plank 4
+  { 6, "left" }, -- stop just RIGHT of the balcony slab (don't get under it)
+  { 30, "jump" }, -- full jump up its face, held past the apex (no cut)...
+  { 2, "left" },
+  { 24, "left", "jump" }, -- ...DOUBLE JUMP at the top, steering in over it
+  { 22, "left" }, -- land on the balcony
+  { 30 }, -- admire the view
+  -- phase B: glide off the balcony, clear across to the plateau
+  { 24, "right" }, -- walk off the balcony edge
+  { 16, "right" }, -- fall, drift right
+  { 6, "dive" }, -- GLIDE from balcony height: 270 px/s over the lowlands
+  { 56 }, -- sail toward the plateau
+  { 6, "up" }, -- flip out of the glide
+  { 40 }, -- drop onto the plateau top (or its doorstep)
+  { 24 }, -- land, settle
+  { 30, "right" }, -- approach (self-healing: run-up if we landed short)
+  { 26, "right", "jump" }, { 24, "right" }, { 8 }, -- hop: a skip on top, or
+  -- the mount over the lip if the glide came up short of the plateau
+  { 120, "right" }, -- across the plateau to its edge
+  -- phase C: into the gap, perch the pillar, glide into the pit
+  { 26, "right" }, -- off the edge, drop into the gap
+  { 26 }, -- land between the walls
+  { 8, "right" }, -- line up on the pillar
+  { 26, "right", "jump" }, { 20, "right" }, { 8 }, -- hop up: the PERCH
+  { 16 }, -- hold the pose
+  { 16, "right", "jump" }, { 4, "right" }, -- hop off the perch...
+  { 6, "dive" }, -- ...glide over the pit lip...
+  { 50 }, -- ...crash the crate pile, slide out
+  { 30 }, -- dust settles
+  -- phase D: crate out of the pit, crate back in
+  { 6, "left" }, -- cancel the slide: flip up at the right wall
+  { 24 }, -- land
+  { 18, "left" }, -- walk back into the strewn pile
+  { 5, "grab" }, -- pick one up
+  { 18 },
+  { 56, "right" }, -- carry to the right wall (over the crates)
+  { 26, "right", "jump" }, { 24, "right" }, { 12 }, -- hop out of the pit
+  { 14, "right" }, -- under the stair plank
+  { 26, "right", "jump" }, { 22, "right" }, { 8 }, -- up onto the stair
+  { 6, "left" }, -- face the pit
+  { 5, "grab" }, -- THROW it back in
+  { 45 }, -- watch it land
+  -- phase E: drop through, hop the skyline home, glide the last stretch
+  { 8, "down", "jump" }, -- drop through the plank
+  { 26 },
+  { 24, "left" }, -- toward the pit
+  { 180, "left" }, -- across the whole pit floor — crate-hopping is slow;
+  -- overrun just presses the left wall (the sync point)
+  { 12 }, -- settle grounded at the left wall (no airborne jump press)
+  { 26, "left", "jump" }, { 22, "left" }, { 8 }, -- hop out the left side
+  { 8 }, -- square up at the pillar's right face
+  { 30, "left", "jump" }, -- jump hugging the face (blocked, then over)...
+  { 2, "left" },
+  { 24, "left", "jump" }, -- ...DOUBLE JUMP, steering in over the top
+  { 26, "left" }, -- cross it, drop into the gap beyond
+  { 40 }, -- land at the plateau wall, settle DEAD (re-sync any drift)
+  { 30, "left", "jump" }, -- jump hugging the wall face...
+  { 2, "left" },
+  { 24, "left", "jump" }, -- ...DOUBLE JUMP, steering in over the lip
+  { 24, "left" }, -- land on top
+  { 36 }, -- settle dead again
+  { 30, "left", "jump" }, -- stack flourish on top — or the RETRY, if
+  { 2, "left" }, -- drift ate the first one at the wall
+  { 24, "left", "jump" },
+  { 24, "left" },
+  { 12 },
+  { 120, "left" }, -- across the plateau
+  { 30, "left" }, -- off its left wall, drop to the lowlands
+  { 16, "left", "jump" }, { 4, "left" }, -- hop...
+  { 6, "dive" }, -- ...glide home
+  { 40 }, -- sail, flop, slide
+  { 6, "up" }, -- flip up
+  { 24 }, -- land near the spawn
+  { 20 }, -- settle
+  -- finale: the air kit at the locked feel
   { 14, "right" }, -- turn around
-  { 12, "right", "jump" }, { 4, "right" }, -- hop...
-  { 8, "dive" }, -- ...DIVE (its own button, mid-air only)...
-  { 20 }, -- no cancel: belly-flop, slide
-  { 22 }, -- lie there a beat
-  { 6, "left" }, -- any press cancels (opposite dir too): flip up
-  { 24 }, -- land (facing unlocks on touchdown)
+  { 16, "right", "jump" }, { 4, "right" }, -- hop...
+  { 6, "dive" }, -- ...glide out
+  { 30 }, -- let it sink toward the ground
+  { 4, "right" }, -- late cancel holding the glide direction: BOOST
+  { 24, "right" }, -- ride the burst to touchdown
+  { 16 }, -- settle
+  { 14, "left" }, -- turn around
+  { 16, "left", "jump" }, { 4, "left" }, -- hop...
+  { 6, "dive" }, -- ...glide...
+  { 26 }, -- no cancel: belly-flop, slide
+  { 20 }, -- lie there a beat
+  { 6, "up" }, -- flip up (a cancel; no new dive till touchdown)
+  { 26 }, -- land
   { 14, "right" }, -- runway for the closer
-  { 12, "right", "jump" }, { 5, "right" }, -- jump...
-  { 12, "right", "jump" }, -- ...DOUBLE JUMP (space again in mid-air)...
-  { 6, "right" },
-  { 8, "dive" }, -- ...and dive out of it
-  { 22 }, -- belly-flop, short slide
+  { 26, "right", "jump" }, -- full jump, held through the apex...
+  { 4, "right" },
+  { 24, "right", "jump" }, -- ...DOUBLE JUMP from the top, held through...
+  { 2, "right" },
+  { 6, "dive" }, -- ...and glide out of the stack
+  { 40 }, -- sail, flop
   { 6, "up" }, -- flip up
   { 26 }, -- land
   { 30 }, -- bow
@@ -141,6 +186,11 @@ local KITCHECK = {
   { 28, "right" }, -- ride to landing
   { 20 }, -- bow out
 }
+
+-- exported for choreography tooling (boundary dumps, montages); the
+-- tables are data, not state — readers must not mutate them
+M.TIMELINE = TIMELINE
+M.KITCHECK = KITCHECK
 
 -- is `action` held on relative frame `rel`? (pure; edges derive from
 -- rel-1). variant 2 = the kit check; anything else = the tour.

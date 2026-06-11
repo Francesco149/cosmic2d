@@ -255,6 +255,17 @@ function game.step()
   props.step()
   fx.step()
   cam_step()
+  -- choreography telemetry (the demo-tuning loop): --eval "_G.DEMO_DBG=30"
+  -- prints the player track every N frames; reads + prints only
+  if DEMO_DBG and state.frame() % DEMO_DBG == 0 then
+    local px, py = player.pos()
+    local function pk(off)
+      return pt.state.buf_peek("sandbox.player", "f32", off)
+    end
+    print(("DBG f=%d x=%d y=%d vy=%d dive=%d charge=%d carry=%d"):format(
+      state.frame(), px // 1, py // 1, pk(12) // 1, pk(64) // 1,
+      pk(84) // 1, pk(48) // 1))
+  end
 end
 
 function game.draw()
