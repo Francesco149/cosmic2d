@@ -511,6 +511,21 @@ local function t_ui()
   check(sv == 100, "ui: slider drag to max (got " .. sv .. ")")
   pass({ bu(56, 10) }, sl_body)
 
+  -- explicit-rect placement (virtualized rows): drags without a layout
+  -- slot and never advances the panel cursor
+  local nv, cy0, cy1 = 5
+  local function rect_body()
+    cy0 = ui.cursor_y()
+    nv = ui.number("n", nv, { rect = { 6, 40, 50, 10 }, speed = 1 })
+    cy1 = ui.cursor_y()
+  end
+  pass({ mo(30, 44) }, rect_body) -- label 45% of 50 = 22px -> track x 28..56
+  pass({ bd(30, 44) }, rect_body)
+  pass({ mo(40, 44) }, rect_body)
+  check(nv == 15, "ui: rect-placed number drags (got " .. nv .. ")")
+  check(cy0 == cy1, "ui: rect placement leaves the layout cursor alone")
+  pass({ bu(40, 44) }, rect_body)
+
   -- text input: click focuses, text inserts, editing keys work
   local tv, sub = "", false
   local function ti_body()

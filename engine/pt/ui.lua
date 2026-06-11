@@ -25,6 +25,13 @@
 -- Ids: push_id/pop_id scope a path stack; a widget's id is its label (or
 -- explicit id) appended to the path, e.g. "console/input". Stable across
 -- frames as long as the call structure is; pass explicit ids in loops.
+--
+-- Placement: widgets normally take the next layout slot (panel strip or
+-- pending row column). label/button/checkbox/slider/number also accept
+-- opts.rect = {x, y, w, h} to place explicitly — for editors inside
+-- virtualized ui.list rows (the inspector), where the row rect is handed
+-- to draw_row instead of flowing through the layout. Rect widgets in
+-- loops need opts.id as usual.
 
 local M = select(2, ...) or {}
 
@@ -266,8 +273,13 @@ local function pop_clip()
   if c then pal.clip(c.x, c.y, c.w, c.h) else pal.clip() end
 end
 
--- next widget rect: either the pending row column or a full-width strip
-local function lay_next(h)
+-- next widget rect: an explicit opts.rect, the pending row column, or a
+-- full-width strip
+local function lay_next(h, opts)
+  if opts and opts.rect then
+    local r = opts.rect
+    return { x = r[1], y = r[2], w = r[3], h = r[4] }
+  end
   local l = lay()
   h = h or M.style.row_h
   if l.row and l.row.i <= #l.row.cols then
@@ -505,7 +517,7 @@ end
 function M.label(s, opts)
   opts = opts or {}
   local st = M.style
-  local r = lay_next(opts.h)
+  local r = lay_next(opts.h, opts)
   if clip_visible(r.x, r.y, r.w, r.h) then
     M.text(r.x, r.y + (r.h - st.gh) // 2, s, opts.color or st.text, opts.font)
   end
@@ -516,7 +528,7 @@ function M.button(label, opts)
   opts = opts or {}
   local st = M.style
   local id = qid(opts.id or label)
-  local r = lay_next(opts.h)
+  local r = lay_next(opts.h, opts)
   local clicked, held = behave_button(id, r.x, r.y, r.w, r.h)
   if clip_visible(r.x, r.y, r.w, r.h) then
     local bg = held and st.widget_active or
@@ -534,7 +546,7 @@ function M.checkbox(label, value, opts)
   opts = opts or {}
   local st = M.style
   local id = qid(opts.id or label)
-  local r = lay_next()
+  local r = lay_next(nil, opts)
   local clicked, held = behave_button(id, r.x, r.y, r.w, r.h)
   if clicked then value = not value end
   if clip_visible(r.x, r.y, r.w, r.h) then
@@ -562,7 +574,7 @@ function M.slider(label, value, min, max, opts)
   opts = opts or {}
   local st = M.style
   local id = qid(opts.id or label)
-  local r = lay_next()
+  local r = lay_next(nil, opts)
   local lw = opts.label_w or (r.w * 45 // 100)
   local tx, tw = r.x + lw, r.w - lw
   local _, held = behave_button(id, tx, r.y, tw, r.h)
@@ -594,7 +606,7 @@ function M.number(label, value, opts)
   opts = opts or {}
   local st = M.style
   local id = qid(opts.id or label)
-  local r = lay_next()
+  local r = lay_next(nil, opts)
   local lw = opts.label_w or (r.w * 45 // 100)
   local tx, tw = r.x + lw, r.w - lw
   local _, held = behave_button(id, tx, r.y, tw, r.h)
