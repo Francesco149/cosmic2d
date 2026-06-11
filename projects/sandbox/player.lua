@@ -35,6 +35,16 @@
 --    never silently out-jumps it (stock 255/280, the retired dj.speed
 --    over the stock jump impulse, bit-exact).
 --
+--  * MANTLE LENIENCY — a descending near-miss at a platform lip (feet
+--    within knobs.move.mantle px BELOW a standable top the body
+--    horizontally overlaps — or is flush against, on a side bonk)
+--    hoists the player onto it: jumps that almost make it land, glides
+--    that clip an edge flop into the slide ON the platform instead of
+--    scraping off. Policy over mechanism: the engine mover stays exact
+--    (D024); the player repositions itself and the normal touchdown
+--    logic runs through the synthesized hit. Never while dropping
+--    through a plank (down+jump), never while rising.
+--
 -- Every number is a doc-tree knob (knobs.move/dive/dj/feel) — tune live.
 --
 -- The jump curve (D029) is authored in feel terms, not raw physics: rise
@@ -100,6 +110,35 @@ local function boom(x, y, dir, n, fast)
   fx.spawn(x, y, n, { vx0 = -dir * (fast and 220 or 90), vx1 = -dir * 25,
                       vy0 = -45, vy1 = 35, life0 = 0.16, life1 = 0.34,
                       shade0 = 3.0, shade1 = 4.0 })
+end
+
+-- the mantle probe: is there a standable top edge (solid, or one-way —
+-- the leniency deliberately bypasses the row-entry rule) within
+-- `mantle` px below the feet, in the body's column span (extended one
+-- column toward a side bonk), with room to stand above it? Returns the
+-- surface y and whether the support is one-way only. Assumes H <= tile
+-- (the body above the lip spans a single row).
+local function mantle_top(tm, x, y, mantle, ext_l, ext_r)
+  local t = tm.tile
+  local feet = y + M.H
+  local r = m.ceil((feet - mantle) / t)
+  if r * t >= feet then return nil end -- no top edge strictly above feet
+  local c0 = m.floor(x / t) - (ext_l and 1 or 0)
+  local c1 = m.ceil((x + M.W) / t) - 1 + (ext_r and 1 or 0)
+  for fx = c0, c1 do -- room to stand: the row above the lip must be clear
+    local a = tm.tiles[tm:get(fx, r - 1)]
+    if a and a.solid then return nil end
+  end
+  local found, solid = false, false
+  for cx = c0, c1 do
+    local d = tm.tiles[tm:get(cx, r)]
+    if d and (d.solid or d.oneway) then
+      found = true
+      solid = solid or (d.solid or false)
+    end
+  end
+  if not found then return nil end
+  return r * t, not solid
 end
 
 -- ctl: left/right/up/down (held), jump_pressed/jump_held/jump_released,
@@ -284,6 +323,18 @@ function M.step(ctl)
   local was_grounded = grounded
   local nx, ny, hit = tm:move(x, y, M.W, M.H, vx * DT, vy * DT,
                               { drop = drop > 0 })
+  -- mantle leniency: a descending near-miss at a lip becomes a landing
+  -- (and a side bonk at the lip stops stealing vx — clear the flags
+  -- before the wall response below; the touchdown branch then runs the
+  -- full landing logic off the synthesized hit.down)
+  if k.mantle > 0 and not hit.down and vy >= 0 and drop <= 0 then
+    local top, ow = mantle_top(tm, nx, ny, k.mantle, hit.left, hit.right)
+    if top then
+      ny = top - M.H
+      hit.left, hit.right = false, false
+      hit.down, hit.oneway = true, ow
+    end
+  end
   drop = m.max(0.0, drop - 1)
   if hit.left or hit.right then vx = 0 end
   if hit.up then vy = m.max(vy, 0.0) end
