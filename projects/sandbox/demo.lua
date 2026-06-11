@@ -1,9 +1,14 @@
--- demo — the attract-mode input script: action "key states" as a pure
+-- demo — the attract-mode input scripts: action "key states" as a pure
 -- function of the frame relative to demo start (doc.demo_t0). Pure data +
--- arithmetic means the demo is deterministic by construction, so it doubles
+-- arithmetic means a demo is deterministic by construction, so it doubles
 -- as the input source for recorded goldens and montages (enable with
 -- `game.demo(1)` in the console, or --eval "game.demo(1)" when recording).
 -- Any real move/jump/grab press hands control back to the player.
+--
+-- Two timelines: 1 = the attract TOUR (the showcase), 2 = the KIT CHECK
+-- (game.demo(2)) — a short scripted exercise of the air-move rules from
+-- the spawn area, for goldens that pin rule changes with real
+-- choreographed input rather than demo_t0 offset tricks.
 
 local M = {}
 
@@ -84,11 +89,39 @@ local TIMELINE = {
   { 30 }, -- bow
 }
 
--- is `action` held on relative frame `rel`? (pure; edges derive from rel-1)
-function M.down(rel, action)
+-- timeline 2 — the kit check: hop-dive, cancel WITH JUMP, immediately
+-- press jump again (must NOT double jump: dives spend the charge — the
+-- attempt buffers a landing hop at most), land; hop-dive to a belly
+-- flop, slide, flip out (the cancel_grav arc), land; hop back. The
+-- run-up drifts into the left plank tower's airspace, so one-way
+-- landings are part of the exercise; any arc lands somewhere — the
+-- rules fire regardless of knob evals layered on top.
+local KITCHECK = {
+  { 20 }, -- settle
+  { 18, "right" }, -- run-up
+  { 12, "right", "jump" }, { 4, "right" }, -- hop...
+  { 6, "dive" }, -- ...dive
+  { 5 }, -- commit
+  { 3, "jump" }, -- cancel with jump (the spent press: not a jump)
+  { 4 }, -- beat
+  { 4, "jump" }, -- dj attempt: the dive spent the charge -> no dj
+  { 24 }, -- fall, land (buffered hop fires here if anywhere)
+  { 16 }, -- settle
+  { 12, "right", "jump" }, { 4, "right" }, -- hop...
+  { 6, "dive" }, -- ...dive, no cancel
+  { 26 }, -- belly flop, slide out
+  { 5, "up" }, -- cancel from the slide: flip up
+  { 26 }, -- land
+  { 12, "left", "jump" }, { 18, "left" }, -- hop back toward home
+  { 24 }, -- bow out
+}
+
+-- is `action` held on relative frame `rel`? (pure; edges derive from
+-- rel-1). variant 2 = the kit check; anything else = the tour.
+function M.down(rel, action, variant)
   if rel < 0 then return false end
   local t = 0
-  for _, row in ipairs(TIMELINE) do
+  for _, row in ipairs(variant == 2 and KITCHECK or TIMELINE) do
     local t1 = t + row[1]
     if rel < t1 then
       for i = 2, #row do

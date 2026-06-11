@@ -45,9 +45,10 @@ local KNOBS = {
            jump_h = 56.0, apex_t = 24.0, fall_mul = 1.0,
            hang_speed = 0.0, hang_mul = 1.0,
            cut = 0.45, fall_max = 340, coyote = 6, buffer = 5 },
-  dive = { speed = 270, vy = 50, grav = 0.55, cancel_vy = 150,
-           cancel_slow = 0.45, boost = 400, boost_max = 900.0,
-           boost_win = 9, slide_fric = 4.0, flip_t = 0.35 },
+  dive = { speed = 270, vy = 50, grav = 0.55, cancel_grav = 1.0,
+           cancel_vy = 150, cancel_slow = 0.45, boost = 400,
+           boost_max = 900.0, boost_win = 9, slide_fric = 4.0,
+           flip_t = 0.35 },
   dj = { speed = 255, buffer = 5, coyote = 6 },
   cam = { lerp = 0.10, lerp_y = 0.08, look = 26, look_lerp = 0.05,
           dead = 26 },
@@ -148,11 +149,12 @@ function game.init()
 end
 
 -- attract mode: game.demo(1) in the console (or --eval) hands the controls
--- to the demo script; any real action press takes them back
+-- to the demo script — game.demo(2) runs the kit-check timeline instead
+-- (golden choreography; see demo.lua); any real action press takes back
 function game.demo(on)
   local d = state.doc
-  if on == 1 or on == true then
-    d.demo = 1
+  if on == 1 or on == true or on == 2 then
+    d.demo = on == 2 and 2 or 1
     d.demo_t0 = state.frame()
   else
     d.demo = 0
@@ -163,7 +165,7 @@ local ACTIONS = { "left", "right", "up", "down", "jump", "grab", "dive" }
 
 local function build_ctl()
   local d = state.doc
-  if d.demo == 1 then
+  if d.demo ~= 0 then
     for _, a in ipairs(ACTIONS) do
       if input.pressed(a) then
         game.demo(0)
@@ -171,10 +173,10 @@ local function build_ctl()
       end
     end
   end
-  if d.demo == 1 then
+  if d.demo ~= 0 then
     local rel = state.frame() - d.demo_t0
-    local function dn(a) return demo.down(rel, a) end
-    local function was(a) return demo.down(rel - 1, a) end
+    local function dn(a) return demo.down(rel, a, d.demo) end
+    local function was(a) return demo.down(rel - 1, a, d.demo) end
     local any = false
     for _, a in ipairs(ACTIONS) do
       if dn(a) and not was(a) then
@@ -255,7 +257,7 @@ function game.draw()
   local rec = pt.trace and pt.trace.recording and pt.trace.recording()
   text.draw(3, 3, ("frame %d%s"):format(frame, rec and "  REC" or ""),
             { g = 0.95, b = 0.8, a = 0.9 })
-  if state.doc.demo == 1 then
+  if state.doc.demo ~= 0 then
     local msg = "DEMO * press any key to play"
     local tw = text.measure(msg)
     text.draw((W - tw) // 2, 24, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })

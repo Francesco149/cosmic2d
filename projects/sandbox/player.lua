@@ -10,7 +10,10 @@
 --  * CANCEL — pressing ANY action during a dive or slide (the opposite
 --    direction included): front-flip pop (slight up momentum), forward
 --    momentum slowed, air control returns, but facing stays locked until
---    you touch the ground.
+--    you touch the ground. The flip-out arc falls under its own gravity
+--    multiplier (knobs.dive.cancel_grav) — decoupled from the jump
+--    curve's fall_mul/hang shaping, so tuning the jump never changes
+--    the flip.
 --  * DIVE BOOST — cancel within ~knobs.dive.boost_win frames of the
 --    ground (before touchdown or just after sliding) while HOLDING the
 --    dive direction: big forward speed + flip + ground-bounce burst. The
@@ -20,11 +23,11 @@
 --  * DOUBLE JUMP — jump pressed again in mid-air, one charge per
 --    airtime (restored on landing), its own buffer + coyote knobs
 --    (knobs.dj): within dj.coyote of walking off a ledge an air press is
---    still the full ground jump (charge kept); a jump press that cancels
---    a dive arms dj.buffer frames of intent, so cancel->double jump
---    chains space-space. A charge-less air press buffers the landing
---    jump as usual. Dives lock out the double jump; diving OUT of a
---    double jump is allowed. Release-cut applies to both jumps.
+--    still the full ground jump (charge kept). A charge-less air press
+--    buffers the landing jump as usual. Dives SPEND the charge — no
+--    double jump out of a dive or its cancel; landing restores it.
+--    Diving OUT of a double jump is still allowed. Release-cut applies
+--    to both jumps.
 --
 -- Every number is a doc-tree knob (knobs.move/dive/dj/feel) — tune live.
 --
@@ -157,7 +160,6 @@ function M.step(ctl)
     dstate = 3 -- flip-out: air control back, facing locked until ground
     flip_t = kd.flip_t
     slide_t = 0
-    if press then dj_buf = kj.buffer end -- cancel->dj chain (space-space)
     press = false -- the press canceled; it is not also a jump
   end
 
@@ -207,7 +209,9 @@ function M.step(ctl)
     vx = facing * kd.speed
     vy = m.max(vy, 0.0) + kd.vy
     flip_t = 0
-    jbuf, dj_buf = 0, 0 -- a dive locks out the other air moves
+    -- a dive spends the air moves: the jump buffers AND the dj charge —
+    -- no double jump out of a dive or its cancel (landing restores it)
+    jbuf, dj_buf, charge = 0, 0, 0
     boom(x + M.W * 0.5 - facing * 4, y + M.H * 0.5, facing, 9, true)
   end
 
@@ -248,12 +252,16 @@ function M.step(ctl)
 
   -- gravity phases: rising = the curve as-is; falling = fall_mul times
   -- it; the apex hang window multiplies hang_mul on top. Dives keep
-  -- their own multiplier; on the ground it's just the contact probe
+  -- their own multiplier and the cancel flip-out has its own too
+  -- (cancel_grav — jump tuning never reshapes the flip); on the ground
+  -- it's just the contact probe
   local grav_mul
   if dstate == 1 then
     grav_mul = kd.grav
   elseif grounded then
     grav_mul = 1.0
+  elseif dstate == 3 then
+    grav_mul = kd.cancel_grav
   else
     grav_mul = vy > 0 and k.fall_mul or 1.0
     if m.abs(vy) <= k.hang_speed then grav_mul = grav_mul * k.hang_mul end
