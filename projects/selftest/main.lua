@@ -954,6 +954,66 @@ local function t_buf_poke()
   pal.buf_free("selftest.poke")
 end
 
+-- ---- pt.inspect (the M4 inspector panel: eval building + render) ----
+
+local function t_inspect()
+  local inspect = pt.require("pt.inspect")
+  local repl = pt.require("pt.repl")
+  local ui = pt.require("pt.ui")
+
+  -- eval path building: dotted when clean, bracketed otherwise
+  check(inspect.path_append("doc", "knobs") == "doc.knobs",
+        "inspect: dotted path")
+  check(inspect.path_append("doc", "end") == 'doc["end"]',
+        "inspect: keyword key bracketed")
+  check(inspect.path_append("doc", "a b") == 'doc["a b"]',
+        "inspect: non-identifier key bracketed")
+  check(inspect.path_append("doc", 3) == "doc[3]", "inspect: integer key")
+
+  -- value literals reproduce value AND numeric subtype
+  check(inspect.fmt_value(142) == "142", "inspect: integer literal")
+  check(inspect.fmt_value(142.0) == "142.0", "inspect: float keeps .0")
+  check(inspect.fmt_value(0.55) == "0.55", "inspect: fraction literal")
+  check(inspect.fmt_value(-3.25) == "-3.25", "inspect: negative float")
+  check(inspect.fmt_value(true) == "true", "inspect: boolean literal")
+  check(inspect.fmt_value(1 / 0) == "(1/0)", "inspect: inf is eval-safe")
+  check(inspect.fmt_value(2.5e300) == "2.5e+300", "inspect: exponent form")
+
+  -- a built command runs through the real eval path
+  state.doc.itest = { ["end"] = 1.0, flag = false }
+  local cmd = inspect.path_append(inspect.path_append("doc", "itest"), "end")
+              .. " = " .. inspect.fmt_value(2.5)
+  check(cmd == 'doc.itest["end"] = 2.5', "inspect: assembled command")
+  check(repl.exec(cmd) == true, "inspect: built eval runs")
+  check(state.doc.itest["end"] == 2.5, "inspect: built eval landed")
+
+  -- the panel renders over a populated doc + an expanded buffer without
+  -- touching sim state or submitting anything (one headless ui pass)
+  state.doc.itest.sub = { x = 1, y = 2.5, tag = "hi" }
+  pal.buf("selftest.insp", 16):f32(0, 3.5)
+  inspect.open_buf["selftest.insp"] = true
+  inspect.open_doc["itest"] = true
+  inspect.search = ""
+  local before = state.canon(state.doc)
+  local function render()
+    ui.frame({})
+    pal.begin_frame(0, 0, 0, 1)
+    inspect.frame(2, 2, 186, 250)
+    ui.frame_end()
+  end
+  render()
+  check(state.canon(state.doc) == before, "inspect: render is read-only")
+  check(#repl.queue == 0, "inspect: render submits nothing")
+  inspect.search = "itest" -- search mode: flat leaf rows
+  render()
+  inspect.search = ""
+
+  state.doc.itest = nil
+  inspect.open_doc["itest"] = nil
+  inspect.open_buf["selftest.insp"] = nil
+  pal.buf_free("selftest.insp")
+end
+
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
@@ -988,6 +1048,7 @@ function game.init()
   t_console()
   t_tilemap()
   t_tilemap_tools()
+  t_inspect()
   t_bundle()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

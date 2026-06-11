@@ -1,8 +1,8 @@
--- pt.editor — editor mode v0 (M4): the F1 mode switch, map painting and
--- the collider overlay. Engine-level chrome, available in every project
--- unless project.lua sets `editor = false` (the play-mode lockdown for
--- shipped zips — it disables F1 here and the ` / F3 toggles in pt.console
--- and pt.perf; see locked()).
+-- pt.editor — editor mode v0 (M4): the F1 mode switch, map painting, the
+-- collider overlay and the state inspector (pt.inspect, toolbar toggle).
+-- Engine-level chrome, available in every project unless project.lua sets
+-- `editor = false` (the play-mode lockdown for shipped zips — it disables
+-- F1 here and the ` / F3 toggles in pt.console and pt.perf; see locked()).
 --
 -- Dev/render class by the D021 iron rule: this module owns no sim state
 -- and never mutates any directly. Every edit is SUBMITTED as a console
@@ -34,15 +34,18 @@ local ui = pt.require("pt.ui")
 local repl = pt.require("pt.repl")
 local gfx = pt.require("pt.gfx")
 local tilemap = pt.require("pt.tilemap")
+local inspect = pt.require("pt.inspect")
 
 M.on = M.on or false
 M.sel = M.sel or 1 -- selected tile id; 0 = the eraser
 M.show_col = M.show_col or false
+if M.show_insp == nil then M.show_insp = true end -- the inspector panel
 
 local floor, ceil = math.floor, math.ceil
 local KEY_F1 = 58
 local TB_H = 43 -- toolbar: pad + status row + gap + 22px swatch strip + pad
 local SW = 22 -- swatch cell size
+local IW = 186 -- inspector panel width (right edge, under the toolbar)
 local KIND_COLOR = {
   player = { 0.30, 0.95, 0.95, 0.95 },
   prop = { 0.95, 0.65, 0.25, 0.95 },
@@ -174,7 +177,7 @@ local function toolbar(att, tx, ty)
   local st = ui.style
   ui.begin_panel("editor", 0, 0, W, TB_H)
 
-  ui.row({ 50, 230, 76, 42, 42 })
+  ui.row({ 44, 168, 64, 56, 38, 38 })
   ui.label("EDITOR", { color = st.accent })
   local status
   if att and att.tm then
@@ -185,6 +188,7 @@ local function toolbar(att, tx, ty)
   end
   ui.label(status, { color = st.text_dim })
   M.show_col = ui.checkbox("colliders", M.show_col)
+  M.show_insp = ui.checkbox("inspect", M.show_insp)
   if att and att.save then
     if ui.button("save") then
       if att.save() then
@@ -262,6 +266,10 @@ function M.frame()
   end
 
   toolbar(att, tx, ty)
+  if M.show_insp then
+    local W, H = pal.gfx_size()
+    inspect.frame(W - IW - 2, TB_H + 2, IW, H - TB_H - 4)
+  end
 end
 
 return M
