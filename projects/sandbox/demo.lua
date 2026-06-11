@@ -54,12 +54,33 @@ local TIMELINE = {
   { 8, "down", "jump" }, -- drop through the plank
   { 20 },
   { 35, "left" }, { 100, "left" }, -- into the pit, across the floor
-  { 20, "left", "jump" }, { 14, "left" }, -- full jump out the left side
+  { 20, "left", "jump" }, { 26, "left" }, -- full jump out the left side
   { 20, "left", "jump" }, { 28, "left" }, -- full jump: clear the pillar
   { 30, "left" },
   { 13, "left", "jump" }, { 17, "left" }, -- onto the plateau
-  { 70, "left" }, -- across, off the edge
-  { 50, "left" }, -- run home
+  { 58, "left" }, -- across, stop near its left edge
+  -- finale: the air kit
+  { 12, "left", "jump" }, { 4, "left" }, -- hop off the edge...
+  { 8, "jump" }, -- ...DIVE out over the lower ground
+  { 18 }, -- committed drop
+  { 8, "left" }, -- cancel in the window holding left: DIVE BOOST + flip
+  { 30, "left" }, -- ride it out, land (the boost evaporates)
+  { 16 }, -- settle
+  { 14, "right" }, -- turn around
+  { 12, "right", "jump" }, { 4, "right" }, -- hop...
+  { 8, "jump" }, -- ...DIVE (jump pressed in mid-air)...
+  { 20 }, -- no cancel: belly-flop, slide
+  { 22 }, -- lie there a beat
+  { 6, "left" }, -- any press cancels (opposite dir too): flip up
+  { 24 }, -- land (facing unlocks on touchdown)
+  { 14, "right" }, -- runway for the closer
+  { 12, "right", "jump" }, { 5, "right" }, -- jump...
+  { 12, "right", "up", "jump" }, -- ...DOUBLE JUMP (up held + new press)...
+  { 6, "right" },
+  { 8, "jump" }, -- ...and dive out of it
+  { 22 }, -- belly-flop, short slide
+  { 6, "up" }, -- flip up
+  { 26 }, -- land
   { 30 }, -- bow
 }
 

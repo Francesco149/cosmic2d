@@ -5,7 +5,8 @@
 --
 -- sandbox.fx layout: [0] u32 ring cursor | [4..15] reserved
 --   then NPART * 32B: x y vx vy life life0 shade (f32) + 4 spare bytes
--- shade picks the palette: < 1.5 = dust (gray-brown), >= 1.5 = spark (warm).
+-- shade picks the palette: < 1.5 dust (gray-brown), < 3 spark (warm),
+-- >= 3 boom (white-blue — dive trails and dash pops).
 
 local m = pt.require("pt.math")
 local rand = pt.require("pt.rand")
@@ -75,9 +76,12 @@ function M.draw()
       if shade < 1.5 then -- dust
         local v = 0.42 + 0.22 * shade
         r, g, b = v * 1.12, v, v * 0.82
-      else -- spark
+      elseif shade < 3.0 then -- spark
         local t = shade - 1.5
         r, g, b = 1.0, 0.72 - 0.25 * t, 0.30 - 0.18 * t
+      else -- boom
+        local t = m.clamp(shade - 3.0, 0, 1)
+        r, g, b = 1.0 - 0.18 * t, 0.95 - 0.08 * t, 1.0
       end
       local q = n * 48
       local size = fade > 0.6 and 2 or 1

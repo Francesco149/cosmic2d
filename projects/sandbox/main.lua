@@ -36,6 +36,10 @@ local KNOBS = {
   move = { accel = 1500, decel = 1800, air = 0.55, run = 130,
            gravity = 700, jump = 280, cut = 0.45, fall_max = 340,
            coyote = 6, buffer = 5 },
+  dive = { speed = 270, vy = 50, grav = 0.55, cancel_vy = 150,
+           cancel_slow = 0.45, boost = 400, boost_win = 9,
+           slide_fric = 4.0, flip_t = 0.35 },
+  dj = { speed = 255, buffer = 5, coyote = 6 },
   cam = { lerp = 0.10, lerp_y = 0.08, look = 26, look_lerp = 0.05,
           dead = 26 },
   throw = { vx = 260, vy = 200, inherit = 0.6, radius = 28 },
@@ -70,12 +74,12 @@ function game.init()
   end
 
   input.map({
-    { "left", input.key.left, input.key.a },
-    { "right", input.key.right, input.key.d },
-    { "up", input.key.up, input.key.w },
-    { "down", input.key.down, input.key.s },
+    { "left", input.key.left },
+    { "right", input.key.right },
+    { "up", input.key.up },
+    { "down", input.key.down },
     { "jump", input.key.space },
-    { "grab", input.key.z, input.key.e },
+    { "grab", input.key.e },
     { "quit", input.key.escape },
   })
 end
@@ -92,12 +96,12 @@ function game.demo(on)
   end
 end
 
-local DEMO_ACTIONS = { "left", "right", "jump", "grab" }
+local ACTIONS = { "left", "right", "up", "down", "jump", "grab" }
 
 local function build_ctl()
   local d = state.doc
   if d.demo == 1 then
-    for _, a in ipairs(DEMO_ACTIONS) do
+    for _, a in ipairs(ACTIONS) do
       if input.pressed(a) then
         game.demo(0)
         break
@@ -108,13 +112,28 @@ local function build_ctl()
     local rel = state.frame() - d.demo_t0
     local function dn(a) return demo.down(rel, a) end
     local function was(a) return demo.down(rel - 1, a) end
+    local any = false
+    for _, a in ipairs(ACTIONS) do
+      if dn(a) and not was(a) then
+        any = true
+        break
+      end
+    end
     return {
       left = dn("left"), right = dn("right"),
       up = dn("up"), down = dn("down"),
       jump_pressed = dn("jump") and not was("jump"),
       jump_released = was("jump") and not dn("jump"),
       grab_pressed = dn("grab") and not was("grab"),
+      any_pressed = any,
     }
+  end
+  local any = false
+  for _, a in ipairs(ACTIONS) do
+    if input.pressed(a) then
+      any = true
+      break
+    end
   end
   return {
     left = input.down("left"), right = input.down("right"),
@@ -122,6 +141,7 @@ local function build_ctl()
     jump_pressed = input.pressed("jump"),
     jump_released = input.released("jump"),
     grab_pressed = input.pressed("grab"),
+    any_pressed = any,
   }
 end
 
@@ -176,7 +196,7 @@ function game.draw()
     text.draw((W - tw) // 2, 24, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
   text.draw(3, H - 11,
-            "arrows/wasd move * space jump (hold) * down+jump drop * z grab/throw",
+            "arrows * space jump / air dive (press cancels) * up+space double jump * e grab",
             { r = 0.90, g = 0.88, b = 0.78, a = 0.9 })
 end
 
