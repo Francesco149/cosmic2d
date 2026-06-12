@@ -164,11 +164,16 @@ local KITCHECK = {
   { 26 }, -- land
   { 12, "left", "jump" }, { 18, "left" }, -- hop back toward home
   { 24 }, -- bow out
-  -- the boost coda
+  -- the boost coda (timed for the LOCKED knobs: boost_win 3 + the slow
+  -- glide sink means a mid-air cancel must come within ~4 px of the
+  -- floor — instead let the glide FLOP and cancel in the fresh slide
+  -- (slide_t <= boost_win also boosts). Drift tolerance: a hair early
+  -- still boosts via the near-ground probe, a hair late via the slide)
   { 12, "left", "jump" }, { 4, "left" }, -- hop...
   { 6, "dive" }, -- ...dive left
-  { 12 }, -- commit, drop toward the ground
-  { 6, "left" }, -- cancel holding the dive direction: DIVE BOOST
+  { 22 }, -- commit; the glide sinks to the floor and flops
+  { 6, "left" }, -- cancel in the young slide, holding the dive
+  -- direction: DIVE BOOST (ground-bounce burst)
   { 4, "dive" }, -- dive press mid-boost: dead button (locked till ground)
   { 26, "left" }, -- ride the boost to touchdown (it evaporates there)
   { 24 }, -- settle
@@ -179,8 +184,8 @@ local KITCHECK = {
   { 4 }, -- commit, still high
   { 4, "up" }, -- cancel high, neutral press (never a boost): plain flip
   { 4, "dive" }, -- dive press post-cancel: dead (one dive per airtime)
-  { 22 }, -- fall, land
-  { 14 }, -- settle
+  { 46 }, -- the cancel_grav arc is long: ride it down, land
+  { 14 }, -- settle grounded (the closer must be a deliberate press)
   { 12, "right", "jump" }, { 6, "right" }, -- full jump...
   { 10, "right", "jump" }, -- ...DOUBLE JUMP (dj.scale * the jump impulse)
   { 28, "right" }, -- ride to landing
