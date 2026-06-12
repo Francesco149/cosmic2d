@@ -4,16 +4,16 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-12
-**Milestone**: M4 — editor mode v0: increments 1–3 human-verified
-(editor loop, inspector, feel knobs); increment 4 done (the feel is
-LOCKED IN — stock knobs are the human's dial-in, mantle leniency D030,
-final dive rules, tour v2 re-choreographed). Increment 5 DONE — **prop
-spawn palette** (D031, the last M4 PLAN bullet): crate swatch in the
-editor strip, LMB spawn / RMB delete as `game.props.spawn/despawn_at`
-evals, propspawn golden, **human-verified** ("feels good"). 16 goldens
-+ 22241 selftest checks green. Every M4 PLAN bullet is now done and
-verified. **Next: M2 wishlist inertial scroll**, then the kit-check
-boost-coda re-time (cleanup).
+**Milestone**: M4 — editor mode v0: **COMPLETE** (every PLAN bullet
+done and verified; the feel is LOCKED IN per D029/D030, prop palette
+D031). Post-M4 cleanup also done this session: (1) M2-wishlist
+**inertial scroll** with edge rubber-band in pt.ui (selftest-covered,
+montage on the feed); (2) the **kit-check boost coda re-timed** for
+the locked knobs + a new **kitcheck golden** pinning the full air-kit
+rule set including the boost; (3) the **tour finale re-cut** — real
+DIVE BOOST beat + a vertical-tower flare closer (montage on the feed,
+taste check pending). 17 goldens + 22244 selftest checks green.
+**Next: M5 — time machine** (ring trace D019, scrubber).
 
 ## What works right now
 
@@ -55,7 +55,15 @@ plus M4 so far:
   balcony-height glide to the plateau, pillar glide-crash perch, glide
   into the crate pile, carry + stair throw, drop-through, the slow
   crate-floor crossing, wall-hugging dj-stack mounts home, glide back,
-  and a glide-cancel / flop-flip / jump→dj→glide finale. ~2730 frames.
+  and the finale: flop-cancel DIVE BOOST riding the lowland to the
+  plateau wall, no-cancel belly flop, then a vertical jump→dj tower
+  into a swoop with a low-flare landing. 2719 frames.
+- **Inertial scroll** (pt.ui, M2 wishlist): a wheel notch is velocity
+  now (same 3-row total travel), edges rubber-band (overshoot, spring
+  return that snaps dead AT the edge). Thumb drags / scroll_set /
+  scroll_to_bottom stay instant. Dev-chrome only — never sim, never
+  in traces; rows render on a rounded offset so pixel text stays
+  crisp mid-glide. Constants live next to begin_scroll in ui.lua.
 - **Choreography tooling**: `--eval "_G.DEMO_DBG=30"` prints a player
   track every N frames (x/y/vy/dive/charge/carry; reads+prints only);
   demo.lua exports TIMELINE/KITCHECK for boundary dumps. The tuning
@@ -79,31 +87,34 @@ plus M4 so far:
   values themselves (their dial-in, folded verbatim — canon-hash-equal
   to their saved knobs.dat before it was retired), and the prop spawn
   palette ("feels good", 2026-06-12).
-- Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** +
-  **16 goldens** (this session: **propspawn** — spawn, despawn_at hit
-  and miss, held-crate refusal, the swap + carry self-heal, 240 f on
-  the procedural map). Headless eval smoke-tests passed for cap/count,
-  spawn indices, despawn refusal and the carry heal (14→13 after the
-  swap) before recording.
+- Agent-verified (this session): `nix run .#test` ALL GREEN — selftest
+  **22244** + **17 goldens** (new: **kitcheck**, 560 f demo(2) on a
+  fresh procedural boot — pins spent-press, no-dj-after-dive,
+  flop-slide-flip, the BOOST from the young slide, dive dead
+  mid-boost, boost dies at touchdown, neutral high cancel = plain
+  flip, dive dead post-cancel, grounded jump→dj closer). Scroll
+  physics tuned offline, then frame-by-frame in-engine (notch glides
+  to exactly 3 rows; fling at an edge: overshoot −27.7 px, snap dead
+  at 0 in 7 f, zero drift). Finale re-cut verified beat-by-beat via
+  the TRK eval-chain telemetry on the procedural map: flop f2378,
+  boost f2380 (sl=2), wall-kiss anchor x=470, flare at x=428, bow at
+  x=434 (36 px clear of the wall).
 - Earlier (2026-06-11): tour v2 verified beat-by-beat via telemetry +
   20-shot montage; dj.speed→scale migration tested live; mantle A/B
   verified (0 falls, 4 lands) before its golden.
 
-## Next step (M4 continues)
+## Next step (M5 — time machine)
 
-1. M2 wishlist: inertial/bouncy scroll for editor chrome.
-2. Cleanup candidates while in the area: re-time the kit-check boost
-   coda for the locked knobs (boost_win 3 + glide sink means the old
-   cancel timing no longer boosts — boostlock's bundled copy still
-   verifies forever, but FUTURE kit-check recordings lost that
-   coverage); the finale's "late cancel" boost is currently a plain
-   flip for the same reason (cosmetic).
+1. Read D019 + ARCHITECTURE on the trace format, then design the
+   **always-on ring trace** (last N seconds, replacing the in-memory
+   recorder's grow-forever buffering) — snapshot story to DECISIONS.
+2. Then the timeline scrubber UI (read state straight from trace
+   deltas, no re-sim), rewind & resume, trace export ("save what just
+   happened"), replay playback. Pixel goldens land this milestone too
+   (pinned lavapipe).
 
 ## Known small items / debts
 
-- Kit-check codas are mistimed for the locked knobs (above) — the kit
-  check still runs deterministically; only boost coverage in future
-  recordings is affected.
 - Inspector drags echo one eval per changed frame (correct for traces;
   quiet submit variant if it grates). Strings read-only; no add/delete;
   no sliders (range metadata via attach, D027).
@@ -123,15 +134,19 @@ plus M4 so far:
 
 ## Open questions for the human
 
-- **Watch tour v2** (montage on the feed, or `game.demo(1)` after a
-  `game.level.reset()` if your painted map.dat is loaded): does the
-  new choreography read as deliberate showmanship in the locked feel?
-  Beats worth a re-cut are cheap now (telemetry + boundary tooling).
+- **Two montages on the feed** (2026-06-12): (1) the inertial-scroll
+  rubber-band — also just wheel the console/inspector in a live
+  session, especially at an edge; (2) the finale re-cut — does the
+  boost's plateau wall-kiss read as deliberate (it's also the beat's
+  re-sync anchor), and does the vertical-tower flare closer land as
+  a finale? Beats are cheap to re-cut (telemetry + boundary tooling).
+- **Watch tour v2** (`game.demo(1)` after a `game.level.reset()` if
+  your painted map.dat is loaded): does the full choreography read as
+  deliberate showmanship in the locked feel?
 - RESOLVED (2026-06-12): the stock level stays procedural — no
   committed map.dat until in-editor sprite/background design tools
   (M8 era) and the rest of the editor features are fleshed out. The
   human's painted map.dat stays local.
-- The finale has no real BOOST beat under the locked knobs (window 3
-  is genuinely hard open-loop). Fine to leave as flip, or want me to
-  hunt a boost-able setup (e.g. a scripted dive from a specific ledge
-  height) for the showcase?
+- RESOLVED (2026-06-12): the finale's boost — found the robust setup
+  (flop-cancel within boost_win of the slide start); both the kit
+  check and the tour now show a real boost.
