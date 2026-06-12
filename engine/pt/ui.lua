@@ -387,6 +387,16 @@ end
 
 -- ---- scrolling ----
 
+-- inertial feel (per 60Hz render tick, dev chrome only — never sim). A
+-- wheel notch becomes velocity that glides out under friction; the total
+-- glide distance per notch is still wheel_rows * row_h. Overshooting an
+-- edge rubber-bands: a spring pulls back (harder damping out of bounds)
+-- and the return snaps dead at the boundary instead of re-entering the
+-- content — bounce, not slingshot.
+local SCROLL_FRIC = 0.78      -- in-bounds velocity decay per tick
+local SCROLL_FRIC_OUT = 0.65  -- decay while overshooting (stiffer)
+local SCROLL_SPRING = 0.35    -- pull per px of overshoot
+
 -- vertical scroll region of fixed height h inside the current layout.
 -- Content height is measured as widgets advance the inner cursor; the
 -- scrollbar appears when content overflows. Wheel scrolls when hovered
@@ -406,11 +416,12 @@ function M.begin_scroll(id, h, opts)
   if opts.bg then M.rect(r.x, r.y, r.w, r.h, opts.bg) end
   push_clip(r.x, r.y, r.w, r.h)
   local inner_w = r.w - st.scrollbar_w - 1
+  local off = math.floor(s.scroll + 0.5) -- pixel-crisp rows mid-glide
   lay_stack[#lay_stack + 1] = {
-    x = r.x, cy = r.y - s.scroll, w = inner_w, indent = 0,
+    x = r.x, cy = r.y - off, w = inner_w, indent = 0,
   }
   scroll_stack[#scroll_stack + 1] = { id = id, rect = r,
-                                      start_cy = r.y - s.scroll }
+                                      start_cy = r.y - off }
   M.push_id(seg)
   return inner_w
 end
@@ -431,17 +442,20 @@ function M.end_scroll()
   local max_scroll = math.max(0, s.content_h - r.h)
   if s.want_bottom then
     s.scroll = max_scroll
+    s.vel = 0
     s.want_bottom = nil
   end
 
-  -- wheel: innermost hovered scroll region consumes it
+  -- wheel: innermost hovered scroll region consumes it (as velocity)
   if not wheel_taken and M.inp.wheel ~= 0 and mouse_in(r.x, r.y, r.w, r.h)
      and clip_visible(M.inp.mx, M.inp.my, 1, 1) then
-    s.scroll = s.scroll - M.inp.wheel * st.wheel_rows * st.row_h
+    s.vel = (s.vel or 0) - M.inp.wheel * st.wheel_rows * st.row_h
+              * (1 - SCROLL_FRIC) / SCROLL_FRIC
     wheel_taken = true
   end
 
   -- scrollbar
+  local thumb_held = false
   if max_scroll > 0 then
     local bx = r.x + r.w - st.scrollbar_w
     M.rect(bx, r.y, st.scrollbar_w, r.h, st.track)
@@ -458,6 +472,8 @@ function M.end_scroll()
       end
       local want_ty = M.inp.my - ws.drag
       s.scroll = (want_ty - r.y) / math.max(1, r.h - th) * max_scroll
+      s.vel = 0
+      thumb_held = true
     else
       widget_state(tid).drag = nil
     end
@@ -467,7 +483,29 @@ function M.end_scroll()
            th, M.is_active(tid) and M.style.accent or M.style.widget_hot)
   end
 
-  s.scroll = math.min(math.max(s.scroll, 0), max_scroll)
+  -- integrate the glide / rubber-band (the thumb overrides physics)
+  if thumb_held or max_scroll == 0 then
+    s.scroll = math.min(math.max(s.scroll, 0), max_scroll)
+    s.vel = 0
+  else
+    local x, v = s.scroll, s.vel or 0
+    local out_lo, out_hi = x < 0, x > max_scroll
+    if out_lo then
+      v = (v - x * SCROLL_SPRING) * SCROLL_FRIC_OUT
+    elseif out_hi then
+      v = (v + (max_scroll - x) * SCROLL_SPRING) * SCROLL_FRIC_OUT
+    else
+      v = v * SCROLL_FRIC
+    end
+    x = x + v
+    -- the rubber band returns TO the edge, never past it
+    if out_lo and x >= 0 then x, v = 0, 0 end
+    if out_hi and x <= max_scroll then x, v = max_scroll, 0 end
+    if x >= 0 and x <= max_scroll and v > -0.05 and v < 0.05 then
+      x, v = math.floor(x + 0.5), 0 -- settled: land on a whole pixel
+    end
+    s.scroll, s.vel = x, v
+  end
 end
 
 function M.scroll_get(id)
@@ -476,7 +514,8 @@ function M.scroll_get(id)
 end
 
 function M.scroll_set(id, v)
-  widget_state(qid(id)).scroll = v -- clamped at next end_scroll
+  local s = widget_state(qid(id))
+  s.scroll, s.vel = v, 0 -- out-of-range rubber-bands at next end_scroll
 end
 
 -- is the region scrolled to (within one row of) the bottom?

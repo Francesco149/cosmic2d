@@ -599,10 +599,26 @@ local function t_ui()
   check(got.at_bottom == false, "ui: not at bottom at scroll 0")
   pass({ mo(20, 12) }, sc_body) -- mouse into region (y 6..28)
   pass({ { type = "wheel", dy = -1 } }, sc_body)
-  pass({}, sc_body)
-  check(got.scroll == 33, "ui: wheel scrolls 3 rows (got " .. got.scroll .. ")")
+  check(got.scroll > 0 and got.scroll < 33,
+        "ui: wheel glides, not jumps (got " .. got.scroll .. ")")
+  for _ = 1, 60 do pass({}, sc_body) end -- let the inertia run out
+  check(got.scroll == 33, "ui: one notch settles at 3 rows (got "
+        .. got.scroll .. ")")
   check(first_row == 5, "ui: list window follows scroll (first "
         .. tostring(first_row) .. ")")
+
+  -- wheel up at the top rubber-bands: overshoots negative, returns to 0
+  pass({}, function()
+    ui.scroll_set("log", 0)
+    sc_body()
+  end)
+  pass({ { type = "wheel", dy = 1 } }, sc_body)
+  pass({}, sc_body)
+  check(got.scroll < 0, "ui: edge overshoot goes out of bounds (got "
+        .. got.scroll .. ")")
+  for _ = 1, 60 do pass({}, sc_body) end
+  check(got.scroll == 0, "ui: rubber band returns to the edge (got "
+        .. got.scroll .. ")")
   local function sc_bottom()
     ui.scroll_to_bottom("log")
     sc_body()
