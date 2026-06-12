@@ -177,29 +177,40 @@ local function sorted_buf_list()
   return list
 end
 
+-- encode a snapshot from captured parts: bufs = name-sorted array of
+-- {name, bytes}, doct = canonical doc bytes, code = pt.modules()-shaped
+-- array or nil (code-less: trace keyframes). The ring trace (D032) uses
+-- this to serialize keyframes it captured from its mirrors; sharing the
+-- encoder is what keeps those byte-identical to live snapshots.
+function M.encode_snapshot(bufs, doct, code)
+  local w = chunk.writer(SNAP_MAGIC)
+  if code then
+    local parts = {}
+    for _, mod in ipairs(code) do
+      parts[#parts + 1] = pack("<s4s4s4", mod.name, mod.path, mod.source)
+    end
+    w.chunk("CODE", 1, pack("<I4", #parts) .. table.concat(parts))
+  end
+  local bp = {}
+  for _, b in ipairs(bufs) do
+    bp[#bp + 1] = pack("<s4", b.name) .. pack("<s4", b.bytes)
+  end
+  w.chunk("BUFS", 1, pack("<I4", #bp) .. table.concat(bp))
+  w.chunk("DOCT", 1, doct)
+  return w.result()
+end
+
 -- opts.code = false omits the bundle (trace keyframes: the trace's starting
 -- snapshot + epoch records already pin the code)
 function M.snapshot(opts)
-  local w = chunk.writer(SNAP_MAGIC)
-
-  if not (opts and opts.code == false) then
-    local code = {}
-    for _, mod in ipairs(pt.modules()) do
-      code[#code + 1] = pack("<s4s4s4", mod.name, mod.path, mod.source)
-    end
-    w.chunk("CODE", 1, pack("<I4", #code) .. table.concat(code))
-  end
-
   local bufs = {}
   for _, b in ipairs(sorted_buf_list()) do
     local view = pal.buf(b.name, b.size)
-    bufs[#bufs + 1] = pack("<s4", b.name) .. pack("<s4", view:str(0, b.size))
+    bufs[#bufs + 1] = { name = b.name, bytes = view:str(0, b.size) }
   end
-  w.chunk("BUFS", 1, pack("<I4", #bufs) .. table.concat(bufs))
-
-  w.chunk("DOCT", 1, M.doc_bytes())
-
-  return w.result()
+  local code
+  if not (opts and opts.code == false) then code = pt.modules() end
+  return M.encode_snapshot(bufs, M.doc_bytes(), code)
 end
 
 -- decode a snapshot blob: {code = array|nil, bufs = array, doct = string}

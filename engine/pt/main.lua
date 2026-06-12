@@ -164,8 +164,10 @@ function M.boot()
     pal.quit(ok and 0 or 1)
     return
   end
+  -- the ring trace is always on in live sessions (D032); --record pins it
+  M.trace = pt.require("pt.trace")
+  M.trace.ring_start({ project = args.project })
   if args.record then
-    M.trace = pt.require("pt.trace")
     M.trace.record_start(args.record, { project = args.project })
   end
   if args.evals then -- after record_start: the drain lands in frame 1
@@ -224,7 +226,7 @@ local function sim_step(events)
   M.input.apply(rec)
   M.game.step()
   M.state.advance_frame()
-  if M.args.record then M.trace.record_frame(rec, evals) end
+  if M.trace then M.trace.record_frame(rec, evals) end
   return rec
 end
 

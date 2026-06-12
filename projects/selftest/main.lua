@@ -1072,6 +1072,140 @@ local function t_bundle()
   check(#changed == 1 and changed[1] == "knob", "adopt reports the reload")
 end
 
+-- ---- pt.trace segment ring (D032) ----
+-- runs before main.boot() starts the live ring, so the module is ours to
+-- drive: synthetic frames = mutate buffers, advance the counter by hand,
+-- call record_frame. Leaves state exactly as found.
+
+local function t_ring()
+  local trace = pt.require("pt.trace")
+  local chunklib = pt.require("pt.chunk")
+  local sim = pal.buf("pt.sim", 64)
+  local f0 = sim:i64(0)
+  local save_seconds, save_kf = trace.ring.seconds, trace.ring.kf
+  local irec = ("\0"):rep(10)
+
+  trace.ring.kf = 4
+  trace.ring.seconds = 0.2 -- 12-frame window
+  local b = pal.buf("st.ring", 16)
+  b:i32(0, 0); b:i32(4, 0)
+  trace.ring_start({ project = "selftest" })
+
+  -- 20 synthetic frames; doc changes at 9, reverts at 15; eval at 18
+  local snaps = {}
+  for i = 1, 20 do
+    b:i32(0, i * 7)
+    b:i32(4, i)
+    if i == 9 then state.doc.ringtest = 9 end
+    if i == 15 then state.doc.ringtest = nil end
+    sim:i64(0, f0 + i)
+    snaps[i] = b:str(0, 16)
+    trace.record_frame(irec, i == 18 and { "-- ring eval marker" } or nil)
+  end
+
+  local lo, hi = trace.ring_range()
+  check(hi == f0 + 20, "ring: newest frame")
+  check(lo == f0 + 8, "ring: eviction kept exactly the window")
+  for f = lo, hi do
+    local st = trace.ring_state_at(f)
+    check(st.bufs["st.ring"] == snaps[f - f0],
+          "ring: state_at frame +" .. (f - f0))
+    check(string.unpack("<i8", st.bufs["pt.sim"]) == f,
+          "ring: state_at counter +" .. (f - f0))
+    local doc = state.parse(st.doct)
+    local want = (f - f0 >= 9 and f - f0 <= 14) and 9 or nil
+    check(doc.ringtest == want, "ring: state_at doc +" .. (f - f0))
+  end
+  check(trace.ring_state_at(hi).input == irec, "ring: state_at input record")
+  local stats = trace.ring_stats()
+  check(stats.segs == 4 and stats.frames == 12 and not stats.pinned,
+        "ring: stats")
+
+  -- export the retained window: a normal PTRC with KEYF at the boundaries
+  local ok, frames = trace.ring_export("/tmp/st_ring.ptrace")
+  check(ok and frames == 12, "ring: export frame count")
+  local tags = {}
+  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring.ptrace"),
+                                   "PTRC")) do
+    tags[#tags + 1] = c.tag
+    if c.tag == "TAIL" then
+      check(string.unpack("<I4", c.payload) == 12, "ring: export TAIL")
+    end
+  end
+  check(table.concat(tags, " ") ==
+        "HEAD SNAP FRAM FRAM FRAM FRAM KEYF FRAM FRAM FRAM FRAM KEYF " ..
+        "FRAM EVAL FRAM FRAM FRAM KEYF TAIL",
+        "ring: export chunk order (got " .. table.concat(tags, " ") .. ")")
+
+  -- rewind to hi-3 (= +17, first frame of the last full segment)
+  trace.rewind(f0 + 17)
+  check(b:str(0, 16) == snaps[17], "rewind: buffer restored")
+  check(sim:i64(0) == f0 + 17, "rewind: frame counter restored")
+  local lo2, hi2 = trace.ring_range()
+  check(lo2 == lo and hi2 == f0 + 17, "rewind: ring truncated")
+  check(state.doc.ringtest == nil, "rewind: doc restored")
+
+  -- resume recording on the truncated timeline
+  for i = 18, 19 do
+    b:i32(0, i * 1000)
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+  end
+  local _, hi3 = trace.ring_range()
+  check(hi3 == f0 + 19, "rewind: ring resumed")
+  check(string.unpack("<i4", trace.ring_state_at(f0 + 18).bufs["st.ring"])
+        == 18000, "rewind: post-rewind state_at")
+
+  -- a non-monotonic counter step = out-of-band restore: ring resets
+  sim:i64(0, f0 + 100)
+  trace.record_frame(irec, nil)
+  local lo4, hi4 = trace.ring_range()
+  check(lo4 == f0 + 100 and hi4 == f0 + 100, "ring: discontinuity reset")
+
+  -- code epochs land in the ring and travel through exports
+  trace.on_code_change({ "pt.chunk" })
+  sim:i64(0, f0 + 101)
+  trace.record_frame(irec, nil)
+  ok = trace.ring_export("/tmp/st_ring2.ptrace")
+  check(ok, "ring: epoch export")
+  tags = {}
+  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring2.ptrace"),
+                                   "PTRC")) do
+    tags[#tags + 1] = c.tag
+  end
+  check(table.concat(tags, " ") == "HEAD SNAP EPOC FRAM TAIL",
+        "ring: epoch chunk order (got " .. table.concat(tags, " ") .. ")")
+
+  -- record_start pins the ring; the synthesized SNAP == a live snapshot
+  trace.record_start("/tmp/st_pin.ptrace", { project = "selftest" })
+  local live_snap = state.snapshot()
+  check(trace.recording(), "pin: recording()")
+  for i = 102, 106 do
+    b:i32(0, i * 3)
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+  end
+  trace.record_stop()
+  check(not trace.recording(), "pin: stopped")
+  tags = {}
+  local pin_snap
+  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_pin.ptrace"),
+                                   "PTRC")) do
+    tags[#tags + 1] = c.tag
+    if c.tag == "SNAP" then pin_snap = c.payload end
+  end
+  check(table.concat(tags, " ") == "HEAD SNAP FRAM FRAM FRAM FRAM KEYF " ..
+        "FRAM TAIL",
+        "pin: chunk order (got " .. table.concat(tags, " ") .. ")")
+  check(pin_snap == live_snap, "pin: SNAP byte-identical to a live snapshot")
+
+  -- leave no trace (of the trace)
+  pal.buf_free("st.ring")
+  sim:i64(0, f0)
+  trace.ring.seconds, trace.ring.kf = save_seconds, save_kf
+  trace._R, trace._rec = nil, nil
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1092,6 +1226,7 @@ function game.init()
   t_tilemap_tools()
   t_inspect()
   t_bundle()
+  t_ring()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
