@@ -57,6 +57,17 @@ M.style = M.style or {
   error = { 1.0, 0.35, 0.35, 1.0 },
   track = { 0.12, 0.13, 0.19, 1.0 },
 }
+-- scroll feel knobs (dev chrome only — tune live from the console,
+-- e.g. `pt.ui.style.scroll.spring = 0.5`). inertia: wheel notches are
+-- velocity (off = classic instant jumps); elastic: edges rubber-band
+-- (off = hard clamp); fric: in-bounds velocity decay per 60Hz tick;
+-- fric_out: decay while overshooting (stiffer); spring: pull per px
+-- of overshoot. Backfilled separately so hot reload onto an older
+-- style table picks the defaults up.
+M.style.scroll = M.style.scroll or {
+  inertia = true, elastic = true,
+  fric = 0.78, fric_out = 0.65, spring = 0.35,
+}
 
 M.ticks = M.ticks or 0 -- render ticks, for cursor blink only (never sim)
 
@@ -71,6 +82,7 @@ M.cap_keys = M.cap_keys or false
 
 local lay_stack, clip_stack, id_stack, scroll_stack, panels = {}, {}, {}, {}, {}
 local wheel_taken = false
+local focus_drawn = false -- did the focused widget draw this frame?
 
 -- ---- drawing helpers ----
 
@@ -207,6 +219,7 @@ function M.frame(events)
   lay_stack, clip_stack, id_stack, scroll_stack, panels = {}, {}, {}, {}, {}
   M.next_hot = nil
   wheel_taken = false
+  focus_drawn = false
   M.force_keys = false
   M.force_mouse = false
   return out
@@ -216,6 +229,10 @@ end
 function M.frame_end()
   M.hot = M.next_hot
   if M.active and not M.inp.buttons[1] then M.active = nil end -- lost release
+  -- orphaned focus: the focused widget didn't draw this frame (its chrome
+  -- was closed around it, e.g. editor off with a focused search box) —
+  -- release the keyboard or the game never sees another key-down
+  if M.focus and not focus_drawn then M.focus = nil end
 
   local over_panel = false
   for _, p in ipairs(panels) do
@@ -392,10 +409,8 @@ end
 -- glide distance per notch is still wheel_rows * row_h. Overshooting an
 -- edge rubber-bands: a spring pulls back (harder damping out of bounds)
 -- and the return snaps dead at the boundary instead of re-entering the
--- content — bounce, not slingshot.
-local SCROLL_FRIC = 0.78      -- in-bounds velocity decay per tick
-local SCROLL_FRIC_OUT = 0.65  -- decay while overshooting (stiffer)
-local SCROLL_SPRING = 0.35    -- pull per px of overshoot
+-- content — bounce, not slingshot. All of it tunes (or switches off)
+-- via style.scroll above.
 
 -- vertical scroll region of fixed height h inside the current layout.
 -- Content height is measured as widgets advance the inner cursor; the
@@ -446,11 +461,17 @@ function M.end_scroll()
     s.want_bottom = nil
   end
 
-  -- wheel: innermost hovered scroll region consumes it (as velocity)
+  -- wheel: innermost hovered scroll region consumes it (as velocity,
+  -- or as the classic instant jump with inertia off)
   if not wheel_taken and M.inp.wheel ~= 0 and mouse_in(r.x, r.y, r.w, r.h)
      and clip_visible(M.inp.mx, M.inp.my, 1, 1) then
-    s.vel = (s.vel or 0) - M.inp.wheel * st.wheel_rows * st.row_h
-              * (1 - SCROLL_FRIC) / SCROLL_FRIC
+    local sk = st.scroll
+    local d = M.inp.wheel * st.wheel_rows * st.row_h
+    if sk.inertia then
+      s.vel = (s.vel or 0) - d * (1 - sk.fric) / sk.fric
+    else
+      s.scroll = s.scroll - d
+    end
     wheel_taken = true
   end
 
@@ -484,23 +505,29 @@ function M.end_scroll()
   end
 
   -- integrate the glide / rubber-band (the thumb overrides physics)
+  local sk = st.scroll
   if thumb_held or max_scroll == 0 then
     s.scroll = math.min(math.max(s.scroll, 0), max_scroll)
     s.vel = 0
   else
     local x, v = s.scroll, s.vel or 0
     local out_lo, out_hi = x < 0, x > max_scroll
-    if out_lo then
-      v = (v - x * SCROLL_SPRING) * SCROLL_FRIC_OUT
-    elseif out_hi then
-      v = (v + (max_scroll - x) * SCROLL_SPRING) * SCROLL_FRIC_OUT
+    if out_lo and sk.elastic then
+      v = (v - x * sk.spring) * sk.fric_out
+    elseif out_hi and sk.elastic then
+      v = (v + (max_scroll - x) * sk.spring) * sk.fric_out
     else
-      v = v * SCROLL_FRIC
+      v = v * sk.fric
     end
     x = x + v
-    -- the rubber band returns TO the edge, never past it
-    if out_lo and x >= 0 then x, v = 0, 0 end
-    if out_hi and x <= max_scroll then x, v = max_scroll, 0 end
+    if sk.elastic then
+      -- the rubber band returns TO the edge, never past it
+      if out_lo and x >= 0 then x, v = 0, 0 end
+      if out_hi and x <= max_scroll then x, v = max_scroll, 0 end
+    else -- hard edges: clamp and kill the glide there
+      if x < 0 then x, v = 0, 0
+      elseif x > max_scroll then x, v = max_scroll, 0 end
+    end
     if x >= 0 and x <= max_scroll and v > -0.05 and v < 0.05 then
       x, v = math.floor(x + 0.5), 0 -- settled: land on a whole pixel
     end
@@ -754,6 +781,7 @@ function M.text_input(id, txt, opts)
   end
 
   local focused = M.focus == id
+  if focused then focus_drawn = true end -- frame_end orphan check
   local changed, submitted = false, false
 
   if focused then

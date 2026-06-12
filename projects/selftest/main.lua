@@ -619,6 +619,32 @@ local function t_ui()
   for _ = 1, 60 do pass({}, sc_body) end
   check(got.scroll == 0, "ui: rubber band returns to the edge (got "
         .. got.scroll .. ")")
+
+  -- the style.scroll feel knobs: inertia off = classic instant jump,
+  -- elastic off = hard edges (no overshoot)
+  ui.style.scroll.inertia = false
+  pass({ { type = "wheel", dy = -1 } }, sc_body)
+  check(got.scroll == 33, "ui: inertia off jumps 3 rows (got "
+        .. got.scroll .. ")")
+  ui.style.scroll.elastic = false
+  pass({ { type = "wheel", dy = 1 } }, sc_body) -- back to the top...
+  pass({ { type = "wheel", dy = 1 } }, sc_body) -- ...and into the edge
+  check(got.scroll == 0, "ui: elastic off clamps dead at the edge (got "
+        .. got.scroll .. ")")
+  ui.style.scroll.inertia, ui.style.scroll.elastic = true, true
+
+  -- orphaned focus: chrome closes around a focused field — the keyboard
+  -- must go back to the game (the editor-swap stuck-keys bug)
+  local function ti3_body()
+    ui.text_input("in3", "abc")
+  end
+  pass({ mo(20, 10) }, ti3_body)
+  pass({ bd(20, 10), bu(20, 10) }, ti3_body)
+  check(ui.capturing_keys(), "ui: field focused before its chrome closes")
+  pass({}, function() end) -- field not drawn; this frame is still captured
+  out = pass({ kd(4) }, function() end)
+  check(not ui.capturing_keys(), "ui: orphaned focus released")
+  check(#out == 1, "ui: key-down reaches the game after the release")
   local function sc_bottom()
     ui.scroll_to_bottom("log")
     sc_body()
