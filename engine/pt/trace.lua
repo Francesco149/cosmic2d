@@ -456,20 +456,7 @@ function M.rewind(f)
     if cur[name] ~= files[name].source then diff = true end
   end
 
-  -- live buffer surgery (state.restore's moves, from decoded tables)
-  local names = {}
-  for name in pairs(st.bufs) do names[#names + 1] = name end
-  table.sort(names)
-  for _, b in ipairs(sorted_buf_list()) do
-    local want = st.bufs[b.name]
-    if want == nil or #want ~= b.size then pal.buf_free(b.name) end
-  end
-  for _, name in ipairs(names) do
-    pal.buf(name, #st.bufs[name]):setstr(0, st.bufs[name])
-  end
-  local newdoc = state.parse(st.doct)
-  for k in pairs(state.doc) do state.doc[k] = nil end
-  for k, v in pairs(newdoc) do state.doc[k] = v end
+  state.restore_tables(st.bufs, st.doct)
   if diff then pt.restore_bundle(list) end
 
   -- truncate the ring after f and rebase the mirrors there
@@ -480,8 +467,7 @@ function M.rewind(f)
   for _, c in ipairs(seg.chunks) do bytes = bytes + #c.payload end
   seg.bytes = bytes
   R.prev = {}
-  for _, name in ipairs(names) do
-    local b = st.bufs[name]
+  for name, b in pairs(st.bufs) do
     local m = pal.buf(nil, #b)
     m:setstr(0, b)
     R.prev[name] = { mirror = m, size = #b }

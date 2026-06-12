@@ -243,34 +243,39 @@ function M.parse_snapshot(blob)
   return { code = code, bufs = bufs, doct = doct }
 end
 
--- restore from a snapshot blob. Does NOT call game.init(); flows that
--- restore (snapshot load, trace verify) re-run init themselves afterwards.
-function M.restore(blob)
-  local snap = M.parse_snapshot(blob)
-  local code, bufs, doct = snap.code, snap.bufs, snap.doct
-  if not code then error("snapshot has no code bundle to restore", 0) end
-
-  -- buffers: free what the snapshot doesn't have (or has at another size),
-  -- then write contents (creating as needed)
-  local want = {}
-  for _, b in ipairs(bufs) do want[b.name] = b.bytes end
+-- the buffer/doc half of restore (no code, no init): write a decoded state
+-- back into the live buffers + doc tree. bufs = name -> bytes map. The ring
+-- scrubber/rewind (D032) calls this per playhead move — no game code runs.
+function M.restore_tables(bufs, doct)
+  -- free what the target doesn't have (or has at another size), then write
   for _, b in ipairs(sorted_buf_list()) do
-    if want[b.name] == nil or #want[b.name] ~= b.size then
-      pal.buf_free(b.name)
-    end
+    local want = bufs[b.name]
+    if want == nil or #want ~= b.size then pal.buf_free(b.name) end
   end
-  for _, b in ipairs(bufs) do
-    pal.buf(b.name, #b.bytes):setstr(0, b.bytes)
+  local names = {}
+  for name in pairs(bufs) do names[#names + 1] = name end
+  table.sort(names)
+  for _, name in ipairs(names) do
+    pal.buf(name, #bufs[name]):setstr(0, bufs[name])
   end
 
   -- doc: repopulate in place so module references to M.doc stay valid
   local newdoc = M.parse(doct)
-  if type(newdoc) ~= "table" then error("snapshot DOCT is not a table", 0) end
+  if type(newdoc) ~= "table" then error("doc bytes are not a table", 0) end
   for k in pairs(M.doc) do M.doc[k] = nil end
   for k, v in pairs(newdoc) do M.doc[k] = v end
+end
 
+-- restore from a snapshot blob. Does NOT call game.init(); flows that
+-- restore (snapshot load, trace verify) re-run init themselves afterwards.
+function M.restore(blob)
+  local snap = M.parse_snapshot(blob)
+  if not snap.code then error("snapshot has no code bundle to restore", 0) end
+  local want = {}
+  for _, b in ipairs(snap.bufs) do want[b.name] = b.bytes end
+  M.restore_tables(want, snap.doct)
   -- code last: re-executes changed modules against the restored state
-  pt.restore_bundle(code)
+  pt.restore_bundle(snap.code)
 end
 
 function M.save(path)

@@ -127,6 +127,7 @@ function M.boot()
   M.console = pt.require("pt.console")
   M.perf = pt.require("pt.perf")
   M.editor = pt.require("pt.editor")
+  M.scrub = pt.require("pt.scrub")
   pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
@@ -230,6 +231,17 @@ local function sim_step(events)
   return rec
 end
 
+-- after an engine-driven restore (scrubber rewind): clear any error pause
+-- and re-run init — the same restore contract every other flow follows
+function M.after_restore()
+  if M.game_err then
+    M.game_err = nil
+    M.console.clear_error()
+    pal.log("[resume] rewound out of the error")
+  end
+  if M.game then guarded(M.game.init) end
+end
+
 local function step_guarded(events)
   if not M.contain then
     sim_step(events)
@@ -265,6 +277,9 @@ function M.tick()
     -- paused on the autopsy table: no stepping, repl runs immediately
     M.repl.drain()
     M.acc, M.last = 0, nil -- no catch-up pileup across the pause
+  elseif M.scrub.paused() then
+    -- time machine open: sim frozen, queued evals wait for the resume
+    M.acc, M.last = 0, nil
   elseif M.args.headless then
     step_guarded(events)
   else
@@ -284,6 +299,7 @@ function M.tick()
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
   M.editor.frame() -- editor chrome above the game, under perf/console
+  M.scrub.frame() -- the time machine rides above the editor
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything
   M.ui.frame_end()
