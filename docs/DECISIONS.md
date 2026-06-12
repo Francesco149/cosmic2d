@@ -591,3 +591,65 @@ is dev-side chrome (D021) and never recorded.
 carry arg widgets, still formatting one eval), multiple prop kinds
 arrive (doc-tree prop defs feeding the entry list), or drag-stamping
 wants batched evals (D026's poke_run path).
+
+## D032 — the ring IS the recorder: always-on segment ring trace (M5)
+
+**Context**: M5's time machine needs the last N seconds of play always
+available for scrubbing/rewind/export, and D019's revisit trigger has
+fired conceptually: the recorder buffers a whole session in memory and
+writes once at stop — grow-forever is exactly what an always-on
+recorder cannot do.
+**Decision**: pt.trace keeps recording-session state as a ring of
+**segments**. A segment = (a) a code-less keyframe captured from the
+delta mirrors (= state after the previous segment's last frame), (b) a
+reference snapshot of the loaded bundle (pt.modules() — Lua strings
+are shared, so this is pointers, not copies), and (c) the same encoded
+chunk bytes the PTRC v1 recorder already produces (EVAL/FRAM/EPOC, in
+order), eagerly closed at `kf` frames (default 60 = 1 s). The ring is
+ON in every live session (anything but --verify) and evicts whole
+segments older than `seconds` (default 30). On top of it:
+- **--record / record_start is a pin**, not a second recorder: it
+  forces a segment boundary and exempts segments from eviction;
+  record_stop writes HEAD + SNAP (first pinned keyframe + its bundle)
+  + the pinned segments' chunks with KEYF at each boundary + TAIL —
+  byte-identical PTRC v1 output for the same session (validated by
+  re-recording the kitcheck golden and diffing).
+- **Export-the-past** ("save what just happened") is the same
+  concatenation over whatever the ring still holds — the synthesized
+  SNAP makes it a normal trace the verifier accepts.
+- **Scrub access**: ring_state_at(f) = nearest keyframe + forward
+  XOR-delta walk, O(kf) and never executes game code. delta1 being
+  XOR (involutive) leaves bidirectional stepping open to the scrubber
+  as an optimization; kind-1 (create/resize) records are the one-way
+  barriers.
+- **Rewind** = write the scrubbed state into the live buffers/doc
+  (state.restore's surgery), restore the bundle as of that frame
+  (segment bundle + EPOCs up to it), truncate the ring after it, reset
+  the mirrors; the caller re-runs game.init() (same contract as every
+  other restore). An active file recording is stopped first (a linear
+  trace cannot contain a rewind).
+- **Out-of-band restores** (snapshot load) reset the ring; the
+  backstop is automatic — record_frame watches the pt.sim frame
+  counter and a non-monotonic step resets the ring with a log line.
+  Out-of-band *mutation* (error-pause pokes, re-init after reload)
+  needs no handling: deltas are computed against the mirrors, so the
+  next recorded frame absorbs it (the ring stays scrubbable; only
+  re-sim *verify* of an exported window containing such a frame would
+  diverge, which is true today for any non-eval poke).
+**Why**: one recorder, one byte format, one oracle. The ring replaces
+the grow-forever buffering for the always-on case at ~0.5 MB for 30 s
+of sandbox state (17 KB × 30 keyframes + sparse deltas); the marquee
+payoff is scrubbing backward from a crash — the error pause already
+freezes the sim, and the ring holds how it got there.
+**Snapshot story**: ring bookkeeping lives in the Lua heap plus
+anonymous mirror buffers — never in named buffers or the doc tree, so
+recording never perturbs the sim and ring config (trace.ring.seconds/
+kf, console-tunable) never enters traces. The ring itself dies with
+the VM (parachute reboot = fresh ring), which is correct: its contents
+described a code epoch that just crashed.
+**Revisit if**: pinned recordings of long sessions hurt memory (then:
+pal.x_append_file and stream evicted-but-pinned segments to disk), big
+tilemaps make keyframes dominate (then: keyframe spacing per ring
+position, or delta'd keyframes), or scrubber drag wants faster access
+than O(kf) re-decode (then: cached mirror walk using XOR
+reversibility).
