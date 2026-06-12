@@ -10,10 +10,10 @@ LOCKED IN — stock knobs are the human's dial-in, mantle leniency D030,
 final dive rules, tour v2 re-choreographed). Increment 5 DONE — **prop
 spawn palette** (D031, the last M4 PLAN bullet): crate swatch in the
 editor strip, LMB spawn / RMB delete as `game.props.spawn/despawn_at`
-evals, propspawn golden. 16 goldens + 22241 selftest checks green;
-palette screenshot on llm-feed. **Next: M2 wishlist inertial scroll**,
-then the kit-check boost-coda re-time (cleanup), then M4 human
-verification wraps the milestone.
+evals, propspawn golden, **human-verified** ("feels good"). 16 goldens
++ 22241 selftest checks green. Every M4 PLAN bullet is now done and
+verified. **Next: M2 wishlist inertial scroll**, then the kit-check
+boost-coda re-time (cleanup).
 
 ## What works right now
 
@@ -75,9 +75,10 @@ plus M4 so far:
 
 ## Verified
 
-- Human-verified: editor loop, inspector knob UI, and the locked knob
+- Human-verified: editor loop, inspector knob UI, the locked knob
   values themselves (their dial-in, folded verbatim — canon-hash-equal
-  to their saved knobs.dat before it was retired).
+  to their saved knobs.dat before it was retired), and the prop spawn
+  palette ("feels good", 2026-06-12).
 - Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** +
   **16 goldens** (this session: **propspawn** — spawn, despawn_at hit
   and miss, held-crate refusal, the swap + carry self-heal, 240 f on
@@ -126,9 +127,10 @@ plus M4 so far:
   `game.level.reset()` if your painted map.dat is loaded): does the
   new choreography read as deliberate showmanship in the locked feel?
   Beats worth a re-cut are cheap now (telemetry + boundary tooling).
-- Your painted map.dat is still local/uncommitted: the prop palette
-  now exists (you can dress a level with crates) — commit a dressed
-  map as the stock level, or keep procedural until the second tileset?
+- RESOLVED (2026-06-12): the stock level stays procedural — no
+  committed map.dat until in-editor sprite/background design tools
+  (M8 era) and the rest of the editor features are fleshed out. The
+  human's painted map.dat stays local.
 - The finale has no real BOOST beat under the locked knobs (window 3
   is genuinely hard open-loop). Fine to leave as flip, or want me to
   hunt a boost-able setup (e.g. a scripted dive from a specific ledge
