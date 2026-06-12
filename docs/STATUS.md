@@ -4,9 +4,9 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-12
-**Milestone**: M5 — time machine: **code-complete, every PLAN bullet
-done and agent-verified**; human taste check on the scrubber panel
-pending (screenshot on the feed). The ring IS the recorder (D032):
+**Milestone**: M5 — time machine: **COMPLETE** (every PLAN bullet done,
+agent-verified, and the rewind feel human-signed-off 2026-06-12). The
+ring IS the recorder (D032):
 every live session keeps the last 30 s scrubbable, F4 opens the time
 machine, rewind/export/replay all ride the same segment ring, and the
 suite now runs under `nix flake check` with pixel goldens.
@@ -72,8 +72,9 @@ tour v2) plus M5:
   t_ring selftests pin eviction, state_at (bufs/counter/doc/input),
   export chunk order, rewind+resume, discontinuity reset, EPOC
   pass-through, pin SNAP == live snapshot bytes.
-- Human-verified: M4 feel locks (D029/D030/D031) carry over; nothing
-  new since the 2026-06-12 prop-palette check.
+- Human-verified (2026-06-12, M5 sign-off): the time machine rewind
+  "feels good"; the inertial scroll and the mantle leniency (D030) are
+  "solid" — all three locked in. M4 feel locks (D029/D031) carry over.
 
 ## Next step (M6 — audio)
 
@@ -114,11 +115,9 @@ tour v2) plus M5:
 
 ## Open questions for the human
 
-- **Time machine on the feed** (2026-06-12): panel screenshot pushed —
-  layout/readability ok? Best checked live: play a bit, F4, drag the
-  timeline, rewind mid-jump. Does the freeze→scrub→resume loop feel
-  right?
-- Carried over (2026-06-12): the inertial-scroll rubber-band montage
-  and the tour-finale re-cut montage are still on the feed awaiting a
-  taste check; `game.demo(1)` after `game.level.reset()` for the full
-  tour v2 read.
+- RESOLVED (2026-06-12): time machine rewind feel, inertial scroll,
+  and mantle — all signed off.
+- Carried over (2026-06-12): the tour-finale re-cut montage on the
+  feed (does the boost's plateau wall-kiss read as deliberate, does
+  the vertical-tower flare land as a finale?) and the full tour v2
+  watch (`game.demo(1)` after `game.level.reset()`).
