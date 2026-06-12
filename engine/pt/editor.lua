@@ -22,7 +22,13 @@
 --     end,
 --     save = function() end,        -- optional: persist project state
 --                                   --   (sandbox: map.dat + knobs.dat)
---     reset_eval = "game.level.reset()" } -- optional: rebuild command
+--     reset_eval = "game.level.reset()", -- optional: rebuild command
+--     props = {                     -- optional spawn palette (D031):
+--       { name = "crate",           --   entries join the swatch strip;
+--         icon = { u=, v=, w=, h= },--   atlas sub-rect for the swatch
+--         spawn = "game.props.spawn(%d,%d)",       -- eval formats, filled
+--         erase = "game.props.despawn_at(%d,%d)" } -- with world x,y (ints)
+--     } }
 --
 -- While editor mode is on, the mouse belongs to the editor (the game sees
 -- only up-events); the keyboard still reaches the game — walk around
@@ -42,6 +48,7 @@ local inspect = pt.require("pt.inspect")
 
 M.on = M.on or false
 M.sel = M.sel or 1 -- selected tile id; 0 = the eraser
+-- M.sel_prop: selected palette entry index, or nil = the tile brush
 M.show_col = M.show_col or false
 if M.show_insp == nil then M.show_insp = true end -- the inspector panel
 if M.paint_on == nil then M.paint_on = true end -- brush armed / mouse to game
@@ -153,6 +160,22 @@ local function paint(att, tx, ty)
   M.last_cell = { tx, ty }
 end
 
+-- the spawn palette's world interaction: press edges only (a drag must
+-- not machine-gun crates) — LMB submits the entry's spawn eval at the
+-- world mouse, RMB its erase eval. Cartridge commands through the repl
+-- (D031): a spawn records and replays exactly like a painted cell.
+local function spawn_click(att, e)
+  local inp = ui.inp
+  local wx = floor(inp.mx + att.camx)
+  local wy = floor(inp.my + att.camy)
+  if e.icon then -- ghost: where the spawn would sit
+    ui.frame_rect(wx - e.icon.w // 2, wy - e.icon.h // 2,
+                  e.icon.w, e.icon.h, { 1, 1, 1, 0.85 })
+  end
+  if inp.clicked[1] and e.spawn then repl.submit(e.spawn:format(wx, wy)) end
+  if inp.clicked[3] and e.erase then repl.submit(e.erase:format(wx, wy)) end
+end
+
 -- ---- the toolbar ----
 
 local function swatch(att, id, x, y)
@@ -171,10 +194,33 @@ local function swatch(att, id, x, y)
   else
     ui.text(ix + 4, iy + 4, "??", st.text_dim)
   end
-  if M.sel == id then
+  if M.sel == id and not M.sel_prop then
     ui.frame_rect(x, y, SW, SW, st.accent)
   end
-  if clicked then M.sel = id end
+  if clicked then
+    M.sel = id
+    M.sel_prop = nil
+  end
+end
+
+local function prop_swatch(att, k, x, y)
+  local st = ui.style
+  local e = att.props[k]
+  local clicked, hot = ui.hit("pw" .. k, x, y, SW, SW)
+  ui.rect(x, y, SW, SW, hot and st.widget_hot or st.widget)
+  local ic = e.icon
+  if ic then
+    local aw, ah = att.atlas.w, att.atlas.h
+    pal.quad(x + (SW - ic.w) // 2, y + (SW - ic.h) // 2, ic.w, ic.h,
+             1, 1, 1, 1, att.atlas.id,
+             ic.u / aw, ic.v / ah, (ic.u + ic.w) / aw, (ic.v + ic.h) / ah)
+  else
+    ui.text(x + 4, y + (SW - st.gh) // 2, "??", st.text_dim)
+  end
+  if M.sel_prop == k then
+    ui.frame_rect(x, y, SW, SW, st.accent)
+  end
+  if clicked then M.sel_prop = k end
 end
 
 local function toolbar(att, tx, ty)
@@ -223,11 +269,22 @@ local function toolbar(att, tx, ty)
       swatch(att, id, x, strip.y)
       x = x + SW + 2
     end
+    if att.props then -- the spawn palette joins the strip after a gap
+      x = x + 4
+      for k = 1, #att.props do
+        prop_swatch(att, k, x, strip.y)
+        x = x + SW + 2
+      end
+    end
     M.paint_on = ui.checkbox("paint", M.paint_on, {
       rect = { x + 6, strip.y + (SW - st.row_h) // 2, 50, st.row_h } })
-    ui.text(x + 62, strip.y + (SW - st.gh) // 2,
-            M.paint_on and "lmb paint  rmb erase  f1 play"
-            or "mouse plays the game  f1 play", st.text_dim)
+    local hint = "lmb paint  rmb erase  f1 play"
+    if not M.paint_on then
+      hint = "mouse plays the game  f1 play"
+    elseif att.props and M.sel_prop and att.props[M.sel_prop] then
+      hint = "lmb spawn  rmb delete  f1 play"
+    end
+    ui.text(x + 62, strip.y + (SW - st.gh) // 2, hint, st.text_dim)
   else
     ui.text(strip.x, strip.y + (SW - st.gh) // 2, "f1 play", st.text_dim)
   end
@@ -269,11 +326,16 @@ function M.frame()
       draw_aabbs(att)
     end
     if M.paint_on then
-      if tx then
-        ui.frame_rect(tx * att.tm.tile, ty * att.tm.tile,
-                      att.tm.tile, att.tm.tile, { 1, 1, 1, 0.85 })
+      local pe = att.props and M.sel_prop and att.props[M.sel_prop]
+      if pe then -- a palette entry holds the brush: spawn/erase clicks
+        if tx then spawn_click(att, pe) end
+      else
+        if tx then
+          ui.frame_rect(tx * att.tm.tile, ty * att.tm.tile,
+                        att.tm.tile, att.tm.tile, { 1, 1, 1, 0.85 })
+        end
+        paint(att, tx, ty)
       end
-      paint(att, tx, ty)
     end
   end
 
