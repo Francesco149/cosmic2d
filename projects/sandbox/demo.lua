@@ -111,9 +111,10 @@ local TIMELINE = {
   { 14, "right" }, -- turn around
   { 16, "right", "jump" }, { 4, "right" }, -- hop...
   { 6, "dive" }, -- ...glide out
-  { 30 }, -- let it sink toward the ground
-  { 4, "right" }, -- late cancel holding the glide direction: BOOST
-  { 24, "right" }, -- ride the burst to touchdown
+  { 24 }, -- sink to the floor, FLOP
+  { 4, "right" }, -- cancel the young slide holding the glide
+  -- direction: a real DIVE BOOST (ground-bounce burst)
+  { 24, "right" }, -- ride the burst to touchdown (it dies there)
   { 16 }, -- settle
   { 14, "left" }, -- turn around
   { 16, "left", "jump" }, { 4, "left" }, -- hop...
@@ -122,15 +123,16 @@ local TIMELINE = {
   { 20 }, -- lie there a beat
   { 6, "up" }, -- flip up (a cancel; no new dive till touchdown)
   { 26 }, -- land
-  { 14, "right" }, -- runway for the closer
-  { 26, "right", "jump" }, -- full jump, held through the apex...
-  { 4, "right" },
-  { 24, "right", "jump" }, -- ...DOUBLE JUMP from the top, held through...
-  { 2, "right" },
-  { 6, "dive" }, -- ...and glide out of the stack
-  { 40 }, -- sail, flop
-  { 6, "up" }, -- flip up
-  { 26 }, -- land
+  { 14 }, -- breathe before the closer — no runway walk: the flip arc
+  -- needs this beat to land, and the wall is close on the right
+  { 26, "jump" }, -- full VERTICAL jump, held through the apex...
+  { 4 },
+  { 24, "jump" }, -- ...DOUBLE JUMP straight up, a tower of air...
+  { 2, "right" }, -- face right at the top (clean air: facing follows)
+  { 6, "dive" }, -- ...and swoop out of the stack
+  { 34 }, -- sail right across the open lowland
+  { 6, "up" }, -- FLARE: cancel the swoop low, flip...
+  { 32 }, -- ...hang, drop, land (clear of the plateau wall)
   { 30 }, -- bow
 }
 
