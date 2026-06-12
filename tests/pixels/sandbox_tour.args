@@ -1,0 +1,6 @@
+projects/sandbox
+--headless
+--frames
+600
+--eval
+game.demo(1)
