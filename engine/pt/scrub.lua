@@ -14,6 +14,12 @@
 -- truncates the future and pt.main.after_restore re-runs init (the restore
 -- contract) and clears an error pause — the marquee flow is crash, F4,
 -- scrub back, watch it coming, rewind, try something else.
+--
+-- Replay mode: open_replay(path) loads a shared .ptrace INTO the ring
+-- (trace.ring_load — state+code restore to its SNAP) and auto-plays it,
+-- state-per-frame, no re-sim. The same panel scrubs it; "play from here"
+-- /"finish" adopt the trace's timeline at the playhead/end and hand the
+-- controls back to live play (which records onward from there).
 
 local M = select(2, ...) or {}
 local ui = pt.require("pt.ui")
@@ -48,20 +54,50 @@ function M.open()
   M.irec = trace.ring_state_at(hi).input
 end
 
--- back to the present, timeline intact (recording resumes seamlessly)
+-- back to the present, timeline intact (recording resumes seamlessly);
+-- in replay mode there is no other present — adopt the trace's end
 function M.close()
   if not M.on then return end
+  if M.replay then
+    M.at = M.hi
+    return M.rewind_here()
+  end
   apply(M.hi)
   M.on, M.play = false, false
 end
 
--- the playhead becomes the new present; the future is discarded
+-- the playhead becomes the new present; the future is discarded (for a
+-- replay: adopt its timeline here and keep playing live)
 function M.rewind_here()
   if not M.on then return end
   trace.rewind(M.at)
   M.shown = M.at
-  M.on, M.play = false, false
+  M.on, M.play, M.replay = false, false, false
   if pt.main and pt.main.after_restore then pt.main.after_restore() end
+end
+
+-- replay playback of a .ptrace (M5): queue the load; it happens in the
+-- chrome phase (never mid-sim-frame, so the console eval that triggered
+-- it can't poison the timeline it replaces — in a verify re-sim this is
+-- a recorded no-op, the replay's effects live in the deltas)
+function M.open_replay(path)
+  M.pending = path
+end
+
+local function do_load(path)
+  if pt.require("pt.editor").locked() then return end
+  local ok, lo = pcall(trace.ring_load, path)
+  if not ok then
+    pal.log("[scrub] replay load failed: " .. tostring(lo))
+    return
+  end
+  if pt.main and pt.main.after_restore then pt.main.after_restore() end
+  local rlo, rhi = trace.ring_range()
+  M.on, M.replay = true, true
+  M.lo, M.hi = rlo, rhi
+  M.at, M.shown = rlo, rlo
+  M.play = rhi > rlo -- it's a showcase: roll it
+  M.irec = nil
 end
 
 function M.export()
@@ -88,6 +124,11 @@ end
 -- ---- the per-tick frame (pt.main: after editor, before perf/console) ----
 
 function M.frame()
+  if M.pending then
+    local path = M.pending
+    M.pending = nil
+    do_load(path)
+  end
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep and k.scancode == KEY_F4 then
       if M.on then M.close() else M.open() end
@@ -111,7 +152,7 @@ function M.frame()
   ui.begin_panel("scrub", 2, H - ph - 2, W - 4, ph)
 
   ui.row({ 1.1, 2, 1.6 })
-  ui.label("TIME MACHINE (F4)", { color = st.accent })
+  ui.label(M.replay and "REPLAY" or "TIME MACHINE (F4)", { color = st.accent })
   ui.label(("frame %d / %d   t%+.2fs")
            :format(M.at, M.hi, (M.at - M.hi) / 60))
   ui.label("in: " .. held_actions(M.irec))
@@ -135,13 +176,14 @@ function M.frame()
   if ui.button(">") then seek(M.at + 1) end
   if ui.button("+60") then seek(M.at + 60) end
   if ui.button(">|") then seek(M.hi) end
-  if ui.button("rewind here") then
+  if ui.button(M.replay and "play from here" or "rewind here",
+               { id = "rewind" }) then
     M.rewind_here()
     ui.end_panel()
     return
   end
   if ui.button("save .ptrace") then M.export() end
-  if ui.button("close") then
+  if ui.button(M.replay and "finish" or "close", { id = "close" }) then
     M.close()
     ui.end_panel()
     return

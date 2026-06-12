@@ -335,6 +335,91 @@ function M.ring_export(path)
   return write_trace(path, R.project, ring_kf(), 1)
 end
 
+-- load a .ptrace as the ring (replay playback, M5): the live ring is
+-- REPLACED by the trace's frames and live state+code restore to the
+-- trace's SNAP. The caller must freeze the sim before the next
+-- record_frame and re-run game.init (pt.scrub does both, then scrubs/
+-- plays); leaving adopts the trace's timeline via rewind, which rebases
+-- the mirrors — until then they are deliberately stale. EVAL effects are
+-- already inside the deltas; EPOC code is folded into each segment's
+-- bundle so rewind restores the right code at any frame.
+function M.ring_load(path)
+  local blob, err = pal.read_file(path)
+  if not blob then error("can't read trace " .. path .. ": " .. err, 0) end
+  local chunks = chunk.read(blob, "PTRC")
+  if M._rec then
+    pal.log("[trace] recording stopped by replay load")
+    M.record_stop()
+  end
+
+  local segs, cur, snap_blob, f0
+  local frames = 0
+  local bundle, border -- working file map + insertion order
+  local function bundle_list()
+    local out = {}
+    for i, n in ipairs(border) do out[i] = bundle[n] end
+    return out
+  end
+  for _, c in ipairs(chunks) do
+    if c.tag == "SNAP" and c.version == 1 and not snap_blob then
+      snap_blob = c.payload
+      local s = state.parse_snapshot(c.payload)
+      if not s.code then error("trace SNAP has no code bundle", 0) end
+      bundle, border = {}, {}
+      for _, fl in ipairs(s.code) do
+        bundle[fl.name] = fl
+        border[#border + 1] = fl.name
+      end
+      for _, b in ipairs(s.bufs) do
+        if b.name == "pt.sim" then f0 = string.unpack("<i8", b.bytes) end
+      end
+      f0 = f0 or 0
+      cur = { id = 1, first = f0 + 1, kf_bufs = s.bufs, kf_doct = s.doct,
+              bundle = bundle_list(), chunks = {}, frames = 0, bytes = 0 }
+      segs = { cur }
+    elseif not cur then -- HEAD (and anything else) before SNAP
+    elseif c.tag == "FRAM" and c.version == 1 then
+      seg_append(cur, "FRAM", c.payload)
+      cur.frames = cur.frames + 1
+      frames = frames + 1
+    elseif c.tag == "EVAL" and c.version == 1 then
+      seg_append(cur, "EVAL", c.payload)
+    elseif c.tag == "EPOC" and c.version == 1 then
+      seg_append(cur, "EPOC", c.payload)
+      local n, pos = unpack("<I4", c.payload)
+      for _ = 1, n do
+        local name, fpath, source
+        name, fpath, source, pos = unpack("<s4s4s4", c.payload, pos)
+        if not bundle[name] then border[#border + 1] = name end
+        bundle[name] = { name = name, path = fpath, source = source }
+      end
+    elseif c.tag == "KEYF" and c.version == 1 then
+      local s = state.parse_snapshot(c.payload)
+      cur = { id = #segs + 1, first = f0 + 1 + frames, kf_bufs = s.bufs,
+              kf_doct = s.doct, bundle = bundle_list(), chunks = {},
+              frames = 0, bytes = 0 }
+      segs[#segs + 1] = cur
+    elseif c.tag == "TAIL" and c.version == 1 then
+      local n = unpack("<I4", c.payload)
+      if n ~= frames then
+        pal.log(("[trace] ring_load: TAIL says %d frames, file has %d")
+                :format(n, frames))
+      end
+    end
+  end
+  if not snap_blob then error("trace has no SNAP chunk", 0) end
+
+  state.restore(snap_blob) -- buffers/doc/counter + bundle code
+  local R = M._R or { project = "" }
+  R.segs = segs
+  R.next_id = #segs + 1
+  R.last_frame = f0 + frames -- the loaded newest; exits rewind to rebase
+  R.prev, R.prev_doc = {}, nil
+  M._R = R
+  pal.log(("[trace] replay loaded: %s (%d frames)"):format(path, frames))
+  return f0, f0 + frames
+end
+
 -- ---- scrub access (no game code runs) ----
 
 local function decode_fram(p)
