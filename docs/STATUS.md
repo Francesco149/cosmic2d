@@ -58,12 +58,20 @@ plus M4 so far:
   and the finale: flop-cancel DIVE BOOST riding the lowland to the
   plateau wall, no-cancel belly flop, then a vertical jump→dj tower
   into a swoop with a low-flare landing. 2719 frames.
-- **Inertial scroll** (pt.ui, M2 wishlist): a wheel notch is velocity
-  now (same 3-row total travel), edges rubber-band (overshoot, spring
-  return that snaps dead AT the edge). Thumb drags / scroll_set /
-  scroll_to_bottom stay instant. Dev-chrome only — never sim, never
-  in traces; rows render on a rounded offset so pixel text stays
-  crisp mid-glide. Constants live next to begin_scroll in ui.lua.
+- **Inertial scroll** (pt.ui, M2 wishlist; human-verified "feels
+  pretty good"): a wheel notch is velocity now (same 3-row total
+  travel), edges rubber-band (overshoot, spring return that snaps
+  dead AT the edge). Thumb drags / scroll_set / scroll_to_bottom stay
+  instant. Dev-chrome only — never sim, never in traces; rows render
+  on a rounded offset so pixel text stays crisp mid-glide. Feel knobs
+  on **ui.style.scroll** ({inertia, elastic, fric, fric_out, spring},
+  console-tunable, NOT doc-tree — UI state stays out of traces);
+  inertia=false = classic jumps, elastic=false = hard edges.
+- **Orphaned-focus fix**: a text field focused inside chrome that
+  stops drawing (editor toggled off with a focused search box) used
+  to hold cap_keys forever — the game went deaf to key-downs.
+  frame_end now releases focus when the focused widget didn't draw
+  that frame.
 - **Choreography tooling**: `--eval "_G.DEMO_DBG=30"` prints a player
   track every N frames (x/y/vy/dive/charge/carry; reads+prints only);
   demo.lua exports TIMELINE/KITCHECK for boundary dumps. The tuning
