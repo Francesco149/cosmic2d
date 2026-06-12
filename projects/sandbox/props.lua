@@ -18,7 +18,7 @@ local M = {}
 local DT = 1.0 / 60.0
 local HDR = 16
 local STRIDE = 32
-local MAX = 16
+local MAX = 48 -- fresh-boot capacity (an adopted buffer keeps its own)
 
 local buf
 
@@ -30,23 +30,91 @@ function M.count()
   return buf:u32(0)
 end
 
+-- slots the buffer has room for (spawn's bound — never the MAX constant,
+-- because an adopted buffer may predate a capacity change)
+function M.cap()
+  return (buf:size() - HDR) // STRIDE
+end
+
+local function seed(i, x, y)
+  local p = off(i)
+  buf:f32(p, x)
+  buf:f32(p + 4, y)
+  buf:f32(p + 8, 0)
+  buf:f32(p + 12, 0)
+  buf:f32(p + 16, 12)
+  buf:f32(p + 20, 12)
+  buf:f32(p + 24, 0)
+  buf:f32(p + 28, (i * 0.6180339887) % 1.0)
+end
+
 function M.init()
-  buf = pal.buf("sandbox.props", HDR + MAX * STRIDE)
+  -- adopt whatever props buffer exists, at ITS size: init re-runs after
+  -- snapshot restores and hot reloads, and pal.buf errors on a size
+  -- mismatch — only a virgin boot creates the buffer
+  buf = nil
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == "sandbox.props" then buf = pal.buf(b.name, b.size) end
+  end
+  buf = buf or pal.buf("sandbox.props", HDR + MAX * STRIDE)
   if buf:u32(0) == 0 then -- virgin: seed the pit
     local spots = level.prop_spots
     buf:u32(0, #spots)
     for i, s in ipairs(spots) do
-      local p = off(i)
-      buf:f32(p, s[1])
-      buf:f32(p + 4, s[2])
-      buf:f32(p + 8, 0)
-      buf:f32(p + 12, 0)
-      buf:f32(p + 16, 12)
-      buf:f32(p + 20, 12)
-      buf:f32(p + 24, 0)
-      buf:f32(p + 28, (i * 0.6180339887) % 1.0)
+      seed(i, s[1], s[2])
     end
   end
+end
+
+-- ---- the editor palette's eval units (D026/D031): spawn/despawn are
+-- cartridge commands submitted through pt.repl, so an editing session
+-- records and replays them exactly like painted cells ----
+
+-- spawn a crate centered on (x, y); returns its index, or nil when full
+function M.spawn(x, y)
+  local n = M.count()
+  if n >= M.cap() then
+    pal.log("[props] full (" .. n .. " crates)")
+    return nil
+  end
+  seed(n + 1, x - 6, y - 6)
+  buf:u32(0, n + 1)
+  return n + 1
+end
+
+-- remove prop i, keeping the list dense (the last prop moves into the
+-- hole). A held crate refuses — the player's hands are not a place props
+-- vanish from; the swap CAN move the held crate's index, which
+-- player.step self-heals by re-finding the held flag.
+function M.despawn(i)
+  local n = M.count()
+  if i < 1 or i > n or M.held(i) then return nil end
+  if i < n then buf:setstr(off(i), buf:str(off(n), STRIDE)) end
+  buf:u32(0, n - 1)
+  return true
+end
+
+-- the palette eraser: despawn the topmost free crate under a world point
+-- (draw order is index order, so the highest index is the visible one)
+function M.despawn_at(x, y)
+  for i = M.count(), 1, -1 do
+    local p = off(i)
+    if buf:f32(p + 24) == 0.0
+       and x >= buf:f32(p) and x < buf:f32(p) + buf:f32(p + 16)
+       and y >= buf:f32(p + 4) and y < buf:f32(p + 4) + buf:f32(p + 20) then
+      return M.despawn(i)
+    end
+  end
+  return nil
+end
+
+-- the held crate's current index, by flag (only the player grabs):
+-- player.step's carry self-heal after a despawn swap
+function M.find_held()
+  for i = 1, M.count() do
+    if M.held(i) then return i end
+  end
+  return nil
 end
 
 function M.get(i)

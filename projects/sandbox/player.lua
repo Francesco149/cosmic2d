@@ -168,6 +168,12 @@ function M.step(ctl)
   local grounded = buf:f32(44) == 1.0
   local on_oneway = buf:f32(60) == 1.0
   local carry = math.floor(buf:f32(48))
+  -- carry self-heal: an editor despawn (game.props.despawn_at eval) swaps
+  -- the last crate into the hole — if that moved the carried crate,
+  -- re-find it by its held flag (only the player holds crates)
+  if carry > 0 and (carry > props.count() or not props.held(carry)) then
+    carry = props.find_held() or 0
+  end
   local dstate = buf:f32(64)
   local ddir = buf:f32(68)
   local slide_t, flip_t = buf:f32(72), buf:f32(76)

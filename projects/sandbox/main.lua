@@ -32,6 +32,7 @@ local W, H = pal.gfx_size()
 
 local game = {}
 game.level = level -- console/editor evals reach the map: game.level.reset()
+game.props = props -- and the crates: game.props.spawn(x,y) / despawn_at(x,y)
 
 -- feel knobs, all live (doc tree -> snapshots, traces, console, M4 panels).
 -- Merged key-by-key so docs from older sessions grow new knobs in place —
@@ -162,6 +163,13 @@ function game.init()
       end,
       save = function() return level.save() and game.save_knobs() end,
       reset_eval = "game.level.reset()",
+      -- the spawn palette (D031): eval formats the editor fills with the
+      -- clicked world point — spawning is a cartridge command like paint
+      props = {
+        { name = "crate", icon = level.crate_uv,
+          spawn = "game.props.spawn(%d,%d)",
+          erase = "game.props.despawn_at(%d,%d)" },
+      },
     }
   end)
 end
