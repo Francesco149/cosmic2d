@@ -355,11 +355,18 @@ editpaint golden pins this.
 
 Cartridges opt in from `game.init`: `pt.editor.attach(fn)`, where fn()
 is called once per editor frame and returns the live, read-only surface:
-`{ tm, atlas, camx, camy, colliders(), save, reset_eval }`. The toolbar
-offers tile swatches built from `tm.tiles` + atlas (id 0 = eraser), LMB
-paints / RMB erases with cell-line drag continuity, a collider overlay
-(solid fills / one-way top stripes walked from the visible tm window,
-plus AABB outlines from `colliders()`), and save/reset actions.
+`{ tm, atlas, camx, camy, colliders(), save, reset_eval, props }`. The
+toolbar offers tile swatches built from `tm.tiles` + atlas (id 0 = the
+eraser), LMB paints / RMB erases with cell-line drag continuity, a
+collider overlay (solid fills / one-way top stripes walked from the
+visible tm window, plus AABB outlines from `colliders()`), and
+save/reset actions. The optional `props` list (D031) is the spawn
+palette: entries `{ name, icon = atlas sub-rect, spawn/erase = eval
+format strings }` join the swatch strip; while one holds the brush,
+click press edges submit the entry's eval formatted with the world
+mouse — spawning is a cartridge command (sandbox:
+`game.props.spawn(x,y)` / `game.props.despawn_at(x,y)`) and records
+like everything else. The editpaint and propspawn goldens pin both.
 
 **The inspector** (pt.inspect, toolbar `inspect` toggle, D027) is the
 M4 entity list + inspector: a searchable tree over exactly what sim

@@ -3,17 +3,17 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
-**Date**: 2026-06-11
+**Date**: 2026-06-12
 **Milestone**: M4 — editor mode v0: increments 1–3 human-verified
-(editor loop, inspector, feel knobs). Increment 4 DONE — **the feel is
-LOCKED IN**: the human's dial-in is the stock KNOBS default
-(canon-hash-verified fold, knobs.dat retired), mantle leniency (D030),
-dive rules finalized (one dive per airtime, dj spends on dive, boost
-cap + lockout, cancel_grav), dj scales the jump curve, and the attract
-tour is **re-choreographed for the locked feel** (platformer_locked,
-2780 f). 15 goldens + 22241 selftest checks green; tour montage on
-llm-feed. **Next: prop spawn palette** (last M4 bullet), then M2
-wishlist inertial scroll.
+(editor loop, inspector, feel knobs); increment 4 done (the feel is
+LOCKED IN — stock knobs are the human's dial-in, mantle leniency D030,
+final dive rules, tour v2 re-choreographed). Increment 5 DONE — **prop
+spawn palette** (D031, the last M4 PLAN bullet): crate swatch in the
+editor strip, LMB spawn / RMB delete as `game.props.spawn/despawn_at`
+evals, propspawn golden. 16 goldens + 22241 selftest checks green;
+palette screenshot on llm-feed. **Next: M2 wishlist inertial scroll**,
+then the kit-check boost-coda re-time (cleanup), then M4 human
+verification wraps the milestone.
 
 ## What works right now
 
@@ -62,6 +62,16 @@ plus M4 so far:
   loop that works: telemetry run → align against a Lua boundary dump →
   fix rows → repeat; settle-dead rows and wall-press overruns are the
   two re-sync primitives.
+- **Prop spawn palette** (D031): the attach surface's optional `props`
+  list puts cartridge spawnables in the swatch strip (icon = atlas
+  sub-rect). While an entry holds the brush, LMB/RMB press edges submit
+  its spawn/erase eval formatted with the world mouse. Sandbox:
+  `game.props.spawn(x,y)` (crate centered on the click, capacity =
+  actual buffer size, 48 on fresh boots), `game.props.despawn_at(x,y)`
+  (topmost free crate under the point; held refuses). Despawn
+  swap-compacts; player.step self-heals its carry index by re-finding
+  the held flag. props.init now adopts an existing buffer at its own
+  size (restore/reload safe across capacity changes).
 
 ## Verified
 
@@ -69,22 +79,19 @@ plus M4 so far:
   values themselves (their dial-in, folded verbatim — canon-hash-equal
   to their saved knobs.dat before it was retired).
 - Agent-verified: `nix run .#test` ALL GREEN — selftest **22241** +
-  **15 goldens** (this session: jumpfeel, boostcap, divecancel,
-  boostlock, djscale, mantle, **platformer_locked** — the full v2 tour,
-  2780 f). The whole dial-in lands bit-exact at stock (tour PNGs
-  byte-identical at every step until the lock-in itself). Tour v2
-  verified beat-by-beat via telemetry + 20-shot montage (on llm-feed).
-- dj.speed→scale migration tested live; mantle A/B verified (0 falls,
-  4 lands) before its golden.
+  **16 goldens** (this session: **propspawn** — spawn, despawn_at hit
+  and miss, held-crate refusal, the swap + carry self-heal, 240 f on
+  the procedural map). Headless eval smoke-tests passed for cap/count,
+  spawn indices, despawn refusal and the carry heal (14→13 after the
+  swap) before recording.
+- Earlier (2026-06-11): tour v2 verified beat-by-beat via telemetry +
+  20-shot montage; dj.speed→scale migration tested live; mantle A/B
+  verified (0 falls, 4 lands) before its golden.
 
 ## Next step (M4 continues)
 
-1. **Prop spawn palette** (crates first; doc-tree prop defs later) —
-   the last M4 PLAN bullet. Spawning must be an eval (a
-   `game.props.spawn_eval(x, y)`-shaped cartridge command) like paint
-   and inspector writes (D026/D027).
-2. M2 wishlist: inertial/bouncy scroll for editor chrome.
-3. Cleanup candidates while in the area: re-time the kit-check boost
+1. M2 wishlist: inertial/bouncy scroll for editor chrome.
+2. Cleanup candidates while in the area: re-time the kit-check boost
    coda for the locked knobs (boost_win 3 + glide sink means the old
    cancel timing no longer boosts — boostlock's bundled copy still
    verifies forever, but FUTURE kit-check recordings lost that
@@ -119,9 +126,9 @@ plus M4 so far:
   `game.level.reset()` if your painted map.dat is loaded): does the
   new choreography read as deliberate showmanship in the locked feel?
   Beats worth a re-cut are cheap now (telemetry + boundary tooling).
-- Your painted map.dat is still local/uncommitted: commit it as the
-  stock level when the prop palette + second tileset exist, or keep
-  procedural?
+- Your painted map.dat is still local/uncommitted: the prop palette
+  now exists (you can dress a level with crates) — commit a dressed
+  map as the stock level, or keep procedural until the second tileset?
 - The finale has no real BOOST beat under the locked knobs (window 3
   is genuinely hard open-loop). Fine to leave as flip, or want me to
   hunt a boost-able setup (e.g. a scripted dive from a specific ledge

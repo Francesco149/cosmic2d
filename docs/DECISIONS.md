@@ -554,3 +554,40 @@ pure step logic. The mantle golden + platformer_locked pin it.
 shared pt-level helper over the tilemap API, still controller-side),
 or assists want engine-side queries the API lacks (add read-only
 queries, never mover behavior).
+
+## D031 — prop spawning is an eval: the palette is cartridge commands (M4)
+
+**Context**: M4's last bullet, the prop spawn palette. Spawning mutates
+sim state, so it falls under the same trace contract as painting
+(D026) and inspector writes (D027): an editing session that drops
+crates must record and verify byte-exact. The engine has no entity
+concept (D005/D027) — what a "prop" is belongs to the cartridge.
+**Decision**: the editor attach surface gains an optional `props` list:
+`{ name, icon = {u,v,w,h} (atlas sub-rect for the swatch), spawn =
+"game.props.spawn(%d,%d)", erase = "game.props.despawn_at(%d,%d)" }`.
+Entries join the swatch strip after the tiles; while one holds the
+brush, LMB/RMB press edges (no drag machine-gun) format the entry's
+eval with the floored world mouse and submit it through pt.repl — the
+editor stays a repl client with a mouse, and what the evals DO is
+entirely cartridge code. Sandbox side: `game.props.spawn(x,y)` (crate
+centered on the click, capacity-bounded by the buffer's actual size),
+`game.props.despawn_at(x,y)` (topmost free crate under the point;
+held crates refuse — resolved at EXECUTION time inside the sim frame,
+so the eval never embeds a stale index). Despawn keeps the prop list
+dense by swapping the last slot into the hole; since that can move the
+held crate's index, player.step self-heals its carry by re-finding the
+held flag (only the player grabs). props.init now adopts an existing
+buffer at ITS size (init re-runs after restores/reloads and pal.buf
+errors on mismatch); fresh boots allocate 48 slots.
+**Why**: zero new trace machinery for the third time — the propspawn
+golden pins spawn, despawn_at (hit and miss), the held refusal and the
+swap/self-heal. Eval-format entries are deliberately the thinnest
+possible palette contract; richer prop definitions (doc-tree prop
+defs, per-entry params) can grow on the same surface without touching
+the editor's trust model.
+**Snapshot story**: spawns/despawns travel as EVALs; palette selection
+is dev-side chrome (D021) and never recorded.
+**Revisit if**: cartridges want parameterized spawns (then: entries
+carry arg widgets, still formatting one eval), multiple prop kinds
+arrive (doc-tree prop defs feeding the entry list), or drag-stamping
+wants batched evals (D026's poke_run path).
