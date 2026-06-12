@@ -11,3 +11,7 @@
 # scratch
 /tmp/
 /tests/out/
+
+# time-machine ring exports (the scrubber's "save .ptrace"; share via
+# tests/traces or the feed, don't commit by accident)
+/projects/*/ring-f*.ptrace

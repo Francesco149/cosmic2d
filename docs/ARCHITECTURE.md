@@ -150,7 +150,10 @@ What this buys:
   divergent frame *and the exact bytes* are reported, which is the tool you
   want when hunting a determinism bug (hashes alone can't localize).
 - **Rewind during play** = an always-on in-memory ring trace of the last N
-  seconds; "save what just happened" exports it.
+  seconds; "save what just happened" exports it. As of M5 this is real:
+  the ring IS the recorder (D032, pt.trace), F4 opens the scrubber
+  (pt.scrub) over it, and a loaded .ptrace replays through the same panel
+  (state-per-frame playback; exiting adopts the trace's timeline).
 
 Cosmetic state (particles, camera shake) is still deterministic sim state —
 pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
@@ -416,8 +419,8 @@ pettan2d/
     boot.lua           thin shim: module system + handoff to pt.main
     pt/                engine modules (main, state, input, rand, math,
                        ease, gfx, text, trace, chunk, ui, console, repl,
-                       perf, tilemap, editor, inspect; assets/ = baked
-                       fonts)
+                       perf, tilemap, editor, inspect, scrub; assets/ =
+                       baked fonts)
   projects/
     sandbox/           the stock cartridge (M3: live-editable platformer —
                        main/level/player/props/fx/demo/pix modules)
@@ -427,6 +430,7 @@ pettan2d/
   tools/               dev scripts (bake_spleen, feed helpers)
   tests/
     traces/            golden traces (replay-forever, contract rule 6)
+    pixels/            pixel goldens (.png + .args sidecar; pinned lavapipe)
     cartridges/        test fixtures (churn: trace-format edge cases)
   bin/                 built PAL binaries (gitignored until release packaging)
 ```

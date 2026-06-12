@@ -51,12 +51,24 @@ bin/pettan projects/sandbox --headless --frames N --eval "game.demo(1)" \
   --shot /tmp/s.png     # --eval queues a console line for frame 1 (recorded
                         # as an EVAL chunk) — drives demos/knobs headlessly
 nix run .#test                      # selftest + all committed goldens (lavapipe)
+nix flake check                     # same suite as a sandboxed derivation
 ```
 
 - Goldens: `VK_DRIVER_FILES` is forced to the flake's lavapipe ICD by the
   test runner — never record goldens on hardware drivers (D007). State
   traces are driver-independent (sim is pure CPU); pixel goldens (M5) are
   not. New golden = trace + `.project` sidecar naming its cartridge dir.
+- Pixel golden = `tests/pixels/<name>.png` + `<name>.args` (one argv token
+  per line; the runner appends `--shot` and byte-compares). Record ON
+  LAVAPIPE: `VK_DRIVER_FILES=$PETTAN_LVP_ICD bin/pettan <args…> --shot
+  tests/pixels/<name>.png` inside the devshell — and mind untracked local
+  state (a painted `projects/sandbox/map.dat` boots instead of the
+  procedural map; move it aside).
+- Time machine (M5): F4 in any live session scrubs the always-on ring
+  trace (last `pt.trace.ring.seconds`, default 30); "rewind here" truncates
+  the future, "save .ptrace" exports the ring; replay a file with
+  `pt.scrub.open_replay("path.ptrace")` from the console. Crash → F4 →
+  scrub back and watch it coming is the intended debugging loop.
 - The flake only sees **tracked** files: `git add` new files before any
   `nix develop`/`nix build`/`nix run .#test` if files were added.
 
