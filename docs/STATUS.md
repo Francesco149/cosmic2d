@@ -115,9 +115,6 @@ tour v2) plus M5:
 
 ## Open questions for the human
 
-- RESOLVED (2026-06-12): time machine rewind feel, inertial scroll,
-  and mantle — all signed off.
-- Carried over (2026-06-12): the tour-finale re-cut montage on the
-  feed (does the boost's plateau wall-kiss read as deliberate, does
-  the vertical-tower flare land as a finale?) and the full tour v2
-  watch (`game.demo(1)` after `game.level.reset()`).
+- None — slate clear as of 2026-06-12: time machine rewind feel,
+  inertial scroll, mantle, and tour v2 (incl. the finale re-cut) all
+  signed off ("exercises all the mechanics correctly").
