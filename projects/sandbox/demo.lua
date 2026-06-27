@@ -25,14 +25,17 @@ local TIMELINE = {
   { 30 }, -- settle
   { 6, "grapple" }, -- GRAPPLE: a plank sits above spawn (procedural map)
   { 56 }, -- ride the pull up, settle onto the plank
-  -- B: flash-jump off, repeatable dashes across the lowlands
+  -- B: flash-jump off the plank, land, then jump + flash again — it's ONCE
+  -- per airtime now (re-arms on landing), so the staple is jump->flash->land
   { 20, "right" }, -- walk to the plank edge, off
   { 8, "right" },
   { 5, "right", "jump" }, -- FLASH JUMP — dash + sonic boom
-  { 9, "right" },
-  { 5, "right", "jump" }, -- FLASH JUMP again (repeatable — the staple)
-  { 30, "right" }, -- sail forward
-  { 26 }, -- land, settle
+  { 46, "right" }, -- sail forward, land (floatier now)
+  { 10, "right", "jump" }, -- jump (a fresh airtime)
+  { 8, "right" },
+  { 5, "right", "jump" }, -- FLASH JUMP again (re-armed)
+  { 44, "right" }, -- sail, land
+  { 22 }, -- settle
   -- C: jump -> up-jump climb, hop to fine-tune the apex
   { 10, "jump" }, -- JUMP (fixed apex)
   { 6 }, -- release
@@ -41,10 +44,12 @@ local TIMELINE = {
   { 1, "hop" }, -- HOP near the top — a TAP fine-tuner (no flutter cooldown)
   { 34 }, -- arc back down
   { 26 }, -- land
-  -- D: (settle grounded) hop -> flutter hover (hold E), then drift down
-  { 30 }, -- ensure we've landed from C's arc
-  { 4, "hop" }, -- grounded HOP — lifts off
-  { 96, "hop" }, -- HOLD E -> FLUTTER, hover/slow-fall (~1.6 s)
+  -- D: jump, hop at the rise, then hold E -> a high, long flutter hover
+  { 30 }, -- settle grounded from C
+  { 8, "jump" }, -- JUMP up first (height for a longer hover)
+  { 8 }, -- rise
+  { 4, "hop" }, -- HOP higher (air hop, fresh airtime)
+  { 96, "hop" }, -- HOLD E -> FLUTTER, hover/slow-fall from up high
   { 40 }, -- release: fall the rest, land
   { 24 }, -- settle (hop now on cooldown)
   -- E: teleport blinks (A<->B phase flips) advancing
@@ -77,13 +82,18 @@ local KITCHECK = {
   { 6 },
   { 4, "grapple" }, -- BLOCKED (grapple_used this airtime)
   { 36 }, -- land (resets used; grapple_cd still counting)
-  -- flash jump is repeatable
+  -- flash jump is ONCE per airtime: a 2nd airborne press is ignored, and it
+  -- re-arms after landing
   { 8, "right", "jump" }, -- ground jump
   { 6, "right" },
   { 4, "right", "jump" }, -- FLASH JUMP #1
   { 6, "right" },
-  { 4, "right", "jump" }, -- FLASH JUMP #2 (repeatable)
-  { 26 }, -- land
+  { 4, "right", "jump" }, -- 2nd airborne press -> BLOCKED (once per airtime)
+  { 34 }, -- land
+  { 8, "right", "jump" }, -- jump (fresh airtime)
+  { 6, "right" },
+  { 4, "right", "jump" }, -- FLASH JUMP again -> WORKS (re-armed on landing)
+  { 34 }, -- land
   -- up jump locks out flash jump for the airtime
   { 8, "jump" }, -- ground jump
   { 5 },
