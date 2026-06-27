@@ -256,13 +256,9 @@ function M.step(ctl)
   -- ALTERNATES forward/back, tied to the A<->B phase flip that happens each
   -- blink: mode A blinks forward (solid), mode B blinks back (phases through
   -- hazards/enemies — at M12). Max 2/s. =====
-  if ctl.teleport_held and tp_cd <= 0 then
-    local tdir = tp_mode == 0 and facing or -facing -- A forward / B back
+  if ctl.teleport_held and tp_cd <= 0 and grappling == 0 then -- locked while
+    local tdir = tp_mode == 0 and facing or -facing -- grappling. A fwd / B back
     local bx = tm:move(x, y, W, H, tdir * k.tp_dist, 0) -- clamps at solids
-    if grappling ~= 0 then
-      grappling = 0
-      grapple_cd = m.max(grapple_cd, k.grapple_cd)
-    end
     if flutter_t > 0 then hop_cd = m.max(hop_cd, k.hop_cd) end
     fluttering, hop_active, flutter_t = 0, 0, 0
     ring(x + W * 0.5, y + H * 0.5, 12, 150, 2.0, 3.2, 0.14, 0.30) -- depart
@@ -307,9 +303,9 @@ function M.step(ctl)
     end
   end
 
-  -- ===== WALK / AIR CONTROL (normal during the grapple's extend phase; only
-  -- the reel takes over motion) =====
-  if grappling ~= 2 then
+  -- ===== WALK / AIR CONTROL (locked out for the WHOLE grapple — extend and
+  -- reel — until it's cancelled; the grapple is a committed vertical move) =====
+  if grappling == 0 then
     if dir ~= 0 then facing = dir end
     if grounded then
       if dir ~= 0 then

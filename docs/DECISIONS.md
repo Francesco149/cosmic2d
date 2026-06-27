@@ -792,7 +792,9 @@ updated):
   But the launch is dominated by the post-reel coast ≈ `grapple_vmax`²/2g, so vmax
   is the real lever — lowered 300→220 (accel 720 unchanged, the "accel feels fine"
   ask) to cut a medium grapple's overshoot from ~5.6 CH to ~2.5 CH. **Starting a
-  grapple zeroes horizontal momentum.**
+  grapple zeroes horizontal momentum**, and **arrows + teleport are locked out for
+  the whole grapple** (extend and reel) until it's cancelled — it's a committed
+  vertical move (hop was already gated; jump still cancels).
 
 ## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
 

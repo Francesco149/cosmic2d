@@ -99,7 +99,8 @@ GAME.md §4 + D035 updated; selftest 22312 + record→verify both timelines:
   very-short grapples a small launch. The launch is really capped by
   `grapple_vmax` (coast ≈ vmax²/2g) — lowered 300→220, cutting a medium grapple's
   overshoot ~5.6 CH → **~2.5 CH** (accel 720 unchanged). **Grapple start zeroes
-  horizontal momentum.**
+  horizontal momentum; arrows + teleport are locked out for the whole grapple**
+  (committed vertical move; jump still cancels).
 
 ## What works right now (the engine, M0–M6 + the M7 moveset)
 
