@@ -1,137 +1,186 @@
--- player — the character controller (M3 + the air-move set): run with
--- accel/decel, buffered + coyote jumps with release-cut variable height,
--- one-way platforms with down+jump drop-through, grab/throw crates, and
--- the A-Hat-in-Time air kit:
+-- player — the cosmic mecha-girl controller (M7, D035 / GAME.md §4): the
+-- MapleStory-derived moveset that replaces the old A-Hat-in-Time air kit.
+-- Pure cartridge policy: it rides the frozen tilemap mover + one-way
+-- platforms (D024) and reads the map through primitives for grapple
+-- targeting (the D030 pattern — feel/assists/queries are controller-side,
+-- the mover stays a mechanism). No engine/PAL change. Determinism class is
+-- unchanged: integer-frame timers, pure-IEEE scans, engine PRNG (fx) only,
+-- cm.math trig, no libm, no wall clock.
 --
---  * DIVE — its own button ("dive", G), mid-air only: a fast forward
---    lunge with a boom pop + trail. No air control, facing locked.
---    Land without canceling -> belly slide, and you stay on your belly
---    until the dive is canceled (slide friction brings you to rest).
---  * CANCEL — pressing ANY action during a dive or slide (the opposite
---    direction included): front-flip pop (slight up momentum), forward
---    momentum slowed, air control returns, but facing stays locked until
---    you touch the ground. The flip-out arc falls under its own gravity
---    multiplier (knobs.dive.cancel_grav) — decoupled from the jump
---    curve's fall_mul/hang shaping, so tuning the jump never changes
---    the flip. No new dive until you touch the ground (the flip-out
---    state IS the lockout) — one dive per airtime, like the dj.
---  * DIVE BOOST — cancel within ~knobs.dive.boost_win frames of the
---    ground (before touchdown or just after sliding) while HOLDING the
---    dive direction: big forward speed + flip + ground-bounce burst. The
---    boost evaporates the moment you touch the ground (gap-crossing
---    tech); while it lasts, steering caps speed at knobs.dive.boost_max
---    instead of move.run — and the dive button is DEAD: no
---    boost->dive->boost chains for infinite fast movement; the
---    touchdown that ends the boost unlocks the dive.
---  * DOUBLE JUMP — jump pressed again in mid-air, one charge per
---    airtime (restored on landing), its own buffer + coyote knobs
---    (knobs.dj): within dj.coyote of walking off a ledge an air press is
---    still the full ground jump (charge kept). A charge-less air press
---    buffers the landing jump as usual. Dives SPEND the charge — no
---    double jump out of a dive or its cancel; landing restores it.
---    Diving OUT of a double jump is still allowed. Release-cut applies
---    to both jumps. The impulse is dj.scale times the jump curve's —
---    a SCALE so the second jump tracks the first under tuning and
---    never silently out-jumps it (stock 255/280, the retired dj.speed
---    over the stock jump impulse, bit-exact).
+-- The moveset (every value a live knob under doc.knobs.move, D028):
+--   1 WALK      hold ←/→ grounded — slow ground move (~3 CW/s; you fly,
+--               you don't run).
+--   2 JUMP      Jump, grounded — FIXED apex ≈1 CH (not variable height);
+--               hold Jump auto-repeats on landing (bounce). down+Jump on a
+--               one-way drops through.
+--   3 FLASH JUMP Jump again airborne — upright forward dash (~6 CW from
+--               apex), repeatable, the staple. Sonic-boom ring. Minimal air
+--               control (air_accel only trims the arc). Locked while up-jumped.
+--   4 UP JUMP   Up + Jump airborne — fixed vertical impulse (jump→up-jump
+--               chain ≈5 CH). Once per airtime; LOCKS OUT flash jump until
+--               landing. Time it late for less height.
+--   5 HOP       E — diagonal up-forward boost, the trajectory fine-tuner.
+--               Chains anywhere. Once per airtime (and never on flutter cd).
+--   6 FLUTTER   hold E after a hop — hover / slow-fall up to flutter_max.
+--               On release/timeout hop goes on hop_cd (a plain TAP hop never
+--               arms the cooldown). Cooldown persists across airtimes.
+--   7 GRAPPLE   q (the spec's ` is the dev console — see main.lua) — reel up
+--               to a standable top above, preferring targets past ½ a
+--               screenful. Slow accel. Once per airtime, 3 s cooldown. Jump
+--               CANCELS (no auto-FJ; press Jump again for that).
+--   8 TELEPORT  R (hold to spam) — blink ~5 CW forward, lose all momentum,
+--               max 2/s. Persistent A↔B PHASE-SHIFT mode, flips each blink,
+--               resets on map change: appearance reflects the mode (mode B's
+--               phase-through-hazards/enemies lands with combat, M12). Blink
+--               clamps at solid walls, passes one-ways.
+--   9 ATTACK    hold D — continuous slice (slash particle stub; enemies at
+--               M12). Jump/FJ/up-jump allowed; HOP is disabled while held.
 --
---  * MANTLE LENIENCY — a descending near-miss at a platform lip (feet
---    within knobs.move.mantle px BELOW a standable top the body
---    horizontally overlaps — or is flush against, on a side bonk)
---    hoists the player onto it: jumps that almost make it land, glides
---    that clip an edge flop into the slide ON the platform instead of
---    scraping off. Policy over mechanism: the engine mover stays exact
---    (D024); the player repositions itself and the normal touchdown
---    logic runs through the synthesized hit. Never while dropping
---    through a plank (down+jump), never while rising.
+-- Per-airtime flags (hop_used, up-jumped→FJ-lock, grapple_used) reset on
+-- landing; the teleport MODE bit, hop cooldown and grapple cooldown persist
+-- (mode resets on map change). All state is named-buffer sim state below;
+-- nothing lives on the Lua heap.
 --
--- Every number is a doc-tree knob (knobs.move/dive/dj/feel) — tune live.
---
--- The jump curve (D029) is authored in feel terms, not raw physics: rise
--- gravity and the takeoff impulse derive from knobs.move.jump_h (apex
--- height, px) and apex_t (time to apex, frames); falling multiplies
--- gravity by fall_mul, and an apex hang window (airborne, |vy| <=
--- hang_speed) multiplies by hang_mul on top — floaty peaks, snappy
--- drops, all five orthogonal. Dives keep their own multiplier (dive.grav)
--- over the same base curve.
---
--- sandbox.player layout (f32 fields):
---   [0] x | [4] y          AABB top-left (10x14 px body)
---   [8] vx | [12] vy
---   [16] facing (+1/-1)
---   [20] coyote frames | [24] jump-buffer frames | [28] drop-through frames
---   [32] squash timer s | [36] stretch timer s | [40] anim phase
---   [44] grounded (0/1) | [48] carried prop (0 = none)
---   [52] landing impact (px/s) | [56] run-dust accumulator
---   [60] standing on one-way (0/1)
---   [64] dive state (0 none, 1 air dive, 2 belly slide, 3 flip-out)
---   [68] dive direction (+1/-1) | [72] slide frames | [76] flip anim s
---   [80] boosted (0/1) | [84] air-jump charge (0/1)
---   [88] dj buffer frames | [92] dj coyote frames
+-- Units: cw/ch knobs are the character box AND the calibration unit (CW/CH,
+-- GAME.md §4). Distances default to the spec's CW/CH relationships sized to
+-- fit the current 16 px-tile map at 1:1. The absolute "6 CW ≈ ⅓ screen"
+-- anchor (CW ≈ 26 px) needs the zoom/real-sprite pass (M8 / M-art); it's a
+-- cw/ch/zoom knob change away.
 
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local ease = cm.require("cm.ease")
 local pix = cm.require("pix")
 local level = cm.require("level")
-local props = cm.require("props")
 local fx = cm.require("fx")
 
 local M = {}
 
 local DT = 1.0 / 60.0
-M.W, M.H = 10, 14
+local TAU = 6.28318530717958623200
+
+-- named-buffer layout (f32 fields). Offsets are the single source of truth
+-- shared by step() (writes) and draw() (reads).
+local O = {
+  x = 0, y = 4, vx = 8, vy = 12, facing = 16,
+  grounded = 20, on_oneway = 24, coyote = 28, jbuf = 32, drop = 36,
+  hop_used = 40, upjumped = 44, grapple_used = 48,
+  hop_active = 52, fluttering = 56, flutter_t = 60, hop_cd = 64,
+  grappling = 68, gx = 72, gy = 76, grapple_cd = 80,
+  tp_mode = 84, tp_cd = 88, attack_t = 92,
+  squash_t = 96, stretch_t = 100, anim = 104, land = 108, dust = 112,
+  tp_flash = 116, fj_t = 120,
+}
+local SIZE = 128
+
+M.W, M.H = 12, 18 -- body box; refreshed from cw/ch knobs each init/step
 
 local buf
 
 function M.init()
-  buf = pal.buf("sandbox.player", 96)
-  if buf:f32(0) == 0 and buf:f32(4) == 0 and buf:f32(8) == 0
-     and buf:f32(12) == 0 then -- virgin: spawn
-    buf:f32(0, level.spawn.x)
-    buf:f32(4, level.spawn.y)
-    buf:f32(16, 1)
+  -- the layout changed from the old controller's 96 bytes; a hot reload over
+  -- the stale buffer would size-mismatch (pal.buf errors), so discard it and
+  -- re-seed. Cold boots / verify runs just allocate fresh.
+  local ok, b = pcall(pal.buf, "sandbox.player", SIZE)
+  if not ok then
+    pal.buf_free("sandbox.player")
+    b = pal.buf("sandbox.player", SIZE)
+  end
+  buf = b
+  if buf:f32(O.x) == 0 and buf:f32(O.y) == 0
+     and buf:f32(O.vx) == 0 and buf:f32(O.vy) == 0 then -- virgin: spawn
+    buf:f32(O.x, level.spawn.x)
+    buf:f32(O.y, level.spawn.y)
+    buf:f32(O.facing, 1)
   end
 end
 
-function M.pos()
-  return buf:f32(0), buf:f32(4)
+function M.pos() return buf:f32(O.x), buf:f32(O.y) end
+function M.center() return buf:f32(O.x) + M.W * 0.5, buf:f32(O.y) + M.H * 0.5 end
+function M.facing() return buf:f32(O.facing) end
+
+-- ---- helpers ----
+
+local function approach(v, target, step)
+  if v < target then return m.min(v + step, target) end
+  return m.max(v - step, target)
 end
 
-function M.center()
-  return buf:f32(0) + M.W * 0.5, buf:f32(4) + M.H * 0.5
+-- a radial particle ring (sonic boom, teleport pop): exact angles via
+-- cm.math trig (deterministic, no libm). fx.spawn collapses equal min/max.
+local function ring(x, y, n, speed, sh0, sh1, l0, l1)
+  for i = 0, n - 1 do
+    local a = TAU * i / n
+    local c, s = m.cos(a), m.sin(a)
+    fx.spawn(x, y, 1, { vx0 = c * speed, vx1 = c * speed,
+                        vy0 = s * speed, vy1 = s * speed,
+                        life0 = l0, life1 = l1, shade0 = sh0, shade1 = sh1 })
+  end
 end
 
-function M.facing()
-  return buf:f32(16)
+local function puff(x, y, n, sh)
+  fx.spawn(x, y, n, { vx0 = -34, vx1 = 34, vy0 = -38, vy1 = -6,
+                      shade0 = sh or 0.3, shade1 = (sh or 0.3) + 0.7 })
 end
 
-local function boom(x, y, dir, n, fast)
-  fx.spawn(x, y, n, { vx0 = -dir * (fast and 220 or 90), vx1 = -dir * 25,
-                      vy0 = -45, vy1 = 35, life0 = 0.16, life1 = 0.34,
-                      shade0 = 3.0, shade1 = 4.0 })
-end
-
--- the mantle probe: is there a standable top edge (solid, or one-way —
--- the leniency deliberately bypasses the row-entry rule) within
--- `mantle` px below the feet, in the body's column span (extended one
--- column toward a side bonk), with room to stand above it? Returns the
--- surface y and whether the support is one-way only. Assumes H <= tile
--- (the body above the lip spans a single row).
-local function mantle_top(tm, x, y, mantle, ext_l, ext_r)
+-- the grapple targeting scan (deterministic, cartridge-side, D030): find
+-- standable tops above the player in its column span within range_max; pick
+-- the LOWEST that is at least range_min_pref above (reach past close ones);
+-- if none qualify, fall back to the HIGHEST in range. Returns the surface y
+-- (the tile top the feet would land on) or nil.
+local function grapple_scan(tm, x, y, W, H, range_max, min_pref)
   local t = tm.tile
-  local feet = y + M.H
+  local feet = y + H
+  local c0 = m.floor(x / t)
+  local c1 = m.ceil((x + W) / t) - 1
+  local r_lo = m.floor((feet - range_max) / t)
+  local r_hi = m.ceil(feet / t) - 1 -- rows strictly above the feet
+  local best_q, gap_q -- smallest gap among gap >= min_pref
+  local best_a, gap_a -- largest gap overall
+  for r = r_lo, r_hi do
+    local standable = false
+    for c = c0, c1 do
+      local d = tm.tiles[tm:get(c, r)]
+      if d and (d.solid or d.oneway) then standable = true break end
+    end
+    if standable then
+      local clear = true -- room to stand: the row above must be solid-free
+      for c = c0, c1 do
+        local a = tm.tiles[tm:get(c, r - 1)]
+        if a and a.solid then clear = false break end
+      end
+      if clear then
+        local surface = r * t
+        local gap = feet - surface
+        if gap > 0 and gap <= range_max then
+          if gap >= min_pref and (not gap_q or gap < gap_q) then
+            best_q, gap_q = surface, gap
+          end
+          if not gap_a or gap > gap_a then best_a, gap_a = surface, gap end
+        end
+      end
+    end
+  end
+  return best_q or best_a
+end
+
+-- mantle leniency (D030): a descending near-miss at a standable lip within
+-- `mantle` px below the feet (column span extended toward a side bonk) hoists
+-- the player onto it. Returns the surface y and whether support is one-way.
+local function mantle_top(tm, x, y, W, H, mantle, ext_l, ext_r)
+  local t = tm.tile
+  local feet = y + H
   local r = m.ceil((feet - mantle) / t)
-  if r * t >= feet then return nil end -- no top edge strictly above feet
+  if r * t >= feet then return nil end
   local c0 = m.floor(x / t) - (ext_l and 1 or 0)
-  local c1 = m.ceil((x + M.W) / t) - 1 + (ext_r and 1 or 0)
-  for fx = c0, c1 do -- room to stand: the row above the lip must be clear
-    local a = tm.tiles[tm:get(fx, r - 1)]
+  local c1 = m.ceil((x + W) / t) - 1 + (ext_r and 1 or 0)
+  for c = c0, c1 do
+    local a = tm.tiles[tm:get(c, r - 1)]
     if a and a.solid then return nil end
   end
   local found, solid = false, false
-  for cx = c0, c1 do
-    local d = tm.tiles[tm:get(cx, r)]
+  for c = c0, c1 do
+    local d = tm.tiles[tm:get(c, r)]
     if d and (d.solid or d.oneway) then
       found = true
       solid = solid or (d.solid or false)
@@ -141,417 +190,469 @@ local function mantle_top(tm, x, y, mantle, ext_l, ext_r)
   return r * t, not solid
 end
 
--- ctl: left/right/up/down (held), jump_pressed/jump_held/jump_released,
--- grab_pressed, any_pressed (any action's press edge — the dive cancel
--- trigger) — main.lua builds this from live input or the demo script
+-- ctl (built in main.lua from live input or the demo script):
+--   left/right/up/down       held
+--   jump_pressed/jump_held    space (press edge / held — held = auto-repeat)
+--   hop_pressed/hop_held      e     (press edge / held — held = flutter)
+--   grapple_pressed           q     (press edge)
+--   teleport_held             r     (held — hold to spam, rate-limited)
+--   attack_held               d     (held)
 function M.step(ctl)
   local k = state.doc.knobs.move
-  local kd = state.doc.knobs.dive
-  local kj = state.doc.knobs.dj
   local feel = state.doc.knobs.feel
   local kf = state.doc.knobs.fx
   local tm = level.tm
 
-  -- the derived jump curve (D029): integer-ratio math, so the stock
-  -- 56 px / 24 f reproduces the retired jump=280/gravity=700 pair
-  -- bit-exactly (2*56*3600/24^2 = 700, 2*56*60/24 = 280)
-  local apex_t = m.max(k.apex_t, 0.001) -- a zero apex must not make NaNs
+  local W = m.max(4, m.floor(k.cw))
+  local H = m.max(4, m.floor(k.ch))
+  M.W, M.H = W, H
+
+  -- the fixed-height jump curve (D029 math, but no release-cut): apex height
+  -- jump_h px reached in apex_t frames sets the rise gravity + takeoff impulse.
+  local apex_t = m.max(k.jump_apex_t, 1.0)
   local g_rise = 2.0 * k.jump_h * 3600.0 / (apex_t * apex_t)
   local v0 = 2.0 * k.jump_h * 60.0 / apex_t
 
-  local x, y = buf:f32(0), buf:f32(4)
-  local vx, vy = buf:f32(8), buf:f32(12)
-  local facing = buf:f32(16)
-  local coyote, jbuf = buf:f32(20), buf:f32(24)
-  local drop = buf:f32(28)
-  local squash_t, stretch_t = buf:f32(32), buf:f32(36)
-  local grounded = buf:f32(44) == 1.0
-  local on_oneway = buf:f32(60) == 1.0
-  local carry = math.floor(buf:f32(48))
-  -- carry self-heal: an editor despawn (game.props.despawn_at eval) swaps
-  -- the last crate into the hole — if that moved the carried crate,
-  -- re-find it by its held flag (only the player holds crates)
-  if carry > 0 and (carry > props.count() or not props.held(carry)) then
-    carry = props.find_held() or 0
-  end
-  local dstate = buf:f32(64)
-  local ddir = buf:f32(68)
-  local slide_t, flip_t = buf:f32(72), buf:f32(76)
-  local boosted = buf:f32(80) == 1.0
-  local charge = buf:f32(84)
-  local dj_buf, dj_coy = buf:f32(88), buf:f32(92)
+  local x, y = buf:f32(O.x), buf:f32(O.y)
+  local vx, vy = buf:f32(O.vx), buf:f32(O.vy)
+  local facing = buf:f32(O.facing)
+  local grounded = buf:f32(O.grounded) == 1.0
+  local on_oneway = buf:f32(O.on_oneway) == 1.0
+  local coyote, jbuf, drop = buf:f32(O.coyote), buf:f32(O.jbuf), buf:f32(O.drop)
+  local hop_used = buf:f32(O.hop_used)
+  local upjumped = buf:f32(O.upjumped)
+  local grapple_used = buf:f32(O.grapple_used)
+  local hop_active = buf:f32(O.hop_active)
+  local fluttering = buf:f32(O.fluttering)
+  local flutter_t = buf:f32(O.flutter_t)
+  local hop_cd = buf:f32(O.hop_cd)
+  local grappling = buf:f32(O.grappling)
+  local gx, gy = buf:f32(O.gx), buf:f32(O.gy)
+  local grapple_cd = buf:f32(O.grapple_cd)
+  local tp_mode, tp_cd = buf:f32(O.tp_mode), buf:f32(O.tp_cd)
+  local attack_t = buf:f32(O.attack_t)
+  local squash_t, stretch_t = buf:f32(O.squash_t), buf:f32(O.stretch_t)
 
+  local was_grounded = grounded
+  local dir = (ctl.right and 1 or 0) - (ctl.left and 1 or 0)
   local press = ctl.jump_pressed
-  local canceled = false
 
-  -- dive cancel: any pressed action flips out of a dive or belly slide
-  if (dstate == 1 or dstate == 2) and ctl.any_pressed then
-    canceled = true
-    local near_ground
-    if dstate == 2 then
-      near_ground = slide_t <= kd.boost_win
-    else -- would the dive touch down within the window?
-      local probe = m.max(vy, 80.0) * kd.boost_win * DT
-      local _, _, ph = tm:move(x, y, M.W, M.H, 0, probe)
-      near_ground = ph.down or false
+  -- ===== TELEPORT (R, hold to spam) — blink, lose all momentum =====
+  if ctl.teleport_held and tp_cd <= 0 then
+    local bx = tm:move(x, y, W, H, facing * k.tp_dist, 0) -- clamps at solids
+    if grappling == 1 then
+      grappling = 0
+      grapple_cd = m.max(grapple_cd, k.grapple_cd)
     end
-    local holding = (ddir > 0 and ctl.right) or (ddir < 0 and ctl.left)
-    if near_ground and holding then -- DIVE BOOST
-      vx = ddir * kd.boost
-      boosted = true
-      boom(x + M.W * 0.5, y + M.H, ddir, 10, true)
-      fx.spawn(x + M.W * 0.5, y + M.H, 12, -- ground-bounce ring
-               { vx0 = -130, vx1 = 130, vy0 = -40, vy1 = -6,
-                 shade0 = 0.3, shade1 = 1.0 })
+    if flutter_t > 0 then hop_cd = m.max(hop_cd, k.hop_cd) end
+    fluttering, hop_active = 0, 0
+    ring(x + W * 0.5, y + H * 0.5, 12, 150, 2.0, 3.2, 0.14, 0.30) -- depart
+    x, vx, vy = bx, 0, 0
+    tp_mode = 1 - tp_mode
+    tp_cd = k.tp_min_interval
+    buf:f32(O.tp_flash, 1.0)
+    ring(x + W * 0.5, y + H * 0.5, 10, 70, 3.0, 4.0, 0.12, 0.26) -- arrive
+  end
+
+  -- ===== GRAPPLE (q) — reel up to a platform; jump cancels =====
+  if ctl.grapple_pressed and grappling == 0 and grapple_cd <= 0
+     and grapple_used == 0 then
+    local ty = grapple_scan(tm, x, y, W, H, k.grapple_range_max,
+                            k.grapple_range_min_pref)
+    if ty then
+      grappling, gy, gx, grapple_used = 1, ty, x + W * 0.5, 1
+      ring(x + W * 0.5, y, 8, 60, 3.0, 4.0, 0.10, 0.22)
+    end
+  end
+  if grappling == 1 then
+    if press then -- jump cancels (consumed; no auto flash-jump)
+      grappling, grapple_cd, press = 0, k.grapple_cd, false
+      puff(x + W * 0.5, y + H * 0.5, 4, 2.2)
     else
-      vx = vx * kd.cancel_slow
-      boom(x + M.W * 0.5, y + M.H * 0.5, ddir, 4, false)
+      vy = m.max(vy - k.grapple_accel * DT, -k.grapple_vmax)
+      vx = approach(vx, 0, k.grapple_accel * DT)
+      if (y + H) <= gy then grappling, grapple_cd = 0, k.grapple_cd end
     end
-    vy = -kd.cancel_vy
-    dstate = 3 -- flip-out: air control back, facing locked until ground
-    flip_t = kd.flip_t
-    slide_t = 0
-    press = false -- the press canceled; it is not also a jump
   end
 
-  -- run: full authority on the ground, k.air of it in the air; dives and
-  -- slides have no steering at all
-  local ax = (ctl.right and 1 or 0) - (ctl.left and 1 or 0)
-  if dstate == 1 then
-    -- committed: vx stays as the dive set it
-  elseif dstate == 2 then
-    vx = vx * m.max(0.0, 1.0 - kd.slide_fric * DT) -- belly friction
-  elseif ax ~= 0 then
-    if dstate == 0 then facing = ax end -- 3 = flip-out: facing stays locked
-    vx = vx + ax * k.accel * (grounded and 1.0 or k.air) * DT
-    vx = boosted and m.clamp(vx, -kd.boost_max, kd.boost_max)
-         or m.clamp(vx, -k.run, k.run)
-  else
-    local d = k.decel * (grounded and 1.0 or k.air) * DT
-    if vx > 0 then vx = m.max(0.0, vx - d) else vx = m.min(0.0, vx + d) end
+  -- ===== WALK / AIR CONTROL (skipped while grappling reels) =====
+  if grappling == 0 then
+    if dir ~= 0 then facing = dir end
+    if grounded then
+      if dir ~= 0 then
+        vx = approach(vx, dir * k.walk_speed, k.walk_accel * DT)
+      else
+        vx = approach(vx, 0, k.ground_fric * DT)
+      end
+    elseif fluttering ~= 1 then
+      if dir ~= 0 then -- minimal: only trims the committed arc
+        vx = m.clamp(vx + dir * k.air_accel * DT, -k.fj_vx, k.fj_vx)
+      else
+        vx = approach(vx, 0, k.air_fric * DT)
+      end
+    end
   end
 
-  -- jump intent routing: ground/coyote presses buffer as before; an air
-  -- press is the double jump when a charge is there, else it buffers the
-  -- landing jump
+  -- ===== JUMP INTENT: ground/coyote buffers; airborne = up-jump or FJ =====
   if press then
     if grounded or coyote > 0 then
       jbuf = k.buffer
-    elseif dj_coy > 0 then -- dj's own ledge grace: still the full jump
-      vy = -v0
-      stretch_t = feel.stretch_t
-      coyote, dj_coy = 0, 0
-      fx.spawn(x + M.W * 0.5, y + M.H, 3,
-               { vx0 = -25, vx1 = 25, vy0 = -35, vy1 = -5,
-                 shade0 = 0.3, shade1 = 1.0 })
-    elseif charge > 0 and dstate ~= 1 and dstate ~= 2 then
-      dj_buf = kj.buffer -- fires just below
-    else
-      jbuf = k.buffer
+    elseif ctl.up and upjumped == 0 then -- UP JUMP (fixed vertical impulse)
+      vy = -k.upjump_v
+      upjumped, coyote = 1, 0
+      ring(x + W * 0.5, y + H, 9, 80, 3.0, 4.0, 0.12, 0.26)
+    elseif upjumped == 0 then -- FLASH JUMP (locked out after an up-jump)
+      vx = facing * k.fj_vx
+      vy = k.fj_vy
+      ring(x + W * 0.5 - facing * 4, y + H * 0.5, 14, 130, 3.0, 4.2, 0.14, 0.32)
     end
   end
 
-  -- the dive: its own button, mid-air only, from clean air ONLY
-  -- (dstate 0): mid-dive and mid-slide can't re-dive, and the cancel
-  -- flip-out (dstate 3, which persists until touchdown) is the
-  -- one-dive-per-airtime lockout — no dive after a cancel, no
-  -- boost->dive->boost chains (`not boosted` kept as belt and
-  -- suspenders), until the ground resets the kit. Locked while
-  -- carrying; the press that canceled a dive never starts the next one
-  if ctl.dive_pressed and not canceled and not grounded and carry == 0
-     and not boosted and dstate == 0 then
-    dstate = 1
-    ddir = facing
-    vx = facing * kd.speed
-    vy = m.max(vy, 0.0) + kd.vy
-    flip_t = 0
-    -- a dive spends the air moves: the jump buffers AND the dj charge —
-    -- no double jump out of a dive or its cancel (landing restores it)
-    jbuf, dj_buf, charge = 0, 0, 0
-    boom(x + M.W * 0.5 - facing * 4, y + M.H * 0.5, facing, 9, true)
-  end
-
-  -- double jump: buffered intent fires as soon as it is legal; the
-  -- impulse rides the jump curve (v0 * scale: tuning the jump retunes
-  -- the dj with it, and scale <= 1 keeps it the weaker jump)
-  if dj_buf > 0 and not grounded and charge > 0
-     and dstate ~= 1 and dstate ~= 2 then
-    vy = -v0 * kj.scale
-    charge = 0
-    dj_buf = 0
-    coyote, dj_coy = 0, 0
-    flip_t = 0 -- a dj out of the flip shows the jump pose again
-    stretch_t = feel.stretch_t
-    fx.spawn(x + M.W * 0.5, y + M.H, 5,
-             { vx0 = -45, vx1 = 45, vy0 = -20, vy1 = 25,
-               shade0 = 3.0, shade1 = 3.8 })
-  else
-    dj_buf = m.max(0.0, dj_buf - 1)
-  end
-
-  -- buffered ground jump (+ down+jump drop-through on one-ways)
+  -- ===== buffered GROUND JUMP (+ down+jump drop-through) =====
   if jbuf > 0 and (grounded or coyote > 0) then
     if ctl.down and grounded and on_oneway then
-      drop = 8 -- MapleStory down+jump: fall through the plank
+      drop = 8 -- fall through the plank
     else
       vy = -v0
-      stretch_t = feel.stretch_t
-      coyote, dj_coy = 0, 0
-      fx.spawn(x + M.W * 0.5, y + M.H, 3,
-               { vx0 = -25, vx1 = 25, vy0 = -35, vy1 = -5,
-                 shade0 = 0.3, shade1 = 1.0 })
+      coyote = 0
+      puff(x + W * 0.5, y + H, 3)
     end
     jbuf = 0
   else
-    jbuf = m.max(0.0, jbuf - 1)
+    jbuf = m.max(0, jbuf - 1)
   end
-  -- variable height: releasing the key while rising cuts the jump
-  if ctl.jump_released and vy < 0 then vy = vy * k.cut end
 
-  -- gravity phases: rising = the curve as-is; falling = fall_mul times
-  -- it; the apex hang window multiplies hang_mul on top. Dives keep
-  -- their own multiplier and the cancel flip-out has its own too
-  -- (cancel_grav — jump tuning never reshapes the flip); on the ground
-  -- it's just the contact probe
-  local grav_mul
-  if dstate == 1 then
-    grav_mul = kd.grav
-  elseif grounded then
-    grav_mul = 1.0
-  elseif dstate == 3 then
-    grav_mul = kd.cancel_grav
-  else
-    grav_mul = vy > 0 and k.fall_mul or 1.0
-    if m.abs(vy) <= k.hang_speed then grav_mul = grav_mul * k.hang_mul end
+  -- ===== HOP (E) — once/airtime; never while attacking or on flutter cd ====
+  local can_hop = hop_used == 0 and hop_cd <= 0 and not ctl.attack_held
+                  and grappling == 0
+  if ctl.hop_pressed and can_hop then
+    vx = vx + facing * k.hop_vx
+    vy = -k.hop_vy
+    hop_used, hop_active = 1, 1
+    puff(x + W * 0.5, y + H, 4, 0.8)
   end
-  vy = m.min(vy + g_rise * grav_mul * DT, k.fall_max)
 
-  local was_grounded = grounded
-  local nx, ny, hit = tm:move(x, y, M.W, M.H, vx * DT, vy * DT,
-                              { drop = drop > 0 })
-  -- mantle leniency: a descending near-miss at a lip becomes a landing
-  -- (and a side bonk at the lip stops stealing vx — clear the flags
-  -- before the wall response below; the touchdown branch then runs the
-  -- full landing logic off the synthesized hit.down)
-  if k.mantle > 0 and not hit.down and vy >= 0 and drop <= 0 then
-    local top, ow = mantle_top(tm, nx, ny, k.mantle, hit.left, hit.right)
+  -- ===== FLUTTER (hold E after a hop) — hover; arms hop_cd on release =====
+  -- (landing ends flutter in the touchdown branch, so `grounded` is NOT an end
+  -- condition here — that would clear hop_active on a grounded hop's own frame,
+  -- before liftoff, and flutter could never start)
+  if hop_active == 1 then
+    if not ctl.hop_held or flutter_t >= k.flutter_max
+       or grappling == 1 or ctl.attack_held then
+      if flutter_t > 0 then hop_cd = k.hop_cd end -- a plain tap never arms it
+      fluttering, hop_active = 0, 0
+    elseif not ctl.hop_pressed and not grounded then -- airborne, past the press
+      fluttering = 1
+      flutter_t = flutter_t + 1
+    else
+      fluttering = 0 -- the hop frame itself / not yet airborne: no hover
+    end
+  end
+
+  -- ===== GRAVITY (grapple drives vy itself; flutter eases to a slow sink) ===
+  if grappling == 0 then
+    if fluttering == 1 then
+      vy = approach(vy, k.flutter_fall, k.flutter_decel * DT)
+    else
+      local g = (vy < 0) and g_rise or (g_rise * k.fall_mul)
+      vy = m.min(vy + g * DT, k.fall_max)
+    end
+  end
+
+  -- ===== MOVE + COLLIDE (the frozen exact mover) =====
+  local nx, ny, hit = tm:move(x, y, W, H, vx * DT, vy * DT, { drop = drop > 0 })
+  if k.mantle > 0 and not hit.down and vy >= 0 and drop <= 0
+     and grappling == 0 then
+    local top, ow = mantle_top(tm, nx, ny, W, H, k.mantle, hit.left, hit.right)
     if top then
-      ny = top - M.H
+      ny = top - H
       hit.left, hit.right = false, false
       hit.down, hit.oneway = true, ow
     end
   end
-  drop = m.max(0.0, drop - 1)
+  drop = m.max(0, drop - 1)
   if hit.left or hit.right then vx = 0 end
-  if hit.up then vy = m.max(vy, 0.0) end
+  if hit.up then
+    vy = m.max(vy, 0.0)
+    if grappling == 1 then grappling, grapple_cd = 0, k.grapple_cd end
+  end
   if hit.down then
-    if not was_grounded then
-      if dstate == 1 then -- dive touchdown: onto the belly
-        dstate = 2
-        slide_t = 0
-        squash_t = feel.squash_t * 0.7
-        buf:f32(52, vy)
-        fx.spawn(nx + M.W * 0.5 + ddir * 5, ny + M.H, 6,
-                 { vx0 = ddir * 20, vx1 = ddir * 90, vy0 = -40, vy1 = -8,
-                   shade0 = 0.2, shade1 = 1.0 })
-      elseif vy > 60 then -- regular landing: squash + dust
-        buf:f32(52, vy)
-        squash_t = feel.squash_t
-        local burst = m.floor(m.clamp(vy / 60.0, 2, 9))
-        fx.spawn(nx + M.W * 0.5, ny + M.H, burst,
-                 { vx0 = -55, vx1 = 55, vy0 = -45, vy1 = -8,
-                   shade0 = 0.2, shade1 = 1.0 })
-      end
+    if not was_grounded and vy > 60 then -- landing squash + dust
+      buf:f32(O.land, vy)
+      squash_t = feel.squash_t
+      local burst = m.floor(m.clamp(vy / 60.0, 2, 9))
+      fx.spawn(nx + W * 0.5, ny + H, burst,
+               { vx0 = -55, vx1 = 55, vy0 = -45, vy1 = -8,
+                 shade0 = 0.2, shade1 = 1.0 })
     end
     vy = 0
-    grounded = true
-    on_oneway = hit.oneway or false
+    grounded, on_oneway = true, hit.oneway or false
     coyote = k.coyote
-    dj_coy = kj.coyote
-    charge = 1
-    if dstate == 3 then -- flip-out ends: facing unlocks
-      dstate = 0
-      flip_t = 0
-    end
-    if boosted then -- the boost evaporates on touchdown
-      vx = m.clamp(vx, -k.run, k.run)
-      boosted = false
+    hop_used, upjumped, grapple_used = 0, 0, 0 -- per-airtime reset
+    if hop_active == 1 and flutter_t > 0 then hop_cd = k.hop_cd end
+    fluttering, hop_active, flutter_t = 0, 0, 0
+    if grappling == 1 then grappling, grapple_cd = 0, k.grapple_cd end
+    if ctl.jump_held then jbuf = k.buffer end -- auto-repeat: hold to bounce
+  else
+    grounded, on_oneway = false, false
+    coyote = m.max(0, coyote - 1)
+  end
+
+  -- ===== ATTACK (hold D) — continuous slice stub (enemies at M12) =====
+  if ctl.attack_held then
+    attack_t = attack_t - 1
+    if attack_t <= 0 then
+      attack_t = k.attack_interval
+      local sx = nx + W * 0.5 + facing * (W * 0.5 + k.attack_reach * 0.4)
+      fx.spawn(sx, ny + H * 0.45, 5,
+               { vx0 = facing * 60, vx1 = facing * 210,
+                 vy0 = -36, vy1 = 36, life0 = 0.07, life1 = 0.16,
+                 shade0 = 2.0, shade1 = 3.6 })
     end
   else
-    grounded = false
-    on_oneway = false
-    coyote = m.max(0.0, coyote - 1)
-    dj_coy = m.max(0.0, dj_coy - 1)
-    if dstate == 2 then dstate = 1 end -- slid off a ledge: airborne dive
+    attack_t = 0
   end
-  if dstate == 2 then slide_t = slide_t + 1 end
 
-  -- trails: dive boom stream, belly-slide scrape, footfall dust
+  -- ===== cooldown timers (integer-frame) =====
+  hop_cd = m.max(0, hop_cd - 1)
+  grapple_cd = m.max(0, grapple_cd - 1)
+  tp_cd = m.max(0, tp_cd - 1)
+
+  -- ===== cosmetic trails =====
   local frame = state.frame()
-  if dstate == 1 and frame % 2 == 0 then
-    boom(nx + M.W * 0.5 - ddir * 6, ny + M.H * 0.5, ddir, 1, false)
-  elseif boosted and not grounded then
-    boom(nx + M.W * 0.5 - ddir * 7, ny + M.H * 0.5, ddir, 1, false)
-  elseif dstate == 2 and m.abs(vx) > 50 and frame % 3 == 0 then
-    fx.spawn(nx + M.W * 0.5 + ddir * 5, ny + M.H, 1,
-             { vx0 = -ddir * 40, vx1 = -ddir * 10, vy0 = -30, vy1 = -8,
-               shade0 = 0.3, shade1 = 0.9 })
+  if fluttering == 1 and frame % 4 == 0 then -- hover shimmer
+    fx.spawn(nx + W * 0.5, ny + H * 0.6, 1,
+             { vx0 = -16, vx1 = 16, vy0 = -22, vy1 = -6,
+               life0 = 0.22, life1 = 0.40, shade0 = 2.6, shade1 = 3.4 })
   end
-  local dust = buf:f32(56)
-  if grounded and dstate == 0 and m.abs(vx) > k.run * 0.5 then
+  if grappling == 1 and frame % 2 == 0 then -- motes streaming up the beam
+    fx.spawn(nx + W * 0.5, ny, 1,
+             { vx0 = -8, vx1 = 8, vy0 = -180, vy1 = -90,
+               life0 = 0.10, life1 = 0.20, shade0 = 3.0, shade1 = 4.0 })
+  end
+  local dust = buf:f32(O.dust)
+  if grounded and dir ~= 0 and m.abs(vx) > k.walk_speed * 0.5 then
     dust = dust + m.abs(vx) * DT
     if dust >= kf.run_dist then
       dust = dust - kf.run_dist
-      fx.spawn(nx + M.W * 0.5 - facing * 3, ny + M.H, 1,
-               { vx0 = -facing * 30, vx1 = -facing * 8, vy0 = -28, vy1 = -8,
+      fx.spawn(nx + W * 0.5 - facing * 3, ny + H, 1,
+               { vx0 = -facing * 28, vx1 = -facing * 8, vy0 = -26, vy1 = -8,
                  shade0 = 0.3, shade1 = 0.9 })
     end
   else
     dust = 0
   end
 
-  -- grab / throw (one button: holding nothing grabs, holding throws);
-  -- a press that canceled a dive is spent
-  if ctl.grab_pressed and not canceled then
-    local kt = state.doc.knobs.throw
-    if carry > 0 then
-      props.throw(carry, facing * kt.vx + vx * kt.inherit, -kt.vy)
-      carry = 0
-      stretch_t = m.max(stretch_t, feel.stretch_t * 0.6)
-    else
-      local i = props.nearest_free(nx + M.W * 0.5, ny + M.H * 0.5, kt.radius)
-      if i then
-        props.grab(i)
-        carry = i
-      end
-    end
-  end
-  if carry > 0 then
-    local pw, ph = select(3, props.get(carry))
-    props.pin(carry, nx + M.W * 0.5 - pw * 0.5, ny - ph - 1)
-  end
-
-  buf:f32(0, nx)
-  buf:f32(4, ny)
-  buf:f32(8, vx)
-  buf:f32(12, vy)
-  buf:f32(16, facing)
-  buf:f32(20, coyote)
-  buf:f32(24, jbuf)
-  buf:f32(28, drop)
-  buf:f32(32, m.max(0.0, squash_t - DT))
-  buf:f32(36, m.max(0.0, stretch_t - DT))
-  buf:f32(40, buf:f32(40) + m.abs(vx) * DT * 0.075)
-  buf:f32(44, grounded and 1.0 or 0.0)
-  buf:f32(48, carry)
-  buf:f32(56, dust)
-  buf:f32(60, on_oneway and 1.0 or 0.0)
-  buf:f32(64, dstate)
-  buf:f32(68, ddir)
-  buf:f32(72, slide_t)
-  buf:f32(76, m.max(0.0, flip_t - DT))
-  buf:f32(80, boosted and 1.0 or 0.0)
-  buf:f32(84, charge)
-  buf:f32(88, dj_buf)
-  buf:f32(92, dj_coy)
+  -- ===== write back =====
+  buf:f32(O.x, nx); buf:f32(O.y, ny)
+  buf:f32(O.vx, vx); buf:f32(O.vy, vy)
+  buf:f32(O.facing, facing)
+  buf:f32(O.grounded, grounded and 1.0 or 0.0)
+  buf:f32(O.on_oneway, on_oneway and 1.0 or 0.0)
+  buf:f32(O.coyote, coyote); buf:f32(O.jbuf, jbuf); buf:f32(O.drop, drop)
+  buf:f32(O.hop_used, hop_used); buf:f32(O.upjumped, upjumped)
+  buf:f32(O.grapple_used, grapple_used)
+  buf:f32(O.hop_active, hop_active); buf:f32(O.fluttering, fluttering)
+  buf:f32(O.flutter_t, flutter_t); buf:f32(O.hop_cd, hop_cd)
+  buf:f32(O.grappling, grappling); buf:f32(O.gx, gx); buf:f32(O.gy, gy)
+  buf:f32(O.grapple_cd, grapple_cd)
+  buf:f32(O.tp_mode, tp_mode); buf:f32(O.tp_cd, tp_cd)
+  buf:f32(O.attack_t, attack_t)
+  buf:f32(O.squash_t, m.max(0, squash_t - DT))
+  buf:f32(O.stretch_t, m.max(0, stretch_t - DT))
+  buf:f32(O.anim, buf:f32(O.anim) + m.abs(vx) * DT * 0.09)
+  buf:f32(O.dust, dust)
+  buf:f32(O.tp_flash, m.max(0, buf:f32(O.tp_flash) - 0.12))
 end
 
--- ---- sprite (procedural placeholder: 7 frames of 12x16) ----
--- 0 idle, 1-2 run, 3 jump, 4 dive/belly, 5-6 front-flip tuck
+-- ---- sprite (procedural placeholder: 11 frames, mecha-girl-ish) ----
+-- 0 idle | 1-2 walk | 3 rise | 4 fall | 5 dash(FJ) | 6 up-jump |
+-- 7 hop | 8 hover(flutter) | 9 grapple | 10 attack. White/cyan bodysuit
+-- nodding at the art direction (GAME.md §10); the human pixels the real art.
+
+local FW, FH, NF = 16, 24, 11
 
 local function build_sprite()
-  local img = pix.img(84, 16)
-  local function frame(f, legs, body_y)
-    local o = f * 12
-    img.rect(o + 3, body_y, 6, 2, 0.32, 0.22, 0.16) -- hair
-    img.px(o + 2, body_y + 1, 0.32, 0.22, 0.16)
-    img.px(o + 9, body_y + 1, 0.32, 0.22, 0.16)
-    img.rect(o + 3, body_y + 2, 6, 4, 0.96, 0.82, 0.66) -- face
-    img.px(o + 4, body_y + 3, 0.13, 0.11, 0.11) -- eyes
-    img.px(o + 7, body_y + 3, 0.13, 0.11, 0.11)
-    img.rect(o + 2, body_y + 6, 8, 5, 0.24, 0.55, 0.62) -- overalls
-    img.rect(o + 2, body_y + 6, 1, 3, 0.96, 0.82, 0.66) -- arms
-    img.rect(o + 9, body_y + 6, 1, 3, 0.96, 0.82, 0.66)
-    for _, l in ipairs(legs) do
-      img.rect(o + l[1], l[2], 2, l[3], 0.20, 0.17, 0.15)
-    end
-  end
-  frame(0, { { 3, 13, 3 }, { 7, 13, 3 } }, 2) -- idle
-  frame(1, { { 2, 13, 3 }, { 8, 13, 2 } }, 1) -- run A
-  frame(2, { { 5, 13, 3 }, { 6, 14, 2 } }, 1) -- run B
-  frame(3, { { 3, 12, 2 }, { 7, 12, 2 } }, 2) -- jump (legs tucked)
+  local img = pix.img(NF * FW, FH)
+  local HAIR = { 0.30, 0.26, 0.42 }
+  local SKIN = { 0.97, 0.86, 0.74 }
+  local SUIT = { 0.93, 0.94, 0.98 }
+  local SHAD = { 0.66, 0.70, 0.84 }
+  local CYAN = { 0.42, 0.86, 0.98 }
+  local DARK = { 0.15, 0.14, 0.20 }
+  local function R(o, x, y, w, h, c) img.rect(o + x, y, w, h, c[1], c[2], c[3]) end
+  local function P(o, x, y, c) img.px(o + x, y, c[1], c[2], c[3]) end
 
-  -- frame 4: dive/belly — horizontal, head forward (atlas faces right)
-  local o = 4 * 12
-  img.rect(o + 0, 10, 3, 2, 0.20, 0.17, 0.15) -- trailing legs
-  img.rect(o + 2, 8, 7, 5, 0.24, 0.55, 0.62) -- body flat
-  img.rect(o + 8, 6, 4, 2, 0.32, 0.22, 0.16) -- hair swept back
-  img.rect(o + 8, 8, 4, 4, 0.96, 0.82, 0.66) -- face forward
-  img.px(o + 10, 9, 0.13, 0.11, 0.11) -- eye
-  img.rect(o + 4, 13, 4, 1, 0.96, 0.82, 0.66) -- arms tucked under
-
-  -- frames 5/6: front-flip tuck, upright and inverted
-  local function tuck(f, inverted)
-    local o2 = f * 12
-    img.rect(o2 + 3, 4, 7, 8, 0.24, 0.55, 0.62) -- ball
-    local hy = inverted and 10 or 3
-    local fy = inverted and 6 or 7
-    img.rect(o2 + 4, hy, 5, 2, 0.32, 0.22, 0.16) -- hair
-    img.rect(o2 + 5, fy, 4, 2, 0.96, 0.82, 0.66) -- face sliver
-    img.px(o2 + 6, fy, 0.13, 0.11, 0.11)
-    img.rect(o2 + 3, inverted and 3 or 12, 4, 1, 0.20, 0.17, 0.15) -- legs
+  -- head at cell-local (hx, hy), 6 wide. eye_dx shifts the eye for a look dir.
+  local function head(o, hx, hy, eye_dx)
+    R(o, hx, hy, 6, 3, HAIR)
+    P(o, hx - 1, hy + 1, HAIR); P(o, hx + 6, hy + 1, HAIR)
+    R(o, hx, hy + 3, 6, 4, SKIN)
+    P(o, hx + 2 + (eye_dx or 0), hy + 4, DARK)
+    P(o, hx + 4 + (eye_dx or 0), hy + 4, DARK)
+    R(o, hx, hy + 7, 6, 1, HAIR) -- fringe shadow
   end
-  tuck(5, false)
-  tuck(6, true)
+
+  -- torso top-left (tx, ty), w x h, with a cyan accent seam down the middle
+  local function torso(o, tx, ty, tw, th)
+    R(o, tx, ty, tw, th, SUIT)
+    R(o, tx, ty + th - 1, tw, 1, SHAD)
+    R(o, tx + tw // 2, ty + 1, 1, th - 1, CYAN)
+  end
+
+  -- frame 0: idle
+  do local o = 0 * FW
+    head(o, 5, 2, 0)
+    torso(o, 4, 10, 8, 6)
+    R(o, 3, 10, 1, 4, SUIT); R(o, 12, 10, 1, 4, SUIT) -- arms down
+    R(o, 5, 16, 2, 5, SHAD); R(o, 9, 16, 2, 5, SHAD) -- legs
+    P(o, 5, 21, CYAN); P(o, 10, 21, CYAN) -- boot glow
+  end
+  -- frames 1-2: walk (legs + arm swing alternate)
+  do local o = 1 * FW
+    head(o, 5, 2, 1)
+    torso(o, 4, 10, 8, 6)
+    R(o, 2, 11, 2, 3, SUIT); R(o, 12, 11, 2, 2, SUIT) -- arms swing
+    R(o, 4, 16, 2, 5, SHAD); R(o, 10, 16, 2, 4, SHAD) -- stride
+  end
+  do local o = 2 * FW
+    head(o, 5, 2, 1)
+    torso(o, 4, 10, 8, 6)
+    R(o, 3, 11, 2, 2, SUIT); R(o, 12, 11, 2, 3, SUIT)
+    R(o, 6, 16, 2, 4, SHAD); R(o, 9, 16, 2, 5, SHAD)
+  end
+  -- frame 3: rise (legs tucked, arms up)
+  do local o = 3 * FW
+    head(o, 5, 3, 0)
+    torso(o, 4, 11, 8, 6)
+    R(o, 3, 8, 2, 3, SUIT); R(o, 11, 8, 2, 3, SUIT) -- arms up
+    R(o, 5, 17, 2, 3, SHAD); R(o, 9, 17, 2, 3, SHAD) -- knees up
+  end
+  -- frame 4: fall (arms out)
+  do local o = 4 * FW
+    head(o, 5, 3, 0)
+    torso(o, 4, 11, 8, 6)
+    R(o, 1, 11, 3, 2, SUIT); R(o, 12, 11, 3, 2, SUIT) -- arms wide
+    R(o, 5, 17, 2, 5, SHAD); R(o, 9, 17, 2, 5, SHAD)
+  end
+  -- frame 5: dash / flash jump (leaning forward, trailing limbs; faces right)
+  do local o = 5 * FW
+    head(o, 7, 3, 1)
+    R(o, 3, 11, 9, 5, SUIT) -- torso swept back
+    R(o, 5, 15, 7, 1, SHAD)
+    R(o, 6, 11, 1, 4, CYAN) -- accent streak
+    R(o, 1, 12, 3, 2, SUIT) -- trailing arm
+    R(o, 2, 16, 4, 2, SHAD); R(o, 5, 18, 3, 2, SHAD) -- trailing legs
+  end
+  -- frame 6: up jump (stretched vertical, arms straight up)
+  do local o = 6 * FW
+    head(o, 5, 4, 0)
+    torso(o, 4, 12, 8, 7)
+    R(o, 4, 7, 2, 5, SUIT); R(o, 10, 7, 2, 5, SUIT) -- arms straight up
+    P(o, 4, 7, CYAN); P(o, 11, 7, CYAN)
+    R(o, 6, 19, 2, 4, SHAD); R(o, 8, 19, 2, 4, SHAD) -- legs together
+  end
+  -- frame 7: hop (compact crouch-leap)
+  do local o = 7 * FW
+    head(o, 5, 5, 0)
+    torso(o, 4, 12, 8, 5)
+    R(o, 2, 13, 2, 2, SUIT); R(o, 12, 13, 2, 2, SUIT)
+    R(o, 4, 17, 3, 3, SHAD); R(o, 9, 17, 3, 3, SHAD) -- knees drawn up
+  end
+  -- frame 8: hover / flutter (arms out wide, floaty)
+  do local o = 8 * FW
+    head(o, 5, 3, 0)
+    torso(o, 4, 10, 8, 6)
+    R(o, 0, 10, 4, 2, SUIT); R(o, 12, 10, 4, 2, SUIT) -- wide arms
+    P(o, 0, 10, CYAN); P(o, 15, 10, CYAN)
+    R(o, 5, 16, 2, 4, SHAD); R(o, 9, 16, 2, 4, SHAD)
+    P(o, 5, 20, CYAN); P(o, 10, 20, CYAN)
+  end
+  -- frame 9: grapple (one arm reaching up, body stretched)
+  do local o = 9 * FW
+    head(o, 5, 5, 0)
+    torso(o, 4, 12, 8, 6)
+    R(o, 9, 4, 2, 9, SUIT) -- reaching arm
+    P(o, 9, 4, CYAN); P(o, 10, 4, CYAN)
+    R(o, 4, 13, 2, 3, SUIT) -- other arm
+    R(o, 5, 18, 2, 4, SHAD); R(o, 9, 18, 2, 4, SHAD)
+  end
+  -- frame 10: attack (arm thrust forward; faces right)
+  do local o = 10 * FW
+    head(o, 4, 3, 1)
+    torso(o, 3, 11, 8, 6)
+    R(o, 10, 12, 5, 2, SUIT) -- extended arm
+    P(o, 14, 12, CYAN); P(o, 14, 13, CYAN) -- blade root glow
+    R(o, 4, 17, 2, 5, SHAD); R(o, 8, 17, 2, 5, SHAD)
+  end
   return img.tex()
 end
 
 local sprite = build_sprite()
-local FRAMES = 7
 
 function M.draw()
+  local k = state.doc.knobs.move
   local feel = state.doc.knobs.feel
-  local x, y = buf:f32(0), buf:f32(4)
-  local vx, vy = buf:f32(8), buf:f32(12)
-  local facing = buf:f32(16)
-  local grounded = buf:f32(44) == 1.0
-  local dstate = buf:f32(64)
-  local flip_t = buf:f32(76)
+  local x, y = buf:f32(O.x), buf:f32(O.y)
+  local vx, vy = buf:f32(O.vx), buf:f32(O.vy)
+  local facing = buf:f32(O.facing)
+  local W, H = M.W, M.H
+  local grounded = buf:f32(O.grounded) == 1.0
+  local fluttering = buf:f32(O.fluttering) == 1.0
+  local grappling = buf:f32(O.grappling) == 1.0
+  local upjumped = buf:f32(O.upjumped) == 1.0
+  local attacking = buf:f32(O.attack_t) > 0
+  local mode = buf:f32(O.tp_mode)
+
+  -- grapple beam first (under the body): a cyan line up to the anchor
+  if grappling then
+    local cxp = x + W * 0.5
+    local gyv = buf:f32(O.gy)
+    pal.quad(cxp - 0.5, gyv, 1, m.max(0, y - gyv), 0.42, 0.86, 0.98, 0.7)
+    pal.quad(cxp - 2, gyv - 1, 4, 2, 0.7, 0.95, 1.0, 0.9)
+  end
 
   local f
-  if dstate == 1 or dstate == 2 then
-    f = 4
-  elseif dstate == 3 and flip_t > 0 then
-    f = 5 + math.floor(flip_t * 14) % 2 -- tumbling tuck
+  if grappling then f = 9
+  elseif fluttering then f = 8
+  elseif attacking and grounded and m.abs(vx) < 6 then f = 10
   elseif not grounded then
-    f = 3
-  elseif m.abs(vx) > 8 then
-    f = math.floor(buf:f32(40)) % 2 == 0 and 1 or 2
-  else
-    f = 0
-  end
+    if m.abs(vx) > k.fj_vx * 0.55 then f = 5
+    elseif vy < -40 then f = upjumped and 6 or 3
+    else f = 4 end
+  elseif m.abs(vx) > 6 then
+    f = m.floor(buf:f32(O.anim)) % 2 == 0 and 1 or 2
+  else f = 0 end
 
-  -- squash & stretch around the feet center (flat poses skip it)
+  -- squash & stretch around the feet
   local sx, sy = 1.0, 1.0
-  if dstate == 0 then
-    local sq = ease.cubic_in(m.clamp(buf:f32(32) / feel.squash_t, 0, 1))
-              * feel.squash * m.clamp(buf:f32(52) / 360.0, 0.3, 1.0)
-    local st = ease.cubic_in(m.clamp(buf:f32(36) / feel.stretch_t, 0, 1))
-              * feel.stretch
-    if not grounded then
-      st = st + m.clamp(m.abs(vy) / 900.0, 0, 0.22)
-    end
-    sx = 1.0 + sq * 0.9 - st * 0.5
-    sy = 1.0 - sq * 0.6 + st * 0.6
+  local sq = ease.cubic_in(m.clamp(buf:f32(O.squash_t) / feel.squash_t, 0, 1))
+             * feel.squash * m.clamp(buf:f32(O.land) / 360.0, 0.3, 1.0)
+  local st = ease.cubic_in(m.clamp(buf:f32(O.stretch_t) / feel.stretch_t, 0, 1))
+             * feel.stretch
+  if not grounded then st = st + m.clamp(m.abs(vy) / 900.0, 0, 0.22) end
+  sx = 1.0 + sq * 0.9 - st * 0.5
+  sy = 1.0 - sq * 0.6 + st * 0.6
+
+  -- phase-shift mode tint: mode A solid/white, mode B cyan + translucent.
+  -- a teleport flash brightens both for a frame or two.
+  local tr, tg, tb, ta = 1, 1, 1, 1
+  if mode == 1 then tr, tg, tb, ta = 0.55, 0.93, 1.0, 0.82 end
+  local flash = buf:f32(O.tp_flash)
+  if flash > 0 then
+    tr = tr + (1 - tr) * flash
+    tg = tg + (1 - tg) * flash
+    tb = tb + (1 - tb) * flash
+    ta = ta + (1 - ta) * flash
   end
 
-  local dw, dh = 12 * sx, 16 * sy
-  local dx = x + M.W * 0.5 - dw * 0.5
-  local dy = y + M.H - dh -- feet-anchored: squash sinks, stretch rises
-  local u0 = (f * 12) / (FRAMES * 12)
-  local u1 = (f * 12 + 12) / (FRAMES * 12)
+  local dw, dh = W * sx, H * sy
+  local dx = x + W * 0.5 - dw * 0.5
+  local dy = y + H - dh -- feet-anchored
+  local u0 = (f * FW) / (NF * FW)
+  local u1 = (f * FW + FW) / (NF * FW)
   if facing < 0 then u0, u1 = u1, u0 end
-  pal.quad(dx, dy, dw, dh, 1, 1, 1, 1, sprite.id, u0, 0, u1, 1)
+  pal.quad(dx, dy, dw, dh, tr, tg, tb, ta, sprite.id, u0, 0, u1, 1)
 end
 
 return M

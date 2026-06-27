@@ -161,7 +161,10 @@ do
   end
 end
 
-M.spawn = { x = 6 * T, y = 36 * T - 14 } -- on the ground, left area
+-- a little above the ground so any character box height (move.cw/ch is a
+-- live knob now, M7) falls and lands cleanly on boot rather than spawning
+-- embedded in the slab
+M.spawn = { x = 6 * T, y = 36 * T - 24 }
 
 -- initial crate spots (constants: init must not draw from cm.rand)
 M.prop_spots = {

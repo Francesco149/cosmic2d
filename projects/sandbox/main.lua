@@ -1,21 +1,26 @@
--- sandbox main.lua — M3: the live-editable platformer sandbox (the stock
--- cartridge). A MapleStory-vocabulary character in a tile world with a
--- crate pit: run, jump (variable height), hop one-way planks, down+jump
--- through them, grab and throw crates, all under a knobbed follow camera
--- with parallax hills behind. Everything tunes live:
+-- sandbox main.lua — the cosmic hub testbed (the stock cartridge). The
+-- mecha-girl MapleStory moveset (M7, D035 / GAME.md §4) in a tile world,
+-- under a knobbed follow camera with parallax hills behind. Every value
+-- tunes live (` console / F1 inspector). Controls:
 --
---   arrows           move (down+jump drops through planks)
---   space            jump (hold for height); again in mid-air: double jump
---   g                mid-air dive; any key cancels it (see player.lua)
---   e                grab nearest crate / throw it
+--   arrows           move (down+jump drops through one-way planks)
+--   space            jump (fixed height; hold to auto-repeat). Airborne:
+--                    again = flash jump; Up+space = up jump
+--   e                hop; HOLD after a hop = flutter (hover)
+--   q                grapple up to a platform (spec key is `, the dev
+--                    console — q is the proxy here; see input map below)
+--   r                teleport blink (hold to spam; flips A↔B phase mode)
+--   d                hold = continuous slice (enemies arrive at M12)
 --   `                console — poke doc.knobs.* live, game.demo(1)
 --   f1               editor mode — paint the map, collider overlay (M4)
 --   escape           quit
 --
 -- Module split: level (tiles + map + backdrop), player (controller),
--- props (crates), fx (particles), demo (attract script), pix (art helper).
--- Determinism: sim state in named buffers + doc tree only; randomness from
--- cm.rand; trig from cm.math; fixed dt (ARCHITECTURE "Determinism").
+-- props (crate physics; the player no longer grabs — the sandbox grab/throw
+-- "tool" returns with the physics milestone, GAME.md §7), fx (particles),
+-- demo (attract script), pix (art helper). Determinism: sim state in named
+-- buffers + doc tree only; randomness from cm.rand; trig from cm.math; fixed
+-- dt (ARCHITECTURE "Determinism").
 
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
@@ -38,28 +43,37 @@ game.props = props -- and the crates: game.props.spawn(x,y) / despawn_at(x,y)
 -- Merged key-by-key so docs from older sessions grow new knobs in place —
 -- and shed retired ones (renames would linger as dead inspector rows).
 local KNOBS = {
-  -- the jump is authored as a curve (D029): jump_h px to the apex in
-  -- apex_t frames; fall_mul scales gravity on the way down, hang_mul
-  -- inside the apex window (airborne, |vy| <= hang_speed). Stock
-  -- values are the human's locked dial-in (2026-06-11): low floaty
-  -- hops with a real hang, glide-class dives (grav 0.09), a tight
-  -- weak boost — placeholder-art feel, revisited with real assets.
-  move = { accel = 1500, decel = 1800, air = 0.55, run = 76,
-           jump_h = 34.6850323, apex_t = 24.0, fall_mul = 1.0,
-           hang_speed = 30.176251, hang_mul = 0.510357681,
-           cut = 0.201668596, fall_max = 340, coyote = 6, buffer = 5,
-           mantle = 4.0 },
-  dive = { speed = 270, vy = 50, grav = 0.092539383, cancel_grav = 1.0,
-           cancel_vy = 150, cancel_slow = 0.45, boost = 135,
-           boost_max = 203.595886, boost_win = 3, slide_fric = 4.0,
-           flip_t = 0.35 },
-  -- dj.scale rides the jump curve: dj impulse = jump impulse * scale,
-  -- so the second jump tracks the first under tuning (and stays the
-  -- weaker jump while scale <= 1)
-  dj = { scale = 0.875571135, buffer = 5, coyote = 6 },
+  -- the MapleStory moveset (M7, D035 / GAME.md §4). cw/ch are the character
+  -- box AND the CW/CH calibration unit; distances follow the spec's CW/CH
+  -- relationships, sized for the current 16 px-tile map at 1:1. The absolute
+  -- "6 CW ≈ ⅓ screen" anchor (CW ≈ 26 px) needs the zoom/real-sprite pass
+  -- (M8 / M-art) — it's a cw/ch/zoom knob change. Timers are integer frames;
+  -- these defaults are placeholders pending the human's feel sign-off.
+  move = {
+    cw = 12, ch = 18,
+    -- walk (slow — you fly, you don't run) + minimal air control
+    walk_speed = 42, walk_accel = 640, ground_fric = 900,
+    air_accel = 110, air_fric = 36,
+    -- jump: fixed apex ≈ 1 CH; hold to auto-repeat on landing
+    jump_h = 20, jump_apex_t = 15, fall_mul = 1.3, fall_max = 360,
+    coyote = 6, buffer = 5, mantle = 4,
+    -- flash jump: repeatable forward dash (~6 CW from apex) + sonic boom
+    fj_vx = 186, fj_vy = -78,
+    -- up jump: fixed vertical impulse (jump→up-jump chain ≈ 5 CH)
+    upjump_v = 268,
+    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd)
+    hop_vx = 120, hop_vy = 150,
+    flutter_max = 600, flutter_fall = 26, flutter_decel = 520, hop_cd = 600,
+    -- grapple: reel to a top above, prefer past ½ screen; slow accel; 3 s cd
+    grapple_range_max = 244, grapple_range_min_pref = 120,
+    grapple_accel = 720, grapple_vmax = 300, grapple_cd = 180,
+    -- teleport: ~5 CW blink, max 2/s
+    tp_dist = 60, tp_min_interval = 30,
+    -- continuous attack (slash stub; enemies M12)
+    attack_interval = 6, attack_reach = 22,
+  },
   cam = { lerp = 0.10, lerp_y = 0.08, look = 26, look_lerp = 0.05,
           dead = 26 },
-  throw = { vx = 260, vy = 200, inherit = 0.6, radius = 28 },
   prop = { gravity = 700, fall_max = 340, rest = 0.3, wall_rest = 0.45,
            fric = 7.0 },
   fx = { gravity = 420, drag = 2.2, run_dist = 22 },
@@ -96,18 +110,11 @@ end
 function game.init()
   local d = state.doc
   d.knobs = d.knobs or load_knobs() or {}
-  -- migration: the dj impulse became a scale of the jump impulse. A
-  -- live doc or knobs.dat from before carries a tuned dj.speed —
-  -- convert it against the jump curve it was tuned with (the feel is
-  -- preserved exactly); the prune below then drops the retired key
-  do
-    local dj, mv = d.knobs.dj, d.knobs.move
-    if dj and dj.speed and not dj.scale and mv and mv.jump_h
-       and mv.apex_t then
-      dj.scale = dj.speed / (2.0 * mv.jump_h * 60.0
-                             / math.max(mv.apex_t, 0.001))
-    end
-  end
+  -- M7 retired the old controller's knob groups (and reshaped move). Drop the
+  -- dead top-level groups a live doc or old knobs.dat may still carry — the
+  -- per-key prune below only cleans groups KNOBS still owns, so these would
+  -- otherwise linger as dead inspector rows.
+  for _, g in ipairs({ "dive", "dj", "throw" }) do d.knobs[g] = nil end
   for group, defaults in pairs(KNOBS) do
     d.knobs[group] = d.knobs[group] or {}
     for key, v in pairs(defaults) do
@@ -137,8 +144,13 @@ function game.init()
     { "up", input.key.up },
     { "down", input.key.down },
     { "jump", input.key.space },
-    { "grab", input.key.e },
-    { "dive", input.key.g },
+    { "hop", input.key.e },
+    -- the spec's grapple key is ` (backtick), but that's the dev console
+    -- (engine-reserved unless the project locks the editor); q is the dev
+    -- proxy. A shipped/locked build can add input.key.grave here.
+    { "grapple", input.key.q },
+    { "teleport", input.key.r },
+    { "attack", input.key.d },
     { "quit", input.key.escape },
   })
 
@@ -187,8 +199,12 @@ function game.demo(on)
   end
 end
 
-local ACTIONS = { "left", "right", "up", "down", "jump", "grab", "dive" }
+local ACTIONS = { "left", "right", "up", "down", "jump", "hop", "grapple",
+                  "teleport", "attack" }
 
+-- ctl edges (see player.M.step): jump/hop carry both a press edge and the
+-- held bit (held = jump auto-repeat, hop->flutter); grapple is a press edge;
+-- teleport/attack are held (teleport rate-limits its own spam).
 local function build_ctl()
   local d = state.doc
   if d.demo ~= 0 then
@@ -203,38 +219,24 @@ local function build_ctl()
     local rel = state.frame() - d.demo_t0
     local function dn(a) return demo.down(rel, a, d.demo) end
     local function was(a) return demo.down(rel - 1, a, d.demo) end
-    local any = false
-    for _, a in ipairs(ACTIONS) do
-      if dn(a) and not was(a) then
-        any = true
-        break
-      end
-    end
     return {
       left = dn("left"), right = dn("right"),
       up = dn("up"), down = dn("down"),
-      jump_pressed = dn("jump") and not was("jump"),
-      jump_released = was("jump") and not dn("jump"),
-      grab_pressed = dn("grab") and not was("grab"),
-      dive_pressed = dn("dive") and not was("dive"),
-      any_pressed = any,
+      jump_pressed = dn("jump") and not was("jump"), jump_held = dn("jump"),
+      hop_pressed = dn("hop") and not was("hop"), hop_held = dn("hop"),
+      grapple_pressed = dn("grapple") and not was("grapple"),
+      teleport_held = dn("teleport"),
+      attack_held = dn("attack"),
     }
-  end
-  local any = false
-  for _, a in ipairs(ACTIONS) do
-    if input.pressed(a) then
-      any = true
-      break
-    end
   end
   return {
     left = input.down("left"), right = input.down("right"),
     up = input.down("up"), down = input.down("down"),
-    jump_pressed = input.pressed("jump"),
-    jump_released = input.released("jump"),
-    grab_pressed = input.pressed("grab"),
-    dive_pressed = input.pressed("dive"),
-    any_pressed = any,
+    jump_pressed = input.pressed("jump"), jump_held = input.down("jump"),
+    hop_pressed = input.pressed("hop"), hop_held = input.down("hop"),
+    grapple_pressed = input.pressed("grapple"),
+    teleport_held = input.down("teleport"),
+    attack_held = input.down("attack"),
   }
 end
 
@@ -270,9 +272,9 @@ function game.step()
     local function pk(off)
       return cm.state.buf_peek("sandbox.player", "f32", off)
     end
-    print(("DBG f=%d x=%d y=%d vy=%d dive=%d charge=%d carry=%d"):format(
-      state.frame(), px // 1, py // 1, pk(12) // 1, pk(64) // 1,
-      pk(84) // 1, pk(48) // 1))
+    print(("DBG f=%d x=%d y=%d vy=%d gnd=%d hop_cd=%d grap=%d tp=%d"):format(
+      state.frame(), px // 1, py // 1, pk(12) // 1, pk(20) // 1,
+      pk(64) // 1, pk(68) // 1, pk(84) // 1))
   end
 end
 
@@ -300,7 +302,7 @@ function game.draw()
     text.draw((W - tw) // 2, 24, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
   text.draw(3, H - 11,
-            "arrows * space jump x2 * g air dive (any key cancels) * e grab/throw",
+            "arrows  space:jump/flash/up  e:hop(hold=flutter)  q:grapple  r:teleport  d:slice",
             { r = 0.90, g = 0.88, b = 0.78, a = 0.9 })
 end
 
