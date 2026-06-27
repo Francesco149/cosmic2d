@@ -84,9 +84,19 @@ monitor (vsync) the render loop's zero-sim-step ticks dropped their polled
 events (a key-up landing there never cleared → stuck). Now `feed()` ingests
 events **every tick**, `sample()` builds the record **per sim step**; headless
 lockstep + trace determinism are byte-identical (selftest 22308→**22312** with
-new regression cases; parity re-verified). Latest build deployed to
-`C:\temp\cosmic`. **Pending the human**: re-test it windowed (movement + the
-other keys) and the visible-window/feel check.
+new regression cases; parity re-verified).
+
+**Post-M6 perf fix** (commit `cae9024`): running from a WSL terminal showed
+rhythmic frame spikes — the 4 Hz hot-reload poll stat'd ~30 module files inline
+on the main thread, slow over 9p/drvfs. PAL gained a **background file-watcher
+thread** (`pal.watch_mtime`, API 3→4); `cm.reload` reads cached mtimes, no
+main-thread FS. Lazy-spawned (never in capped/verify runs → determinism
+intact); parachute keeps its inline stat. Verified: selftest 22312, hot reload
+still fires (linux), windows binary runs stably with the thread up.
+
+Latest build (both fixes) deployed to `C:\temp\cosmic`. **Pending the human**:
+re-test windowed — movement/keys release cleanly, no frame spikes from a WSL
+terminal, plus the visible-window/feel check.
 
 ## Next step (M7 — movement overhaul, D035 / GAME.md §4)
 

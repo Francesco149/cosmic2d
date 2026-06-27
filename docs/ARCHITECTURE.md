@@ -560,5 +560,19 @@ binary incompatible, in either direction (D015).
 | event `{type="text", text=utf8}` | input | delivered between key events while text input is on; long IME commits split at utf-8 boundaries (≤39 bytes/event) |
 | `pal.frame_stats()` | dev | `{quads, segs, vbytes}` from the last present + live `{textures, bufs, buf_bytes}` counts |
 
+### PAL API v4 additions (M6)
+
+| fn | class | notes |
+| --- | --- | --- |
+| `pal.watch_mtime(path)` | dev | cached mtime of a watched path, refreshed by a background **file-watcher thread** (spawned lazily on first call, live sessions only). The hot-reload poll uses this so it never stats on the main thread — that caused rhythmic frame spikes over a slow FS (WSL 9p / drvfs). Falls back to a direct stat for an unwatched path. Never sim state |
+
+The watcher thread (`pal/src/main.c`) stats the append-only `pal.watch_add`
+list off-thread and caches each `cur_mtime` under a mutex; `cm.reload` reads
+`pal.watch_mtime` instead of `pal.mtime`. It is dev-only and spawns only when
+the reload poll runs (never in capped/verify runs, so determinism is
+untouched). The crash parachute keeps its own inline stat (error-state only),
+so reboot-on-edit still works even when the thread never started (e.g. a
+boot-time engine crash).
+
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.
