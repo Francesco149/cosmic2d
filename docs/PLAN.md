@@ -128,15 +128,14 @@ M0–M5 above are done. The human's calls: **Windows first** (so all feel-testin
 happens natively on the win11 host), and the engine is steered by the game's
 needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
 
-- **M6 — windows port** *(next)*: mingw cross build from the flake, SDL3.dll
-  packaging, run `cosmic.exe` on the win11 host (WSL interop for dev), fix the
-  "windowed needs cwd=repo-root" debt. Prove **linux↔windows state parity** the
-  cheap way — record a fresh `.ctrace` on one OS and `--verify` it on the other
-  (state is pure CPU, so byte-exact); the committed golden suite is re-cut at
-  M7 (new movement + assets), not re-blessed here. *Exit*: `cosmic.exe
-  projects/sandbox` runs smoothly on win11; a fresh trace cross-verifies
-  byte-exact both directions.
-- **M7 — movement overhaul** (the heart; D035, GAME.md §4): rip out the old
+- **M6 — windows port** *(DONE 2026-06-27, commit `6b39cf6`; D038)*: cross-built
+  via `nix build .#cosmic-windows` (pkgsCross.mingwW64 + nixpkgs cross SDL3 —
+  pure Nix). The PAL being pure SDL3 meant near-zero source change (SDL_main +
+  a self-locating `fixup_cwd`, which also closed the cwd=repo-root debt). Agent-
+  verified on win11 via WSL interop: selftest 22308 PASS; **byte-exact
+  cross-platform parity** (linux↔windows `--verify` both ways + byte-identical
+  traces); Vulkan renders headless. *Pending*: human runs it windowed.
+- **M7 — movement overhaul** *(next)* (the heart; D035, GAME.md §4): rip out the old
   controller; build the full MapleStory moveset (walk / jump / flash-jump /
   up-jump / hop / flutter / grapple / teleport / continuous-attack) as live
   knobs in the hub cartridge; calibrate CW/CH so 6 CW ≈ ⅓ screen; one-way

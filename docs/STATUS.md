@@ -5,13 +5,15 @@
 
 **Date**: 2026-06-27
 **Phase**: **engine pivot — now building the flagship game, `cosmic`.** M0–M5
-(the engine: determinism kit, PAL stack, UI/console/inspector/editor, the
-platformer sandbox, the M5 time machine) are complete. This session renamed the
-project to **cosmic2d**, digested the human's full game vision into a design
-bible, and re-sequenced the roadmap. No game code changed yet — the stock
-cartridge is still the old M3/M4 platformer sandbox.
-**Next: M6 — windows port** (the human's call: native feel-testing on the win11
-host before the movement overhaul).
+(engine) are complete. This session renamed the project to **cosmic2d**,
+digested the human's full game vision into a design bible, re-sequenced the
+roadmap, and **shipped M6 — the windows port** (cross-build + byte-exact
+cross-platform determinism parity, agent-verified on the win11 host). No game
+code changed yet — the stock cartridge is still the old M3/M4 platformer
+sandbox.
+**Next: M7 — movement overhaul** (D035, GAME.md §4): the MapleStory moveset.
+**Pending human check**: run cosmic.exe *windowed* on the win11 desktop (a
+visible window + feel) — the one M6 thing headless WSL interop can't verify.
 
 ## This session (2026-06-27)
 
@@ -35,9 +37,17 @@ host before the movement overhaul).
     (death/respawn + optional economy + navigation + verifiable stats).
   - **CLAUDE.md** — intro + docs list updated for the game and GAME.md.
 - **Human decisions ratified**: total rename (incl. magic; goldens waived);
-  protagonist = **antagonist mecha girl**; **Windows-first** sequencing.
+  protagonist = **antagonist mecha girl**; **Windows-first** sequencing; all six
+  GAME.md §11 design questions (→ D037).
+- **M6 windows port shipped** (commit `6b39cf6`, D038): mingw cross-build +
+  byte-exact cross-platform determinism parity, agent-verified on the win11
+  host. Details in the M6 section below.
 
-## What works right now (the engine, M0–M5)
+## What works right now (the engine, M0–M6)
+
+**Runs on Windows** (M6): `nix build .#cosmic-windows` → `cosmic.exe`, byte-exact
+state parity with linux.
+
 
 Boot + live sessions + hot reload + crash parachute; the PAL draw/state/input/
 trace stack; the determinism kit (fixed 60 Hz, engine PRNG, cm.math, named
@@ -49,25 +59,43 @@ machine** (always-on segment ring D032, F4 scrubber, rewind, `.ctrace` export,
 replay playback); the suite under `nix flake check`. Detail: ARCHITECTURE.md +
 DECISIONS D001–D032 + git history.
 
-## Next step (M6 — windows port)
+## M6 — windows port: DONE (agent-verified 2026-06-27, commit `6b39cf6`)
 
-1. Read PLAN M6, ARCHITECTURE ("two layers", PAL API table, Rendering), and the
-   flake. The dev box is NixOS on WSL2 and can run both Linux and Windows
-   binaries (D004).
-2. mingw cross toolchain in `flake.nix`; cross-build the PAL against SDL3 for
-   Windows; package `SDL3.dll`; run `cosmic.exe projects/sandbox` on the win11
-   host via WSL interop. SDL_GPU/Vulkan backend (native dzn/RTX or lavapipe).
-3. Fix the **"windowed needs cwd=repo-root"** debt as part of packaging
-   (long-deferred to packaging).
-4. **Parity proof, cheaply**: record a fresh `.ctrace` on Linux, `--verify` it
-   on Windows (and vice versa) — state is pure CPU so it must be byte-exact.
-   Do **not** re-bless the committed golden suite here; that re-cut belongs to
-   M7 (new movement + real assets), so M6's throwaway parity traces aren't
-   redone.
+Cross-build via the flake's `packages.cosmic-windows` (`pkgsCross.mingwW64` +
+nixpkgs cross SDL3 3.4.8 — pure Nix, no impure downloads; **D038**). The PAL is
+pure SDL3, so the only C changes were `<SDL3/SDL_main.h>` (Windows entry) and
+`fixup_cwd()` (self-locate via `SDL_GetBasePath` — **closes the cwd=repo-root
+debt on both platforms**). Ships self-contained: `cosmic.exe` + `SDL3.dll` +
+`libmcfgthread`. Verified on the win11 host via WSL interop:
 
-After M6: **M7 — movement overhaul** (D035, GAME.md §4) — rip out the old
-controller, build the MapleStory moveset as live knobs, calibrate CW/CH, re-cut
-the attract demo + goldens, human feel sign-off (native on win11).
+- **selftest 22308 checks PASS** on `pal windows`;
+- **cross-platform determinism parity is byte-exact** — linux records → windows
+  `--verify` PASS, windows records → linux `--verify` PASS, and the two
+  independently-recorded sandbox traces are **byte-identical**;
+- the full Vulkan pipeline **renders headless on windows** (screenshot pushed
+  to llm-feed).
+
+Build it: `nix build .#cosmic-windows`; the `result/` tree is runnable on win11
+(`cosmic.exe` beside `SDL3.dll` + `engine/`/`projects/`). **Pending the human**:
+run it *windowed* on the desktop (visible window + feel).
+
+## Next step (M7 — movement overhaul, D035 / GAME.md §4)
+
+1. Read GAME.md §4 (the full spec) + D035 + D030 (the assists-as-cartridge-
+   policy pattern it follows). It's **pure cartridge controller policy** —
+   rewrite `projects/sandbox/player.lua`, no engine/PAL change.
+2. Rip out the old controller (variable-height jump + air-dive). Build: walk,
+   jump (fixed ~1 CH, auto-repeat), flash-jump (repeatable upright dash +
+   sonic-boom ring), up-jump (vertical, locks out flash-jump), hop + flutter
+   (once/airtime; hold E → 10 s hover → 10 s cooldown), grapple (pull to a
+   platform above, prefers > ½ screen, 3 s cd, once/airtime), teleport (blink
+   ~5 CW, kills momentum, persistent A↔B **phase-shift** mode, max 2/s),
+   hold-to-slice continuous attack.
+3. Every value a live knob under `doc.knobs.move` (D028). Calibrate CW/CH so
+   6 CW ≈ ⅓ screen (CW ≈ 26 px — pick sprite size + zoom).
+4. Re-choreograph the attract demo (D025) and **re-cut the golden suite** (new
+   CTRC magic + new movement) — where the stale goldens finally get replaced.
+5. Human feel sign-off, native on win11.
 
 ## Known small items / debts
 

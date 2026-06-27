@@ -812,3 +812,35 @@ they stay trace-reproducible. Nothing new for the determinism model.
 **Revisit if**: the economy ever needs to *punish* (it shouldn't, by design);
 fast-travel undermines the intended walk-back (tune its availability); or
 verifiable runs need tamper-proofing beyond trace replay (then: sign traces).
+
+## D038 — windows build: pure-Nix mingw cross + cross SDL3 (M6, 2026-06-27)
+
+**Context**: M6 ships the Windows port. D011 anticipated "SDL3 from nixpkgs
+(linux) / official prebuilt (windows packaging)". In practice nixpkgs provides a
+cross SDL3 (`pkgsCross.mingwW64.sdl3`, the **same 3.4.8** as linux), so the
+official-prebuilt path is unnecessary.
+**Decision**: build Windows via the flake package `cosmic-windows` using
+`pkgsCross.mingwW64` + the nixpkgs cross SDL3 — pure Nix, reproducible, no impure
+fetch. Output is self-contained: `cosmic.exe` + `SDL3.dll` + `libmcfgthread`
+(the mingw stdenv's DLL symlinks are materialized into real files in a
+`postFixup`, since Windows can't follow a /nix/store symlink). The PAL being
+**pure SDL3** (file IO via SDL_LoadFile/SaveFile/GlobDirectory/GetPathInfo/
+CreateDirectory; time/paths via SDL) meant the only C changes were
+`<SDL3/SDL_main.h>` (the Windows entry) and `fixup_cwd()` (self-locate the repo
+root via `SDL_GetBasePath` — which also **retires the long-standing
+"windowed needs cwd=repo-root" debt on both platforms**). The Makefile gained
+overridable `PKG_CONFIG`/`EXE`/`LDFLAGS` (linux build unchanged); the Windows
+link is `-mconsole` (so stderr + headless work) + `-static-libgcc`. **Supersedes
+D011's "official prebuilt for windows" note.**
+**Why**: pure-Nix cross is more reproducible and lower-maintenance than vendoring
+a prebuilt, and auto-pins to the same SDL3 as linux. Portability falling out for
+near-free validates the small-SDL3-PAL pillar (D004).
+**Determinism**: verified byte-exact across the platform boundary — selftest
+22308 PASS on `pal windows`; linux↔windows `--verify` both directions PASS; two
+independently-recorded sandbox traces are byte-identical. The IEEE-754 /
+Lua-5.4 / no-libm discipline (ARCHITECTURE "Determinism") holds cross-platform
+as designed, so the golden contract (D015 rule 6) extends to Windows for free.
+**Revisit if**: a future PAL primitive isn't covered by SDL3 and needs a
+platform `#ifdef` (then: isolate it behind the contract, never leak it to engine
+code); or end-user shipping wants a windowed (`-mwindows`, no console) subsystem
+build (M15: an additive flag).

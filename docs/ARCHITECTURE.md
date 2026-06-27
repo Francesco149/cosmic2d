@@ -35,7 +35,12 @@ to revisit; this file describes *what is*. Keep it current when code changes.
 ### Boot flow
 
 1. `cosmic [project_dir] [flags…]` — C parses nothing; argv is handed to Lua
-   as `pal.argv`.
+   as `pal.argv`. Before the handoff `main` self-locates the repo root (chdir
+   to the dir holding `engine/boot.lua`, found via `SDL_GetBasePath`), so the
+   binary runs when launched from anywhere — `bin/cosmic`, or a packaged
+   `cosmic.exe` beside `engine/`. Windows builds cross-compile from the flake
+   (`nix build .#cosmic-windows`; mingw + cross SDL3) — the PAL is pure SDL3 so
+   the same C ports unchanged (D038).
 2. PAL creates the Lua state and runs `engine/boot.lua` — a deliberately thin
    shim that defines the **cm module system** and hands off to `cm.main`.
 3. `cm.main.boot()` parses flags, reads `<project>/project.lua` (plain table:
