@@ -8,8 +8,18 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <SDL3/SDL_main.h> /* WinMain shim + correct main-thread setup */
+
 #include "lauxlib.h"
 #include "lualib.h"
+
+#ifdef _WIN32
+#include <direct.h>
+#define pal_chdir _chdir
+#else
+#include <unistd.h>
+#define pal_chdir chdir
+#endif
 
 Pal G;
 
@@ -167,6 +177,21 @@ static void error_frame(void) {
   }
 }
 
+/* Make the working directory the one that holds engine/boot.lua, so the binary
+ * works when launched from anywhere (double-click, a file manager, another
+ * cwd) and not only from the repo root. A no-op when cwd is already correct —
+ * explicit `cosmic <project>` runs from the repo root are unchanged. Closes the
+ * long-standing "windowed needs cwd=repo-root" debt, on both platforms. */
+static void fixup_cwd(void) {
+  SDL_PathInfo info;
+  if (SDL_GetPathInfo("engine/boot.lua", &info)) return; /* already correct */
+  const char *base = SDL_GetBasePath(); /* exe dir, trailing slash; don't free */
+  if (!base || pal_chdir(base) != 0) return;
+  if (SDL_GetPathInfo("engine/boot.lua", &info)) return; /* exe next to engine/ */
+  if (pal_chdir("..") != 0) return; /* bin/ layout: repo root is one up; else
+                                       boot_lua reports the missing engine/ */
+}
+
 int main(int argc, char **argv) {
   G.argc = argc;
   G.argv = argv;
@@ -182,6 +207,8 @@ int main(int argc, char **argv) {
     }
     pal_log("no display; using offscreen video driver");
   }
+
+  fixup_cwd();
 
   if (!boot_lua()) {
     /* boot.lua sets exit_on_error before loading game code in capped runs;

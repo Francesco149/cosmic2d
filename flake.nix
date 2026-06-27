@@ -45,6 +45,37 @@
             cp -r pal/shaders $out/pal/
           '';
         };
+
+        # M6 — Windows cross build (mingw-w64 + cross SDL3, both from nixpkgs;
+        # the PAL is pure SDL3 so the C ports as-is). The cross stdenv sets
+        # CC/PKG_CONFIG/PKG_CONFIG_PATH; we only add EXE + a console subsystem
+        # (-mconsole, so stderr/headless work) and static libgcc. Output is a
+        # self-contained tree: cosmic.exe + SDL3.dll beside engine/projects/.
+        cosmic-windows = let cross = pkgs.pkgsCross.mingwW64;
+        in cross.stdenv.mkDerivation {
+          pname = "cosmic2d-windows";
+          version = "0.1-m6";
+          src = self;
+          nativeBuildInputs = [ pkgs.pkg-config pkgs.glslang ];
+          buildInputs = [ cross.sdl3 ];
+          dontStrip = true;
+          buildPhase = ''
+            make -C pal EXE=.exe LDFLAGS="-mconsole -static-libgcc"
+          '';
+          installPhase = ''
+            mkdir -p $out/pal
+            cp -r bin engine projects tests $out/
+            cp -r pal/shaders $out/pal/
+            cp ${cross.sdl3.out}/bin/SDL3.dll $out/bin/
+          '';
+          # the mingw stdenv symlinks runtime DLLs (libmcfgthread) into bin/;
+          # Windows can't follow a /nix/store symlink, so materialize real files
+          postFixup = ''
+            for f in $out/bin/*.dll; do
+              if [ -L "$f" ]; then t=$(readlink -f "$f"); rm "$f"; cp "$t" "$f"; fi
+            done
+          '';
+        };
         default = cosmic;
       });
 

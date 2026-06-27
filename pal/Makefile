@@ -1,11 +1,15 @@
-# builds ../bin/cosmic (run `make` from pal/, inside `nix develop`)
+# builds ../bin/cosmic (run `make` from pal/, inside `nix develop`).
+# Cross-compile for Windows by overriding CC + PKG_CONFIG + EXE + LDFLAGS
+# from the env/flake (see flake.nix `cosmic-windows`); Linux build unchanged.
 CC ?= cc
-BIN := ../bin/cosmic
+PKG_CONFIG ?= pkg-config
+EXE ?=
+BIN := ../bin/cosmic$(EXE)
 BUILD := build
 
 CFLAGS := -O2 -g -std=c11 -Wall -Wextra -Wno-unused-parameter \
-          -Ivendor -Ivendor/lua/src $(shell pkg-config --cflags sdl3)
-LDLIBS := $(shell pkg-config --libs sdl3) -lm
+          -Ivendor -Ivendor/lua/src $(shell $(PKG_CONFIG) --cflags sdl3)
+LDLIBS := $(shell $(PKG_CONFIG) --libs sdl3) -lm
 
 # deterministic string-hash seed (D003): lstate.c's seeding block is
 # guarded by '#if !defined(luai_makeseed)', so this define replaces it
@@ -23,7 +27,7 @@ all: $(BIN) $(SHADERS)
 
 $(BIN): $(PAL_OBJ) $(LUA_OBJ)
 	@mkdir -p $(dir $@)
-	$(CC) -o $@ $^ $(LDLIBS)
+	$(CC) -o $@ $^ $(LDFLAGS) $(LDLIBS)
 
 $(BUILD)/%.o: src/%.c src/pal.h | $(BUILD)
 	$(CC) $(CFLAGS) -c -o $@ $<
