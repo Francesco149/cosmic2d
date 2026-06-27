@@ -11,9 +11,10 @@ roadmap, and **shipped M6 — the windows port** (cross-build + byte-exact
 cross-platform determinism parity, agent-verified on the win11 host). No game
 code changed yet — the stock cartridge is still the old M3/M4 platformer
 sandbox.
+**M6 fully closed — human-verified 2026-06-27**: cosmic.exe runs windowed on the
+win11 desktop, smooth, input clean, no frame spikes (after the two post-M6 fixes
+below).
 **Next: M7 — movement overhaul** (D035, GAME.md §4): the MapleStory moveset.
-**Pending human check**: run cosmic.exe *windowed* on the win11 desktop (a
-visible window + feel) — the one M6 thing headless WSL interop can't verify.
 
 ## This session (2026-06-27)
 
@@ -94,9 +95,9 @@ main-thread FS. Lazy-spawned (never in capped/verify runs → determinism
 intact); parachute keeps its inline stat. Verified: selftest 22312, hot reload
 still fires (linux), windows binary runs stably with the thread up.
 
-Latest build (both fixes) deployed to `C:\temp\cosmic`. **Pending the human**:
-re-test windowed — movement/keys release cleanly, no frame spikes from a WSL
-terminal, plus the visible-window/feel check.
+Latest build (both fixes) deployed to `C:\temp\cosmic`. **Human-verified
+2026-06-27**: windowed run is perfectly smooth — input releases cleanly, no
+frame spikes from a WSL terminal.
 
 ## Next step (M7 — movement overhaul, D035 / GAME.md §4)
 
