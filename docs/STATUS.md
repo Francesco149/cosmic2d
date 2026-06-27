@@ -68,6 +68,23 @@ Deferred per the human: the **fancy slice VFX** (orbiting energy blades + trail
 particles) waits for the editor/particle-emitter work so it can be authored
 live; final knob tuning waits for the real art.
 
+### Feedback round 2 (2026-06-28)
+
+GAME.md §4 + D035 updated; selftest 22312 + record→verify both timelines still
+byte-exact; montage "M7 moveset v3" on llm-feed:
+
+- **Flutter cd only on a real flutter** (was: any tap armed the 10 s cd). A
+  `flutter_grace` (10 airborne frames) must pass before the hover — and thus the
+  cd — engages; a normal tap is a clean hop. (Verified: `flutter_t` starts only
+  after `hop_active`>grace, cd arms on land.) Also reconfirmed the teleport-
+  re-arm bug fix.
+- **Grapple extends → reels** (was: instant reel, short-range slingshot). The
+  hook climbs to the target at `grapple_extend` (~1 screenful/s) under gravity;
+  it reels only on connect, from your current velocity — so a jump-into-grapple
+  has fallen to downward velocity (verified +70 px/s at connect) that the reel
+  reverses first, damping the launch. Key fix: landing no longer cancels a
+  grapple (the extend phase is grounded for a grapple-from-standing).
+
 ## What works right now (the engine, M0–M6 + the M7 moveset)
 
 **Runs on Windows** (M6): `nix build .#cosmic-windows` → `cosmic.exe`, byte-exact

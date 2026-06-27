@@ -763,6 +763,22 @@ blades + trails) is **deferred** to after the editor/particle-emitter work so it
 can be authored live. Final knob values + golden re-cut still await the real art
 + feel sign-off.
 
+**Feel pass 2 (2026-06-28).** Two more refinements from live testing (GAME.md §4
+updated):
+- **Flutter cooldown only on a real flutter.** The cd arming was too eager — any
+  hold > 1 frame counted as a flutter, so a normal tap armed the 10 s cd. Now a
+  `flutter_grace` window (10 airborne frames) must pass before the hover (and
+  thus the cd) engages; a tap under that is a clean hop with no cd. (Also fixed:
+  a stale `flutter_t` let a later teleport re-arm the cd — `flutter_t` now resets
+  on flutter end, which had made the cd feel "permanent.")
+- **Grapple extends, then reels.** Was an instant reel that slingshot you too
+  high on short hops. Now the hook **extends** to the target at `grapple_extend`
+  (~1 screenful/s) while you stay under gravity; only on connect does it reel —
+  from your current velocity. So a jump *into* a grapple has fallen back to
+  downward velocity by connect-time, which the reel must reverse first, damping
+  the launch. The landing branch must NOT cancel a grapple (the extend phase is
+  grounded for a grapple-from-standing; the reel lifts you off when it connects).
+
 ## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
 
 **Context**: the human wants (a) an **editor-only UI scale** independent of the
