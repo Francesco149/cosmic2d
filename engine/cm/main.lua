@@ -221,9 +221,9 @@ end
 -- (or accept) an input record, apply, step, count; state is recorded
 -- post-step pre-draw, so a draw that mutates sim state shows up as a
 -- verify divergence on the next frame
-local function sim_step(events)
+local function sim_step()
   local evals = M.repl.drain()
-  local rec = M.input.collect(events)
+  local rec = M.input.sample()
   M.input.apply(rec)
   M.game.step()
   M.state.advance_frame()
@@ -242,12 +242,12 @@ function M.after_restore()
   if M.game then guarded(M.game.init) end
 end
 
-local function step_guarded(events)
+local function step_guarded()
   if not M.contain then
-    sim_step(events)
+    sim_step()
     return true
   end
-  local ok, err = xpcall(sim_step, debug.traceback, events)
+  local ok, err = xpcall(sim_step, debug.traceback)
   if not ok then enter_error(err) end
   return ok
 end
@@ -267,6 +267,10 @@ function M.tick()
   end
   -- engine UI sees raw events; the game sees what the UI didn't capture
   events = M.ui.frame(events)
+  -- ingest into live input state EVERY tick, decoupled from sim stepping, so a
+  -- render loop faster than the 60 Hz sim never drops a press/release (the
+  -- windowed key-stick bug); sim_step then samples the live state per step
+  M.input.feed(events)
 
   local now = pal.time_ns()
   -- reload polling off in capped runs (deterministic captures)
@@ -281,14 +285,13 @@ function M.tick()
     -- time machine open: sim frozen, queued evals wait for the resume
     M.acc, M.last = 0, nil
   elseif M.args.headless then
-    step_guarded(events)
+    step_guarded()
   else
     M.acc = M.acc + (M.last and now - M.last or SIM_DT)
     M.last = now
     if M.acc > 4 * SIM_DT then M.acc = 4 * SIM_DT end -- stall clamp
     while M.acc >= SIM_DT do
-      if not step_guarded(events) then break end
-      events = {} -- catch-up steps see held keys, not fresh events
+      if not step_guarded() then break end
       M.acc = M.acc - SIM_DT
     end
   end

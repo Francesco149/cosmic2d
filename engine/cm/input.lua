@@ -78,7 +78,15 @@ local function iclamp(v, lo, hi)
   return v
 end
 
-function M.collect(events)
+-- feed: ingest raw events into live key/mouse state. Call EVERY tick — even
+-- ticks that run no sim step. This was the windowed key-stick bug: ingestion
+-- used to live inside sample() (then `collect`), which only ran inside a sim
+-- step, so when the render loop outran the 60 Hz sim (a >60 Hz monitor, vsync
+-- on) the events polled on a zero-step tick were drained and thrown away —
+-- a key-up landing on such a tick never cleared, sticking the key. live_tap
+-- accumulates sub-frame taps across zero-step ticks until sample() consumes
+-- them, so a press never vanishes regardless of render rate.
+function M.feed(events)
   for _, e in ipairs(events) do
     if e.type == "key" then
       if e.down then
@@ -101,7 +109,12 @@ function M.collect(events)
       wheel_carry = wheel_carry + e.dy
     end
   end
+end
 
+-- sample: build one input record from the current live state. Call once per
+-- sim step. Clears the sub-frame tap set, so a tap registers for exactly one
+-- record (sticky tap) and catch-up steps in the same tick see only held keys.
+function M.sample()
   local bits = 0
   for i, def in ipairs(M.defs) do
     for _, sc in ipairs(def.keys) do
@@ -124,6 +137,13 @@ function M.collect(events)
   return pack("<I4i2i2I1i1", bits,
               iclamp(live_mx, -32768, 32767), iclamp(live_my, -32768, 32767),
               live_buttons, wheel)
+end
+
+-- back-compat: feed then sample in one call. Headless lockstep (one tick =
+-- one step) and selftest use this; the windowed loop calls feed/sample apart.
+function M.collect(events)
+  M.feed(events)
+  return M.sample()
 end
 
 -- ---- the deterministic half: record -> sim-visible state ----

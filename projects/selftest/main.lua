@@ -328,6 +328,27 @@ local function t_input()
   input.apply(input.collect({}))
   check(input.released("left"), "tap releases next frame")
 
+  -- feed/sample split: events ingested on ticks that run NO sim step (render
+  -- loop faster than the 60 Hz sim) must not be dropped — the windowed
+  -- key-stick regression. feed() updates live state every tick; sample()
+  -- builds a record per step.
+  input.feed({ key(4, true) })  -- tick A (no step): press
+  input.feed({})                 -- tick B (no step): idle
+  input.feed({ key(4, false) })  -- tick C (no step): release
+  input.apply(input.sample())    -- first step since: the tap is not lost
+  check(input.down("left") and input.pressed("left"),
+        "tap across zero-step ticks survives to the next sample")
+  input.apply(input.sample())
+  check(input.released("left"), "that tap releases on the following sample")
+  -- a genuinely held key over many fast no-step ticks stays held, releases clean
+  input.feed({ key(4, true) })
+  input.feed({}); input.feed({}); input.feed({})
+  input.apply(input.sample())
+  check(input.down("left"), "held key survives fast no-step ticks")
+  input.feed({ key(4, false) })
+  input.apply(input.sample())
+  check(not input.down("left") and input.released("left"), "held key releases")
+
   -- mouse + buttons + wheel
   input.apply(input.collect({
     { type = "motion", x = 12.7, y = -3.2 },
