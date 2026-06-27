@@ -4,47 +4,49 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-27
-**Phase**: **engine pivot — now building the flagship game, `cosmic`.** M0–M5
-(engine) are complete. This session renamed the project to **cosmic2d**,
-digested the human's full game vision into a design bible, re-sequenced the
-roadmap, and **shipped M6 — the windows port** (cross-build + byte-exact
-cross-platform determinism parity, agent-verified on the win11 host). No game
-code changed yet — the stock cartridge is still the old M3/M4 platformer
-sandbox.
-**M6 fully closed — human-verified 2026-06-27**: cosmic.exe runs windowed on the
-win11 desktop, smooth, input clean, no frame spikes (after the two post-M6 fixes
-below).
-**Next: M7 — movement overhaul** (D035, GAME.md §4): the MapleStory moveset.
+**Phase**: **M7 — movement overhaul (the heart; D035 / GAME.md §4).** M0–M6
+complete (M6 windows port human-verified; see its section below). This session
+**built the full MapleStory moveset** as pure cartridge controller policy (no
+PAL/engine change), re-choreographed the attract demo, and proved determinism.
+The stock cartridge is now the cosmic mecha-girl controller (still on the old
+platformer map as a playground).
+**Agent work done; the exit gate is the human's FEEL SIGN-OFF, native on win11.**
+After sign-off locks the knobs, the golden suite gets re-cut against them
+(deferred deliberately — tuning would invalidate goldens cut now).
+**Next: human plays it on win11 and tunes; then re-cut goldens, close M7.**
 
-## This session (2026-06-27)
+## This session (2026-06-27) — M7 moveset
 
-- **Total rename pettan2d → cosmic2d** (D033), committed `c9fbe72`: `cm.*` Lua
-  namespace (`engine/cm/`, `cm` global, `cm_tick`), container magic
-  **CTRC/CSNP**, trace ext **`.ctrace`**, `bin/cosmic`, env `COSMIC_LVP_ICD`.
-  Verified: build clean, **selftest 22308 checks PASS**, record → verify
-  round-trips on the new magic (exit 0), sandbox smoke shot renders.
-- **Game design digested into the repo**:
-  - **`docs/GAME.md`** (new) — the design bible: identity, fiction spine
-    (proposal), the gameplay loop, the full movement spec (§4), combat/
-    spectacle, hub, sandbox, exploration, areas/story, art direction + GPT
-    ref-prompts, and the open questions.
-  - **PLAN.md** — "What this is" reframed around the game; **roadmap
-    re-sequenced** M6→M15 (windows → movement → viewport/editor-UX → audio →
-    art tools → physics → combat → world → sandbox → shipping+content); new
-    risks.
-  - **DECISIONS** — D033 (rename), D034 (game identity: mecha-girl spin-off),
-    D035 (movement = cartridge controller policy, supersedes D029 specifics),
-    D036 (viewport: variable FOV + resize ladder + editor-only UI scale), D037
-    (death/respawn + optional economy + navigation + verifiable stats).
-  - **CLAUDE.md** — intro + docs list updated for the game and GAME.md.
-- **Human decisions ratified**: total rename (incl. magic; goldens waived);
-  protagonist = **antagonist mecha girl**; **Windows-first** sequencing; all six
-  GAME.md §11 design questions (→ D037).
-- **M6 windows port shipped** (commit `6b39cf6`, D038): mingw cross-build +
-  byte-exact cross-platform determinism parity, agent-verified on the win11
-  host. Details in the M6 section below.
+The whole MapleStory moveset (GAME.md §4) now lives in the hub cartridge as
+pure controller policy. Commits: `2a810a4` (controller + wiring), `69569c4`
+(attract demo).
 
-## What works right now (the engine, M0–M6)
+- **`projects/sandbox/player.lua`** rewritten: the old A-Hat-in-Time kit
+  (variable-height jump, dive/boost/double-jump, crate grab) is gone; in its
+  place — walk, jump (fixed ~1 CH, hold to auto-repeat), **flash jump** (repeat-
+  able dash + sonic-boom ring), **up jump** (fixed vertical, once/airtime, locks
+  out flash jump), **hop + flutter** (hop once/airtime; hold E hovers up to 10 s
+  then arms a 10 s hop cd — a *1-frame TAP* never arms it), **grapple**
+  (deterministic column scan for a standable top above, prefers past ½ screen,
+  slow reel, once/airtime, 3 s cd, jump cancels), **teleport** (~5 CW blink,
+  momentum dump, max 2/s, persistent A↔B phase mode that tints the sprite), and
+  **hold-D slice** (slash stub; enemies at M12). New 128-byte buffer layout
+  (pcall self-heals the old 96-byte one on reload). New 11-frame placeholder
+  sprite + grapple beam + phase tint.
+- **`main.lua`**: action map (hop=E, **grapple=q** — the spec's `` ` `` is the
+  dev console, so q is the proxy), new ctl edges, retired dive/dj/throw knobs.
+  **`level.lua`**: spawn lifted clear of the ground for any cw/ch.
+- **`demo.lua`** re-choreographed: TOUR showreel + KITCHECK rule oracle, both
+  byte-exact on `--verify`.
+- **Determinism proven**: `selftest 22312 PASS`; record→verify byte-exact —
+  TOUR 820 frames, KITCHECK 470 frames. No PAL/engine change (binary untouched).
+- **Calibration**: every value is a live knob under `doc.knobs.move` (D028);
+  `cw`/`ch` are the character box AND the CW/CH unit. Defaults are placeholders
+  sized to the current 16 px-tile map at 1:1 — the absolute *6 CW ≈ ⅓ screen*
+  anchor (CW≈26) needs M8 zoom + real art (a cw/ch/zoom knob change).
+- **Montage** pushed to llm-feed ("M7 moveset — final demo tour").
+
+## What works right now (the engine, M0–M6 + the M7 moveset)
 
 **Runs on Windows** (M6): `nix build .#cosmic-windows` → `cosmic.exe`, byte-exact
 state parity with linux.
@@ -54,11 +56,15 @@ Boot + live sessions + hot reload + crash parachute; the PAL draw/state/input/
 trace stack; the determinism kit (fixed 60 Hz, engine PRNG, cm.math, named
 buffers + canonical doc tree); snapshot/restore with code bundles (D012);
 cm.ui/console/repl/perf; error containment (game errors pause, never kill);
-cm.tilemap with one-way platforms; the platformer sandbox; the editor +
-inspector + prop palette (everything edits via recorded EVALs); the M5 **time
-machine** (always-on segment ring D032, F4 scrubber, rewind, `.ctrace` export,
-replay playback); the suite under `nix flake check`. Detail: ARCHITECTURE.md +
-DECISIONS D001–D032 + git history.
+cm.tilemap with one-way platforms; the editor + inspector + prop palette
+(everything edits via recorded EVALs); the M5 **time machine** (always-on
+segment ring D032, F4 scrubber, rewind, `.ctrace` export, replay playback); the
+suite under `nix flake check`. Detail: ARCHITECTURE.md + DECISIONS D001–D032 +
+git history.
+
+**The M7 moveset** (this session): walk / jump / flash-jump / up-jump /
+hop+flutter / grapple / teleport / hold-slice, all deterministic, every value a
+live knob — pending the human's feel tuning. See the session note above.
 
 ## M6 — windows port: DONE (agent-verified 2026-06-27, commit `6b39cf6`)
 
@@ -99,32 +105,43 @@ Latest build (both fixes) deployed to `C:\temp\cosmic`. **Human-verified
 2026-06-27**: windowed run is perfectly smooth — input releases cleanly, no
 frame spikes from a WSL terminal.
 
-## Next step (M7 — movement overhaul, D035 / GAME.md §4)
+## Next step (close M7)
 
-1. Read GAME.md §4 (the full spec) + D035 + D030 (the assists-as-cartridge-
-   policy pattern it follows). It's **pure cartridge controller policy** —
-   rewrite `projects/sandbox/player.lua`, no engine/PAL change.
-2. Rip out the old controller (variable-height jump + air-dive). Build: walk,
-   jump (fixed ~1 CH, auto-repeat), flash-jump (repeatable upright dash +
-   sonic-boom ring), up-jump (vertical, locks out flash-jump), hop + flutter
-   (once/airtime; hold E → 10 s hover → 10 s cooldown), grapple (pull to a
-   platform above, prefers > ½ screen, 3 s cd, once/airtime), teleport (blink
-   ~5 CW, kills momentum, persistent A↔B **phase-shift** mode, max 2/s),
-   hold-to-slice continuous attack.
-3. Every value a live knob under `doc.knobs.move` (D028). Calibrate CW/CH so
-   6 CW ≈ ⅓ screen (CW ≈ 26 px — pick sprite size + zoom).
-4. Re-choreograph the attract demo (D025) and **re-cut the golden suite** (new
-   CTRC magic + new movement) — where the stale goldens finally get replaced.
-5. Human feel sign-off, native on win11.
+1. **Human feel sign-off, native on win11** (the exit gate). Build the windows
+   package (`nix build .#cosmic-windows`) or run the linux binary; play the
+   moveset and tune `doc.knobs.move` live (F1 inspector / `` ` `` console). Keys:
+   arrows · space=jump (hold=auto-repeat; airborne=flash, Up+space=up-jump) ·
+   e=hop (hold=flutter) · **q=grapple** · r=teleport · d=slice. Save tuned
+   knobs with `game.save_knobs()`.
+2. **Re-cut the golden suite** (deferred until knobs lock — tuning invalidates
+   any sandbox golden cut now). The committed traces are still old `.ptrace`
+   (dormant; the suite globs `.ctrace`). Plan: **delete** the obsolete-mechanic
+   traces (boostcap, boostlock, divecancel, djscale, jumpfeel, platformer_dive,
+   platformer, platformer_locked, sandbox_ease, old kitcheck, sandbox); **re-cut
+   as `.ctrace`** the engine-feature goldens that ride the sandbox (editpaint,
+   inspectpoke, propspawn, mantle) + churn/evalfix (their own cartridges); **add**
+   a fresh `kitcheck.ctrace` from `game.demo(2)`; **re-shoot** the pixel goldens
+   (sandbox_idle, sandbox_tour). selftest 22312 is the live net meanwhile.
+3. Then M7 is closed; suggest `/clear` → M8 (viewport/zoom, D036) which also
+   delivers the CW≈26 absolute calibration.
 
 ## Known small items / debts
 
-- **Golden suite is intentionally stale** (D033): committed `.ptrace` files
-  carry the old PTRC magic *and* old-movement choreography; `nix run .#test`
-  trace/pixel goldens are red until re-cut at M7. **selftest** (22308 checks,
-  driver-independent) is the live net meanwhile.
+- **M7 feel knobs are placeholders** — `doc.knobs.move` defaults are agent
+  guesses for the human to dial in (the sign-off step). cw/ch=12/18 fit the
+  current map at 1:1; absolute screen-scale (CW≈26) is M8.
+- **Golden suite still stale, now also pre-sign-off** (D033): committed
+  `.ptrace` are dormant; the M7 re-cut waits for locked knobs (next-step #2).
+  selftest 22312 is the live net.
+- **Grapple onto a SOLID platform from directly below bonks** (hit.up) — the
+  two map balconies are STONE; grapple works through one-way planks (most of
+  the map). The real hub (M-content) follows the one-way rule (GAME.md §4).
+- **Grapple is on `q`, not the spec's `` ` ``** (the dev console owns backtick
+  unless the project locks the editor). A shipped/locked build can bind grave.
+- **Player grab/throw is gone** — E is hop now; the crate pit is inert physics.
+  The sandbox grab/float/constrain "tool" returns with M-physics (GAME.md §7).
 - `projects/sandbox/map.dat` is **untracked local state** that shadows the
-  procedural map at boot (PROCESS warns about it for goldens); left as-is.
+  procedural map at boot (PROCESS warns for goldens); left as-is.
 - Confirm the rename *choices* `cm` (prefix) and `.ctrace` (ext) are
   acceptable — one sed to change now, frozen after 1.0 (D033).
 - Carry-over M5/M4 debts still stand: console-eval rewind caveat, scrub previews
