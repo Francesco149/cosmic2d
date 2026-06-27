@@ -54,15 +54,19 @@ local KNOBS = {
     -- walk (slow — you fly, you don't run) + minimal air control
     walk_speed = 42, walk_accel = 640, ground_fric = 900,
     air_accel = 110, air_fric = 36,
-    -- jump: fixed apex ≈ 1 CH; hold to auto-repeat on landing
-    jump_h = 20, jump_apex_t = 15, fall_mul = 1.3, fall_max = 360,
+    -- jump: fixed apex ≈ 1 CH; hold to auto-repeat on landing. apex_t is ×1.5
+    -- (vs 15) for ~1.5× airtime at the SAME height — the curve reaches jump_h
+    -- in apex_t frames, so airtime scales with apex_t and height stays jump_h
+    -- (human feel, 2026-06-28). The weaker gravity that falls out means the
+    -- fixed-velocity impulses below are scaled ×2/3 to hold their heights.
+    jump_h = 20, jump_apex_t = 22.5, fall_mul = 1.3, fall_max = 360,
     coyote = 6, buffer = 5, mantle = 4,
-    -- flash jump: repeatable forward dash (~6 CW from apex) + sonic boom
-    fj_vx = 186, fj_vy = -78,
-    -- up jump: fixed vertical impulse (jump→up-jump chain ≈ 5 CH)
-    upjump_v = 268,
-    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd)
-    hop_vx = 120, hop_vy = 150,
+    -- flash jump: ONCE per airtime, forward dash + sonic boom (fj_vy ×2/3)
+    fj_vx = 186, fj_vy = -52,
+    -- up jump: fixed vertical impulse (jump→up-jump chain ≈ 5 CH; ×2/3)
+    upjump_v = 178.67,
+    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd; hop_vy ×2/3)
+    hop_vx = 120, hop_vy = 100,
     flutter_max = 600, flutter_fall = 26, flutter_decel = 520, hop_cd = 600,
     -- grapple: reel to a top above, prefer past ½ screen; slow accel; 3 s cd
     grapple_range_max = 244, grapple_range_min_pref = 120,
@@ -278,6 +282,47 @@ function game.step()
   end
 end
 
+-- TEMP (M7 testing): a cooldown / per-airtime HUD so feel-testing can SEE the
+-- timers (hop/grapple/teleport cd, which air moves are spent, the phase mode,
+-- live flutter). Render-only (reads player.dbg, never writes sim). Remove once
+-- the editor can live-visualize emitter/ability state (deferred with the slice
+-- VFX). Hidden during the attract demo so montages/goldens stay clean.
+local function draw_cd_hud()
+  local d = player.dbg()
+  local k = state.doc.knobs.move
+  local function bar(row, label, cur, maxv)
+    local y = 14 + row * 8
+    text.draw(3, y, label, { r = 0.92, g = 0.9, b = 0.8, a = 0.9 })
+    local bx, bw = 42, 50
+    pal.quad(bx, y, bw, 6, 0.08, 0.08, 0.10, 0.75)
+    if cur > 0.5 then
+      local f = maxv > 0 and m.clamp(cur / maxv, 0, 1) or 0
+      pal.quad(bx, y, bw * f, 6, 0.96, 0.5, 0.28, 0.95) -- cooling down
+      text.draw(bx + bw + 4, y, ("%.1fs"):format(cur / 60),
+                { r = 0.96, g = 0.7, b = 0.5, a = 0.9 })
+    else
+      pal.quad(bx, y, bw, 6, 0.32, 0.85, 0.46, 0.8) -- ready
+      text.draw(bx + bw + 4, y, "ready", { r = 0.5, g = 0.9, b = 0.6, a = 0.85 })
+    end
+  end
+  bar(0, "hop", d.hop_cd, k.hop_cd)
+  bar(1, "grapple", d.grapple_cd, k.grapple_cd)
+  bar(2, "tp", d.tp_cd, k.tp_min_interval)
+  local spent = {}
+  if d.fj_used > 0.5 then spent[#spent + 1] = "FLASH" end
+  if d.upjumped > 0.5 then spent[#spent + 1] = "UPJ" end
+  if d.hop_used > 0.5 then spent[#spent + 1] = "HOP" end
+  if d.grapple_used > 0.5 then spent[#spent + 1] = "GRAP" end
+  text.draw(3, 38, #spent > 0 and ("spent: " .. table.concat(spent, " "))
+            or "air: all ready", { r = 0.85, g = 0.8, b = 0.7, a = 0.85 })
+  local mode = d.tp_mode > 0.5 and "B back/phase" or "A fwd/solid"
+  local fl = d.fluttering > 0.5
+            and ("  flutter %.1fs"):format((k.flutter_max - d.flutter_t) / 60)
+            or ""
+  text.draw(3, 46, "phase: " .. mode .. fl,
+            { r = 0.55, g = 0.88, b = 0.95, a = 0.85 })
+end
+
 function game.draw()
   pal.begin_frame(0.42, 0.58, 0.80, 1)
   local frame = state.frame()
@@ -300,6 +345,8 @@ function game.draw()
     local msg = "DEMO * press any key to play"
     local tw = text.measure(msg)
     text.draw((W - tw) // 2, 24, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
+  else
+    draw_cd_hud() -- TEMP testing overlay (hidden during the demo)
   end
   text.draw(3, H - 11,
             "arrows  space:jump/flash/up  e:hop(hold=flutter)  q:grapple  r:teleport  d:slice",

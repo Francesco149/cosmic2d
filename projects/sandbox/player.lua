@@ -69,7 +69,7 @@ local O = {
   grappling = 68, gx = 72, gy = 76, grapple_cd = 80,
   tp_mode = 84, tp_cd = 88, attack_t = 92,
   squash_t = 96, stretch_t = 100, anim = 104, land = 108, dust = 112,
-  tp_flash = 116, fj_t = 120,
+  tp_flash = 116, fj_used = 120,
 }
 local SIZE = 128
 
@@ -98,6 +98,18 @@ end
 function M.pos() return buf:f32(O.x), buf:f32(O.y) end
 function M.center() return buf:f32(O.x) + M.W * 0.5, buf:f32(O.y) + M.H * 0.5 end
 function M.facing() return buf:f32(O.facing) end
+
+-- live cooldown/flag state for the temporary testing HUD (main.draw). Pure
+-- read; cooldowns are remaining frames, flags are 0/1.
+function M.dbg()
+  return {
+    hop_cd = buf:f32(O.hop_cd), grapple_cd = buf:f32(O.grapple_cd),
+    tp_cd = buf:f32(O.tp_cd), flutter_t = buf:f32(O.flutter_t),
+    hop_used = buf:f32(O.hop_used), fj_used = buf:f32(O.fj_used),
+    upjumped = buf:f32(O.upjumped), grapple_used = buf:f32(O.grapple_used),
+    fluttering = buf:f32(O.fluttering), tp_mode = buf:f32(O.tp_mode),
+  }
+end
 
 -- ---- helpers ----
 
@@ -222,6 +234,7 @@ function M.step(ctl)
   local hop_used = buf:f32(O.hop_used)
   local upjumped = buf:f32(O.upjumped)
   local grapple_used = buf:f32(O.grapple_used)
+  local fj_used = buf:f32(O.fj_used)
   local hop_active = buf:f32(O.hop_active)
   local fluttering = buf:f32(O.fluttering)
   local flutter_t = buf:f32(O.flutter_t)
@@ -237,15 +250,19 @@ function M.step(ctl)
   local dir = (ctl.right and 1 or 0) - (ctl.left and 1 or 0)
   local press = ctl.jump_pressed
 
-  -- ===== TELEPORT (R, hold to spam) — blink, lose all momentum =====
+  -- ===== TELEPORT (R, hold to spam) — blink, lose all momentum. Direction
+  -- ALTERNATES forward/back, tied to the A<->B phase flip that happens each
+  -- blink: mode A blinks forward (solid), mode B blinks back (phases through
+  -- hazards/enemies — at M12). Max 2/s. =====
   if ctl.teleport_held and tp_cd <= 0 then
-    local bx = tm:move(x, y, W, H, facing * k.tp_dist, 0) -- clamps at solids
+    local tdir = tp_mode == 0 and facing or -facing -- A forward / B back
+    local bx = tm:move(x, y, W, H, tdir * k.tp_dist, 0) -- clamps at solids
     if grappling == 1 then
       grappling = 0
       grapple_cd = m.max(grapple_cd, k.grapple_cd)
     end
     if flutter_t > 0 then hop_cd = m.max(hop_cd, k.hop_cd) end
-    fluttering, hop_active = 0, 0
+    fluttering, hop_active, flutter_t = 0, 0, 0
     ring(x + W * 0.5, y + H * 0.5, 12, 150, 2.0, 3.2, 0.14, 0.30) -- depart
     x, vx, vy = bx, 0, 0
     tp_mode = 1 - tp_mode
@@ -301,9 +318,10 @@ function M.step(ctl)
       vy = -k.upjump_v
       upjumped, coyote = 1, 0
       ring(x + W * 0.5, y + H, 9, 80, 3.0, 4.0, 0.12, 0.26)
-    elseif upjumped == 0 then -- FLASH JUMP (locked out after an up-jump)
-      vx = facing * k.fj_vx
+    elseif upjumped == 0 and fj_used == 0 then -- FLASH JUMP (once per airtime;
+      vx = facing * k.fj_vx                    -- also locked out by an up-jump)
       vy = k.fj_vy
+      fj_used = 1
       ring(x + W * 0.5 - facing * 4, y + H * 0.5, 14, 130, 3.0, 4.2, 0.14, 0.32)
     end
   end
@@ -340,7 +358,8 @@ function M.step(ctl)
     if not ctl.hop_held or flutter_t >= k.flutter_max
        or grappling == 1 or ctl.attack_held then
       if flutter_t > 0 then hop_cd = k.hop_cd end -- a plain tap never arms it
-      fluttering, hop_active = 0, 0
+      fluttering, hop_active, flutter_t = 0, 0, 0 -- reset ft so a later
+      -- teleport (which re-arms hop_cd while ft>0) can't refresh the cooldown
     elseif not ctl.hop_pressed and not grounded then -- airborne, past the press
       fluttering = 1
       flutter_t = flutter_t + 1
@@ -388,7 +407,7 @@ function M.step(ctl)
     vy = 0
     grounded, on_oneway = true, hit.oneway or false
     coyote = k.coyote
-    hop_used, upjumped, grapple_used = 0, 0, 0 -- per-airtime reset
+    hop_used, upjumped, grapple_used, fj_used = 0, 0, 0, 0 -- per-airtime reset
     if hop_active == 1 and flutter_t > 0 then hop_cd = k.hop_cd end
     fluttering, hop_active, flutter_t = 0, 0, 0
     if grappling == 1 then grappling, grapple_cd = 0, k.grapple_cd end
@@ -451,7 +470,7 @@ function M.step(ctl)
   buf:f32(O.on_oneway, on_oneway and 1.0 or 0.0)
   buf:f32(O.coyote, coyote); buf:f32(O.jbuf, jbuf); buf:f32(O.drop, drop)
   buf:f32(O.hop_used, hop_used); buf:f32(O.upjumped, upjumped)
-  buf:f32(O.grapple_used, grapple_used)
+  buf:f32(O.grapple_used, grapple_used); buf:f32(O.fj_used, fj_used)
   buf:f32(O.hop_active, hop_active); buf:f32(O.fluttering, fluttering)
   buf:f32(O.flutter_t, flutter_t); buf:f32(O.hop_cd, hop_cd)
   buf:f32(O.grappling, grappling); buf:f32(O.gx, gx); buf:f32(O.gy, gy)
