@@ -653,3 +653,124 @@ tilemaps make keyframes dominate (then: keyframe spacing per ring
 position, or delta'd keyframes), or scrubber drag wants faster access
 than O(kf) re-decode (then: cached mirror walk using XOR
 reversibility).
+
+## D033 — rename pettan2d → cosmic2d (pre-1.0 break clause; human call, 2026-06-27)
+
+**Context**: the project gained a flagship game identity (**cosmic**, D034)
+and the human asked to rename pettan2d → cosmic2d and every pettan-derived
+token. D015 freezes the PAL base semantics — including the trace/snapshot
+container magic — at 1.0, but **explicitly allows pre-1.0 breaks** with a
+DECISIONS entry and a deliberate golden regeneration. We are pre-1.0.
+**Decision**: total rename in one mechanical pass. Product/docs, binary
+(`bin/cosmic`), the Lua namespace `pt.*` → `cm.*` (the `engine/cm/` dir, the
+`cm` global, `cm_tick`), the trace/snapshot container magic `PTRC` → **CTRC**
+/ `PSNP` → **CSNP**, the trace extension `.ptrace` → **`.ctrace`**, env vars
+(`COSMIC_LVP_ICD`), flake outputs. Word-boundary-safe seds; verified: build
+clean, selftest **22308 checks PASS**, and a record → verify round-trip on the
+new CTRC magic (exit 0). The committed golden suite (old magic + the
+about-to-be-replaced movement choreography, D035) is **intentionally left
+stale** and gets re-cut at M6/M7 against real assets — this *is* the
+"deliberately regenerate goldens" step the clause requires; sinking effort into
+keeping soon-deleted choreography green would be waste. selftest (engine
+invariants) remains the live net meanwhile.
+**Why**: this is the engine for the cosmic game now; aligning identity before
+the 1.0 freeze is the cheap moment. The freeze henceforth governs cosmic's
+**CTRC/CSNP** magic, which become the eternal tokens.
+**Snapshot story**: unchanged — only the container magic strings differ.
+**Revisit**: the freeze itself is unchanged. The namespace prefix `cm` and the
+`.ctrace` extension are *choices* (one sed to change) — change them now if you
+dislike them, never after 1.0.
+
+## D034 — the stock game is cosmic, an antagonist-mecha-girl spin-off (human call, 2026-06-27)
+
+**Context**: the human now has a specific game to make and wants the engine
+**built around** its art and gameplay (PLAN "What this is", GAME.md).
+**Decision**: the flagship / stock game is **cosmic** — single-player 2D
+action-exploration, cute/cozy with a touch of cosmic dread, starring the
+**antagonist mecha girl** of the `cosmic` universe as a spin-off / prequel
+(chosen over playing cosmic's protagonist so that project's canon stays free,
+and because the mechanical moveset fits a mecha character). MapleStory-style
+self-contained maps + portals; power-fantasy slice-through-hordes spectacle; a
+Garry's-Mod-flavored physics sandbox; Wadanohara-like pixel art. The game's
+cozy **hub** replaces the generic platformer sandbox as the stock cartridge and
+the dev testbed. Full design in **GAME.md**. The proposed **fiction spine**
+(the mecha girl's reality-bending tech unifies movement + sandbox + dread;
+finishing an area's questlines "stabilizes its reality" → unlocks prop-spawning
+there) is a **proposal pending the human** (GAME.md §11).
+**Why**: a concrete game focuses the roadmap and dogfoods the engine's
+batteries; villain-origin keeps cosmic's own (longer-cycle) story untouched.
+**Snapshot story**: n/a (design-level). Each game system documents its own as
+it lands.
+**Revisit**: the human owns the fiction. Identity (mecha-girl spin-off) is
+ratified; the spine, progression, area list and boss design are open (GAME.md
+§11) and may reshape the later milestones.
+
+## D035 — the MapleStory moveset is cartridge controller policy (human spec, 2026-06-27)
+
+**Context**: cosmic is built around an unconventional MapleStory-derived moveset
+(GAME.md §4) that wholesale replaces the old M3/M4 controller (variable-height
+jump + air-dive). Movement is the make-or-break feel system.
+**Decision**: the new controller — walk, jump (fixed ~1 CH, auto-repeat),
+flash-jump (repeatable upright dash, sonic-boom ring), up-jump (vertical,
+locks out flash-jump for the airtime), hop + flutter (once-per-airtime diagonal
+boost; holding E hovers 10 s then arms a 10 s hop cooldown), grapple (pull to a
+platform above, prefers targets beyond ½ screen, 3 s cooldown, once per
+airtime), teleport (blink ~5 CW, kills momentum, persistent A↔B mode that
+changes appearance, max 2/s), and hold-to-slice continuous attack — is built as
+**pure cartridge controller policy** in the hub project's player module, with
+**no PAL/engine change**. It rides the existing tilemap mover + one-way
+platforms (D024) and reads the map through existing primitives for targeting
+(the **D030 pattern**: feel/assists/queries are controller-side, the mover
+stays a frozen mechanism). Every value is a live knob under `doc.knobs.move`
+(persisted D028, inspector-tunable). Per-airtime flags (hop used, up-jump→FJ
+lock, grapple used) reset on landing; the teleport **mode bit**, **hop
+cooldown** and **grapple cooldown** persist in a player named buffer / doc
+(mode resets on map change). This **supersedes the specifics of D029** (the new
+jump is a fixed one-CH height, not the authored variable-height curve) while
+reusing the **patterns** of D030 (assists as policy) and D025 (the attract demo
+is sim input — re-choreographed against the new moveset).
+**Why**: the frozen engine mover stays untouched and trustworthy; all feel is
+hot-tunable cartridge data/code that travels in bundles; determinism is
+unchanged by construction — integer-frame timers, pure-IEEE tilemap scans,
+engine PRNG only, no wall clock, no libm.
+**Snapshot story**: knobs are doc state (D028); per-move timers/flags/mode are
+ordinary sim state in a player buffer/doc. Goldens re-cut at M7.
+**Revisit**: if a move needs a map query the tilemap API lacks (add read-only
+queries, never mover behavior); if other cartridges want the moveset (a
+cm-level controller helper); exact knob values are M7 calibration + human feel
+sign-off. Units are CW/CH (GAME.md §4) so sprite/zoom recalibration is safe.
+
+## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
+
+**Context**: the human wants (a) an **editor-only UI scale** independent of the
+game's pixel scale, (b) a **movable/resizable game render area**, and (c) a
+**window-resize ladder** snapping to pixel-perfect multiples — so e.g. a 1080p
+window runs the game at 2× in a sub-rect with editor chrome at 1× around it.
+Today the PAL renders one fixed internal target integer-scaled to fill the
+window (ARCHITECTURE "Rendering"; D006 product decisions).
+**Decision (M8)**: generalize the present path. The internal target becomes a
+**variable FOV** (the visible game area in internal pixels) capped at the
+480×270 reference: below the cap the FOV **crops** (less world visible, sprites
+unchanged), at/above the cap the game **integer-upscales**. The window-resize
+**ladder** (the human's spec): reference 960×540 = FOV 480×270 at 2× (default;
+**borderless when window == screen**); horizontal resize → next whole aspect at
+the same vertical res (wider FOV); diagonal resize → next pixel-perfect
+resolution, and if chrome is squeezed, **lower the editor UI scale**; 4:3 =
+same vertical res, cropped width (720×540 win / 360×270 FOV); 640×360 and
+480×360 are the smallest (FOV cropped both ways); FOV maxes at 480×270, beyond
+which the game upscales, snapping to **integer multiples by default**. The
+**game viewport** is a movable/resizable rect (snaps to pixel-perfect
+multiples); **editor UI** draws at its own scale in the leftover space.
+**Iron rule**: the sim **never reads window size / FOV / viewport** — FOV is a
+render-only camera extent; goldens render at a fixed FOV. Likely a small
+**additive** PAL surface (present into a sub-rect at a chosen scale; a separate
+UI-scale pass) born `pal.x_*` under the stability contract, documented in the
+API table when built.
+**Why**: the editor-UX pillar (5) and comfortable dev on the win11 host;
+decoupling FOV, UI scale and viewport is what lets one window host the game and
+the editor at different scales.
+**Snapshot story**: none — viewport / FOV / UI scale are render + dev-side state
+(D021 class), never sim, never recorded.
+**Revisit**: if variable FOV complicates camera/parallax math (then: keep FOV
+fixed and scale-only, the simpler subset), or if fractional scaling is ever
+wanted (opt-in; default stays integer).

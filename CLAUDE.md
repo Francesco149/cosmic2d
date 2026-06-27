@@ -4,6 +4,13 @@ Tiny 2D pixel-art engine / fantasy console: small C platform binary ("PAL") +
 hot-reloadable Lua engine/editor/games, deterministic to the bit, batteries
 included. You (the agent) are the primary developer.
 
+The engine now has a flagship game it is built around: **cosmic** — a cute /
+cozy, occasionally cosmic-dread action-exploration game starring the
+antagonist mecha girl of the `cosmic` universe (a spin-off / prequel).
+MapleStory-style movement and self-contained maps + portals, power-fantasy
+slice-through-hordes spectacle, and a Garry's-Mod-flavored physics sandbox.
+The art targets a Wadanohara-like pixel style. See `docs/GAME.md`.
+
 ## Session start — do this first
 
 1. Read `docs/STATUS.md` (current state + exact next step).
@@ -16,6 +23,8 @@ included. You (the agent) are the primary developer.
 
 - **STATUS.md** — living handoff; update at session/milestone end.
 - **PLAN.md** — vision, pillars, milestone roadmap with exit criteria.
+- **GAME.md** — the cosmic game design bible: identity, gameplay loop,
+  movement spec, combat/spectacle, sandbox, art direction, story.
 - **ARCHITECTURE.md** — two-layer design, state model, determinism iron
   rules, PAL API contract.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.

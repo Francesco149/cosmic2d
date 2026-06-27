@@ -11,10 +11,19 @@ whole world: the engine, its editor and tools, the documentation, and the game
 projects. You share a game by zipping the folder; the recipient can play it,
 edit it, and build their own game with the same binary. MIT licensed, public.
 
-The stock experience is a **live-editable platformer sandbox** (Garry's Mod
-spirit): a MapleStory-style character controller in a blank-slate map with a
-prop pit — spawn, grab, throw physics objects, paint the map, edit the game's
-Lua code with hot reload, all while the game runs.
+The engine now has a flagship game it is **built around**: **cosmic** (see
+`GAME.md`) — a cute/cozy, occasionally cosmic-dread action-exploration game
+starring the `cosmic`-universe antagonist mecha girl (a spin-off / prequel).
+MapleStory-style movement and self-contained maps + portals, power-fantasy
+slice-through-hordes spectacle, and a Garry's-Mod-flavored physics sandbox; the
+art targets a Wadanohara-like pixel style. The engine's batteries are proven by
+dogfooding this game, and its feel/art requirements drive the roadmap below.
+
+The game's cozy **hub** doubles as the live-editable **testbed** (the old M3/M4
+"platformer sandbox", now with a purpose): a playground where we spawn/grab/
+throw props, paint maps, and edit Lua with hot reload while it runs. The engine
+stays general — you can still zip the folder and build your own game — but
+cosmic is the thing we steer by.
 
 ## Pillars (in priority order)
 
@@ -114,22 +123,76 @@ definition of done. Order may flex; pillars don't.
   just happened" trace export, replay playback of shared traces (showcases);
   golden trace suite wired into `nix flake check`; pixel goldens on pinned
   lavapipe.
-- **M6 — audio**: FM synth core in PAL (voices × 4-op, envelopes, feedback,
-  a few algorithms), patches/sequencing in Lua, sfx hooked into sandbox
-  (jump/land/throw), PCM-hash audio goldens.
-- **M7 — windows**: mingw cross build from the flake, SDL3.dll packaging,
-  run .exe via WSL interop, state-golden parity vs linux.
-- **M8 — procedural sprites**: noise/shape/gradient/bevel/blend primitives →
-  texture bake API + generator panel; upgrade placeholder art.
-- **M9 — LUT + look**: LUT post pass, stock LUTs, palette/LUT editor panel,
-  parallax/feedback polish pass with the human dialing knobs.
-- **M10 — self-contained shipping**: committed per-platform binaries, project
-  zip flow, startup project/mode config, rebindable-controls UI, in-engine
-  docs browser v0, sprite/animation editor v0.
+M6 onward was **re-sequenced 2026-06-27** to build the cosmic game (GAME.md).
+M0–M5 above are done. The human's calls: **Windows first** (so all feel-testing
+happens natively on the win11 host), and the engine is steered by the game's
+needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
 
-Beyond M10: physics with rotation (box2d-lite-style solver), slopes/ladders
-(Maple/Fortune Summoners movement vocabulary), tracker UI for music, gamepad,
-GL/software backends, more editor tooling. Roadmap grows as we learn.
+- **M6 — windows port** *(next)*: mingw cross build from the flake, SDL3.dll
+  packaging, run `cosmic.exe` on the win11 host (WSL interop for dev), fix the
+  "windowed needs cwd=repo-root" debt. Prove **linux↔windows state parity** the
+  cheap way — record a fresh `.ctrace` on one OS and `--verify` it on the other
+  (state is pure CPU, so byte-exact); the committed golden suite is re-cut at
+  M7 (new movement + assets), not re-blessed here. *Exit*: `cosmic.exe
+  projects/sandbox` runs smoothly on win11; a fresh trace cross-verifies
+  byte-exact both directions.
+- **M7 — movement overhaul** (the heart; D035, GAME.md §4): rip out the old
+  controller; build the full MapleStory moveset (walk / jump / flash-jump /
+  up-jump / hop / flutter / grapple / teleport / continuous-attack) as live
+  knobs in the hub cartridge; calibrate CW/CH so 6 CW ≈ ⅓ screen; one-way
+  platforms throughout; VFX stubs (sonic-boom ring, teleport trail). Re-cut
+  the attract demo + goldens (D025) against the new moveset. Pure cartridge
+  policy — no PAL change. *Exit*: the moveset feels right (human sign-off,
+  native on win11), every knob live-tunable, deterministic, golden-pinned.
+  *(M7/M8 may swap — movement is first as the identity-defining feel system,
+  now feel-testable natively.)*
+- **M8 — viewport & editor UX** (D036): variable-FOV internal target
+  (≤480×270, integer-upscaled to a game-viewport rect), the window-resize
+  ladder (aspect/FOV snapping, borderless-on-match), **editor-only UI scale**
+  independent of game scale, a movable/resizable game viewport snapping to
+  pixel-perfect multiples. The sim stays independent of FOV/window (goldens at
+  a fixed FOV). Plus multi-file Lua conventions + project subdirs verified at
+  scale (the loader already supports nested paths). *Exit*: a 1080p window with
+  the game at 2× and editor chrome at 1× around it; the resize ladder snaps
+  correctly; deep hot-reload across many project files.
+- **M9 — audio** (was M6): FM synth core in PAL (voices × 4-op, envelopes,
+  feedback, a few algorithms), patches/sequencing in Lua, sfx for jump/land/
+  flash-jump/slice/teleport, music, PCM-hash audio goldens.
+- **M10 — sprite & procedural art tools** (folds old M8 procgen + M9 LUT + the
+  sprite editor): in-engine **sprite/animation editor** (portraits + sprites +
+  gradients), **procedural sprite generator** (noise/shape/gradient/bevel/blend)
+  for particles/liquids/dust + environment, **LUT post pass** + palette/LUT
+  editor. Begin upgrading placeholders → real Wadanohara-style assets (human
+  authors, agent integrates). *Exit*: the human authors a character sprite +
+  portrait in-engine; particles/liquids/dust are procedural; the LUT dials each
+  area's look.
+- **M11 — rotational physics & destruction**: a box2d-lite-style rigid-body
+  solver — deterministic, born a versioned PAL kernel (`name@1`, contract rule
+  4) — plus breakables, knock-over props, throw. *Exit*: throwing/knocking
+  props feels great, deterministic, golden-pinned.
+- **M12 — combat & enemies**: continuous-attack slicing, trash-enemy hordes
+  (deterministic AI), juicy death anims + particle trails, hitstop/screen
+  feedback, a boss-fight framework. *Exit*: carving a horde feels satisfying
+  (human sign-off); a boss is a real fight.
+- **M13 — world: portals, save, quests, radar**: portal map transitions,
+  persistent world/progression state + a **save system** (leveraging the
+  snapshot infra), quest tracking, the secrets **radar**, area-completion →
+  prop-spawn unlock. *Exit*: traverse hub↔areas by portal; progress persists
+  across sessions; secrets + radar work.
+- **M14 — sandbox tool (2D gmod)**: grab / float / move / rotate / throw + a
+  small constraint set (weld / axle / rope), prop discovery → unlock, spawn in
+  hub + completed areas. Builds on M11. *Exit*: the sandbox is fun in the hub
+  (human sign-off).
+- **M15 — shipping & content build-out** (was M10): committed per-platform
+  binaries, project zip flow, startup project/mode config, rebindable-controls
+  UI, in-engine docs browser v0 — and the **ongoing story/maps authoring** (the
+  actual game), interleaved from here once hub + movement exist.
+
+Sequencing: order may flex; **Windows → movement is fixed** per the human.
+M9–M14 are ordered by dependency (audio + art tools enable spectacle; physics
+precedes the sandbox; world precedes shipping) but interleave with content
+authoring. Still later: slopes/ladders if wanted, tracker UI for music,
+gamepad, GL/software backends. Roadmap grows as we learn.
 
 ## Risks / watch list
 
@@ -142,4 +205,15 @@ GL/software backends, more editor tooling. Roadmap grows as we learn.
 - **Editor UI scope creep** → UI core API is reviewed against "could Godot's
   inspector be built on this?" before M4 begins.
 - **Determinism erosion** — every new sim-touching system must state its
-  snapshot story in DECISIONS.md; golden suite is the enforcement.
+  snapshot story in DECISIONS.md; golden suite is the enforcement. Two new
+  fronts: the **variable FOV** (M8) must stay render-only (sim never reads
+  window/FOV; goldens at a fixed FOV), and the **rotational physics solver**
+  (M11) lands as a versioned kernel, golden-pinned, measured in perf first.
+- **Movement feel is make-or-break** — the whole game is the moveset (M7).
+  Mitigation: Windows-first so feel-testing is native, every value a live knob,
+  and the trace scrubber for debugging arcs frame-by-frame. The human is the
+  taste check.
+- **Scope** — the full game (combat, world, save, sandbox, content) is a long
+  road. Mitigation: ship the **hub + movement loop** first and prove it's fun
+  before layering enemies/world/sandbox; content authoring is the interleaved
+  long tail, not a milestone gate.

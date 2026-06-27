@@ -3,118 +3,97 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
-**Date**: 2026-06-12
-**Milestone**: M5 — time machine: **COMPLETE** (every PLAN bullet done,
-agent-verified, and the rewind feel human-signed-off 2026-06-12). The
-ring IS the recorder (D032):
-every live session keeps the last 30 s scrubbable, F4 opens the time
-machine, rewind/export/replay all ride the same segment ring, and the
-suite now runs under `nix flake check` with pixel goldens.
-**Next: M6 — audio** (FM synth core in PAL, patches/sequencing in Lua,
-sfx in the sandbox, PCM-hash audio goldens).
+**Date**: 2026-06-27
+**Phase**: **engine pivot — now building the flagship game, `cosmic`.** M0–M5
+(the engine: determinism kit, PAL stack, UI/console/inspector/editor, the
+platformer sandbox, the M5 time machine) are complete. This session renamed the
+project to **cosmic2d**, digested the human's full game vision into a design
+bible, and re-sequenced the roadmap. No game code changed yet — the stock
+cartridge is still the old M3/M4 platformer sandbox.
+**Next: M6 — windows port** (the human's call: native feel-testing on the win11
+host before the movement overhaul).
 
-## What works right now
+## This session (2026-06-27)
 
-Everything from M0–M4 (boot, live sessions, hot reload, parachute, PAL
-draw/state/input/trace stack, determinism kit, goldens, cm.ui/console/
-repl/perf, error containment, cm.tilemap, the platformer sandbox, the
-editor + inspector + prop palette, the LOCKED stock feel D029/D030,
-tour v2) plus M5:
+- **Total rename pettan2d → cosmic2d** (D033), committed `c9fbe72`: `cm.*` Lua
+  namespace (`engine/cm/`, `cm` global, `cm_tick`), container magic
+  **CTRC/CSNP**, trace ext **`.ctrace`**, `bin/cosmic`, env `COSMIC_LVP_ICD`.
+  Verified: build clean, **selftest 22308 checks PASS**, record → verify
+  round-trips on the new magic (exit 0), sandbox smoke shot renders.
+- **Game design digested into the repo**:
+  - **`docs/GAME.md`** (new) — the design bible: identity, fiction spine
+    (proposal), the gameplay loop, the full movement spec (§4), combat/
+    spectacle, hub, sandbox, exploration, areas/story, art direction + GPT
+    ref-prompts, and the open questions.
+  - **PLAN.md** — "What this is" reframed around the game; **roadmap
+    re-sequenced** M6→M15 (windows → movement → viewport/editor-UX → audio →
+    art tools → physics → combat → world → sandbox → shipping+content); new
+    risks.
+  - **DECISIONS** — D033 (rename), D034 (game identity: mecha-girl spin-off),
+    D035 (movement = cartridge controller policy, supersedes D029 specifics),
+    D036 (viewport: variable FOV + resize ladder + editor-only UI scale).
+  - **CLAUDE.md** — intro + docs list updated for the game and GAME.md.
+- **Human decisions ratified**: total rename (incl. magic; goldens waived);
+  protagonist = **antagonist mecha girl**; **Windows-first** sequencing.
 
-- **The segment ring (D032, cm.trace)**: always-on in live sessions —
-  segments of kf=60 frames (keyframe captured from the delta mirrors +
-  a bundle ref + the same EVAL/FRAM/EPOC bytes CTRC v1 always had),
-  whole-segment eviction past `cm.trace.ring.seconds` (default 30,
-  console-tunable, never in traces). Bounded: 31 segs / ~1 MB after
-  2400 sandbox frames. `--record` is now a PIN over the ring;
-  record_stop writes byte-identical files to the old linear recorder
-  (validated chunk-by-chunk against a pre-change worktree recording of
-  the same session — only SNAP.CODE differed, engine sources changed).
-  Out-of-band restores auto-reset the ring via the cm.sim counter
-  discontinuity watch. Ring session state lives on the module table
-  (survives trace.lua self-reload, dies with the VM by design).
-- **The time machine (cm.scrub, F4)**: sim freezes, a bottom panel
-  scrubs the ring — timeline slider, |< −60 < play > +60 >| transport,
-  arrow-key steps, the frame's held actions decoded from its input
-  record. The playhead state is written straight into the live
-  buffers/doc (state.restore_tables; no game code runs — game.draw
-  renders the past, the F1 inspector reads it). `close` returns to the
-  present, timeline intact; `rewind here` truncates the future
-  (trace.rewind restores the bundle as of that frame if it differs,
-  cm.main.after_restore re-runs init and clears an error pause — the
-  debugging loop is crash → F4 → scrub back → watch it coming);
-  `save .ctrace` exports the ring to the project dir (gitignored).
-- **Replay playback**: `cm.scrub.open_replay("file.ctrace")` loads a
-  trace INTO the ring (trace.ring_load: SNAP → state+code restore,
-  KEYF → segment boundaries, EPOCs folded into per-segment bundles)
-  and auto-plays it state-per-frame, no re-sim — committed goldens
-  replay through their own bundled code epochs. "play from here" /
-  "finish" adopt the trace's timeline at the playhead/end; live play
-  then records onward from inside the replay. The load is deferred to
-  the chrome phase so the triggering console eval can't poison the
-  timeline (in a verify re-sim it's a recorded no-op).
-- **Suite under `nix flake check`** (checks.goldens) sharing the same
-  script as `nix run .#test`: selftest (22308 checks) + 17 trace
-  goldens + **3 pixel goldens** on pinned lavapipe
-  (tests/pixels/<name>.png + .args sidecar, one argv token per line,
-  byte-compared: sandbox attract f120, tour mid-flight f600,
-  uigallery chrome f30).
+## What works right now (the engine, M0–M5)
 
-## Verified
+Boot + live sessions + hot reload + crash parachute; the PAL draw/state/input/
+trace stack; the determinism kit (fixed 60 Hz, engine PRNG, cm.math, named
+buffers + canonical doc tree); snapshot/restore with code bundles (D012);
+cm.ui/console/repl/perf; error containment (game errors pause, never kill);
+cm.tilemap with one-way platforms; the platformer sandbox; the editor +
+inspector + prop palette (everything edits via recorded EVALs); the M5 **time
+machine** (always-on segment ring D032, F4 scrubber, rewind, `.ctrace` export,
+replay playback); the suite under `nix flake check`. Detail: ARCHITECTURE.md +
+DECISIONS D001–D032 + git history.
 
-- Agent-verified (this session): suite ALL GREEN both via `nix run
-  .#test` and `nix flake check`. Old-vs-new recorder byte-identity
-  (573 chunks, same session, worktree A/B). Headless scripted flows:
-  open/scrub/close resumes the present seamlessly; rewind truncates
-  and the sim continues on the rewound timeline; export at f300 →
-  replay in a fresh session → seek → adopt at f150 → ring records
-  onward; kitcheck golden (older code epoch) replays via its bundle.
-  t_ring selftests pin eviction, state_at (bufs/counter/doc/input),
-  export chunk order, rewind+resume, discontinuity reset, EPOC
-  pass-through, pin SNAP == live snapshot bytes.
-- Human-verified (2026-06-12, M5 sign-off): the time machine rewind
-  "feels good"; the inertial scroll and the mantle leniency (D030) are
-  "solid" — all three locked in. M4 feel locks (D029/D031) carry over.
+## Next step (M6 — windows port)
 
-## Next step (M6 — audio)
+1. Read PLAN M6, ARCHITECTURE ("two layers", PAL API table, Rendering), and the
+   flake. The dev box is NixOS on WSL2 and can run both Linux and Windows
+   binaries (D004).
+2. mingw cross toolchain in `flake.nix`; cross-build the PAL against SDL3 for
+   Windows; package `SDL3.dll`; run `cosmic.exe projects/sandbox` on the win11
+   host via WSL interop. SDL_GPU/Vulkan backend (native dzn/RTX or lavapipe).
+3. Fix the **"windowed needs cwd=repo-root"** debt as part of packaging
+   (long-deferred to packaging).
+4. **Parity proof, cheaply**: record a fresh `.ctrace` on Linux, `--verify` it
+   on Windows (and vice versa) — state is pure CPU so it must be byte-exact.
+   Do **not** re-bless the committed golden suite here; that re-cut belongs to
+   M7 (new movement + real assets), so M6's throwaway parity traces aren't
+   redone.
 
-1. Read PLAN M6 + DECISIONS for prior audio notes; design the PAL FM
-   synth core (voices × 4-op, envelopes, feedback, a few algorithms)
-   — PAL API addition, so: ADR + API table update + `pal.x_` prefix
-   per the stability contract.
-2. Patches/sequencing in Lua (synth state is sim state; commands
-   timestamped in the sample domain from the frame counter), sandbox
-   sfx (jump/land/throw), PCM-hash audio goldens.
+After M6: **M7 — movement overhaul** (D035, GAME.md §4) — rip out the old
+controller, build the MapleStory moveset as live knobs, calibrate CW/CH, re-cut
+the attract demo + goldens, human feel sign-off (native on win11).
 
 ## Known small items / debts
 
-- Calling `cm.trace.rewind()` (or `cm.scrub.rewind_here()`) from the
-  console mid-play records that eval into the very timeline it
-  rewrites — exported traces re-execute it on verify. Use F4; only
-  `open_replay` is deferred-safe. (Panel-only guard if it ever bites.)
-- Scrubbing previews the past with CURRENT draw code; only rewind
-  restores the frame's bundle. Visual-only quirk after mid-ring
-  reloads.
-- Adopting a replay (or any snapshot restore) enters bundle mode: disk
-  hot reload stays paused until `cm.adopt_disk()` (existing D012
-  semantics, now reachable via the scrubber).
-- Pinned recordings (`--record`) exempt segments from eviction — long
-  recordings grow memory like the old recorder did (D032 revisit:
-  pal.x_append_file streaming).
-- Inspector drags echo one eval per changed frame; strings read-only;
-  no add/delete; no sliders (range metadata via attach, D027).
-- Dragging a sim-rewritten buffer cell "fights" (live-edit semantics).
-- Demo choreography assumes the procedural map + LOCKED stock knobs
-  (D025); reset + stock for the real tour.
-- Windowed mode requires cwd = repo root (fix at M10 packaging).
-- Texture re-create leaks on VM reboot persist by design; buffer husks
-  have the inspector free button.
-- repl env caveat (D022): pre-recording env assignments don't travel.
-- props separation can squeeze a crate into a wall in pathological
-  piles; belly slide keeps the standing hitbox.
+- **Golden suite is intentionally stale** (D033): committed `.ptrace` files
+  carry the old PTRC magic *and* old-movement choreography; `nix run .#test`
+  trace/pixel goldens are red until re-cut at M7. **selftest** (22308 checks,
+  driver-independent) is the live net meanwhile.
+- `projects/sandbox/map.dat` is **untracked local state** that shadows the
+  procedural map at boot (PROCESS warns about it for goldens); left as-is.
+- Confirm the rename *choices* `cm` (prefix) and `.ctrace` (ext) are
+  acceptable — one sed to change now, frozen after 1.0 (D033).
+- Carry-over M5/M4 debts still stand: console-eval rewind caveat, scrub previews
+  with current draw code, bundle-mode-after-restore pauses disk reload, pinned
+  recordings grow memory, inspector strings read-only / no add-delete, props can
+  squeeze into a wall in pathological piles. (Full list was in the M5 STATUS in
+  git history if one bites.)
 
-## Open questions for the human
+## Open questions for the human (GAME.md §11)
 
-- None — slate clear as of 2026-06-12: time machine rewind feel,
-  inertial scroll, mantle, and tour v2 (incl. the finale re-cut) all
-  signed off ("exercises all the mechanics correctly").
+1. **Fiction spine** (GAME.md §2) — does "reality-bending tech unifies movement
+   + sandbox + dread; area-completion stabilizes reality → prop-spawn" land?
+2. **Teleport modes** — what do the A↔B modes mechanically differ in?
+3. **Moveset availability** — all traversal from the start (agent's lean), or
+   stage some as upgrades?
+4. **Off-earth areas** — how many, and the earth↔cosmic structure?
+5. **Bosses** — rough count and what makes them tick?
+6. **Save model** — checkpoint per map, or free-save on the snapshot infra?
+
+(Plus the always-open: art is human-authored; the agent designs map layouts +
+scenery from primitives and writes story/quests once we reach M-content.)
