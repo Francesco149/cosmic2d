@@ -69,9 +69,9 @@ local O = {
   grappling = 68, gx = 72, gy = 76, grapple_cd = 80,
   tp_mode = 84, tp_cd = 88, attack_t = 92,
   squash_t = 96, stretch_t = 100, anim = 104, land = 108, dust = 112,
-  tp_flash = 116, fj_used = 120, htipy = 124,
+  tp_flash = 116, fj_used = 120, htipy = 124, reel_t = 128,
 }
-local SIZE = 128
+local SIZE = 132
 
 M.W, M.H = 12, 18 -- body box; refreshed from cw/ch knobs each init/step
 
@@ -242,6 +242,7 @@ function M.step(ctl)
   local grappling = buf:f32(O.grappling) -- 0 idle, 1 extending, 2 reeling
   local gx, gy = buf:f32(O.gx), buf:f32(O.gy)
   local htipy = buf:f32(O.htipy) -- the climbing hook tip's y (extend phase)
+  local reel_t = buf:f32(O.reel_t) -- frames spent reeling (min-duration guard)
   local grapple_cd = buf:f32(O.grapple_cd)
   local tp_mode, tp_cd = buf:f32(O.tp_mode), buf:f32(O.tp_cd)
   local attack_t = buf:f32(O.attack_t)
@@ -283,7 +284,8 @@ function M.step(ctl)
                             k.grapple_range_min_pref)
     if ty then
       grappling, gy, gx = 1, ty, x + W * 0.5 -- 1 = extending
-      htipy, grapple_used = y, 1 -- the tip starts at the player, climbs to gy
+      htipy, grapple_used, reel_t = y, 1, 0 -- tip starts at the player, climbs
+      vx = 0 -- starting a grapple cancels all horizontal momentum
       ring(x + W * 0.5, y, 8, 60, 3.0, 4.0, 0.10, 0.22)
     end
   end
@@ -294,10 +296,14 @@ function M.step(ctl)
     elseif grappling == 1 then -- EXTENDING: the hook climbs; you keep falling
       htipy = htipy - k.grapple_extend * DT
       if htipy <= gy then grappling, htipy = 2, gy end -- connect -> reel
-    else -- grappling == 2: REELING from the velocity you connected with
-      vy = m.max(vy - k.grapple_accel * DT, -k.grapple_vmax)
-      vx = approach(vx, 0, k.grapple_accel * DT)
-      if (y + H) <= gy then grappling, grapple_cd = 0, k.grapple_cd end
+    else -- grappling == 2: REELING from the velocity you connected with. Stop
+      reel_t = reel_t + 1 -- a couple of CH SHORT of the platform so the residual
+      vy = m.max(vy - k.grapple_accel * DT, -k.grapple_vmax) -- coasts up under
+      vx = approach(vx, 0, k.grapple_accel * DT) -- gravity (damps the launch);
+      if (y + H) <= gy + k.grapple_stop_ch * H -- a min duration keeps very
+         and reel_t >= k.grapple_min_t then    -- short grapples a real launch
+        grappling, grapple_cd = 0, k.grapple_cd
+      end
     end
   end
 
@@ -324,9 +330,9 @@ function M.step(ctl)
   if press then
     if grounded or coyote > 0 then
       jbuf = k.buffer
-    elseif ctl.up and upjumped == 0 then -- UP JUMP (fixed vertical impulse)
-      vy = -k.upjump_v
-      upjumped, coyote = 1, 0
+    elseif ctl.up and upjumped == 0 then -- UP JUMP — rise upjump_h above here
+      vy = -m.sqrt(2.0 * g_rise * k.upjump_h) -- (height-based: survives gravity
+      upjumped, coyote = 1, 0                 -- tweaks; time it late for less)
       ring(x + W * 0.5, y + H, 9, 80, 3.0, 4.0, 0.12, 0.26)
     elseif upjumped == 0 and fj_used == 0 then -- FLASH JUMP (once per airtime;
       vx = facing * k.fj_vx                    -- also locked out by an up-jump)
@@ -355,7 +361,7 @@ function M.step(ctl)
                   and grappling == 0
   if ctl.hop_pressed and can_hop then
     vx = vx + facing * k.hop_vx
-    vy = -k.hop_vy
+    vy = -m.sqrt(2.0 * g_rise * k.hop_h) -- height-based (survives gravity tweaks)
     hop_used, hop_active = 1, 1
     puff(x + W * 0.5, y + H, 4, 0.8)
   end
@@ -494,7 +500,8 @@ function M.step(ctl)
   buf:f32(O.hop_active, hop_active); buf:f32(O.fluttering, fluttering)
   buf:f32(O.flutter_t, flutter_t); buf:f32(O.hop_cd, hop_cd)
   buf:f32(O.grappling, grappling); buf:f32(O.gx, gx); buf:f32(O.gy, gy)
-  buf:f32(O.htipy, htipy); buf:f32(O.grapple_cd, grapple_cd)
+  buf:f32(O.htipy, htipy); buf:f32(O.reel_t, reel_t)
+  buf:f32(O.grapple_cd, grapple_cd)
   buf:f32(O.tp_mode, tp_mode); buf:f32(O.tp_cd, tp_cd)
   buf:f32(O.attack_t, attack_t)
   buf:f32(O.squash_t, m.max(0, squash_t - DT))

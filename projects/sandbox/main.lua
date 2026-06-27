@@ -54,27 +54,33 @@ local KNOBS = {
     -- walk (slow — you fly, you don't run) + minimal air control
     walk_speed = 42, walk_accel = 640, ground_fric = 900,
     air_accel = 110, air_fric = 36,
-    -- jump: fixed apex ≈ 1 CH; hold to auto-repeat on landing. apex_t is ×1.5
-    -- (vs 15) for ~1.5× airtime at the SAME height — the curve reaches jump_h
-    -- in apex_t frames, so airtime scales with apex_t and height stays jump_h
-    -- (human feel, 2026-06-28). The weaker gravity that falls out means the
-    -- fixed-velocity impulses below are scaled ×2/3 to hold their heights.
-    jump_h = 20, jump_apex_t = 22.5, fall_mul = 1.3, fall_max = 360,
+    -- jump: fixed apex ≈ 1 CH; hold to auto-repeat on landing. apex_t is set
+    -- for ~2/3 s total airtime (human feel, 2026-06-28): airtime ≈ apex_t ×
+    -- (1 + 1/sqrt(fall_mul)) frames; height stays jump_h regardless. The
+    -- velocity-derived moves below are HEIGHT-based now, so retuning gravity
+    -- keeps their heights automatically.
+    jump_h = 20, jump_apex_t = 21.3, fall_mul = 1.3, fall_max = 360,
     coyote = 6, buffer = 5, mantle = 4,
-    -- flash jump: ONCE per airtime, forward dash + sonic boom (fj_vy ×2/3)
+    -- flash jump: ONCE per airtime, forward dash + sonic boom
     fj_vx = 186, fj_vy = -52,
-    -- up jump: fixed vertical impulse (jump→up-jump chain ≈ 5 CH; ×2/3)
-    upjump_v = 178.67,
-    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd; hop_vy ×2/3).
-    -- flutter_grace: airborne frames you can hold E before the hover (and its
-    -- cooldown) engages — so a normal TAP hop never arms a cooldown.
-    hop_vx = 120, hop_vy = 100, flutter_grace = 10,
+    -- up jump: rise upjump_h px above the launch (jump→up-jump chain)
+    upjump_h = 56,
+    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd). hop_h =
+    -- the hop's rise px. flutter_grace: airborne frames you can hold E before
+    -- the hover (and its cooldown) engages — so a normal TAP never arms a cd.
+    hop_vx = 120, hop_h = 18, flutter_grace = 10,
     flutter_max = 600, flutter_fall = 26, flutter_decel = 520, hop_cd = 600,
     -- grapple: the hook EXTENDS to a top above at grapple_extend px/s (~1
-    -- screenful/s) under gravity, THEN reels you in (slow accel). 3 s cd.
+    -- screenful/s) under gravity, THEN reels you in (slow accel), STOPPING
+    -- grapple_stop_ch character-heights short of the platform so the residual
+    -- coasts up under gravity (damps the launch). grapple_min_t guarantees a
+    -- short launch even on a very close target. 3 s cd.
+    -- vmax is the LAUNCH cap: the post-reel coast ≈ vmax²/(2·gravity), so it
+    -- dominates the launch height. Lowered 300→220 to dampen it (~2 CH overshoot
+    -- after the early stop) while keeping the accel feel. grapple_accel unchanged.
     grapple_range_max = 244, grapple_range_min_pref = 120,
-    grapple_extend = 270, grapple_accel = 720, grapple_vmax = 300,
-    grapple_cd = 180,
+    grapple_extend = 270, grapple_accel = 720, grapple_vmax = 220,
+    grapple_stop_ch = 2.0, grapple_min_t = 6, grapple_cd = 180,
     -- teleport: ~5 CW blink, max 2/s
     tp_dist = 60, tp_min_interval = 30,
     -- continuous attack (slash stub; enemies M12)
