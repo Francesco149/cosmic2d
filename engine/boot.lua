@@ -22,6 +22,12 @@ local bundle_mode = false -- restored-snapshot code active: disk reload paused
 
 cm = { code_epoch = 0 }
 
+-- the hot-reload poll checks file mtimes 4x/s; pal.watch_mtime reads a cache
+-- the PAL's watcher thread refreshes off the main thread, so the poll never
+-- stats on the main thread (the rhythmic frame spikes over a slow FS, e.g.
+-- WSL 9p). Falls back to a direct stat on an older PAL (contract rule 7).
+local watch_mtime = pal.watch_mtime or pal.mtime
+
 local function module_path(name)
   -- dotted segments of [%w_%-] only: no slashes, no empty segments, so the
   -- result can never escape its root
@@ -125,7 +131,7 @@ function cm.reload(force)
   table.sort(names)
   for _, name in ipairs(names) do
     local m = registry[name]
-    local mt = pal.mtime(m.path)
+    local mt = watch_mtime(m.path)
     if force or mt ~= m.mtime then
       m.mtime = mt
       local src = pal.read_file(m.path)

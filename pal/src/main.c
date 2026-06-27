@@ -95,6 +95,59 @@ static bool watches_changed(void) {
   return changed;
 }
 
+/* Background file-watcher: stats the watch list off the main thread so the
+ * engine's hot-reload poll never blocks on a slow FS (WSL 9p / drvfs). The
+ * list is append-only with stable indices, so we read the count under the
+ * lock, stat each path lock-free (the slow part), then write cur_mtime back
+ * under the lock. Detached: it runs until the process exits. */
+static int watch_thread_fn(void *unused) {
+  (void)unused;
+  for (;;) {
+    SDL_LockMutex(G.watch_mutex);
+    int n = G.watch_count;
+    SDL_UnlockMutex(G.watch_mutex);
+    for (int i = 0; i < n; i++) {
+      SDL_PathInfo info;
+      int64_t mt =
+          SDL_GetPathInfo(G.watch[i].path, &info) ? (int64_t)info.modify_time : 0;
+      SDL_LockMutex(G.watch_mutex);
+      G.watch[i].cur_mtime = mt;
+      SDL_UnlockMutex(G.watch_mutex);
+    }
+    SDL_Delay(200);
+  }
+  return 0;
+}
+
+static void watch_start(void) {
+  if (G.watch_started) return;
+  if (!G.watch_mutex) G.watch_mutex = SDL_CreateMutex();
+  SDL_Thread *t = SDL_CreateThread(watch_thread_fn, "cm-watch", NULL);
+  if (t) {
+    SDL_DetachThread(t);
+    G.watch_started = true;
+  }
+}
+
+int64_t pal_watch_mtime(const char *path) {
+  if (!G.watch_started) watch_start(); /* live-session lazy spawn */
+  int64_t mt = -1;
+  if (G.watch_mutex) {
+    SDL_LockMutex(G.watch_mutex);
+    for (int i = 0; i < G.watch_count; i++)
+      if (SDL_strcmp(G.watch[i].path, path) == 0) {
+        mt = G.watch[i].cur_mtime;
+        break;
+      }
+    SDL_UnlockMutex(G.watch_mutex);
+  }
+  if (mt < 0) { /* unwatched path: one-off direct stat */
+    SDL_PathInfo info;
+    mt = SDL_GetPathInfo(path, &info) ? (int64_t)info.modify_time : 0;
+  }
+  return mt;
+}
+
 static void push_event(PalEvent e) {
   if (G.event_count < PAL_MAX_EVENTS) G.events[G.event_count++] = e;
 }

@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 3
+#define PAL_VERSION_API 4
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -72,7 +72,8 @@ typedef struct {
 
 typedef struct {
   char *path;
-  int64_t mtime;
+  int64_t mtime;     /* consumer baseline (parachute / engine last-seen) */
+  int64_t cur_mtime; /* current mtime, refreshed by the watcher thread */
 } PalWatch;
 
 typedef struct {
@@ -127,15 +128,24 @@ typedef struct {
 
   PalBuf *bufs;
 
-  /* crash-parachute watch list (checked only in error state) */
+  /* watch list: crash-parachute (inline stat, error state) + the background
+   * file-watcher thread that refreshes cur_mtime so the engine's hot-reload
+   * poll never stats on the main thread (pal.watch_mtime, dev-only). Append-
+   * only: entries are never removed, so indices are stable across threads. */
   PalWatch watch[PAL_MAX_WATCH];
   int watch_count;
+  SDL_Mutex *watch_mutex; /* guards watch_count growth + cur_mtime */
+  bool watch_started;     /* watcher thread spawned (lazily, live only) */
 } Pal;
 
 extern Pal G;
 
 /* main.c */
 void pal_log(const char *fmt, ...);
+/* cached mtime of a watched path, refreshed off-thread; lazily spawns the
+ * watcher thread on first call (live sessions only). Falls back to a direct
+ * stat for unwatched paths. Dev-only — never sim state. */
+int64_t pal_watch_mtime(const char *path);
 
 /* gfx.c */
 typedef struct {

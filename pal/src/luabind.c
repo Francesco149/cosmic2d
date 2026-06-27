@@ -671,14 +671,31 @@ static int l_mkdir(lua_State *L) {
 
 static int l_watch_add(lua_State *L) {
   const char *path = luaL_checkstring(L, 1);
-  for (int i = 0; i < G.watch_count; i++)
-    if (strcmp(G.watch[i].path, path) == 0) return 0;
-  if (G.watch_count == PAL_MAX_WATCH)
-    return luaL_error(L, "watch list full");
   SDL_PathInfo info;
   int64_t mt = SDL_GetPathInfo(path, &info) ? (int64_t)info.modify_time : 0;
-  G.watch[G.watch_count++] = (PalWatch){.path = SDL_strdup(path), .mtime = mt};
+  if (!G.watch_mutex) G.watch_mutex = SDL_CreateMutex();
+  SDL_LockMutex(G.watch_mutex); /* sync count growth with the watcher thread */
+  bool dup = false, full = false;
+  for (int i = 0; i < G.watch_count; i++)
+    if (strcmp(G.watch[i].path, path) == 0) {
+      dup = true;
+      break;
+    }
+  if (!dup) {
+    if (G.watch_count == PAL_MAX_WATCH)
+      full = true;
+    else
+      G.watch[G.watch_count++] =
+          (PalWatch){.path = SDL_strdup(path), .mtime = mt, .cur_mtime = mt};
+  }
+  SDL_UnlockMutex(G.watch_mutex);
+  if (full) return luaL_error(L, "watch list full");
   return 0;
+}
+
+static int l_watch_mtime(lua_State *L) {
+  lua_pushinteger(L, (lua_Integer)pal_watch_mtime(luaL_checkstring(L, 1)));
+  return 1;
 }
 
 /* ---------- module ---------- */
@@ -720,6 +737,7 @@ static const luaL_Reg pal_funcs[] = {
     {"mtime", l_mtime},
     {"mkdir", l_mkdir},
     {"watch_add", l_watch_add},
+    {"watch_mtime", l_watch_mtime},
     {NULL, NULL}};
 
 void pal_lua_register(lua_State *L) {
