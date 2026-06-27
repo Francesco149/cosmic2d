@@ -1,4 +1,4 @@
--- pt.math — deterministic transcendentals for sim code.
+-- cm.math — deterministic transcendentals for sim code.
 --
 -- libm sin/cos/atan differ in the last bits between platforms/libcs, which
 -- breaks bit-exact replay; these implementations use only IEEE-754 f64
@@ -66,7 +66,7 @@ end
 
 local function checkangle(x, who)
   if not (x >= -MAXARG and x <= MAXARG) then
-    error("pt.math." .. who .. ": |x| > 2^20 (or NaN) — wrap your angles", 3)
+    error("cm.math." .. who .. ": |x| > 2^20 (or NaN) — wrap your angles", 3)
   end
 end
 
@@ -132,7 +132,7 @@ local function atan_poly(x)
 end
 
 function M.atan(x)
-  if x ~= x then error("pt.math.atan: NaN", 2) end
+  if x ~= x then error("cm.math.atan: NaN", 2) end
   local sign = x < 0
   local ax = abs(x)
   local r
@@ -165,7 +165,7 @@ local PI_LO = 1.22464679914735317720e-16 -- pi = M.pi + PI_LO
 
 -- atan2(y, x): angle of the point (x, y), in (-pi, pi]
 function M.atan2(y, x)
-  if y ~= y or x ~= x then error("pt.math.atan2: NaN", 2) end
+  if y ~= y or x ~= x then error("cm.math.atan2: NaN", 2) end
   if y == 0.0 then
     if x >= 0.0 then return y end -- +-0 by sign of y
     if 1.0 / y < 0.0 then return -(M.pi + PI_LO) end -- y is -0
@@ -189,13 +189,13 @@ end
 -- asin/acos via atan2 identities; inputs clamped to [-1, 1] (game-friendly:
 -- dot products drift a hair out of range and should not crash the sim)
 function M.asin(x)
-  if x ~= x then error("pt.math.asin: NaN", 2) end
+  if x ~= x then error("cm.math.asin: NaN", 2) end
   if x < -1.0 then x = -1.0 elseif x > 1.0 then x = 1.0 end
   return M.atan2(x, sqrt((1.0 - x) * (1.0 + x)))
 end
 
 function M.acos(x)
-  if x ~= x then error("pt.math.acos: NaN", 2) end
+  if x ~= x then error("cm.math.acos: NaN", 2) end
   if x < -1.0 then x = -1.0 elseif x > 1.0 then x = 1.0 end
   return M.atan2(sqrt((1.0 - x) * (1.0 + x)), x)
 end
@@ -234,15 +234,15 @@ local function pow2i(n) -- exact 2^n for integer n in [-1074, 1023]
 end
 
 function M.exp2(x)
-  if x ~= x then error("pt.math.exp2: NaN", 2) end
-  if x > 1024.0 then error("pt.math.exp2: overflow (x > 1024)", 2) end
+  if x ~= x then error("cm.math.exp2: NaN", 2) end
+  if x > 1024.0 then error("cm.math.exp2: overflow (x > 1024)", 2) end
   if x < -1074.0 then return 0.0 end
   local n = floor(x + 0.5)
   local r = x - n
   return exp2_frac(r) * pow2i(math.tointeger(n))
 end
 
--- exact IEEE; provided here so sim code can grab everything from pt.math
+-- exact IEEE; provided here so sim code can grab everything from cm.math
 M.sqrt = math.sqrt
 M.floor = math.floor
 M.ceil = math.ceil

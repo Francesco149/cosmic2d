@@ -16,24 +16,24 @@ sfx in the sandbox, PCM-hash audio goldens).
 ## What works right now
 
 Everything from M0–M4 (boot, live sessions, hot reload, parachute, PAL
-draw/state/input/trace stack, determinism kit, goldens, pt.ui/console/
-repl/perf, error containment, pt.tilemap, the platformer sandbox, the
+draw/state/input/trace stack, determinism kit, goldens, cm.ui/console/
+repl/perf, error containment, cm.tilemap, the platformer sandbox, the
 editor + inspector + prop palette, the LOCKED stock feel D029/D030,
 tour v2) plus M5:
 
-- **The segment ring (D032, pt.trace)**: always-on in live sessions —
+- **The segment ring (D032, cm.trace)**: always-on in live sessions —
   segments of kf=60 frames (keyframe captured from the delta mirrors +
-  a bundle ref + the same EVAL/FRAM/EPOC bytes PTRC v1 always had),
-  whole-segment eviction past `pt.trace.ring.seconds` (default 30,
+  a bundle ref + the same EVAL/FRAM/EPOC bytes CTRC v1 always had),
+  whole-segment eviction past `cm.trace.ring.seconds` (default 30,
   console-tunable, never in traces). Bounded: 31 segs / ~1 MB after
   2400 sandbox frames. `--record` is now a PIN over the ring;
   record_stop writes byte-identical files to the old linear recorder
   (validated chunk-by-chunk against a pre-change worktree recording of
   the same session — only SNAP.CODE differed, engine sources changed).
-  Out-of-band restores auto-reset the ring via the pt.sim counter
+  Out-of-band restores auto-reset the ring via the cm.sim counter
   discontinuity watch. Ring session state lives on the module table
   (survives trace.lua self-reload, dies with the VM by design).
-- **The time machine (pt.scrub, F4)**: sim freezes, a bottom panel
+- **The time machine (cm.scrub, F4)**: sim freezes, a bottom panel
   scrubs the ring — timeline slider, |< −60 < play > +60 >| transport,
   arrow-key steps, the frame's held actions decoded from its input
   record. The playhead state is written straight into the live
@@ -41,10 +41,10 @@ tour v2) plus M5:
   renders the past, the F1 inspector reads it). `close` returns to the
   present, timeline intact; `rewind here` truncates the future
   (trace.rewind restores the bundle as of that frame if it differs,
-  pt.main.after_restore re-runs init and clears an error pause — the
+  cm.main.after_restore re-runs init and clears an error pause — the
   debugging loop is crash → F4 → scrub back → watch it coming);
-  `save .ptrace` exports the ring to the project dir (gitignored).
-- **Replay playback**: `pt.scrub.open_replay("file.ptrace")` loads a
+  `save .ctrace` exports the ring to the project dir (gitignored).
+- **Replay playback**: `cm.scrub.open_replay("file.ctrace")` loads a
   trace INTO the ring (trace.ring_load: SNAP → state+code restore,
   KEYF → segment boundaries, EPOCs folded into per-segment bundles)
   and auto-plays it state-per-frame, no re-sim — committed goldens
@@ -88,7 +88,7 @@ tour v2) plus M5:
 
 ## Known small items / debts
 
-- Calling `pt.trace.rewind()` (or `pt.scrub.rewind_here()`) from the
+- Calling `cm.trace.rewind()` (or `cm.scrub.rewind_here()`) from the
   console mid-play records that eval into the very timeline it
   rewrites — exported traces re-execute it on verify. Use F4; only
   `open_replay` is deferred-safe. (Panel-only guard if it ever bites.)
@@ -96,7 +96,7 @@ tour v2) plus M5:
   restores the frame's bundle. Visual-only quirk after mid-ring
   reloads.
 - Adopting a replay (or any snapshot restore) enters bundle mode: disk
-  hot reload stays paused until `pt.adopt_disk()` (existing D012
+  hot reload stays paused until `cm.adopt_disk()` (existing D012
   semantics, now reachable via the scrubber).
 - Pinned recordings (`--record`) exempt segments from eviction — long
   recordings grow memory like the old recorder did (D032 revisit:

@@ -15,18 +15,18 @@
 -- Module split: level (tiles + map + backdrop), player (controller),
 -- props (crates), fx (particles), demo (attract script), pix (art helper).
 -- Determinism: sim state in named buffers + doc tree only; randomness from
--- pt.rand; trig from pt.math; fixed dt (ARCHITECTURE "Determinism").
+-- cm.rand; trig from cm.math; fixed dt (ARCHITECTURE "Determinism").
 
-local m = pt.require("pt.math")
-local state = pt.require("pt.state")
-local input = pt.require("pt.input")
-local text = pt.require("pt.text")
-local gfx = pt.require("pt.gfx")
-local level = pt.require("level")
-local player = pt.require("player")
-local props = pt.require("props")
-local fx = pt.require("fx")
-local demo = pt.require("demo")
+local m = cm.require("cm.math")
+local state = cm.require("cm.state")
+local input = cm.require("cm.input")
+local text = cm.require("cm.text")
+local gfx = cm.require("cm.gfx")
+local level = cm.require("level")
+local player = cm.require("player")
+local props = cm.require("props")
+local fx = cm.require("fx")
+local demo = cm.require("demo")
 
 local W, H = pal.gfx_size()
 
@@ -69,7 +69,7 @@ local KNOBS = {
 local cam
 
 local function knob_file()
-  return pt.main.args.project .. "/knobs.dat"
+  return cm.main.args.project .. "/knobs.dat"
 end
 
 -- tuned knobs persist next to project.lua (knobs.dat: canonical doc bytes
@@ -144,7 +144,7 @@ function game.init()
 
   -- the M4 editor: what to paint, where the camera is, which boxes to
   -- outline. The getter runs once per editor frame and only reads.
-  pt.editor.attach(function()
+  cm.editor.attach(function()
     return {
       tm = level.tm,
       atlas = level.tex,
@@ -268,7 +268,7 @@ function game.step()
   if DEMO_DBG and state.frame() % DEMO_DBG == 0 then
     local px, py = player.pos()
     local function pk(off)
-      return pt.state.buf_peek("sandbox.player", "f32", off)
+      return cm.state.buf_peek("sandbox.player", "f32", off)
     end
     print(("DBG f=%d x=%d y=%d vy=%d dive=%d charge=%d carry=%d"):format(
       state.frame(), px // 1, py // 1, pk(12) // 1, pk(64) // 1,
@@ -291,7 +291,7 @@ function game.draw()
   fx.draw()
 
   gfx.layer(0)
-  local rec = pt.trace and pt.trace.recording and pt.trace.recording()
+  local rec = cm.trace and cm.trace.recording and cm.trace.recording()
   text.draw(3, 3, ("frame %d%s"):format(frame, rec and "  REC" or ""),
             { g = 0.95, b = 0.8, a = 0.9 })
   if state.doc.demo ~= 0 then

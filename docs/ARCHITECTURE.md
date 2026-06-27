@@ -1,4 +1,4 @@
-# pettan2d — architecture
+# cosmic2d — architecture
 
 The technical design. DECISIONS.md records *why* each choice was made and when
 to revisit; this file describes *what is*. Keep it current when code changes.
@@ -34,32 +34,32 @@ to revisit; this file describes *what is*. Keep it current when code changes.
 
 ### Boot flow
 
-1. `pettan [project_dir] [flags…]` — C parses nothing; argv is handed to Lua
+1. `cosmic [project_dir] [flags…]` — C parses nothing; argv is handed to Lua
    as `pal.argv`.
 2. PAL creates the Lua state and runs `engine/boot.lua` — a deliberately thin
-   shim that defines the **pt module system** and hands off to `pt.main`.
-3. `pt.main.boot()` parses flags, reads `<project>/project.lua` (plain table:
+   shim that defines the **cm module system** and hands off to `cm.main`.
+3. `cm.main.boot()` parses flags, reads `<project>/project.lua` (plain table:
    name, internal w/h, window scale, entry, seed), calls `pal.gfx_init{…}`,
    requires the project entry module, dispatches `--record`/`--verify` modes.
-4. C loop: each iteration calls the global `pt_tick()` under `pcall`.
+4. C loop: each iteration calls the global `cm_tick()` under `pcall`.
    Lua decides everything inside the tick (sim steps, drawing, reload polls).
 
-### The module system (pt.require)
+### The module system (cm.require)
 
-- `pt.*` names map to `engine/pt/` (`pt.math` → `engine/pt/math.lua`) and
-  attach to the `pt` global on load; other names map into the project dir.
+- `cm.*` names map to `engine/cm/` (`cm.math` → `engine/cm/math.lua`) and
+  attach to the `cm` global on load; other names map into the project dir.
   Dotted-segment validation means module paths can never escape their root.
 - A module file returns a table. The loader **retains every chunk's source
-  text** (`pt.modules()` = the content-addressed D012 bundle) and watches
+  text** (`cm.modules()` = the content-addressed D012 bundle) and watches
   every loaded file for the crash parachute.
-- Hot reload (`pt.reload`, polled by pt.main outside capped runs) re-executes
+- Hot reload (`cm.reload`, polled by cm.main outside capped runs) re-executes
   a changed chunk and repopulates the original table in place — references
   held by other modules stay valid. Chunks are called with
-  `(name, prev_table)`; loop-owning modules like pt.main keep state across
+  `(name, prev_table)`; loop-owning modules like cm.main keep state across
   their own reload via `local M = select(2, ...) or {}`. Module-local
   upvalues reset on reload: sim state lives in named buffers / the doc tree.
-- Snapshot restore runs code **from the bundle** (`pt.restore_bundle`) and
-  pauses disk reload until `pt.adopt_disk()` — D012's explicit adoption step.
+- Snapshot restore runs code **from the bundle** (`cm.restore_bundle`) and
+  pauses disk reload until `cm.adopt_disk()` — D012's explicit adoption step.
 - `game.init()` must be **reload-idempotent** (named buffers persist); the
   same contract makes it restore-safe: every restore is followed by
   `game.init()`.
@@ -69,7 +69,7 @@ to revisit; this file describes *what is*. Keep it current when code changes.
 Two nets, engine first (D023):
 
 - **Engine containment** (live sessions; `--frames`/`--verify` stay
-  fail-fast): pt.main runs require/init/step/draw guarded. A game error
+  fail-fast): cm.main runs require/init/step/draw guarded. A game error
   logs the traceback, pauses the sim, stops any active recording (the trace
   stays valid up to the last good frame) and opens the console with an
   error banner; the REPL drains immediately while paused, so state can be
@@ -99,9 +99,9 @@ instead, all sim state lives in things the PAL can snapshot byte-exactly:
    (`pal.buf_list()`) for snapshot/inspection. Bulk data lives here:
    physics arrays, particle pools, tilemaps, synth state, PRNG state, the
    frame counter. Anonymous buffers (`pal.buf(nil, size)`) are scratch:
-   not persistent, not snapshot. `pt.state.buf_poke/buf_peek(name, kind,
+   not persistent, not snapshot. `cm.state.buf_poke/buf_peek(name, kind,
    off[, v])` edit/read one typed cell by buffer name — the tools' eval
-   unit (D027): live writes route through pt.repl like any sim edit.
+   unit (D027): live writes route through cm.repl like any sim edit.
 2. **The doc tree** — one Lua table of plain data (tables/numbers/strings/
    booleans, no functions/userdata) for irregular state: entity definitions,
    knob values, inventory-ish data. Serialized canonically (sorted keys) by
@@ -151,8 +151,8 @@ What this buys:
   want when hunting a determinism bug (hashes alone can't localize).
 - **Rewind during play** = an always-on in-memory ring trace of the last N
   seconds; "save what just happened" exports it. As of M5 this is real:
-  the ring IS the recorder (D032, pt.trace), F4 opens the scrubber
-  (pt.scrub) over it, and a loaded .ptrace replays through the same panel
+  the ring IS the recorder (D032, cm.trace), F4 opens the scrubber
+  (cm.scrub) over it, and a loaded .ctrace replays through the same panel
   (state-per-frame playback; exiting adopts the trace's timeline).
 
 Cosmetic state (particles, camera shake) is still deterministic sim state —
@@ -160,37 +160,37 @@ pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
 
 ### Concrete M1/M2 formats (v1, all little-endian)
 
-Source of truth for byte layouts: the headers of `engine/pt/chunk.lua`,
+Source of truth for byte layouts: the headers of `engine/cm/chunk.lua`,
 `state.lua`, `input.lua`, `trace.lua`. Summary:
 
-- **Containers** (pt.chunk): `<magic 4cc>` then chunks of
+- **Containers** (cm.chunk): `<magic 4cc>` then chunks of
   `<tag 4cc, u32 version, u32 len, payload>`; unknown tags/versions are
-  skipped, truncation errors loudly. Snapshot magic `PSNP`, trace `PTRC`.
-- **Canonical doc bytes** (pt.state.canon): type-tagged values — 0x00 nil,
+  skipped, truncation errors loudly. Snapshot magic `CSNP`, trace `CTRC`.
+- **Canonical doc bytes** (cm.state.canon): type-tagged values — 0x00 nil,
   0x01/02 false/true, 0x03 i64, 0x04 f64 bits, 0x05 u32-len string,
   0x06 u32-count table with integer keys ascending then string keys
   bytewise. NaN, shared subtables, fractional/boolean keys rejected.
   Equal trees ⇒ identical bytes (hashing + deltas rely on this).
-- **Snapshot** (`PSNP`): CODE (the D012 bundle: name/path/source triples),
+- **Snapshot** (`CSNP`): CODE (the D012 bundle: name/path/source triples),
   BUFS (every named buffer, sorted), DOCT (canonical doc bytes). Trace
   keyframes reuse the format without CODE.
-- **Input record** (pt.input, 10 bytes/frame): u32 action down-bits in
+- **Input record** (cm.input, 10 bytes/frame): u32 action down-bits in
   definition order (≤32 actions), i16 mouse x/y in internal pixels, u8
   mouse-button bits, i8 wheel steps. Applied state (cur+prev) lives in the
-  `pt.input` buffer, so edges (pressed/released) are snapshot-consistent.
+  `cm.input` buffer, so edges (pressed/released) are snapshot-consistent.
   Live sampling has "sticky tap": a sub-frame press+release still lands one
   frame's bit.
-- **Trace** (`PTRC`): HEAD (keyframe interval, project, action names), SNAP
+- **Trace** (`CTRC`): HEAD (keyframe interval, project, action names), SNAP
   (full starting snapshot), per-frame FRAM (input record + per-buffer
   records: kind 0 = `delta1` vs previous frame, 1 = created/resized with
   full bytes, 2 = freed + canonical doc bytes when changed), EVAL before a
   FRAM (console commands drained at the start of that sim frame — D022;
-  verify re-executes them via pt.repl.exec, delta playback ignores them),
+  verify re-executes them via cm.repl.exec, delta playback ignores them),
   KEYF every N frames (code-less snapshot, cross-checked on verify), EPOC
   (changed sources on mid-recording hot reload, applied at the same frame
   on replay), TAIL (frame count). v1 lists every buffer every frame.
-- **Engine sim buffers**: `pt.sim` = `[0]` i64 frame counter, `[8..39]`
-  xoshiro256++ s0..s3, rest reserved. `pt.input` = documented in input.lua.
+- **Engine sim buffers**: `cm.sim` = `[0]` i64 frame counter, `[8..39]`
+  xoshiro256++ s0..s3, rest reserved. `cm.input` = documented in input.lua.
 
 ## Determinism (iron rules)
 
@@ -202,7 +202,7 @@ input trace — across runs, machines, and eventually platforms.
 - All randomness from the engine PRNG (xoshiro-family, state in a named
   buffer). `math.random`/`os.time`/`os.clock` are **banned in sim code**
   (engine/editor convenience code may use them; never inside `sim_step`).
-- No libm transcendentals in sim paths: `pt.math` provides sin/cos/atan2/etc
+- No libm transcendentals in sim paths: `cm.math` provides sin/cos/atan2/etc
   with our own implementations (pure IEEE arithmetic is bit-exact across
   platforms; libm is not). Plain `+ - * /` and `sqrt` on f64 are safe.
 - Lua 5.4 integers are exact; prefer them for counters/ids/fixed-point.
@@ -268,18 +268,18 @@ fragment samplers set 2 / uniforms set 3.
 
 PAL delivers raw events (`pal.poll_events()`): key scancode up/down, mouse,
 window, utf-8 text (while `pal.text_input` is on). The engine UI sees raw
-events first (`pt.ui.frame` filters what the game may sample — see UI
+events first (`cm.ui.frame` filters what the game may sample — see UI
 below); the rest are folded into **actions** via the rebindable action map
 (project + user bindings); the sim reads actions only. Gamepad later = new
 event types + map entries, zero sim changes.
 
-## Engine UI (pt.ui — M2)
+## Engine UI (cm.ui — M2)
 
 Immediate mode: panels and widgets are plain function calls every frame;
 the only retained state is a per-id table (scroll offsets, collapse flags,
 text cursors) keyed by a hierarchical id path (`push_id`/`pop_id`).
-**Dev/render class by iron rule**: pt.ui never touches named buffers, the
-doc tree or pt.rand — UI chrome state survives hot reload (module table),
+**Dev/render class by iron rule**: cm.ui never touches named buffers, the
+doc tree or cm.rand — UI chrome state survives hot reload (module table),
 resets on VM reboot, and is never recorded. What a widget *edits* (a doc
 knob, say) is the caller's write.
 
@@ -295,10 +295,10 @@ knob, say) is the caller's write.
   (label/button/checkbox/slider/number) also take `opts.rect` to place
   explicitly instead of flowing — editors inside virtualized list rows
   (the inspector's cell views).
-- Built on it: **pt.console** (` toggle: log scrollback from the pal ring,
-  filter, REPL line → pt.repl, error banner), **pt.perf** (F3: frame
+- Built on it: **cm.console** (` toggle: log scrollback from the pal ring,
+  filter, REPL line → cm.repl, error banner), **cm.perf** (F3: frame
   graph vs 16.7 ms budget, sim/draw split, `pal.frame_stats`) and
-  **pt.editor** (F1 — see "Editor" below). `, F3 and F1 are
+  **cm.editor** (F1 — see "Editor" below). `, F3 and F1 are
   engine-reserved keys; `editor = false` in project.lua (shipped zips)
   disables all three toggles — the M4 play-mode lockdown — while
   contained-error banners still open the console programmatically.
@@ -312,7 +312,7 @@ knob, say) is the caller's write.
   `--eval CODE` (repeatable) queues a line at boot through the same path,
   so headless capped runs can flip doc switches replayably.
 
-## Tilemaps (pt.tilemap — M3)
+## Tilemaps (cm.tilemap — M3)
 
 A tile grid in a named buffer, self-describing for tools (D024):
 `[0] u32 w | [4] u32 h | [8] u32 tile px | [12] reserved`, then u16 ids
@@ -336,27 +336,27 @@ per the numpy model.
 
 M4 statics (tools): `poke(name,tx,ty,id)` / `peek(name,tx,ty)` edit one
 cell by buffer name — the editor's eval unit (D026; live writes go
-through pt.repl). `save(name,path)` / `load(name,path)` move the raw
+through cm.repl). `save(name,path)` / `load(name,path)` move the raw
 self-describing bytes to/from disk (load is boot-time-only by rule:
 file bytes are not sim input). `cell_line(x0,y0,x1,y1,fn)` walks an
 8-connected Bresenham line (brush drag continuity). `new` returns a
 second value `fresh` — true when cells did not survive (created or
 shape-rebuilt), the "seed a first boot" signal.
 
-## Editor (pt.editor — M4)
+## Editor (cm.editor — M4)
 
 Editor mode v0: F1 toggles editor/play chrome over the running game (the
 sim keeps stepping; keyboard stays with the game, the mouse belongs to
 the editor — unless the swatch-row `paint` checkbox disarms the brush,
 which hands the world's mouse back to the game while panels keep
-capturing over themselves). Dev/render class like all pt.ui chrome (D021) — and by D026
+capturing over themselves). Dev/render class like all cm.ui chrome (D021) — and by D026
 it owns no sim state and never writes any directly: **every edit is a
-pt.repl submission** (`pt.tilemap.poke(...)` per painted cell, the
+cm.repl submission** (`cm.tilemap.poke(...)` per painted cell, the
 cartridge's `reset_eval` string for the reset button), so editing
 records as D022 EVAL chunks and replays/verifies byte-exact. The
 editpaint golden pins this.
 
-Cartridges opt in from `game.init`: `pt.editor.attach(fn)`, where fn()
+Cartridges opt in from `game.init`: `cm.editor.attach(fn)`, where fn()
 is called once per editor frame and returns the live, read-only surface:
 `{ tm, atlas, camx, camy, colliders(), save, reset_eval, props }`. The
 toolbar offers tile swatches built from `tm.tiles` + atlas (id 0 = the
@@ -371,17 +371,17 @@ mouse — spawning is a cartridge command (sandbox:
 `game.props.spawn(x,y)` / `game.props.despawn_at(x,y)`) and records
 like everything else. The editpaint and propspawn goldens pin both.
 
-**The inspector** (pt.inspect, toolbar `inspect` toggle, D027) is the
+**The inspector** (cm.inspect, toolbar `inspect` toggle, D027) is the
 M4 entity list + inspector: a searchable tree over exactly what sim
 state can be (D005) — the doc tree and every named buffer. Doc numbers
 drag-edit (magnitude-scaled speed; integers stay integers, floats stay
 floats), booleans toggle, strings are read-only v0, tables collapse;
 searching shows matching leaves flat with full-path labels. Buffers
 expand to a typed lens view (u8..f64 per buffer) of every cell,
-drag-editable, plus a free button (husk cleanup; hidden for `pt.*`
-engine buffers). Reads are direct; **every write is a pt.repl
+drag-editable, plus a free button (husk cleanup; hidden for `cm.*`
+engine buffers). Reads are direct; **every write is a cm.repl
 submission** — `doc.knobs.move.run = 142.0`,
-`pt.state.buf_poke("sandbox.player","f32",0,920.0)`,
+`cm.state.buf_poke("sandbox.player","f32",0,920.0)`,
 `pal.buf_free("husk")` — so inspector sessions record and verify like
 console sessions (the inspectpoke golden pins all three shapes). The
 panel also works while a contained error has the sim paused (the repl
@@ -406,7 +406,7 @@ ahead by a small fixed latency. Replays regenerate identical PCM.
 ## Directory layout
 
 ```
-pettan2d/
+cosmic2d/
   CLAUDE.md            agent orientation (session-start checklist)
   README.md  LICENSE  flake.nix
   docs/                PLAN, ARCHITECTURE, DECISIONS, PROCESS, STATUS
@@ -416,8 +416,8 @@ pettan2d/
     shaders/           *.vert/*.frag GLSL + committed *.spv
     Makefile
   engine/
-    boot.lua           thin shim: module system + handoff to pt.main
-    pt/                engine modules (main, state, input, rand, math,
+    boot.lua           thin shim: module system + handoff to cm.main
+    cm/                engine modules (main, state, input, rand, math,
                        ease, gfx, text, trace, chunk, ui, console, repl,
                        perf, tilemap, editor, inspect, scrub; assets/ =
                        baked fonts)
@@ -426,7 +426,7 @@ pettan2d/
                        main/level/player/props/fx/demo/pix modules)
     selftest/          engine invariants cartridge (PRNG KATs, trig
                        accuracy, serializer/snapshot/input/ui/tilemap)
-    uigallery/         living pt.ui reference, shaped like the M4 inspector
+    uigallery/         living cm.ui reference, shaped like the M4 inspector
   tools/               dev scripts (bake_spleen, feed helpers)
   tests/
     traces/            golden traces (replay-forever, contract rule 6)
@@ -443,7 +443,7 @@ startup project + mode for end-user shipping.
 
 - C: C11, `-Wall -Wextra`, prefix `pal_`, no global mutable state outside the
   PAL context struct (the buffer registry lives there too).
-- Lua: engine namespace `pt` (e.g. `pt.gfx`, `pt.state`, `pt.ui`); modules
+- Lua: engine namespace `cm` (e.g. `cm.gfx`, `cm.state`, `cm.ui`); modules
   loaded through the engine's own loader (reload-aware, project-jailed
   paths, forward slashes everywhere).
 - The PAL Lua API (`pal.*`) is the **porting contract**: keep it small,
@@ -544,7 +544,7 @@ binary incompatible, in either direction (D015).
 | `pal.buf_delta1(prev, cur)` | sim | **versioned kernel** (contract rule 4): sparse XOR delta of two equal-size views. Format frozen: runs of `{u32 off LE, u32 len LE, len XOR bytes}`; a run ends at the last differing byte followed by ≥8 equal bytes; `""` = identical |
 | `pal.buf_apply_delta1(view, delta)` | sim | XOR runs into view (self-inverse: applying twice undoes); errors on malformed/OOB runs |
 | `pal.exit_on_error(b)` | dev | when set, a Lua error exits the process with code 1 instead of parachuting (capped runs, golden verify) |
-| `pal.quitting()` | dev | true once quit was requested — pt.main flushes recordings on any quit path |
+| `pal.quitting()` | dev | true once quit was requested — cm.main flushes recordings on any quit path |
 
 ### PAL API v3 additions (M2)
 

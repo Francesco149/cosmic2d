@@ -1,6 +1,6 @@
 /* main.c — PAL entry: owns the process loop and the Lua VM lifecycle.
  * Everything interesting happens in Lua (engine/boot.lua); the C loop only
- * pumps events, pcalls pt_tick(), and parachutes on errors by watching for
+ * pumps events, pcalls cm_tick(), and parachutes on errors by watching for
  * file changes and rebooting the VM (named buffers survive — see pal.h). */
 #include "pal.h"
 
@@ -61,9 +61,9 @@ static void enter_error_state(const char *msg) {
 
 static void tick_lua(void) {
   lua_pushcfunction(G.L, msgh);
-  lua_getglobal(G.L, "pt_tick");
+  lua_getglobal(G.L, "cm_tick");
   if (!lua_isfunction(G.L, -1)) {
-    enter_error_state("engine/boot.lua did not define global pt_tick()");
+    enter_error_state("engine/boot.lua did not define global cm_tick()");
     lua_settop(G.L, 0);
     return;
   }
@@ -170,7 +170,7 @@ static void error_frame(void) {
 int main(int argc, char **argv) {
   G.argc = argc;
   G.argv = argv;
-  SDL_SetAppMetadata("pettan2d", "0.0", "dev.pettan2d");
+  SDL_SetAppMetadata("cosmic2d", "0.0", "dev.cosmic2d");
 
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     /* no display (CI/headless box): the offscreen driver still gives us

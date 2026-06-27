@@ -1,4 +1,4 @@
-# pettan2d — decision log
+# cosmic2d — decision log
 
 Append-only ADR log. Each entry: context, decision, why, and what would make
 us revisit. New sim-touching systems must state their snapshot story here.
@@ -200,7 +200,7 @@ stable bytes; text formats make float round-tripping and key ordering fiddly.
 bits, u32-length strings, tables as sorted key/value pairs (integer keys
 ascending, then string keys bytewise). NaN, shared subtables, fractional and
 boolean keys are errors. Spec in ARCHITECTURE "Concrete M1 formats";
-implementation pt/state.lua.
+implementation cm/state.lua.
 **Why**: equal trees ⇒ identical bytes (delta/hash-stable), float bits exact
 by construction, ~40 lines each way, no dependencies.
 **Snapshot story**: this IS the doc tree's snapshot encoding.
@@ -228,8 +228,8 @@ forever.
 raw event streams are OS-timing-dependent.
 **Decision**: per sim frame, one frozen 10-byte record (u32 action down-bits
 in definition order, i16 mouse x/y internal px, u8 button bits, i8 wheel
-steps). pt.input.apply() is the only path into sim-visible input state,
-which lives in the `pt.input` named buffer (cur+prev, so pressed/released
+steps). cm.input.apply() is the only path into sim-visible input state,
+which lives in the `cm.input` named buffer (cur+prev, so pressed/released
 edges are snapshot-consistent). Live sampling adds "sticky tap": a
 press+release inside one sample window still sets the bit for one frame.
 **Why**: record/replay symmetry by construction; edges survive restore;
@@ -237,12 +237,12 @@ sub-frame taps never vanish (feel pillar).
 **Revisit when**: text input lands (M2 console) → additive record type in
 the container, not a change to record v1; gamepad → new bits/axes likewise.
 
-## D019 — snapshot/trace containers: PSNP/PTRC tagged chunks (M1)
+## D019 — snapshot/trace containers: CSNP/CTRC tagged chunks (M1)
 
 **Context**: D012/D014 need concrete file formats with room to grow.
-**Decision**: one chunk grammar (pt/chunk.lua): magic + version-stamped
-tagged chunks, unknown tags skipped, truncation = loud error. PSNP = CODE
-(full bundle) + BUFS (every named buffer) + DOCT. PTRC = HEAD + SNAP +
+**Decision**: one chunk grammar (cm/chunk.lua): magic + version-stamped
+tagged chunks, unknown tags skipped, truncation = loud error. CSNP = CODE
+(full bundle) + BUFS (every named buffer) + DOCT. CTRC = HEAD + SNAP +
 per-frame FRAM (input record + per-buffer kind 0 delta / 1 full / 2 freed +
 doc bytes on change) + code-less KEYF every N (cross-checked on verify) +
 EPOC on mid-record reload + TAIL. FRAM v1 lists every buffer every frame
@@ -258,11 +258,11 @@ currently buffers in memory and writes once at stop).
 **Context**: satisfying interactions are a pillar; easing should be
 available everywhere rather than ad-hoc lerps — and "everywhere" includes
 sim state, which cannot hold functions.
-**Decision**: pt.ease ships the standard family (31 curves: linear +
+**Decision**: cm.ease ships the standard family (31 curves: linear +
 quad/cubic/quart/quint/sine/expo/circ/back/elastic/bounce × in/out/inout)
-as pure deterministic functions over pt.math (which grew exp2 for
+as pure deterministic functions over cm.math (which grew exp2 for
 expo/elastic). Curves are addressable by NAME via a registry — doc knobs,
-timelines and tweens store the name; `pt.ease.register` lets game code add
+timelines and tweens store the name; `cm.ease.register` lets game code add
 curves, and that code travels in bundles (D012), so named curves replay
 exactly. Registered curves are endpoint-pinned (f(≤0)=0, f(≥1)=1 exactly).
 Engine systems that take a duration accept an easing name wherever it makes
@@ -279,12 +279,12 @@ small curve-descriptor table in the doc tree.
 the engine is hot-reload-first and deterministic-first, so a retained
 widget tree would fight both (lifecycle across reloads; UI state leaking
 into snapshots).
-**Decision**: pt.ui is an immediate-mode core: widgets are per-frame calls;
+**Decision**: cm.ui is an immediate-mode core: widgets are per-frame calls;
 the only retained state is a per-id table keyed by hierarchical id paths,
 living on the module (survives hot reload, resets on VM reboot, never
 snapshot). Interaction = classic hot/active/focus with one-frame capture
 latency; the game receives only events the UI didn't capture, and
-up-events always pass (no stuck keys). Iron rule: pt.ui never touches
+up-events always pass (no stuck keys). Iron rule: cm.ui never touches
 buffers/doc/PRNG. ` (console) and F3 (perf) are engine-reserved keys until
 M4 play-mode lockdown. **Inspector review gate (PLAN risk list) passed**
 via projects/uigallery, an inspector-shaped dogfood: searchable +
@@ -297,7 +297,7 @@ is the caller's write and the caller's snapshot story.
 **Revisit if**: M4 docking/z-order outgrows draw-order hover resolution
 (then: explicit z-ordered panel registry feeding the same hover model), or
 per-frame Lua garbage from UI shows in the perf panel (then: rect/id
-caching inside pt.ui, API unchanged).
+caching inside cm.ui, API unchanged).
 
 ## D022 — console evals are recorded sim inputs (EVAL records, M2)
 
@@ -305,16 +305,16 @@ caching inside pt.ui, API unchanged).
 must stay an oracle. Deltas alone would keep *replay* correct but verify
 (re-sim) would diverge at the first poke — and a knob-tuning session is
 exactly what we want to record and share.
-**Decision**: pt.repl is the single eval path: submits queue, the queue
+**Decision**: cm.repl is the single eval path: submits queue, the queue
 drains at the START of the next sim frame (before input applies), and the
 recorder writes drained commands as EVAL v1 chunks before that frame's
-FRAM. Verify re-executes them via the same pt.repl.exec at the same point.
+FRAM. Verify re-executes them via the same cm.repl.exec at the same point.
 Replay-without-re-sim ignores EVALs (their effects are in the deltas). A
 contained game error stops an active recording so the trace stays valid up
-to the last good frame. Golden: tests/traces/evalfix.ptrace (doc poke,
+to the last good frame. Golden: tests/traces/evalfix.ctrace (doc poke,
 buffer creation, an erroring command), tamper-tested.
 **Snapshot story**: commands are data in the trace; the code they call
-travels in bundles (D012). Caveat (documented in pt/repl.lua): repl env
+travels in bundles (D012). Caveat (documented in cm/repl.lua): repl env
 variables assigned before recording starts don't travel — keep
 trace-relevant state in the doc tree.
 **Revisit if**: games want player-facing text entry in the *sim* (then:
@@ -327,7 +327,7 @@ strings).
 **Context**: M2 exit criterion "Lua errors never kill the session"; the
 M0 magenta screen threw away the session's visual context and the C
 parachute rebooted the whole VM for any game typo.
-**Decision**: pt.main guards require/init/step/draw in live sessions. On
+**Decision**: cm.main guards require/init/step/draw in live sessions. On
 error: traceback to the log, sim paused (no stepping, no game.draw),
 recording stopped, console auto-opens with a banner; the REPL drains
 immediately while paused so the wreckage is inspectable. Resume = any
@@ -348,7 +348,7 @@ half-frame behind a marker chunk).
 **Context**: M3 needs a tile world that is sim state (snapshot/trace/
 reboot-proof), renders through the bulk quad path, and that M4's editor
 and inspector can later open without side-channel metadata.
-**Decision**: pt.tilemap stores `w/h/tile-size` as a 16-byte header in
+**Decision**: cm.tilemap stores `w/h/tile-size` as a 16-byte header in
 the buffer itself, u16 ids after; `new` adopts a same-shape buffer
 without touching cells (reload-idempotent init) and rebuilds on shape
 change; `open` adopts from the header alone. Tile *classes* (solid /
@@ -367,7 +367,7 @@ actually differs (hash-gated), never stomping restored cells. M4's map
 painting will retire code-built maps (the build becomes a reset action).
 **Revisit if**: maps want layers/flags per cell (then: a header version
 bump + documented cell format v2, additive), or Lua collision shows in
-pt.perf under real load (then: the versioned-kernel path).
+cm.perf under real load (then: the versioned-kernel path).
 
 ## D025 — the demo is sim input: attract mode + --eval (M3)
 
@@ -381,8 +381,8 @@ demo.lua. No module state, no wall clock: edges derive from f(rel) vs
 f(rel-1), so it's deterministic by construction, travels in code
 bundles, and any real move/jump/grab press hands control back. It's
 enabled by `game.demo(1)` — normally typed in the console, and in
-headless runs injected by the new pt.main `--eval CODE` flag, which
-queues the line through pt.repl at boot so it drains at sim frame 1 and
+headless runs injected by the new cm.main `--eval CODE` flag, which
+queues the line through cm.repl at boot so it drains at sim frame 1 and
 records as a D022 EVAL chunk. The platformer golden is exactly that:
 cold boot + one EVAL + 1400 frames of scripted play. Choreography is
 calibrated against default doc.knobs; retuning movement knobs means
@@ -390,7 +390,7 @@ re-choreographing the demo (goldens are unaffected — they replay the
 bundled code and knobs they were recorded with).
 **Snapshot story**: demo on/off + anchor live in the doc tree; the
 script is code. EVAL records carry the activation into traces.
-**Revisit if**: more cartridges want attract scripts (then: a pt.demo
+**Revisit if**: more cartridges want attract scripts (then: a cm.demo
 helper for timeline tables), or choreography maintenance hurts (then:
 waypoint-seeking driver reading sim state — still deterministic, but it
 needs a careful story for mid-trace restores before it's allowed).
@@ -401,13 +401,13 @@ needs a careful story for mid-trace restores before it's allowed).
 map) under the D014 trace contract: a recording made while editing has
 to verify byte-exact. The editor's own chrome is dev-side by D021, and
 D022 already made console evals recorded sim inputs.
-**Decision**: pt.editor owns no sim state and never writes any
-directly. Every edit is a command string submitted through pt.repl —
-`pt.tilemap.poke("map",x,y,id)` per painted cell (a new by-name static,
+**Decision**: cm.editor owns no sim state and never writes any
+directly. Every edit is a command string submitted through cm.repl —
+`cm.tilemap.poke("map",x,y,id)` per painted cell (a new by-name static,
 the eval-able edit unit), the cartridge's `reset_eval` for the reset
 button — so edits drain at frame start, record as EVAL chunks, and
 verify re-executes them: an editing session IS a console session.
-Cartridges expose their editable surface with `pt.editor.attach(fn)`;
+Cartridges expose their editable surface with `cm.editor.attach(fn)`;
 the getter returns {tm, atlas, camx/camy, colliders(), save,
 reset_eval} fresh each frame and must only read. F1 toggles editor/play
 (F1 joins ` and F3 as engine-reserved); `editor = false` in project.lua
@@ -439,21 +439,21 @@ same trace contract as painting (D026). The engine deliberately has no
 entity class: ALL sim state is named buffers + the doc tree (D005), so
 an inspector over exactly those two surfaces IS the entity list — a
 crate is bytes in `sandbox.props`, a feel knob is `doc.knobs.move.run`.
-**Decision**: pt.inspect (a pt.editor panel, toolbar toggle) renders a
+**Decision**: cm.inspect (a cm.editor panel, toolbar toggle) renders a
 searchable tree of the doc tree and every named buffer. It reads sim
 state directly each frame and writes ONLY by submitting command strings
-through pt.repl: `doc.knobs.move.run = 142.0` (drag numbers /
+through cm.repl: `doc.knobs.move.run = 142.0` (drag numbers /
 checkboxes; literals preserve numeric subtype — floats keep a `.0`
 because the canon serializer tags integers and floats differently),
-`pt.state.buf_poke(name,kind,off,v)` (new by-name static, the generic
-sibling of pt.tilemap.poke; buffers expand to typed u8..f64 lens views
+`cm.state.buf_poke(name,kind,off,v)` (new by-name static, the generic
+sibling of cm.tilemap.poke; buffers expand to typed u8..f64 lens views
 with drag-editable cells), and `pal.buf_free(name)` (the free button =
 the manual cleanup for reload-orphaned buffer husks PLAN promises;
-hidden for engine `pt.*` buffers). Strings are read-only v0. Drag speed
+hidden for engine `cm.*` buffers). Strings are read-only v0. Drag speed
 scales ~1% of magnitude per pixel; no sliders yet — bounded sliders
 want real range metadata, which arrives with cartridge-supplied
 surfaces (prop-defs era), not heuristics that would cage values.
-pt.ui grew `opts.rect` (explicit widget placement) so editors work
+cm.ui grew `opts.rect` (explicit widget placement) so editors work
 inside virtualized list rows — a D021 anticipated additive gap.
 **Why**: zero new trace machinery, again: a tuning session records as
 EVAL chunks and verifies byte-exact (inspectpoke golden pins all three
@@ -465,7 +465,7 @@ lens choices, search) is dev-side per D021 and never recorded.
 **Revisit if**: the tuning pass wants sliders/ranges (then: knob
 metadata on the editor attach surface, additive), buffers want named
 field views (then: cartridge descriptors, same surface), eval echo
-spam from long drags grates (then: a quiet submit variant in pt.repl),
+spam from long drags grates (then: a quiet submit variant in cm.repl),
 or string/new-key/delete editing is missed (widgets, not architecture).
 
 ## D028 — tuned knobs persist as canonical doc bytes (M4)
@@ -475,7 +475,7 @@ or string/new-key/delete editing is missed (widgets, not architecture).
 code defaults; tuning should also travel inside a shared project zip.
 map.dat (D026) set the file pattern.
 **Decision**: knobs.dat next to project.lua holds
-`pt.state.canon(doc.knobs)` — the frozen D016 encoding, reused as a
+`cm.state.canon(doc.knobs)` — the frozen D016 encoding, reused as a
 file format. The cartridge owns it (sandbox: `game.save_knobs()`,
 called by the editor save button alongside the map save). Load is
 boot-time-only and only when `doc.knobs` is nil — a live doc always
@@ -488,7 +488,7 @@ they only feed boot state, which starting snapshots capture).
 **Snapshot story**: knobs stay ordinary doc state; the file never
 participates after boot.
 **Revisit if**: more doc subtrees want per-project persistence (then: a
-generalized pt.state.persist helper instead of cartridge copies), or
+generalized cm.state.persist helper instead of cartridge copies), or
 per-user tuning needs to split from per-project shipping values.
 
 ## D029 — the jump is authored as a curve, not raw physics (M4, human ask)
@@ -522,7 +522,7 @@ re-choreographing; frames are already the codebase's feel unit
 (coyote/buffer).
 **Snapshot story**: knobs remain ordinary doc state (D028 persists
 them); goldens jumpfeel + boostcap pin the new paths under trace.
-**Revisit if**: other cartridges want the curve (then: a pt-level
+**Revisit if**: other cartridges want the curve (then: a cm-level
 jump-curve helper), or the hang window wants asymmetry (rise-side vs
 fall-side speeds — additive knobs).
 
@@ -551,7 +551,7 @@ the lip, drifting over it — or stack a double jump for clearance.
 **Snapshot story**: none beyond the knob (doc tree); the assist is
 pure step logic. The mantle golden + platformer_locked pin it.
 **Revisit if**: a second cartridge wants the same assist (then: a
-shared pt-level helper over the tilemap API, still controller-side),
+shared cm-level helper over the tilemap API, still controller-side),
 or assists want engine-side queries the API lacks (add read-only
 queries, never mover behavior).
 
@@ -567,7 +567,7 @@ concept (D005/D027) — what a "prop" is belongs to the cartridge.
 "game.props.spawn(%d,%d)", erase = "game.props.despawn_at(%d,%d)" }`.
 Entries join the swatch strip after the tiles; while one holds the
 brush, LMB/RMB press edges (no drag machine-gun) format the entry's
-eval with the floored world mouse and submit it through pt.repl — the
+eval with the floored world mouse and submit it through cm.repl — the
 editor stays a repl client with a mouse, and what the evals DO is
 entirely cartridge code. Sandbox side: `game.props.spawn(x,y)` (crate
 centered on the click, capacity-bounded by the buffer's actual size),
@@ -599,12 +599,12 @@ available for scrubbing/rewind/export, and D019's revisit trigger has
 fired conceptually: the recorder buffers a whole session in memory and
 writes once at stop — grow-forever is exactly what an always-on
 recorder cannot do.
-**Decision**: pt.trace keeps recording-session state as a ring of
+**Decision**: cm.trace keeps recording-session state as a ring of
 **segments**. A segment = (a) a code-less keyframe captured from the
 delta mirrors (= state after the previous segment's last frame), (b) a
-reference snapshot of the loaded bundle (pt.modules() — Lua strings
+reference snapshot of the loaded bundle (cm.modules() — Lua strings
 are shared, so this is pointers, not copies), and (c) the same encoded
-chunk bytes the PTRC v1 recorder already produces (EVAL/FRAM/EPOC, in
+chunk bytes the CTRC v1 recorder already produces (EVAL/FRAM/EPOC, in
 order), eagerly closed at `kf` frames (default 60 = 1 s). The ring is
 ON in every live session (anything but --verify) and evicts whole
 segments older than `seconds` (default 30). On top of it:
@@ -612,7 +612,7 @@ segments older than `seconds` (default 30). On top of it:
   forces a segment boundary and exempts segments from eviction;
   record_stop writes HEAD + SNAP (first pinned keyframe + its bundle)
   + the pinned segments' chunks with KEYF at each boundary + TAIL —
-  byte-identical PTRC v1 output for the same session (validated by
+  byte-identical CTRC v1 output for the same session (validated by
   re-recording the kitcheck golden and diffing).
 - **Export-the-past** ("save what just happened") is the same
   concatenation over whatever the ring still holds — the synthesized
@@ -629,7 +629,7 @@ segments older than `seconds` (default 30). On top of it:
   other restore). An active file recording is stopped first (a linear
   trace cannot contain a rewind).
 - **Out-of-band restores** (snapshot load) reset the ring; the
-  backstop is automatic — record_frame watches the pt.sim frame
+  backstop is automatic — record_frame watches the cm.sim frame
   counter and a non-monotonic step resets the ring with a log line.
   Out-of-band *mutation* (error-pause pokes, re-init after reload)
   needs no handling: deltas are computed against the mirrors, so the

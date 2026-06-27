@@ -1,4 +1,4 @@
--- pt.tilemap — buffer-backed tile grids: bulk-path rendering and AABB
+-- cm.tilemap — buffer-backed tile grids: bulk-path rendering and AABB
 -- collision (M3). The grid lives in a named buffer, so the map is sim state
 -- (snapshot/trace/reboot-proof) and self-describing for future tools:
 --
@@ -89,7 +89,7 @@ end
 
 -- poke/peek mutate/read one cell of a map buffer BY NAME, so an edit is a
 -- single self-contained command string. poke is a sim-state mutation: live
--- tools must route it through pt.repl.submit (the D022 EVAL path) so a
+-- tools must route it through cm.repl.submit (the D022 EVAL path) so a
 -- recording replays the edit; calling it directly mid-frame would make an
 -- active trace diverge on verify. OOB is ignored (poke) / 0 (peek), same
 -- as TM:set/get.
@@ -292,7 +292,7 @@ end
 -- ---- rendering ----
 
 -- pack the camera-visible window into a scratch buffer and draw in one
--- pal.draw_quads call. tex = {id=, w=, h=} (pt.gfx.texture shape); each
+-- pal.draw_quads call. tex = {id=, w=, h=} (cm.gfx.texture shape); each
 -- visible id needs tiles[id].u,v (atlas px). Render-only.
 local F32 = 4
 local QUAD = 12 * F32

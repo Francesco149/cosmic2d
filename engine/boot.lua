@@ -1,5 +1,5 @@
--- boot.lua — PAL bootstrap: defines the pt module system, then hands off to
--- pt.main (engine/pt/main.lua), which owns flags, project load and the loop.
+-- boot.lua — PAL bootstrap: defines the cm module system, then hands off to
+-- cm.main (engine/cm/main.lua), which owns flags, project load and the loop.
 --
 -- Deliberately thin: the C loop loads this file from disk on every VM
 -- (re)boot, and it is the one piece of engine code snapshots cannot restore
@@ -12,15 +12,15 @@
 -- table in place — but module-local upvalues reset on reload, so sim state
 -- belongs in named buffers / the doc tree, never in module locals.
 --
--- pt.* names map to engine/pt/ (pt.math -> engine/pt/math.lua) and attach to
--- the pt global on load; anything else maps into the project dir
+-- cm.* names map to engine/cm/ (cm.math -> engine/cm/math.lua) and attach to
+-- the cm global on load; anything else maps into the project dir
 -- (player.weapons -> <project>/player/weapons.lua).
 
 local registry = {} -- name -> {name,path,source,hash,mtime,table,special,loading,from_bundle}
 local project_root
 local bundle_mode = false -- restored-snapshot code active: disk reload paused
 
-pt = { code_epoch = 0 }
+cm = { code_epoch = 0 }
 
 local function module_path(name)
   -- dotted segments of [%w_%-] only: no slashes, no empty segments, so the
@@ -31,7 +31,7 @@ local function module_path(name)
     error("bad module name: " .. tostring(name), 0)
   end
   local rel = name:gsub("%.", "/") .. ".lua"
-  if name:sub(1, 3) == "pt." then return "engine/" .. rel end
+  if name:sub(1, 3) == "cm." then return "engine/" .. rel end
   if not project_root then
     error("project module '" .. name .. "' required before project root set", 0)
   end
@@ -49,15 +49,15 @@ local function run_chunk(name, path, source, prev)
 end
 
 local function attach(name, tbl)
-  local key = name:match("^pt%.([%w_%-]+)$")
+  local key = name:match("^cm%.([%w_%-]+)$")
   if not key then return end
-  if pt[key] ~= nil and pt[key] ~= tbl then
-    error("module pt." .. key .. " collides with pt infrastructure", 0)
+  if cm[key] ~= nil and cm[key] ~= tbl then
+    error("module cm." .. key .. " collides with cm infrastructure", 0)
   end
-  pt[key] = tbl
+  cm[key] = tbl
 end
 
-function pt.require(name)
+function cm.require(name)
   local m = registry[name]
   if m and m.table then return m.table end
   if m and m.loading then error("circular require: " .. name, 0) end
@@ -92,14 +92,14 @@ end
 
 -- source-only entries (boot.lua, project.lua): bundled for reproducibility,
 -- never (re)executed by the module system
-function pt.register_special(name, path, source)
+function cm.register_special(name, path, source)
   registry[name] = { name = name, path = path, source = source,
                      hash = pal.hash(source), special = true }
   pal.watch_add(path)
 end
 
 -- sorted snapshot of every loaded source — the D012 code bundle
-function pt.modules()
+function cm.modules()
   local names = {}
   for n, m in pairs(registry) do
     if m.source and (m.special or m.table) then names[#names + 1] = n end
@@ -115,7 +115,7 @@ end
 
 -- dev hot reload: re-execute changed modules in place. Returns the sorted
 -- list of reloaded module names (empty while running bundle code).
-function pt.reload(force)
+function cm.reload(force)
   if bundle_mode then return {} end
   local changed = {}
   local names = {}
@@ -147,13 +147,13 @@ function pt.reload(force)
       end
     end
   end
-  if #changed > 0 then pt.code_epoch = pt.code_epoch + 1 end
+  if #changed > 0 then cm.code_epoch = cm.code_epoch + 1 end
   return changed
 end
 
 -- snapshot restore (D012): run code from the bundle, not from disk. Disk
--- reload stays paused until pt.adopt_disk() deliberately switches back.
-function pt.restore_bundle(files)
+-- reload stays paused until cm.adopt_disk() deliberately switches back.
+function cm.restore_bundle(files)
   bundle_mode = true
   for _, f in ipairs(files) do
     if f.name:sub(1, 1) ~= "@" then
@@ -174,28 +174,28 @@ function pt.restore_bundle(files)
       end
     end
   end
-  pt.code_epoch = pt.code_epoch + 1
+  cm.code_epoch = cm.code_epoch + 1
 end
 
-function pt.adopt_disk()
+function cm.adopt_disk()
   if not bundle_mode then return {} end
   bundle_mode = false
   for _, m in pairs(registry) do m.from_bundle = nil end
-  return pt.reload(true)
+  return cm.reload(true)
 end
 
-function pt.set_project_root(dir)
+function cm.set_project_root(dir)
   project_root = dir
 end
 
 do
   local self_src = pal.read_file("engine/boot.lua")
-  if self_src then pt.register_special("@boot", "engine/boot.lua", self_src) end
+  if self_src then cm.register_special("@boot", "engine/boot.lua", self_src) end
 end
 
-local main = pt.require("pt.main")
+local main = cm.require("cm.main")
 
-function pt_tick()
+function cm_tick()
   return main.tick()
 end
 

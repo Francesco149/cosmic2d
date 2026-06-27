@@ -1,19 +1,19 @@
--- pt.state — the sim state model (ARCHITECTURE "State model"):
+-- cm.state — the sim state model (ARCHITECTURE "State model"):
 --
 --  * named buffers (C-owned, byte-exact, survive VM reboots) for bulk data;
 --  * the doc tree (M.doc): one plain-data Lua table for irregular state —
 --    tables/integers/floats/strings/booleans only, integer/string keys only,
 --    a tree (no shared subtables), no NaN. Bulk data belongs in buffers.
 --
--- The "pt.sim" buffer is the engine's own sim state, layout FROZEN:
+-- The "cm.sim" buffer is the engine's own sim state, layout FROZEN:
 --   [0..7]  i64 sim frame counter
---   [8..39] xoshiro256++ s0..s3 (pt.rand)
+--   [8..39] xoshiro256++ s0..s3 (cm.rand)
 --   [40..63] reserved (zero)
 --
--- A snapshot is a PSNP container (pt.chunk) holding the code bundle (D012),
+-- A snapshot is a CSNP container (cm.chunk) holding the code bundle (D012),
 -- every named buffer, and the canonical doc bytes. Restore writes buffers,
 -- repopulates M.doc in place, and re-executes bundle code via
--- pt.restore_bundle — afterwards the caller re-runs game.init(), which must
+-- cm.restore_bundle — afterwards the caller re-runs game.init(), which must
 -- be reload-idempotent (the same contract hot reload already demands).
 --
 -- Canonical serialization v1, FROZEN: value =
@@ -24,7 +24,7 @@
 -- Two equal doc trees always produce identical bytes (hash/delta-stable).
 
 local M = select(2, ...) or {}
-local chunk = pt.require("pt.chunk")
+local chunk = cm.require("cm.chunk")
 
 M.doc = M.doc or {}
 
@@ -33,7 +33,7 @@ local pack, unpack = string.pack, string.unpack
 -- ---- sim buffer ----
 
 local function simbuf()
-  return pal.buf("pt.sim", 64)
+  return pal.buf("cm.sim", 64)
 end
 
 function M.frame()
@@ -50,8 +50,8 @@ end
 -- ---- by-name buffer cell pokes (tools / the inspector's eval unit) ----
 
 -- poke/peek one typed cell of a named buffer, so a buffer edit is a single
--- self-contained command string — pt.tilemap.poke's generic sibling. poke
--- is a sim-state mutation: live tools must route it through pt.repl.submit
+-- self-contained command string — cm.tilemap.poke's generic sibling. poke
+-- is a sim-state mutation: live tools must route it through cm.repl.submit
 -- (the D022 EVAL path) so a recording replays the edit. kind is a view
 -- accessor name (u8/i8/u16/i16/u32/i32/i64/f32/f64); a bad kind, an
 -- unknown buffer or an OOB offset all error (contained by the repl).
@@ -169,7 +169,7 @@ end
 
 -- ---- snapshots ----
 
-local SNAP_MAGIC = "PSNP"
+local SNAP_MAGIC = "CSNP"
 
 local function sorted_buf_list()
   local list = pal.buf_list()
@@ -178,7 +178,7 @@ local function sorted_buf_list()
 end
 
 -- encode a snapshot from captured parts: bufs = name-sorted array of
--- {name, bytes}, doct = canonical doc bytes, code = pt.modules()-shaped
+-- {name, bytes}, doct = canonical doc bytes, code = cm.modules()-shaped
 -- array or nil (code-less: trace keyframes). The ring trace (D032) uses
 -- this to serialize keyframes it captured from its mirrors; sharing the
 -- encoder is what keeps those byte-identical to live snapshots.
@@ -209,7 +209,7 @@ function M.snapshot(opts)
     bufs[#bufs + 1] = { name = b.name, bytes = view:str(0, b.size) }
   end
   local code
-  if not (opts and opts.code == false) then code = pt.modules() end
+  if not (opts and opts.code == false) then code = cm.modules() end
   return M.encode_snapshot(bufs, M.doc_bytes(), code)
 end
 
@@ -275,7 +275,7 @@ function M.restore(blob)
   for _, b in ipairs(snap.bufs) do want[b.name] = b.bytes end
   M.restore_tables(want, snap.doct)
   -- code last: re-executes changed modules against the restored state
-  pt.restore_bundle(snap.code)
+  cm.restore_bundle(snap.code)
 end
 
 function M.save(path)

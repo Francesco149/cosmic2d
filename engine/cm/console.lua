@@ -1,14 +1,14 @@
--- pt.console — the drop-down log console + Lua REPL (M2). Engine-level:
+-- cm.console — the drop-down log console + Lua REPL (M2). Engine-level:
 -- available in every project, toggled with ` (grave; engine-reserved along
 -- with F3 until play-mode lockdown lands in M4). All dev-side state; the
--- only sim-facing thing the console does is pt.repl.submit, which is the
+-- only sim-facing thing the console does is cm.repl.submit, which is the
 -- recorded EVAL path (D022).
 --
 -- While open: every keydown is captured (game keeps seeing key-ups so held
 -- keys release cleanly), the input line owns the keyboard, mouse over the
 -- console is captured, mouse below it still reaches the game — tune knobs
 -- with the sim running behind the glass. The sim does NOT pause for an
--- open console; it pauses only when a game error is contained (pt.main),
+-- open console; it pauses only when a game error is contained (cm.main),
 -- and then the console doubles as the wreckage inspector: the REPL drains
 -- immediately while paused, so state can be poked mid-autopsy.
 --
@@ -18,10 +18,10 @@
 
 local M = select(2, ...) or {}
 
-local ui = pt.require("pt.ui")
-local repl = pt.require("pt.repl")
-local state = pt.require("pt.state")
-local ease = pt.require("pt.ease")
+local ui = cm.require("cm.ui")
+local repl = cm.require("cm.repl")
+local state = cm.require("cm.state")
+local ease = cm.require("cm.ease")
 
 local SB_CAP = 2000
 
@@ -95,7 +95,7 @@ local function line_color(s)
   return st.text
 end
 
--- ---- error banner (pt.main drives these on contained game errors) ----
+-- ---- error banner (cm.main drives these on contained game errors) ----
 
 function M.notify_error(msg)
   M.error_msg = msg
@@ -148,18 +148,18 @@ local function nav_history(dir, current)
   return h[hist_pos]
 end
 
--- ---- the per-tick frame (pt.main calls this after the game draws) ----
+-- ---- the per-tick frame (cm.main calls this after the game draws) ----
 
 function M.frame()
   local W, H = pal.gfx_size()
   poll_log()
 
   -- toggle keys work no matter who has the keyboard (but shipped zips
-  -- lock the dev surfaces: project editor = false, see pt.editor.locked;
+  -- lock the dev surfaces: project editor = false, see cm.editor.locked;
   -- error banners still open the console programmatically)
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep then
-      if k.scancode == KEY.grave and not pt.editor.locked() then
+      if k.scancode == KEY.grave and not cm.editor.locked() then
         M.toggle()
       elseif k.scancode == KEY.esc and M.open and not M.error_msg then
         M.toggle(false)
@@ -183,7 +183,7 @@ function M.frame()
 
   -- title row: status left, filter box right
   ui.row({ 3, 1 })
-  local rec = pt.trace and pt.trace.recording and pt.trace.recording()
+  local rec = cm.trace and cm.trace.recording and cm.trace.recording()
   ui.label(("console  frame %d%s%s"):format(
     state.frame(), rec and "  [REC]" or "", M.paused and "  [PAUSED]" or ""),
     { color = st.accent })

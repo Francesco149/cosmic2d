@@ -141,7 +141,7 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
           cfg->headless ? " (headless)" : "");
 
   if (!cfg->headless) {
-    G.win = SDL_CreateWindow(cfg->title ? cfg->title : "pettan2d",
+    G.win = SDL_CreateWindow(cfg->title ? cfg->title : "cosmic2d",
                              cfg->w * cfg->scale, cfg->h * cfg->scale,
                              SDL_WINDOW_RESIZABLE);
     if (!G.win) { pal_log("gfx: window: %s", SDL_GetError()); return false; }

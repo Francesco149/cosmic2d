@@ -1,31 +1,31 @@
--- pt.scrub — the time machine (M5, D032): scrub the always-on ring trace,
+-- cm.scrub — the time machine (M5, D032): scrub the always-on ring trace,
 -- step or play through the past, rewind & resume from any frame, export
 -- the ring ("save what just happened").
 --
 -- Dev chrome (D021): all state lives on this module, never in sim state;
--- the panel is immediate-mode pt.ui. F4 toggles (locked down with the
+-- the panel is immediate-mode cm.ui. F4 toggles (locked down with the
 -- editor via project `editor = false`). While open the sim is FROZEN
--- (pt.main gates stepping on M.paused()) and the ring is dormant, so the
+-- (cm.main gates stepping on M.paused()) and the ring is dormant, so the
 -- timeline is stable; moving the playhead writes the decoded ring state
 -- straight into the live buffers/doc (state.restore_tables — no game code
 -- runs, the game's draw simply renders the past, and the inspector reads
 -- it). Closing restores the newest frame and play continues as if nothing
 -- happened. "rewind here" makes the playhead the new present: trace.rewind
--- truncates the future and pt.main.after_restore re-runs init (the restore
+-- truncates the future and cm.main.after_restore re-runs init (the restore
 -- contract) and clears an error pause — the marquee flow is crash, F4,
 -- scrub back, watch it coming, rewind, try something else.
 --
--- Replay mode: open_replay(path) loads a shared .ptrace INTO the ring
+-- Replay mode: open_replay(path) loads a shared .ctrace INTO the ring
 -- (trace.ring_load — state+code restore to its SNAP) and auto-plays it,
 -- state-per-frame, no re-sim. The same panel scrubs it; "play from here"
 -- /"finish" adopt the trace's timeline at the playhead/end and hand the
 -- controls back to live play (which records onward from there).
 
 local M = select(2, ...) or {}
-local ui = pt.require("pt.ui")
-local trace = pt.require("pt.trace")
-local state = pt.require("pt.state")
-local input = pt.require("pt.input")
+local ui = cm.require("cm.ui")
+local trace = cm.require("cm.trace")
+local state = cm.require("cm.state")
+local input = cm.require("cm.input")
 
 local KEY_F4 = 61
 local KEY_RIGHT, KEY_LEFT = 79, 80
@@ -44,7 +44,7 @@ local function apply(f)
 end
 
 function M.open()
-  if M.on or pt.require("pt.editor").locked() then return end
+  if M.on or cm.require("cm.editor").locked() then return end
   local lo, hi = trace.ring_range()
   if not lo then return end
   M.on = true
@@ -73,10 +73,10 @@ function M.rewind_here()
   trace.rewind(M.at)
   M.shown = M.at
   M.on, M.play, M.replay = false, false, false
-  if pt.main and pt.main.after_restore then pt.main.after_restore() end
+  if cm.main and cm.main.after_restore then cm.main.after_restore() end
 end
 
--- replay playback of a .ptrace (M5): queue the load; it happens in the
+-- replay playback of a .ctrace (M5): queue the load; it happens in the
 -- chrome phase (never mid-sim-frame, so the console eval that triggered
 -- it can't poison the timeline it replaces — in a verify re-sim this is
 -- a recorded no-op, the replay's effects live in the deltas)
@@ -85,13 +85,13 @@ function M.open_replay(path)
 end
 
 local function do_load(path)
-  if pt.require("pt.editor").locked() then return end
+  if cm.require("cm.editor").locked() then return end
   local ok, lo = pcall(trace.ring_load, path)
   if not ok then
     pal.log("[scrub] replay load failed: " .. tostring(lo))
     return
   end
-  if pt.main and pt.main.after_restore then pt.main.after_restore() end
+  if cm.main and cm.main.after_restore then cm.main.after_restore() end
   local rlo, rhi = trace.ring_range()
   M.on, M.replay = true, true
   M.lo, M.hi = rlo, rhi
@@ -101,8 +101,8 @@ local function do_load(path)
 end
 
 function M.export()
-  local proj = (pt.main and pt.main.args and pt.main.args.project) or "."
-  return trace.ring_export(("%s/ring-f%d.ptrace"):format(proj, M.hi))
+  local proj = (cm.main and cm.main.args and cm.main.args.project) or "."
+  return trace.ring_export(("%s/ring-f%d.ctrace"):format(proj, M.hi))
 end
 
 local function held_actions(irec)
@@ -121,7 +121,7 @@ local function seek(f)
   M.at = math.min(math.max(f, M.lo), M.hi)
 end
 
--- ---- the per-tick frame (pt.main: after editor, before perf/console) ----
+-- ---- the per-tick frame (cm.main: after editor, before perf/console) ----
 
 function M.frame()
   if M.pending then
@@ -182,7 +182,7 @@ function M.frame()
     ui.end_panel()
     return
   end
-  if ui.button("save .ptrace") then M.export() end
+  if ui.button("save .ctrace") then M.export() end
   if ui.button(M.replay and "finish" or "close", { id = "close" }) then
     M.close()
     ui.end_panel()

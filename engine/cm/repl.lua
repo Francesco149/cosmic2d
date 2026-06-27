@@ -1,19 +1,19 @@
--- pt.repl — the deterministic console-eval path (D022). Console (or game
--- code) submits command strings; pt.main drains the queue at the START of
+-- cm.repl — the deterministic console-eval path (D022). Console (or game
+-- code) submits command strings; cm.main drains the queue at the START of
 -- the next sim frame, before input applies. When a trace is recording,
 -- drained commands are written as EVAL records, and trace verify re-executes
 -- them through the same M.exec at the same point — so a live knob-tweaking
 -- session stays byte-replayable, console pokes included.
 --
 -- Determinism notes: a command runs against live sim state and may do
--- anything game code could (use pt.rand, create buffers, error). All of
+-- anything game code could (use cm.rand, create buffers, error). All of
 -- that replays exactly. What does NOT travel in a trace is this module's
 -- dev-side state (queue, history, the env table for `x = 5` assignments):
 -- commands recorded mid-session that READ env variables set before
 -- recording started will diverge on verify. For verify-clean traces, put
 -- state in the doc tree, not in repl locals.
 --
--- exec env: reads fall through to _G plus sugar (doc = pt.state.doc,
+-- exec env: reads fall through to _G plus sugar (doc = cm.state.doc,
 -- game = the running entry module); bare assignments land in the env table,
 -- so a stray `state = 5` can't clobber engine globals.
 
@@ -26,8 +26,8 @@ local HISTORY_MAX = 100
 
 M.env = M.env or setmetatable({}, {
   __index = function(_, k)
-    if k == "doc" then return pt.state.doc end
-    if k == "game" then return pt.main.game end
+    if k == "doc" then return cm.state.doc end
+    if k == "game" then return cm.main.game end
     return _G[k]
   end,
 })

@@ -1,6 +1,6 @@
--- pt.perf — F3-toggled performance overlay (M2): frame-time graph against
+-- cm.perf — F3-toggled performance overlay (M2): frame-time graph against
 -- the 16.7 ms budget, sim/draw split, draw batch stats (pal.frame_stats),
--- buffer/texture/Lua-heap sizes. pt.main feeds note() every tick; history
+-- buffer/texture/Lua-heap sizes. cm.main feeds note() every tick; history
 -- stays warm while the panel is closed so opening it shows the recent past.
 --
 -- All dev-side (module state only). The numbers describe the WALL cost of
@@ -9,7 +9,7 @@
 
 local M = select(2, ...) or {}
 
-local ui = pt.require("pt.ui")
+local ui = cm.require("cm.ui")
 
 local HIST = 180 -- ~3s at 60
 local GRAPH_H = 30
@@ -47,7 +47,7 @@ end
 function M.frame()
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep and k.scancode == 60 -- F3; locked when shipped
-       and not pt.editor.locked() then M.toggle() end
+       and not cm.editor.locked() then M.toggle() end
   end
   if not M.open then return end
 

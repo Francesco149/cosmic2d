@@ -1,4 +1,4 @@
--- pt.gfx — engine drawing conveniences over the narrow pal surface:
+-- cm.gfx — engine drawing conveniences over the narrow pal surface:
 -- camera with per-layer parallax multipliers, memoized PNG textures, and
 -- sprite (sub-rect) drawing. All render-only; none of this is sim state.
 
@@ -25,9 +25,9 @@ function M.texture(path)
   local t = textures[path]
   if t then return t end
   local bytes, err = pal.read_file(path)
-  if not bytes then error("pt.gfx.texture: " .. path .. ": " .. err, 2) end
+  if not bytes then error("cm.gfx.texture: " .. path .. ": " .. err, 2) end
   local pix, w, h = pal.png_read(bytes)
-  if not pix then error("pt.gfx.texture: " .. path .. ": " .. w, 2) end
+  if not pix then error("cm.gfx.texture: " .. path .. ": " .. w, 2) end
   t = { id = pal.tex_create(w, h, pix), w = w, h = h }
   textures[path] = t
   return t

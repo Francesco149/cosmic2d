@@ -1,4 +1,4 @@
--- pt.input — the action map between raw PAL events and the sim
+-- cm.input — the action map between raw PAL events and the sim
 -- (ARCHITECTURE "Input"). The sim NEVER reads events: each sim frame is fed
 -- one compact input record, and live play and trace replay go through the
 -- same apply() path, so record & replay are symmetrical by construction.
@@ -9,7 +9,7 @@
 --   u8      mouse buttons bitfield (button 1..8 -> bit 0..7)
 --   i8      wheel steps this frame (accumulated, clamped)
 --
--- Applied state lives in the "pt.input" named buffer (32 bytes, layout
+-- Applied state lives in the "cm.input" named buffer (32 bytes, layout
 -- below) — pressed/released derive from cur vs prev bits, so snapshots and
 -- trace verify see identical edges to live play.
 --   [0] u32 cur bits | [4] u32 prev bits | [8] i16 mx | [10] i16 my
@@ -32,7 +32,7 @@ local live_mx, live_my = 0.0, 0.0
 local live_buttons = 0
 local wheel_carry = 0.0
 
-local BUF = "pt.input"
+local BUF = "cm.input"
 
 local function buf()
   return pal.buf(BUF, 32)

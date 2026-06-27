@@ -1,5 +1,5 @@
--- pt.chunk — the tagged binary container shared by snapshots (PSNP) and
--- traces (PTRC). Format v1, FROZEN (stability contract rule 5):
+-- cm.chunk — the tagged binary container shared by snapshots (CSNP) and
+-- traces (CTRC). Format v1, FROZEN (stability contract rule 5):
 --
 --   <magic 4cc> then chunks of: <tag 4cc> <u32 version LE> <u32 len LE>
 --   <len payload bytes>

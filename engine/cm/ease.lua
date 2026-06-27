@@ -1,11 +1,11 @@
--- pt.ease — easing curves, a first-class citizen of the feel pillar.
--- Every curve is a pure deterministic f(t): [0,1] -> [0,1] built on pt.math
+-- cm.ease — easing curves, a first-class citizen of the feel pillar.
+-- Every curve is a pure deterministic f(t): [0,1] -> [0,1] built on cm.math
 -- (sim-safe everywhere: knobs, timelines, tweens, camera, audio envelopes).
 --
 -- Curves are addressable BY NAME through a registry: sim state can't hold
 -- functions, so anything stored in the doc tree / buffers (a tween's curve,
 -- a knob's response) stores the *name* and resolves at use time with
--- pt.ease.get(name). Game-defined curves join via pt.ease.register — the
+-- cm.ease.get(name). Game-defined curves join via cm.ease.register — the
 -- registering code travels in snapshots/traces (D012), so named curves
 -- replay exactly.
 --
@@ -14,7 +14,7 @@
 -- to the player (snappy start, soft landing).
 
 local M = select(2, ...) or {}
-local m = pt.require("pt.math")
+local m = cm.require("cm.math")
 
 local curves = {}
 
@@ -23,7 +23,7 @@ local curves = {}
 -- residue from trig-based curves drifting a snapped position)
 function M.register(name, fn)
   if type(name) ~= "string" or type(fn) ~= "function" then
-    error("pt.ease.register(name, fn)", 2)
+    error("cm.ease.register(name, fn)", 2)
   end
   local pinned = function(t)
     if t <= 0.0 then return 0.0 end

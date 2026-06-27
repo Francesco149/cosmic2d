@@ -69,13 +69,13 @@
 --   [80] boosted (0/1) | [84] air-jump charge (0/1)
 --   [88] dj buffer frames | [92] dj coyote frames
 
-local m = pt.require("pt.math")
-local state = pt.require("pt.state")
-local ease = pt.require("pt.ease")
-local pix = pt.require("pix")
-local level = pt.require("level")
-local props = pt.require("props")
-local fx = pt.require("fx")
+local m = cm.require("cm.math")
+local state = cm.require("cm.state")
+local ease = cm.require("cm.ease")
+local pix = cm.require("pix")
+local level = cm.require("level")
+local props = cm.require("props")
+local fx = cm.require("fx")
 
 local M = {}
 

@@ -9,9 +9,9 @@
 -- self-describing buffer bytes); M.load() is boot-time only, because file
 -- contents are not sim input and would not replay.
 
-local pix = pt.require("pix")
-local tilemap = pt.require("pt.tilemap")
-local gfx = pt.require("pt.gfx")
+local pix = cm.require("pix")
+local tilemap = cm.require("cm.tilemap")
+local gfx = cm.require("cm.gfx")
 
 local M = {}
 
@@ -132,7 +132,7 @@ function M.reset()
 end
 
 local function map_file()
-  return pt.main.args.project .. "/map.dat"
+  return cm.main.args.project .. "/map.dat"
 end
 
 -- persist the live map next to project.lua (the editor's save button).
@@ -163,7 +163,7 @@ end
 
 M.spawn = { x = 6 * T, y = 36 * T - 14 } -- on the ground, left area
 
--- initial crate spots (constants: init must not draw from pt.rand)
+-- initial crate spots (constants: init must not draw from cm.rand)
 M.prop_spots = {
   { 54 * T + 2, 38 * T - 12 }, { 56 * T + 6, 38 * T - 12 },
   { 58 * T + 1, 38 * T - 12 }, { 60 * T + 5, 38 * T - 12 },

@@ -12,6 +12,6 @@
 /tmp/
 /tests/out/
 
-# time-machine ring exports (the scrubber's "save .ptrace"; share via
+# time-machine ring exports (the scrubber's "save .ctrace"; share via
 # tests/traces or the feed, don't commit by accident)
-/projects/*/ring-f*.ptrace
+/projects/*/ring-f*.ctrace

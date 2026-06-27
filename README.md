@@ -1,4 +1,4 @@
-# pettan2d
+# cosmic2d
 
 A tiny 2D pixel-art engine / fantasy console. One self-contained folder holds
 the engine, its editor and tools, and your game projects — share a game by
@@ -29,7 +29,7 @@ Linux/WSL2 with Nix:
 
 ```sh
 nix develop -c make -C pal
-bin/pettan projects/sandbox
+bin/cosmic projects/sandbox
 ```
 
 Windows native builds land at milestone M7.

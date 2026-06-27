@@ -1,17 +1,17 @@
 -- fx — particles v0 (M3): one pooled buffer, spawned by gameplay moments
 -- (landings, footfalls, throws, crate impacts), drawn via the bulk path.
 -- Particles are cosmetic but still SIM state (deterministic, snapshotted):
--- spawn uses pt.rand, step uses fixed dt, pool lives in a named buffer.
+-- spawn uses cm.rand, step uses fixed dt, pool lives in a named buffer.
 --
 -- sandbox.fx layout: [0] u32 ring cursor | [4..15] reserved
 --   then NPART * 32B: x y vx vy life life0 shade (f32) + 4 spare bytes
 -- shade picks the palette: < 1.5 dust (gray-brown), < 3 spark (warm),
 -- >= 3 boom (white-blue — dive trails and dash pops).
 
-local m = pt.require("pt.math")
-local rand = pt.require("pt.rand")
-local ease = pt.require("pt.ease")
-local state = pt.require("pt.state")
+local m = cm.require("cm.math")
+local rand = cm.require("cm.rand")
+local ease = cm.require("cm.ease")
+local state = cm.require("cm.state")
 
 local M = {}
 

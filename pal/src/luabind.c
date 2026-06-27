@@ -337,7 +337,7 @@ static int l_gfx_init(lua_State *L) {
   lua_getfield(L, 1, "scale");
   cfg.scale = (int)luaL_optinteger(L, -1, cfg.scale);
   lua_getfield(L, 1, "title");
-  cfg.title = luaL_optstring(L, -1, "pettan2d");
+  cfg.title = luaL_optstring(L, -1, "cosmic2d");
   lua_getfield(L, 1, "headless");
   cfg.headless = lua_toboolean(L, -1);
   lua_getfield(L, 1, "vsync");

@@ -1,4 +1,4 @@
--- uigallery — living reference for pt.ui, deliberately shaped like the M4
+-- uigallery — living reference for cm.ui, deliberately shaped like the M4
 -- entity inspector (PLAN risk list: "could Godot's inspector be built on
 -- this?"). Left: searchable, virtualized, selectable entity list. Right:
 -- collapsible property sections with drag numbers, sliders, checkboxes,
@@ -8,8 +8,8 @@
 -- reload, reset on reboot) — deliberately NOT sim state; nothing here
 -- should ever be recorded.
 
-local ui = pt.require("pt.ui")
-local state = pt.require("pt.state")
+local ui = cm.require("cm.ui")
+local state = cm.require("cm.state")
 
 local game = select(2, ...) or {}
 local KINDS = { "prop", "crate", "lamp", "spawner", "decal", "trigger" }

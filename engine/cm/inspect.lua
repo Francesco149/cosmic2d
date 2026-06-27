@@ -1,17 +1,17 @@
--- pt.inspect — the M4 entity/state inspector: a searchable tree over ALL
+-- cm.inspect — the M4 entity/state inspector: a searchable tree over ALL
 -- live sim state — the doc tree and every named buffer — with in-place
--- editors. Engine editor chrome, drawn by pt.editor beside its toolbar;
+-- editors. Engine editor chrome, drawn by cm.editor beside its toolbar;
 -- dev/render class by the D021 iron rule (expansion state, lens choices
 -- and the search string live on this module table, never recorded).
 --
 -- The D026 discipline, same as map painting: this module READS sim state
 -- freely every frame but never writes any directly — every edit is a
--- command string submitted through pt.repl, draining at the next sim
+-- command string submitted through cm.repl, draining at the next sim
 -- frame start and recording as a D022 EVAL chunk:
 --
 --   doc.knobs.move.run = 142.0                          drag a number
 --   doc.demo = 1                                        (integers stay
---   pt.state.buf_poke("sandbox.player","f32",0,920.0)    integers, floats
+--   cm.state.buf_poke("sandbox.player","f32",0,920.0)    integers, floats
 --   pal.buf_free("husk")                                 stay floats)
 --
 -- so a live tuning session replays and verifies byte-exact, and the panel
@@ -28,15 +28,15 @@
 -- fights back exactly as you'd expect — the poke lands at frame start,
 -- then the sim runs: nudging a position works, pinning a velocity
 -- doesn't. That's live editing semantics, not a bug. The free button
--- (hidden for engine pt.* buffers) is the manual cleanup for
+-- (hidden for engine cm.* buffers) is the manual cleanup for
 -- reload-orphaned buffer husks the PLAN promises; freeing a buffer some
 -- module still writes is a contained game error, not a crash.
 
 local M = select(2, ...) or {}
 
-local ui = pt.require("pt.ui")
-local repl = pt.require("pt.repl")
-local state = pt.require("pt.state")
+local ui = cm.require("cm.ui")
+local repl = cm.require("cm.repl")
+local state = cm.require("cm.state")
 
 M.open_doc = M.open_doc or {} -- doc path -> explicit open/closed override
 M.open_buf = M.open_buf or {} -- buffer name -> expanded flag
@@ -211,10 +211,10 @@ local function draw_buffer(name, size)
     if clicked then M.lens[name] = l end
   end
 
-  -- info row; free = husk cleanup (engine pt.* buffers: no button)
+  -- info row; free = husk cleanup (engine cm.* buffers: no button)
   ui.row({ 3, 2 })
   ui.label(size .. " bytes", { color = st.text_dim })
-  if name:sub(1, 3) ~= "pt." then
+  if name:sub(1, 3) ~= "cm." then
     if ui.button("free", { id = "free/" .. name }) then
       repl.submit(("pal.buf_free(%q)"):format(name))
     end
@@ -234,7 +234,7 @@ local function draw_buffer(name, size)
       speed = cell_speed(lens, v), min = LENS_MIN[lens], max = LENS_MAX[lens],
       label_w = 42, fmt = isf and "%.4g" or nil })
     if changed then
-      repl.submit(("pt.state.buf_poke(%q,%q,%d,%s)")
+      repl.submit(("cm.state.buf_poke(%q,%q,%d,%s)")
                   :format(name, lens, off, M.fmt_value(nv)))
     end
   end)
@@ -263,7 +263,7 @@ local function buffer_section(q)
   end
 end
 
--- ---- the panel (pt.editor places it while editor mode is on) ----
+-- ---- the panel (cm.editor places it while editor mode is on) ----
 
 function M.frame(x, y, w, h)
   local st = ui.style

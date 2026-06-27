@@ -8,10 +8,10 @@
 --   then per prop 32B: x y vx vy w h (f32) | state (f32: 0 free, 1 held) |
 --   hue (f32, draw tint variety)
 
-local m = pt.require("pt.math")
-local state = pt.require("pt.state")
-local level = pt.require("level")
-local fx = pt.require("fx")
+local m = cm.require("cm.math")
+local state = cm.require("cm.state")
+local level = cm.require("level")
+local fx = cm.require("fx")
 
 local M = {}
 
@@ -67,7 +67,7 @@ function M.init()
 end
 
 -- ---- the editor palette's eval units (D026/D031): spawn/despawn are
--- cartridge commands submitted through pt.repl, so an editing session
+-- cartridge commands submitted through cm.repl, so an editing session
 -- records and replays them exactly like painted cells ----
 
 -- spawn a crate centered on (x, y); returns its index, or nil when full

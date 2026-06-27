@@ -1,12 +1,12 @@
 -- selftest cartridge — engine invariants that don't need a recorded trace:
 -- PRNG known-answer tests against the reference C implementation, trig
 -- accuracy sweeps against the host libm, and (as M1 grows) serializer and
--- snapshot round-trips. Run: bin/pettan projects/selftest --headless --frames 1
+-- snapshot round-trips. Run: bin/cosmic projects/selftest --headless --frames 1
 -- (--frames sets exit_on_error, so any failed check exits 1).
 
-local rand = pt.require("pt.rand")
-local m = pt.require("pt.math")
-local state = pt.require("pt.state")
+local rand = cm.require("cm.rand")
+local m = cm.require("cm.math")
+local state = cm.require("cm.state")
 
 local game = {}
 local checks = 0
@@ -16,11 +16,11 @@ local function check(cond, what)
   if not cond then error("SELFTEST FAIL: " .. what, 0) end
 end
 
--- ---- pt.rand vs reference xoshiro256++/splitmix64 (vectors from the
+-- ---- cm.rand vs reference xoshiro256++/splitmix64 (vectors from the
 -- Blackman/Vigna C, generated 2026-06-10) ----
 
 local function t_rand_kat()
-  local sim = pal.buf("pt.sim", 64)
+  local sim = pal.buf("cm.sim", 64)
   -- raw state {1,2,3,4}
   for i = 0, 3 do sim:i64(8 + 8 * i, i + 1) end
   local raw = { 0x0000000002800001, 0x0000000003800067, 0x000cc00003800067,
@@ -28,7 +28,7 @@ local function t_rand_kat()
   for i, want in ipairs(raw) do
     check(rand.u64() == want, "xoshiro raw1234 output " .. i)
   end
-  -- splitmix-seeded from the "pettan2d" seed
+  -- splitmix-seeded from the "cosmic2d" seed
   rand.seed(0x70657474616e3264)
   local state = { 0x1fadf3d892dc22fe, 0x96ad28ac07b30484,
                   0x1e6d0aea8184269d, 0x5984702b6063ef56 }
@@ -57,7 +57,7 @@ local function t_rand_dist()
   check(({ "a" })[1] == rand.pick({ "a" }), "pick singleton")
 end
 
--- ---- pt.math vs host libm (accuracy, not bit-equality: libm is the
+-- ---- cm.math vs host libm (accuracy, not bit-equality: libm is the
 -- reference for *closeness*; bit-exactness across runs is the goldens' job)
 
 local TOL = 1e-11
@@ -133,7 +133,7 @@ local function t_atan_sweep()
   check(m.asin(1.0000001) == m.asin(1), "asin clamps overdrive")
 end
 
--- ---- pt.state: canonical serializer ----
+-- ---- cm.state: canonical serializer ----
 
 local function deep_equal(a, b)
   if a == b then
@@ -181,10 +181,10 @@ local function t_canon()
   check(not pcall(state.canon, { a = shared, b = shared }), "alias rejected")
 end
 
--- ---- pt.state: snapshot round-trip ----
+-- ---- cm.state: snapshot round-trip ----
 
 local function t_snapshot()
-  local sim = pal.buf("pt.sim", 64)
+  local sim = pal.buf("cm.sim", 64)
   rand.seed(777)
   sim:i64(0, 1234) -- pretend we're at frame 1234
 
@@ -196,7 +196,7 @@ local function t_snapshot()
   state.doc.flags = { true, false, true }
 
   local snap = state.snapshot()
-  local epoch_before = pt.code_epoch
+  local epoch_before = cm.code_epoch
 
   -- wreck everything the snapshot should put back
   sim:i64(0, 9999)
@@ -224,13 +224,13 @@ local function t_snapshot()
   state.restore(snap)
   check(rand.u64() == expect_draw, "prng stream position restored")
 
-  check(pt.code_epoch > epoch_before, "restore bumps code epoch")
-  check(#pt.reload() == 0, "disk reload paused while on bundle code")
-  pt.adopt_disk()
+  check(cm.code_epoch > epoch_before, "restore bumps code epoch")
+  check(#cm.reload() == 0, "disk reload paused while on bundle code")
+  cm.adopt_disk()
   pal.buf_free("selftest.b1")
 end
 
--- ---- pt.math.exp2 + pt.ease ----
+-- ---- cm.math.exp2 + cm.ease ----
 
 local function t_exp2()
   check(m.exp2(0) == 1.0 and m.exp2(10) == 1024.0 and m.exp2(-3) == 0.125,
@@ -248,7 +248,7 @@ local function t_exp2()
 end
 
 local function t_ease()
-  local ease = pt.require("pt.ease")
+  local ease = cm.require("cm.ease")
   local names = ease.names()
   check(#names == 31, "expected curve count (got " .. #names .. ")")
   for _, name in ipairs(names) do
@@ -293,10 +293,10 @@ local function t_ease()
   check(ease.get("selftest_step")(0.7) == 1.0, "custom curve registered")
 end
 
--- ---- pt.input: records, edges, snapshot consistency ----
+-- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
-  local input = pt.require("pt.input")
+  local input = cm.require("cm.input")
   input.map({ { "jump", input.key.space, input.key.up },
               { "left", input.key.left }, { "right", input.key.right } })
   check(input.bit_of.jump == 0 and input.bit_of.right == 2,
@@ -350,15 +350,15 @@ local function t_input()
   input.apply(input.collect({})) -- edge ages into a hold
   check(not input.pressed("right"), "edge aged")
   state.restore(snap)
-  pt.adopt_disk()
+  cm.adopt_disk()
   check(input.pressed("right"), "press edge restored from snapshot")
   input.apply(input.collect({ key(79, false) }))
 end
 
--- ---- pt.text: glyph pixels land exactly in their cell ----
+-- ---- cm.text: glyph pixels land exactly in their cell ----
 
 local function t_text()
-  local text = pt.require("pt.text")
+  local text = cm.require("cm.text")
   pal.begin_frame(0, 0, 0, 1)
   text.draw(3, 5, "A")
   pal.present()
@@ -380,10 +380,10 @@ local function t_text()
   check(w == 20 and h == 16, "measure multi-line")
 end
 
--- ---- pt.repl: exec semantics (the deterministic console path, D022) ----
+-- ---- cm.repl: exec semantics (the deterministic console path, D022) ----
 
 local function t_repl()
-  local repl = pt.require("pt.repl")
+  local repl = cm.require("cm.repl")
 
   local function tail_after(fn)
     local before = pal.log_lines(0)
@@ -404,7 +404,7 @@ local function t_repl()
   check(out[2] == "= 1, a", "repl: multi-return echo")
   -- statement: no result line
   out = tail_after(function()
-    check(repl.exec("pt.state.doc.t_repl = 7"), "repl: statement ok")
+    check(repl.exec("cm.state.doc.t_repl = 7"), "repl: statement ok")
   end)
   check(#out == 1, "repl: statement has no = line")
   check(state.doc.t_repl == 7, "repl: statement hit the doc tree")
@@ -423,8 +423,8 @@ local function t_repl()
   check(not repl.exec("syntax ]]"), "repl: syntax error returns false")
   -- queue order + drain
   repl.queue = {}
-  repl.submit("pt.state.doc.t_q = 'a'")
-  repl.submit("pt.state.doc.t_q = pt.state.doc.t_q .. 'b'")
+  repl.submit("cm.state.doc.t_q = 'a'")
+  repl.submit("cm.state.doc.t_q = cm.state.doc.t_q .. 'b'")
   check(#repl.queue == 2, "repl: submits queue")
   local drained = repl.drain()
   check(#drained == 2 and #repl.queue == 0, "repl: drain empties queue")
@@ -434,12 +434,12 @@ local function t_repl()
   check(repl.history[#repl.history]:find("t_q"), "repl: history records")
 end
 
--- ---- pt.ui: interaction logic via synthetic events (headless-safe; the
+-- ---- cm.ui: interaction logic via synthetic events (headless-safe; the
 -- 64x64 gfx target is live, so widgets really draw — logic is what we
 -- assert, pixels are the glyph test's job) ----
 
 local function t_ui()
-  local ui = pt.require("pt.ui")
+  local ui = cm.require("cm.ui")
   ui.s = {} -- isolate from any earlier state
   ui.focus, ui.hot, ui.active = nil, nil, nil
   ui.cap_mouse, ui.cap_keys = false, false
@@ -702,11 +702,11 @@ local function t_ui()
   check(ui.active == nil, "ui: nothing active at rest")
 end
 
--- ---- pt.console: toggle/error logic (drawing exercised, not asserted) ----
+-- ---- cm.console: toggle/error logic (drawing exercised, not asserted) ----
 
 local function t_console()
-  local ui = pt.require("pt.ui")
-  local con = pt.require("pt.console")
+  local ui = cm.require("cm.ui")
+  local con = cm.require("cm.console")
   local function kd(sc) return { type = "key", scancode = sc, down = true, rep = false } end
   local function pass(events)
     ui.frame(events)
@@ -737,7 +737,7 @@ local function t_console()
 
   -- history: up/up/down/down ends back on the live line (regression:
   -- human-found — the console used to clobber on_key's replacement text)
-  local repl = pt.require("pt.repl")
+  local repl = cm.require("cm.repl")
   con.toggle(true)
   for _ = 1, 15 do pass({}) end -- open + focused via take_focus
   repl.submit("cmd_one()")
@@ -770,10 +770,10 @@ local function t_console()
   ui.blur()
 end
 
--- ---- pt.tilemap: header/cells + the AABB mover (M3) ----
+-- ---- cm.tilemap: header/cells + the AABB mover (M3) ----
 
 local function t_tilemap()
-  local tilemap = pt.require("pt.tilemap")
+  local tilemap = cm.require("cm.tilemap")
   local T = { [1] = { solid = true }, [2] = { oneway = true } }
 
   -- 12x8 cells of 16px: floor along the bottom, a wall column, a plank
@@ -879,10 +879,10 @@ local function t_tilemap()
   pal.buf_free("selftest.map")
 end
 
--- ---- pt.tilemap M4 statics: fresh flag, poke/peek, save/load, cell_line --
+-- ---- cm.tilemap M4 statics: fresh flag, poke/peek, save/load, cell_line --
 
 local function t_tilemap_tools()
-  local tilemap = pt.require("pt.tilemap")
+  local tilemap = cm.require("cm.tilemap")
   local T = { [1] = { solid = true } }
 
   local tm, fresh = tilemap.new{ name = "selftest.map4", w = 6, h = 5,
@@ -907,7 +907,7 @@ local function t_tilemap_tools()
         "tilemap: poke/peek oob is inert")
 
   -- save/load round trip (raw self-describing bytes)
-  local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/pettan_selftest_map.dat"
+  local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_map.dat"
   check(tilemap.save("selftest.map4", tmp) == true, "tilemap: save writes")
   tilemap.poke("selftest.map4", 1, 2, 1) -- diverge live state from the file
   check(tilemap.load("selftest.map4", tmp) == true, "tilemap: load ok")
@@ -916,7 +916,7 @@ local function t_tilemap_tools()
         "tilemap: save/load round trip restores bytes")
   local ok, err = tilemap.load("selftest.map4", tmp .. ".nope")
   check(ok == nil and err == "no file", "tilemap: load missing file refused")
-  check(pal.write_file(tmp, "PETTANBOGUS") == true, "selftest tmp writable")
+  check(pal.write_file(tmp, "COSMICBOGUS") == true, "selftest tmp writable")
   ok, err = tilemap.load("selftest.map4", tmp)
   check(ok == nil and err ~= nil, "tilemap: load garbage refused")
   check(tilemap.peek("selftest.map4", 1, 2) == 7,
@@ -951,10 +951,10 @@ local function t_tilemap_tools()
   end
 end
 
--- ---- pt.state.buf_poke/buf_peek (the inspector's buffer eval unit) ----
+-- ---- cm.state.buf_poke/buf_peek (the inspector's buffer eval unit) ----
 
 local function t_buf_poke()
-  local repl = pt.require("pt.repl")
+  local repl = cm.require("cm.repl")
   pal.buf("selftest.poke", 32)
 
   state.buf_poke("selftest.poke", "u8", 0, 200)
@@ -985,23 +985,23 @@ local function t_buf_poke()
   check(not pcall(state.buf_peek, "selftest.nosuch", "u8", 0),
         "buf_peek: unknown buffer errors")
 
-  -- the actual eval form: a self-contained command string through pt.repl
-  check(repl.exec('pt.state.buf_poke("selftest.poke","f32",28,2.25)') == true,
+  -- the actual eval form: a self-contained command string through cm.repl
+  check(repl.exec('cm.state.buf_poke("selftest.poke","f32",28,2.25)') == true,
         "buf_poke: exec as an eval string")
   check(state.buf_peek("selftest.poke", "f32", 28) == 2.25,
         "buf_poke: eval landed")
-  check(repl.exec('pt.state.buf_poke("selftest.poke","u8",999,1)') == false,
+  check(repl.exec('cm.state.buf_poke("selftest.poke","u8",999,1)') == false,
         "buf_poke: erroring eval is contained")
 
   pal.buf_free("selftest.poke")
 end
 
--- ---- pt.inspect (the M4 inspector panel: eval building + render) ----
+-- ---- cm.inspect (the M4 inspector panel: eval building + render) ----
 
 local function t_inspect()
-  local inspect = pt.require("pt.inspect")
-  local repl = pt.require("pt.repl")
-  local ui = pt.require("pt.ui")
+  local inspect = cm.require("cm.inspect")
+  local repl = cm.require("cm.repl")
+  local ui = cm.require("cm.ui")
 
   -- eval path building: dotted when clean, bracketed otherwise
   check(inspect.path_append("doc", "knobs") == "doc.knobs",
@@ -1059,28 +1059,28 @@ end
 -- ---- code bundle restore (D012): bundle source replaces running code ----
 
 local function t_bundle()
-  local knob = pt.require("knob")
+  local knob = cm.require("knob")
   check(knob.value == 1, "knob module baseline")
-  pt.restore_bundle({
+  cm.restore_bundle({
     { name = "knob", path = "projects/selftest/knob.lua",
       source = "return { value = 2 }" },
   })
   check(knob.value == 2, "bundle code re-executed into the same table")
-  check(pt.require("knob") == knob, "module identity preserved")
-  local changed = pt.adopt_disk()
+  check(cm.require("knob") == knob, "module identity preserved")
+  local changed = cm.adopt_disk()
   check(knob.value == 1, "adopt_disk returns to disk code")
   check(#changed == 1 and changed[1] == "knob", "adopt reports the reload")
 end
 
--- ---- pt.trace segment ring (D032) ----
+-- ---- cm.trace segment ring (D032) ----
 -- runs before main.boot() starts the live ring, so the module is ours to
 -- drive: synthetic frames = mutate buffers, advance the counter by hand,
 -- call record_frame. Leaves state exactly as found.
 
 local function t_ring()
-  local trace = pt.require("pt.trace")
-  local chunklib = pt.require("pt.chunk")
-  local sim = pal.buf("pt.sim", 64)
+  local trace = cm.require("cm.trace")
+  local chunklib = cm.require("cm.chunk")
+  local sim = pal.buf("cm.sim", 64)
   local f0 = sim:i64(0)
   local save_seconds, save_kf = trace.ring.seconds, trace.ring.kf
   local irec = ("\0"):rep(10)
@@ -1110,7 +1110,7 @@ local function t_ring()
     local st = trace.ring_state_at(f)
     check(st.bufs["st.ring"] == snaps[f - f0],
           "ring: state_at frame +" .. (f - f0))
-    check(string.unpack("<i8", st.bufs["pt.sim"]) == f,
+    check(string.unpack("<i8", st.bufs["cm.sim"]) == f,
           "ring: state_at counter +" .. (f - f0))
     local doc = state.parse(st.doct)
     local want = (f - f0 >= 9 and f - f0 <= 14) and 9 or nil
@@ -1121,12 +1121,12 @@ local function t_ring()
   check(stats.segs == 4 and stats.frames == 12 and not stats.pinned,
         "ring: stats")
 
-  -- export the retained window: a normal PTRC with KEYF at the boundaries
-  local ok, frames = trace.ring_export("/tmp/st_ring.ptrace")
+  -- export the retained window: a normal CTRC with KEYF at the boundaries
+  local ok, frames = trace.ring_export("/tmp/st_ring.ctrace")
   check(ok and frames == 12, "ring: export frame count")
   local tags = {}
-  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring.ptrace"),
-                                   "PTRC")) do
+  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring.ctrace"),
+                                   "CTRC")) do
     tags[#tags + 1] = c.tag
     if c.tag == "TAIL" then
       check(string.unpack("<I4", c.payload) == 12, "ring: export TAIL")
@@ -1163,21 +1163,21 @@ local function t_ring()
   check(lo4 == f0 + 100 and hi4 == f0 + 100, "ring: discontinuity reset")
 
   -- code epochs land in the ring and travel through exports
-  trace.on_code_change({ "pt.chunk" })
+  trace.on_code_change({ "cm.chunk" })
   sim:i64(0, f0 + 101)
   trace.record_frame(irec, nil)
-  ok = trace.ring_export("/tmp/st_ring2.ptrace")
+  ok = trace.ring_export("/tmp/st_ring2.ctrace")
   check(ok, "ring: epoch export")
   tags = {}
-  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring2.ptrace"),
-                                   "PTRC")) do
+  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring2.ctrace"),
+                                   "CTRC")) do
     tags[#tags + 1] = c.tag
   end
   check(table.concat(tags, " ") == "HEAD SNAP EPOC FRAM TAIL",
         "ring: epoch chunk order (got " .. table.concat(tags, " ") .. ")")
 
   -- record_start pins the ring; the synthesized SNAP == a live snapshot
-  trace.record_start("/tmp/st_pin.ptrace", { project = "selftest" })
+  trace.record_start("/tmp/st_pin.ctrace", { project = "selftest" })
   local live_snap = state.snapshot()
   check(trace.recording(), "pin: recording()")
   for i = 102, 106 do
@@ -1189,8 +1189,8 @@ local function t_ring()
   check(not trace.recording(), "pin: stopped")
   tags = {}
   local pin_snap
-  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_pin.ptrace"),
-                                   "PTRC")) do
+  for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_pin.ctrace"),
+                                   "CTRC")) do
     tags[#tags + 1] = c.tag
     if c.tag == "SNAP" then pin_snap = c.payload end
   end

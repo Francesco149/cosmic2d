@@ -1,4 +1,4 @@
-# pettan2d — agent orientation
+# cosmic2d — agent orientation
 
 Tiny 2D pixel-art engine / fantasy console: small C platform binary ("PAL") +
 hot-reloadable Lua engine/editor/games, deterministic to the bit, batteries
@@ -40,8 +40,8 @@ included. You (the agent) are the primary developer.
 ## Quick commands
 
 ```sh
-nix develop -c make -C pal                                   # build bin/pettan
-bin/pettan projects/sandbox                                  # run windowed
-bin/pettan projects/sandbox --headless --frames 120 --shot /tmp/s.png
+nix develop -c make -C pal                                   # build bin/cosmic
+bin/cosmic projects/sandbox                                  # run windowed
+bin/cosmic projects/sandbox --headless --frames 120 --shot /tmp/s.png
 nix run .#test                                               # goldens (M1+)
 ```

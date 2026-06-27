@@ -1,6 +1,6 @@
-# builds ../bin/pettan (run `make` from pal/, inside `nix develop`)
+# builds ../bin/cosmic (run `make` from pal/, inside `nix develop`)
 CC ?= cc
-BIN := ../bin/pettan
+BIN := ../bin/cosmic
 BUILD := build
 
 CFLAGS := -O2 -g -std=c11 -Wall -Wextra -Wno-unused-parameter \

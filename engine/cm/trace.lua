@@ -1,12 +1,12 @@
--- pt.trace — the segment ring recorder + verifier (D014, D019, D032).
--- One PTRC file is a replay, a frame-addressable debugging timeline, and
+-- cm.trace — the segment ring recorder + verifier (D014, D019, D032).
+-- One CTRC file is a replay, a frame-addressable debugging timeline, and
 -- the determinism oracle.
 --
--- PTRC container (pt.chunk), chunk order is meaningful:
+-- CTRC container (cm.chunk), chunk order is meaningful:
 --   HEAD v1  u32 keyframe_interval, s4 project, u32 n, n * s4 action names
---   SNAP v1  full pt.state snapshot (with code bundle) — state before frame 1
+--   SNAP v1  full cm.state snapshot (with code bundle) — state before frame 1
 --   FRAM v1  one per sim frame, in order:
---              s4 input record (pt.input v1)
+--              s4 input record (cm.input v1)
 --              u32 buffer count, then per live named buffer sorted by name:
 --                s4 name, u8 kind, s4 payload
 --                kind 0 = delta1 vs previous frame (payload may be empty)
@@ -15,7 +15,7 @@
 --              u8 doc kind: 0 = unchanged, 1 = changed (then s4 canon bytes)
 --   EVAL v1  console commands drained at the START of the next FRAM's sim
 --            frame, before its input record applies (D022): u32 n,
---            n * s4 command. Verify re-executes them via pt.repl.exec at
+--            n * s4 command. Verify re-executes them via cm.repl.exec at
 --            the same point; replay-without-re-sim can ignore them (their
 --            effects are inside the deltas)
 --   KEYF v1  code-less snapshot of the state right after the preceding FRAM
@@ -51,15 +51,15 @@
 -- an observer: its bookkeeping lives on M (survives trace.lua's own
 -- reload) and in anonymous buffers, never in named buffers or the doc
 -- tree, so recording does not perturb the sim — and ring knobs never
--- enter traces. record_frame watches the pt.sim frame counter: a
+-- enter traces. record_frame watches the cm.sim frame counter: a
 -- non-monotonic step means an out-of-band restore happened and the ring
 -- resets (an active pin is flushed first, valid up to its last frame).
 
 local M = select(2, ...) or {}
-local chunk = pt.require("pt.chunk")
-local state = pt.require("pt.state")
-local input = pt.require("pt.input")
-local repl = pt.require("pt.repl")
+local chunk = cm.require("cm.chunk")
+local state = cm.require("cm.state")
+local input = cm.require("cm.input")
+local repl = cm.require("cm.repl")
 
 local pack, unpack = string.pack, string.unpack
 
@@ -104,7 +104,7 @@ end
 local function open_segment(R, first)
   local bufs, doct = capture_keyframe(R)
   local seg = { id = R.next_id, first = first, kf_bufs = bufs,
-                kf_doct = doct, bundle = pt.modules(), chunks = {},
+                kf_doct = doct, bundle = cm.modules(), chunks = {},
                 frames = 0, bytes = 0 }
   R.next_id = R.next_id + 1
   R.segs[#R.segs + 1] = seg
@@ -275,7 +275,7 @@ function M.on_code_change(changed_names)
   local R = M._R
   if not R or #changed_names == 0 then return end
   local mods = {}
-  for _, m in ipairs(pt.modules()) do mods[m.name] = m end
+  for _, m in ipairs(cm.modules()) do mods[m.name] = m end
   local names = {}
   for _, n in ipairs(changed_names) do names[#names + 1] = n end
   table.sort(names)
@@ -288,10 +288,10 @@ function M.on_code_change(changed_names)
   pal.log("[trace] code epoch: " .. table.concat(names, ", "))
 end
 
--- serialize segments first_i.. as a PTRC blob and write it
+-- serialize segments first_i.. as a CTRC blob and write it
 local function write_trace(path, project, kf, first_i)
   local R = M._R
-  local w = chunk.writer("PTRC")
+  local w = chunk.writer("CTRC")
   local names = input.actions()
   local head = { pack("<I4s4I4", kf, project, #names) }
   for _, n in ipairs(names) do head[#head + 1] = pack("<s4", n) end
@@ -335,10 +335,10 @@ function M.ring_export(path)
   return write_trace(path, R.project, ring_kf(), 1)
 end
 
--- load a .ptrace as the ring (replay playback, M5): the live ring is
+-- load a .ctrace as the ring (replay playback, M5): the live ring is
 -- REPLACED by the trace's frames and live state+code restore to the
 -- trace's SNAP. The caller must freeze the sim before the next
--- record_frame and re-run game.init (pt.scrub does both, then scrubs/
+-- record_frame and re-run game.init (cm.scrub does both, then scrubs/
 -- plays); leaving adopts the trace's timeline via rewind, which rebases
 -- the mirrors — until then they are deliberately stale. EVAL effects are
 -- already inside the deltas; EPOC code is folded into each segment's
@@ -346,7 +346,7 @@ end
 function M.ring_load(path)
   local blob, err = pal.read_file(path)
   if not blob then error("can't read trace " .. path .. ": " .. err, 0) end
-  local chunks = chunk.read(blob, "PTRC")
+  local chunks = chunk.read(blob, "CTRC")
   if M._rec then
     pal.log("[trace] recording stopped by replay load")
     M.record_stop()
@@ -371,7 +371,7 @@ function M.ring_load(path)
         border[#border + 1] = fl.name
       end
       for _, b in ipairs(s.bufs) do
-        if b.name == "pt.sim" then f0 = string.unpack("<i8", b.bytes) end
+        if b.name == "cm.sim" then f0 = string.unpack("<i8", b.bytes) end
       end
       f0 = f0 or 0
       cur = { id = 1, first = f0 + 1, kf_bufs = s.bufs, kf_doct = s.doct,
@@ -534,7 +534,7 @@ function M.rewind(f)
   -- only re-execute the bundle when it differs from the loaded code:
   -- the common rewind (no reload since f) must not enter bundle mode
   local cur = {}
-  for _, m in ipairs(pt.modules()) do cur[m.name] = m.source end
+  for _, m in ipairs(cm.modules()) do cur[m.name] = m.source end
   local list, diff = {}, false
   for _, name in ipairs(order) do
     list[#list + 1] = files[name]
@@ -542,7 +542,7 @@ function M.rewind(f)
   end
 
   state.restore_tables(st.bufs, st.doct)
-  if diff then pt.restore_bundle(list) end
+  if diff then cm.restore_bundle(list) end
 
   -- truncate the ring after f and rebase the mirrors there
   for i = #R.segs, si + 1, -1 do R.segs[i] = nil end
@@ -596,7 +596,7 @@ end
 function M.verify(path, game)
   local blob, err = pal.read_file(path)
   if not blob then error("can't read trace " .. path .. ": " .. err, 0) end
-  local chunks = chunk.read(blob, "PTRC")
+  local chunks = chunk.read(blob, "CTRC")
 
   local snap
   for _, c in ipairs(chunks) do
@@ -736,7 +736,7 @@ function M.verify(path, game)
         name, fpath, source, pos = unpack("<s4s4s4", c.payload, pos)
         files[#files + 1] = { name = name, path = fpath, source = source }
       end
-      pt.restore_bundle(files)
+      cm.restore_bundle(files)
     elseif c.tag == "TAIL" and c.version == 1 then
       tail_frames = unpack("<I4", c.payload)
     end

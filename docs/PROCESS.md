@@ -1,4 +1,4 @@
-# pettan2d — working process (for the agent)
+# cosmic2d — working process (for the agent)
 
 How work happens in this repo. The human is available for questions and
 visual checks but sessions are expected to be autonomous and long-running
@@ -40,14 +40,14 @@ auto-memory: future sessions must orient from a fresh clone + these docs.
 Everything runs inside the flake devshell (`nix develop -c <cmd>`):
 
 ```sh
-nix develop -c make -C pal          # build → bin/pettan (+ shaders if changed)
-bin/pettan projects/sandbox         # run windowed (WSLg window appears on the
+nix develop -c make -C pal          # build → bin/cosmic (+ shaders if changed)
+bin/cosmic projects/sandbox         # run windowed (WSLg window appears on the
                                     #   Windows side; dzn/RTX or lavapipe)
-bin/pettan projects/sandbox --headless --frames 120 --shot /tmp/shot.png
-bin/pettan projects/selftest --headless --frames 1       # 22k engine checks
-bin/pettan <proj> --headless --frames N --record t.ptrace  # capture a trace
-bin/pettan <proj> --verify t.ptrace  # golden runner: byte-exact replay, exit 0/1
-bin/pettan projects/sandbox --headless --frames N --eval "game.demo(1)" \
+bin/cosmic projects/sandbox --headless --frames 120 --shot /tmp/shot.png
+bin/cosmic projects/selftest --headless --frames 1       # 22k engine checks
+bin/cosmic <proj> --headless --frames N --record t.ctrace  # capture a trace
+bin/cosmic <proj> --verify t.ctrace  # golden runner: byte-exact replay, exit 0/1
+bin/cosmic projects/sandbox --headless --frames N --eval "game.demo(1)" \
   --shot /tmp/s.png     # --eval queues a console line for frame 1 (recorded
                         # as an EVAL chunk) — drives demos/knobs headlessly
 nix run .#test                      # selftest + all committed goldens (lavapipe)
@@ -60,14 +60,14 @@ nix flake check                     # same suite as a sandboxed derivation
   not. New golden = trace + `.project` sidecar naming its cartridge dir.
 - Pixel golden = `tests/pixels/<name>.png` + `<name>.args` (one argv token
   per line; the runner appends `--shot` and byte-compares). Record ON
-  LAVAPIPE: `VK_DRIVER_FILES=$PETTAN_LVP_ICD bin/pettan <args…> --shot
+  LAVAPIPE: `VK_DRIVER_FILES=$COSMIC_LVP_ICD bin/cosmic <args…> --shot
   tests/pixels/<name>.png` inside the devshell — and mind untracked local
   state (a painted `projects/sandbox/map.dat` boots instead of the
   procedural map; move it aside).
 - Time machine (M5): F4 in any live session scrubs the always-on ring
-  trace (last `pt.trace.ring.seconds`, default 30); "rewind here" truncates
-  the future, "save .ptrace" exports the ring; replay a file with
-  `pt.scrub.open_replay("path.ptrace")` from the console. Crash → F4 →
+  trace (last `cm.trace.ring.seconds`, default 30); "rewind here" truncates
+  the future, "save .ctrace" exports the ring; replay a file with
+  `cm.scrub.open_replay("path.ctrace")` from the console. Crash → F4 →
   scrub back and watch it coming is the intended debugging loop.
 - The flake only sees **tracked** files: `git add` new files before any
   `nix develop`/`nix build`/`nix run .#test` if files were added.

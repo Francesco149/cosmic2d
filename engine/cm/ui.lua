@@ -1,14 +1,14 @@
--- pt.ui — immediate-mode UI core (M2). Panels and widgets are plain function
+-- cm.ui — immediate-mode UI core (M2). Panels and widgets are plain function
 -- calls made every frame; the only retained state is a per-id table (scroll
 -- offsets, collapse flags, text cursors) keyed by a hierarchical id path.
 --
--- Determinism class: dev/render only. pt.ui must never touch named buffers,
--- the doc tree or pt.rand — UI state lives on this module table (survives
+-- Determinism class: dev/render only. cm.ui must never touch named buffers,
+-- the doc tree or cm.rand — UI state lives on this module table (survives
 -- hot reload, deliberately resets on VM reboot) and is never recorded in
 -- snapshots or traces. Anything a widget *edits* (e.g. a knob in the doc
 -- tree) is the caller's write, on the caller's head.
 --
--- Frame protocol (pt.main drives this; cartridges just draw widgets):
+-- Frame protocol (cm.main drives this; cartridges just draw widgets):
 --   1. ui.frame(events) at tick start ingests this tick's raw events and
 --      returns the events the game may see, filtered by LAST tick's capture
 --      flags (the classic one-frame imgui latency). Key-ups and button-ups
@@ -35,7 +35,7 @@
 
 local M = select(2, ...) or {}
 
-local text = pt.require("pt.text")
+local text = cm.require("cm.text")
 
 -- ---- persistent module state (survives hot reload, not VM reboot) ----
 
@@ -58,7 +58,7 @@ M.style = M.style or {
   track = { 0.12, 0.13, 0.19, 1.0 },
 }
 -- scroll feel knobs (dev chrome only — tune live from the console,
--- e.g. `pt.ui.style.scroll.spring = 0.5`). inertia: wheel notches are
+-- e.g. `cm.ui.style.scroll.spring = 0.5`). inertia: wheel notches are
 -- velocity (off = classic instant jumps); elastic: edges rubber-band
 -- (off = hard clamp); fric: in-bounds velocity decay per 60Hz tick;
 -- fric_out: decay while overshooting (stiffer); spring: pull per px
@@ -268,7 +268,7 @@ end
 -- ---- layout ----
 
 local function lay()
-  return lay_stack[#lay_stack] or error("pt.ui: widget outside a panel", 3)
+  return lay_stack[#lay_stack] or error("cm.ui: widget outside a panel", 3)
 end
 
 local function push_clip(x, y, w, h)

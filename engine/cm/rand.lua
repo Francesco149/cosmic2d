@@ -1,8 +1,8 @@
--- pt.rand — the engine PRNG: xoshiro256++ (Blackman/Vigna) ported to Lua 5.4
+-- cm.rand — the engine PRNG: xoshiro256++ (Blackman/Vigna) ported to Lua 5.4
 -- integer ops (wrapping arithmetic + logical shifts are exact, so this is
 -- bit-identical to the reference C on every platform).
 --
--- State lives in the "pt.sim" named buffer (see pt.state for the layout:
+-- State lives in the "cm.sim" named buffer (see cm.state for the layout:
 -- s0..s3 at bytes 8..39) — every draw reads and writes the buffer, so a
 -- snapshot taken between any two calls captures the exact stream position,
 -- and state survives VM reboots. math.random is banned in sim code; this
@@ -10,7 +10,7 @@
 
 local M = {}
 
-local SIM_BUF, S0 = "pt.sim", 8
+local SIM_BUF, S0 = "cm.sim", 8
 local sim -- view, re-acquired per VM lifetime
 
 local function buf()
@@ -33,7 +33,7 @@ local function splitmix(z)
 end
 
 function M.seed(n)
-  n = math.tointeger(n) or error("pt.rand.seed: integer expected", 2)
+  n = math.tointeger(n) or error("cm.rand.seed: integer expected", 2)
   local b = buf()
   for i = 0, 3 do
     local out
@@ -82,10 +82,10 @@ end
 -- masked rejection: unbiased, expected < 2 draws
 function M.range(m, n)
   if n == nil then m, n = 1, m end
-  m = math.tointeger(m) or error("pt.rand.range: integer expected", 2)
-  n = math.tointeger(n) or error("pt.rand.range: integer expected", 2)
+  m = math.tointeger(m) or error("cm.rand.range: integer expected", 2)
+  n = math.tointeger(n) or error("cm.rand.range: integer expected", 2)
   local span = n - m + 1
-  if span <= 0 then error("pt.rand.range: empty range", 2) end
+  if span <= 0 then error("cm.rand.range: empty range", 2) end
   local mask = span - 1
   mask = mask | (mask >> 1)
   mask = mask | (mask >> 2)

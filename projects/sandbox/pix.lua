@@ -1,6 +1,6 @@
 -- pix — tiny procedural pixel-art builder for placeholder assets.
 -- Render-only: textures rebuild on every reload/reboot (old ids leak by the
--- live-reload pillar). Deterministic from constants, but NEVER from pt.rand:
+-- live-reload pillar). Deterministic from constants, but NEVER from cm.rand:
 -- module top-levels and game.init must not touch the sim PRNG stream.
 
 local M = {}

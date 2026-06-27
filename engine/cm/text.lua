@@ -1,4 +1,4 @@
--- pt.text — bitmap text from the baked spleen atlases (D010). Glyphs are
+-- cm.text — bitmap text from the baked spleen atlases (D010). Glyphs are
 -- white-on-transparent in one texture per font; pal.quad's vertex color
 -- tints them, so any color is free. Render-only (no sim state).
 --
@@ -32,7 +32,7 @@ end
 local function font(name)
   local f = fonts[name]
   if f then return f end
-  local data = pt.require("pt.assets.font_" .. name)
+  local data = cm.require("cm.assets.font_" .. name)
   local tex = pal.tex_create(data.w, data.h, decode_atlas(data))
   f = { tex = tex, data = data }
   fonts[name] = f

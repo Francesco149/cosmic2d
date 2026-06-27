@@ -1,20 +1,20 @@
--- pt.editor — editor mode v0 (M4): the F1 mode switch, map painting, the
--- collider overlay and the state inspector (pt.inspect, toolbar toggle).
+-- cm.editor — editor mode v0 (M4): the F1 mode switch, map painting, the
+-- collider overlay and the state inspector (cm.inspect, toolbar toggle).
 -- Engine-level chrome, available in every project unless project.lua sets
 -- `editor = false` (the play-mode lockdown for shipped zips — it disables
--- F1 here and the ` / F3 toggles in pt.console and pt.perf; see locked()).
+-- F1 here and the ` / F3 toggles in cm.console and cm.perf; see locked()).
 --
 -- Dev/render class by the D021 iron rule: this module owns no sim state
 -- and never mutates any directly. Every edit is SUBMITTED as a console
--- command through pt.repl (the D022 EVAL path) — pt.tilemap.poke per
+-- command through cm.repl (the D022 EVAL path) — cm.tilemap.poke per
 -- painted cell, the cartridge's reset_eval for the reset button — so an
 -- editing session records into a trace exactly like console typing:
 -- replay and verify reproduce the edits byte-exact (D026). The editor is
 -- a repl client with a mouse.
 --
--- Cartridge wiring: game.init calls pt.editor.attach(fn); fn() runs once
+-- Cartridge wiring: game.init calls cm.editor.attach(fn); fn() runs once
 -- per editor frame (read-only!) and returns the live editing surface:
---   { tm = pt.tilemap wrapper,      -- the paintable map
+--   { tm = cm.tilemap wrapper,      -- the paintable map
 --     atlas = { id=, w=, h= },      -- texture the tm tiles reference
 --     camx =, camy =,               -- world camera this frame
 --     colliders = function()        -- optional, for the overlay
@@ -40,11 +40,11 @@
 
 local M = select(2, ...) or {}
 
-local ui = pt.require("pt.ui")
-local repl = pt.require("pt.repl")
-local gfx = pt.require("pt.gfx")
-local tilemap = pt.require("pt.tilemap")
-local inspect = pt.require("pt.inspect")
+local ui = cm.require("cm.ui")
+local repl = cm.require("cm.repl")
+local gfx = cm.require("cm.gfx")
+local tilemap = cm.require("cm.tilemap")
+local inspect = cm.require("cm.inspect")
 
 M.on = M.on or false
 M.sel = M.sel or 1 -- selected tile id; 0 = the eraser
@@ -70,10 +70,10 @@ function M.attach(fn)
 end
 
 -- project.lua `editor = false` locks every dev surface (shipped zips):
--- F1 here, the ` toggle in pt.console, F3 in pt.perf. Game code can still
+-- F1 here, the ` toggle in cm.console, F3 in cm.perf. Game code can still
 -- opt a door back in by flipping the field (the PLAN's "opt-in door").
 function M.locked()
-  local proj = pt.main and pt.main.proj
+  local proj = cm.main and cm.main.proj
   return (proj ~= nil and proj.editor == false) and true or false
 end
 
@@ -153,7 +153,7 @@ local function paint(att, tx, ty)
     local key = cy * tm.w + cx
     if M.stroke[key] ~= id and tm:get(cx, cy) ~= id then
       M.stroke[key] = id
-      repl.submit(("pt.tilemap.poke(%q,%d,%d,%d)")
+      repl.submit(("cm.tilemap.poke(%q,%d,%d,%d)")
                   :format(tm.name, cx, cy, id))
     end
   end)
@@ -235,7 +235,7 @@ local function toolbar(att, tx, ty)
     status = ("map %s  %dx%d"):format(att.tm.name, att.tm.w, att.tm.h)
     if tx then status = status .. ("  cell %d,%d"):format(tx, ty) end
   else
-    status = "nothing to edit - game.init: pt.editor.attach(fn)"
+    status = "nothing to edit - game.init: cm.editor.attach(fn)"
   end
   ui.label(status, { color = st.text_dim })
   M.show_col = ui.checkbox("colliders", M.show_col)
@@ -292,7 +292,7 @@ local function toolbar(att, tx, ty)
   ui.end_panel()
 end
 
--- ---- the per-tick frame (pt.main: after game draw, before perf) ----
+-- ---- the per-tick frame (cm.main: after game draw, before perf) ----
 
 function M.frame()
   for _, k in ipairs(ui.inp.keys) do

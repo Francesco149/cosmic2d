@@ -1,4 +1,4 @@
-# pettan2d — plan
+# cosmic2d — plan
 
 The distilled project vision and the milestone roadmap. This file replaces the
 original SEED brainstorm; nothing from it was dropped, only organized.
@@ -87,7 +87,7 @@ definition of done. Order may flex; pillars don't.
   SDL_GPU clear + untextured quad batch, embedded Lua 5.4, C-owned loop with
   protected engine tick, headless mode, PNG screenshot, named persistent
   buffers, hot reload with error-state recovery. Sandbox project draws
-  animated quads. *Exit*: `pettan projects/sandbox` shows motion at 60 fps;
+  animated quads. *Exit*: `cosmic projects/sandbox` shows motion at 60 fps;
   edit main.lua → visual change without restart; broken code → error overlay
   → fix → recovers; headless screenshot pushed to llm-feed.
 - **M1 — draw + state + determinism core**: textures + atlas basics, bulk

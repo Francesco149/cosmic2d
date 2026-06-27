@@ -1,4 +1,4 @@
--- pt.main — engine entry: flags, project lifecycle, the tick loop.
+-- cm.main — engine entry: flags, project lifecycle, the tick loop.
 -- Keeps its state on M (survives its own hot reload via the prev-table
 -- convention; see boot.lua header).
 --
@@ -69,7 +69,7 @@ local function load_project(dir)
   local path = dir .. "/project.lua"
   local src, err = pal.read_file(path)
   if not src then error("can't read " .. path .. ": " .. tostring(err), 0) end
-  pt.register_special("@project", path, src)
+  cm.register_special("@project", path, src)
   local chunk, lerr = load(src, "@" .. path)
   if not chunk then error(lerr, 0) end
   local proj = chunk()
@@ -110,25 +110,25 @@ function M.boot()
 
   local proj = load_project(args.project)
   M.proj = proj
-  pt.set_project_root(args.project)
+  cm.set_project_root(args.project)
 
   pal.gfx_init {
     w = proj.internal_w or 480, h = proj.internal_h or 270,
     scale = proj.window_scale or 2,
-    title = proj.name or "pettan2d",
+    title = proj.name or "cosmic2d",
     headless = args.headless,
     vsync = not args.no_vsync,
   }
 
-  M.state = pt.require("pt.state")
-  M.input = pt.require("pt.input")
-  M.ui = pt.require("pt.ui")
-  M.repl = pt.require("pt.repl")
-  M.console = pt.require("pt.console")
-  M.perf = pt.require("pt.perf")
-  M.editor = pt.require("pt.editor")
-  M.scrub = pt.require("pt.scrub")
-  pt.require("pt.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
+  M.state = cm.require("cm.state")
+  M.input = cm.require("cm.input")
+  M.ui = cm.require("cm.ui")
+  M.repl = cm.require("cm.repl")
+  M.console = cm.require("cm.console")
+  M.perf = cm.require("cm.perf")
+  M.editor = cm.require("cm.editor")
+  M.scrub = cm.require("cm.scrub")
+  cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
   print = function(...)
@@ -140,7 +140,7 @@ function M.boot()
 
   M.entry = (proj.entry or "main.lua"):gsub("%.lua$", ""):gsub("/", ".")
   if M.contain then
-    local ok, game = xpcall(pt.require, debug.traceback, M.entry)
+    local ok, game = xpcall(cm.require, debug.traceback, M.entry)
     if ok then
       M.game = game
       guarded(M.game.init)
@@ -149,7 +149,7 @@ function M.boot()
       enter_error(game)
     end
   else
-    M.game = pt.require(M.entry)
+    M.game = cm.require(M.entry)
     M.game.init()
   end
 
@@ -160,13 +160,13 @@ function M.boot()
     args.project, w, h, pal.version.major, pal.version.api, pal.platform))
 
   if args.verify then
-    M.trace = pt.require("pt.trace")
+    M.trace = cm.require("cm.trace")
     local ok = M.trace.verify(args.verify, M.game)
     pal.quit(ok and 0 or 1)
     return
   end
   -- the ring trace is always on in live sessions (D032); --record pins it
-  M.trace = pt.require("pt.trace")
+  M.trace = cm.require("cm.trace")
   M.trace.ring_start({ project = args.project })
   if args.record then
     M.trace.record_start(args.record, { project = args.project })
@@ -183,7 +183,7 @@ local function poll_reload(now)
   -- boot-time failure: the entry never loaded; keep retrying the require
   -- (covers fixes to the entry or anything in its require chain)
   if M.game_err and not M.game then
-    local ok, game = xpcall(pt.require, debug.traceback, M.entry)
+    local ok, game = xpcall(cm.require, debug.traceback, M.entry)
     if ok then
       M.game = game
       M.game_err = nil
@@ -200,7 +200,7 @@ local function poll_reload(now)
     return
   end
 
-  local changed = pt.reload()
+  local changed = cm.reload()
   if #changed == 0 then return end
   if M.trace then M.trace.on_code_change(changed) end
   if M.game_err then
