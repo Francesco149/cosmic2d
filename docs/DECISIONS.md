@@ -779,6 +779,21 @@ updated):
   the launch. The landing branch must NOT cancel a grapple (the extend phase is
   grounded for a grapple-from-standing; the reel lifts you off when it connects).
 
+**Feel pass 3 (2026-06-28).**
+- **Jump airtime ≈ ⅔ s** (`jump_apex_t` 22.5→21.3; airtime ≈ apex_t·(1+1/√fall_mul)
+  frames, height stays `jump_h`).
+- **Up-jump and hop are now HEIGHT-based** (`upjump_h`, `hop_h`): the impulse
+  velocity is derived from the live gravity each step (`v=√(2·g·h)`), so retuning
+  gravity keeps their heights automatically — no more re-deriving ×k velocity
+  knobs every gravity change (jump was already height-authored, D029).
+- **Grapple launch dampened.** The reel now stops `grapple_stop_ch` CH (≈2) short
+  of the platform so the residual coasts up under gravity; a `grapple_min_t` floor
+  keeps very-short grapples a small launch (else stopping short would no-op them).
+  But the launch is dominated by the post-reel coast ≈ `grapple_vmax`²/2g, so vmax
+  is the real lever — lowered 300→220 (accel 720 unchanged, the "accel feels fine"
+  ask) to cut a medium grapple's overshoot from ~5.6 CH to ~2.5 CH. **Starting a
+  grapple zeroes horizontal momentum.**
+
 ## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
 
 **Context**: the human wants (a) an **editor-only UI scale** independent of the

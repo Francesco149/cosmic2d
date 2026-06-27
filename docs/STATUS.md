@@ -85,6 +85,22 @@ byte-exact; montage "M7 moveset v3" on llm-feed:
   reverses first, damping the launch. Key fix: landing no longer cancels a
   grapple (the extend phase is grounded for a grapple-from-standing).
 
+### Feedback round 3 (2026-06-28)
+
+GAME.md §4 + D035 updated; selftest 22312 + record→verify both timelines:
+
+- **Jump airtime ≈ ⅔ s** (apex_t 22.5→21.3; measured 0.65 s for a clean jump),
+  height unchanged.
+- **Up-jump & hop are height-based now** (`upjump_h`/`hop_h`): velocity derived
+  from live gravity, so gravity retunes auto-preserve heights (no more ×k impulse
+  recomputes).
+- **Grapple launch dampened**: reel stops ~2 CH short of the platform
+  (`grapple_stop_ch`) so the residual coasts under gravity; `grapple_min_t` keeps
+  very-short grapples a small launch. The launch is really capped by
+  `grapple_vmax` (coast ≈ vmax²/2g) — lowered 300→220, cutting a medium grapple's
+  overshoot ~5.6 CH → **~2.5 CH** (accel 720 unchanged). **Grapple start zeroes
+  horizontal momentum.**
+
 ## What works right now (the engine, M0–M6 + the M7 moveset)
 
 **Runs on Windows** (M6): `nix build .#cosmic-windows` → `cosmic.exe`, byte-exact
