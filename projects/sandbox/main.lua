@@ -65,12 +65,16 @@ local KNOBS = {
     fj_vx = 186, fj_vy = -52,
     -- up jump: fixed vertical impulse (jump→up-jump chain ≈ 5 CH; ×2/3)
     upjump_v = 178.67,
-    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd; hop_vy ×2/3)
-    hop_vx = 120, hop_vy = 100,
+    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd; hop_vy ×2/3).
+    -- flutter_grace: airborne frames you can hold E before the hover (and its
+    -- cooldown) engages — so a normal TAP hop never arms a cooldown.
+    hop_vx = 120, hop_vy = 100, flutter_grace = 10,
     flutter_max = 600, flutter_fall = 26, flutter_decel = 520, hop_cd = 600,
-    -- grapple: reel to a top above, prefer past ½ screen; slow accel; 3 s cd
+    -- grapple: the hook EXTENDS to a top above at grapple_extend px/s (~1
+    -- screenful/s) under gravity, THEN reels you in (slow accel). 3 s cd.
     grapple_range_max = 244, grapple_range_min_pref = 120,
-    grapple_accel = 720, grapple_vmax = 300, grapple_cd = 180,
+    grapple_extend = 270, grapple_accel = 720, grapple_vmax = 300,
+    grapple_cd = 180,
     -- teleport: ~5 CW blink, max 2/s
     tp_dist = 60, tp_min_interval = 30,
     -- continuous attack (slash stub; enemies M12)

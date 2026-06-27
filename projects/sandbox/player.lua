@@ -69,7 +69,7 @@ local O = {
   grappling = 68, gx = 72, gy = 76, grapple_cd = 80,
   tp_mode = 84, tp_cd = 88, attack_t = 92,
   squash_t = 96, stretch_t = 100, anim = 104, land = 108, dust = 112,
-  tp_flash = 116, fj_used = 120,
+  tp_flash = 116, fj_used = 120, htipy = 124,
 }
 local SIZE = 128
 
@@ -239,8 +239,9 @@ function M.step(ctl)
   local fluttering = buf:f32(O.fluttering)
   local flutter_t = buf:f32(O.flutter_t)
   local hop_cd = buf:f32(O.hop_cd)
-  local grappling = buf:f32(O.grappling)
+  local grappling = buf:f32(O.grappling) -- 0 idle, 1 extending, 2 reeling
   local gx, gy = buf:f32(O.gx), buf:f32(O.gy)
+  local htipy = buf:f32(O.htipy) -- the climbing hook tip's y (extend phase)
   local grapple_cd = buf:f32(O.grapple_cd)
   local tp_mode, tp_cd = buf:f32(O.tp_mode), buf:f32(O.tp_cd)
   local attack_t = buf:f32(O.attack_t)
@@ -257,7 +258,7 @@ function M.step(ctl)
   if ctl.teleport_held and tp_cd <= 0 then
     local tdir = tp_mode == 0 and facing or -facing -- A forward / B back
     local bx = tm:move(x, y, W, H, tdir * k.tp_dist, 0) -- clamps at solids
-    if grappling == 1 then
+    if grappling ~= 0 then
       grappling = 0
       grapple_cd = m.max(grapple_cd, k.grapple_cd)
     end
@@ -271,29 +272,38 @@ function M.step(ctl)
     ring(x + W * 0.5, y + H * 0.5, 10, 70, 3.0, 4.0, 0.12, 0.26) -- arrive
   end
 
-  -- ===== GRAPPLE (q) — reel up to a platform; jump cancels =====
+  -- ===== GRAPPLE (q) — the hook EXTENDS to a target above (~1 screenful/s)
+  -- while you stay under normal gravity; once it CONNECTS it reels you in from
+  -- your CURRENT velocity. So a jump INTO a grapple has fallen back to downward
+  -- velocity by connect-time, which damps the reel — no short-range slingshot.
+  -- Jump cancels either phase. =====
   if ctl.grapple_pressed and grappling == 0 and grapple_cd <= 0
      and grapple_used == 0 then
     local ty = grapple_scan(tm, x, y, W, H, k.grapple_range_max,
                             k.grapple_range_min_pref)
     if ty then
-      grappling, gy, gx, grapple_used = 1, ty, x + W * 0.5, 1
+      grappling, gy, gx = 1, ty, x + W * 0.5 -- 1 = extending
+      htipy, grapple_used = y, 1 -- the tip starts at the player, climbs to gy
       ring(x + W * 0.5, y, 8, 60, 3.0, 4.0, 0.10, 0.22)
     end
   end
-  if grappling == 1 then
+  if grappling ~= 0 then
     if press then -- jump cancels (consumed; no auto flash-jump)
       grappling, grapple_cd, press = 0, k.grapple_cd, false
       puff(x + W * 0.5, y + H * 0.5, 4, 2.2)
-    else
+    elseif grappling == 1 then -- EXTENDING: the hook climbs; you keep falling
+      htipy = htipy - k.grapple_extend * DT
+      if htipy <= gy then grappling, htipy = 2, gy end -- connect -> reel
+    else -- grappling == 2: REELING from the velocity you connected with
       vy = m.max(vy - k.grapple_accel * DT, -k.grapple_vmax)
       vx = approach(vx, 0, k.grapple_accel * DT)
       if (y + H) <= gy then grappling, grapple_cd = 0, k.grapple_cd end
     end
   end
 
-  -- ===== WALK / AIR CONTROL (skipped while grappling reels) =====
-  if grappling == 0 then
+  -- ===== WALK / AIR CONTROL (normal during the grapple's extend phase; only
+  -- the reel takes over motion) =====
+  if grappling ~= 2 then
     if dir ~= 0 then facing = dir end
     if grounded then
       if dir ~= 0 then
@@ -350,26 +360,33 @@ function M.step(ctl)
     puff(x + W * 0.5, y + H, 4, 0.8)
   end
 
-  -- ===== FLUTTER (hold E after a hop) — hover; arms hop_cd on release =====
-  -- (landing ends flutter in the touchdown branch, so `grounded` is NOT an end
-  -- condition here — that would clear hop_active on a grounded hop's own frame,
-  -- before liftoff, and flutter could never start)
-  if hop_active == 1 then
+  -- ===== FLUTTER (hold E after a hop) — hover; arms hop_cd ONLY if you enter
+  -- the hover. hop_active counts airborne frames since the hop; the hover (and
+  -- thus flutter_t / the cooldown) begins only after flutter_grace frames, so a
+  -- normal TAP — not just a 1-frame one — is a clean hop with no cooldown. The
+  -- cd then starts on release / timeout (or landing, below). =====
+  if hop_active > 0 then
     if not ctl.hop_held or flutter_t >= k.flutter_max
-       or grappling == 1 or ctl.attack_held then
-      if flutter_t > 0 then hop_cd = k.hop_cd end -- a plain tap never arms it
-      fluttering, hop_active, flutter_t = 0, 0, 0 -- reset ft so a later
-      -- teleport (which re-arms hop_cd while ft>0) can't refresh the cooldown
-    elseif not ctl.hop_pressed and not grounded then -- airborne, past the press
-      fluttering = 1
-      flutter_t = flutter_t + 1
+       or grappling ~= 0 or ctl.attack_held then
+      if flutter_t > 0 then hop_cd = k.hop_cd end -- only if the hover was entered
+      fluttering, hop_active, flutter_t = 0, 0, 0 -- reset ft so a later teleport
+      -- (which re-arms hop_cd while ft>0) can't refresh the cooldown
+    elseif not grounded then
+      hop_active = hop_active + 1
+      if hop_active > k.flutter_grace then -- past the tap window: hover begins
+        fluttering = 1
+        flutter_t = flutter_t + 1
+      else
+        fluttering = 0 -- still within the tap grace: normal hop arc, no hover
+      end
     else
-      fluttering = 0 -- the hop frame itself / not yet airborne: no hover
+      fluttering = 0 -- pre-liftoff (a grounded hop's own frame)
     end
   end
 
-  -- ===== GRAVITY (grapple drives vy itself; flutter eases to a slow sink) ===
-  if grappling == 0 then
+  -- ===== GRAVITY (normal during the extend phase; the reel drives vy itself;
+  -- flutter eases to a slow sink) ===
+  if grappling ~= 2 then
     if fluttering == 1 then
       vy = approach(vy, k.flutter_fall, k.flutter_decel * DT)
     else
@@ -381,7 +398,7 @@ function M.step(ctl)
   -- ===== MOVE + COLLIDE (the frozen exact mover) =====
   local nx, ny, hit = tm:move(x, y, W, H, vx * DT, vy * DT, { drop = drop > 0 })
   if k.mantle > 0 and not hit.down and vy >= 0 and drop <= 0
-     and grappling == 0 then
+     and grappling ~= 2 then
     local top, ow = mantle_top(tm, nx, ny, W, H, k.mantle, hit.left, hit.right)
     if top then
       ny = top - H
@@ -393,8 +410,9 @@ function M.step(ctl)
   if hit.left or hit.right then vx = 0 end
   if hit.up then
     vy = m.max(vy, 0.0)
-    if grappling == 1 then grappling, grapple_cd = 0, k.grapple_cd end
-  end
+    if grappling == 2 then grappling, grapple_cd = 0, k.grapple_cd end -- reel
+  end                                                                  -- bonked
+
   if hit.down then
     if not was_grounded and vy > 60 then -- landing squash + dust
       buf:f32(O.land, vy)
@@ -408,9 +426,11 @@ function M.step(ctl)
     grounded, on_oneway = true, hit.oneway or false
     coyote = k.coyote
     hop_used, upjumped, grapple_used, fj_used = 0, 0, 0, 0 -- per-airtime reset
-    if hop_active == 1 and flutter_t > 0 then hop_cd = k.hop_cd end
+    if hop_active > 0 and flutter_t > 0 then hop_cd = k.hop_cd end
     fluttering, hop_active, flutter_t = 0, 0, 0
-    if grappling == 1 then grappling, grapple_cd = 0, k.grapple_cd end
+    -- NB: landing does NOT cancel a grapple — the hook extends while you stand
+    -- (grounded grapple), then the reel lifts you off; the extend phase always
+    -- connects, so there is no "stuck on the ground" case to cancel
     if ctl.jump_held then jbuf = k.buffer end -- auto-repeat: hold to bounce
   else
     grounded, on_oneway = false, false
@@ -444,7 +464,7 @@ function M.step(ctl)
              { vx0 = -16, vx1 = 16, vy0 = -22, vy1 = -6,
                life0 = 0.22, life1 = 0.40, shade0 = 2.6, shade1 = 3.4 })
   end
-  if grappling == 1 and frame % 2 == 0 then -- motes streaming up the beam
+  if grappling == 2 and frame % 2 == 0 then -- motes streaming up while reeling
     fx.spawn(nx + W * 0.5, ny, 1,
              { vx0 = -8, vx1 = 8, vy0 = -180, vy1 = -90,
                life0 = 0.10, life1 = 0.20, shade0 = 3.0, shade1 = 4.0 })
@@ -474,7 +494,7 @@ function M.step(ctl)
   buf:f32(O.hop_active, hop_active); buf:f32(O.fluttering, fluttering)
   buf:f32(O.flutter_t, flutter_t); buf:f32(O.hop_cd, hop_cd)
   buf:f32(O.grappling, grappling); buf:f32(O.gx, gx); buf:f32(O.gy, gy)
-  buf:f32(O.grapple_cd, grapple_cd)
+  buf:f32(O.htipy, htipy); buf:f32(O.grapple_cd, grapple_cd)
   buf:f32(O.tp_mode, tp_mode); buf:f32(O.tp_cd, tp_cd)
   buf:f32(O.attack_t, attack_t)
   buf:f32(O.squash_t, m.max(0, squash_t - DT))
@@ -618,17 +638,18 @@ function M.draw()
   local W, H = M.W, M.H
   local grounded = buf:f32(O.grounded) == 1.0
   local fluttering = buf:f32(O.fluttering) == 1.0
-  local grappling = buf:f32(O.grappling) == 1.0
+  local grappling = buf:f32(O.grappling) > 0.5 -- 1 extending or 2 reeling
   local upjumped = buf:f32(O.upjumped) == 1.0
   local attacking = buf:f32(O.attack_t) > 0
   local mode = buf:f32(O.tp_mode)
 
-  -- grapple beam first (under the body): a cyan line up to the anchor
+  -- grapple beam first (under the body): a cyan line up to the climbing hook
+  -- tip (htipy reaches the anchor gy when it connects, then the reel shrinks it)
   if grappling then
     local cxp = x + W * 0.5
-    local gyv = buf:f32(O.gy)
-    pal.quad(cxp - 0.5, gyv, 1, m.max(0, y - gyv), 0.42, 0.86, 0.98, 0.7)
-    pal.quad(cxp - 2, gyv - 1, 4, 2, 0.7, 0.95, 1.0, 0.9)
+    local tipy = buf:f32(O.htipy)
+    pal.quad(cxp - 0.5, tipy, 1, m.max(0, y - tipy), 0.42, 0.86, 0.98, 0.7)
+    pal.quad(cxp - 2, tipy - 1, 4, 2, 0.7, 0.95, 1.0, 0.9) -- the hook tip
   end
 
   local f
