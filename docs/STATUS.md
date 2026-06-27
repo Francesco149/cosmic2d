@@ -76,8 +76,17 @@ debt on both platforms**). Ships self-contained: `cosmic.exe` + `SDL3.dll` +
   to llm-feed).
 
 Build it: `nix build .#cosmic-windows`; the `result/` tree is runnable on win11
-(`cosmic.exe` beside `SDL3.dll` + `engine/`/`projects/`). **Pending the human**:
-run it *windowed* on the desktop (visible window + feel).
+(`cosmic.exe` beside `SDL3.dll` + `engine/`/`projects/`).
+
+**Post-M6 windowed bug, FIXED** (commit `6209bbc`): the human's windowed run hit
+a **key-stick** — `cm.input` was sampled only inside `sim_step`, so on a >60 Hz
+monitor (vsync) the render loop's zero-sim-step ticks dropped their polled
+events (a key-up landing there never cleared → stuck). Now `feed()` ingests
+events **every tick**, `sample()` builds the record **per sim step**; headless
+lockstep + trace determinism are byte-identical (selftest 22308→**22312** with
+new regression cases; parity re-verified). Latest build deployed to
+`C:\temp\cosmic`. **Pending the human**: re-test it windowed (movement + the
+other keys) and the visible-window/feel check.
 
 ## Next step (M7 — movement overhaul, D035 / GAME.md §4)
 
