@@ -21,10 +21,14 @@ local M = {}
 -- timeline: each row is { duration_frames, "action", "action", ... };
 -- rows run back to back. After the last row the demo just idles.
 local TIMELINE = {
-  -- A: grapple straight up from spawn to the plank above — the reel
+  -- A: jump, then grapple in the air to the plank above — by connect-time
+  -- you've fallen back to downward velocity, so the reel is damped (no
+  -- slingshot). Shows the extend→connect→reel arc.
   { 30 }, -- settle
-  { 6, "grapple" }, -- GRAPPLE: a plank sits above spawn (procedural map)
-  { 56 }, -- ride the pull up, settle onto the plank
+  { 6, "jump" }, -- jump up toward the plank
+  { 8 }, -- crest, start falling
+  { 4, "grapple" }, -- GRAPPLE in the air: the hook extends, then reels
+  { 70 }, -- ride the reel up, settle onto the plank
   -- B: flash-jump off the plank, land, then jump + flash again — it's ONCE
   -- per airtime now (re-arms on landing), so the staple is jump->flash->land
   { 20, "right" }, -- walk to the plank edge, off
@@ -104,21 +108,21 @@ local KITCHECK = {
   -- hop once per airtime (1-frame TAPs — a multi-frame hold would flutter and
   -- arm the 10 s cooldown, which would then block every later hop test)
   { 8, "jump" }, { 5 },
-  { 1, "hop" }, -- HOP #1 (tap)
+  { 6, "hop" }, -- HOP #1 (a normal-length TAP, under flutter_grace)
   { 5 },
-  { 1, "hop" }, -- HOP #2 -> ignored (once per airtime)
+  { 6, "hop" }, -- HOP #2 -> ignored (once per airtime)
   { 26 }, -- land
-  -- a plain TAP hop never arms the flutter cooldown
-  { 8, "jump" }, { 5 }, { 1, "hop" }, { 28 }, -- tap, land
-  { 8, "jump" }, { 5 }, { 1, "hop" }, { 26 }, -- WORKS next airtime (no cd)
-  -- a FLUTTER (a held hop) arms the cooldown; the next airtime's hop is
-  -- blocked. Kept LAST: the 10 s cd it arms blocks any hop after it.
+  -- a normal TAP hop never arms the flutter cooldown
+  { 8, "jump" }, { 5 }, { 6, "hop" }, { 28 }, -- tap, land
+  { 8, "jump" }, { 5 }, { 6, "hop" }, { 26 }, -- WORKS next airtime (no cd)
+  -- a FLUTTER (E held past flutter_grace) arms the cooldown; the next
+  -- airtime's hop is blocked. Kept LAST: its 10 s cd blocks any hop after it.
   { 8, "jump" }, { 5 },
   { 4, "hop" }, -- hop...
-  { 40, "hop" }, -- ...HOLD E -> flutter (arms hop_cd on release)
+  { 40, "hop" }, -- ...HOLD E past the grace -> flutter (arms hop_cd)
   { 30 }, -- land
   { 8, "jump" }, { 5 },
-  { 1, "hop" }, -- hop -> BLOCKED (hop_cd still counting)
+  { 6, "hop" }, -- hop -> BLOCKED (hop_cd still counting)
   { 26 }, -- land
   -- teleport rate-limits its spam and flips A<->B each blink
   { 64, "teleport" }, -- hold -> blinks at the 2/s cap, mode flips
