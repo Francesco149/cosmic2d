@@ -172,13 +172,19 @@ needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
   props feels great, deterministic, golden-pinned.
 - **M12 — combat & enemies**: continuous-attack slicing, trash-enemy hordes
   (deterministic AI), juicy death anims + particle trails, hitstop/screen
-  feedback, a boss-fight framework. *Exit*: carving a horde feels satisfying
-  (human sign-off); a boss is a real fight.
-- **M13 — world: portals, save, quests, radar**: portal map transitions,
-  persistent world/progression state + a **save system** (leveraging the
-  snapshot infra), quest tracking, the secrets **radar**, area-completion →
-  prop-spawn unlock. *Exit*: traverse hub↔areas by portal; progress persists
-  across sessions; secrets + radar work.
+  feedback; **HP + natural regen**; **currency/farmable drops** (engine PRNG);
+  a boss-fight framework for the **~3–5 hand-crafted** bosses (cheese-able via
+  potions, D037). *Exit*: carving a horde feels satisfying (human sign-off); a
+  boss is a real fight; drops land.
+- **M13 — world: portals, hubs, save, economy, navigation** (D037): portal map
+  transitions, **two hubs** with **death→nearest-hub respawn, no rollback**,
+  persistent autosaved progression (on the snapshot infra), the **world map +
+  fast-travel** to visited maps, the **quest arrow**, the **optional economy**
+  (shop; dual-sourced abilities incl. the secrets **radar** and extended
+  flutter-range; cheese consumables), area-completion → prop-spawn unlock, and
+  per-save **stats** (toward verifiable challenge runs). *Exit*: traverse
+  hub↔areas by portal + world map; die and respawn without losing progress;
+  buy/earn an ability; secrets + radar work.
 - **M14 — sandbox tool (2D gmod)**: grab / float / move / rotate / throw + a
   small constraint set (weld / axle / rope), prop discovery → unlock, spawn in
   hub + completed areas. Builds on M11. *Exit*: the sandbox is fun in the hub

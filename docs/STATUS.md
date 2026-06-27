@@ -31,7 +31,8 @@ host before the movement overhaul).
     risks.
   - **DECISIONS** — D033 (rename), D034 (game identity: mecha-girl spin-off),
     D035 (movement = cartridge controller policy, supersedes D029 specifics),
-    D036 (viewport: variable FOV + resize ladder + editor-only UI scale).
+    D036 (viewport: variable FOV + resize ladder + editor-only UI scale), D037
+    (death/respawn + optional economy + navigation + verifiable stats).
   - **CLAUDE.md** — intro + docs list updated for the game and GAME.md.
 - **Human decisions ratified**: total rename (incl. magic; goldens waived);
   protagonist = **antagonist mecha girl**; **Windows-first** sequencing.
@@ -84,16 +85,16 @@ the attract demo + goldens, human feel sign-off (native on win11).
   squeeze into a wall in pathological piles. (Full list was in the M5 STATUS in
   git history if one bites.)
 
-## Open questions for the human (GAME.md §11)
+## Design questions — RESOLVED 2026-06-27 (GAME.md §11, D037)
 
-1. **Fiction spine** (GAME.md §2) — does "reality-bending tech unifies movement
-   + sandbox + dread; area-completion stabilizes reality → prop-spawn" land?
-2. **Teleport modes** — what do the A↔B modes mechanically differ in?
-3. **Moveset availability** — all traversal from the start (agent's lean), or
-   stage some as upgrades?
-4. **Off-earth areas** — how many, and the earth↔cosmic structure?
-5. **Bosses** — rough count and what makes them tick?
-6. **Save model** — checkpoint per map, or free-save on the snapshot infra?
+The human answered all six: fiction spine **ratified**; **earth + a cosmic
+finale**, two hubs; **~3–5 hand-crafted bosses**; **full moveset from the
+start**; teleport **phase-shift** modes (A solid / B phases); and a
+**hub-respawn + optional-economy** model (currency/farmable drops, dual-sourced
+abilities incl. radar + flutter-range, cheese consumables, world map + quest
+arrow, no-rollback death, verifiable challenge stats). Captured in GAME.md §8/§11
+and **D037**. Remaining opens are milestone-local (ability roster, boss roster,
+HP/regen tuning) and don't block M6/M7.
 
-(Plus the always-open: art is human-authored; the agent designs map layouts +
-scenery from primitives and writes story/quests once we reach M-content.)
+(Always-open: art is human-authored; the agent designs map layouts + scenery
+from primitives and writes story/quests once we reach M-content.)

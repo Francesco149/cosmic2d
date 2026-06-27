@@ -37,7 +37,7 @@ The three things it wants to be, in priority:
 On top sits a **Garry's-Mod-flavored physics sandbox** (§7): grab/float/
 constrain/throw props you've unlocked by discovering them.
 
-## 2. Fiction spine *(proposal)*
+## 2. Fiction spine
 
 A unifying concept so the systems read as one game instead of a pile of
 mechanics. **The mecha girl's tech bends local reality**, and every system is a
@@ -54,7 +54,7 @@ facet of that one power:
 
 This makes the sandbox an expression of the protagonist rather than a bolt-on,
 and gives the hub ("where she is strongest, reality is hers") its role as
-permanent playground + testbed. Ratify, replace, or reshape — see §11.
+permanent playground + testbed. **Ratified 2026-06-27.**
 
 ## 3. The gameplay loop
 
@@ -87,6 +87,8 @@ old platformer controller (variable-height jump + air-dive, D029/D030). It is
 **pure cartridge controller policy** — no engine/PAL change — built on the
 existing tilemap mover and one-way platforms (D024). Every value below is a
 live knob under `doc.knobs.move` (persisted per D028, tunable in the inspector).
+The **whole moveset is available from the start** — it's the toy; progression
+gates *areas, auxiliary abilities and the sandbox* (§8), never the moves.
 
 ### Units & feel calibration
 
@@ -114,7 +116,7 @@ sprite exists (a M-movement task). Timers are integer **frames** (60/s).
 | 5 | **Hop** | E | diagonal up-forward boost; grounded hop ≈ an apex flash-jump's reach. Chains anywhere (before/after FJ or up-jump, or grounded) — the trajectory fine-tuner | `hop_vx`, `hop_vy` | **once per airtime** (unless on flutter cooldown) / hop puff |
 | 6 | **Flutter** | hold E after a hop | hover / slow-fall up to **10 s**. Then **hop goes on a 10 s cooldown** — full 10 s elapsed *or* the moment you release. **Plain hop (no flutter) never triggers the cooldown** | `flutter_max`(600f), `flutter_fall`, `hop_cd`(600f) | cooldown persists across airtimes / hover shimmer |
 | 7 | **Grapple** | \` (backtick) | grab a platform **above** and accelerate to it. Max range ≈ 1 screenful; **prefers a target beyond ½ a screenful** (reaches past close ones). Slow accel (~½ screenful to top speed). Jump **cancels** (does *not* auto-FJ — press Jump again for that). Chains anywhere | `grapple_range_max`, `grapple_range_min_pref`, `grapple_accel`, `grapple_vmax`, `grapple_cd`(180f) | **once per airtime**; **3 s cooldown** after finish/cancel / beam + pull |
-| 8 | **Teleport** | R | blink **≈5 CW** forward, **lose all momentum**. Max **2/s** (hold to spam). **Persistent two-mode toggle** A↔B — flips each teleport, resets only on **map change**; changes the character's **appearance** (a mechanic hook) | `tp_dist`, `tp_min_interval`(30f) | clamps at solid walls, passes one-ways / **afterimage trail** + mode swap |
+| 8 | **Teleport** | R | blink **≈5 CW** forward, **lose all momentum**. Max **2/s** (hold to spam). **Persistent A↔B mode**, flips each teleport, resets only on **map change**: **mode A solid, mode B phases** through hazards / enemies / thin walls — appearance reflects the mode | `tp_dist`, `tp_min_interval`(30f) | clamps at solid walls, passes one-ways / **afterimage trail** + mode swap |
 | 9 | **Continuous attack** | hold D | slice through enemies continuously as you move. Jump / flash-jump / up-jump allowed; **hop is disabled** while attacking | `attack_interval`, `attack_reach` | / slash particle trail + enemy death anim |
 
 ### Targeting & determinism
@@ -150,8 +152,14 @@ tilemap (D024) — bottom/top rows solid, interior rows one-way.
   a knob.
 - **Breakables & rigid-body props**: knock them over, throw them, smash them —
   needs the rotational-physics milestone (M-physics).
-- **Bosses are the real fight**: telegraphed patterns, actual difficulty — the
-  deliberate contrast to trash. A few set-pieces, not a bestiary.
+- **Drops**: trash drops **currency** and **farmables** — slicing a horde *is*
+  farming, closing the spectacle→reward loop (§8). Drops roll on the engine
+  PRNG (deterministic).
+- **Bosses are the real fight**: **~3–5 hand-crafted set-pieces** (not a
+  bestiary) at major story beats, telegraphed patterns, actual difficulty — the
+  deliberate contrast to trash. HP + natural regen exist; a boss is **cheese-
+  able** by farming potions that out-regen the natural rate, for players who'd
+  rather skip the challenge (the forgiveness pillar, §8).
 
 ## 6. The hub
 
@@ -160,6 +168,9 @@ sandbox** (prop-spawning always on here) + **the testbed** for new
 mechanics/effects. Designed to reward just messing around. This is also where
 *we* dogfood every new system as it lands (it replaces the old M3/M4 "platformer
 sandbox" as the stock cartridge).
+
+**Two hubs for now**: one on earth, one at the cosmic finale (§9). Hubs are the
+**respawn points** — death returns you to the nearest one (§8).
 
 ## 7. Sandbox — 2D Garry's Mod *(scope: a few deep mechanics, not Minecraft)*
 
@@ -177,18 +188,52 @@ there's **no hold animation** — you grab a thing and it **floats**:
 Depends on the rotational-physics solver (M-physics). Guardrail per the human:
 keep it to a few simple, satisfying mechanics — addicting, not a survival game.
 
-## 8. Forgiveness & secrets
+## 8. Forgiveness, economy & navigation
 
-- Secrets and collectibles hide behind **hidden portals**, **movement
-  challenges**, and **maps you skip** during the main story.
-- **Radar ability** (earned later): for players who don't want to hunt, it
-  surfaces nearby secrets — "as forgiving as you want it to be."
-- Revisiting a cleared map should stay fun on movement + sandbox alone.
+The pillar: **as forgiving as you want it to be.** Everything that smooths the
+game is *optional* and *dual-sourced* — earn it by playing, or buy it early by
+farming; never required either way.
 
-## 9. Areas & story *(proposal)*
+**Secrets.** Collectibles and secrets hide behind hidden portals, movement
+challenges, and maps you skip during the main story. Revisiting a cleared map
+stays fun on movement + sandbox alone.
 
-- **Earth-side hub + regions**, plus **one or two off-earth / cosmic areas**
-  (the title's namesake; the dread lives out there).
+**The optional economy.** Trash enemies drop **currency** and **farmables**, so
+slicing a horde *is* farming (the spectacle→reward loop, §5). Farming is **100%
+optional** — every purchasable is *also* earned naturally through the story and
+side quests; the shop just lets you get things **early**. You spend on:
+
+- **Auxiliary abilities & upgrades** — a layer *on top of* the always-available
+  moveset (§4): the **radar** (reveals nearby missables/secrets, for players
+  who don't want to hunt), **extended flutter range** (reach areas otherwise
+  unreachable), and more as we design them. These gate *optional* areas — a
+  light, opt-out metroidvania layer — never the core toy.
+- **Cheese consumables** — HP + natural regen exist; **potions that out-regen
+  the natural rate** let you trivialize a boss you'd rather not fight. Farming
+  to skip challenge is a legitimate, intended path.
+
+**Death & respawn.** Dying returns you to the **nearest hub** (for now: earth +
+cosmic finale, §6/§9). **No progress rollback** — currency, unlocks, quest
+progress and found secrets all persist (the save is persistent + autosaved).
+The **walk back** to where you died is intended gameplay: movement + spectacle
+make traversal the "penalty," and it's *fun*. But it's **opt-out** — the world
+map offers **fast-travel** to any map you've already visited.
+
+**Navigation.** A **world map** (visited maps + fast-travel) and a **helper
+arrow** pointing toward the objective of your **currently-selected quest** — the
+"follow the story at your pace, or wander off" aid for a non-linear world.
+
+**Stats & verifiable challenge runs** *(later)*. Track per-save stats — mobs
+killed, currency farmed, deaths, secrets found, time — so players can flex
+challenge playthroughs (no-death, no-farm, low%). Determinism is a gift here: a
+recorded trace replays byte-exact, so a challenge run can be **provable**, not
+just claimed — the engine's regression infra doubles as an anti-cheat oracle.
+
+## 9. Areas & story
+
+- **Earth-side hub + regions**, plus a **cosmic finale** area off-earth where
+  the dread peaks (the title's namesake). **Two hubs**: earth and the cosmic
+  finale (the respawn points, §6/§8). Reachable via portals + the world map.
 - **Main story = a big questline** you follow at your pace or set aside to
   explore. Villain-origin arc tracking the escalation of the reality tech (§2).
 - Per-map: a main-quest beat + optional secrets/challenges/hordes.
@@ -240,18 +285,20 @@ shading with gentle gradients."*
   simple readable silhouette, soft rounded shapes, single accent glow, designed
   to pop satisfyingly when destroyed."
 
-## 11. Open questions for the human
+## 11. Resolved & still-open (2026-06-27)
 
-1. **Fiction spine (§2)** — does "reality-bending tech unifies movement +
-   sandbox + dread, and area-completion stabilizes reality enough to spawn
-   props" land? Or a different through-line?
-2. **Teleport modes (#8)** — what should the A↔B modes *mechanically* differ
-   in (attack element? phasing? gravity/weight)? Strong fantasy hook to define.
-3. **Moveset availability** — agent leans: **all traversal from the start**
-   (it's the toy); gate *areas, story, sandbox-spawn, and the radar*, not the
-   moves. Confirm, or stage some moves as upgrades?
-4. **Off-earth areas (§9)** — how many, and the earth↔cosmic structure?
-5. **Bosses** — rough count and what makes them tick (the one place difficulty
-   spikes).
-6. **Save model** — engineering call deferred to M-world, but: checkpoint per
-   map, or free-save leveraging the snapshot infra?
+**Ratified this session** (D034): the fiction spine (§2); **earth + a cosmic
+finale**, two hubs (§9); **~3–5 hand-crafted bosses** (§5); the **full moveset
+from the start** (§4); the teleport's **phase-shift** modes (§4 #8, mode A
+solid / mode B phases through hazards-enemies-thin-walls); and the **hub-respawn
++ optional-economy** forgiveness model (§8) — currency/farmable drops, dual-
+sourced abilities (radar, flutter-range), cheese consumables, world map + quest
+arrow, no-rollback death, verifiable challenge stats.
+
+**Still open — deferred to their milestones, not blocking:**
+
+- Exact **ability/upgrade roster** + currency/farmable economy specifics (M13
+  economy; M12 combat). Radar and flutter-range are the seeds.
+- The **boss roster** — who the ~3–5 are and their mechanics (M12).
+- **HP / regen / damage** tuning — knobs dialed at M12 with feel sign-off.
+- Hub/area **count growth** beyond the first two as the world expands.

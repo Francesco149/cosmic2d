@@ -774,3 +774,41 @@ the editor at different scales.
 **Revisit**: if variable FOV complicates camera/parallax math (then: keep FOV
 fixed and scale-only, the simpler subset), or if fractional scaling is ever
 wanted (opt-in; default stays integer).
+
+## D037 — death, the optional economy, and navigation (human spec, 2026-06-27)
+
+**Context**: answering GAME §11's "save model" question, the human specified a
+death/respawn + economy + navigation model that realizes the "as forgiving as
+you want it to be" pillar economically and threads through M12 (combat) and M13
+(world).
+**Decision** (design; lands at M12 + M13, GAME.md §8):
+- **Death → respawn at the nearest hub** (initially earth + cosmic finale,
+  D034/§9); **no progress rollback** (currency, unlocks, quests, secrets
+  persist). The save is **persistent + autosaved**. The **walk back** is
+  intended gameplay (movement + spectacle make traversal the penalty);
+  **opt-out** via **world-map fast-travel** to already-visited maps.
+- **Optional economy**: trash enemies drop **currency + farmables** (rolled on
+  the engine PRNG → trace-reproducible). Farming is **100% optional** — every
+  purchasable is *also* earned via story / side quests; the shop only grants
+  things **early**. Two spend lanes: (a) **auxiliary abilities/upgrades** layered
+  on the always-available moveset (D035) — radar (reveal missables), extended
+  flutter range (reach optional areas), more TBD — a light **opt-out
+  metroidvania** gate on *optional* content only; (b) **cheese consumables**
+  (HP potions out-regenerating natural regen) to trivialize a boss by choice.
+- **Navigation**: a **world map** (visited maps + fast-travel) and a **helper
+  arrow** toward the selected quest's objective.
+- **Stats & verifiable challenge runs** (later): per-save stat tracking (mobs
+  killed, currency farmed, deaths, secrets, time). Determinism makes a recorded
+  trace a **byte-exact, provable** challenge run — the D014 trace/regression
+  infra doubles as an anti-cheat oracle. A real differentiator and a standing
+  reason to keep gameplay a pure function of (input, seed).
+**Why**: dual-sourcing (buy OR earn) keeps farming optional and non-punishing;
+drops reward the slice-through spectacle; provable runs fall out of determinism
+for free.
+**Snapshot story**: currency / unlocks / quest flags / stats are ordinary sim
+state (doc tree + buffers); the persistent save is a serialized snapshot subset
+on the existing infra (D005/D012). Drops use the engine PRNG (D006-class), so
+they stay trace-reproducible. Nothing new for the determinism model.
+**Revisit if**: the economy ever needs to *punish* (it shouldn't, by design);
+fast-travel undermines the intended walk-back (tune its availability); or
+verifiable runs need tamper-proofing beyond trace replay (then: sign traces).
