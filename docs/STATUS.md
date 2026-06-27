@@ -3,17 +3,17 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
-**Date**: 2026-06-27
+**Date**: 2026-06-28
 **Phase**: **M7 — movement overhaul (the heart; D035 / GAME.md §4).** M0–M6
-complete (M6 windows port human-verified; see its section below). This session
-**built the full MapleStory moveset** as pure cartridge controller policy (no
-PAL/engine change), re-choreographed the attract demo, and proved determinism.
-The stock cartridge is now the cosmic mecha-girl controller (still on the old
-platformer map as a playground).
-**Agent work done; the exit gate is the human's FEEL SIGN-OFF, native on win11.**
-After sign-off locks the knobs, the golden suite gets re-cut against them
-(deferred deliberately — tuning would invalidate goldens cut now).
-**Next: human plays it on win11 and tunes; then re-cut goldens, close M7.**
+complete. The full MapleStory moveset is built as pure cartridge controller
+policy (no PAL/engine change), the attract demo is re-choreographed, and
+determinism is proven. **The human did a first live feel pass (win11): "feels
+approximately right"** — feedback now applied (flash once/airtime, teleport
+alternates fwd/back, flutter cooldown fixed, 1.5× airtime, a cooldown HUD).
+**Final knob tuning + the golden re-cut wait for the real ART** (the human's
+call — feel tweaks land with real sprites); the mechanics are otherwise done.
+**Next: more feel passes as art arrives; the fancy slice VFX is deferred to the
+editor/particle work; re-cut goldens once knobs lock.**
 
 ## This session (2026-06-27) — M7 moveset
 
@@ -45,6 +45,28 @@ pure controller policy. Commits: `2a810a4` (controller + wiring), `69569c4`
   sized to the current 16 px-tile map at 1:1 — the absolute *6 CW ≈ ⅓ screen*
   anchor (CW≈26) needs M8 zoom + real art (a cw/ch/zoom knob change).
 - **Montage** pushed to llm-feed ("M7 moveset — final demo tour").
+
+### Feedback round 1 (2026-06-28, human win11 pass — "feels approximately right")
+
+Applied (GAME.md §4 + D035 updated; selftest 22312 + record→verify both
+timelines still byte-exact; montage "M7 moveset v2" on llm-feed):
+
+- **Flash jump → once per airtime** (was infinite/repeatable): re-arms on
+  landing. Verified via the fj flag (fires once, 2nd airborne press blocked,
+  resets on land).
+- **Teleport → alternates forward/back** (was forward only), tied to the A↔B
+  phase flip: mode A fwd/solid, B back/phase.
+- **Flutter "permanent cooldown" fixed**: it was the (correct) 10 s hop_cd being
+  *invisible* + a real bug where a teleport re-armed it while a stale
+  `flutter_t` lingered (now reset on flutter end). Mid-air hop works when off cd.
+- **1.5× airtime, same heights**: `jump_apex_t` ×1.5; `upjump_v`/`hop_vy`/`fj_vy`
+  ×2/3 (height ∝ v²/g).
+- **Temporary cooldown HUD** (main.lua `draw_cd_hud`, live-play only): hop/
+  grapple/tp bars + spent air-moves + phase mode — the requested cd viz.
+
+Deferred per the human: the **fancy slice VFX** (orbiting energy blades + trail
+particles) waits for the editor/particle-emitter work so it can be authored
+live; final knob tuning waits for the real art.
 
 ## What works right now (the engine, M0–M6 + the M7 moveset)
 
@@ -128,8 +150,13 @@ frame spikes from a WSL terminal.
 ## Known small items / debts
 
 - **M7 feel knobs are placeholders** — `doc.knobs.move` defaults are agent
-  guesses for the human to dial in (the sign-off step). cw/ch=12/18 fit the
+  guesses for the human to dial in (with the real art). cw/ch=12/18 fit the
   current map at 1:1; absolute screen-scale (CW≈26) is M8.
+- **Slice VFX is a stub, deferred** — the fancy version (orbiting energy blades
+  + trail particles) waits for the editor/particle-emitter work so it can be
+  live-authored (human's call). The attack input + a placeholder slash exist.
+- **Cooldown HUD is temporary** (main.lua `draw_cd_hud`, live-play only) — a
+  testing aid; remove once the editor can visualize ability/emitter state.
 - **Golden suite still stale, now also pre-sign-off** (D033): committed
   `.ptrace` are dormant; the M7 re-cut waits for locked knobs (next-step #2).
   selftest 22312 is the live net.

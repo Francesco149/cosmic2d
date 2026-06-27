@@ -740,6 +740,29 @@ queries, never mover behavior); if other cartridges want the moveset (a
 cm-level controller helper); exact knob values are M7 calibration + human feel
 sign-off. Units are CW/CH (GAME.md §4) so sprite/zoom recalibration is safe.
 
+**M7 implementation + first feel refinements (2026-06-28).** Built in
+`projects/sandbox/player.lua` (128-byte player buffer; selftest 22312, record→
+verify byte-exact). The human's first live pass on win11 ("feels approximately
+right") adjusted three spec points — GAME.md §4 updated to match:
+- **Flash jump is ONCE per airtime** (was "repeatable, the staple"): infinite
+  flash trivialized traversal; now it re-arms on landing, so the staple is
+  jump→flash→land→repeat (still flash-heavy, but you chain the rest of the kit).
+- **Teleport ALTERNATES forward/back** (was "forward"): each blink flips the
+  A↔B phase, so direction alternates with it — mode A forward/solid, B back/
+  phase. Makes the phase mode a movement mechanic, not just appearance.
+- **Gravity gives ~1.5× airtime at the SAME heights** (floatier): `jump_apex_t`
+  ×1.5 (airtime scales with apex_t, height stays `jump_h`); the fixed-velocity
+  impulses (`upjump_v`/`hop_vy`/`fj_vy`) ×2/3 to hold their heights under the
+  weaker gravity (height ∝ v²/g, g→4/9).
+Implementation choices: grapple is on **`q`** (the spec's `` ` `` is the dev
+console); player **grab/throw removed** (E is hop; the sandbox tool returns at
+M-physics); a **temporary cooldown HUD** (main.lua `draw_cd_hud`, live-play
+only) visualizes the timers for testing — to be removed once the editor can
+live-visualize ability/emitter state. The **fancy slice VFX** (orbiting energy
+blades + trails) is **deferred** to after the editor/particle-emitter work so it
+can be authored live. Final knob values + golden re-cut still await the real art
++ feel sign-off.
+
 ## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
 
 **Context**: the human wants (a) an **editor-only UI scale** independent of the
