@@ -176,10 +176,26 @@ headless `--bake` lands; `genart.lua` re-bakes meanwhile. The studio **play
 preview uses a wall clock** (`pal.time_ns`, dev-only) — faithful to how the game
 runs a clip but not frame-stepped; **onion shows only the immediate neighbors**
 (±1); **clip editing isn't separately undoable** (only frame ops are — clips
-carry no pixels). Carried from Phase 1–3: **paint/gradient is not masked by the
-selection**; a gradient fill only recolors a layer's existing pixels (by design);
-**one fill per layer**; whole-sprite **resize/rotate of a non-square doc** is
-deferred; the dock can need its scroll on short windows. None blocking.
+carry no pixels). **Gradient** fills aren't clipped by the selection (they're
+masked by layer alpha instead — a possible future nicety); a gradient fill only
+recolors a layer's existing pixels (by design); **one fill per layer**; whole-
+sprite **resize/rotate of a non-square doc** is deferred; the dock can need its
+scroll on short windows. None blocking.
+
+### Studio feedback round 1 (2026-06-28) — `35b150a`
+Two asks from the human's first real use ("feels great so far"):
+- **Selection now restricts editing** to the marquee — a write-clip in `cm.paint`
+  (`set_clip`/`clip_off`, honored by set/over/flood) that the studio sets around
+  pencil/eraser/bucket/shape edits + the live shape preview; composite/bake are
+  never clipped (a defensive `clip_off` guards `rebuild_tex`). The marquee stays
+  visible across tool switches as the active mask. selftest +5.
+- **Paste lands on its own new layer** (never overwrites what's beneath):
+  `paste()` floats with a `new_layer` flag; `commit_float()` creates the layer +
+  stamps as ONE undo step (a struct bracket around the new `sprite.raw_add_layer`).
+  A **merge-down** button (LAYERS panel, now 2 rows of 3) flattens a layer onto
+  the one below — `sprite.merge_down` (opacity + gradient fill honored, one undo
+  step). selftest +3. Verified by `--win` captures (clipped fill, paste→2 layers,
+  merge→1).
 
 **Launch**: `bin/cosmic --studio` (drops into the project's asset browser;
 project defaults to projects/sandbox) — or `F2` in any running session. The
@@ -188,9 +204,11 @@ project defaults to projects/sandbox) — or `F2` in any running session. The
 Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
 V(move) · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
 Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/
-^V/^D clipboard · Enter stamp float · Del clear · H/J flip · `[`/`]` rotate ·
+^V/^D clipboard (**paste → new layer**) · Enter stamp float · Del clear · with a
+marquee, paint/fill/shape **clip to the selection** · H/J flip · `[`/`]` rotate ·
 menubar fH/fV/rL/rR/x2//2 + browse/new/save/close · rail brs/1px · palette slots
-L=load R=save. **Gradient**: drag an axis on a layer → a non-destructive fill
+L=load R=save · **LAYERS** panel: add/dup/del · up/dn/**merge** (flatten onto
+below). **Gradient**: drag an axis on a layer → a non-destructive fill
 masked to its pixels; drag the p0/p1 handles; the dock panel tunes type / ramp
 (click bar=add stop, RMB marker=delete) / dither / levels / bayer / phase;
 bake=stamp to pixels, clear=remove. **Timeline** (bottom): the frame thumbnail
