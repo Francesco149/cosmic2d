@@ -139,6 +139,7 @@ function M.boot()
   M.editor = cm.require("cm.editor")
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")
+  M.options = cm.require("cm.options")
   -- the resize ladder runs only live: headless/verify keep the fixed project
   -- FOV so goldens + determinism never see a window-derived size (D036). The
   -- --win capture is the one headless exception (it wants the live layout).
@@ -323,6 +324,7 @@ function M.tick()
   M.scrub.frame() -- the time machine rides above the editor
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything
+  M.options.frame() -- the video menu (Esc) rides on top of all of it
   M.ui.frame_end()
   local present_t0 = pal.time_ns()
   pal.present()
