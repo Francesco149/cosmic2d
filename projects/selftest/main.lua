@@ -1677,6 +1677,33 @@ local function t_sprite()
   check(lm and lm.pivot.x == 3 and lm.pivot.y == 1, "sprite: save bakes the .meta sidecar")
   check(sprite.decode_meta("garbage!!") == nil, "sprite: decode_meta rejects garbage")
 
+  -- slices (Phase 5b): add (default rect) / delete are undoable; the rect clamps;
+  -- they round-trip the .spr SLCE chunk + the .meta; find_slice looks up by name.
+  local sl = sprite.new(16, 10)
+  local s1 = sprite.add_slice(sl, "hand")
+  check(#sl.slices == 1 and s1.name == "hand", "sprite: add_slice appends")
+  check(s1.w >= 1 and s1.x + s1.w <= sl.w and s1.y + s1.h <= sl.h,
+        "sprite: default slice rect in bounds")
+  check(sprite.can_undo(sl), "sprite: add_slice is undoable")
+  sprite.set_slice_rect(sl, 1, 99, -3, 999, 4) -- clamps to the cell
+  check(s1.x == 15 and s1.y == 0 and s1.x + s1.w <= 16 and s1.h == 4,
+        "sprite: set_slice_rect clamps to bounds")
+  sprite.undo(sl)
+  check(sl.slices[1].x ~= 15, "sprite: undo restores the slice rect")
+  sprite.set_slice_rect(sl, 1, 2, 3, 5, 4)
+  local sl2 = sprite.decode(sprite.encode(sl))
+  local g = sprite.find_slice(sl2, "hand")
+  check(g and g.x == 2 and g.y == 3 and g.w == 5 and g.h == 4,
+        "sprite: slice round-trips the .spr SLCE chunk")
+  local mm = sprite.decode_meta(sprite.encode_meta(sl))
+  local gm = sprite.find_slice(mm, "hand")
+  check(gm and gm.x == 2 and gm.w == 5, "sprite: slice round-trips the .meta")
+  check(sprite.find_slice(mm, "nope") == nil, "sprite: find_slice misses cleanly")
+  sprite.delete_slice(sl, 1)
+  check(#sl.slices == 0, "sprite: delete_slice removes")
+  sprite.undo(sl)
+  check(#sl.slices == 1, "sprite: undo restores the deleted slice")
+
   -- undo / redo a stroke (the delta1 codec), and a no-op pushes nothing
   local d = sprite.new(4, 4)
   local c = sprite.cell(d)

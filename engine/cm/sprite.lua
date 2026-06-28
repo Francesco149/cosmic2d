@@ -66,7 +66,7 @@ function M.new(w, h, opts)
     w = w, h = h, frames = 1,
     palette = opts.palette or M.default_palette(),
     layers = { new_layer("layer 1", w, h, 1) },
-    clips = {}, pivot = { x = w // 2, y = h - 1 },
+    clips = {}, slices = {}, pivot = { x = w // 2, y = h - 1 },
     cur_layer = 1, cur_frame = 1, dirty = false,
     _undo = {}, _redo = {},
   }
@@ -118,6 +118,15 @@ local function clone_clips(clips)
   return t
 end
 
+-- deep-copy the slice list (named rects; doc-level, like clips) for snapshots/undo.
+local function clone_slices(slices)
+  local t = {}
+  for i, s in ipairs(slices or {}) do
+    t[i] = { name = s.name, x = s.x, y = s.y, w = s.w, h = s.h }
+  end
+  return t
+end
+
 -- the whole structural state (the layer stack + frame count + clips + cursors)
 -- as a self-contained snapshot. Cell pixels + clips are cloned, so it survives
 -- later edits.
@@ -125,6 +134,7 @@ local function capture_struct(doc)
   local layers = {}
   for i, l in ipairs(doc.layers) do layers[i] = clone_layer(l, doc.w, doc.h, doc.frames) end
   return { layers = layers, frames = doc.frames, clips = clone_clips(doc.clips),
+           slices = clone_slices(doc.slices),
            pivot = { x = doc.pivot.x, y = doc.pivot.y },
            cur_layer = doc.cur_layer, cur_frame = doc.cur_frame }
 end
@@ -135,6 +145,7 @@ local function restore_struct(doc, snap)
   doc.layers = snap.layers
   doc.frames = snap.frames
   if snap.clips then doc.clips = snap.clips end
+  if snap.slices then doc.slices = snap.slices end
   if snap.pivot then doc.pivot = snap.pivot end
   doc.cur_layer = math.min(snap.cur_layer or 1, #snap.layers)
   doc.cur_frame = math.min(snap.cur_frame or 1, snap.frames)
@@ -323,6 +334,65 @@ function M.set_pivot(doc, x, y)
   local before = capture_struct(doc)
   doc.pivot.x, doc.pivot.y = x, y
   push_struct(doc, before)
+end
+
+-- ---- slices (named rects; Phase 5b, STUDIO.md §3) ----
+-- A slice is a named rectangle in cell space — an attach point / region the game
+-- looks up by name (a hand to hang a weapon on, a hit/hurt box). Per-doc for v1
+-- (per-frame keys are a documented follow-up). Baked into .meta beside the pivot;
+-- the SLCE chunk keeps them in the editable .spr. Always clamped to the cell.
+
+local function clamp_rect(doc, x, y, w, h)
+  x = math.max(0, math.min(doc.w - 1, math.floor(x)))
+  y = math.max(0, math.min(doc.h - 1, math.floor(y)))
+  w = math.max(1, math.min(doc.w - x, math.floor(w)))
+  h = math.max(1, math.min(doc.h - y, math.floor(h)))
+  return x, y, w, h
+end
+
+-- add a slice WITHOUT an undo step — for a studio gesture that brackets its own
+-- struct snapshot (drag-to-create as ONE step). Defaults to a centered rect.
+function M.raw_add_slice(doc, name)
+  local w = math.max(1, doc.w // 3)
+  local h = math.max(1, doc.h // 3)
+  local s = { name = name or ("slice " .. (#doc.slices + 1)),
+              x = (doc.w - w) // 2, y = (doc.h - h) // 2, w = w, h = h }
+  doc.slices[#doc.slices + 1] = s
+  return s
+end
+
+function M.add_slice(doc, name)
+  local before = capture_struct(doc)
+  local s = M.raw_add_slice(doc, name)
+  push_struct(doc, before)
+  return s
+end
+
+function M.delete_slice(doc, si)
+  if not doc.slices[si] then return end
+  local before = capture_struct(doc)
+  table.remove(doc.slices, si)
+  push_struct(doc, before)
+end
+
+-- set a slice's rect, one undo step (clamped, no-op safe). The studio's live drag
+-- mutates the rect inside a begin/commit_struct bracket instead.
+function M.set_slice_rect(doc, si, x, y, w, h)
+  local s = doc.slices[si]
+  if not s then return end
+  x, y, w, h = clamp_rect(doc, x, y, w, h)
+  if s.x == x and s.y == y and s.w == w and s.h == h then return end
+  local before = capture_struct(doc)
+  s.x, s.y, s.w, s.h = x, y, w, h
+  push_struct(doc, before)
+end
+
+-- find a slice by name. Accepts a doc, a decoded .meta ({slices=…}), or a raw
+-- slice array — the runtime's by-name lookup. nil when absent.
+function M.find_slice(src, name)
+  local arr = (type(src) == "table" and src.slices) or src
+  for _, s in ipairs(arr or {}) do if s.name == name then return s end end
+  return nil
 end
 
 -- ---- gradient fills (non-destructive; Phase 3, STUDIO.md §6) ----
@@ -518,6 +588,14 @@ function M.encode(doc)
     end
     w.chunk("CLIP", 1, table.concat(parts))
   end
+  -- SLCE: named rects (attach points / hit regions) — Phase 5b
+  if #doc.slices > 0 then
+    local parts = { pack("<I4", #doc.slices) }
+    for _, s in ipairs(doc.slices) do
+      parts[#parts + 1] = pack("<s2i4i4i4i4", s.name, s.x, s.y, s.w, s.h)
+    end
+    w.chunk("SLCE", 1, table.concat(parts))
+  end
   -- TAIL is the integrity check
   w.chunk("TAIL", 1, pack("<I4I4", #doc.layers, doc.frames))
   return w.result()
@@ -584,6 +662,14 @@ function M.decode(blob)
         doc.clips[#doc.clips + 1] =
           { name = name, loop = LOOP_MODES[lid] or "loop", frames = frames }
       end
+    elseif c.tag == "SLCE" and c.version == 1 and doc then
+      local ns, pos = unpack("<I4", c.payload)
+      doc.slices = {}
+      for _ = 1, ns do
+        local name, sx, sy, sw, sh
+        name, sx, sy, sw, sh, pos = unpack("<s2i4i4i4i4", c.payload, pos)
+        doc.slices[#doc.slices + 1] = { name = name, x = sx, y = sy, w = sw, h = sh }
+      end
     end
     -- unknown tags/versions skipped (forward-compatible by rule)
   end
@@ -609,19 +695,36 @@ end
 
 -- the runtime metadata as a plain doc tree (integers floored so canon is stable).
 function M.meta_of(doc)
-  return { pivot = { x = math.floor(doc.pivot.x), y = math.floor(doc.pivot.y) } }
+  local slices = {}
+  for i, s in ipairs(doc.slices or {}) do
+    slices[i] = { name = tostring(s.name or ""), x = math.floor(s.x),
+                  y = math.floor(s.y), w = math.floor(s.w), h = math.floor(s.h) }
+  end
+  return { pivot = { x = math.floor(doc.pivot.x), y = math.floor(doc.pivot.y) },
+           slices = slices }
 end
 
 function M.encode_meta(doc) return state.canon(M.meta_of(doc)) end
 
--- decode .meta bytes to a normalized { pivot = {x,y} } (defaults on any garbage,
--- so a missing / corrupt file degrades cleanly to a feet-center fallback caller-side).
+-- decode .meta bytes to a normalized { pivot = {x,y}, slices = {…} } (defaults on
+-- any garbage, so a missing / corrupt file degrades cleanly to fallbacks caller-side).
 function M.decode_meta(bytes)
   local ok, t = pcall(state.parse, bytes)
   if not ok or type(t) ~= "table" then return nil end
   local p = type(t.pivot) == "table" and t.pivot or {}
+  local slices = {}
+  if type(t.slices) == "table" then
+    for _, s in ipairs(t.slices) do
+      if type(s) == "table" then
+        slices[#slices + 1] = { name = tostring(s.name or ""),
+          x = math.floor(tonumber(s.x) or 0), y = math.floor(tonumber(s.y) or 0),
+          w = math.max(1, math.floor(tonumber(s.w) or 1)),
+          h = math.max(1, math.floor(tonumber(s.h) or 1)) }
+      end
+    end
+  end
   return { pivot = { x = math.floor(tonumber(p.x) or 0),
-                     y = math.floor(tonumber(p.y) or 0) } }
+                     y = math.floor(tonumber(p.y) or 0) }, slices = slices }
 end
 
 function M.save_meta(path, doc)

@@ -57,6 +57,7 @@ M.play_t0 = M.play_t0 or 0
 M.clip_i = M.clip_i           -- active clip index, or nil
 M.clip_entry = M.clip_entry   -- selected entry index within the active clip
 M.tl_scroll = M.tl_scroll or 0
+M.slice_i = M.slice_i         -- active slice index (the slice tool / dock edit), or nil
 
 -- layout metrics (ui-canvas px); regions computed each frame from these
 local MENU_H, RAIL_W, DOCK_W, TIME_H = 14, 22, 116, 46
@@ -71,7 +72,7 @@ local KEY_RET, KEY_DEL, KEY_BKSP = 40, 76, 42
 local KEY_LBRK, KEY_RBRK = 47, 48
 local SC = { z = 29, y = 28, s = 22, b = 5, e = 8, g = 10, i = 12, x = 27,
              l = 15, r = 21, o = 18, f = 9, m = 16, v = 25, c = 6, d = 7,
-             h = 11, j = 13, p = 19 }
+             h = 11, j = 13, p = 19, k = 14 }
 
 local TOOLS = {
   { id = "pencil",  key = "B", tip = "pencil" },
@@ -85,6 +86,7 @@ local TOOLS = {
   { id = "select",  key = "M", tip = "marquee select" },
   { id = "move",    key = "V", tip = "move selection / float" },
   { id = "pivot",   key = "P", tip = "pivot / anchor (drag the crosshair)" },
+  { id = "slice",   key = "K", tip = "slice region (drag a rect; name it in the dock)" },
 }
 local SHAPE = { line = true, rect = true, ellipse = true }
 
@@ -691,6 +693,7 @@ local function handle_keys()
       elseif sc == SC.m then M.tool = "select"
       elseif sc == SC.v then M.tool = "move"
       elseif sc == SC.p then M.tool = "pivot"
+      elseif sc == SC.k then M.tool = "slice"
       elseif sc == SC.f then M.fill_shapes = not M.fill_shapes
       elseif sc == SC.h then M.flip(true)
       elseif sc == SC.j then M.flip(false)
@@ -871,6 +874,35 @@ local function handle_pivot(over)
   end
 end
 
+-- the slice tool: drag a rect to set the ACTIVE slice's region (creating one if
+-- none is selected). The whole drag is ONE undo step (a begin/commit_struct
+-- bracket around a raw add + the rect set, mirroring the pivot drag).
+local function handle_slice(over)
+  local doc, inp = M.doc, ui.inp
+  if over and inp.clicked[1] and not ui.active then
+    sprite.begin_struct(doc)
+    local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+    M.slc_ax, M.slc_ay = clamp(px, 0, doc.w - 1), clamp(py, 0, doc.h - 1)
+    if not (M.slice_i and doc.slices[M.slice_i]) then
+      sprite.raw_add_slice(doc); M.slice_i = #doc.slices -- no separate undo step
+    end
+    M.slc_drag, M.slc_moved = true, false
+  end
+  if M.slc_drag then
+    if inp.buttons[1] then
+      local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      local s = doc.slices[M.slice_i]
+      if s then
+        local rc = norm_rect(M.slc_ax, M.slc_ay, px, py, doc.w, doc.h)
+        s.x, s.y, s.w, s.h, M.slc_moved = rc.x, rc.y, rc.w, rc.h, true
+      end
+    else
+      M.slc_drag = false
+      if M.slc_moved then sprite.commit_struct(doc) else sprite.cancel_struct(doc) end
+    end
+  end
+end
+
 local function handle_paint(over)
   if M.playing then return end -- the canvas shows the playhead; no editing mid-play
   local inp = ui.inp
@@ -908,6 +940,7 @@ local function handle_paint(over)
 
   if tool == "gradient" then handle_gradient(over); return end
   if tool == "pivot" then handle_pivot(over); return end
+  if tool == "slice" then handle_slice(over); return end
 
   if tool == "pick" then
     if over and pressed and dpx then
@@ -1093,6 +1126,18 @@ local function draw_canvas(r)
     ui.rect(cxp - 1, cyp - arm, 3, arm * 2 + 1, { 0, 0, 0, a * 0.7 })
     ui.rect(cxp - arm, cyp, arm * 2 + 1, 1, { 1, 0.85, 0.2, a })
     ui.rect(cxp, cyp - arm, 1, arm * 2 + 1, { 1, 0.85, 0.2, a })
+  end
+  -- slices (named rects): faint always (align art to them), bright + labelled
+  -- when the slice tool is the active authoring overlay.
+  do
+    local on = M.tool == "slice"
+    for si, s in ipairs(M.doc.slices) do
+      local sel = si == M.slice_i
+      local cl = { 1, 0.3, 0.75, (on or sel) and 0.9 or 0.3 }
+      ui.frame_rect(ix + s.x * z, iy + s.y * z, s.w * z, s.h * z, cl)
+      if on then ui.text(ix + s.x * z + 1, iy + s.y * z + 1, s.name,
+                         sel and st.accent or cl) end
+    end
   end
   -- gradient axis + endpoint handles (gradient tool active + this layer has a fill)
   local gl = M.doc.layers[M.doc.cur_layer]
@@ -1458,6 +1503,53 @@ local function draw_clips(x, y, cw)
   return y
 end
 
+-- SLICES: named rects (Phase 5b). The list (click = make active), new / delete,
+-- and an inline rename for the active slice. Drag the K tool on the canvas to set
+-- the active slice's region. Returns the next y.
+local function draw_slices(x, y, cw)
+  local st = ui.style
+  local doc = M.doc
+  ui.text(x, y, "SLICES", st.accent); y = y + 11
+  if M.slice_i and not doc.slices[M.slice_i] then M.slice_i = nil end -- stale guard
+
+  local half = (cw - 2) // 2
+  if ui.button("+ slice", { rect = { x, y, half, 12 }, id = "sl_new" }) then
+    sprite.add_slice(doc); M.slice_i = #doc.slices
+  end
+  if ui.button("del", { rect = { x + half + 2, y, cw - half - 2, 12 }, id = "sl_del" })
+     and M.slice_i then
+    sprite.delete_slice(doc, M.slice_i)
+    M.slice_i = (#doc.slices > 0) and min(M.slice_i, #doc.slices) or nil
+  end
+  y = y + 14
+
+  if #doc.slices == 0 then
+    ui.text(x, y, "drag the K tool", st.text_dim); return y + 11
+  end
+  for si, s in ipairs(doc.slices) do
+    local active = si == M.slice_i
+    if ui.hit("sl_row" .. si, x, y, cw, 11) then M.slice_i = si end
+    ui.rect(x, y, cw, 11, active and st.widget_active or st.widget)
+    ui.frame_rect(x, y, cw, 11, active and st.accent or st.panel_edge)
+    ui.text(x + 2, y + 2, s.name, active and st.accent or st.text)
+    local dim = ("%d,%d %dx%d"):format(s.x, s.y, s.w, s.h)
+    ui.text(x + cw - #dim * st.gw - 3, y + 2, dim, st.text_dim)
+    y = y + 12
+  end
+  y = y + 2
+
+  local s = doc.slices[M.slice_i]
+  if s then -- inline rename of the active slice (like clips)
+    if ui.focus ~= "sl_name" then M.sl_name_edit = s.name end
+    local nm, nch, nsub = ui.text_input("sl_name", M.sl_name_edit or s.name,
+      { hint = "name", rect = { x, y, cw, 11 } })
+    M.sl_name_edit = nm
+    if (nch or nsub) and nm ~= "" then s.name = nm; doc.dirty = true end
+    y = y + 13
+  end
+  return y + 2
+end
+
 local function draw_dock(r)
   local st = ui.style
   local inp = ui.inp
@@ -1478,6 +1570,7 @@ local function draw_dock(r)
   y = draw_layers(x, y, cw)
   y = draw_gradient(x, y, cw)
   y = draw_clips(x, y, cw)
+  y = draw_slices(x, y, cw)
 
   -- PALETTE: swatch grid + add-current + preset slots
   ui.text(x, y, "PALETTE", st.accent); y = y + 11
@@ -1675,6 +1768,9 @@ local function draw_timeline(r)
     extra = M.fill_shapes and "  fill" or "  outl"
   elseif tool == "pivot" then
     extra = ("  @%d,%d"):format(doc.pivot.x, doc.pivot.y)
+  elseif tool == "slice" then
+    local s = M.slice_i and doc.slices[M.slice_i]
+    extra = s and ("  " .. s.name) or "  (drag)"
   end
   local dpx, dpy = M.doc_pixel(inp.mx, inp.my)
   local stat = ("%s%s  %s  %dx"):format(
