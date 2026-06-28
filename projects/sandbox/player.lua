@@ -22,12 +22,13 @@
 --   5 HOP       E — diagonal up-forward boost, the trajectory fine-tuner.
 --               Chains anywhere. Once per airtime (and never on flutter cd).
 --   6 FLUTTER   hold E after a hop AND keep holding once you START FALLING —
---               small UPWARD mini-hops (flutter_vx=0) every flutter_interval
---               frames, flutter_boosts times, each sized to roughly hold height
---               with a gentle bob. Your horizontal momentum is KEPT (a flash-jump
---               carries through; hold a dir to add to it). Not a glide. On
---               release/timeout/land hop goes on hop_cd (a plain TAP hop —
---               released before you fall — never arms it). Cd persists.
+--               small up-forward mini-hops (a slight diagonal, <45° from up:
+--               flutter_vx forward « the vertical kick) every flutter_interval
+--               frames, flutter_boosts times, each ~holding height with a gentle
+--               bob + nudging you forward a little. Carried momentum is CANCELLED
+--               at hover-start (a flash-jump doesn't launch you far); hold a dir
+--               to steer. On release/timeout/land hop goes on hop_cd (a plain TAP
+--               hop — released before you fall — never arms it). Cd persists.
 --   7 GRAPPLE   q (the spec's ` is the dev console — see main.lua) — reel up
 --               to a standable top above, preferring targets past ½ a
 --               screenful. Slow accel. Once per airtime, 3 s cooldown. Jump
@@ -317,11 +318,11 @@ function M.step(ctl)
       else
         vx = approach(vx, 0, k.ground_fric * DT)
       end
-    else -- airborne. Holding a dir trims the arc (and lets you ADD to a flutter
-      if dir ~= 0 then -- hover); flutter PRESERVES horizontal momentum otherwise
+    else -- airborne: holding a dir trims the arc / steers the flutter hover
+      if dir ~= 0 then
         vx = m.clamp(vx + dir * k.air_accel * DT, -k.fj_vx, k.fj_vx)
-      elseif fluttering ~= 1 then -- no air drag mid-flutter: a flash-jump carries
-        vx = approach(vx, 0, k.air_fric * DT)
+      else -- air drag also applies mid-flutter, so the slight per-beat forward
+        vx = approach(vx, 0, k.air_fric * DT) -- diagonal stays a gentle drift
       end
     end
   end
@@ -386,8 +387,8 @@ function M.step(ctl)
       else
         if flutter_t % k.flutter_interval == 0 then -- the beat: a mini UP-hop
           vy = -m.sqrt(2.0 * g_rise * k.flutter_h)  -- up (~holds height/beat)
-          if k.flutter_vx ~= 0 then -- 0 = pure vertical, untouched horizontal
-            vx = m.clamp(vx + facing * k.flutter_vx, -k.fj_vx, k.fj_vx)
+          if k.flutter_vx ~= 0 then -- slight up-FORWARD diagonal (< vy, so <45°
+            vx = m.clamp(vx + facing * k.flutter_vx, -k.fj_vx, k.fj_vx) -- from up)
           end
           puff(x + W * 0.5, y + H, 2, 2.4)
         end
@@ -396,8 +397,9 @@ function M.step(ctl)
     elseif not hold or grounded then
       hop_active = 0 -- released / landed before falling: a clean hop, no cd
     elseif vy > 0 then -- started falling while holding: the hover begins
-      fluttering, flutter_t = 1, 0 -- KEEP your horizontal momentum (a flash-jump
-    end                            -- carries through); the boosts are vertical
+      fluttering, flutter_t = 1, 0 -- cancel carried momentum (so a flash-jump
+      vx = 0                       -- doesn't launch you far); the boosts then
+    end                            -- nudge you forward a little (flutter_vx)
   end
 
   -- ===== GRAVITY (normal during the extend phase; the reel drives vy itself.

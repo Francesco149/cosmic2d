@@ -114,14 +114,14 @@ Three asks from the human's first real play:
   D035): hold E after a hop and KEEP holding once you START FALLING → a small
   UPWARD height-based mini-hop every `flutter_interval`(30f≈2/s), `flutter_boosts`
   (4) times, sized (`flutter_h`=11) to roughly HOLD altitude with a gentle ~11px
-  bob. Your horizontal momentum is KEPT (a flash-jump carries through — no air drag
-  mid-flutter; hold a dir to ADD to it); the boosts are vertical (`flutter_vx`=0).
-  Replaces the `flutter_grace`/`_max`/`_fall`/`_decel` glide knobs; the "must be
-  falling" gate is the tap guard. **Round 4b** tuned the round-4 boosts ¼ smaller +
-  upward-only + 2/s; **4c** kept horizontal momentum (4b had wrongly dumped it) per
-  the human. Verified on TOUR: x carries the ~120 drift, vy flips every 30f at ~−84,
-  y holds with a gentle ~4px/s sink; selftest 22351; KITCHECK + TOUR record→verify
-  byte-exact;
+  bob. Carried momentum is CANCELLED at hover-start (a flash-jump doesn't launch
+  you far) and each boost is a slight up-FORWARD diagonal (`flutter_vx`=30 « the
+  ~84 vertical → ~20°, <45°) so you drift forward a little; air drag keeps it
+  gentle, hold a dir to steer. Replaces the `flutter_grace`/`_max`/`_fall`/`_decel`
+  glide knobs; the "must be falling" gate is the tap guard. **4b** tuned the boosts
+  ¼ smaller + 2/s; **4c** kept momentum (too far); **4d** cancel + slight diagonal
+  (the keeper). Verified on TOUR: x drifts gently ~20–34px/s, vy flips every 30f at
+  ~−84, y holds; selftest 22351; KITCHECK + TOUR record→verify byte-exact;
   montage on llm-feed. **KITCHECK's flutter sub-test no longer triggers** (hop hold
   lands in a merged airtime under the new trajectories — choreography drift, not a
   bug; re-choreograph once the knobs settle). Magnitudes are the human's feel call.

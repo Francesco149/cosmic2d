@@ -823,6 +823,13 @@ updated):
   only the vertical boosts — holding a dir still accelerates via air control, and
   `flutter_vx`=0 leaves horizontal completely untouched on the beat. Verified: x
   drifts at the carried ~120 through the TOUR hover; determinism byte-exact.
+  **Round 4d (same day):** conserving ALL momentum launched you too far. Settled
+  on the middle: roll back to the 4b CANCEL (vx=0 dump at hover-start + air drag
+  restored, so a flash-jump no longer coasts through) BUT make each boost a slight
+  up-FORWARD diagonal — `flutter_vx` 0→**30** (« the ~84 vertical kick → ~20° from
+  vertical, <45°). Net: carried momentum is killed, then the small diagonal boosts
+  build a gentle forward drift that air drag holds to ~20–34px/s (vs 4c's full ~120).
+  Verified on TOUR: x drifts ~gently, vy still flips every 30f at ~−84, y holds.
   NB the KITCHECK flutter sub-test no longer triggers (its hop hold lands in a
   merged airtime under the new trajectories — choreography drift, not a logic bug;
   TOUR exercises the flutter, determinism is intact); re-choreograph once the
