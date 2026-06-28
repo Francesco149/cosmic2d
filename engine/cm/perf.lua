@@ -10,6 +10,7 @@
 local M = select(2, ...) or {}
 
 local ui = cm.require("cm.ui")
+local view = cm.require("cm.view")
 
 local HIST = 180 -- ~3s at 60
 local GRAPH_H = 30
@@ -51,7 +52,7 @@ function M.frame()
   end
   if not M.open then return end
 
-  local W = pal.gfx_size()
+  local W = view.surface_size() -- the ui canvas when the editor owns it (D036)
   local st = ui.style
   local pw = 132
   ui.begin_panel("perf", W - pw - 2, 2, pw, 116, { title = "perf  [f3]" })

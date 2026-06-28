@@ -71,9 +71,17 @@ M.style.scroll = M.style.scroll or {
 
 M.ticks = M.ticks or 0 -- render ticks, for cursor blink only (never sim)
 
--- per-tick input snapshot (rebuilt by ui.frame)
-M.inp = M.inp or { mx = -1000, my = -1000, buttons = {}, clicked = {},
-                   released = {}, wheel = 0, keys = {}, text = "" }
+-- per-tick input snapshot (rebuilt by ui.frame). mx/my = the space panels
+-- hit-test in (ui-canvas px when M.ui_space, else game px); gx/gy = always the
+-- game-space mouse (the editor's world placement reads this). See cm.view (the
+-- two-target composite, D036): set M.ui_space when the editor's ui canvas owns
+-- the chrome so panels hit-test in ui-canvas coords, not the game FOV.
+M.inp = M.inp or { mx = -1000, my = -1000, gx = -1000, gy = -1000,
+                   buttons = {}, clicked = {}, released = {}, wheel = 0,
+                   keys = {}, text = "" }
+M.inp.gx = M.inp.gx or -1000 -- backfill across a hot reload onto an old snapshot
+M.inp.gy = M.inp.gy or -1000
+M.ui_space = M.ui_space or false -- cm.view pushes this each frame
 
 M.cap_mouse = M.cap_mouse or false -- filters applied to THIS tick's events
 M.cap_keys = M.cap_keys or false
@@ -177,6 +185,18 @@ end
 
 -- ---- frame lifecycle ----
 
+-- store both mouse spaces from a motion/button event: gx/gy is always game
+-- space (world placement); mx/my is the panel hit-test space — ui-canvas px
+-- when the editor's ui layer owns the chrome (M.ui_space), else game px.
+local function set_mouse(i, e)
+  i.gx, i.gy = e.x, e.y
+  if M.ui_space then
+    i.mx, i.my = e.ui_x or e.x, e.ui_y or e.y
+  else
+    i.mx, i.my = e.x, e.y
+  end
+end
+
 -- ingest this tick's events; return what the game is allowed to see,
 -- filtered by last tick's capture flags. Down-events are captured,
 -- up-events always pass (no stuck keys/buttons in the game).
@@ -197,9 +217,9 @@ function M.frame(events)
       i.text = i.text .. e.text
       pass = false -- text events are a UI-only stream
     elseif e.type == "motion" then
-      i.mx, i.my = e.x, e.y
+      set_mouse(i, e)
     elseif e.type == "button" then
-      i.mx, i.my = e.x, e.y
+      set_mouse(i, e)
       if e.down then
         i.buttons[e.button] = true
         i.clicked[e.button] = true

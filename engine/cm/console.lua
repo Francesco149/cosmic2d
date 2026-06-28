@@ -19,6 +19,7 @@
 local M = select(2, ...) or {}
 
 local ui = cm.require("cm.ui")
+local view = cm.require("cm.view")
 local repl = cm.require("cm.repl")
 local state = cm.require("cm.state")
 local ease = cm.require("cm.ease")
@@ -151,7 +152,7 @@ end
 -- ---- the per-tick frame (cm.main calls this after the game draws) ----
 
 function M.frame()
-  local W, H = pal.gfx_size()
+  local W, H = view.surface_size() -- ui canvas when the editor owns it (D036)
   poll_log()
 
   -- toggle keys work no matter who has the keyboard (but shipped zips

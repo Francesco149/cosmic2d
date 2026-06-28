@@ -1287,6 +1287,24 @@ local function t_viewport()
   check(select(1, pal.gfx_size()) == 64, "fov: restored to 64x64")
 end
 
+-- ---- cm.ui: the two mouse spaces (M8.4) ----
+-- gx/gy is always game-space (the editor's world placement); mx/my is the
+-- panel hit-test space — ui-canvas px when the editor owns the chrome
+-- (M.ui_space), else game px (dev panels overlay the full-window game).
+local function t_uispace()
+  local ui = cm.require("cm.ui")
+  local was = ui.ui_space
+  ui.ui_space = true
+  ui.frame({ { type = "motion", x = 10, y = 20, ui_x = 5, ui_y = 8 } })
+  check(ui.inp.mx == 5 and ui.inp.my == 8, "ui_space: mx/my take ui_x/ui_y")
+  check(ui.inp.gx == 10 and ui.inp.gy == 20, "ui_space: gx/gy stay game x/y")
+  ui.ui_space = false
+  ui.frame({ { type = "motion", x = 11, y = 22, ui_x = 5, ui_y = 8 } })
+  check(ui.inp.mx == 11 and ui.inp.my == 22, "no ui layer: mx/my = game x/y")
+  check(ui.inp.gx == 11 and ui.inp.gy == 22, "no ui layer: gx/gy = game x/y")
+  ui.ui_space = was
+end
+
 -- ---- cm.view: the D036 resize ladder (M8.3) ----
 -- Pure window->FOV math; locks every rung the human specified. Render-only
 -- policy, so it is safe to compute headless (it just doesn't get applied).
@@ -1321,6 +1339,7 @@ function game.init()
   t_text()
   t_repl()
   t_ui()
+  t_uispace()
   t_console()
   t_tilemap()
   t_tilemap_tools()

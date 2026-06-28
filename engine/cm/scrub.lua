@@ -23,6 +23,7 @@
 
 local M = select(2, ...) or {}
 local ui = cm.require("cm.ui")
+local view = cm.require("cm.view")
 local trace = cm.require("cm.trace")
 local state = cm.require("cm.state")
 local input = cm.require("cm.input")
@@ -146,7 +147,7 @@ function M.frame()
   end
   apply(M.at)
 
-  local W, H = pal.gfx_size()
+  local W, H = view.surface_size() -- ui canvas when the editor owns it (D036)
   local st = ui.style
   local ph = st.pad * 2 + st.row_h * 3 + st.gap * 2
   ui.begin_panel("scrub", 2, H - ph - 2, W - 4, ph)

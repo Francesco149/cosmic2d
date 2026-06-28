@@ -45,6 +45,7 @@ local repl = cm.require("cm.repl")
 local gfx = cm.require("cm.gfx")
 local tilemap = cm.require("cm.tilemap")
 local inspect = cm.require("cm.inspect")
+local view = cm.require("cm.view")
 
 M.on = M.on or false
 M.sel = M.sel or 1 -- selected tile id; 0 = the eraser
@@ -55,9 +56,11 @@ if M.paint_on == nil then M.paint_on = true end -- brush armed / mouse to game
 
 local floor, ceil = math.floor, math.ceil
 local KEY_F1 = 58
-local TB_H = 43 -- toolbar: pad + status row + gap + 22px swatch strip + pad
+-- exposed on M so cm.view can inset the game viewport by the chrome (D036)
+M.TB_H = 43 -- toolbar: pad + status row + gap + 22px swatch strip + pad
+M.IW = 186 -- inspector panel width (right edge, under the toolbar)
+local TB_H, IW = M.TB_H, M.IW
 local SW = 22 -- swatch cell size
-local IW = 186 -- inspector panel width (right edge, under the toolbar)
 local KIND_COLOR = {
   player = { 0.30, 0.95, 0.95, 0.95 },
   prop = { 0.95, 0.65, 0.25, 0.95 },
@@ -125,8 +128,10 @@ end
 local function hover_cell(att)
   if ui.over_panel or ui.active then return nil end
   local tm = att.tm
-  local tx = floor((ui.inp.mx + att.camx) / tm.tile)
-  local ty = floor((ui.inp.my + att.camy) / tm.tile)
+  -- gx/gy: game-space mouse (through the viewport), so painting lands on the
+  -- world even when the editor chrome lives on a separate ui canvas (D036)
+  local tx = floor((ui.inp.gx + att.camx) / tm.tile)
+  local ty = floor((ui.inp.gy + att.camy) / tm.tile)
   if tx < 0 or tx >= tm.w or ty < 0 or ty >= tm.h then return nil end
   return tx, ty
 end
@@ -166,8 +171,8 @@ end
 -- (D031): a spawn records and replays exactly like a painted cell.
 local function spawn_click(att, e)
   local inp = ui.inp
-  local wx = floor(inp.mx + att.camx)
-  local wy = floor(inp.my + att.camy)
+  local wx = floor(inp.gx + att.camx) -- game-space mouse (see hover_cell)
+  local wy = floor(inp.gy + att.camy)
   if e.icon then -- ghost: where the spawn would sit
     ui.frame_rect(wx - e.icon.w // 2, wy - e.icon.h // 2,
                   e.icon.w, e.icon.h, { 1, 1, 1, 0.85 })
@@ -224,7 +229,7 @@ local function prop_swatch(att, k, x, y)
 end
 
 local function toolbar(att, tx, ty)
-  local W = pal.gfx_size()
+  local W = view.surface_size() -- the ui canvas when the editor owns it (D036)
   local st = ui.style
   ui.begin_panel("editor", 0, 0, W, TB_H)
 
@@ -339,11 +344,16 @@ function M.frame()
     end
   end
 
+  -- chrome now draws on the ui canvas (its own scale); the world overlay above
+  -- stayed on the game target so it tracks + scales with the world (D036)
+  pal.x_target("ui")
   toolbar(att, tx, ty)
   if M.show_insp then
-    local W, H = pal.gfx_size()
+    local W, H = view.surface_size()
     inspect.frame(W - IW - 2, TB_H + 2, IW, H - TB_H - 4)
   end
+  -- leave the target on "ui" so the dev panels drawn after us (scrub / perf /
+  -- console) compose onto the same canvas while the editor is active
 end
 
 return M
