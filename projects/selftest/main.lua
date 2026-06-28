@@ -1508,6 +1508,81 @@ local function t_paint()
   check(paint.hsv(rh, rs, rv) == c, "paint: hsv round-trip")
 end
 
+-- ---- cm.paint gradients: eval + ordered dither (M10 Phase 3, STUDIO.md §6) ----
+local function t_grad()
+  local paint = cm.require("cm.paint")
+  local BLK, WHT = paint.pack(0, 0, 0), paint.pack(255, 255, 255)
+  local RED, GRN, BLU = paint.pack(255, 0, 0), paint.pack(0, 255, 0), paint.pack(0, 0, 255)
+
+  -- lerp_rgba: midpoint + alpha lerp
+  check(paint.lerp_rgba(BLK, WHT, 0.5) == paint.pack(128, 128, 128),
+        "grad: lerp_rgba midpoint")
+  check(paint.lerp_rgba(BLK, WHT, 0) == BLK and paint.lerp_rgba(BLK, WHT, 1) == WHT,
+        "grad: lerp_rgba endpoints")
+  check(paint.lerp_rgba(paint.pack(0, 0, 0, 0), paint.pack(0, 0, 0, 255), 0.5)
+        == paint.pack(0, 0, 0, 128), "grad: lerp_rgba alpha")
+
+  -- ramp: multi-stop sampling, clamped past the ends
+  local two = { { pos = 0, rgba = BLK }, { pos = 1, rgba = WHT } }
+  check(paint.ramp(two, 0) == BLK and paint.ramp(two, 1) == WHT
+        and paint.ramp(two, 0.5) == paint.pack(128, 128, 128), "grad: ramp 2-stop")
+  check(paint.ramp(two, -1) == BLK and paint.ramp(two, 2) == WHT, "grad: ramp clamps ends")
+  local tri = { { pos = 0, rgba = RED }, { pos = 0.5, rgba = GRN }, { pos = 1, rgba = BLU } }
+  check(paint.ramp(tri, 0.5) == GRN and paint.ramp(tri, 0.25) == paint.pack(128, 128, 0),
+        "grad: ramp 3-stop interpolates within a segment")
+
+  -- bayer: known thresholds + the cell tiles (period = size)
+  check(paint.bayer(2, 0, 0) == 0.5 / 4 and paint.bayer(2, 1, 0) == 2.5 / 4,
+        "grad: bayer 2x2 entries")
+  check(paint.bayer(4, 0, 0) == 0.5 / 16, "grad: bayer 4x4 origin")
+  check(paint.bayer(4, 4, 4) == paint.bayer(4, 0, 0)
+        and paint.bayer(8, 8, 3) == paint.bayer(8, 0, 3), "grad: bayer tiles by size")
+
+  -- grad_t: linear projection, radial distance ratio, angular quarter-turns
+  check(paint.grad_t("linear", 0, 0, 0, 0, 10, 0) == 0
+        and paint.grad_t("linear", 10, 0, 0, 0, 10, 0) == 1
+        and paint.grad_t("linear", 5, 0, 0, 0, 10, 0) == 0.5
+        and paint.grad_t("linear", -5, 0, 0, 0, 10, 0) == -0.5, "grad: grad_t linear")
+  check(paint.grad_t("radial", 0, 0, 0, 0, 0, 10) == 0
+        and paint.grad_t("radial", 6, 8, 0, 0, 0, 10) == 1
+        and paint.grad_t("radial", 0, 5, 0, 0, 0, 10) == 0.5, "grad: grad_t radial")
+  local function near(a, b) return math.abs(a - b) < 1e-6 end
+  check(near(paint.grad_t("angular", 10, 0, 0, 0, 10, 0), 0)
+        and near(paint.grad_t("angular", 0, 10, 0, 0, 10, 0), 0.25)
+        and near(paint.grad_t("angular", 0, -10, 0, 0, 10, 0), 0.75), "grad: grad_t angular")
+
+  -- dither_t: strength 0 snaps to nearest band; strength 1 dithers by threshold
+  check(paint.dither_t(0, 2, 0, 0.5) == 0 and paint.dither_t(1, 2, 0, 0.5) == 1,
+        "grad: dither_t band endpoints")
+  check(paint.dither_t(0.3, 2, 0, 0.1) == 0 and paint.dither_t(0.7, 2, 0, 0.9) == 1,
+        "grad: dither_t strength 0 = hard band (threshold-independent)")
+  check(paint.dither_t(0.3, 2, 1, 0.125) == 1 and paint.dither_t(0.3, 2, 1, 0.625) == 0,
+        "grad: dither_t strength 1 dithers around the threshold")
+  check(paint.dither_t(0.5, 5, 0, 0.5) == 0.5, "grad: dither_t lands on a mid band")
+
+  -- grad_shade: a 5-wide BLACK→WHITE linear, 2 bands, no dither — a clean split
+  local lin = { type = "linear", p0 = { x = 0, y = 0 }, p1 = { x = 4, y = 0 },
+                stops = two, levels = 2, dither = 0, bayer = 2, phase = 0 }
+  check(paint.grad_shade(lin, 0, 0) == BLK and paint.grad_shade(lin, 4, 0) == WHT
+        and paint.grad_shade(lin, 1, 0) == BLK and paint.grad_shade(lin, 3, 0) == WHT,
+        "grad: grad_shade hard 2-band split")
+  -- phase slides the ramp along the axis (here +0.5 pushes the split earlier)
+  lin.phase = 0.5
+  check(paint.grad_shade(lin, 0, 0) == WHT, "grad: phase slides the ramp")
+  lin.phase = 0
+
+  -- grad_fill masks to the source alpha, preserving each pixel's coverage
+  local mask = paint.image(4, 1)
+  paint.set(mask, 0, 0, RED); paint.set(mask, 3, 0, paint.pack(0, 255, 0, 128))
+  local fill3 = { type = "linear", p0 = { x = 0, y = 0 }, p1 = { x = 3, y = 0 },
+                  stops = two, levels = 2, dither = 0, bayer = 2, phase = 0 }
+  local outg = paint.image(4, 1)
+  paint.grad_fill(outg, fill3, mask)
+  check(paint.get(outg, 0, 0) == paint.pack(0, 0, 0, 255), "grad: grad_fill recolors masked px (opaque)")
+  check(paint.get(outg, 1, 0) == 0 and paint.get(outg, 2, 0) == 0, "grad: grad_fill skips unmasked px")
+  check(paint.get(outg, 3, 0) == paint.pack(255, 255, 255, 128), "grad: grad_fill keeps the mask alpha")
+end
+
 -- ---- cm.sprite: the studio document — model, .spr codec, bake, undo (M10) ----
 local function t_sprite()
   local sprite = cm.require("cm.sprite")
@@ -1633,6 +1708,7 @@ function game.init()
   t_ladder()
   t_capture()
   t_paint()
+  t_grad()
   t_sprite()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

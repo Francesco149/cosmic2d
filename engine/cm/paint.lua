@@ -21,6 +21,7 @@ local M = select(2, ...) or {}
 
 local floor, ceil, sqrt, abs = math.floor, math.ceil, math.sqrt, math.abs
 local max, min = math.max, math.min
+local atan, pi = math.atan, math.pi
 
 -- ---- color packing (0..255 ints <-> RGBA8 u32) ----
 
@@ -335,6 +336,138 @@ function M.rotate90(img, dir)
     end
   end
   return out
+end
+
+-- ---- gradients (eval + ordered dither — the signature feature, STUDIO.md §6) ----
+--
+-- A gradient FILL is a small editable object (the studio stores one per layer,
+-- the .spr keeps it live): { type, p0={x,y}, p1={x,y}, stops={{pos,rgba}…},
+-- levels, dither(0..1 strength), bayer(2|4|8), phase(0..1) }. These are pure
+-- functions of the def + a pixel — dev-class float is fine, and selftest pins
+-- them with KATs. Pixel-art gradients are *ordered dithering* between a few
+-- bands, never a smooth blend: dither_t snaps each pixel to a real ramp band, so
+-- every output pixel is an exact ramp color (no AA, STUDIO.md §5.1).
+
+-- float-lerp two packed colors (alpha lerps too); f in 0..1.
+function M.lerp_rgba(c0, c1, f)
+  local r0, g0, b0, a0 = M.unpack(c0)
+  local r1, g1, b1, a1 = M.unpack(c1)
+  return M.pack(floor(r0 + (r1 - r0) * f + 0.5), floor(g0 + (g1 - g0) * f + 0.5),
+                floor(b0 + (b1 - b0) * f + 0.5), floor(a0 + (a1 - a0) * f + 0.5))
+end
+
+-- sample a multi-stop ramp at t (clamped to the end stops). `stops` is an array
+-- of { pos = 0..1, rgba } sorted ascending by pos; pos ties take the earlier.
+function M.ramp(stops, t)
+  local n = #stops
+  if n == 0 then return 0 end
+  if n == 1 or t <= stops[1].pos then return stops[1].rgba end
+  if t >= stops[n].pos then return stops[n].rgba end
+  for i = 1, n - 1 do
+    local a, b = stops[i], stops[i + 1]
+    if t <= b.pos then
+      local span = b.pos - a.pos
+      return M.lerp_rgba(a.rgba, b.rgba, span > 1e-9 and (t - a.pos) / span or 0)
+    end
+  end
+  return stops[n].rgba
+end
+
+-- the classic recursive Bayer index matrices (ordered-dither thresholds).
+local BAYER = {
+  [2] = { 0, 2, 3, 1 },
+  [4] = { 0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5 },
+  [8] = { 0, 32, 8, 40, 2, 34, 10, 42, 48, 16, 56, 24, 50, 18, 58, 26,
+          12, 44, 4, 36, 14, 46, 6, 38, 60, 28, 52, 20, 62, 30, 54, 22,
+          3, 35, 11, 43, 1, 33, 9, 41, 51, 19, 59, 27, 49, 17, 57, 25,
+          15, 47, 7, 39, 13, 45, 5, 37, 63, 31, 55, 23, 61, 29, 53, 21 },
+}
+
+-- the ordered-dither threshold at (x,y) for a size∈{2,4,8} Bayer cell, in (0,1).
+function M.bayer(size, x, y)
+  if size ~= 2 and size ~= 8 then size = 4 end
+  local v = BAYER[size][(y % size) * size + (x % size) + 1]
+  return (v + 0.5) / (size * size)
+end
+
+-- the raw axis parameter for a pixel: linear/mirror = projection onto p0→p1
+-- (unclamped, may exit 0..1); radial = distance/|axis| (≥0); angular = the
+-- turn from the axis direction, wrapped to [0,1). The per-type clamp/wrap/fold
+-- is applied in grad_shade (so phase can slide first).
+function M.grad_t(kind, x, y, p0x, p0y, p1x, p1y)
+  local dx, dy = p1x - p0x, p1y - p0y
+  if kind == "radial" then
+    local r2 = dx * dx + dy * dy
+    if r2 < 1e-9 then return 0 end
+    local px, py = x - p0x, y - p0y
+    return sqrt((px * px + py * py) / r2)
+  elseif kind == "angular" then
+    local a = (atan(y - p0y, x - p0x) - atan(dy, dx)) / (2 * pi)
+    return a - floor(a)
+  else -- linear / mirror
+    local len2 = dx * dx + dy * dy
+    if len2 < 1e-9 then return 0 end
+    return ((x - p0x) * dx + (y - p0y) * dy) / len2
+  end
+end
+
+-- quantize t into `levels` bands, ordered-dithering across each band boundary.
+-- bt is this pixel's Bayer threshold. strength 0 = hard bands (snap to nearest);
+-- strength 1 = the whole band dithers (smoothest pixel-art ramp). Returns a
+-- band-snapped t' to feed back into the ramp, so the output is an exact band color.
+function M.dither_t(t, levels, strength, bt)
+  if levels <= 1 then return 0 end
+  if t <= 0 then return 0 end
+  if t >= 1 then return 1 end
+  local tb = t * (levels - 1)
+  local base = floor(tb)
+  local frac = tb - base
+  local p
+  if strength <= 0 then
+    p = frac < 0.5 and 0 or 1
+  else
+    p = (frac - 0.5) / strength + 0.5
+    p = p < 0 and 0 or (p > 1 and 1 or p)
+  end
+  local lvl = base + ((bt < p) and 1 or 0)
+  if lvl > levels - 1 then lvl = levels - 1 end
+  return lvl / (levels - 1)
+end
+
+local function fold_tri(t) -- period-2 triangle wave 0→1→0 (for the mirror type)
+  local m = t - 2 * floor(t / 2)
+  return m > 1 and 2 - m or m
+end
+
+-- the gradient color at one pixel: geometry → +phase → per-type normalize →
+-- ordered-dither band snap → ramp sample. A complete, pure "color at (x,y)".
+function M.grad_shade(fill, x, y)
+  local p0, p1 = fill.p0, fill.p1
+  local t = M.grad_t(fill.type, x, y, p0.x, p0.y, p1.x, p1.y) + (fill.phase or 0)
+  if fill.type == "angular" then t = t - floor(t)
+  elseif fill.type == "mirror" then t = fold_tri(t)
+  else t = t < 0 and 0 or (t > 1 and 1 or t) end
+  t = M.dither_t(t, fill.levels or 2, fill.dither or 0, M.bayer(fill.bayer or 4, x, y))
+  return M.ramp(fill.stops, t)
+end
+
+-- render `fill` into `img`, but ONLY where `mask` has alpha > 0 — the gradient
+-- recolors a layer's *visible* pixels and keeps their per-pixel alpha (the
+-- shape is the layer's, the color is the ramp's; STUDIO.md §6). Masked-out
+-- pixels are left untouched, so pass a cleared scratch (composite) or the cell
+-- itself (in-place destructive stamp). img and mask must share dimensions.
+function M.grad_fill(img, fill, mask)
+  for y = 0, img.h - 1 do
+    for x = 0, img.w - 1 do
+      local ma = (M.get(mask, x, y) >> 24) & 255
+      if ma ~= 0 then
+        local c = M.grad_shade(fill, x, y)
+        local ca = (c >> 24) & 255
+        local oa = ca == 255 and ma or (ca * ma + 127) // 255
+        M.set(img, x, y, (c & 0x00ffffff) | (oa << 24))
+      end
+    end
+  end
 end
 
 return M
