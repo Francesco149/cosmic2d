@@ -1477,6 +1477,72 @@ local function t_paint()
         "paint: blit stamp copies opaque, skips transparent")
 end
 
+-- ---- cm.sprite: the studio document — model, .spr codec, bake, undo (M10) ----
+local function t_sprite()
+  local sprite = cm.require("cm.sprite")
+  local paint = cm.require("cm.paint")
+  local RED, GRN = paint.pack(255, 0, 0), paint.pack(0, 255, 0)
+
+  local doc = sprite.new(8, 6)
+  check(doc.w == 8 and doc.h == 6 and doc.frames == 1 and #doc.layers == 1,
+        "sprite: new doc shape")
+  check(#doc.palette >= 8, "sprite: default palette seeded")
+
+  local cell = sprite.cell(doc)
+  paint.set(cell, 2, 3, RED)
+  paint.set(cell, 0, 0, GRN)
+  local out = paint.image(8, 6)
+  sprite.composite_into(doc, 1, out)
+  check(paint.get(out, 2, 3) == RED and paint.get(out, 0, 0) == GRN,
+        "sprite: composite one layer == the cell")
+
+  -- a 2nd opaque layer draws over; hiding it falls back to the layer below
+  local l2 = sprite.add_layer(doc, "top")
+  paint.set(l2.cells[1], 2, 3, GRN)
+  sprite.composite_into(doc, 1, out)
+  check(paint.get(out, 2, 3) == GRN, "sprite: top layer composites over")
+  l2.hidden = true
+  sprite.composite_into(doc, 1, out)
+  check(paint.get(out, 2, 3) == RED, "sprite: hidden layer skipped")
+  l2.hidden = false
+
+  -- .spr encode/decode round-trip preserves pixels + layers + palette
+  local doc2 = sprite.decode(sprite.encode(doc))
+  check(doc2.w == 8 and doc2.h == 6 and #doc2.layers == 2, "sprite: decode shape")
+  check(paint.get(sprite.cell(doc2, 1, 1), 2, 3) == RED, "sprite: decode layer 1 px")
+  check(paint.get(sprite.cell(doc2, 2, 1), 2, 3) == GRN, "sprite: decode layer 2 px")
+  check(doc2.palette[12] == doc.palette[12], "sprite: decode palette")
+
+  -- bake: flattened strip (1 frame here), top layer wins at (2,3)
+  local strip = sprite.bake_image(doc)
+  check(strip.w == 8 and strip.h == 6, "sprite: bake strip dims")
+  check(paint.get(strip, 2, 3) == GRN, "sprite: bake flattens layers")
+
+  -- disk round-trip + the baked PNG landing beside the .spr
+  local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_sprite.spr"
+  check(sprite.save(doc, tmp) == true, "sprite: save writes")
+  local doc3, err = sprite.load(tmp)
+  check(doc3 and paint.get(sprite.cell(doc3, 1, 1), 2, 3) == RED,
+        "sprite: load round-trip (" .. tostring(err) .. ")")
+  check(pal.read_file((tmp:gsub("%.spr$", ".png"))) ~= nil, "sprite: bake png written")
+
+  -- undo / redo a stroke (the delta1 codec), and a no-op pushes nothing
+  local d = sprite.new(4, 4)
+  local c = sprite.cell(d)
+  sprite.begin_edit(d)
+  paint.set(c, 1, 1, RED); paint.set(c, 2, 2, RED)
+  sprite.end_edit(d)
+  check(sprite.can_undo(d) and paint.get(c, 1, 1) == RED, "sprite: stroke recorded")
+  sprite.undo(d)
+  check(paint.get(c, 1, 1) == 0 and paint.get(c, 2, 2) == 0, "sprite: undo reverts")
+  check(sprite.can_redo(d), "sprite: redo available")
+  sprite.redo(d)
+  check(paint.get(c, 1, 1) == RED and paint.get(c, 2, 2) == RED, "sprite: redo reapplies")
+  local n = #d._undo
+  sprite.begin_edit(d); sprite.end_edit(d)
+  check(#d._undo == n, "sprite: empty edit pushes no undo step")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1503,6 +1569,7 @@ function game.init()
   t_ladder()
   t_capture()
   t_paint()
+  t_sprite()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
