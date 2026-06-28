@@ -4,15 +4,17 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** Core built +
-committed + visually self-verified (M8.1–M8.4 + capture + D039); the
-editor-around-game **layout is human-approved** ("it looks correct yes",
-2026-06-28). One feel pass applied (`bf58389`): **fill-the-window ladder** (no
-more letterbox on maximize) + **alt+enter borderless fullscreen**. Open: confirm
-`cfg.ui_scale` (2× vs 1×) on win11; then M8.6/M8.5. Both linux + windows builds
-compile clean. M7 movement remains FEEL-APPROVED; its deferred items (CW≈26
-scale, slice VFX, golden re-cut) still wait on M8 + assets.
-**Done this session (M8.1–M8.4 + capture, all on `main`, selftest 22312→22348,
+**Phase**: **M8 — viewport & editor UX (D036): FEATURE-COMPLETE** (pending the
+golden re-cut, which is deferred — see below). The whole D036 model ships:
+variable-FOV two-target composite (editor chrome at its own scale **around** the
+game viewport), the resize ladder, alt+enter borderless fullscreen (**human-
+approved**), and the **options menu** (Esc) to set resolution/scale/fullscreen
+directly. Layout approved ("it looks correct yes"); two feel passes applied. M8
+is covered by **selftest 22312→22351** (+39: viewport/composite/ladder/mouse-
+split/capture); determinism byte-exact; both linux + windows builds clean. M7
+movement remains FEEL-APPROVED; its deferred items (CW≈26 scale, slice VFX) wait
+on real assets.
+**Done this session (M8.1–M8.6 + capture, all on `main`, selftest 22312→22351,
 determinism byte-exact, uigallery golden byte-identical, goldens else unaffected):**
 - **M8.1** `ea7dc9a` — PAL **api 4→5**: `pal.x_fov(w,h)` (the variable game FOV =
   resizable internal target), `pal.x_window_size()`, `x_set_window_size`/
@@ -54,10 +56,34 @@ editor inset fills the central rect) on llm-feed. **Still open**: confirm
 `cfg.ui_scale` (2× readable vs D036's literal 1×) on win11; test the alt+enter
 toggle natively (headless can't).
 
-**Next:** **M8.6** (options menu — set resolution/scale/fullscreen directly; the
-PAL hooks + the fullscreen toggle exist) and **M8.5** (golden re-cut +
-multi-file/subdir hot-reload at scale). Then close M7's deferred items (set
-FOV/scale + `move.cw/ch` for the CW≈26 anchor; slice VFX).
+### M8 feedback round 2 (2026-06-28, win11) — `02d55c4`, `2ea0973`
+Fullscreen **approved**. Fixed "parallax bleeds through the bottom in fullscreen
+editor mode": a FOV taller/wider than the 480×270 design renders past the sim
+camera's clamp (the sim can't read the live FOV — determinism), revealing
+undesigned world. Also latent in play mode (1280×720→640×360 bled). Fix —
+**unified ladder** (supersedes round-1's fill): `scale = max(base, ⌊W/ref_w⌋,
+⌊H/ref_h⌋)` (max-of-fits, so maximize still FILLS) **+ FOV hard-capped at the
+reference** (so the render never exceeds the design → never bleeds). Net: fills
+on whole-multiple windows (incl. maximized 16:9 → 480×260), thin letterbox /
+editor margins otherwise; no bleed in play or editor. **M8.6 options menu**
+(`cm.options`, Esc): fullscreen toggle, windowed presets (960×540…1920×1080),
+ui-scale 1×/2×/3× — sets res directly when you can't drag-resize. **M8.5**:
+api5 table extended (x_capture); nested-subdir module load + deep hot-reload
+verified (the loader watch_adds every required file, dotted names → nested
+paths).
+
+**Still open / deferred**:
+- **`cfg.ui_scale`** default (2× now; D036 says 1×) — the human's taste call,
+  live-tunable + in the options menu. Not blocking.
+- **Options persistence** across launches — a noted follow-up (live-apply works).
+- **Golden suite re-cut** — DEFERRED (D033 + STATUS): the pixel goldens
+  (sandbox_idle/tour) are M5-era and would just re-cut again when real art lands
+  (M10); the `.ptrace`→`.ctrace` trace re-cut waits on confirming the rename
+  (D033, human's call). selftest (22351) is the live net meanwhile.
+
+**Next:** confirm M8 ui_scale taste on win11; the deferred items above; then M9
+(audio) or circle back to M7's asset-gated items (CW≈26 scale via FOV/scale +
+`move.cw/ch`; slice VFX once the editor's particle work lands).
 
 ## This session (2026-06-27) — M7 moveset
 
@@ -235,8 +261,10 @@ two-target composite + the resize ladder). Remaining M8 sub-steps:
    goldens (sandbox_idle, sandbox_tour). selftest 22312 is the live net until then.
 
 Controls (dev): arrows · space=jump (hold=auto-repeat; airborne=flash, Up=up-jump)
-· e=hop (hold=flutter) · **q=grapple** · r=teleport · d=slice. `game.save_knobs()`
-persists tuning. The temporary cooldown HUD shows hop/grapple/tp timers.
+· e=hop (hold=flutter) · **q=grapple** · r=teleport · d=slice. F1=editor ·
+**Esc=options menu** · **alt+enter=borderless fullscreen** · `=console · F3=perf ·
+F4=time machine. `game.save_knobs()` persists tuning. The temporary cooldown HUD
+shows hop/grapple/tp timers.
 
 ## Known small items / debts
 

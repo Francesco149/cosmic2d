@@ -593,6 +593,8 @@ golden suite + determinism untouched.
 | `pal.x_ui_target(w,h)` → `w,h` | render/dev | create/resize the **editor/UI canvas** (the second target). `w==0\|\|h==0` frees it (no ui layer = shipped game) |
 | `pal.x_target("game"\|"ui")` | render | route subsequent quads to a target; every `begin_frame` resets to `"game"`. Segments carry a target id; one shared vertex buffer, two filtered scene passes |
 | `pal.x_compose{x,y,scale,ui_scale}` | render/dev | define the present composite: the game target blits to `(x,y)` at integer `scale`; if `ui_scale>0` and a ui target exists, the ui canvas blits over the whole window at that integer scale, alpha-over the game. `pal.x_compose()` (no arg) → centered letterbox, no ui layer |
+| `pal.x_capture(w,h)` | render/dev | enable an offscreen capture target sized `w×h`; present composites into it instead of a swapchain (`0,0` frees + disables). Lets a headless `--shot` capture the editor-around-game composite that otherwise lives only in the window |
+| `pal.x_capture_read()` → `pixels,w,h` | dev/test | the capture target as RGBA8 (top-left, tight), post-present |
 | event `ui_x,ui_y` (motion/button) | input | the ui-canvas-space mouse, alongside game-space `x,y`. The editor chrome hit-tests `ui_x/ui_y`; the world overlay + the recorded sim mouse stay `x,y` |
 
 `present()` is factored into `scene_pass(target,id,clear)` (game → game target,
