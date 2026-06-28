@@ -43,23 +43,33 @@ feature-complete and M7 (movement) is feel-approved; both stand below as history
   Canvas: checkerboard, composite→one texture, cursor-anchored zoom, middle-drag
   pan, grid, hover. Tools: pencil/eraser/bucket/eyedropper, primary/secondary
   (LMB/RMB), Alt=pick, X=swap, Ctrl+Z/Y undo, Ctrl+S save. Palette panel.
-- **selftest 22351→22393** (+42, cm.paint + cm.sprite KATs); all green.
-- **Screenshot pushed to llm-feed** ("M10 the studio — Phase 1 MVP"): a 32×32
-  demo motif painted through the real pipeline. **Awaiting the human's
-  layout/UX taste read** before building more chrome.
+- **1d DONE** `e305c29` — HSV+hex **color picker** (SV square + hue strip + hex
+  field, set_prim sync), **palette save-slots** (6 project-level presets in
+  art/palettes.dat, L=load/R=save, + "+ add color"), and the **asset browser**
+  (menubar "browse": modal thumbnail grid of `<project>/art/*.spr`, click-to-
+  open, new/refresh/close). Plus `cm.ui.text_input` now takes `opts.rect`.
+- **selftest 22351→22397** (+46, cm.paint + cm.sprite KATs); all green.
+- **Layout human-approved** ("looks reasonable so far, let's continue"); 3
+  screenshots on llm-feed (MVP shell, dock+picker, browser).
 
-**Next step (resume here): finish Phase 1d** — the rest of the "solid paint
-foundation": (1) an **HSV + hex color picker** in the dock (mix free colors, not
-only the palette); (2) **custom palette save-slots** (save/load named palettes
-to a project-level file, "add current color" to the palette); (3) the **asset
-browser** — a grid of baked thumbnails from `<project>/art/`, new/open/dup/
-delete (you can't open a second asset yet). Phase 1 exit: a human paints,
-palettes, saves, bakes, and reopens a sprite. Then Phase 2 (layers/shapes/
-transforms/clipboard) → 3 (gradients) → 4 (animation + game wiring). Full plan:
-STUDIO.md §10. Visual progress → llm-feed; the human is the taste gate.
+**Phase 1 (solid paint foundation) is COMPLETE** — exit met: paint → palette →
+mix colors → save (.spr + baked .png) → bake → reopen all work, verified via the
+`--win` composite capture. The studio is genuinely usable for single-layer
+sprites.
+
+**Next step (resume here): Phase 2** (STUDIO.md §10) — **layers** (the layers
+panel: add/dup/delete/reorder, opacity/hide/lock; the doc model + composite
+already handle N layers, needs the UI + structural-op undo), **shapes** (line/
+rect/ellipse with live drag-preview + shift-constrain; cm.paint already has the
+rasterizers), **selection** (marquee + move + cut/copy/paste as a floating
+selection), **transforms** (flip/rotate90/scale on selection/layer), and
+**custom brush from a selection** (sprite-as-brush). Then Phase 3 (gradients —
+the signature feature) → Phase 4 (animation timeline + clips + `cm.anim` + wire
+the sandbox player to a studio-authored sprite, hitting the M10 exit).
 
 Controls (studio): F2 toggle · B/E/G/I tools · LMB primary / RMB secondary ·
-Alt=eyedropper · X swap · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save.
+Alt=eyedropper · X swap · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save ·
+menubar browse/new/save/close · palette slots L=load R=save.
 
 ---
 
