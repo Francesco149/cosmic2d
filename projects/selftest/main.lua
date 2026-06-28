@@ -1506,6 +1506,29 @@ local function t_paint()
   local c = paint.pack(200, 120, 40)
   local rh, rs, rv = paint.to_hsv(c)
   check(paint.hsv(rh, rs, rv) == c, "paint: hsv round-trip")
+
+  -- write-clip (the studio's "selection restricts editing"): set/over/flood only
+  -- touch the clip rect; clip_off restores; composite-class ops are off by default
+  local cl = paint.image(6, 6)
+  paint.set_clip(2, 2, 5, 5) -- half-open [2,5)×[2,5)
+  paint.set(cl, 0, 0, RED)   -- outside → ignored
+  paint.set(cl, 3, 3, RED)   -- inside → written
+  check(paint.get(cl, 0, 0) == 0 and paint.get(cl, 3, 3) == RED,
+        "paint: set respects the write-clip")
+  paint.rect(cl, 0, 0, 6, 6, GRN, true) -- a full-rect fill, clipped to [2,5)²
+  local n = 0
+  for yy = 0, 5 do for xx = 0, 5 do if paint.get(cl, xx, yy) == GRN then n = n + 1 end end end
+  check(n == 9, "paint: rect/line writes clip to the rect (3x3)")
+  paint.clip_off()
+  paint.set(cl, 0, 0, RED)
+  check(paint.get(cl, 0, 0) == RED, "paint: clip_off restores full writes")
+  -- flood stays inside the clip (a clipped-out pixel bounds the fill)
+  local fl = paint.image(6, 6) -- all transparent (one connected region)
+  paint.set_clip(0, 0, 3, 6)   -- left half only
+  paint.flood(fl, 1, 1, RED)
+  paint.clip_off()
+  check(paint.get(fl, 1, 1) == RED and paint.get(fl, 4, 1) == 0,
+        "paint: flood stays inside the write-clip")
 end
 
 -- ---- cm.paint gradients: eval + ordered dither (M10 Phase 3, STUDIO.md §6) ----
@@ -1766,6 +1789,22 @@ local function t_sprite()
         "sprite: save writes a loadable .anim sidecar")
   sprite.delete_clip(cd, 1)
   check(#cd.clips == 1 and cd.clips[1].name == "extra", "sprite: delete_clip removes it")
+
+  -- merge_down: flatten a layer onto the one below, then drop it (one undo step)
+  local md = sprite.new(2, 2)
+  paint.set(sprite.cell(md, 1, 1), 0, 0, RED) -- bottom layer
+  local mtop = sprite.add_layer(md)
+  paint.set(mtop.cells[1], 1, 1, GRN) -- top layer, a different pixel
+  sprite.merge_down(md, 2)
+  check(#md.layers == 1 and md.cur_layer == 1, "sprite: merge_down drops the top layer")
+  check(paint.get(sprite.cell(md, 1, 1), 0, 0) == RED
+        and paint.get(sprite.cell(md, 1, 1), 1, 1) == GRN,
+        "sprite: merge_down flattens both layers")
+  sprite.undo(md)
+  check(#md.layers == 2 and paint.get(md.layers[2].cells[1], 1, 1) == GRN,
+        "sprite: undo merge_down restores the layer")
+  sprite.merge_down(md, 1) -- nothing below the bottom layer
+  check(#md.layers == 2, "sprite: merge_down is a no-op for the bottom layer")
 end
 
 -- cm.anim: the pure clip evaluator (loop/once/pingpong at boundaries),

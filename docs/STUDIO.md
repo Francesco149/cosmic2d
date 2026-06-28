@@ -222,6 +222,13 @@ load-bearing, not polish:
   canvas to begin a stroke.
 - **Don't lose work** — confirm before discarding an unsaved doc (new / open /
   close / quit). Autosave-recovery is a later nicety.
+- **Selection restricts editing.** With a marquee active, pencil / eraser /
+  bucket / shapes only touch the selected area (a write-clip in `cm.paint` honored
+  by set / over / flood — composite / bake are never clipped). The marquee stays
+  visible across tool switches so it reads as an active mask. `^D` clears it.
+- **Paste never overwrites silently.** Paste lands on its **own new layer** (you
+  position the float, it commits as a "paste" layer) — merge-down from the layers
+  panel to flatten onto the layer below when you mean to.
 - **Big-canvas perf** — never submit thousands of quads. Composite to one
   texture, re-upload only the dirty cell, draw one scaled quad (§8).
 

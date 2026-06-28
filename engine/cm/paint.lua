@@ -23,6 +23,16 @@ local floor, ceil, sqrt, abs = math.floor, math.ceil, math.sqrt, math.abs
 local max, min = math.max, math.min
 local atan, pi = math.atan, math.pi
 
+-- an optional WRITE-CLIP rectangle (doc px, half-open [x0,x1)×[y0,y1)) honored by
+-- the write primitives set / over / flood, so the studio can confine a stroke /
+-- fill / shape to the active selection (STUDIO.md §5.1: "selection restricts
+-- editing"). Off by default — composite / bake / scratch / copy never set it, so
+-- they are never clipped. set_clip / clip_off are below.
+local clip_x0, clip_y0, clip_x1, clip_y1
+local function clipped_out(x, y)
+  return clip_x0 ~= nil and (x < clip_x0 or x >= clip_x1 or y < clip_y0 or y >= clip_y1)
+end
+
 -- ---- color packing (0..255 ints <-> RGBA8 u32) ----
 
 function M.pack(r, g, b, a)
@@ -34,6 +44,10 @@ function M.unpack(rgba)
 end
 
 M.CLEAR = 0 -- transparent (all-zero RGBA)
+
+-- set / clear the write-clip rect (see above). Half-open: [x0,x1) × [y0,y1).
+function M.set_clip(x0, y0, x1, y1) clip_x0, clip_y0, clip_x1, clip_y1 = x0, y0, x1, y1 end
+function M.clip_off() clip_x0 = nil end
 
 -- HSV (all components 0..1; h wraps) -> packed RGBA. The studio's color picker
 -- and the Phase-3 gradient ramps both work in HSV. Pure float, dev-class.
@@ -93,6 +107,7 @@ end
 -- blend). Out of bounds is a silent no-op (clip).
 function M.set(img, x, y, rgba)
   if x < 0 or x >= img.w or y < 0 or y >= img.h then return end
+  if clipped_out(x, y) then return end
   img.buf:u32((y * img.w + x) * 4, rgba)
 end
 
@@ -103,6 +118,7 @@ function M.over(img, x, y, rgba)
   if sa == 0 then return end
   if sa == 255 then return M.set(img, x, y, rgba) end
   if x < 0 or x >= img.w or y < 0 or y >= img.h then return end
+  if clipped_out(x, y) then return end
   local off = (y * img.w + x) * 4
   local d = img.buf:u32(off)
   local da = (d >> 24) & 255
@@ -220,15 +236,19 @@ end
 function M.flood(img, x, y, rgba)
   x, y = floor(x), floor(y)
   if x < 0 or x >= img.w or y < 0 or y >= img.h then return end
+  if clipped_out(x, y) then return end -- seeding outside the clip fills nothing
   local target = M.get(img, x, y)
   if target == rgba then return end
   local w, h = img.w, img.h
+  -- a clipped-out pixel is treated as a boundary (≠ target), so the fill stays
+  -- inside the active selection (STUDIO.md §5.1)
+  local function match(xx, ny) return not clipped_out(xx, ny) and M.get(img, xx, ny) == target end
   local stack = { x, y }
   local function seed_row(lx, rx, ny)
     if ny < 0 or ny >= h then return end
     local inside = false
     for xx = lx, rx do
-      if M.get(img, xx, ny) == target then
+      if match(xx, ny) then
         if not inside then stack[#stack + 1] = xx; stack[#stack + 1] = ny; inside = true end
       else
         inside = false
@@ -238,11 +258,11 @@ function M.flood(img, x, y, rgba)
   while #stack > 0 do
     local cy = stack[#stack]; stack[#stack] = nil
     local cx = stack[#stack]; stack[#stack] = nil
-    if M.get(img, cx, cy) == target then
+    if match(cx, cy) then
       local lx = cx
-      while lx - 1 >= 0 and M.get(img, lx - 1, cy) == target do lx = lx - 1 end
+      while lx - 1 >= 0 and match(lx - 1, cy) do lx = lx - 1 end
       local rx = cx
-      while rx + 1 < w and M.get(img, rx + 1, cy) == target do rx = rx + 1 end
+      while rx + 1 < w and match(rx + 1, cy) do rx = rx + 1 end
       for xx = lx, rx do img.buf:u32((cy * w + xx) * 4, rgba) end
       seed_row(lx, rx, cy - 1)
       seed_row(lx, rx, cy + 1)

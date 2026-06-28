@@ -407,6 +407,7 @@ end
 
 function M.rebuild_tex()
   local doc = M.doc
+  paint.clip_off() -- defensive: a composite/bake is never clipped to a selection
   if not M.comp or M.comp.w ~= doc.w or M.comp.h ~= doc.h then
     M.comp = paint.image(doc.w, doc.h)
   end
@@ -457,14 +458,23 @@ function M.reset_sel()
   free_anim_tex()
 end
 
--- stamp the floating selection into the active cell (one undo step); the
--- selection rect follows it so you can keep nudging.
+-- stamp the floating selection into the layer (one undo step); the selection
+-- rect follows it so you can keep nudging. A PASTE float (new_layer) lands on its
+-- own fresh layer instead (struct-bracketed so the layer + its pixels are one
+-- undo step) — paste never destroys what's under it; merge-down to flatten.
 function M.commit_float()
   local f = M.float
   if not f then return end
-  sprite.begin_edit(M.doc)
-  paint.blit(M.cell(), floor(f.x), floor(f.y), f.img, 0, 0, f.w, f.h, "stamp")
-  sprite.end_edit(M.doc)
+  if f.new_layer then
+    sprite.begin_struct(M.doc)
+    sprite.raw_add_layer(M.doc, "paste")
+    paint.blit(M.cell(), floor(f.x), floor(f.y), f.img, 0, 0, f.w, f.h, "stamp")
+    sprite.commit_struct(M.doc)
+  else
+    sprite.begin_edit(M.doc)
+    paint.blit(M.cell(), floor(f.x), floor(f.y), f.img, 0, 0, f.w, f.h, "stamp")
+    sprite.end_edit(M.doc)
+  end
   M.sel = { x = floor(f.x), y = floor(f.y), w = f.w, h = f.h }
   M.float = nil
   free_float_tex()
@@ -508,7 +518,10 @@ function M.paste()
   local cw, ch = M.clip.w, M.clip.h
   local px = M.sel and M.sel.x or floor((M.doc.w - cw) / 2)
   local py = M.sel and M.sel.y or floor((M.doc.h - ch) / 2)
-  M.float = { img = paint.copy_region(M.clip, 0, 0, cw, ch), x = px, y = py, w = cw, h = ch }
+  -- paste into a NEW layer (created when the float lands; new_layer flag) so it
+  -- never overwrites the layer below — merge-down from the LAYERS panel to flatten
+  M.float = { img = paint.copy_region(M.clip, 0, 0, cw, ch),
+              x = px, y = py, w = cw, h = ch, new_layer = true }
   build_float_tex()
   M.tool = "move"
   M.dirty = true
@@ -741,15 +754,27 @@ local function build_preview()
   end
   paint.fill(M.preview, 0)
   local sx, sy, ex, ey = resolve_shape()
+  sel_clip() -- preview the shape clipped exactly as it will commit
   stroke_shape(M.preview, sx, sy, ex, ey,
                M.shape_which == "prim" and M.prim or M.sec)
+  paint.clip_off()
   if M.preview_tex then pal.tex_free(M.preview_tex) end
   M.preview_tex = pal.tex_create(doc.w, doc.h, M.preview.buf:str(0, doc.w * doc.h * 4))
   M.has_preview = true
 end
 
+-- set the cm.paint write-clip to the active selection so a stroke / fill / shape
+-- only touches it (STUDIO.md §5.1: "selection restricts editing"); always paired
+-- with paint.clip_off(). A floating selection means a move/paste gesture (not
+-- painting), so no clip then.
+local function sel_clip()
+  local s = M.sel
+  if s and not M.float then paint.set_clip(s.x, s.y, s.x + s.w, s.y + s.h) end
+end
+
 local function dab(px, py)
   local cell = M.cell()
+  sel_clip()
   if M.brush and M.tool == "pencil" then
     -- a custom brush: stamp it (alpha-masked) along the stroke, centered
     local b = M.brush
@@ -767,6 +792,7 @@ local function dab(px, py)
       paint.set(cell, px, py, color)
     end
   end
+  paint.clip_off()
   M.last_px, M.last_py = px, py
   M.dirty = true
 end
@@ -834,7 +860,9 @@ local function handle_paint(over)
     if not held then
       local sx, sy, ex, ey = resolve_shape()
       sprite.begin_edit(M.doc)
+      sel_clip()
       stroke_shape(M.cell(), sx, sy, ex, ey, M.shape_which == "prim" and M.prim or M.sec)
+      paint.clip_off()
       sprite.end_edit(M.doc)
       M.shape_drawing, M.dirty = false, true
     end
@@ -864,7 +892,9 @@ local function handle_paint(over)
   if tool == "fill" then
     if over and pressed and dpx and not ui.active then
       sprite.begin_edit(M.doc)
+      sel_clip()
       paint.flood(M.cell(), dpx, dpy, which == "prim" and M.prim or M.sec)
+      paint.clip_off()
       sprite.end_edit(M.doc)
       M.dirty = true
     end
@@ -1095,22 +1125,25 @@ local function draw_layers(x, y, cw)
   local doc = M.doc
   ui.text(x, y, "LAYERS", st.accent); y = y + 11
 
-  -- structural action buttons (each op is one undo step)
+  -- structural action buttons (each op is one undo step), two rows of three:
+  -- add / dup / delete · move up / move down / merge-down (flatten onto below)
   local acts = { { "+", "add" }, { "dup", "dup" }, { "del", "del" },
-                 { "up", "up" }, { "dn", "dn" } }
-  local bw = (cw - (#acts - 1) * 2) // #acts
+                 { "up", "up" }, { "dn", "dn" }, { "merge", "mrg" } }
+  local bw = (cw - 2 * 2) // 3
   for i, a in ipairs(acts) do
-    local bx = x + (i - 1) * (bw + 2)
-    if ui.button(a[1], { rect = { bx, y, bw, 12 }, id = "ly_" .. a[2] }) then
+    local bx = x + ((i - 1) % 3) * (bw + 2)
+    local by = y + ((i - 1) // 3) * 14
+    if ui.button(a[1], { rect = { bx, by, bw, 12 }, id = "ly_" .. a[2] }) then
       if a[2] == "add" then sprite.add_layer(doc)
       elseif a[2] == "dup" then sprite.dup_layer(doc, doc.cur_layer)
       elseif a[2] == "del" then sprite.delete_layer(doc, doc.cur_layer)
       elseif a[2] == "up" then sprite.move_layer(doc, doc.cur_layer, 1)
-      elseif a[2] == "dn" then sprite.move_layer(doc, doc.cur_layer, -1) end
+      elseif a[2] == "dn" then sprite.move_layer(doc, doc.cur_layer, -1)
+      elseif a[2] == "mrg" then sprite.merge_down(doc, doc.cur_layer) end
       M.dirty = true
     end
   end
-  y = y + 14
+  y = y + 28
 
   -- the active layer's opacity (a render property; not on the undo stack)
   local L = doc.layers[doc.cur_layer]

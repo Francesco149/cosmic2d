@@ -150,11 +150,18 @@ local function push_struct(doc, before)
   trim_undo(doc)
 end
 
-function M.add_layer(doc, name)
-  local before = capture_struct(doc)
+-- add a layer WITHOUT pushing an undo step — for composed ops that bracket their
+-- own struct snapshot (e.g. the studio's paste-into-a-new-layer, one undo step).
+function M.raw_add_layer(doc, name)
   local l = new_layer(name or ("layer " .. (#doc.layers + 1)), doc.w, doc.h, doc.frames)
   doc.layers[#doc.layers + 1] = l
   doc.cur_layer = #doc.layers
+  return l
+end
+
+function M.add_layer(doc, name)
+  local before = capture_struct(doc)
+  local l = M.raw_add_layer(doc, name)
   push_struct(doc, before)
   return l
 end
@@ -386,6 +393,35 @@ function M.composite_into(doc, fi, out)
     end
   end
   return out
+end
+
+-- merge layer `li` DOWN onto the layer below (li-1): flatten li's visible pixels
+-- (honoring its opacity + gradient fill) over the layer below, per frame, then
+-- drop li. The layer below's own fill is baked first so the flattened result
+-- stays faithful. One undo step; a no-op for the bottom layer.
+function M.merge_down(doc, li)
+  li = li or doc.cur_layer
+  if li <= 1 then return end
+  local before = capture_struct(doc)
+  local top, bot = doc.layers[li], doc.layers[li - 1]
+  local op = top.opacity
+  for f = 1, doc.frames do
+    if bot.fill then paint.grad_fill(bot.cells[f], bot.fill, bot.cells[f]) end
+    local src = shaded_cell(doc, top, f) -- top's pixels incl. its own fill
+    local dst = bot.cells[f]
+    for i = 0, doc.w * doc.h - 1 do
+      local c = src.buf:u32(i * 4)
+      local a = (c >> 24) & 255
+      if a ~= 0 then
+        if op < 255 then a = a * op // 255 end
+        paint.over(dst, i % doc.w, i // doc.w, (c & 0x00ffffff) | (a << 24))
+      end
+    end
+  end
+  bot.fill = nil
+  table.remove(doc.layers, li)
+  doc.cur_layer = li - 1
+  push_struct(doc, before)
 end
 
 -- bake every frame into one horizontal strip image (frames cells laid L→R) —
