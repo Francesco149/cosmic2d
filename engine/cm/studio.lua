@@ -143,6 +143,30 @@ function M.open(doc)
   M.toggle(true)
 end
 
+-- launch the studio as a top-level session — the `--studio` boot flag and the
+-- `cm.studio.launch()` console one-liner both land here. With no argument it
+-- enters the mode and drops into the asset browser (the project's art picker, or
+-- a blank canvas if there are none). An optional `asset` (a bare name resolved
+-- under <project>/art, or an explicit path) opens straight into that document.
+function M.launch(asset)
+  M.toggle(true)
+  if not M.on then pal.log("[studio] disabled (project locks the editor)"); return end
+  if asset then
+    local p = tostring(asset)
+    if not p:match("/") then
+      local proj = (cm.main and cm.main.args and cm.main.args.project) or "projects/sandbox"
+      p = proj .. "/art/" .. p
+    end
+    if not p:match("%.spr$") then p = p .. ".spr" end
+    local doc, err = sprite.load(p)
+    if doc then M.open(doc)
+    else pal.log("[studio] can't open " .. p .. ": " .. tostring(err)) end
+    return
+  end
+  M.open_browser()
+  if M.browse_items and #M.browse_items == 0 then M.browser = false end -- blank canvas
+end
+
 -- a recognizable motif for screenshots / smoke tests (not undoable; dev aid)
 function M.demo()
   if not M.doc then M.new_doc(32, 32) end

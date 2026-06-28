@@ -181,6 +181,10 @@ selection**; a gradient fill only recolors a layer's existing pixels (by design)
 **one fill per layer**; whole-sprite **resize/rotate of a non-square doc** is
 deferred; the dock can need its scroll on short windows. None blocking.
 
+**Launch**: `bin/cosmic --studio` (drops into the project's asset browser;
+project defaults to projects/sandbox) — or `F2` in any running session. The
+`--studio` flag is live/capture-only (gated out of `--verify`).
+
 Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
 V(move) · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
 Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/

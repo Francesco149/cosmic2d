@@ -3,7 +3,11 @@
 -- convention; see boot.lua header).
 --
 -- Flags: [project_dir] --headless --frames N --shot PATH --no-vsync
---        --record PATH --verify PATH --eval CODE
+--        --record PATH --verify PATH --eval CODE --studio
+--   --studio          boot straight into the asset studio (the F2 sprite/
+--                     animation editor), dropping into the project's art
+--                     browser. The easy launcher: `bin/cosmic --studio`
+--                     (project defaults to projects/sandbox). Live only.
 --   --headless        no window; tick = exactly one sim step (lockstep).
 --                     Without --frames it paces to ~60Hz with hot reload +
 --                     parachute: a full live session minus the window (D013)
@@ -64,6 +68,7 @@ local function parse_args()
       i = i + 1
       a.evals = a.evals or {}
       a.evals[#a.evals + 1] = argv[i] or error("--eval needs code")
+    elseif arg == "--studio" then a.studio = true
     elseif arg:sub(1, 2) ~= "--" then a.project = arg
     else error("unknown flag: " .. arg) end
     i = i + 1
@@ -209,6 +214,10 @@ function M.boot()
   if args.evals then -- after record_start: the drain lands in frame 1
     for _, code in ipairs(args.evals) do M.repl.submit(code) end
   end
+  -- --studio: open the asset studio at boot (a top-level dev launcher, same as
+  -- booting + F2). Live/capture only — --verify returned above; pure headless is
+  -- a harmless no-op. The studio pauses the sim while open.
+  if args.studio then M.studio.launch() end
 end
 
 local function poll_reload(now)
