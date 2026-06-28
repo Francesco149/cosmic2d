@@ -5,15 +5,15 @@
 
 **Date**: 2026-06-28
 **Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** The core is built,
-committed, and verified-as-far-as-headless (M8.1–M8.4 + D039 ADR). The headline
-behavior (editor chrome at its own scale **around** the game viewport) is
-mechanically done and **awaits a win11 visual feel-test** — its correctness is
-purely visual and unobservable headless (read_pixels/--shot capture the game
-target, not the swapchain composite; WSLg/dzn isn't representative). M7 movement
-remains FEEL-APPROVED; its deferred items (CW≈26 scale, slice VFX, golden re-cut)
-still wait on M8 + real assets.
-**Done this session (M8.1–M8.4, all on `main`, selftest 22312→22344, determinism
-byte-exact, uigallery golden byte-identical, goldens otherwise unaffected):**
+committed, and **visually self-verified** (M8.1–M8.4 + the capture tooling +
+D039). The headline behavior — editor chrome at its own scale **around** the game
+viewport — is confirmed correct via headless capture (3 shots on llm-feed:
+editor@1080p game-inset-3×, editor@960×600 game-2×, play@1080p full-window-4×).
+It now **awaits the human's win11 taste pass** (the look/feel, not correctness).
+Both linux + windows builds compile clean. M7 movement remains FEEL-APPROVED; its
+deferred items (CW≈26 scale, slice VFX, golden re-cut) still wait on M8 + assets.
+**Done this session (M8.1–M8.4 + capture, all on `main`, selftest 22312→22348,
+determinism byte-exact, uigallery golden byte-identical, goldens else unaffected):**
 - **M8.1** `ea7dc9a` — PAL **api 4→5**: `pal.x_fov(w,h)` (the variable game FOV =
   resizable internal target), `pal.x_window_size()`, `x_set_window_size`/
   `x_set_fullscreen` (options menu). Additive `x_*` (experimental ns).
@@ -31,8 +31,17 @@ byte-exact, uigallery golden byte-identical, goldens otherwise unaffected):**
   viewport** (window minus the toolbar/inspector) at its own integer scale. The
   mouse splits: `inp.gx/gy` game-space (world placement), `inp.mx/my` ui-canvas
   (panel hit-test). console/scrub/perf re-homed via `view.surface_size()`.
+- **Capture** `11cbc23` — `pal.x_capture(w,h)` / `x_capture_read()` + engine
+  `--win WxH`: composite into an offscreen target so a headless `--shot` shows
+  the editor-around-game layout (only the swapchain has it otherwise). This is
+  how the layout was self-verified + pushed to llm-feed. **Also fixes** the
+  "graphics pipeline not bound" SIGILL the human saw: `pipe_blit` was only built
+  for a window; now built unconditionally (UNORM format headless). Live path
+  unchanged. `t_capture` guards the composite layering + the headless blit pipe.
+  Capture a view: `bin/cosmic projects/sandbox --win 1920x1080 --frames 30 \
+  --shot /tmp/e.png --eval "cm.editor.toggle(true)"`.
 - **Docs**: **D039** (the two-target composite realizing D036) + the
-  **ARCHITECTURE api v5 table** are written (commit alongside this STATUS).
+  **ARCHITECTURE api v5 table**.
 **HUMAN CHECKPOINT (open) — please win11 feel-test M8.4:** F1 toggles the editor;
 expect the game inset at 2× with the toolbar across the top + inspector on the
 right at the UI scale; painting/prop-spawn should still land on the world; F1
