@@ -27,7 +27,8 @@ M.doc = M.doc -- the open document (nil until first open)
 M.zoom = M.zoom or 8
 M.pan_x = M.pan_x or 0
 M.pan_y = M.pan_y or 0
-M.tool = M.tool or "pencil" -- pencil | eraser | fill | pick
+M.tool = M.tool or "pencil" -- pencil | eraser | fill | pick | line | rect | ellipse
+M.fill_shapes = M.fill_shapes or false -- rect/ellipse: filled vs outline
 M.prim = M.prim or paint.pack(246, 248, 252) -- primary color (LMB)
 M.sec = M.sec or paint.pack(32, 28, 44) -- secondary color (RMB)
 M.hsv = M.hsv or { h = 0.58, s = 0.03, v = 0.99 } -- the picker's H/S/V state
@@ -43,14 +44,20 @@ local LROW = 12 -- a layers-panel row
 -- scancodes
 local KEY_F2 = 59
 local ALT_L, ALT_R, CTRL_L, CTRL_R = 226, 230, 224, 228
-local SC = { z = 29, y = 28, s = 22, b = 5, e = 8, g = 10, i = 12, x = 27 }
+local SHIFT_L, SHIFT_R = 225, 229
+local SC = { z = 29, y = 28, s = 22, b = 5, e = 8, g = 10, i = 12, x = 27,
+             l = 15, r = 21, o = 18, f = 9 }
 
 local TOOLS = {
-  { id = "pencil", key = "B", tip = "pencil" },
-  { id = "eraser", key = "E", tip = "eraser" },
-  { id = "fill",   key = "G", tip = "bucket fill" },
-  { id = "pick",   key = "I", tip = "eyedropper (or hold Alt)" },
+  { id = "pencil",  key = "B", tip = "pencil" },
+  { id = "eraser",  key = "E", tip = "eraser" },
+  { id = "fill",    key = "G", tip = "bucket fill" },
+  { id = "line",    key = "L", tip = "line (Shift = 45°)" },
+  { id = "rect",    key = "R", tip = "rectangle (Shift = square)" },
+  { id = "ellipse", key = "O", tip = "ellipse (Shift = circle)" },
+  { id = "pick",    key = "I", tip = "eyedropper (or hold Alt)" },
 }
+local SHAPE = { line = true, rect = true, ellipse = true }
 
 -- ---- helpers ----
 
@@ -233,6 +240,13 @@ function M.doc_pixel(mx, my)
   return px, py
 end
 
+-- the doc pixel under a point WITHOUT the in-bounds clip — a shape's far
+-- endpoint may be dragged off the image; the rasterizers clip per-pixel.
+function M.doc_pixel_raw(mx, my)
+  local r = M.canvas
+  return floor((mx - r.x - M.pan_x) / M.zoom), floor((my - r.y - M.pan_y) / M.zoom)
+end
+
 function M.fit()
   local r = M.canvas
   if not r then return end
@@ -262,6 +276,7 @@ local function handle_keys()
     local sc = k.scancode
     if sc == ALT_L or sc == ALT_R then M.alt = k.down end
     if sc == CTRL_L or sc == CTRL_R then M.ctrl = k.down end
+    if sc == SHIFT_L or sc == SHIFT_R then M.shift = k.down end
     if k.down and not k.rep and not typing then
       if M.ctrl then
         if sc == SC.z then sprite.undo(M.doc); M.dirty = true
@@ -270,10 +285,74 @@ local function handle_keys()
       elseif sc == SC.b then M.tool = "pencil"
       elseif sc == SC.e then M.tool = "eraser"
       elseif sc == SC.g then M.tool = "fill"
+      elseif sc == SC.l then M.tool = "line"
+      elseif sc == SC.r then M.tool = "rect"
+      elseif sc == SC.o then M.tool = "ellipse"
       elseif sc == SC.i then M.tool = "pick"
+      elseif sc == SC.f then M.fill_shapes = not M.fill_shapes
       elseif sc == SC.x then M.prim, M.sec = M.sec, M.prim; M.set_prim(M.prim) end
     end
   end
+end
+
+-- Shift-constrain a shape's endpoints: line snaps to horizontal / vertical /
+-- 45°, rect/ellipse to a square / circle (the shorter axis wins).
+local function constrain_shape(sx, sy, ex, ey)
+  local dx, dy = ex - sx, ey - sy
+  if M.tool == "line" then
+    local adx, ady = math.abs(dx), math.abs(dy)
+    if adx > 2 * ady then ey = sy
+    elseif ady > 2 * adx then ex = sx
+    else
+      local m = min(adx, ady)
+      ex = sx + (dx < 0 and -m or m)
+      ey = sy + (dy < 0 and -m or m)
+    end
+  else
+    local m = min(math.abs(dx), math.abs(dy))
+    ex = sx + (dx < 0 and -m or m)
+    ey = sy + (dy < 0 and -m or m)
+  end
+  return sx, sy, ex, ey
+end
+
+-- draw the active shape tool into `img` between two corners (one undo step on
+-- commit; the same call paints the live preview).
+local function stroke_shape(img, sx, sy, ex, ey, color)
+  if M.tool == "line" then
+    paint.line(img, sx, sy, ex, ey, color)
+  elseif M.tool == "rect" then
+    paint.rect(img, min(sx, ex), min(sy, ey),
+               math.abs(ex - sx) + 1, math.abs(ey - sy) + 1, color, M.fill_shapes)
+  elseif M.tool == "ellipse" then
+    paint.ellipse(img, sx, sy, ex, ey, color, M.fill_shapes)
+  end
+end
+
+-- the current shape's endpoints (start pixel + the cursor), Shift-constrained.
+local function resolve_shape()
+  local sx, sy = M.shape_sx, M.shape_sy
+  local ex, ey = M.doc_pixel_raw(ui.inp.mx, ui.inp.my)
+  if M.shift then return constrain_shape(sx, sy, ex, ey) end
+  return sx, sy, ex, ey
+end
+
+-- rebuild the shape-preview texture (a transparent cell with just the shape) so
+-- draw_canvas can overlay it as one quad — nothing touches real pixels until
+-- release. Called each tick; clears the flag when no shape is in progress.
+local function build_preview()
+  if not M.shape_drawing then M.has_preview = false; return end
+  local doc = M.doc
+  if not M.preview or M.preview.w ~= doc.w or M.preview.h ~= doc.h then
+    M.preview = paint.image(doc.w, doc.h)
+  end
+  paint.fill(M.preview, 0)
+  local sx, sy, ex, ey = resolve_shape()
+  stroke_shape(M.preview, sx, sy, ex, ey,
+               M.shape_which == "prim" and M.prim or M.sec)
+  if M.preview_tex then pal.tex_free(M.preview_tex) end
+  M.preview_tex = pal.tex_create(doc.w, doc.h, M.preview.buf:str(0, doc.w * doc.h * 4))
+  M.has_preview = true
 end
 
 local function dab(px, py)
@@ -296,6 +375,19 @@ local function handle_paint(over)
   local which = (inp.clicked[1] or inp.buttons[1]) and "prim" or "sec"
   local dpx, dpy = M.doc_pixel(inp.mx, inp.my)
 
+  -- a shape already in progress owns the gesture until release (so a tapped Alt
+  -- can't divert it to the eyedropper); the preview tracks the cursor meanwhile
+  if M.shape_drawing then
+    if not held then
+      local sx, sy, ex, ey = resolve_shape()
+      sprite.begin_edit(M.doc)
+      stroke_shape(M.cell(), sx, sy, ex, ey, M.shape_which == "prim" and M.prim or M.sec)
+      sprite.end_edit(M.doc)
+      M.shape_drawing, M.dirty = false, true
+    end
+    return
+  end
+
   if tool == "pick" then
     if over and pressed and dpx then
       local c = paint.get(M.cell(), dpx, dpy)
@@ -309,6 +401,14 @@ local function handle_paint(over)
       paint.flood(M.cell(), dpx, dpy, which == "prim" and M.prim or M.sec)
       sprite.end_edit(M.doc)
       M.dirty = true
+    end
+    return
+  end
+  if SHAPE[tool] then
+    -- press anchors a corner; the preview tracks the cursor; release commits
+    -- (handled by the in-progress block above)
+    if over and pressed and dpx and not ui.active then
+      M.shape_drawing, M.shape_sx, M.shape_sy, M.shape_which = true, dpx, dpy, which
     end
     return
   end
@@ -377,6 +477,10 @@ local function draw_canvas(r)
   end
   -- the composited sprite as one scaled quad (alpha-over the checker, nearest)
   pal.quad(ix, iy, iw, ih, 1, 1, 1, 1, M.canvas_tex, 0, 0, 1, 1)
+  -- the live shape preview rides on top as one more quad (no real pixels yet)
+  if M.has_preview and M.preview_tex then
+    pal.quad(ix, iy, iw, ih, 1, 1, 1, 1, M.preview_tex, 0, 0, 1, 1)
+  end
   -- pixel grid when zoomed in enough to place pixels by it
   if z >= 8 then
     local grid = { 1, 1, 1, 0.06 }
@@ -412,6 +516,15 @@ local function draw_rail(r)
   for i, t in ipairs(TOOLS) do
     tool_button(t, r.x + 2, r.y + 2 + (i - 1) * (bh + 2), bw, bh)
   end
+  -- shape fill/outline mode (lit when filling); also keyed to F
+  local fy = r.y + 2 + #TOOLS * (bh + 2) + 4
+  local on = M.fill_shapes
+  local clicked, hot = ui.hit("tool/fillmode", r.x + 2, fy, bw, bh)
+  ui.rect(r.x + 2, fy, bw, bh, on and st.widget_active or (hot and st.widget_hot or st.widget))
+  ui.frame_rect(r.x + 2, fy, bw, bh, on and st.accent or st.panel_edge)
+  if on then ui.rect(r.x + 5, fy + 4, bw - 6, bh - 8, st.accent) -- a filled glyph
+  else ui.frame_rect(r.x + 5, fy + 4, bw - 6, bh - 8, st.text) end  -- hollow glyph
+  if clicked then M.fill_shapes = not M.fill_shapes end
 end
 
 local function swatch(rgba, x, y)
@@ -676,11 +789,18 @@ local function draw_timeline(r)
   ui.text(r.x + 4, r.y + (r.h - st.gh) // 2, "TIMELINE", st.text_dim)
   ui.text(r.x + 64, r.y + (r.h - st.gh) // 2,
           "frame 1/1   (animation: phase 4)", st.text_dim)
-  -- right side: tool + cursor + zoom status
+  -- right side: tool (+ shape dims / fill mode) + cursor + zoom status
+  local tool = M.alt and "pick" or M.tool
+  local extra = ""
+  if M.shape_drawing then
+    local sx, sy, ex, ey = resolve_shape()
+    extra = ("  %dx%d"):format(math.abs(ex - sx) + 1, math.abs(ey - sy) + 1)
+  elseif SHAPE[tool] then
+    extra = M.fill_shapes and "  fill" or "  outl"
+  end
   local dpx, dpy = M.doc_pixel(ui.inp.mx, ui.inp.my)
-  local stat = ("%s   %s   %dx"):format(
-    (M.alt and "pick" or M.tool),
-    dpx and (dpx .. "," .. dpy) or "--,--", M.zoom)
+  local stat = ("%s%s   %s   %dx"):format(
+    tool, extra, dpx and (dpx .. "," .. dpy) or "--,--", M.zoom)
   ui.text(r.x + r.w - #stat * st.gw - 4, r.y + (r.h - st.gh) // 2, stat, st.text)
 end
 
@@ -712,6 +832,7 @@ function M.frame()
   handle_zoom(over)
   handle_pan()
   handle_paint(over)
+  build_preview()
   if M.dirty or not M.canvas_tex then M.rebuild_tex() end
 
   ui.rect(0, 0, uw, uh, { 0.05, 0.05, 0.07, 1 }) -- opaque base hides the game
