@@ -153,6 +153,7 @@ function M.boot()
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")
   M.options = cm.require("cm.options")
+  M.studio = cm.require("cm.studio") -- the asset studio (F2; M10, render-only)
   -- the resize ladder runs only live: headless/verify keep the fixed project
   -- FOV so goldens + determinism never see a window-derived size (D036). The
   -- --win capture is the one headless exception (it wants the live layout).
@@ -308,8 +309,8 @@ function M.tick()
     -- paused on the autopsy table: no stepping, repl runs immediately
     M.repl.drain()
     M.acc, M.last = 0, nil -- no catch-up pileup across the pause
-  elseif M.scrub.paused() then
-    -- time machine open: sim frozen, queued evals wait for the resume
+  elseif M.scrub.paused() or M.studio.on then
+    -- time machine / asset studio open: sim frozen, queued evals wait
     M.acc, M.last = 0, nil
   elseif M.args.headless then
     step_guarded()
@@ -336,6 +337,7 @@ function M.tick()
   -- ui_scale. The editor already routed there when it's open; in play mode it
   -- returned early, so switch here (no-op headless / when the canvas is off).
   if M.view.ui_active then pal.x_target("ui") end
+  M.studio.frame() -- the asset studio (F2): full-window, under the dev panels
   M.scrub.frame() -- the time machine rides above the editor
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything
