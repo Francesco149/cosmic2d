@@ -33,10 +33,12 @@ M.sec = M.sec or paint.pack(32, 28, 44) -- secondary color (RMB)
 M.hsv = M.hsv or { h = 0.58, s = 0.03, v = 0.99 } -- the picker's H/S/V state
 M.dirty = true -- the canvas composite texture needs a rebuild
 M.alt, M.ctrl = false, false
+M.dock_scroll = M.dock_scroll or 0 -- the right dock scrolls when content is tall
 
 -- layout metrics (ui-canvas px); regions computed each frame from these
 local MENU_H, RAIL_W, DOCK_W, TIME_H = 14, 22, 116, 24
 local SWATCH = 12
+local LROW = 12 -- a layers-panel row
 
 -- scancodes
 local KEY_F2 = 59
@@ -427,13 +429,83 @@ local function swatch(rgba, x, y)
   end
 end
 
+-- LAYERS: the active layer's opacity, add/dup/delete/reorder, and the stack
+-- (drawn top layer first — the artist's mental order). Returns the next y.
+local function draw_layers(x, y, cw)
+  local st, inp = ui.style, ui.inp
+  local doc = M.doc
+  ui.text(x, y, "LAYERS", st.accent); y = y + 11
+
+  -- structural action buttons (each op is one undo step)
+  local acts = { { "+", "add" }, { "dup", "dup" }, { "del", "del" },
+                 { "up", "up" }, { "dn", "dn" } }
+  local bw = (cw - (#acts - 1) * 2) // #acts
+  for i, a in ipairs(acts) do
+    local bx = x + (i - 1) * (bw + 2)
+    if ui.button(a[1], { rect = { bx, y, bw, 12 }, id = "ly_" .. a[2] }) then
+      if a[2] == "add" then sprite.add_layer(doc)
+      elseif a[2] == "dup" then sprite.dup_layer(doc, doc.cur_layer)
+      elseif a[2] == "del" then sprite.delete_layer(doc, doc.cur_layer)
+      elseif a[2] == "up" then sprite.move_layer(doc, doc.cur_layer, 1)
+      elseif a[2] == "dn" then sprite.move_layer(doc, doc.cur_layer, -1) end
+      M.dirty = true
+    end
+  end
+  y = y + 14
+
+  -- the active layer's opacity (a render property; not on the undo stack)
+  local L = doc.layers[doc.cur_layer]
+  local nv, ch = ui.slider("op", L.opacity, 0, 255,
+    { rect = { x, y, cw, 11 }, id = "ly_op", label_w = 2 * st.gw })
+  if ch then L.opacity, doc.dirty, M.dirty = nv, true, true end
+  y = y + 13
+
+  -- the layer rows: display row d=1 is the TOP layer (= doc.layers[#]).
+  local n = #doc.layers
+  for d = 1, n do
+    local li = n - d + 1
+    local L2 = doc.layers[li]
+    local ry = y + (d - 1) * LROW
+    local active = li == doc.cur_layer
+    ui.rect(x, ry, cw, LROW,
+            active and st.widget_active or (li % 2 == 0 and st.widget or st.track))
+    -- visibility toggle (filled = shown)
+    if ui.hit("ly_eye" .. li, x + 1, ry + 2, 9, 9) then
+      L2.hidden = not L2.hidden; doc.dirty, M.dirty = true, true
+    end
+    ui.rect(x + 1, ry + 2, 9, 9, st.widget); ui.frame_rect(x + 1, ry + 2, 9, 9, st.panel_edge)
+    if not L2.hidden then ui.rect(x + 3, ry + 4, 5, 5, st.accent) end
+    -- lock toggle ("L" lit when locked)
+    if ui.hit("ly_lk" .. li, x + 12, ry + 2, 9, 9) then L2.locked = not L2.locked end
+    ui.rect(x + 12, ry + 2, 9, 9, st.widget); ui.frame_rect(x + 12, ry + 2, 9, 9, st.panel_edge)
+    ui.text(x + 14, ry + 2, "L", L2.locked and st.accent or st.text_dim)
+    -- name (click selects the layer)
+    if ui.hit("ly_row" .. li, x + 23, ry, cw - 23, LROW) then
+      doc.cur_layer, M.dirty = li, true
+    end
+    ui.text(x + 24, ry + (LROW - st.gh) // 2, L2.name, active and st.accent or st.text)
+  end
+  return y + n * LROW + 5
+end
+
 local function draw_dock(r)
   local st = ui.style
   local inp = ui.inp
   ui.rect(r.x, r.y, r.w, r.h, st.panel)
   ui.frame_rect(r.x, r.y, r.w, r.h, st.panel_edge)
-  local x, y = r.x + 4, r.y + 4
+  -- the dock can be taller than the window (layers + palette + picker), so the
+  -- whole content scrolls vertically; the wheel scrolls when hovering it (but
+  -- not mid-pick, where the wheel would fight a colour drag).
+  local over = pin(inp.mx, inp.my, r.x, r.y, r.w, r.h)
+  if over and inp.wheel ~= 0 and not M.pick then
+    M.dock_scroll = clamp(M.dock_scroll - inp.wheel * 18, 0, M.dock_over or 0)
+  end
+  M.dock_scroll = clamp(M.dock_scroll, 0, M.dock_over or 0)
+  pal.clip(r.x, r.y + 1, r.w, r.h - 2)
+  local x = r.x + 4
   local cw = r.w - 8
+  local y = r.y + 4 - M.dock_scroll
+  y = draw_layers(x, y, cw)
 
   -- PALETTE: swatch grid + add-current + preset slots
   ui.text(x, y, "PALETTE", st.accent); y = y + 11
@@ -519,6 +591,18 @@ local function draw_dock(r)
   if hchanged or hsub then
     local p = parse_hex(newhex)
     if p then M.set_prim(p) end
+  end
+  y = y + 11
+
+  -- measure the content, reset the clip, draw a scroll thumb when it overflows
+  local content_h = y - (r.y - M.dock_scroll)
+  M.dock_over = max(0, content_h - (r.h - 6))
+  pal.clip()
+  if M.dock_over > 0 then
+    local trk = r.h - 4
+    local th = max(10, trk * trk // content_h)
+    local ty = r.y + 2 + floor((trk - th) * (M.dock_scroll / M.dock_over))
+    ui.rect(r.x + r.w - 3, ty, 2, th, st.accent)
   end
 end
 

@@ -67,14 +67,96 @@ function M.cell(doc, li, fi)
   return l and l.cells[fi or doc.cur_frame]
 end
 
--- ---- structure ops ----
+-- ---- structure ops (each one undoable via a coarse snapshot, STUDIO.md §3) ----
+
+-- deep-copy a cell / layer so a snapshot is independent of the live doc.
+local function clone_cell(src, w, h)
+  local img = paint.image(w, h)
+  img.buf:copy(0, src.buf, 0, w * h * 4)
+  return img
+end
+
+local function clone_layer(l, w, h, frames)
+  local cells = {}
+  for f = 1, frames do cells[f] = clone_cell(l.cells[f], w, h) end
+  return { name = l.name, opacity = l.opacity, hidden = l.hidden,
+           locked = l.locked, cells = cells }
+end
+
+-- the whole structural state (the layer stack + frame count + cursors) as a
+-- self-contained snapshot. Cell pixels are cloned, so it survives later edits.
+local function capture_struct(doc)
+  local layers = {}
+  for i, l in ipairs(doc.layers) do layers[i] = clone_layer(l, doc.w, doc.h, doc.frames) end
+  return { layers = layers, frames = doc.frames,
+           cur_layer = doc.cur_layer, cur_frame = doc.cur_frame }
+end
+
+-- adopt a snapshot's layer stack (it is used exactly once then dropped, so no
+-- clone needed — the doc takes ownership of the snapshot's buffers).
+local function restore_struct(doc, snap)
+  doc.layers = snap.layers
+  doc.frames = snap.frames
+  doc.cur_layer = math.min(snap.cur_layer or 1, #snap.layers)
+  doc.cur_frame = math.min(snap.cur_frame or 1, snap.frames)
+end
+
+local UNDO_CAP = 64 -- dev memory; drop the oldest step past this (STUDIO.md §3)
+local function trim_undo(doc)
+  while #doc._undo > UNDO_CAP do table.remove(doc._undo, 1) end
+end
+
+-- wrap a structural mutation: capture `before` first, mutate, then commit.
+local function push_struct(doc, before)
+  doc._undo[#doc._undo + 1] = { kind = "struct", snap = before }
+  doc._redo = {}
+  doc.dirty = true
+  trim_undo(doc)
+end
 
 function M.add_layer(doc, name)
+  local before = capture_struct(doc)
   local l = new_layer(name or ("layer " .. (#doc.layers + 1)), doc.w, doc.h, doc.frames)
   doc.layers[#doc.layers + 1] = l
   doc.cur_layer = #doc.layers
-  doc.dirty = true
+  push_struct(doc, before)
   return l
+end
+
+-- duplicate a layer in place (its pixels copied), the copy sitting just above
+-- the source and becoming the active layer.
+function M.dup_layer(doc, li)
+  li = li or doc.cur_layer
+  local src = doc.layers[li]
+  if not src then return end
+  local before = capture_struct(doc)
+  local cp = clone_layer(src, doc.w, doc.h, doc.frames)
+  cp.name = src.name .. " copy"
+  table.insert(doc.layers, li + 1, cp)
+  doc.cur_layer = li + 1
+  push_struct(doc, before)
+  return cp
+end
+
+-- delete a layer (a document always keeps at least one).
+function M.delete_layer(doc, li)
+  li = li or doc.cur_layer
+  if #doc.layers <= 1 then return end
+  local before = capture_struct(doc)
+  table.remove(doc.layers, li)
+  doc.cur_layer = math.min(doc.cur_layer, #doc.layers)
+  push_struct(doc, before)
+end
+
+-- move a layer in the draw order: dir +1 = UP (toward the top/front), -1 = down.
+function M.move_layer(doc, li, dir)
+  li = li or doc.cur_layer
+  local ni = li + dir
+  if ni < 1 or ni > #doc.layers then return end
+  local before = capture_struct(doc)
+  doc.layers[li], doc.layers[ni] = doc.layers[ni], doc.layers[li]
+  doc.cur_layer = ni
+  push_struct(doc, before)
 end
 
 -- ---- compositing + bake ----
@@ -236,29 +318,33 @@ function M.end_edit(doc)
   doc._undo[#doc._undo + 1] = { li = e.li, fi = e.fi, delta = delta }
   doc._redo = {}
   doc.dirty = true
+  trim_undo(doc)
 end
 
 function M.can_undo(doc) return #doc._undo > 0 end
 function M.can_redo(doc) return #doc._redo > 0 end
 
-function M.undo(doc)
-  local e = doc._undo[#doc._undo]
+-- apply one undo step (cell-delta or structural snapshot) and push its inverse
+-- onto `dest` (the opposite stack). Shared by undo + redo (they are mirror
+-- images: a delta is its own inverse; a snapshot swaps with the live state).
+local function step_apply(doc, src, dest)
+  local e = src[#src]
   if not e then return false end
-  doc._undo[#doc._undo] = nil
-  pal.buf_apply_delta1(M.cell(doc, e.li, e.fi).buf, e.delta)
-  doc._redo[#doc._redo + 1] = e
-  doc.cur_layer, doc.cur_frame, doc.dirty = e.li, e.fi, true
+  src[#src] = nil
+  if e.kind == "struct" then
+    local cur = capture_struct(doc)
+    restore_struct(doc, e.snap)
+    dest[#dest + 1] = { kind = "struct", snap = cur }
+  else
+    pal.buf_apply_delta1(M.cell(doc, e.li, e.fi).buf, e.delta)
+    doc.cur_layer, doc.cur_frame = e.li, e.fi
+    dest[#dest + 1] = e
+  end
+  doc.dirty = true
   return true
 end
 
-function M.redo(doc)
-  local e = doc._redo[#doc._redo]
-  if not e then return false end
-  doc._redo[#doc._redo] = nil
-  pal.buf_apply_delta1(M.cell(doc, e.li, e.fi).buf, e.delta)
-  doc._undo[#doc._undo + 1] = e
-  doc.cur_layer, doc.cur_frame, doc.dirty = e.li, e.fi, true
-  return true
-end
+function M.undo(doc) return step_apply(doc, doc._undo, doc._redo) end
+function M.redo(doc) return step_apply(doc, doc._redo, doc._undo) end
 
 return M

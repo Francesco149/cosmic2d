@@ -1551,6 +1551,39 @@ local function t_sprite()
   local n = #d._undo
   sprite.begin_edit(d); sprite.end_edit(d)
   check(#d._undo == n, "sprite: empty edit pushes no undo step")
+
+  -- structural ops + the coarse-snapshot undo (Phase 2): add / dup / move /
+  -- delete, each one undoable, snapshots carrying the pixels too.
+  local s = sprite.new(4, 4)
+  paint.set(sprite.cell(s, 1, 1), 0, 0, RED)
+  sprite.add_layer(s)
+  check(#s.layers == 2 and s.cur_layer == 2, "sprite: add_layer appends + selects")
+  check(sprite.can_undo(s), "sprite: structural op is undoable")
+  sprite.undo(s)
+  check(#s.layers == 1, "sprite: undo add_layer")
+  sprite.redo(s)
+  check(#s.layers == 2, "sprite: redo add_layer")
+  s.cur_layer = 1
+  sprite.dup_layer(s, 1)
+  check(#s.layers == 3 and s.cur_layer == 2, "sprite: dup inserts above + selects")
+  check(paint.get(sprite.cell(s, 2, 1), 0, 0) == RED, "sprite: dup copies pixels")
+  paint.set(sprite.cell(s, 2, 1), 0, 0, GRN)
+  check(paint.get(sprite.cell(s, 1, 1), 0, 0) == RED, "sprite: dup is an independent copy")
+  local top = s.layers[3]
+  sprite.move_layer(s, 3, -1)
+  check(s.layers[2] == top and s.cur_layer == 2, "sprite: move_layer reorders + selects")
+  local before_n = #s.layers
+  sprite.delete_layer(s, 1)
+  check(#s.layers == before_n - 1, "sprite: delete removes a layer")
+  sprite.undo(s)
+  check(#s.layers == before_n and paint.get(sprite.cell(s, 1, 1), 0, 0) == RED,
+        "sprite: undo delete restores the layer + its pixels")
+  local one = sprite.new(2, 2)
+  sprite.delete_layer(one)
+  check(#one.layers == 1, "sprite: delete keeps at least one layer")
+  local cap = sprite.new(2, 2)
+  for _ = 1, 80 do sprite.add_layer(cap) end
+  check(#cap._undo <= 64, "sprite: undo stack is capped")
 end
 
 function game.init()
