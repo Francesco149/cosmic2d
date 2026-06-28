@@ -1717,6 +1717,55 @@ local function t_sprite()
   sprite.clear_fill(fd, 2)
   check(fd.layers[2].fill == nil and fd.layers[1].fill ~= nil,
         "sprite: clear_fill removes only that layer's fill")
+
+  -- frames (Phase 4): add / dup / delete / move, each one undo step; every
+  -- layer carries a cell per frame, the clip frame index is 0-based (strip col).
+  local frd = sprite.new(3, 3)
+  paint.set(sprite.cell(frd, 1, 1), 0, 0, RED) -- mark frame 1
+  sprite.add_frame(frd)
+  check(frd.frames == 2 and frd.cur_frame == 2 and #frd.layers[1].cells == 2,
+        "sprite: add_frame appends a blank frame + selects it")
+  check(paint.get(sprite.cell(frd, 1, 2), 0, 0) == 0, "sprite: new frame is blank")
+  paint.set(sprite.cell(frd, 1, 2), 1, 1, GRN)
+  sprite.dup_frame(frd, 2)
+  check(frd.frames == 3 and paint.get(sprite.cell(frd, 1, 3), 1, 1) == GRN,
+        "sprite: dup_frame copies pixels")
+  paint.set(sprite.cell(frd, 1, 3), 1, 1, RED)
+  check(paint.get(sprite.cell(frd, 1, 2), 1, 1) == GRN, "sprite: dup_frame is independent")
+
+  -- a clip spanning the strip, then deleting a middle frame fixes its refs
+  local clip = sprite.add_clip(frd, "all")
+  check(#clip.frames == 3 and clip.frames[1].frame == 0 and clip.frames[3].frame == 2,
+        "sprite: add_clip spans the whole strip")
+  sprite.delete_frame(frd, 2) -- removes 0-based frame 1
+  check(frd.frames == 2, "sprite: delete_frame removes a frame")
+  check(#clip.frames == 2 and clip.frames[2].frame == 1,
+        "sprite: delete_frame drops the ref + slides higher refs down")
+  sprite.undo(frd) -- struct-undo restores frames AND clips
+  check(frd.frames == 3 and #frd.clips[1].frames == 3 and frd.clips[1].frames[3].frame == 2,
+        "sprite: undo delete_frame restores the frame and its clip refs")
+  local mv = frd.layers[1].cells[1]
+  sprite.move_frame(frd, 1, 1) -- frame 1 <-> 2
+  check(frd.layers[1].cells[2] == mv and frd.cur_frame == 2,
+        "sprite: move_frame reorders + selects")
+
+  -- CLIP chunk .spr round-trip + the .anim sidecar from save
+  local cd = sprite.new(2, 2)
+  sprite.add_frame(cd)
+  cd.clips = { { name = "idle", loop = "pingpong",
+                 frames = { { frame = 0, dur = 7 }, { frame = 1, dur = 9 } } } }
+  local c2 = sprite.decode(sprite.encode(cd)).clips[1]
+  check(c2 and c2.name == "idle" and c2.loop == "pingpong" and #c2.frames == 2
+        and c2.frames[2].frame == 1 and c2.frames[2].dur == 9,
+        "sprite: .spr round-trips the CLIP chunk")
+  local atmp = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_anim.spr"
+  sprite.add_clip(cd, "extra")
+  check(sprite.save(cd, atmp) == true, "sprite: save with clips ok")
+  local sidecar = cm.require("cm.anim").load((atmp:gsub("%.spr$", ".anim")))
+  check(sidecar and #sidecar == 2 and sidecar[1].name == "idle",
+        "sprite: save writes a loadable .anim sidecar")
+  sprite.delete_clip(cd, 1)
+  check(#cd.clips == 1 and cd.clips[1].name == "extra", "sprite: delete_clip removes it")
 end
 
 -- cm.anim: the pure clip evaluator (loop/once/pingpong at boundaries),

@@ -27,7 +27,10 @@ local M = select(2, ...) or {}
 
 local paint = cm.require("cm.paint")
 local chunk = cm.require("cm.chunk")
+local anim = cm.require("cm.anim")
 local pack, unpack = string.pack, string.unpack
+
+M.DEFAULT_DUR = 5 -- ticks per new clip frame (~12 fps at 60 Hz)
 
 -- A small cozy default palette nodding at the art direction (GAME.md §10): the
 -- white/gold bodysuit + cyan accent, soft skins, a few neutrals + ink. Truecolor
@@ -101,12 +104,26 @@ local function clone_layer(l, w, h, frames)
            locked = l.locked, cells = cells, fill = clone_fill(l.fill) }
 end
 
--- the whole structural state (the layer stack + frame count + cursors) as a
--- self-contained snapshot. Cell pixels are cloned, so it survives later edits.
+-- deep-copy the clip list (so a snapshot / undo is independent of the live one).
+-- Clips are doc-level (not per-layer); frame ops rewrite refs, so they ride the
+-- structural snapshot too — undoing a frame delete restores the clips it edited.
+local function clone_clips(clips)
+  local t = {}
+  for i, c in ipairs(clips or {}) do
+    local fr = {}
+    for j, e in ipairs(c.frames) do fr[j] = { frame = e.frame, dur = e.dur } end
+    t[i] = { name = c.name, loop = c.loop, frames = fr }
+  end
+  return t
+end
+
+-- the whole structural state (the layer stack + frame count + clips + cursors)
+-- as a self-contained snapshot. Cell pixels + clips are cloned, so it survives
+-- later edits.
 local function capture_struct(doc)
   local layers = {}
   for i, l in ipairs(doc.layers) do layers[i] = clone_layer(l, doc.w, doc.h, doc.frames) end
-  return { layers = layers, frames = doc.frames,
+  return { layers = layers, frames = doc.frames, clips = clone_clips(doc.clips),
            cur_layer = doc.cur_layer, cur_frame = doc.cur_frame }
 end
 
@@ -115,6 +132,7 @@ end
 local function restore_struct(doc, snap)
   doc.layers = snap.layers
   doc.frames = snap.frames
+  if snap.clips then doc.clips = snap.clips end
   doc.cur_layer = math.min(snap.cur_layer or 1, #snap.layers)
   doc.cur_frame = math.min(snap.cur_frame or 1, snap.frames)
 end
@@ -175,6 +193,108 @@ function M.move_layer(doc, li, dir)
   doc.layers[li], doc.layers[ni] = doc.layers[ni], doc.layers[li]
   doc.cur_layer = ni
   push_struct(doc, before)
+end
+
+-- ---- frames + clips (animation; Phase 4, STUDIO.md §7) ----
+-- A frame is a column in the baked strip: every layer carries one cell per
+-- frame (layer.cells[1..frames], 1-based), the gradient fill is shared across a
+-- layer's frames. The CLIP frame index is 0-based (it indexes the strip the game
+-- draws, like player.lua's f), so cells[k+1] is clip-frame k. Inserting after
+-- 1-based position `at` lands the new frame at 0-based index `at` — that identity
+-- is why the clip fixups below take `at` / `fi` directly.
+
+local function clips_after_insert(doc, ins0) -- a new 0-based frame appeared at ins0
+  for _, c in ipairs(doc.clips) do
+    for _, e in ipairs(c.frames) do if e.frame >= ins0 then e.frame = e.frame + 1 end end
+  end
+end
+
+local function clips_after_delete(doc, del0) -- 0-based frame del0 went away
+  for _, c in ipairs(doc.clips) do
+    local keep = {}
+    for _, e in ipairs(c.frames) do
+      if e.frame < del0 then keep[#keep + 1] = e
+      elseif e.frame > del0 then e.frame = e.frame - 1; keep[#keep + 1] = e end
+    end
+    c.frames = keep -- entries pointing AT the deleted frame are dropped
+  end
+end
+
+local function clips_after_swap(doc, a0, b0) -- 0-based frames a0,b0 traded places
+  for _, c in ipairs(doc.clips) do
+    for _, e in ipairs(c.frames) do
+      if e.frame == a0 then e.frame = b0 elseif e.frame == b0 then e.frame = a0 end
+    end
+  end
+end
+
+-- insert a blank frame after 1-based position `at`, in every layer (one undo step)
+function M.add_frame(doc, at)
+  at = at or doc.cur_frame
+  local before = capture_struct(doc)
+  for _, l in ipairs(doc.layers) do table.insert(l.cells, at + 1, paint.image(doc.w, doc.h)) end
+  doc.frames = doc.frames + 1
+  clips_after_insert(doc, at) -- the new frame's 0-based index == at
+  doc.cur_frame = at + 1
+  push_struct(doc, before)
+end
+
+-- duplicate frame `fi` (its pixels copied) right after it, in every layer
+function M.dup_frame(doc, fi)
+  fi = fi or doc.cur_frame
+  if fi < 1 or fi > doc.frames then return end
+  local before = capture_struct(doc)
+  for _, l in ipairs(doc.layers) do
+    table.insert(l.cells, fi + 1, clone_cell(l.cells[fi], doc.w, doc.h))
+  end
+  doc.frames = doc.frames + 1
+  clips_after_insert(doc, fi) -- the copy's 0-based index == fi
+  doc.cur_frame = fi + 1
+  push_struct(doc, before)
+end
+
+-- delete frame `fi` from every layer (a document always keeps ≥1 frame); clips
+-- referencing it lose those entries, higher refs slide down.
+function M.delete_frame(doc, fi)
+  fi = fi or doc.cur_frame
+  if doc.frames <= 1 or fi < 1 or fi > doc.frames then return end
+  local before = capture_struct(doc)
+  for _, l in ipairs(doc.layers) do table.remove(l.cells, fi) end
+  doc.frames = doc.frames - 1
+  clips_after_delete(doc, fi - 1) -- 0-based index of the removed frame
+  doc.cur_frame = math.min(doc.cur_frame, doc.frames)
+  push_struct(doc, before)
+end
+
+-- move frame `fi` in the strip order: dir +1 later (right), -1 earlier (left)
+function M.move_frame(doc, fi, dir)
+  fi = fi or doc.cur_frame
+  local ni = fi + dir
+  if ni < 1 or ni > doc.frames then return end
+  local before = capture_struct(doc)
+  for _, l in ipairs(doc.layers) do l.cells[fi], l.cells[ni] = l.cells[ni], l.cells[fi] end
+  clips_after_swap(doc, fi - 1, ni - 1)
+  doc.cur_frame = ni
+  push_struct(doc, before)
+end
+
+-- ---- animation clips (named frame sequences; lightweight, not undo-managed —
+-- they carry no pixels, and a frame op that touches them rides struct-undo) ----
+
+-- a new clip spanning the whole strip at the default per-frame duration (an
+-- instantly playable loop the artist then trims). Returns the clip.
+function M.add_clip(doc, name, dur)
+  dur = dur or M.DEFAULT_DUR
+  local frames = {}
+  for f = 0, doc.frames - 1 do frames[#frames + 1] = { frame = f, dur = dur } end
+  local clip = { name = name or ("clip " .. (#doc.clips + 1)), loop = "loop", frames = frames }
+  doc.clips[#doc.clips + 1] = clip
+  doc.dirty = true
+  return clip
+end
+
+function M.delete_clip(doc, ci)
+  if doc.clips[ci] then table.remove(doc.clips, ci); doc.dirty = true end
 end
 
 -- ---- gradient fills (non-destructive; Phase 3, STUDIO.md §6) ----
@@ -292,6 +412,11 @@ local FILL_TYPES = { "linear", "radial", "angular", "mirror" }
 local FILL_TID = {}
 for i, t in ipairs(FILL_TYPES) do FILL_TID[t] = i end
 
+-- clip loop mode <-> a stable u8 id for the CLIP chunk
+local LOOP_MODES = { "loop", "once", "pingpong" }
+local LOOP_ID = {}
+for i, t in ipairs(LOOP_MODES) do LOOP_ID[t] = i end
+
 -- one fill record: layer index (the binding) + the def. Floats keep fractional
 -- handle coords; spaces in the pack format are ignored (readability only).
 local FILL_FMT = "<I4 I1 ffff ff I2 I1 I1"
@@ -325,7 +450,18 @@ function M.encode(doc)
   if #fills > 0 then
     w.chunk("FILL", 1, pack("<I4", #fills) .. table.concat(fills))
   end
-  -- CLIP is written in Phase 4; TAIL is the integrity check
+  -- CLIP: the animation clips (names, loop modes, frame sequences) — Phase 4
+  if #doc.clips > 0 then
+    local parts = { pack("<I4", #doc.clips) }
+    for _, c in ipairs(doc.clips) do
+      parts[#parts + 1] = pack("<s2I1I4", c.name, LOOP_ID[c.loop] or 1, #c.frames)
+      for _, e in ipairs(c.frames) do
+        parts[#parts + 1] = pack("<I4I4", e.frame, e.dur)
+      end
+    end
+    w.chunk("CLIP", 1, table.concat(parts))
+  end
+  -- TAIL is the integrity check
   w.chunk("TAIL", 1, pack("<I4I4", #doc.layers, doc.frames))
   return w.result()
 end
@@ -377,6 +513,20 @@ function M.decode(blob)
                      stops = stops, dither = dith, phase = ph, levels = lv, bayer = by }
         end
       end
+    elseif c.tag == "CLIP" and c.version == 1 and doc then
+      local nc, pos = unpack("<I4", c.payload)
+      doc.clips = {}
+      for _ = 1, nc do
+        local name, lid, nf
+        name, lid, nf, pos = unpack("<s2I1I4", c.payload, pos)
+        local frames = {}
+        for i = 1, nf do
+          frames[i] = {}
+          frames[i].frame, frames[i].dur, pos = unpack("<I4I4", c.payload, pos)
+        end
+        doc.clips[#doc.clips + 1] =
+          { name = name, loop = LOOP_MODES[lid] or "loop", frames = frames }
+      end
     end
     -- unknown tags/versions skipped (forward-compatible by rule)
   end
@@ -393,14 +543,17 @@ local function with_ext(path, ext)
   return (path:gsub("%.spr$", "")) .. ext
 end
 
--- write <path>.spr (source) + bake <path>.png (the strip the game loads). The
--- caller (studio) ensures the art dir exists. Returns true, or nil+err.
+-- write <path>.spr (editable source) + bake the build product the game loads:
+-- <path>.png (the flattened strip) and, when the doc has clips, <path>.anim (the
+-- clip table as canonical bytes — cm.anim.save). The caller (studio) ensures the
+-- art dir exists. Returns true, or nil+err.
 function M.save(doc, path)
   if not path:match("%.spr$") then path = path .. ".spr" end
   if not pal.write_file(path, M.encode(doc)) then return nil, "write .spr failed" end
   local strip = M.bake_image(doc)
   pal.png_write(with_ext(path, ".png"), strip.buf:str(0, strip.w * strip.h * 4),
                 strip.w, strip.h)
+  if #doc.clips > 0 then anim.save(with_ext(path, ".anim"), doc.clips) end
   doc.path, doc.dirty = path, false
   return true
 end
