@@ -1363,6 +1363,120 @@ local function t_capture()
   pal.x_fov(64, 64)
 end
 
+-- ---- cm.paint: the studio's pure no-AA rasterizers (M10, D040) ----
+-- Dev/render class (never sim state), but pure functions of their inputs, so
+-- KATs pin them: a line is a line, a fill is a fill. Pixels are packed RGBA8
+-- u32 (R the low byte).
+local function t_paint()
+  local paint = cm.require("cm.paint")
+  local RED, GRN = paint.pack(255, 0, 0), paint.pack(0, 255, 0)
+
+  -- packing: R is the low byte (matches tex_create's RGBA order)
+  check(RED == 0xFF0000FF, "paint: pack RGBA byte order (R low)")
+  local r, g, b, a = paint.unpack(paint.pack(0, 0, 255, 128))
+  check(r == 0 and g == 0 and b == 255 and a == 128, "paint: unpack")
+
+  local function count(im, c)
+    local n = 0
+    for y = 0, im.h - 1 do
+      for x = 0, im.w - 1 do if paint.get(im, x, y) == c then n = n + 1 end end
+    end
+    return n
+  end
+
+  local img = paint.image(8, 8)
+  check(paint.get(img, 0, 0) == 0, "paint: new image is transparent")
+  paint.set(img, 3, 4, RED)
+  check(paint.get(img, 3, 4) == RED, "paint: set/get")
+  paint.set(img, -1, 0, RED); paint.set(img, 99, 0, RED) -- OOB no-op
+  check(paint.get(img, -1, 0) == 0 and paint.get(img, 99, 0) == 0,
+        "paint: set/get clip OOB")
+  paint.fill(img, GRN)
+  check(count(img, GRN) == 64, "paint: fill")
+  paint.fill(img, 0)
+
+  -- lines: endpoints inclusive, expected lengths
+  paint.line(img, 1, 2, 5, 2, RED)
+  check(count(img, RED) == 5 and paint.get(img, 1, 2) == RED
+        and paint.get(img, 5, 2) == RED, "paint: horizontal line")
+  paint.fill(img, 0)
+  paint.line(img, 0, 0, 7, 7, RED)
+  check(count(img, RED) == 8 and paint.get(img, 3, 3) == RED,
+        "paint: diagonal line")
+  paint.fill(img, 0)
+
+  -- rect: hollow perimeter vs solid area
+  paint.rect(img, 1, 1, 5, 4, RED, false)
+  check(count(img, RED) == 14 and paint.get(img, 3, 2) == 0,
+        "paint: rect outline (perimeter, hollow)")
+  paint.fill(img, 0)
+  paint.rect(img, 1, 1, 5, 4, RED, true)
+  check(count(img, RED) == 20, "paint: rect filled area")
+
+  -- ellipse: center set, bbox corners missed, horizontally symmetric
+  local big = paint.image(16, 16)
+  paint.ellipse(big, 1, 1, 14, 14, RED, true)
+  check(paint.get(big, 7, 7) == RED and paint.get(big, 2, 7) == RED,
+        "paint: ellipse center + left extent filled")
+  check(paint.get(big, 1, 1) == 0 and paint.get(big, 14, 14) == 0,
+        "paint: ellipse misses bbox corners")
+  local sym = true
+  for y = 0, 15 do
+    for x = 0, 15 do
+      if (paint.get(big, x, y) ~= 0) ~= (paint.get(big, 15 - x, y) ~= 0) then
+        sym = false
+      end
+    end
+  end
+  check(sym, "paint: ellipse horizontally symmetric")
+
+  -- flood: exact-match, bounded by a wall, same-color no-op
+  local fl = paint.image(8, 8)
+  paint.rect(fl, 1, 1, 6, 6, RED, false) -- hollow box; interior 4x4
+  paint.flood(fl, 3, 3, GRN)
+  check(paint.get(fl, 3, 3) == GRN and count(fl, GRN) == 16,
+        "paint: flood fills the bounded interior")
+  check(paint.get(fl, 0, 0) == 0 and paint.get(fl, 1, 1) == RED,
+        "paint: flood stops at the wall, no leak")
+  paint.flood(fl, 3, 3, GRN) -- same color: must not loop
+  check(count(fl, GRN) == 16, "paint: flood same-color no-op")
+
+  -- over: 50% red over opaque green blends; a=0 no-ops
+  local ov = paint.image(2, 1)
+  paint.set(ov, 0, 0, GRN)
+  paint.over(ov, 0, 0, paint.pack(255, 0, 0, 128))
+  local rr, gg, _, aa = paint.unpack(paint.get(ov, 0, 0))
+  check(aa == 255 and rr > 120 and rr < 135 and gg > 120 and gg < 135,
+        "paint: over blends 50% (" .. rr .. "," .. gg .. "," .. aa .. ")")
+  paint.over(ov, 1, 0, 0)
+  check(paint.get(ov, 1, 0) == 0, "paint: over a=0 no-op")
+
+  -- flips on an asymmetric mark
+  local fp = paint.image(4, 4)
+  paint.set(fp, 0, 0, RED)
+  paint.flip_h(fp)
+  check(paint.get(fp, 3, 0) == RED and paint.get(fp, 0, 0) == 0, "paint: flip_h")
+  paint.flip_v(fp)
+  check(paint.get(fp, 3, 3) == RED, "paint: flip_v")
+
+  -- rotate90: dims swap, corner maps right (CW (0,0)->(h-1,0); CCW ->(0,w-1))
+  local ra = paint.image(4, 2)
+  paint.set(ra, 0, 0, RED)
+  local cw = paint.rotate90(ra, 1)
+  check(cw.w == 2 and cw.h == 4 and paint.get(cw, 1, 0) == RED,
+        "paint: rotate90 CW")
+  check(paint.get(paint.rotate90(ra, -1), 0, 3) == RED, "paint: rotate90 CCW")
+
+  -- blit stamp respects transparency
+  local src = paint.image(2, 2)
+  paint.set(src, 0, 0, RED) -- one opaque texel
+  local dst = paint.image(4, 4)
+  paint.fill(dst, GRN)
+  paint.blit(dst, 1, 1, src, 0, 0, 2, 2, "stamp")
+  check(paint.get(dst, 1, 1) == RED and paint.get(dst, 2, 2) == GRN,
+        "paint: blit stamp copies opaque, skips transparent")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1388,6 +1502,7 @@ function game.init()
   t_viewport()
   t_ladder()
   t_capture()
+  t_paint()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
