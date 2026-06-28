@@ -36,6 +36,15 @@ M.dirty = true -- the canvas composite texture needs a rebuild
 M.alt, M.ctrl = false, false
 M.dock_scroll = M.dock_scroll or 0 -- the right dock scrolls when content is tall
 
+-- gradient-tool state: the params a NEW fill inherits (last-used), + the panel's
+-- selected ramp stop (a reference into the active fill, validated each draw).
+M.g_type = M.g_type or "linear"
+M.g_levels = M.g_levels or 8
+M.g_dither = M.g_dither or 0.6
+M.g_bayer = M.g_bayer or 4
+M.g_phase = M.g_phase or 0
+M.g_sel = M.g_sel -- the selected stop table, or nil
+
 -- layout metrics (ui-canvas px); regions computed each frame from these
 local MENU_H, RAIL_W, DOCK_W, TIME_H = 14, 22, 116, 24
 local SWATCH = 12
@@ -58,6 +67,7 @@ local TOOLS = {
   { id = "line",    key = "L", tip = "line (Shift = 45°)" },
   { id = "rect",    key = "R", tip = "rectangle (Shift = square)" },
   { id = "ellipse", key = "O", tip = "ellipse (Shift = circle)" },
+  { id = "gradient", key = "D", tip = "gradient fill (drag an axis)" },
   { id = "pick",    key = "I", tip = "eyedropper (or hold Alt)" },
   { id = "select",  key = "M", tip = "marquee select" },
   { id = "move",    key = "V", tip = "move selection / float" },
@@ -133,6 +143,24 @@ function M.demo()
   paint.line(c, 14, 20, 17, 20, P(108, 220, 250))         -- cyan accent
   paint.line(c, 15, 6, 15, 1, P(248, 214, 122))           -- gold antenna
   M.dirty = true
+end
+
+-- a gradient screenshot / smoke aid: the motif on a base layer, plus a 2nd
+-- layer with a blob recolored by a multi-stop radial gradient fill (handles
+-- shown, gradient tool armed). Dev-only, not undo-managed beyond the ops it runs.
+function M.demo_gradient()
+  M.toggle(true)
+  M.new_doc(32, 32)
+  M.demo()
+  local P = paint.pack
+  local l = sprite.add_layer(M.doc, "glow")
+  paint.ellipse(l.cells[1], 4, 16, 27, 30, P(255, 255, 255), true) -- a blob to mask
+  sprite.set_fill(M.doc, M.doc.cur_layer, {
+    type = "radial", p0 = { x = 16, y = 23 }, p1 = { x = 28, y = 23 },
+    stops = { { pos = 0, rgba = P(108, 220, 250) }, { pos = 0.5, rgba = P(248, 214, 122) },
+              { pos = 1, rgba = P(210, 110, 120) } },
+    levels = 6, dither = 0.7, bayer = 4, phase = 0 })
+  M.tool, M.dirty = "gradient", true
 end
 
 function M.save()
@@ -253,6 +281,13 @@ function M.doc_pixel_raw(mx, my)
   return floor((mx - r.x - M.pan_x) / M.zoom), floor((my - r.y - M.pan_y) / M.zoom)
 end
 
+-- fractional doc coords under a ui point (gradient handles want sub-pixel
+-- precision so the axis doesn't snap-jitter while dragging).
+function M.doc_pt(mx, my)
+  local r = M.canvas
+  return (mx - r.x - M.pan_x) / M.zoom, (my - r.y - M.pan_y) / M.zoom
+end
+
 function M.fit()
   local r = M.canvas
   if not r then return end
@@ -292,6 +327,7 @@ end
 -- drop all selection state (a new / loaded doc, or an explicit deselect)
 function M.reset_sel()
   M.sel, M.float, M.selecting, M.moving = nil, nil, false, false
+  M.grad_drag, M.g_sel = nil, nil
   free_float_tex()
 end
 
@@ -433,6 +469,59 @@ end
 
 function M.clear_brush() M.brush = nil end
 
+-- ---- gradient tool (Phase 3, STUDIO.md §6) ----
+-- A drag lays a non-destructive gradient FILL onto the active layer (masked by
+-- its pixels); the two endpoints are then live-draggable handles, and the dock
+-- panel tunes type / ramp / dither / levels / phase. A new fill inherits the
+-- last-used params (M.g_*) and starts as a prim→sec 2-stop ramp. The whole axis
+-- drag is one undo step (a struct bracket spanning frames; cm.sprite).
+
+local function make_fill(px, py)
+  return {
+    type = M.g_type, p0 = { x = px, y = py }, p1 = { x = px, y = py },
+    stops = { { pos = 0, rgba = M.prim }, { pos = 1, rgba = M.sec } },
+    levels = M.g_levels, dither = M.g_dither, bayer = M.g_bayer, phase = M.g_phase,
+  }
+end
+
+local function near_pt(mx, my, sx, sy, rad)
+  local dx, dy = mx - sx, my - sy
+  return dx * dx + dy * dy <= rad * rad
+end
+
+-- press: grab an endpoint handle of the active fill, else start a fresh axis
+-- (creating the fill); drag: move that endpoint live; release: one undo step.
+local function handle_gradient(over)
+  local inp, doc = ui.inp, M.doc
+  local L = doc.layers[doc.cur_layer]
+  local r, z = M.canvas, M.zoom
+  local ix, iy = r.x + floor(M.pan_x), r.y + floor(M.pan_y)
+  if not M.grad_drag and inp.clicked[1] and over and not ui.active then
+    local f = L.fill
+    if f and near_pt(inp.mx, inp.my, ix + f.p0.x * z, iy + f.p0.y * z, 7) then
+      sprite.begin_struct(doc); M.grad_drag, M.grad_moved = "p0", false
+    elseif f and near_pt(inp.mx, inp.my, ix + f.p1.x * z, iy + f.p1.y * z, 7) then
+      sprite.begin_struct(doc); M.grad_drag, M.grad_moved = "p1", false
+    else -- re-anchor the axis (keeping an existing ramp) or create a fresh fill
+      local px, py = M.doc_pt(inp.mx, inp.my)
+      sprite.begin_struct(doc)
+      if f then f.p0.x, f.p0.y, f.p1.x, f.p1.y = px, py, px, py
+      else L.fill, M.g_sel = make_fill(px, py), nil end
+      M.grad_drag, M.grad_moved = "p1", true
+    end
+    M.dirty = true
+  end
+  if M.grad_drag and inp.buttons[1] and L.fill then
+    local px, py = M.doc_pt(inp.mx, inp.my)
+    local e = M.grad_drag == "p0" and L.fill.p0 or L.fill.p1
+    if e.x ~= px or e.y ~= py then e.x, e.y, M.grad_moved = px, py, true end
+    M.dirty = true
+  elseif M.grad_drag and not inp.buttons[1] then
+    M.grad_drag = nil
+    if M.grad_moved then sprite.commit_struct(doc) else sprite.cancel_struct(doc) end
+  end
+end
+
 -- ---- input ----
 
 local function handle_keys()
@@ -457,6 +546,7 @@ local function handle_keys()
       elseif sc == SC.l then M.tool = "line"
       elseif sc == SC.r then M.tool = "rect"
       elseif sc == SC.o then M.tool = "ellipse"
+      elseif sc == SC.d then M.tool = "gradient"
       elseif sc == SC.i then M.tool = "pick"
       elseif sc == SC.m then M.tool = "select"
       elseif sc == SC.v then M.tool = "move"
@@ -624,12 +714,18 @@ local function handle_paint(over)
     return
   end
 
+  -- a gradient axis drag in progress owns the gesture until release (an Alt tap
+  -- can't divert it), exactly like a shape stroke
+  if M.grad_drag then handle_gradient(over); return end
+
   -- selection tools (Alt overrides them with the temporary eyedropper, below)
   if not M.alt and (M.tool == "select" or M.tool == "move") then
     handle_select(over); return
   end
   -- choosing a paint/shape tool lands any floating selection onto the layer
   if M.float and not (M.tool == "select" or M.tool == "move") then M.commit_float() end
+
+  if tool == "gradient" then handle_gradient(over); return end
 
   if tool == "pick" then
     if over and pressed and dpx then
@@ -717,6 +813,37 @@ local function draw_marquee(x, y, w, h)
   seg(x, y, false, h); seg(x + w - 1, y, false, h)
 end
 
+-- the gradient axis (a dotted connector) + its two draggable endpoint handles
+-- (p0 = accent, p1 = white), plus a faint rim circle for a radial fill. Drawn in
+-- screen space, clipped to the canvas region (handles can sit off the image).
+local function draw_grad_handles(r, ix, iy, z, f)
+  pal.clip(r.x, r.y, r.w, r.h)
+  local p0x, p0y = ix + f.p0.x * z, iy + f.p0.y * z
+  local p1x, p1y = ix + f.p1.x * z, iy + f.p1.y * z
+  local dx, dy = p1x - p0x, p1y - p0y
+  local dist = math.sqrt(dx * dx + dy * dy)
+  local steps = max(1, floor(dist / 4))
+  for i = 0, steps do
+    local t = i / steps
+    ui.rect(floor(p0x + dx * t), floor(p0y + dy * t), 1, 1, { 1, 1, 1, 0.55 })
+  end
+  if f.type == "radial" and dist > 1 then
+    local n = max(16, floor(dist / 3))
+    for i = 0, n - 1 do
+      local a = i / n * 2 * math.pi
+      ui.rect(floor(p0x + math.cos(a) * dist), floor(p0y + math.sin(a) * dist),
+              1, 1, { 1, 1, 1, 0.3 })
+    end
+  end
+  local function dot(sx, sy, c)
+    ui.rect(sx - 3, sy - 3, 6, 6, { 0, 0, 0, 0.85 })
+    ui.rect(sx - 2, sy - 2, 4, 4, c)
+  end
+  dot(floor(p0x), floor(p0y), ui.style.accent)
+  dot(floor(p1x), floor(p1y), { 1, 1, 1, 1 })
+  pal.clip()
+end
+
 local function draw_canvas(r)
   local st = ui.style
   ui.rect(r.x, r.y, r.w, r.h, { 0.07, 0.07, 0.09, 1 }) -- the canvas void
@@ -766,6 +893,9 @@ local function draw_canvas(r)
   end
   pal.clip()
   ui.frame_rect(ix - 1, iy - 1, iw + 2, ih + 2, st.panel_edge) -- image border
+  -- gradient axis + endpoint handles (gradient tool active + this layer has a fill)
+  local gl = M.doc.layers[M.doc.cur_layer]
+  if M.tool == "gradient" and gl.fill then draw_grad_handles(r, ix, iy, z, gl.fill) end
 end
 
 local function tool_button(t, x, y, w, h)
@@ -886,6 +1016,140 @@ local function draw_layers(x, y, cw)
   return y + n * LROW + 5
 end
 
+-- GRADIENT: the active layer's non-destructive gradient fill — type, the
+-- multi-stop ramp editor (a click on the bar adds a stop; markers select / drag /
+-- right-click-delete), dither / levels / bayer / phase, then bake/clear. Drawn
+-- only when the layer has a fill (or, as a hint, when the gradient tool is armed).
+local function draw_gradient(x, y, cw)
+  local st, inp = ui.style, ui.inp
+  local doc = M.doc
+  local L = doc.layers[doc.cur_layer]
+  local f = L.fill
+  if not f then
+    if M.tool == "gradient" then
+      ui.text(x, y, "GRADIENT", st.accent); y = y + 11
+      ui.text(x, y, "drag an axis on the", st.text_dim); y = y + 9
+      ui.text(x, y, "layer to add a fill", st.text_dim); y = y + 12
+    end
+    return y
+  end
+  -- the selected stop is held by reference; drop it if it left the ramp
+  if M.g_sel then
+    local found = false
+    for _, s in ipairs(f.stops) do if s == M.g_sel then found = true; break end end
+    if not found then M.g_sel = nil end
+  end
+
+  ui.text(x, y, "GRADIENT", st.accent); y = y + 11
+
+  -- type selector
+  local types = { { "lin", "linear" }, { "rad", "radial" },
+                  { "ang", "angular" }, { "mir", "mirror" } }
+  local tw = (cw - 3 * 2) // 4
+  for i, t in ipairs(types) do
+    local bx = x + (i - 1) * (tw + 2)
+    local on = f.type == t[2]
+    local clicked, hot = ui.hit("g_ty" .. i, bx, y, tw, 12)
+    ui.rect(bx, y, tw, 12, on and st.widget_active or (hot and st.widget_hot or st.widget))
+    ui.frame_rect(bx, y, tw, 12, on and st.accent or st.panel_edge)
+    ui.text(bx + (tw - 3 * st.gw) // 2, y + 2, t[1], on and st.accent or st.text)
+    if clicked then f.type, M.g_type, M.dirty = t[2], t[2], true end
+  end
+  y = y + 15
+
+  -- the ramp bar (sampled columns; click adds a stop there)
+  local barh = 12
+  for cx = 0, cw - 1 do
+    ui.rect(x + cx, y, 1, barh, col(paint.ramp(f.stops, cx / (cw - 1))))
+  end
+  ui.frame_rect(x, y, cw, barh, st.panel_edge)
+  if pin(inp.mx, inp.my, x, y, cw, barh) and inp.clicked[1] then
+    local s = { pos = clamp((inp.mx - x) / (cw - 1), 0, 1), rgba = M.prim }
+    f.stops[#f.stops + 1] = s
+    table.sort(f.stops, function(a, b) return a.pos < b.pos end)
+    M.g_sel, M.g_drag_stop, M.dirty = s, s, true
+  end
+  y = y + barh + 1
+
+  -- stop markers: select (LMB), drag (LMB-hold), delete (RMB, keep ≥2)
+  local mrow = 8
+  for _, s in ipairs(f.stops) do
+    local sx = x + floor(s.pos * (cw - 1))
+    local hot = pin(inp.mx, inp.my, sx - 3, y, 7, mrow)
+    ui.rect(sx - 3, y, 7, mrow, col(s.rgba))
+    ui.frame_rect(sx - 3, y, 7, mrow,
+      s == M.g_sel and st.accent or (hot and st.widget_hot or st.panel_edge))
+    if hot and inp.clicked[1] then M.g_sel, M.g_drag_stop = s, s end
+    if hot and inp.clicked[3] and #f.stops > 2 then
+      for j = #f.stops, 1, -1 do if f.stops[j] == s then table.remove(f.stops, j) end end
+      if M.g_sel == s then M.g_sel = nil end
+      M.dirty = true
+    end
+  end
+  if M.g_drag_stop and inp.buttons[1] then
+    M.g_drag_stop.pos = clamp((inp.mx - x) / (cw - 1), 0, 1)
+    table.sort(f.stops, function(a, b) return a.pos < b.pos end)
+    M.dirty = true
+  elseif M.g_drag_stop and not inp.buttons[1] then
+    M.g_drag_stop = nil
+  end
+  y = y + mrow + 2
+
+  -- selected-stop actions (recolor to primary / delete)
+  if M.g_sel then
+    local half = (cw - 2) // 2
+    if ui.button("set col", { rect = { x, y, half, 11 }, id = "g_setcol" }) then
+      M.g_sel.rgba, M.dirty = M.prim, true
+    end
+    if ui.button("del", { rect = { x + half + 2, y, cw - half - 2, 11 }, id = "g_delstop" })
+       and #f.stops > 2 then
+      for j = #f.stops, 1, -1 do if f.stops[j] == M.g_sel then table.remove(f.stops, j) end end
+      M.g_sel, M.dirty = nil, true
+    end
+  else
+    ui.text(x, y, "click ramp: add stop", st.text_dim)
+  end
+  y = y + 13
+
+  -- dither strength / levels / phase sliders (mirror to M.g_* for new fills)
+  local lw = 4 * st.gw
+  local nv, ch = ui.slider("dith", floor(f.dither * 100 + 0.5), 0, 100,
+    { rect = { x, y, cw, 11 }, id = "g_dith", label_w = lw })
+  if ch then f.dither, M.g_dither, M.dirty = nv / 100, nv / 100, true end
+  y = y + 12
+  nv, ch = ui.slider("lvl", f.levels, 2, 16, { rect = { x, y, cw, 11 }, id = "g_lvl", label_w = lw })
+  if ch then f.levels, M.g_levels, M.dirty = nv, nv, true end
+  y = y + 12
+  nv, ch = ui.slider("phs", floor(f.phase * 100 + 0.5), 0, 100,
+    { rect = { x, y, cw, 11 }, id = "g_phs", label_w = lw })
+  if ch then f.phase, M.g_phase, M.dirty = nv / 100, nv / 100, true end
+  y = y + 12
+
+  -- bayer pattern size 2 / 4 / 8
+  ui.text(x, y + 2, "bay", st.text_dim)
+  local bxs = x + lw
+  local bw3 = (cw - lw - 2 * 2) // 3
+  for i, n in ipairs({ 2, 4, 8 }) do
+    local bx = bxs + (i - 1) * (bw3 + 2)
+    local on = f.bayer == n
+    local clicked, hot = ui.hit("g_by" .. i, bx, y, bw3, 11)
+    ui.rect(bx, y, bw3, 11, on and st.widget_active or (hot and st.widget_hot or st.widget))
+    ui.frame_rect(bx, y, bw3, 11, on and st.accent or st.panel_edge)
+    ui.text(bx + (bw3 - st.gw) // 2, y + 2, tostring(n), on and st.accent or st.text)
+    if clicked then f.bayer, M.g_bayer, M.dirty = n, n, true end
+  end
+  y = y + 14
+
+  -- bake the fill into pixels (destructive) / clear the fill object
+  local half = (cw - 2) // 2
+  if ui.button("bake", { rect = { x, y, half, 12 }, id = "g_stamp" }) then
+    sprite.stamp_fill(doc, doc.cur_layer); M.g_sel, M.dirty = nil, true
+  elseif ui.button("clear", { rect = { x + half + 2, y, cw - half - 2, 12 }, id = "g_clear" }) then
+    sprite.clear_fill(doc, doc.cur_layer); M.g_sel, M.dirty = nil, true
+  end
+  return y + 16
+end
+
 local function draw_dock(r)
   local st = ui.style
   local inp = ui.inp
@@ -904,6 +1168,7 @@ local function draw_dock(r)
   local cw = r.w - 8
   local y = r.y + 4 - M.dock_scroll
   y = draw_layers(x, y, cw)
+  y = draw_gradient(x, y, cw)
 
   -- PALETTE: swatch grid + add-current + preset slots
   ui.text(x, y, "PALETTE", st.accent); y = y + 11
@@ -1086,7 +1351,11 @@ local function draw_timeline(r)
   ui.rect(r.x, r.y, r.w, 1, st.panel_edge)
   ui.text(r.x + 4, r.y + (r.h - st.gh) // 2, "TIMELINE", st.text_dim)
   local mid = "frame 1/1   (animation: phase 4)"
-  if M.tool == "select" or M.tool == "move" then
+  if M.tool == "gradient" then
+    local f = M.doc.layers[M.doc.cur_layer].fill
+    mid = f and (f.type .. " fill   drag the handles, tune in the dock")
+            or "drag an axis on the layer to add a gradient fill"
+  elseif M.tool == "select" or M.tool == "move" then
     if M.float then
       mid = "floating   Enter stamp   ^C/^X   Del"
     elseif M.sel then
