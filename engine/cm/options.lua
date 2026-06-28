@@ -14,8 +14,11 @@ local view = cm.require("cm.view")
 
 M.on = M.on or false
 local KEY_ESC = 41
--- windowed presets (window px); the ladder maps each to a FOV + integer scale
-local SIZES = { { 960, 540 }, { 1280, 720 }, { 1600, 900 }, { 1920, 1080 } }
+-- windowed presets (window px). Chosen so the ladder FILLS the window with no
+-- letterbox — i.e. W,H are whole multiples of a FOV ≤ the 480×270 reference:
+-- 720×540→360×270@2, 960×540→480×270@2, 1440×1080→360×270@4, 1920×1080→480×270@4
+-- (a 4:3 + a 16:9 at each of the two heights). See cm.view.ladder.
+local SIZES = { { 720, 540 }, { 960, 540 }, { 1440, 1080 }, { 1920, 1080 } }
 local UI_SCALES = { 1, 2, 3 }
 
 function M.toggle(on)
