@@ -1287,6 +1287,25 @@ local function t_viewport()
   check(select(1, pal.gfx_size()) == 64, "fov: restored to 64x64")
 end
 
+-- ---- cm.view: the D036 resize ladder (M8.3) ----
+-- Pure window->FOV math; locks every rung the human specified. Render-only
+-- policy, so it is safe to compute headless (it just doesn't get applied).
+local function t_ladder()
+  local view = cm.require("cm.view")
+  local function rung(W, H, ew, eh, es, label)
+    local fw, fh, s = view.ladder(W, H)
+    check(fw == ew and fh == eh and s == es,
+      ("ladder %dx%d -> %dx%d@%d (got %dx%d@%d) [%s]")
+      :format(W, H, ew, eh, es, fw, fh, s, label))
+  end
+  rung(960, 540, 480, 270, 2, "reference 2x")
+  rung(1920, 1080, 480, 270, 4, "full FOV upscaled 4x")
+  rung(1280, 720, 480, 270, 2, "16:9 letterboxed at 2x")
+  rung(720, 540, 360, 270, 2, "4:3 cropped width")
+  rung(640, 360, 320, 180, 2, "smallest, cropped both ways")
+  rung(480, 360, 240, 180, 2, "narrow, cropped both ways")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1309,6 +1328,7 @@ function game.init()
   t_bundle()
   t_ring()
   t_viewport()
+  t_ladder()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

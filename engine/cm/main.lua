@@ -128,6 +128,10 @@ function M.boot()
   M.perf = cm.require("cm.perf")
   M.editor = cm.require("cm.editor")
   M.scrub = cm.require("cm.scrub")
+  M.view = cm.require("cm.view")
+  -- the resize ladder runs only live: headless/verify keep the fixed project
+  -- FOV so goldens + determinism never see a window-derived size (D036).
+  M.view.set_enabled(not args.headless)
   cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
@@ -295,6 +299,9 @@ function M.tick()
       M.acc = M.acc - SIM_DT
     end
   end
+  -- render-only: adapt the FOV to the live window size before drawing (no-op
+  -- headless / when unchanged). Runs in every live state (play, error, scrub).
+  M.view.update()
   local draw_t0 = pal.time_ns()
 
   if M.game_err or not guarded(M.game.draw) then
