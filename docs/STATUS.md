@@ -92,7 +92,33 @@ headless/`--frames`/`--verify`/`--win` keep the fixed FOV (goldens + determinism
 byte-stable; gitignored). selftest 22351; sandbox record→verify byte-exact
 (300f); save/load round-trip + menu render verified headless. The **interactive
 behaviors** (Esc opens not quits; settings persist across a real relaunch) are
-the human's native pass — headless has no window events.
+the human's native pass — headless has no window events. (The human's own
+test-session video.dat — ui_scale=1, fullscreen — was observed on disk, which
+*proves* persistence works end-to-end; I reset it during testing, so the next
+launch starts from defaults.)
+
+### M8/M7 feedback round 4 (2026-06-28) — `3894779`, `429530d`, `f890256`
+Three asks from the human's first real play:
+- **Window presets now FILL the window** (options menu): 720×540, 960×540,
+  1440×1080, 1920×1080 (a 4:3 + a 16:9 at two heights) — each a whole multiple of
+  a FOV ≤ the 480×270 reference, so the ladder fills with no letterbox (was the
+  old 16:9-only set that letterboxed at e.g. 1280×720). See cm.view.ladder.
+- **ui_scale applies in PLAY mode too** (D039 revision): the dev chrome (options
+  menu / console / perf / scrub) now ALWAYS rides a ui canvas at `cfg.ui_scale` —
+  cm.view.update allocates it in play as well as the editor (game composed under
+  it, centered full-window in play), and cm.main routes the panels there after
+  `editor.frame` regardless of editor state. So changing ui_scale with the editor
+  closed rescales the menu live (it didn't before — it drew at the game scale).
+  Render-only / live-only; goldens untouched.
+- **Flutter is a rhythmic hold, not a glide** (M7 feel pass 4, GAME.md §4 + D035):
+  hold E after a hop and KEEP holding once you START FALLING → a height-based
+  mini-hop every `flutter_interval`(60f), `flutter_boosts`(4) times, sized
+  (`flutter_h`=45) to roughly HOLD altitude over the beat + a small forward nudge
+  (`flutter_vx`=70). Replaces the `flutter_grace`/`flutter_max`/`flutter_fall`/
+  `flutter_decel` glide knobs. The "must be falling" gate is the tap guard (a hop
+  released before the fall is a clean hop, no cd). Verified: the demo holds y≈480
+  (no net drift) + drifts forward; selftest 22351; KITCHECK + TOUR record→verify
+  byte-exact; montage on llm-feed. Default magnitudes are the human's feel call.
 
 **Still open / deferred**:
 - **`cfg.ui_scale`** default (2× now; D036 says 1×) — the human's taste call,
@@ -102,11 +128,12 @@ the human's native pass — headless has no window events.
   (M10); the `.ptrace`→`.ctrace` trace re-cut waits on confirming the rename
   (D033, human's call). selftest (22351) is the live net meanwhile.
 
-**Next:** native pass on the round-3 interactive fixes (Esc opens the menu /
-doesn't quit; the menu's quit button; settings persist across relaunch) +
-confirm the ui_scale taste on win11; the deferred golden re-cut; then M9 (audio)
-or circle back to M7's asset-gated items (CW≈26 scale via FOV/scale +
-`move.cw/ch`; slice VFX once the editor's particle work lands).
+**Next:** native pass on the round-3/4 interactive feel (Esc opens the menu;
+fill presets; ui_scale rescales the menu in play; **the flutter** — does it hold
+height well, is the bob / forward drift right, is `flutter_h`/`flutter_vx` to
+taste) + the ui_scale default taste on win11; the deferred golden re-cut; then M9
+(audio) or M7's asset-gated items (CW≈26 scale via FOV/scale + `move.cw/ch`;
+slice VFX once the editor's particle work lands).
 
 ## This session (2026-06-27) — M7 moveset
 
