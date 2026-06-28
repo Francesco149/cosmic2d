@@ -18,6 +18,7 @@ local ui = cm.require("cm.ui")
 local view = cm.require("cm.view")
 local paint = cm.require("cm.paint")
 local sprite = cm.require("cm.sprite")
+local anim = cm.require("cm.anim")
 
 local floor, ceil, max, min = math.floor, math.ceil, math.max, math.min
 
@@ -45,8 +46,20 @@ M.g_bayer = M.g_bayer or 4
 M.g_phase = M.g_phase or 0
 M.g_sel = M.g_sel -- the selected stop table, or nil
 
+-- animation / timeline state (Phase 4, STUDIO.md §7): the preview fps, the
+-- onion-skin toggle, the active clip (dock CLIPS selection) + the selected
+-- frame-entry within it, the live-playback flag + its WALL-CLOCK anchor (dev
+-- only, pal.time_ns — never sim), and the strip's horizontal scroll.
+M.fps = M.fps or 12
+M.onion = M.onion or false
+M.playing = M.playing or false
+M.play_t0 = M.play_t0 or 0
+M.clip_i = M.clip_i           -- active clip index, or nil
+M.clip_entry = M.clip_entry   -- selected entry index within the active clip
+M.tl_scroll = M.tl_scroll or 0
+
 -- layout metrics (ui-canvas px); regions computed each frame from these
-local MENU_H, RAIL_W, DOCK_W, TIME_H = 14, 22, 116, 24
+local MENU_H, RAIL_W, DOCK_W, TIME_H = 14, 22, 116, 46
 local SWATCH = 12
 local LROW = 12 -- a layers-panel row
 
@@ -161,6 +174,30 @@ function M.demo_gradient()
               { pos = 1, rgba = P(210, 110, 120) } },
     levels = 6, dither = 0.7, bayer = 4, phase = 0 })
   M.tool, M.dirty = "gradient", true
+end
+
+-- an animation smoke / screenshot aid: a 4-frame doc with a little breathing
+-- bob + leg swing, a pingpong "idle" clip, onion on, frame 2 selected — so the
+-- timeline strip, the onion overlay, and the CLIPS panel all show content.
+function M.demo_anim()
+  M.toggle(true)
+  M.new_doc(24, 24)
+  local P = paint.pack
+  for _ = 1, 3 do sprite.add_frame(M.doc) end -- 4 frames total
+  local body, shade, ink, cyan = P(236, 232, 245), P(150, 156, 196), P(32, 28, 44), P(108, 220, 250)
+  for f = 1, 4 do
+    local c = M.doc.layers[1].cells[f]
+    local bob = (f % 2 == 0) and 1 or 0 -- a 1px breath
+    paint.ellipse(c, 6, 2 + bob, 17, 15 + bob, body, true)
+    paint.ellipse(c, 6, 2 + bob, 17, 15 + bob, shade, false)
+    paint.rect(c, 9, 6 + bob, 2, 2, ink, true); paint.rect(c, 13, 6 + bob, 2, 2, ink, true)
+    paint.line(c, 9, 17, 9 - (f - 1) % 2 * 3, 22, cyan)  -- legs swing
+    paint.line(c, 14, 17, 14 + (f - 1) % 2 * 3, 22, cyan)
+  end
+  local clip = sprite.add_clip(M.doc, "idle", 8)
+  clip.loop = "pingpong"
+  M.clip_i, M.clip_entry = 1, 1
+  M.onion, M.doc.cur_frame, M.dirty = true, 2, true
 end
 
 function M.save()
@@ -298,14 +335,76 @@ function M.fit()
   M.pan_y = (r.h - M.doc.h * M.zoom) // 2
 end
 
+-- ---- animation: the active clip, the displayed frame, playback ----
+
+-- the active clip table (dock CLIPS selection), or nil — re-fetched each use so
+-- a delete / undo that drops it is handled by the nil branch.
+function M.active_clip()
+  return M.clip_i and M.doc.clips[M.clip_i] or nil
+end
+
+-- the 1-based cell to DISPLAY: while playing, the active clip's (or, with none,
+-- the all-frames cycle's) frame at the wall clock — pal.time_ns scaled to 60
+-- ticks/s so the preview matches how the game runs the clip (dev-only, never
+-- sim, STUDIO.md §1/§7). Otherwise the edit cursor.
+function M.disp_frame()
+  local doc = M.doc
+  if not M.playing then return doc.cur_frame end
+  local ticks = floor((pal.time_ns() - M.play_t0) / 1e9 * 60)
+  local clip = M.active_clip()
+  if clip and #clip.frames > 0 then
+    return clamp(anim.frame_at(clip, ticks) + 1, 1, doc.frames) -- 0-based → cell
+  end
+  local per = max(1, floor(60 / max(1, M.fps)))
+  return (floor(ticks / per) % doc.frames) + 1
+end
+
+function M.toggle_play()
+  M.playing = not M.playing
+  if M.playing then M.play_t0 = pal.time_ns() end
+  M.dirty = true
+end
+
+-- free the timeline thumbnail + onion neighbor textures (a new/loaded doc, a
+-- frame-count change, or closing). The ids leak otherwise (no in-place update).
+local function free_anim_tex()
+  if M.thumbs then for _, t in ipairs(M.thumbs) do pal.tex_free(t) end; M.thumbs = nil end
+  if M.onion_prev then pal.tex_free(M.onion_prev); M.onion_prev = nil end
+  if M.onion_next then pal.tex_free(M.onion_next); M.onion_next = nil end
+end
+M.free_anim_tex = free_anim_tex
+
+-- composite frame `fi` into the reuse scratch + upload a fresh texture (caller
+-- owns it). Used for onion neighbors + the per-frame thumbnails.
+local function comp_tex(doc, fi, scratch)
+  sprite.composite_into(doc, fi, scratch)
+  return pal.tex_create(doc.w, doc.h, scratch.buf:str(0, doc.w * doc.h * 4))
+end
+
 function M.rebuild_tex()
   local doc = M.doc
   if not M.comp or M.comp.w ~= doc.w or M.comp.h ~= doc.h then
     M.comp = paint.image(doc.w, doc.h)
   end
-  sprite.composite_into(doc, doc.cur_frame, M.comp)
+  sprite.composite_into(doc, M.disp_frame(), M.comp)
   if M.canvas_tex then pal.tex_free(M.canvas_tex) end
   M.canvas_tex = pal.tex_create(doc.w, doc.h, M.comp.buf:str(0, doc.w * doc.h * 4))
+  -- M.comp is now uploaded; reuse it as the composite scratch below.
+  -- onion neighbors (prev/next frame at low alpha) — edit-time only
+  if M.onion_prev then pal.tex_free(M.onion_prev); M.onion_prev = nil end
+  if M.onion_next then pal.tex_free(M.onion_next); M.onion_next = nil end
+  if M.onion and not M.playing and doc.frames > 1 then
+    if doc.cur_frame > 1 then M.onion_prev = comp_tex(doc, doc.cur_frame - 1, M.comp) end
+    if doc.cur_frame < doc.frames then M.onion_next = comp_tex(doc, doc.cur_frame + 1, M.comp) end
+  end
+  -- per-frame thumbnails for the timeline strip (skip during playback — pixels
+  -- aren't changing then, only the playhead moves; but always build once so a
+  -- play started right after creation still has a strip)
+  if not M.playing or not M.thumbs then
+    if M.thumbs then for _, t in ipairs(M.thumbs) do pal.tex_free(t) end end
+    M.thumbs = {}
+    for f = 1, doc.frames do M.thumbs[f] = comp_tex(doc, f, M.comp) end
+  end
   M.dirty = false
 end
 
@@ -324,11 +423,14 @@ local function build_float_tex()
   M.float_tex = pal.tex_create(f.w, f.h, f.img.buf:str(0, f.w * f.h * 4))
 end
 
--- drop all selection state (a new / loaded doc, or an explicit deselect)
+-- drop all selection state (a new / loaded doc, or an explicit deselect); also
+-- the animation playhead + per-doc timeline textures (frame count may change).
 function M.reset_sel()
   M.sel, M.float, M.selecting, M.moving = nil, nil, false, false
   M.grad_drag, M.g_sel = nil, nil
+  M.clip_i, M.clip_entry, M.playing, M.tl_scroll = nil, nil, false, 0
   free_float_tex()
+  free_anim_tex()
 end
 
 -- stamp the floating selection into the active cell (one undo step); the
@@ -694,6 +796,7 @@ local function handle_select(over)
 end
 
 local function handle_paint(over)
+  if M.playing then return end -- the canvas shows the playhead; no editing mid-play
   local inp = ui.inp
   local tool = M.alt and "pick" or M.tool
   local pressed = inp.clicked[1] or inp.clicked[3]
@@ -864,6 +967,10 @@ local function draw_canvas(r)
       end
     end
   end
+  -- onion skin: the previous (warm) + next (cool) frame at low alpha, UNDER the
+  -- current frame, so they peek through wherever the current cell is transparent
+  if M.onion_prev then pal.quad(ix, iy, iw, ih, 1, 0.45, 0.5, 0.4, M.onion_prev, 0, 0, 1, 1) end
+  if M.onion_next then pal.quad(ix, iy, iw, ih, 0.45, 0.8, 1, 0.4, M.onion_next, 0, 0, 1, 1) end
   -- the composited sprite as one scaled quad (alpha-over the checker, nearest)
   pal.quad(ix, iy, iw, ih, 1, 1, 1, 1, M.canvas_tex, 0, 0, 1, 1)
   -- the live shape preview rides on top as one more quad (no real pixels yet)
@@ -1150,6 +1257,110 @@ local function draw_gradient(x, y, cw)
   return y + 16
 end
 
+-- CLIPS: the animation clips (STUDIO.md §7). The list (click = make active),
+-- new / delete, and the active clip's editor — rename, loop mode, and the frame
+-- SEQUENCE as chips (each an entry's 0-based frame index; click selects, RMB
+-- removes), an "add the current frame" button, and the selected entry's
+-- duration. The timeline's ▶play previews the active clip. Returns the next y.
+local function draw_clips(x, y, cw)
+  local st, inp = ui.style, ui.inp
+  local doc = M.doc
+  ui.text(x, y, "CLIPS", st.accent); y = y + 11
+
+  local fdur = max(1, floor(60 / max(1, M.fps))) -- new entries default to fps
+  local half = (cw - 2) // 2
+  if ui.button("+ clip", { rect = { x, y, half, 12 }, id = "cl_new" }) then
+    sprite.add_clip(doc, nil, fdur)
+    M.clip_i, M.clip_entry = #doc.clips, nil
+  end
+  if ui.button("del", { rect = { x + half + 2, y, cw - half - 2, 12 }, id = "cl_del" })
+     and M.clip_i then
+    sprite.delete_clip(doc, M.clip_i)
+    M.clip_i = (#doc.clips > 0) and min(M.clip_i, #doc.clips) or nil
+    M.clip_entry = nil
+  end
+  y = y + 14
+
+  if #doc.clips == 0 then
+    ui.text(x, y, "no clips yet", st.text_dim); return y + 11
+  end
+  -- the clip list (active lit); the right edge shows the frame-entry count
+  for ci, c in ipairs(doc.clips) do
+    local active = ci == M.clip_i
+    if ui.hit("cl_row" .. ci, x, y, cw, 11) then M.clip_i, M.clip_entry = ci, nil end
+    ui.rect(x, y, cw, 11, active and st.widget_active or st.widget)
+    ui.frame_rect(x, y, cw, 11, active and st.accent or st.panel_edge)
+    ui.text(x + 2, y + 2, c.name, active and st.accent or st.text)
+    local cnt = (#c.frames) .. "f"
+    ui.text(x + cw - #cnt * st.gw - 3, y + 2, cnt, st.text_dim)
+    y = y + 12
+  end
+  y = y + 2
+
+  local clip = M.active_clip()
+  if not clip then return y end
+
+  -- rename (synced to the clip name when not being typed into)
+  if ui.focus ~= "cl_name" then M.cl_name_edit = clip.name end
+  local nm, nch, nsub = ui.text_input("cl_name", M.cl_name_edit or clip.name,
+    { hint = "name", rect = { x, y, cw, 11 } })
+  M.cl_name_edit = nm
+  if (nch or nsub) and nm ~= "" then clip.name = nm; doc.dirty = true end
+  y = y + 13
+
+  -- loop mode
+  local modes = { { "loop", "loop" }, { "once", "once" }, { "png", "pingpong" } }
+  local mw = (cw - 2 * 2) // 3
+  for i, mo in ipairs(modes) do
+    local bx = x + (i - 1) * (mw + 2)
+    local on = clip.loop == mo[2]
+    local cl, ht = ui.hit("cl_lp" .. i, bx, y, mw, 12)
+    ui.rect(bx, y, mw, 12, on and st.widget_active or (ht and st.widget_hot or st.widget))
+    ui.frame_rect(bx, y, mw, 12, on and st.accent or st.panel_edge)
+    ui.text(bx + (mw - #mo[1] * st.gw) // 2, y + 2, mo[1], on and st.accent or st.text)
+    if cl then clip.loop, doc.dirty = mo[2], true end
+  end
+  y = y + 15
+
+  -- the frame sequence: one chip per entry (its 0-based frame index). Click
+  -- selects (for the dur slider); RMB removes (keeping ≥1).
+  ui.text(x, y, "sequence", st.text_dim); y = y + 10
+  local chw = 20
+  local perrow = max(1, (cw + 2) // (chw + 2))
+  for ei, e in ipairs(clip.frames) do
+    local bx = x + ((ei - 1) % perrow) * (chw + 2)
+    local by = y + ((ei - 1) // perrow) * 13
+    local sel = M.clip_entry == ei
+    local cl, ht = ui.hit("cl_e" .. ei, bx, by, chw, 11)
+    ui.rect(bx, by, chw, 11, sel and st.widget_active or (ht and st.widget_hot or st.widget))
+    ui.frame_rect(bx, by, chw, 11, sel and st.accent or st.panel_edge)
+    ui.text(bx + (chw - #tostring(e.frame) * st.gw) // 2, by + 2, tostring(e.frame),
+            sel and st.accent or st.text)
+    if cl then M.clip_entry = ei end
+    if ht and inp.clicked[3] and #clip.frames > 1 then
+      table.remove(clip.frames, ei)
+      M.clip_entry = nil; doc.dirty = true
+    end
+  end
+  y = y + ceil(#clip.frames / perrow) * 13 + 1
+
+  if ui.button("+ add frame " .. (doc.cur_frame - 1),
+               { rect = { x, y, cw, 12 }, id = "cl_addf" }) then
+    clip.frames[#clip.frames + 1] = { frame = doc.cur_frame - 1, dur = fdur }
+    M.clip_entry, doc.dirty = #clip.frames, true
+  end
+  y = y + 14
+
+  local e = M.clip_entry and clip.frames[M.clip_entry]
+  if e then
+    local nv, ch = ui.slider("dur", e.dur, 1, 60,
+      { rect = { x, y, cw, 11 }, id = "cl_dur", label_w = 3 * st.gw })
+    if ch then e.dur, doc.dirty = nv, true end
+    y = y + 12
+  end
+  return y
+end
+
 local function draw_dock(r)
   local st = ui.style
   local inp = ui.inp
@@ -1169,6 +1380,7 @@ local function draw_dock(r)
   local y = r.y + 4 - M.dock_scroll
   y = draw_layers(x, y, cw)
   y = draw_gradient(x, y, cw)
+  y = draw_clips(x, y, cw)
 
   -- PALETTE: swatch grid + add-current + preset slots
   ui.text(x, y, "PALETTE", st.accent); y = y + 11
@@ -1345,27 +1557,17 @@ local function draw_browser(uw, uh)
   end
 end
 
+-- the bottom timeline (STUDIO.md §5): the frame thumbnail strip (select / add /
+-- dup / delete / reorder), the onion + fps + ▶play transport, and the tool /
+-- cursor / zoom status. Clip AUTHORING lives in the dock CLIPS panel; play here
+-- previews the active clip (or, with none, the whole strip at fps).
 local function draw_timeline(r)
-  local st = ui.style
+  local st, inp = ui.style, ui.inp
+  local doc = M.doc
   ui.rect(r.x, r.y, r.w, r.h, st.panel)
   ui.rect(r.x, r.y, r.w, 1, st.panel_edge)
-  ui.text(r.x + 4, r.y + (r.h - st.gh) // 2, "TIMELINE", st.text_dim)
-  local mid = "frame 1/1   (animation: phase 4)"
-  if M.tool == "gradient" then
-    local f = M.doc.layers[M.doc.cur_layer].fill
-    mid = f and (f.type .. " fill   drag the handles, tune in the dock")
-            or "drag an axis on the layer to add a gradient fill"
-  elseif M.tool == "select" or M.tool == "move" then
-    if M.float then
-      mid = "floating   Enter stamp   ^C/^X   Del"
-    elseif M.sel then
-      mid = ("%dx%d   V move   ^C/^X/^V   Del   ^D"):format(M.sel.w, M.sel.h)
-    else
-      mid = "drag selects   ^V paste"
-    end
-  end
-  ui.text(r.x + 64, r.y + (r.h - st.gh) // 2, mid, st.text_dim)
-  -- right side: tool (+ shape dims / fill mode) + cursor + zoom status
+
+  -- right-side status (tool + shape dims / fill mode + cursor + zoom)
   local tool = M.alt and "pick" or M.tool
   if tool == "pencil" and M.brush then tool = "stamp" end
   local extra = ""
@@ -1375,10 +1577,73 @@ local function draw_timeline(r)
   elseif SHAPE[tool] then
     extra = M.fill_shapes and "  fill" or "  outl"
   end
-  local dpx, dpy = M.doc_pixel(ui.inp.mx, ui.inp.my)
-  local stat = ("%s%s   %s   %dx"):format(
+  local dpx, dpy = M.doc_pixel(inp.mx, inp.my)
+  local stat = ("%s%s  %s  %dx"):format(
     tool, extra, dpx and (dpx .. "," .. dpy) or "--,--", M.zoom)
-  ui.text(r.x + r.w - #stat * st.gw - 4, r.y + (r.h - st.gh) // 2, stat, st.text)
+  ui.text(r.x + r.w - #stat * st.gw - 4, r.y + 4, stat, st.text)
+
+  -- ---- frame thumbnail strip (top row) ----
+  local th = 22
+  local tw = clamp(floor(th * doc.w / doc.h), 8, 44)
+  local strip_x, strip_y = r.x + 4, r.y + 3
+  local strip_vw = max(60, r.w - 8 - (#stat * st.gw + 12))
+  local maxscroll = max(0, doc.frames * (tw + 2) - strip_vw)
+  if pin(inp.mx, inp.my, strip_x, strip_y, strip_vw, th) and inp.wheel ~= 0 then
+    M.tl_scroll = clamp(M.tl_scroll - inp.wheel * (tw + 2), 0, maxscroll)
+  end
+  M.tl_scroll = clamp(M.tl_scroll, 0, maxscroll)
+  local playhead = M.playing and M.disp_frame() or nil
+  pal.clip(strip_x, strip_y, strip_vw, th)
+  for f = 1, doc.frames do
+    local bx = strip_x + (f - 1) * (tw + 2) - M.tl_scroll
+    if bx + tw > strip_x and bx < strip_x + strip_vw then
+      ui.rect(bx, strip_y, tw, th, { 0.18, 0.18, 0.21, 1 }) -- transparency backdrop
+      if M.thumbs and M.thumbs[f] then
+        pal.quad(bx, strip_y, tw, th, 1, 1, 1, 1, M.thumbs[f], 0, 0, 1, 1)
+      end
+      local border = (f == doc.cur_frame) and st.accent
+        or (f == playhead and { 0.5, 0.9, 0.6, 1 }) or st.panel_edge
+      ui.frame_rect(bx, strip_y, tw, th, border)
+      if ui.hit("tl_f" .. f, bx, strip_y, tw, th) then
+        M.playing, doc.cur_frame, M.dirty = false, f, true
+      end
+    end
+  end
+  pal.clip()
+
+  -- ---- transport row ----
+  local cy = r.y + th + 6
+  local bx = r.x + 4
+  local function btn(label, w, id)
+    local clicked = ui.button(label, { rect = { bx, cy, w, 13 }, id = id })
+    bx = bx + w + 2
+    return clicked
+  end
+  if btn("+f", 18, "tl_add") then sprite.add_frame(doc); M.dirty = true end
+  if btn("dup", 22, "tl_dup") then sprite.dup_frame(doc, doc.cur_frame); M.dirty = true end
+  if btn("del", 22, "tl_del") then sprite.delete_frame(doc, doc.cur_frame); M.dirty = true end
+  if btn("<", 13, "tl_l") then sprite.move_frame(doc, doc.cur_frame, -1); M.dirty = true end
+  if btn(">", 13, "tl_r") then sprite.move_frame(doc, doc.cur_frame, 1); M.dirty = true end
+  ui.text(bx + 2, cy + 3, ("f %d/%d"):format(doc.cur_frame, doc.frames), st.text)
+  bx = bx + 2 + 8 * st.gw
+
+  local function toggle(label, w, on, id)
+    local cl, ht = ui.hit(id, bx, cy, w, 13)
+    ui.rect(bx, cy, w, 13, on and st.widget_active or (ht and st.widget_hot or st.widget))
+    ui.frame_rect(bx, cy, w, 13, on and st.accent or st.panel_edge)
+    ui.text(bx + (w - #label * st.gw) // 2, cy + 3, label, on and st.accent or st.text)
+    bx = bx + w + 2
+    return cl
+  end
+  if toggle("onion", 38, M.onion, "tl_onion") then M.onion = not M.onion; M.dirty = true end
+  local nv, ch = ui.slider("fps", M.fps, 1, 30,
+    { rect = { bx, cy, 86, 13 }, id = "tl_fps", label_w = 3 * st.gw })
+  if ch then M.fps = nv end
+  bx = bx + 90
+  if toggle(M.playing and "stop" or "play", 38, M.playing, "tl_play") then M.toggle_play() end
+  local clip = M.active_clip()
+  ui.text(bx + 2, cy + 3, clip and (clip.loop .. " " .. clip.name) or "all frames",
+          st.text_dim)
 end
 
 -- ---- per-tick entry (cm.main: after editor.frame, on the ui canvas) ----
@@ -1410,6 +1675,7 @@ function M.frame()
   handle_pan()
   handle_paint(over)
   build_preview()
+  if M.playing then M.dirty = true end -- re-composite the playhead each tick
   if M.dirty or not M.canvas_tex then M.rebuild_tex() end
 
   ui.rect(0, 0, uw, uh, { 0.05, 0.05, 0.07, 1 }) -- opaque base hides the game
