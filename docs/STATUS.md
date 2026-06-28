@@ -9,9 +9,11 @@ golden re-cut, which is deferred — see below). The whole D036 model ships:
 variable-FOV two-target composite (editor chrome at its own scale **around** the
 game viewport), the resize ladder, alt+enter borderless fullscreen (**human-
 approved**), and the **options menu** (Esc) to set resolution/scale/fullscreen
-directly. Layout approved ("it looks correct yes"); two feel passes applied. M8
-is covered by **selftest 22312→22351** (+39: viewport/composite/ladder/mouse-
-split/capture); determinism byte-exact; both linux + windows builds clean. M7
+directly, **now persisted across launches** (video.dat). Layout approved ("it
+looks correct yes"); three feel passes applied (round 3: **Esc opens the options
+menu instead of quitting**, + a menu quit button + persistence). M8 is covered
+by **selftest 22312→22351** (+39: viewport/composite/ladder/mouse-split/capture);
+determinism byte-exact; both linux + windows builds clean. M7
 movement remains FEEL-APPROVED; its deferred items (CW≈26 scale, slice VFX) wait
 on real assets.
 **Done this session (M8.1–M8.6 + capture, all on `main`, selftest 22312→22351,
@@ -72,17 +74,38 @@ api5 table extended (x_capture); nested-subdir module load + deep hot-reload
 verified (the loader watch_adds every required file, dotted names → nested
 paths).
 
+### M8 feedback round 3 (2026-06-28) — `ff1e234`, `929d0e6`
+The human couldn't reach the options menu: Esc still **quit** the game. The
+sandbox bound Esc→`pal.quit()` in `game.step()`, firing alongside `cm.options`'
+own Esc toggle and killing the game before the menu opened. **Fixed** — Esc is
+now engine-reserved for the options menu (like ` for the console); the sandbox
+no longer binds or acts on it. That removed the only keyboard quit, and
+borderless fullscreen has no window-close button, so the options menu gained a
+red **"quit game"** button; it and the window-close (X) now share one
+`cm.main.request_quit()` (a game's `on_quit` hook fires from either). The menu
+also captures the keyboard while open (mirroring the mouse capture) so the
+player doesn't run around behind it. **Options persistence** (the deferred
+follow-up) also landed: resolution / ui-scale / fullscreen save to
+`<project>/video.dat` (`cm.view.save_video`/`load_video`, canonical bytes like
+knobs.dat) and apply before the first frame — interactive sessions only, so
+headless/`--frames`/`--verify`/`--win` keep the fixed FOV (goldens + determinism
+byte-stable; gitignored). selftest 22351; sandbox record→verify byte-exact
+(300f); save/load round-trip + menu render verified headless. The **interactive
+behaviors** (Esc opens not quits; settings persist across a real relaunch) are
+the human's native pass — headless has no window events.
+
 **Still open / deferred**:
 - **`cfg.ui_scale`** default (2× now; D036 says 1×) — the human's taste call,
-  live-tunable + in the options menu. Not blocking.
-- **Options persistence** across launches — a noted follow-up (live-apply works).
+  live-tunable + in the options menu (and now persisted). Not blocking.
 - **Golden suite re-cut** — DEFERRED (D033 + STATUS): the pixel goldens
   (sandbox_idle/tour) are M5-era and would just re-cut again when real art lands
   (M10); the `.ptrace`→`.ctrace` trace re-cut waits on confirming the rename
   (D033, human's call). selftest (22351) is the live net meanwhile.
 
-**Next:** confirm M8 ui_scale taste on win11; the deferred items above; then M9
-(audio) or circle back to M7's asset-gated items (CW≈26 scale via FOV/scale +
+**Next:** native pass on the round-3 interactive fixes (Esc opens the menu /
+doesn't quit; the menu's quit button; settings persist across relaunch) +
+confirm the ui_scale taste on win11; the deferred golden re-cut; then M9 (audio)
+or circle back to M7's asset-gated items (CW≈26 scale via FOV/scale +
 `move.cw/ch`; slice VFX once the editor's particle work lands).
 
 ## This session (2026-06-27) — M7 moveset
