@@ -4,18 +4,36 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M7 movement — mechanically complete + FEEL-APPROVED.** The full
-MapleStory moveset (D035 / GAME.md §4) is built as pure cartridge controller
-policy (no PAL/engine change), deterministic (selftest 22312 + record→verify both
-timelines), every value a live knob. The human signed off after **three live
-feel passes** on win11 ("this feels good") — see the feedback rounds below.
-**Remaining M7 items are deliberately deferred until real assets land**: final
-knob tuning, the **CW≈26 absolute scale** (needs M8 zoom), the **fancy slice
-VFX** (needs the editor's live particle-emitter work), and the **golden re-cut**
-(the placeholder sprite + scale will change, so pinning now would just be re-cut
-again — selftest is the live net meanwhile).
-**Next: M8 — viewport & editor UX (D036)**, which unblocks the zoom (real scale)
-and live VFX authoring; then circle back to close M7's deferred items.
+**Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** The PAL viewport
+foundation + the resize ladder are built, committed, and verified (M8.1–M8.3).
+M7 movement remains mechanically complete + FEEL-APPROVED (3 live win11 passes —
+see the feedback rounds below); its deferred items (CW≈26 scale, slice VFX,
+golden re-cut) still wait on M8 + real assets.
+**Done this session (M8.1–M8.3, all on `main`, selftest 22312→22340, determinism
+byte-exact, goldens unaffected):**
+- **M8.1** `ea7dc9a` — PAL **api 4→5**: `pal.x_fov(w,h)` (the variable game FOV
+  = resizable internal target), `pal.x_window_size()`, plus `x_set_window_size`/
+  `x_set_fullscreen` for the options menu. Additive `x_*` (experimental ns).
+- **M8.2** `f11ab36` — PAL **two-target composite**: `pal.x_ui_target` (a second
+  editor/UI canvas), `pal.x_target("game"|"ui")` routing, `pal.x_compose{…}`
+  (game→sub-rect at integer scale, ui→whole window at its own scale, alpha-over).
+  Mouse events now carry BOTH game-space `x,y` (sim, unchanged) and ui-canvas
+  `ui_x,ui_y` (editor chrome). present() factored into scene_pass + blit_layer.
+- **M8.3** `758dd40` — `cm.view`: the D036 resize **ladder** (scale =
+  max(2,min(⌊W/480⌋,⌊H/270⌋)); FOV = min(480,⌊W/scale⌋)×min(270,⌊H/scale⌋)),
+  applied live only (headless/verify keep the fixed FOV). The game now fills the
+  window with a variable FOV; the editor-on-the-ui-canvas layer is M8.4.
+**Architecture decision (realizing D036)**: the editor-at-1×-around-game-at-2×
+requirement forces a **two-target composite** (game FOV target + higher-res UI
+canvas) — exactly D036's "present into a sub-rect + a separate UI-scale pass".
+That is the M8 rendering model. ADR write-up + ARCHITECTURE api5 table = M8.5.
+**HUMAN CHECKPOINT (open)**: the variable FOV (M8.3) is the first visible M8
+behavior — needs a win11 feel-test (resize the window → FOV crops below 960×540,
+integer-upscales above). And M8.4's **editor layout** (where chrome sits around
+the game viewport, default UI scale) is a taste call before that refactor.
+**Next: M8.4** (editor + dev UI draw into the ui canvas at their own scale; world
+overlay stays game-space; panels hit-test in ui-space) → **M8.6** options menu →
+**M8.5** docs/goldens. Then circle back to close M7's deferred items.
 
 ## This session (2026-06-27) — M7 moveset
 
@@ -163,17 +181,26 @@ Latest build (both fixes) deployed to `C:\temp\cosmic`. **Human-verified
 2026-06-27**: windowed run is perfectly smooth — input releases cleanly, no
 frame spikes from a WSL terminal.
 
-## Next step — M8 (viewport & editor UX, D036), then close M7's deferred items
+## Next step — finish M8 (M8.4 → M8.6 → M8.5), then close M7's deferred items
 
-**M7 feel is signed off** (2026-06-28). Movement is mechanically done, tunable,
-deterministic. Start **M8** next; it unblocks two of M7's deferred items.
+**M8.1–M8.3 are done** (see the Phase block up top: PAL api5 viewport surface +
+two-target composite + the resize ladder). Remaining M8 sub-steps:
 
-1. **M8 — viewport & editor UX (D036)**: variable-FOV internal target,
-   window-resize ladder, editor-only UI scale, movable/resizable game viewport,
-   integer zoom. The **zoom** is what finally delivers the GAME.md §4 anchor
-   (6 CW ≈ ⅓ screen, CW≈26) — at M8 set the zoom + `move.cw/ch` together. Also:
-   the editor's live particle-emitter/logic editing the human wants for the
-   **fancy slice VFX** (orbiting energy blades + trails) — author it then.
+1. **M8.4 — editor + dev UI onto the ui canvas**: route `editor`/`ui`/`console`/
+   `scrub`/`perf` draws through `pal.x_target("ui")`; lay them out against the
+   ui-canvas size (not `gfx_size`, which is now the FOV); panels hit-test in
+   ui-space (`ui_x/ui_y`), the world overlay + prop placement stay game-space
+   (`x/y`); the game becomes a central viewport rect via `pal.x_compose`. This
+   is the big Lua refactor and the visible payoff (editor at 1× around game at
+   2×). **Default layout is a taste call — checkpoint with the human first.**
+2. **M8.6 — options menu**: set resolution/scale/fullscreen directly (a
+   borderless/fullscreen window can't be drag-resized). PAL hooks exist
+   (`x_set_window_size`/`x_set_fullscreen`); needs the menu UI + persistence.
+3. **M8.5 — docs + goldens + multi-file**: ADR for the two-target model, the
+   ARCHITECTURE api5 table, multi-file/subdir hot-reload at scale, golden re-cut.
+   The **zoom** delivers the GAME.md §4 anchor (6 CW ≈ ⅓ screen, CW≈26 at the
+   480-wide FOV) — set the FOV/scale + `move.cw/ch` together here. Plus the
+   editor's live particle-emitter work for the deferred M7 **slice VFX**.
 2. **Then close M7's deferred items** (once scale + assets settle): final knob
    tuning with the real sprite; the slice VFX; and **re-cut the golden suite** —
    committed traces are still dormant `.ptrace` (suite globs `.ctrace`). Plan:
