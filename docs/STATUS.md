@@ -4,8 +4,9 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M10 — the studio (in-engine sprite/animation editor): DESIGN
-CAPTURED, building Phase 1 (foundation).** New direction this session (human
+**Phase**: **M10 — the studio (in-engine sprite/animation editor): Phase 1
+(paint foundation) + Phase 2 (layers / shapes / selection / transforms) BOTH
+COMPLETE; next is Phase 3 (gradients).** New direction this session (human
 spec): build a solid in-editor asset editor — the keystone that unblocks all
 content authoring, so **pulled ahead of M9 (audio)**. M8 (viewport) is
 feature-complete and M7 (movement) is feel-approved; both stand below as history.
@@ -52,24 +53,58 @@ feature-complete and M7 (movement) is feel-approved; both stand below as history
 - **Layout human-approved** ("looks reasonable so far, let's continue"); 3
   screenshots on llm-feed (MVP shell, dock+picker, browser).
 
-**Phase 1 (solid paint foundation) is COMPLETE** — exit met: paint → palette →
-mix colors → save (.spr + baked .png) → bake → reopen all work, verified via the
-`--win` composite capture. The studio is genuinely usable for single-layer
-sprites.
+### M10 Phase 2 — layers / shapes / selection / transforms (this session)
+- **2a DONE** `e8bb594` — **layers**: cm.sprite structural ops (add now undoable,
+  dup with pixels, delete keeps ≥1, reorder), each one undo step via a coarse
+  **snapshot** (the layer stack + frames + cursors, cells cloned); undo/redo
+  unified into one polymorphic `step_apply` (cell-delta vs struct); undo stack
+  **capped at 64**. Studio LAYERS dock (add/dup/del/up/dn, opacity slider, eye+
+  lock toggles, top-down rows, click-select); the dock now **scrolls as a whole**
+  for short windows.
+- **2b DONE** `05a71fd` — **shapes**: line/rect/ellipse (no-AA) with a **live
+  preview** (a transparent scratch cell composited as one overlay quad — no real
+  pixels until release), commit = one undo step. **Shift** constrains (line 45°,
+  rect square, ellipse circle); a **fill/outline** mode (rail glyph or `F`); RMB
+  = secondary; status shows live WxH. Keys L/R/O.
+- **2c DONE** `dc89f4a` — **selection + clipboard**: marquee (`M`, marching
+  ants), **floating selection** — Move (`V`) lifts a selection into a float
+  (cuts a hole) and drags it; it stamps (alpha-masked) on Enter / tool-switch /
+  new marquee. `^C/^X/^V` copy/cut/paste, Del drops/clears, `^D` deselects.
+  cm.paint.copy_region added.
+- **2d DONE** `28ed326` — **transforms + brush**: flip H/V, rotate 90° CW/CCW,
+  scale — on the float (lifting a selection first) else the whole cell (rotate
+  gated to square sprites; whole-sprite resize deferred). **Custom brush** from a
+  selection (sprite-as-brush): the pencil stamps it alpha-masked along the
+  stroke. cm.paint.scale (nearest) added. Menubar cluster fH/fV/rL/rR/x2//2;
+  rail brs/1px; keys H/J flip, `[`/`]` rotate.
+- **selftest 22397→22413** (+16: structural ops/snapshot-undo/cap, copy_region,
+  scale). All green. Each sub-phase has a montage on llm-feed.
 
-**Next step (resume here): Phase 2** (STUDIO.md §10) — **layers** (the layers
-panel: add/dup/delete/reorder, opacity/hide/lock; the doc model + composite
-already handle N layers, needs the UI + structural-op undo), **shapes** (line/
-rect/ellipse with live drag-preview + shift-constrain; cm.paint already has the
-rasterizers), **selection** (marquee + move + cut/copy/paste as a floating
-selection), **transforms** (flip/rotate90/scale on selection/layer), and
-**custom brush from a selection** (sprite-as-brush). Then Phase 3 (gradients —
-the signature feature) → Phase 4 (animation timeline + clips + `cm.anim` + wire
-the sandbox player to a studio-authored sprite, hitting the M10 exit).
+**Phase 1 + Phase 2 are COMPLETE.** The studio now does multi-layer authoring
+with shapes, selection/clipboard, transforms, and a custom brush — verified
+end-to-end via `--win` composite captures (the human's feel/taste pass on the
+live interactions is still welcome but not blocking).
 
-Controls (studio): F2 toggle · B/E/G/I tools · LMB primary / RMB secondary ·
-Alt=eyedropper · X swap · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save ·
-menubar browse/new/save/close · palette slots L=load R=save.
+**Next step (resume here): Phase 3 — gradients** (STUDIO.md §6, the signature
+feature): the **gradient tool** (drag an axis; linear/radial/angular/mirror) and
+a **non-destructive gradient FILL** as an editable object on a layer (type, p0/
+p1 or center+radius+angle, multi-stop ramp, **ordered dither** strength + Bayer,
+**phase**), masked by the layer's existing alpha, with **live on-canvas handles**
+and a panel — bake flattens it, the `.spr` keeps it live. New module `cm.paint`
+gradient eval + dither (selftest-pinned); a `FILL` chunk in the `.spr` (§4). Then
+Phase 4 (animation timeline + clips + `cm.anim` + wire the sandbox player to a
+studio-authored sprite, hitting the M10 exit).
+
+Known small items (Phase 2): **paint is not masked by the selection** (a marquee
+shows but doesn't clip strokes — a later nicety); whole-sprite **resize/rotate of
+a non-square doc** is deferred (transforms there need a selection); the dock can
+need its scroll on very short windows. None blocking.
+
+Controls (studio): F2 toggle · tools B/E/G·L/R/O·I·M(select)/V(move) · LMB
+primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode · Shift constrain
+· wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/^V/^D clipboard ·
+Enter stamp float · Del clear · H/J flip · `[`/`]` rotate · menubar fH/fV/rL/rR/
+x2//2 + browse/new/save/close · rail brs/1px · palette slots L=load R=save.
 
 ---
 
