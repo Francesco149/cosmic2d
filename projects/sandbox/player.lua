@@ -655,11 +655,12 @@ local function build_sprite()
 end
 
 -- load the baked strip + clips (render-only; pcall so a missing asset cleanly
--- falls back to the procedural build_sprite at 11 frames with no clips).
-local function load_sprite()
+-- falls back to the procedural build_sprite at 11 frames with no clips). reload
+-- forces a fresh re-read of the .png texture (the live asset hot-reload path).
+local function load_sprite(reload)
   local proj = cm.main and cm.main.args and cm.main.args.project
   if proj then
-    local ok, tex = pcall(gfx.texture, proj .. "/art/girl.png")
+    local ok, tex = pcall(gfx.texture, proj .. "/art/girl.png", reload)
     if ok and tex then
       return tex, m.max(1, tex.w // FW), anim.load(proj .. "/art/girl.anim"),
              sprite.load_meta(proj .. "/art/girl.meta")
@@ -668,15 +669,33 @@ local function load_sprite()
   return build_sprite(), 11, nil, nil
 end
 
-local sprite_tex, NF, clips, meta = load_sprite()
-local idle_clip = clips and anim.find(clips, "idle")
--- the in-game anchor: the cell pixel pinned to the foot point. From the studio-
--- authored .meta when present (render-only file bytes, D026 — can't perturb a
--- trace); else feet-center of the cell (the procedural fallback's old behavior).
-local PIV_X = meta and meta.pivot.x or FW * 0.5
-local PIV_Y = meta and meta.pivot.y or FH
+-- the render-only sprite assets (the strip texture + frame count + clips + the
+-- .meta-derived foot anchor), held as upvalues and refreshed live when the studio
+-- re-bakes: cm.sprite.save bumps cm.asset_epoch and draw() re-loads when it
+-- advances — closing the paint→see-it-on-the-character loop with no restart. Pure
+-- render-only (D040): nothing here is read by step(), the reload runs in draw
+-- gated on the epoch, and the epoch only moves on a studio save (sim paused, never
+-- in --verify/--frames) — so an asset reload cannot perturb a trace.
+local sprite_tex, NF, clips, meta, idle_clip, PIV_X, PIV_Y
+local asset_epoch
+
+local function refresh_sprite()
+  asset_epoch = cm.asset_epoch or 0
+  sprite_tex, NF, clips, meta = load_sprite(true) -- reload: re-read the baked .png
+  idle_clip = clips and anim.find(clips, "idle")
+  -- the in-game anchor: the cell pixel pinned to the foot point. From the studio-
+  -- authored .meta when present (render-only file bytes, D026 — can't perturb a
+  -- trace); else feet-center of the cell (the procedural fallback's old behavior).
+  PIV_X = meta and meta.pivot.x or FW * 0.5
+  PIV_Y = meta and meta.pivot.y or FH
+end
+
+refresh_sprite() -- initial load (also seeds asset_epoch from cm.asset_epoch)
 
 function M.draw()
+  -- live asset hot-reload (render-only): a studio re-bake bumped cm.asset_epoch,
+  -- so pull the fresh strip/clips/meta before drawing. No-op in the common case.
+  if (cm.asset_epoch or 0) ~= asset_epoch then refresh_sprite() end
   local k = state.doc.knobs.move
   local feel = state.doc.knobs.feel
   local x, y = buf:f32(O.x), buf:f32(O.y)

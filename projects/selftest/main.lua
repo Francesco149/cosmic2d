@@ -1922,6 +1922,40 @@ local function t_anim()
         "anim: find by name")
 end
 
+-- live asset hot-reload (M10 Phase 5): cm.sprite.save bumps the render-only
+-- cm.asset_epoch (a running game watches it to re-load baked art), and
+-- cm.gfx.texture(path, true) re-reads + refreshes the memoized texture in place,
+-- keeping the old one if the re-read fails. Render-only — no determinism surface.
+local function t_asset_reload()
+  local sprite = cm.require("cm.sprite")
+  local gfx = cm.require("cm.gfx")
+  local paint = cm.require("cm.paint")
+  local RED = paint.pack(255, 32, 64)
+  local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_reload.spr"
+  local png = (tmp:gsub("%.spr$", ".png"))
+
+  -- a successful save advances the epoch
+  local d = sprite.new(8, 6)
+  paint.set(sprite.cell(d), 0, 0, RED)
+  local e0 = cm.asset_epoch or 0
+  check(sprite.save(d, tmp) == true, "asset: save ok")
+  check((cm.asset_epoch or 0) == e0 + 1, "asset: save bumps cm.asset_epoch")
+
+  -- the baked strip loads; reload refreshes the SAME table after the strip grows
+  local t = gfx.texture(png)
+  check(t and t.id and t.w == 8 and t.h == 6, "asset: texture loads the baked strip")
+  sprite.add_frame(d) -- two frames now → the strip doubles to 16 wide
+  check(sprite.save(d, tmp) == true, "asset: re-save (grown strip) ok")
+  local t2 = gfx.texture(png, true)
+  check(t2 == t, "asset: reload refreshes the same memoized table in place")
+  check(t.w == 16 and t.h == 6, "asset: reload re-reads the grown strip")
+
+  -- a failed re-read keeps the current texture (truncate so png_read fails)
+  check(pal.write_file(png, "") == true, "asset: truncate the png")
+  local t3 = gfx.texture(png, true)
+  check(t3 == t and t.w == 16, "asset: a failed reload keeps the old texture")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1951,6 +1985,7 @@ function game.init()
   t_grad()
   t_sprite()
   t_anim()
+  t_asset_reload()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

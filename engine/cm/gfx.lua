@@ -20,16 +20,34 @@ function M.layer(mul_x, mul_y)
   pal.camera(cam_x * mul_x, cam_y * (mul_y or mul_x))
 end
 
--- load (once) a PNG from the project/engine tree as a texture
-function M.texture(path)
+-- load (memoized by path) a PNG from the project/engine tree as a texture.
+-- With reload=true (the live asset hot-reload path — a studio re-bake), re-read
+-- the file and refresh the SAME {id,w,h} table in place so every holder updates;
+-- the stale GPU texture is freed (SDL_GPU defers the release, so it's safe even
+-- if it was sampled this frame — gfx.c) rather than leaked, since a session can
+-- save many times and slots are finite. A re-read that fails keeps the current
+-- texture instead of erroring. All render-only; none of this is sim state.
+function M.texture(path, reload)
   local t = textures[path]
-  if t then return t end
+  if t and not reload then return t end
   local bytes, err = pal.read_file(path)
-  if not bytes then error("cm.gfx.texture: " .. path .. ": " .. err, 2) end
+  if not bytes then
+    if t then return t end -- reload of a now-missing file: keep what we have
+    error("cm.gfx.texture: " .. path .. ": " .. err, 2)
+  end
   local pix, w, h = pal.png_read(bytes)
-  if not pix then error("cm.gfx.texture: " .. path .. ": " .. w, 2) end
-  t = { id = pal.tex_create(w, h, pix), w = w, h = h }
-  textures[path] = t
+  if not pix then
+    if t then return t end -- reload of a now-corrupt file: keep what we have
+    error("cm.gfx.texture: " .. path .. ": " .. w, 2)
+  end
+  local id = pal.tex_create(w, h, pix)
+  if t then
+    if t.id then pal.tex_free(t.id) end -- drop the stale GPU texture
+    t.id, t.w, t.h = id, w, h
+  else
+    t = { id = id, w = w, h = h }
+    textures[path] = t
+  end
   return t
 end
 

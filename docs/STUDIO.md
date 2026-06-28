@@ -71,6 +71,21 @@ Per-project: assets live in `<project>/art/`. The sandbox gets
 the source travels in the repo, the baked outputs are the build product (and
 can be regenerated from source by a headless `--bake` later).
 
+**Live reload on save** (closes the paint→see-it-on-the-character loop). A
+successful `cm.sprite.save` bumps a render-only counter `cm.asset_epoch` (a
+sibling of `cm.code_epoch`, on the `cm` root). A running game watches it and
+re-loads the baked `.png`/`.anim`/`.meta` when it advances — so painting in the
+F2 studio and hitting Ctrl+S updates the in-game sprite with no restart
+(`cm.gfx.texture(path, true)` re-uploads the strip in place, freeing the old GPU
+texture). It is **pure render-only** (the §1 payoff): the epoch only ever moves
+on a save (the sim is paused in the studio, and `--verify`/`--frames` never open
+it), and the game reads it in `draw` only — so an asset reload can never perturb
+a trace. The consuming pattern lives in the cartridge (`player.lua`
+`refresh_sprite`), not the engine (D030): the engine just rings the bell. The
+in-process save signal covers the studio loop; an *external* writer (a separate
+`--bake` process editing `art/` while the game runs) would additionally want the
+file-watcher path — a documented follow-up, not needed for the F2 loop.
+
 ## 3. The document model
 
 The in-memory editing model (and the on-disk `.spr` mirror it):

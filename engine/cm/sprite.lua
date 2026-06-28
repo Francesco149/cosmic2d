@@ -751,6 +751,13 @@ function M.save(doc, path)
   if #doc.clips > 0 then anim.save(with_ext(path, ".anim"), doc.clips) end
   M.save_meta(with_ext(path, ".meta"), doc) -- pivot (+ slices) the game reads
   doc.path, doc.dirty = path, false
+  -- signal live asset hot-reload (render-only, D040): a running game watches
+  -- cm.asset_epoch and re-loads the baked .png/.anim/.meta when it advances, so a
+  -- studio paint→save shows on the character with no restart. It can't perturb a
+  -- trace: the bump fires only from a save (the sim is paused in the studio, and
+  -- --verify/--frames never open it), and the game reads the epoch in draw only.
+  -- See projects/sandbox/player.lua:refresh_sprite for the consumer.
+  cm.asset_epoch = (cm.asset_epoch or 0) + 1
   return true
 end
 

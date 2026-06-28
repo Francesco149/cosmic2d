@@ -20,7 +20,12 @@ local registry = {} -- name -> {name,path,source,hash,mtime,table,special,loadin
 local project_root
 local bundle_mode = false -- restored-snapshot code active: disk reload paused
 
-cm = { code_epoch = 0 }
+-- two render-only reload signals on the root table (survive every reload,
+-- reset only on VM reboot): code_epoch bumps on each hot reload, asset_epoch
+-- on each studio asset save (cm.sprite.save). Consumers read them to drop
+-- render caches / re-load baked art — never sim state, so they can't perturb
+-- a trace (the bumps fire only live, the reads only in draw).
+cm = { code_epoch = 0, asset_epoch = 0 }
 
 -- the hot-reload poll checks file mtimes 4x/s; pal.watch_mtime reads a cache
 -- the PAL's watcher thread refreshes off the main thread, so the poll never

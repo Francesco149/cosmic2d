@@ -6,10 +6,11 @@
 **Date**: 2026-06-28
 **Phase**: **M10 — the studio (in-engine sprite/animation editor): Phases 1–4 ALL
 COMPLETE (paint · layers/shapes/selection/transforms · gradients · animation +
-the M10 exit proof). Phase 5 IN PROGRESS — 5a pivots + 5b named slices DONE
-(studio tools + a `.meta` sidecar + the game anchors the pivot; D041),
-`record→verify` byte-exact; next is asset hot-reload / the procedural sprite
-generator / headless `--bake`.**
+the M10 exit proof). Phase 5 IN PROGRESS — 5a pivots + 5b named slices + 5c asset
+hot-reload DONE (studio tools + a `.meta` sidecar + the game anchors the pivot,
+D041; and a studio save now live-reloads the in-game sprite — the paint→see-it
+loop is closed), `record→verify` byte-exact; next is the procedural sprite
+generator / headless `--bake` / per-frame pivot+slice keys.**
 New direction this session (human spec): build a solid in-editor asset editor —
 the keystone that unblocks all content authoring, so **pulled ahead of M9
 (audio)**. M8 (viewport) is feature-complete and M7 (movement) is feel-approved;
@@ -162,18 +163,18 @@ clip-animated sprite with `record→verify` byte-exact. The remaining M10 exit
 human's taste/usage pass on the now-complete tool, not an engine task.
 
 **Next step (resume here): Phase 5 — continue** (STUDIO.md §10; **5a pivots + 5b
-slices are DONE this session**, see the Phase 5 section above). Remaining,
-none blocking — pick by what content authoring needs next:
-**asset hot-reload** (the game refreshes its textures/clips when a `.spr` is
-saved — needs a `pal` tex-update or a re-`texture` path + a save signal; this
-closes the "paint → see it on the character" loop, the natural sequel to pivots),
+slices + 5c asset hot-reload are DONE this session**, see the Phase 5 sections
+above — the editor loop is now closed). Remaining, none blocking — pick by what
+content authoring needs next:
+**headless `--bake`** (regenerate `art/*.png`+`.anim`+`.meta` from `.spr` without
+the studio, so the baked outputs need not be committed — pairs naturally with the
+hot-reload that just landed: an external `--bake` while the game runs would then
+also want the file-watcher reload path noted in 5c),
 **per-frame pivot/slice keys** (the deferred half of 5a/5b — extend `.meta` + the
 HEAD/SLCE schema, readers stay back-compatible), an optional indexed/palette-swap
 mode, the **procedural sprite generator** (noise/shape/gradient/bevel/blend —
-M10's other half, feeding particles/liquids/dust), the **LUT post pass** +
-palette/LUT editor, and **headless `--bake`** (regenerate `art/*.png`+`.anim`+
-`.meta` from `.spr` without the studio, so the baked outputs need not be
-committed). Good `/clear` point.
+M10's other half, feeding particles/liquids/dust), and the **LUT post pass** +
+palette/LUT editor. Good `/clear` point.
 
 Known small items: the **baked `art/girl.png`+`.anim`+`.meta` are committed** (the
 game loads them at boot) — they become regenerable build product once Phase 5's
@@ -236,13 +237,43 @@ deferred (a documented `.meta`/schema extension when a weapon must track a hand)
   baked, and queryable (`find_slice`) but **not yet consumed** — the slice VFX /
   weapon attach that reads them is the deferred M7/particle-emitter work.
 
+### M10 Phase 5c — asset hot-reload (this session) — closes the editor loop
+The keystone that makes the studio a real authoring tool: **paint in F2 → Ctrl+S
+→ the in-game sprite updates live, no restart**. End to end, pure render-only
+(D040 §1 — sprites carry no determinism tax), so it cannot perturb a trace.
+- **The signal**: `cm.sprite.save` bumps `cm.asset_epoch` — a render-only counter
+  on the `cm` root, the asset-side sibling of `cm.code_epoch` (boot.lua). It only
+  ever moves on a save (the studio pauses the sim, and `--verify`/`--frames` never
+  open it); consumers read it in **draw only** so it can't enter a trace.
+- **The re-texture path**: `cm.gfx.texture(path, reload)` — `reload=true` re-reads
+  the PNG and refreshes the memoized `{id,w,h}` **in place** (every holder
+  updates), **freeing** the old GPU texture (SDL_GPU defers the release so it is
+  safe mid-frame; the 256-slot cap makes freeing — not leaking — right for
+  repeated saves) and **keeping** the current texture if the re-read fails.
+- **The consumer is the cartridge** (D030 — the engine rings the bell, the game
+  decides what to reload): `player.lua` `refresh_sprite()` re-derives strip / NF /
+  clips / `.meta` pivot when `cm.asset_epoch` advances, checked atop `M.draw`.
+  `M.step` is **untouched** so the sim is byte-identical.
+- **Proof**: selftest **22498->22506** (+8: save bumps the epoch; reload refreshes
+  in place after the strip grows; a failed reload keeps the old texture). The
+  sandbox `sandbox_idle` render is **byte-identical** to the pre-change tree (git
+  stash A/B); **KITCHECK 470f + TOUR 820f `record->verify` byte-exact**. A scripted
+  headless save->reload (recolor girl.spr magenta via the `cm.sprite.save` path,
+  the same one the studio's Ctrl+S takes) flips the in-game character live --
+  before/after montage on llm-feed; the recolor was reverted, committed art clean.
+- **Scope note**: the in-process save signal serves the F2 loop. An *external*
+  writer (a separate `--bake` editing `art/` while the game runs) would also want
+  a file-watcher path -- a documented follow-up (needs wall-clock mtime polling
+  gated out of capped/verify runs, like `cm.reload`), not needed for the loop.
+
 **Launch**: `bin/cosmic --studio` (drops into the project's asset browser;
 project defaults to projects/sandbox) — or `F2` in any running session. The
 `--studio` flag is live/capture-only (gated out of `--verify`).
 
 Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
 V(move)·**P(pivot)**·**K(slice)** · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
-Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/
+Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save (**live-
+reloads the in-game sprite — no restart**) · ^C/^X/
 ^V/^D clipboard (**paste → new layer**) · Enter stamp float · Del clear · with a
 marquee, paint/fill/shape **clip to the selection** · H/J flip · `[`/`]` rotate ·
 menubar fH/fV/rL/rR/x2//2 + browse/new/save/close · rail brs/1px · palette slots
