@@ -91,8 +91,16 @@ Document
   clips[]         animation clips (§7)
       name, frames=[{frame, dur}], loop="loop"|"once|"pingpong"
   fills[]         non-destructive gradient fills (§6), each bound to a layer
-  pivot           {x,y} per-doc anchor (later: per-frame)  -- in-game origin
+  slices[]        named rects (Phase 5) — {name,x,y,w,h}; attach/hit regions
+  pivot           {x,y} per-doc anchor (Phase 5; later per-frame)  -- in-game origin
 ```
+
+**Pivot + slices** (Phase 5, implemented) are the sprite's runtime *geometry*:
+the pivot is the cell pixel the game pins to an entity's position (feet on the
+ground, later a hand on a weapon); a slice is a named rectangle the game looks up
+by name (attach point, hit/hurt box, fx origin). Both are per-doc for v1
+(per-frame keying is a follow-up, §11). They live in the editable `.spr` and bake
+into a `.meta` sidecar the game reads (§4, D041).
 
 **Pixel storage.** A cell is `w*h*4` bytes RGBA8. A 32×32 sprite × 11 frames ×
 4 layers ≈ 180 KB; a 128×128 portrait × 4 layers ≈ 256 KB — all trivially small.
@@ -126,6 +134,7 @@ format evolves forward-compatibly). Magic `CSPR`:
 | `LAYR` | one per layer: name, opacity, flags, then `frames` cells of pixels |
 | `CLIP` | animation clips (names, sequences, durations, loop modes) |
 | `FILL` | non-destructive gradient fill defs (§6) |
+| `SLCE` | named slices (Phase 5): per slice a name + rect (x,y,w,h) |
 | `TAIL` | integrity check (layer/frame counts) |
 
 v1 stores cells **raw RGBA8**. Pixel art is mostly transparent, so PNG-encoding
@@ -134,6 +143,14 @@ documented v2 upgrade behind a `LAYR` version bump, readers staying
 back-compatible. This is engine/asset-class bytes (not a PAL primitive), so it
 has more freedom than the trace format, but reusing `cm.chunk` keeps it
 consistent and skip-tolerant.
+
+**Baked sidecars the game reads** (D041). `M.save` bakes, beside `<name>.png`
+(the flattened strip): `<name>.anim` (the clip table, when the doc has clips) and
+`<name>.meta` (the runtime *geometry* — pivot + slices — as canonical doc bytes,
+`cm.state.canon`). The `.spr` is the editable source; the sidecars are the
+build product the game adopts at boot (`cm.gfx.texture` + `cm.anim.load` +
+`cm.sprite.load_meta`), exactly the boot-time-or-explicit asset class as
+`map.dat`/`knobs.dat` — never sim input, so consuming them is render-only.
 
 ## 5. The studio UX — a dedicated full-window mode
 
@@ -333,9 +350,11 @@ is reserved like `F1`/`F3`/`` ` ``; the lockdown disables it with the rest.
 ## 10. Build plan (phased; "solid paint foundation" first, per the human)
 
 > **Status (2026-06-28): Phases 1–4 DONE** (paint · layers/shapes/selection/
-> transforms · gradients · animation), and the **M10 exit proof is hit** — the
-> sandbox player draws a studio-authored, clip-animated sprite with
-> `record→verify` byte-exact. **Phase 5 is next.** Live tracker: STATUS.md.
+> transforms · gradients · animation); the **M10 exit proof is hit**. **Phase 5
+> in progress**: **5a pivots** + **5b named slices** DONE (studio tools + the
+> `.meta` sidecar + the game anchors the pivot; D041), `record→verify` byte-exact.
+> Remaining Phase 5: asset hot-reload, procedural generator, LUT, headless
+> `--bake`. Live tracker: STATUS.md.
 
 **Phase 1 — foundation / MVP (the first deliverable).**
 - 1a `cm.paint` rasterizers (pencil/eraser/fill set) + selftest KATs.
@@ -362,8 +381,11 @@ masked by layer alpha (§6).
 runtime loader; **wire the sandbox player to a studio-authored sprite + clips**
 (replaces `build_sprite`; `record→verify` stays byte-exact). Hits the M10 exit.
 
-**Phase 5 — polish & the rest of M10.** asset hot-reload (game refreshes
-textures on save), pivots/origins, frame tags/slices, a brush palette, optional
+**Phase 5 — polish & the rest of M10.** *Done:* **5a pivots/origins** (the Pivot
+tool + the `.meta` sidecar; the game anchors the authored pivot pixel to the foot
+point) and **5b named slices** (the Slice tool + SLICES panel + the `SLCE` chunk;
+runtime `find_slice`) — both per-doc, D041. *Remaining:* asset hot-reload (game
+refreshes textures on save), per-frame pivot/slice keys, a brush palette, optional
 indexed/palette-swap mode, the **procedural sprite generator**
 (noise/shape/gradient/bevel/blend, M10's other half) feeding particles/liquids/
 dust, the **LUT post pass** + palette/LUT editor, headless `--bake`.
@@ -381,7 +403,9 @@ human's taste check (the human is the taste gate, not the smoke test).
 - **In-world live preview** (paint and see it on the character) needs asset
   hot-reload (Phase 5); the studio's own canvas + preview pane cover authoring
   meanwhile.
-- **Pivot granularity** (per-doc vs per-frame origins) — per-doc first; per-frame
-  when a weapon needs to track a hand.
+- **Pivot + slice granularity** (per-doc vs per-frame) — per-doc shipped (Phase
+  5a/5b, D041); **per-frame keys still open** for when a weapon must track a hand
+  across the animation (extends `.meta` + the `HEAD`/`SLCE` schema, readers stay
+  back-compatible).
 - **Tile mode** (canvas repeats around itself for seamless tiles) — easy add
   once the canvas exists; slot in Phase 2/3 if tile authoring comes up.

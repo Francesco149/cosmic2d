@@ -1066,3 +1066,36 @@ files adopted at boot like `map.dat`/`knobs.dat` (boot-time-only by rule).
 per-cell PNG compression / a `pal.x_tex_update` in-place upload is wanted for big
 canvases (both additive, neither blocks); or indexed-palette authoring is
 promoted from optional to a first-class mode.
+
+## D041 — sprite runtime metadata: pivot + slices in a `.meta` sidecar (M10 Phase 5, 2026-06-28)
+
+A sprite needs more than pixels and clips at draw time: a **pivot** (the cell
+pixel the game pins to an entity's position — feet on the ground, later a hand on
+a weapon) and **named slices** (rectangles the game looks up by name — attach
+points, hit/hurt boxes, fx origins). Both live in the editable `.spr` (pivot in
+the `HEAD` chunk, slices in a new `SLCE` chunk) and **bake into a third sidecar
+beside the `.png`/`.anim`: `<name>.meta`** — the sprite's runtime geometry as
+canonical doc bytes (`cm.state.canon`, exactly like `.anim`/`knobs.dat`). The
+game reads it via `cm.sprite.load_meta` and queries `cm.sprite.find_slice`. **v1
+is per-doc** (one pivot, doc-level slices); **per-frame keys are a documented
+follow-up** (when a weapon must track a hand across frames).
+**Why**: a separate sidecar keeps `cm.anim` purely about animation and the
+flattened `.png` purely about pixels — three small files, each one concern,
+each forward-compatibly versioned. The game already loads the baked `.png` +
+`.anim`; `.meta` is the same boot-time-or-explicit asset class (D026), so
+**consuming the pivot is render-only** — `player.lua` maps the authored pivot
+pixel onto the foot point in `draw()`, which is not sim and cannot perturb a
+trace (the §1 payoff again; KITCHECK + TOUR `record→verify` stayed byte-exact).
+Reusing `cm.chunk` for `SLCE` (skip-tolerant) and `cm.state.canon` for `.meta`
+keeps both consistent with the rest of the asset/doc formats. Per-doc-first
+mirrors the pivot-granularity call already flagged in STUDIO.md §11: ship the
+80% case (a static anchor / a roughly pose-stable hurtbox) and add per-frame
+keying only when a real weapon needs it.
+**Iron rule held**: render-only, boot-loaded, never sim state, never snapshotted,
+never traced — the studio authors it, the game adopts the baked bytes like
+`map.dat`. The studio's pivot/slice tools are dev-only (`F2`, gated out of
+`--verify`).
+**Revisit if**: per-frame pivot/slice keying is needed (extend `.meta` + the
+`SLCE`/`HEAD` schema, readers stay back-compatible); or the three sidecars want
+folding into one container; or `headless --bake` lands (then `.png`/`.anim`/
+`.meta` all become regenerable build product, no longer committed).

@@ -4,11 +4,12 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M10 — the studio (in-engine sprite/animation editor): Phases 1
-(paint foundation), 2 (layers/shapes/selection/transforms), 3 (gradients), and
-4 (animation — timeline/clips/`cm.anim` + the M10 exit proof) ALL COMPLETE; next
-is Phase 5 (polish: asset hot-reload, pivots, the procedural sprite generator,
-headless `--bake`).**
+**Phase**: **M10 — the studio (in-engine sprite/animation editor): Phases 1–4 ALL
+COMPLETE (paint · layers/shapes/selection/transforms · gradients · animation +
+the M10 exit proof). Phase 5 IN PROGRESS — 5a pivots + 5b named slices DONE
+(studio tools + a `.meta` sidecar + the game anchors the pivot; D041),
+`record→verify` byte-exact; next is asset hot-reload / the procedural sprite
+generator / headless `--bake`.**
 New direction this session (human spec): build a solid in-editor asset editor —
 the keystone that unblocks all content authoring, so **pulled ahead of M9
 (audio)**. M8 (viewport) is feature-complete and M7 (movement) is feel-approved;
@@ -160,19 +161,26 @@ clip-animated sprite with `record→verify` byte-exact. The remaining M10 exit
 *criterion* (PLAN: the human authors a real character sprite + a portrait) is the
 human's taste/usage pass on the now-complete tool, not an engine task.
 
-**Next step (resume here): Phase 5 — polish & the rest of M10** (STUDIO.md §10):
+**Next step (resume here): Phase 5 — continue** (STUDIO.md §10; **5a pivots + 5b
+slices are DONE this session**, see the Phase 5 section above). Remaining,
+none blocking — pick by what content authoring needs next:
 **asset hot-reload** (the game refreshes its textures/clips when a `.spr` is
-saved — needs a `pal` tex-update or a re-`texture` path + a save signal),
-**pivots/origins** + frame tags/slices, an optional indexed/palette-swap mode,
-the **procedural sprite generator** (noise/shape/gradient/bevel/blend — M10's
-other half, feeding particles/liquids/dust), the **LUT post pass** + palette/LUT
-editor, and **headless `--bake`** (regenerate `art/*.png`+`.anim` from `.spr`
-without the studio, so the baked outputs need not be committed). None blocking;
-pick by what content authoring needs next. Good `/clear` point.
+saved — needs a `pal` tex-update or a re-`texture` path + a save signal; this
+closes the "paint → see it on the character" loop, the natural sequel to pivots),
+**per-frame pivot/slice keys** (the deferred half of 5a/5b — extend `.meta` + the
+HEAD/SLCE schema, readers stay back-compatible), an optional indexed/palette-swap
+mode, the **procedural sprite generator** (noise/shape/gradient/bevel/blend —
+M10's other half, feeding particles/liquids/dust), the **LUT post pass** +
+palette/LUT editor, and **headless `--bake`** (regenerate `art/*.png`+`.anim`+
+`.meta` from `.spr` without the studio, so the baked outputs need not be
+committed). Good `/clear` point.
 
-Known small items: the **baked `art/girl.png`+`.anim` are committed** (the game
-loads them at boot) — they become regenerable build product once Phase 5's
-headless `--bake` lands; `genart.lua` re-bakes meanwhile. The studio **play
+Known small items: the **baked `art/girl.png`+`.anim`+`.meta` are committed** (the
+game loads them at boot) — they become regenerable build product once Phase 5's
+headless `--bake` lands; `genart.lua` re-bakes meanwhile. **Slices are authored +
+baked + queryable (`find_slice`) but not yet consumed by the game** (the slice
+VFX / weapon-attach that would read them is the deferred M7/particle work);
+**pivot/slices are per-doc** (per-frame keys deferred). The studio **play
 preview uses a wall clock** (`pal.time_ns`, dev-only) — faithful to how the game
 runs a clip but not frame-stepped; **onion shows only the immediate neighbors**
 (±1); **clip editing isn't separately undoable** (only frame ops are — clips
@@ -197,12 +205,43 @@ Two asks from the human's first real use ("feels great so far"):
   step). selftest +3. Verified by `--win` captures (clipped fill, paste→2 layers,
   merge→1).
 
+### M10 Phase 5 — pivots + slices (this session) — `082eb0b`, `7cf0b29`
+The keystone authoring metadata, end to end (D041): the sprite's runtime
+*geometry* the game needs at draw time. Both per-doc for v1; per-frame keys
+deferred (a documented `.meta`/schema extension when a weapon must track a hand).
+- **5a pivots DONE** `082eb0b` — the doc already carried a per-doc pivot (feet-
+  center default) in the `.spr` HEAD, but nothing set it, baked it, or used it.
+  Now: `cm.sprite` pivot rides struct-undo + `set_pivot` (clamped, no-op-safe);
+  a new **`.meta` sidecar** (pivot — and 5b slices — as canonical doc bytes,
+  `cm.state.canon`, like `.anim`) baked by `save` beside `.png`/`.anim`, with
+  `load_meta` for the game. `cm.studio` **Pivot tool (P)** — drag the on-canvas
+  crosshair (one struct-undo step/drag); always-visible crosshair; status
+  `pivot @x,y`. **player.lua** anchors the authored pivot pixel to the foot point
+  (was a hardcoded bottom-edge), mirrored on facing, squash/stretch scaling
+  around it — render-only (file bytes, D026) → can't perturb a trace. genart set
+  girl's feet pivot (8,22) + re-baked (.png/.anim byte-identical; .spr HEAD +
+  new .meta). selftest +10.
+- **5b slices DONE** `7cf0b29` — a slice = a named rect (attach point / hit box /
+  fx origin). `cm.sprite` `doc.slices` + raw/add/delete/set_slice_rect (clamped,
+  undoable, ride struct-undo); the **`SLCE` chunk** in `.spr`; slices in `.meta`;
+  `find_slice(doc|meta|array, name)` for the runtime. `cm.studio` **Slice tool
+  (K)** — drag a rect to set the active slice's region (creates one if none; one
+  undo step/drag); a **SLICES dock panel** (list/select/+slice/del/inline
+  rename); on-canvas magenta rects (faint always, bright+labelled with the tool,
+  selected accented). No game/sim surface touched. selftest +10.
+- **selftest 22478→22498** (+20). **Determinism proven**: KITCHECK 470f + TOUR
+  820f `record→verify` byte-exact (pivot consumption is render-only). Three
+  screenshots on llm-feed (studio pivot crosshair · the anchored sprite in-game ·
+  studio named slices). The game **consumes the pivot**; slices are authored,
+  baked, and queryable (`find_slice`) but **not yet consumed** — the slice VFX /
+  weapon attach that reads them is the deferred M7/particle-emitter work.
+
 **Launch**: `bin/cosmic --studio` (drops into the project's asset browser;
 project defaults to projects/sandbox) — or `F2` in any running session. The
 `--studio` flag is live/capture-only (gated out of `--verify`).
 
 Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
-V(move) · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
+V(move)·**P(pivot)**·**K(slice)** · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
 Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/
 ^V/^D clipboard (**paste → new layer**) · Enter stamp float · Del clear · with a
 marquee, paint/fill/shape **clip to the selection** · H/J flip · `[`/`]` rotate ·
@@ -215,7 +254,11 @@ bake=stamp to pixels, clear=remove. **Timeline** (bottom): the frame thumbnail
 strip (click=select, +f/dup/del/`<`/`>`), onion toggle, fps, ▶play/■stop (previews
 the active clip or the whole strip). **CLIPS** dock panel: +clip/del, click a row
 to make it active, rename, loop/once/pingpong, the sequence chips (click=select
-entry, RMB=remove, "+ add frame N"), per-entry dur.
+entry, RMB=remove, "+ add frame N"), per-entry dur. **Pivot (P)**: drag the
+yellow crosshair to set the in-game anchor (baked to `.meta`; the game pins it to
+the feet). **Slice (K)**: drag a rect → a named region; the **SLICES** dock panel
+lists/selects/renames/deletes them (attach points / hit boxes; baked to `.meta`,
+queryable via `cm.sprite.find_slice`).
 
 ---
 
