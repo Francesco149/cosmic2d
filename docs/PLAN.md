@@ -169,7 +169,12 @@ needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
   editor. Begin upgrading placeholders → real Wadanohara-style assets (human
   authors, agent integrates). *Exit*: the human authors a character sprite +
   portrait in-engine; particles/liquids/dust are procedural; the LUT dials each
-  area's look.
+  area's look. **Status (2026-06-28): the sprite/animation editor is DONE —
+  Phases 1–4 (paint · layers/shapes/selection/transforms · gradients ·
+  animation) shipped, and the exit *proof* is hit (the sandbox player draws a
+  studio-authored, clip-animated sprite, `record→verify` byte-exact). Phase 5
+  (procedural generator · LUT pass · asset hot-reload · headless `--bake`) +
+  the human authoring real assets remain.** See STATUS.md.
 - **M11 — rotational physics & destruction**: a box2d-lite-style rigid-body
   solver — deterministic, born a versioned PAL kernel (`name@1`, contract rule
   4) — plus breakables, knock-over props, throw. *Exit*: throwing/knocking

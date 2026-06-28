@@ -325,6 +325,11 @@ is reserved like `F1`/`F3`/`` ` ``; the lockdown disables it with the rest.
 
 ## 10. Build plan (phased; "solid paint foundation" first, per the human)
 
+> **Status (2026-06-28): Phases 1–4 DONE** (paint · layers/shapes/selection/
+> transforms · gradients · animation), and the **M10 exit proof is hit** — the
+> sandbox player draws a studio-authored, clip-animated sprite with
+> `record→verify` byte-exact. **Phase 5 is next.** Live tracker: STATUS.md.
+
 **Phase 1 — foundation / MVP (the first deliverable).**
 - 1a `cm.paint` rasterizers (pencil/eraser/fill set) + selftest KATs.
 - 1b `cm.sprite` doc model, `.spr` save/load, bake-to-PNG, undo.

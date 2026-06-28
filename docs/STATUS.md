@@ -5,8 +5,10 @@
 
 **Date**: 2026-06-28
 **Phase**: **M10 — the studio (in-engine sprite/animation editor): Phases 1
-(paint foundation), 2 (layers / shapes / selection / transforms), and 3
-(gradients — the signature feature) ALL COMPLETE; next is Phase 4 (animation).**
+(paint foundation), 2 (layers/shapes/selection/transforms), 3 (gradients), and
+4 (animation — timeline/clips/`cm.anim` + the M10 exit proof) ALL COMPLETE; next
+is Phase 5 (polish: asset hot-reload, pivots, the procedural sprite generator,
+headless `--bake`).**
 New direction this session (human spec): build a solid in-editor asset editor —
 the keystone that unblocks all content authoring, so **pulled ahead of M9
 (audio)**. M8 (viewport) is feature-complete and M7 (movement) is feel-approved;
@@ -109,30 +111,75 @@ both stand below as history.
 - **selftest 22413→22442** (+29). All green; sandbox boots clean; no engine/
   binary change. Montage (radial/linear/angular) on llm-feed.
 
-**Phases 1–3 are COMPLETE.** The studio now does multi-layer authoring with
-shapes, selection/clipboard, transforms, a custom brush, and the full
-non-destructive **gradient** system — verified end-to-end via `--win` composite
-captures (the human's feel/taste pass on the live interactions is still welcome
-but not blocking).
+### M10 Phase 4 — animation (timeline + clips + cm.anim + the exit proof) — this session
+- **4a DONE** `c499136` — **`cm.anim`**: the pure clip evaluator + the `.anim`
+  codec. `frame_at(clip, elapsed) → frame_index` (integer-only — safe from sim OR
+  render): **loop** wraps, **once** holds the final frame, **pingpong** bounces
+  A,B,C,B (interior reversed; ≤2 frames → plain loop). `duration`, `find`, and
+  `encode/decode/load/save` — the `.anim` sidecar is the clip array as canonical
+  doc bytes (`cm.state.canon`, like knobs.dat); `normalize()` keeps the bytes
+  stable. The engine **mechanism**; the cartridge owns **policy** (D030/D035), no
+  sim state of its own. selftest +15.
+- **4b DONE** `9d09525` — **`cm.sprite` frames + clips**: `add/dup/delete/
+  move_frame`, each one undo step (`capture_struct` now also clones `doc.clips`,
+  so a frame op that rewrites clip refs rides struct-undo). The clip frame index
+  is **0-based** (the strip column the game draws); clip-ref fixups keep them
+  consistent across insert/delete/move. `add_clip`/`delete_clip`; the **`CLIP`
+  chunk** in CSPR (round-trips); `save()` now also bakes `<name>.anim` beside the
+  `.png`. selftest +13.
+- **4c DONE** `f5508f9` — **studio timeline + CLIPS panel**: the frame thumbnail
+  strip (select/add/dup/del/reorder, wheel-scroll), **onion skin** (prev=warm/
+  next=cool under the current at low alpha), an **fps** slider + **▶play/■stop**
+  live preview (samples `cm.anim.frame_at` at the WALL CLOCK — `pal.time_ns`
+  scaled to 60 ticks/s — dev-only, never sim; editing disabled mid-play), and a
+  **CLIPS dock panel** (list/new/del/select, rename, loop mode, the frame
+  SEQUENCE as chips with add-current/RMB-remove, per-entry dur). `TIME_H 24→46`;
+  `demo_anim()` smoke aid. (studio is dev/render-only — not selftested.)
+- **4d DONE** `5933d17` — **the M10 exit proof**: the sandbox player now draws a
+  **studio-authored sprite**. `projects/sandbox/art/girl.{spr,png,anim}` — the
+  editable 12-frame doc + the baked strip + the clip table; `genart.lua` is the
+  one-shot bootstrap (`--eval "cm.require('genart').girl()"`). `player.lua`
+  `load_sprite()` loads `girl.png` via `cm.gfx.texture` + `girl.anim` via
+  `cm.anim` at boot (file bytes ≠ sim input, D026; `build_sprite` stays the
+  fallback); NF derived from the strip width. Moveset poses 0..10 stay
+  **state-driven**; the idle pose now plays the **timed breath clip** via
+  `cm.anim.frame_at(idle, state.frame())` — cosmetic, zero stored state, pure +
+  render-only.
+- **selftest 22442→22470** (+28). **Determinism proven**: a KITCHECK trace
+  recorded BEFORE 4d **verifies PASS** against the new player (sim byte-
+  identical); a fresh re-record is byte-identical to itself; TOUR 400f + KITCHECK
+  200f record→verify PASS. The trace FILE grows only by its embedded module
+  source — exactly why the pre-change trace still verifies (the §1 payoff: a
+  render-only asset cannot perturb the trace). Montage on llm-feed.
 
-**Next step (resume here): Phase 4 — animation** (STUDIO.md §7): the **timeline**
-(multi-frame strip: select/add/dup/delete/reorder, onion-skin toggle, fps), the
-**clip** model (named sequences = `{frame, dur_ticks}` + loop mode: loop/once/
-pingpong) authored in the studio and stored in a `CLIP` chunk + an `art/<name>.
-anim` canonical-bytes table, a new pure **`cm.anim`** evaluator
-(`frame_at(clip, elapsed) → frame_index`, deterministic, mechanism-only — the
-cartridge owns policy, D030/D035), a live wall-clock preview pane, and then the
-**M10 exit proof**: wire the sandbox player to a studio-authored sprite + clips
-(replacing the procedural `build_sprite`) and keep `record→verify` byte-exact
-(the sprite is render-only, so it cannot perturb the trace — §1's payoff).
+**Phases 1–4 are COMPLETE; the M10 exit proof is hit** — the studio authors
+multi-layer sprites with shapes/selection/transforms/gradients AND animation
+(frames + clips + onion + live preview), the bake pipeline produces the strip +
+`.anim` the game loads, and the sandbox player draws a studio-authored,
+clip-animated sprite with `record→verify` byte-exact. The remaining M10 exit
+*criterion* (PLAN: the human authors a real character sprite + a portrait) is the
+human's taste/usage pass on the now-complete tool, not an engine task.
 
-Known small items: **paint/gradient is not masked by the selection** (a marquee
-shows but doesn't clip strokes/fills — a later nicety); a gradient fill only
-shows where the layer already has pixels (by design — "fill the visible pixels";
-the hint says so), so an empty layer reads as "nothing happened" until you draw a
-shape; **one fill per layer** (dup the layer for a second — the simplest scope);
-whole-sprite **resize/rotate of a non-square doc** is deferred; the dock can need
-its scroll on very short windows. None blocking.
+**Next step (resume here): Phase 5 — polish & the rest of M10** (STUDIO.md §10):
+**asset hot-reload** (the game refreshes its textures/clips when a `.spr` is
+saved — needs a `pal` tex-update or a re-`texture` path + a save signal),
+**pivots/origins** + frame tags/slices, an optional indexed/palette-swap mode,
+the **procedural sprite generator** (noise/shape/gradient/bevel/blend — M10's
+other half, feeding particles/liquids/dust), the **LUT post pass** + palette/LUT
+editor, and **headless `--bake`** (regenerate `art/*.png`+`.anim` from `.spr`
+without the studio, so the baked outputs need not be committed). None blocking;
+pick by what content authoring needs next. Good `/clear` point.
+
+Known small items: the **baked `art/girl.png`+`.anim` are committed** (the game
+loads them at boot) — they become regenerable build product once Phase 5's
+headless `--bake` lands; `genart.lua` re-bakes meanwhile. The studio **play
+preview uses a wall clock** (`pal.time_ns`, dev-only) — faithful to how the game
+runs a clip but not frame-stepped; **onion shows only the immediate neighbors**
+(±1); **clip editing isn't separately undoable** (only frame ops are — clips
+carry no pixels). Carried from Phase 1–3: **paint/gradient is not masked by the
+selection**; a gradient fill only recolors a layer's existing pixels (by design);
+**one fill per layer**; whole-sprite **resize/rotate of a non-square doc** is
+deferred; the dock can need its scroll on short windows. None blocking.
 
 Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
 V(move) · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
@@ -142,7 +189,11 @@ menubar fH/fV/rL/rR/x2//2 + browse/new/save/close · rail brs/1px · palette slo
 L=load R=save. **Gradient**: drag an axis on a layer → a non-destructive fill
 masked to its pixels; drag the p0/p1 handles; the dock panel tunes type / ramp
 (click bar=add stop, RMB marker=delete) / dither / levels / bayer / phase;
-bake=stamp to pixels, clear=remove.
+bake=stamp to pixels, clear=remove. **Timeline** (bottom): the frame thumbnail
+strip (click=select, +f/dup/del/`<`/`>`), onion toggle, fps, ▶play/■stop (previews
+the active clip or the whole strip). **CLIPS** dock panel: +clip/del, click a row
+to make it active, rename, loop/once/pingpong, the sequence chips (click=select
+entry, RMB=remove, "+ add frame N"), per-entry dur.
 
 ---
 
