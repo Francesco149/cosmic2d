@@ -50,23 +50,38 @@ function M.surface_size()
   return pal.gfx_size()
 end
 
--- The resize ladder (D036, refined per the human's feel-test 2026-06-28). Pick
--- the integer scale that keeps the FOV NEAR the 480x270 reference, then let the
--- FOV FILL the window at that scale — a few px off the reference, no letterbox —
--- rather than hard-capping at 480x270 and letterboxing the slack (which made a
--- maximized window sit in big black bars). The FOV maxes ~softly~ at the
--- reference: bigger windows raise the scale, not the FOV.
---   scale = max(base, floor(W/ref_w), floor(H/ref_h))   -- the higher fit wins
---   FOV   = floor(W/scale) x floor(H/scale)             -- fills (slack < scale px)
--- Rungs: 960x540->480x270@2x, 1920x1080->480x270@4x, 1920x1040->480x260@4x
--- (maximized: fills, "a few less px of FOV"), 1280x720->640x360@2x (fills, more
--- world), 720x540->360x270@2x (4:3), 640x360->320x180@2x, 480x360->240x180@2x.
-function M.ladder(W, H)
+-- The resize ladder (D036, refined per the human's feel-test 2026-06-28). Two
+-- modes:
+--   fill (play, default) — pick the integer scale that keeps the FOV NEAR the
+--     480x270 reference, then let the FOV FILL the window at that scale (slack
+--     < scale px, no letterbox) instead of hard-capping + letterboxing (which
+--     put a maximized window in big black bars). FOV maxes *softly* at the
+--     reference: a bigger window raises the scale, not the FOV.
+--       scale = max(base, floor(W/ref_w), floor(H/ref_h)); FOV = W//scale x H//scale
+--   cap (editor preview) — the FOV is HARD-capped at the reference so the inset
+--     shows exactly the play-mode view and never reveals world below/around the
+--     level (the parallax bleed the human saw when a tall avail rect gave a
+--     FOV > 270). Crops below the reference on a small rect; centers (margins)
+--     within the avail rect on a large one.
+--       scale = max(base, min(floor(W/ref_w), floor(H/ref_h)))
+--       FOV   = min(ref_w, W//scale) x min(ref_h, H//scale)
+-- fill rungs: 960x540->480x270@2x, 1920x1080->480x270@4x, 1920x1040->480x260@4x
+-- (maximized: fills), 1280x720->640x360@2x, 720x540->360x270@2x, 640x360->320x180@2x.
+-- cap rungs: 1548x994 (editor@1080p) ->480x270@3x; 588x514 (editor@960x600) ->294x257@2x.
+function M.ladder(W, H, cap)
   local c = M.cfg
-  local scale = math.max(c.base_scale, W // c.ref_w, H // c.ref_h)
-  if scale < 1 then scale = 1 end
-  local fw = W // scale
-  local fh = H // scale
+  local scale, fw, fh
+  if cap then
+    scale = math.max(c.base_scale, math.min(W // c.ref_w, H // c.ref_h))
+    if scale < 1 then scale = 1 end
+    fw = math.min(c.ref_w, W // scale)
+    fh = math.min(c.ref_h, H // scale)
+  else
+    scale = math.max(c.base_scale, W // c.ref_w, H // c.ref_h)
+    if scale < 1 then scale = 1 end
+    fw = W // scale
+    fh = H // scale
+  end
   if fw < 1 then fw = 1 end
   if fh < 1 then fh = 1 end
   return fw, fh, scale
@@ -106,7 +121,9 @@ function M.update()
     local right = (ed.show_insp and ed.IW or 0) * us
     local aw = math.max(1, W - right)
     local ah = math.max(1, H - top)
-    local fw, fh, gs = M.ladder(aw, ah)
+    -- cap the FOV at the reference: the inset previews the play view, never
+    -- showing past the level's edges (the parallax bleed on a tall avail rect)
+    local fw, fh, gs = M.ladder(aw, ah, true)
     M.fov_w, M.fov_h, M.scale = fw, fh, gs
     pal.x_fov(fw, fh)
     -- center the game in the available rect
