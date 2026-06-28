@@ -1227,6 +1227,39 @@ local function t_ring()
   trace._R, trace._rec = nil, nil
 end
 
+-- ---- pal.x_fov / x_window_size (M8.1): the variable game target ----
+-- The internal target is resizable (the FOV); gfx_size + read_pixels follow it,
+-- and growing past the init size must grow the readback buffer. Headless, so
+-- x_window_size reports the created size (w*scale). Restores 64x64 for the rest.
+local function t_viewport()
+  local w0, h0 = pal.gfx_size()
+  check(w0 == 64 and h0 == 64, "fov: starts at the project internal size")
+  local ww, wh = pal.x_window_size()
+  check(ww == 128 and wh == 128, "window_size: headless = w*scale (got "
+        .. ww .. "x" .. wh .. ")")
+
+  local function fill_and_read(fw, fh)
+    pal.x_fov(fw, fh)
+    local gw, gh = pal.gfx_size()
+    check(gw == fw and gh == fh, "fov: gfx_size follows resize " .. fw .. "x" .. fh)
+    pal.begin_frame(0, 0, 0, 1)
+    pal.quad(0, 0, fw, fh, 1, 0, 0, 1) -- fill red
+    pal.present()
+    local pix = pal.read_pixels()
+    check(#pix == fw * fh * 4, "fov: read_pixels is fw*fh*4 (" .. fw .. "x" .. fh .. ")")
+    check(pix:byte(1) == 255, "fov: top-left pixel is the drawn red")
+    check(pix:byte(#pix - 3) == 255, "fov: bottom-right pixel is the drawn red")
+  end
+
+  fill_and_read(40, 30)        -- crop below init
+  fill_and_read(80, 80)        -- grow past init: exercises the readback realloc
+  fill_and_read(480, 270)      -- the D036 reference cap size
+  local nw, nh = pal.x_fov(480, 270) -- no-op returns current size
+  check(nw == 480 and nh == 270, "fov: no-op resize returns current size")
+  pal.x_fov(64, 64)            -- restore for the remaining pixel tests
+  check(select(1, pal.gfx_size()) == 64, "fov: restored to 64x64")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1248,6 +1281,7 @@ function game.init()
   t_inspect()
   t_bundle()
   t_ring()
+  t_viewport()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

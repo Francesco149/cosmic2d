@@ -196,15 +196,20 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
   SDL_ReleaseGPUShader(G.dev, blit_vs);
   if (!G.pipe_scene || (!G.headless && !G.pipe_blit)) return false;
 
+  G.readback_cap = (uint32_t)(cfg->w * cfg->h * 4);
   G.readback = SDL_CreateGPUTransferBuffer(
       G.dev, &(SDL_GPUTransferBufferCreateInfo){
                  .usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD,
-                 .size = (Uint32)(cfg->w * cfg->h * 4)});
+                 .size = G.readback_cap});
   if (!G.readback) return false;
 
   G.lay_ox = 0;
   G.lay_oy = 0;
   G.lay_s = (float)cfg->scale;
+  /* until the first present caches the real swapchain size, report the size
+   * the window was created at (mechanism for the Lua-side resize ladder) */
+  G.win_w = cfg->w * cfg->scale;
+  G.win_h = cfg->h * cfg->scale;
 
   uint32_t white = 0xffffffffu;
   if (tex_slot_create(&white, 1, 1) != 0) {
@@ -213,6 +218,53 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
   }
 
   G.gfx_up = true;
+  return true;
+}
+
+bool pal_gfx_target_resize(int w, int h) {
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  if (w > 4096) w = 4096;
+  if (h > 4096) h = 4096;
+  if (w == G.iw && h == G.ih) return true; /* no-op */
+
+  SDL_GPUTexture *nt = SDL_CreateGPUTexture(
+      G.dev, &(SDL_GPUTextureCreateInfo){
+                 .type = SDL_GPU_TEXTURETYPE_2D,
+                 .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                 .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                          SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                 .width = (Uint32)w,
+                 .height = (Uint32)h,
+                 .layer_count_or_depth = 1,
+                 .num_levels = 1});
+  if (!nt) {
+    pal_log("gfx: target resize %dx%d: %s", w, h, SDL_GetError());
+    return false;
+  }
+
+  /* grow the readback transfer buffer if the new target outsizes it */
+  uint32_t need = (uint32_t)(w * h * 4);
+  if (need > G.readback_cap) {
+    SDL_GPUTransferBuffer *nr = SDL_CreateGPUTransferBuffer(
+        G.dev, &(SDL_GPUTransferBufferCreateInfo){
+                   .usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, .size = need});
+    if (!nr) {
+      pal_log("gfx: readback grow %u: %s", need, SDL_GetError());
+      SDL_ReleaseGPUTexture(G.dev, nt);
+      return false;
+    }
+    SDL_ReleaseGPUTransferBuffer(G.dev, G.readback);
+    G.readback = nr;
+    G.readback_cap = need;
+  }
+
+  /* SDL_GPU defers the actual free until the GPU is done with the old texture,
+   * so releasing it here is safe even mid-flight (same as tex_free). */
+  SDL_ReleaseGPUTexture(G.dev, G.target);
+  G.target = nt;
+  G.iw = w;
+  G.ih = h;
   return true;
 }
 
@@ -349,6 +401,8 @@ bool pal_gfx_present(void) {
       return false;
     }
     if (swap) { /* NULL = minimized; skip presentation */
+      G.win_w = (int)sw; /* cache real swapchain px for pal.x_window_size */
+      G.win_h = (int)sh;
       int s = (int)SDL_min(sw / (Uint32)G.iw, sh / (Uint32)G.ih);
       if (s < 1) s = 1;
       float vw = (float)(G.iw * s), vh = (float)(G.ih * s);

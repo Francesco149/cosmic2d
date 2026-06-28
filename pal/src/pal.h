@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 4
+#define PAL_VERSION_API 5
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -99,9 +99,14 @@ typedef struct {
   SDL_GPUTransferBuffer *tbuf;
   uint32_t gpubuf_cap; /* bytes in vbuf/tbuf */
   SDL_GPUTransferBuffer *readback;
+  uint32_t readback_cap; /* bytes in readback; grows if the FOV/target grows */
 
   /* current letterbox layout (for mouse mapping), updated each present */
   float lay_ox, lay_oy, lay_s;
+  /* cached swapchain px size (pal.x_window_size), updated each present; the
+   * window-resize ladder lives in Lua and reads this. Render-only — the sim
+   * never reads window/FOV/viewport (D036 iron rule). */
+  int win_w, win_h;
 
   /* batch accumulation (CPU side, flushed at present) */
   float clear[4];
@@ -154,6 +159,11 @@ typedef struct {
   bool headless, vsync;
 } PalGfxConfig;
 bool pal_gfx_init(const PalGfxConfig *cfg);
+/* resize the game internal target (the "FOV" — visible world in internal px).
+ * Reallocates the readback buffer if the new size exceeds it. No-op (true) if
+ * unchanged. Flows into gfx_size / scene projection / read_pixels. Render-only;
+ * the policy cap (D036's 480x270) lives in Lua, not here (mechanism not policy). */
+bool pal_gfx_target_resize(int w, int h);
 void pal_gfx_begin(float r, float g, float b, float a);
 void pal_gfx_quad(float x, float y, float w, float h, float u0, float v0,
                   float u1, float v1, uint32_t rgba, int tex);

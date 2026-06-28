@@ -356,6 +356,53 @@ static int l_gfx_size(lua_State *L) {
   return 2;
 }
 
+/* pal.x_window_size() -> sw, sh : real swapchain px, cached each present.
+ * The window-resize ladder (D036) lives in Lua and reads this. Render-only. */
+static int l_x_window_size(lua_State *L) {
+  check_gfx(L);
+  lua_pushinteger(L, G.win_w);
+  lua_pushinteger(L, G.win_h);
+  return 2;
+}
+
+/* pal.x_fov(w, h) -> w, h : resize the game internal target (visible world in
+ * internal px). The 480x270 policy cap is enforced in Lua, not here. Call
+ * before begin_frame for the frame that should use the new size. Render-only. */
+static int l_x_fov(lua_State *L) {
+  check_gfx(L);
+  int w = (int)luaL_checkinteger(L, 1);
+  int h = (int)luaL_checkinteger(L, 2);
+  if (!pal_gfx_target_resize(w, h))
+    return luaL_error(L, "x_fov: resize failed (see log)");
+  lua_pushinteger(L, G.iw);
+  lua_pushinteger(L, G.ih);
+  return 2;
+}
+
+/* pal.x_set_window_size(w, h) : resize the OS window (windowed mode; SDL
+ * ignores it in fullscreen). Live only; headless no-op. Render/dev. */
+static int l_x_set_window_size(lua_State *L) {
+  check_gfx(L);
+  int w = (int)luaL_checkinteger(L, 1);
+  int h = (int)luaL_checkinteger(L, 2);
+  if (w < 1) w = 1;
+  if (h < 1) h = 1;
+  if (G.win && !SDL_SetWindowSize(G.win, w, h))
+    pal_log("gfx: set_window_size %dx%d: %s", w, h, SDL_GetError());
+  return 0;
+}
+
+/* pal.x_set_fullscreen(on) : borderless desktop fullscreen (on) or windowed
+ * (off). The mode is NULL → SDL uses borderless-desktop, so the OS resolution
+ * is untouched. Live only; headless no-op. Render/dev. */
+static int l_x_set_fullscreen(lua_State *L) {
+  check_gfx(L);
+  bool on = lua_toboolean(L, 1);
+  if (G.win && !SDL_SetWindowFullscreen(G.win, on))
+    pal_log("gfx: set_fullscreen %d: %s", (int)on, SDL_GetError());
+  return 0;
+}
+
 static int l_begin_frame(lua_State *L) {
   check_gfx(L);
   pal_gfx_begin((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0),
@@ -711,6 +758,10 @@ static const luaL_Reg pal_funcs[] = {
     {"hash", l_hash},
     {"gfx_init", l_gfx_init},
     {"gfx_size", l_gfx_size},
+    {"x_window_size", l_x_window_size},
+    {"x_fov", l_x_fov},
+    {"x_set_window_size", l_x_set_window_size},
+    {"x_set_fullscreen", l_x_set_fullscreen},
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
     {"draw_quads", l_draw_quads},
