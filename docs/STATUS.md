@@ -4,12 +4,13 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M10 — the studio (in-engine sprite/animation editor): Phase 1
-(paint foundation) + Phase 2 (layers / shapes / selection / transforms) BOTH
-COMPLETE; next is Phase 3 (gradients).** New direction this session (human
-spec): build a solid in-editor asset editor — the keystone that unblocks all
-content authoring, so **pulled ahead of M9 (audio)**. M8 (viewport) is
-feature-complete and M7 (movement) is feel-approved; both stand below as history.
+**Phase**: **M10 — the studio (in-engine sprite/animation editor): Phases 1
+(paint foundation), 2 (layers / shapes / selection / transforms), and 3
+(gradients — the signature feature) ALL COMPLETE; next is Phase 4 (animation).**
+New direction this session (human spec): build a solid in-editor asset editor —
+the keystone that unblocks all content authoring, so **pulled ahead of M9
+(audio)**. M8 (viewport) is feature-complete and M7 (movement) is feel-approved;
+both stand below as history.
 
 ### M10 the studio — where we are
 - **Design is captured** (the careful-design deliverable the human asked for):
@@ -80,31 +81,68 @@ feature-complete and M7 (movement) is feel-approved; both stand below as history
 - **selftest 22397→22413** (+16: structural ops/snapshot-undo/cap, copy_region,
   scale). All green. Each sub-phase has a montage on llm-feed.
 
-**Phase 1 + Phase 2 are COMPLETE.** The studio now does multi-layer authoring
-with shapes, selection/clipboard, transforms, and a custom brush — verified
-end-to-end via `--win` composite captures (the human's feel/taste pass on the
-live interactions is still welcome but not blocking).
+### M10 Phase 3 — gradients (the signature feature, STUDIO.md §6) — this session
+- **3a DONE** `f984948` — **`cm.paint` gradient math** (pure, dev-class, no-AA):
+  `lerp_rgba`/`ramp` (multi-stop, clamped), `bayer` (2/4/8 recursive ordered-
+  dither matrices), `grad_t` (linear/mirror projection · radial dist/|axis| ·
+  angular turn-wrapped), `dither_t` (quantize to `levels` bands, ordered-dither
+  each boundary — strength 0 = hard bands, 1 = smoothest; snaps to a real ramp
+  band so every output pixel is an exact ramp color, never an AA blend),
+  `grad_shade`/`grad_fill` (masked by a source alpha → recolor visible pixels,
+  keep coverage). selftest +21 KATs.
+- **3b DONE** `c09e64d` — **`cm.sprite` non-destructive fills**: a fill is bound
+  to a **layer** (`layer.fill`), not a doc-global index array — rides reorder/
+  dup/delete for free. composite/bake apply it via a per-doc shade scratch masked
+  by the frame's alpha (live pixels untouched; bake flattens, `.spr` keeps live).
+  `begin/commit/cancel_struct` (a frame-spanning struct-undo bracket), `set_/
+  clear_/stamp_fill` (each one undo step; stamp bakes destructively). `FILL`
+  chunk in CSPR (layer→def binding, floats for handles). clone_layer deep-copies
+  the fill. selftest +8 (composite-masked, round-trip, stamp/undo, dup, clear).
+- **3c DONE** `1e2224d` — **`cm.studio` gradient tool + handles + panel**: the
+  **D** tool drags an axis onto the active layer (live composite = the real
+  preview; re-drag keeps the ramp; new fill = prim→sec, inherits last params).
+  **On-canvas handles** (dotted axis + draggable p0/p1, radial rim circle), the
+  whole drag one undo step (no-op clicks push nothing). **GRADIENT dock panel**:
+  type selector, a **multi-stop ramp editor** (click bar = add stop; markers
+  select/drag/RMB-delete; set-col/del), dither/levels/phase sliders, bayer 2/4/8,
+  **bake**/**clear**. `demo_gradient()` smoke aid.
+- **selftest 22413→22442** (+29). All green; sandbox boots clean; no engine/
+  binary change. Montage (radial/linear/angular) on llm-feed.
 
-**Next step (resume here): Phase 3 — gradients** (STUDIO.md §6, the signature
-feature): the **gradient tool** (drag an axis; linear/radial/angular/mirror) and
-a **non-destructive gradient FILL** as an editable object on a layer (type, p0/
-p1 or center+radius+angle, multi-stop ramp, **ordered dither** strength + Bayer,
-**phase**), masked by the layer's existing alpha, with **live on-canvas handles**
-and a panel — bake flattens it, the `.spr` keeps it live. New module `cm.paint`
-gradient eval + dither (selftest-pinned); a `FILL` chunk in the `.spr` (§4). Then
-Phase 4 (animation timeline + clips + `cm.anim` + wire the sandbox player to a
-studio-authored sprite, hitting the M10 exit).
+**Phases 1–3 are COMPLETE.** The studio now does multi-layer authoring with
+shapes, selection/clipboard, transforms, a custom brush, and the full
+non-destructive **gradient** system — verified end-to-end via `--win` composite
+captures (the human's feel/taste pass on the live interactions is still welcome
+but not blocking).
 
-Known small items (Phase 2): **paint is not masked by the selection** (a marquee
-shows but doesn't clip strokes — a later nicety); whole-sprite **resize/rotate of
-a non-square doc** is deferred (transforms there need a selection); the dock can
-need its scroll on very short windows. None blocking.
+**Next step (resume here): Phase 4 — animation** (STUDIO.md §7): the **timeline**
+(multi-frame strip: select/add/dup/delete/reorder, onion-skin toggle, fps), the
+**clip** model (named sequences = `{frame, dur_ticks}` + loop mode: loop/once/
+pingpong) authored in the studio and stored in a `CLIP` chunk + an `art/<name>.
+anim` canonical-bytes table, a new pure **`cm.anim`** evaluator
+(`frame_at(clip, elapsed) → frame_index`, deterministic, mechanism-only — the
+cartridge owns policy, D030/D035), a live wall-clock preview pane, and then the
+**M10 exit proof**: wire the sandbox player to a studio-authored sprite + clips
+(replacing the procedural `build_sprite`) and keep `record→verify` byte-exact
+(the sprite is render-only, so it cannot perturb the trace — §1's payoff).
 
-Controls (studio): F2 toggle · tools B/E/G·L/R/O·I·M(select)/V(move) · LMB
-primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode · Shift constrain
-· wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/^V/^D clipboard ·
-Enter stamp float · Del clear · H/J flip · `[`/`]` rotate · menubar fH/fV/rL/rR/
-x2//2 + browse/new/save/close · rail brs/1px · palette slots L=load R=save.
+Known small items: **paint/gradient is not masked by the selection** (a marquee
+shows but doesn't clip strokes/fills — a later nicety); a gradient fill only
+shows where the layer already has pixels (by design — "fill the visible pixels";
+the hint says so), so an empty layer reads as "nothing happened" until you draw a
+shape; **one fill per layer** (dup the layer for a second — the simplest scope);
+whole-sprite **resize/rotate of a non-square doc** is deferred; the dock can need
+its scroll on very short windows. None blocking.
+
+Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
+V(move) · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
+Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save · ^C/^X/
+^V/^D clipboard · Enter stamp float · Del clear · H/J flip · `[`/`]` rotate ·
+menubar fH/fV/rL/rR/x2//2 + browse/new/save/close · rail brs/1px · palette slots
+L=load R=save. **Gradient**: drag an axis on a layer → a non-destructive fill
+masked to its pixels; drag the p0/p1 handles; the dock panel tunes type / ramp
+(click bar=add stop, RMB marker=delete) / dither / levels / bayer / phase;
+bake=stamp to pixels, clear=remove.
 
 ---
 
