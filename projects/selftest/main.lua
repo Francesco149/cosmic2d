@@ -1256,6 +1256,33 @@ local function t_viewport()
   fill_and_read(480, 270)      -- the D036 reference cap size
   local nw, nh = pal.x_fov(480, 270) -- no-op returns current size
   check(nw == 480 and nh == 270, "fov: no-op resize returns current size")
+
+  -- two-target routing (M8.2): quads sent to the ui canvas must not bleed into
+  -- the game target that read_pixels samples (headless runs both scene passes)
+  pal.x_fov(64, 64)
+  local uw, uh = pal.x_ui_target(32, 32)
+  check(uw == 32 and uh == 32, "ui_target: created at 32x32")
+  pal.begin_frame(0, 0, 1, 1)          -- game clears blue
+  pal.quad(0, 0, 64, 64, 1, 0, 0, 1)   -- game: fill red
+  pal.x_target("ui")
+  pal.quad(0, 0, 32, 32, 0, 1, 0, 1)   -- ui: fill green (must stay off the game)
+  pal.x_target("game")
+  pal.present()
+  local gpix = pal.read_pixels()
+  check(#gpix == 64 * 64 * 4, "routing: read_pixels reads the game target")
+  local saw_green = false
+  for i = 1, #gpix, 4 do
+    if gpix:byte(i) == 0 and gpix:byte(i + 1) == 255 and gpix:byte(i + 2) == 0 then
+      saw_green = true
+      break
+    end
+  end
+  check(not saw_green, "routing: ui-target quads stay off the game target")
+  check(gpix:byte(1) == 255 and gpix:byte(2) == 0, "routing: game kept its red")
+  check(not pcall(pal.x_target, "bogus"), "x_target rejects an unknown target")
+  pal.x_ui_target(0, 0)                -- free the ui canvas
+  check(select(2, pal.x_ui_target(0, 0)) == 0, "ui_target freed (size 0)")
+
   pal.x_fov(64, 64)            -- restore for the remaining pixel tests
   check(select(1, pal.gfx_size()) == 64, "fov: restored to 64x64")
 end

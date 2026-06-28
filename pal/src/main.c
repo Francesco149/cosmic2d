@@ -152,9 +152,15 @@ static void push_event(PalEvent e) {
   if (G.event_count < PAL_MAX_EVENTS) G.events[G.event_count++] = e;
 }
 
-static void window_to_internal(float wx, float wy, float *ix, float *iy) {
-  *ix = (wx - G.lay_ox) / G.lay_s;
-  *iy = (wy - G.lay_oy) / G.lay_s;
+/* map a window-px mouse coord into both spaces the engine needs: game-space
+ * (through the game viewport, what the sim/world use) and ui-canvas space (the
+ * editor chrome). The composite that defines these is set each present. */
+static void map_mouse(float wx, float wy, PalEvent *ev) {
+  ev->x = (wx - G.lay_ox) / G.lay_s; /* window -> game viewport -> FOV px */
+  ev->y = (wy - G.lay_oy) / G.lay_s;
+  float us = G.ui_scale > 0 ? G.ui_scale : G.lay_s; /* ui canvas: top-left */
+  ev->ui_x = wx / us;
+  ev->ui_y = wy / us;
 }
 
 static void pump_events(void) {
@@ -174,7 +180,7 @@ static void pump_events(void) {
       break;
     case SDL_EVENT_MOUSE_MOTION: {
       PalEvent ev = {.type = PAL_EV_MOTION};
-      window_to_internal(e.motion.x, e.motion.y, &ev.x, &ev.y);
+      map_mouse(e.motion.x, e.motion.y, &ev);
       push_event(ev);
       break;
     }
@@ -183,7 +189,7 @@ static void pump_events(void) {
       PalEvent ev = {.type = PAL_EV_BUTTON,
                      .a = e.button.button,
                      .down = e.type == SDL_EVENT_MOUSE_BUTTON_DOWN};
-      window_to_internal(e.button.x, e.button.y, &ev.x, &ev.y);
+      map_mouse(e.button.x, e.button.y, &ev);
       push_event(ev);
       break;
     }

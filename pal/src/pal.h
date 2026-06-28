@@ -35,7 +35,8 @@ typedef struct {
   int a;       /* key: scancode | button: index */
   bool down;   /* key/button */
   bool repeat; /* key */
-  float x, y;  /* motion/button: internal coords | wheel: scroll */
+  float x, y;       /* motion/button: game-space (FOV) px | wheel: scroll */
+  float ui_x, ui_y; /* motion/button: ui-canvas px (editor chrome hit-test) */
   char text[PAL_EV_TEXT_MAX]; /* text: utf-8, NUL-terminated */
 } PalEvent;
 
@@ -65,6 +66,7 @@ typedef struct {
 
 typedef struct {
   int tex;
+  int target; /* which render target: 0 = game (FOV), 1 = ui canvas (D036) */
   bool has_clip;
   SDL_Rect clip;
   uint32_t first, count; /* vertex range */
@@ -92,7 +94,13 @@ typedef struct {
   int iw, ih, scale; /* internal target size, initial window scale */
   SDL_Window *win;
   SDL_GPUDevice *dev;
-  SDL_GPUTexture *target; /* internal render target (iw x ih RGBA8) */
+  SDL_GPUTexture *target; /* game render target (iw x ih RGBA8) — the FOV */
+  /* editor/dev UI canvas (D036): a second target at its own scale, composited
+   * over the game viewport at present. NULL = no ui layer (shipped game). */
+  SDL_GPUTexture *ui_target;
+  int ui_w, ui_h;    /* ui canvas size in px (pal.x_ui_target) */
+  float ui_scale;    /* integer px scale the ui canvas blits to the window at */
+  int cur_target;    /* 0 = game, 1 = ui — where subsequent quads accumulate */
   SDL_GPUSampler *sampler;
   SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit;
   SDL_GPUBuffer *vbuf;
@@ -103,6 +111,10 @@ typedef struct {
 
   /* current letterbox layout (for mouse mapping), updated each present */
   float lay_ox, lay_oy, lay_s;
+  /* explicit game-viewport composite (pal.x_compose); when unset, present
+   * auto-letterboxes the game target centered (shipped game / default). */
+  bool compose_set;
+  int vp_x, vp_y, vp_scale; /* game viewport origin (window px) + integer scale */
   /* cached swapchain px size (pal.x_window_size), updated each present; the
    * window-resize ladder lives in Lua and reads this. Render-only — the sim
    * never reads window/FOV/viewport (D036 iron rule). */
@@ -164,6 +176,9 @@ bool pal_gfx_init(const PalGfxConfig *cfg);
  * unchanged. Flows into gfx_size / scene projection / read_pixels. Render-only;
  * the policy cap (D036's 480x270) lives in Lua, not here (mechanism not policy). */
 bool pal_gfx_target_resize(int w, int h);
+/* create/resize the editor/dev UI canvas (D036). w==0 || h==0 frees it (no ui
+ * layer). No-op (true) if unchanged. Render-only. */
+bool pal_gfx_ui_target_resize(int w, int h);
 void pal_gfx_begin(float r, float g, float b, float a);
 void pal_gfx_quad(float x, float y, float w, float h, float u0, float v0,
                   float u1, float v1, uint32_t rgba, int tex);

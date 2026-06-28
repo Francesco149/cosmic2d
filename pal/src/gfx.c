@@ -188,9 +188,12 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
   G.pipe_scene = make_pipeline(quad_vs, quad_fs,
                                SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, true, true);
   if (!G.headless)
+    /* blended: the UI canvas composites over the game layer by its alpha
+     * (transparent ui texels show the game through). The game blit is opaque
+     * (alpha 1) so blending it over the black clear is a no-op (D036). */
     G.pipe_blit = make_pipeline(blit_vs, quad_fs,
                                 SDL_GetGPUSwapchainTextureFormat(G.dev, G.win),
-                                false, false);
+                                true, false);
   SDL_ReleaseGPUShader(G.dev, quad_vs);
   SDL_ReleaseGPUShader(G.dev, quad_fs);
   SDL_ReleaseGPUShader(G.dev, blit_vs);
@@ -268,6 +271,38 @@ bool pal_gfx_target_resize(int w, int h) {
   return true;
 }
 
+bool pal_gfx_ui_target_resize(int w, int h) {
+  if (w <= 0 || h <= 0) { /* free: no ui layer */
+    if (G.ui_target) SDL_ReleaseGPUTexture(G.dev, G.ui_target);
+    G.ui_target = NULL;
+    G.ui_w = G.ui_h = 0;
+    return true;
+  }
+  if (w > 4096) w = 4096;
+  if (h > 4096) h = 4096;
+  if (G.ui_target && w == G.ui_w && h == G.ui_h) return true; /* no-op */
+
+  SDL_GPUTexture *nt = SDL_CreateGPUTexture(
+      G.dev, &(SDL_GPUTextureCreateInfo){
+                 .type = SDL_GPU_TEXTURETYPE_2D,
+                 .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                 .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                          SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                 .width = (Uint32)w,
+                 .height = (Uint32)h,
+                 .layer_count_or_depth = 1,
+                 .num_levels = 1});
+  if (!nt) {
+    pal_log("gfx: ui target %dx%d: %s", w, h, SDL_GetError());
+    return false;
+  }
+  if (G.ui_target) SDL_ReleaseGPUTexture(G.dev, G.ui_target);
+  G.ui_target = nt;
+  G.ui_w = w;
+  G.ui_h = h;
+  return true;
+}
+
 void pal_gfx_begin(float r, float g, float b, float a) {
   G.clear[0] = r; G.clear[1] = g; G.clear[2] = b; G.clear[3] = a;
   G.vcount = 0;
@@ -275,11 +310,13 @@ void pal_gfx_begin(float r, float g, float b, float a) {
   G.cam_x = 0;
   G.cam_y = 0;
   G.clip_on = false;
+  G.cur_target = 0; /* draws default to the game target each frame */
 }
 
 static void seg_for(int tex) {
   PalSeg *s = G.seg_count ? &G.segs[G.seg_count - 1] : NULL;
-  if (s && s->tex == tex && s->has_clip == G.clip_on &&
+  if (s && s->tex == tex && s->target == G.cur_target &&
+      s->has_clip == G.clip_on &&
       (!G.clip_on || (s->clip.x == G.clip.x && s->clip.y == G.clip.y &&
                       s->clip.w == G.clip.w && s->clip.h == G.clip.h)))
     return;
@@ -288,6 +325,7 @@ static void seg_for(int tex) {
     G.segs = realloc(G.segs, G.seg_cap * sizeof *G.segs);
   }
   G.segs[G.seg_count++] = (PalSeg){.tex = tex,
+                                   .target = G.cur_target,
                                    .has_clip = G.clip_on,
                                    .clip = G.clip,
                                    .first = G.vcount,
@@ -330,6 +368,55 @@ void pal_gfx_clip(bool on, int x, int y, int w, int h) {
   if (on) G.clip = (SDL_Rect){x, y, w, h};
 }
 
+/* render the accumulated segments belonging to one target into a texture,
+ * clearing it first. The vertex buffer is shared; we just draw the segs whose
+ * target matches, with this target's projection + full-rect scissor. */
+static void scene_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *tex, int tw,
+                       int th, int target_id, const float clear[4]) {
+  SDL_GPUColorTargetInfo ct = {
+      .texture = tex,
+      .clear_color = {clear[0], clear[1], clear[2], clear[3]},
+      .load_op = SDL_GPU_LOADOP_CLEAR,
+      .store_op = SDL_GPU_STOREOP_STORE,
+  };
+  SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
+  if (G.vcount) {
+    SDL_BindGPUGraphicsPipeline(pass, G.pipe_scene);
+    SDL_BindGPUVertexBuffers(pass, 0,
+                             &(SDL_GPUBufferBinding){.buffer = G.vbuf}, 1);
+    float proj[4] = {2.0f / tw, -2.0f / th, -1.0f, 1.0f};
+    SDL_PushGPUVertexUniformData(cmd, 0, proj, sizeof proj);
+    for (uint32_t i = 0; i < G.seg_count; i++) {
+      PalSeg *s = &G.segs[i];
+      if (s->target != target_id) continue;
+      SDL_Rect full = {0, 0, tw, th};
+      SDL_SetGPUScissor(pass, s->has_clip ? &s->clip : &full);
+      SDL_BindGPUFragmentSamplers(
+          pass, 0,
+          &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
+                                          .sampler = G.sampler},
+          1);
+      SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
+    }
+  }
+  SDL_EndGPURenderPass(pass);
+}
+
+/* blit a target into the bound swapchain pass at a window-px rect (top-left
+ * origin + size). pipe_blit must already be bound. */
+static void blit_layer(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pp,
+                       SDL_GPUTexture *tex, float ox, float oy, float w,
+                       float h, float sw, float sh) {
+  /* NDC rect: x0,y0 = top-left, x1,y1 = bottom-right (y down in pixels) */
+  float rect[4] = {ox / sw * 2 - 1, 1 - oy / sh * 2, (ox + w) / sw * 2 - 1,
+                   1 - (oy + h) / sh * 2};
+  SDL_PushGPUVertexUniformData(cmd, 0, rect, sizeof rect);
+  SDL_BindGPUFragmentSamplers(
+      pp, 0,
+      &(SDL_GPUTextureSamplerBinding){.texture = tex, .sampler = G.sampler}, 1);
+  SDL_DrawGPUPrimitives(pp, 6, 1, 0, 0);
+}
+
 bool pal_gfx_present(void) {
   SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
   if (!cmd) { pal_log("gfx: acquire cmd: %s", SDL_GetError()); return false; }
@@ -363,35 +450,17 @@ bool pal_gfx_present(void) {
     SDL_EndGPUCopyPass(cp);
   }
 
-  /* scene pass: batched quads onto the internal target */
-  SDL_GPUColorTargetInfo ct = {
-      .texture = G.target,
-      .clear_color = {G.clear[0], G.clear[1], G.clear[2], G.clear[3]},
-      .load_op = SDL_GPU_LOADOP_CLEAR,
-      .store_op = SDL_GPU_STOREOP_STORE,
-  };
-  SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
-  if (G.vcount) {
-    SDL_BindGPUGraphicsPipeline(pass, G.pipe_scene);
-    SDL_BindGPUVertexBuffers(pass, 0,
-                             &(SDL_GPUBufferBinding){.buffer = G.vbuf}, 1);
-    float proj[4] = {2.0f / G.iw, -2.0f / G.ih, -1.0f, 1.0f};
-    SDL_PushGPUVertexUniformData(cmd, 0, proj, sizeof proj);
-    for (uint32_t i = 0; i < G.seg_count; i++) {
-      PalSeg *s = &G.segs[i];
-      SDL_Rect full = {0, 0, G.iw, G.ih};
-      SDL_SetGPUScissor(pass, s->has_clip ? &s->clip : &full);
-      SDL_BindGPUFragmentSamplers(
-          pass,
-          0, &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
-                                             .sampler = G.sampler},
-          1);
-      SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
-    }
+  /* scene passes: game segments -> game target; ui segments -> ui canvas.
+   * The game clears to its bg (opaque); the ui canvas clears to transparent so
+   * the game viewport shows through wherever no chrome was drawn. */
+  scene_pass(cmd, G.target, G.iw, G.ih, 0, G.clear);
+  if (G.ui_target) {
+    static const float transparent[4] = {0, 0, 0, 0};
+    scene_pass(cmd, G.ui_target, G.ui_w, G.ui_h, 1, transparent);
   }
-  SDL_EndGPURenderPass(pass);
 
-  /* present pass: integer-scale blit, letterboxed, black borders */
+  /* present composite: game target -> viewport rect, then (if present) the ui
+   * canvas -> the whole window at its own integer scale, alpha-over the game */
   if (!G.headless && G.win) {
     SDL_GPUTexture *swap = NULL;
     Uint32 sw = 0, sh = 0;
@@ -403,16 +472,23 @@ bool pal_gfx_present(void) {
     if (swap) { /* NULL = minimized; skip presentation */
       G.win_w = (int)sw; /* cache real swapchain px for pal.x_window_size */
       G.win_h = (int)sh;
-      int s = (int)SDL_min(sw / (Uint32)G.iw, sh / (Uint32)G.ih);
-      if (s < 1) s = 1;
-      float vw = (float)(G.iw * s), vh = (float)(G.ih * s);
-      float ox = ((float)sw - vw) / 2.0f, oy = ((float)sh - vh) / 2.0f;
-      G.lay_ox = ox;
-      G.lay_oy = oy;
-      G.lay_s = (float)s;
-      /* NDC rect: x0,y0 = top-left, x1,y1 = bottom-right (y down in pixels) */
-      float rect[4] = {ox / sw * 2 - 1, 1 - oy / sh * 2,
-                       (ox + vw) / sw * 2 - 1, 1 - (oy + vh) / sh * 2};
+      /* game viewport (window px) + integer scale: explicit via pal.x_compose,
+       * else a centered integer letterbox (shipped game / default). lay_* is
+       * the game-space mouse mapping (window -> FOV). */
+      float gs;
+      if (G.compose_set) {
+        gs = (float)G.vp_scale;
+        G.lay_ox = (float)G.vp_x;
+        G.lay_oy = (float)G.vp_y;
+      } else {
+        int s = (int)SDL_min(sw / (Uint32)G.iw, sh / (Uint32)G.ih);
+        if (s < 1) s = 1;
+        gs = (float)s;
+        G.lay_ox = ((float)sw - (float)G.iw * gs) / 2.0f;
+        G.lay_oy = ((float)sh - (float)G.ih * gs) / 2.0f;
+      }
+      G.lay_s = gs;
+
       SDL_GPUColorTargetInfo pct = {
           .texture = swap,
           .clear_color = {0, 0, 0, 1},
@@ -421,13 +497,11 @@ bool pal_gfx_present(void) {
       };
       SDL_GPURenderPass *pp = SDL_BeginGPURenderPass(cmd, &pct, 1, NULL);
       SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
-      SDL_PushGPUVertexUniformData(cmd, 0, rect, sizeof rect);
-      SDL_BindGPUFragmentSamplers(
-          pp,
-          0, &(SDL_GPUTextureSamplerBinding){.texture = G.target,
-                                             .sampler = G.sampler},
-          1);
-      SDL_DrawGPUPrimitives(pp, 6, 1, 0, 0);
+      blit_layer(cmd, pp, G.target, G.lay_ox, G.lay_oy, (float)G.iw * gs,
+                 (float)G.ih * gs, (float)sw, (float)sh);
+      if (G.ui_target && G.ui_scale > 0)
+        blit_layer(cmd, pp, G.ui_target, 0, 0, (float)G.ui_w * G.ui_scale,
+                   (float)G.ui_h * G.ui_scale, (float)sw, (float)sh);
       SDL_EndGPURenderPass(pp);
     }
   }

@@ -403,6 +403,64 @@ static int l_x_set_fullscreen(lua_State *L) {
   return 0;
 }
 
+/* pal.x_ui_target(w, h) -> w, h : create/resize the editor/dev UI canvas (the
+ * second target composited over the game viewport). w==0 || h==0 frees it (no
+ * ui layer). Render/dev (D036). */
+static int l_x_ui_target(lua_State *L) {
+  check_gfx(L);
+  int w = (int)luaL_optinteger(L, 1, 0);
+  int h = (int)luaL_optinteger(L, 2, 0);
+  if (!pal_gfx_ui_target_resize(w, h))
+    return luaL_error(L, "x_ui_target: resize failed (see log)");
+  lua_pushinteger(L, G.ui_w);
+  lua_pushinteger(L, G.ui_h);
+  return 2;
+}
+
+/* pal.x_target("game"|"ui") : route subsequent quads to a target. Reset to
+ * "game" by every begin_frame. Render. */
+static int l_x_target(lua_State *L) {
+  check_gfx(L);
+  const char *which = luaL_checkstring(L, 1);
+  if (strcmp(which, "game") == 0)
+    G.cur_target = 0;
+  else if (strcmp(which, "ui") == 0)
+    G.cur_target = 1;
+  else
+    return luaL_error(L, "x_target: expected 'game' or 'ui'");
+  return 0;
+}
+
+/* pal.x_compose{ x=, y=, scale=, ui_scale= } : define the present composite —
+ * the game target blits to (x,y) at integer `scale` (window px); if `ui_scale`
+ * > 0 and a ui target exists, it blits over the whole window at that integer
+ * scale, alpha-over the game. pal.x_compose() (no arg) resets to the default
+ * centered letterbox with no ui layer. Render/dev (D036). */
+static int l_x_compose(lua_State *L) {
+  check_gfx(L);
+  if (lua_isnoneornil(L, 1)) {
+    G.compose_set = false;
+    G.ui_scale = 0;
+    return 0;
+  }
+  luaL_checktype(L, 1, LUA_TTABLE);
+  lua_getfield(L, 1, "scale");
+  int gscale = (int)luaL_optinteger(L, -1, 1);
+  lua_getfield(L, 1, "x");
+  int vx = (int)luaL_optinteger(L, -1, 0);
+  lua_getfield(L, 1, "y");
+  int vy = (int)luaL_optinteger(L, -1, 0);
+  lua_getfield(L, 1, "ui_scale");
+  int us = (int)luaL_optinteger(L, -1, 0);
+  if (gscale < 1) gscale = 1;
+  G.vp_x = vx;
+  G.vp_y = vy;
+  G.vp_scale = gscale;
+  G.ui_scale = us > 0 ? (float)us : 0;
+  G.compose_set = true;
+  return 0;
+}
+
 static int l_begin_frame(lua_State *L) {
   check_gfx(L);
   pal_gfx_begin((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0),
@@ -583,6 +641,10 @@ static int l_poll_events(lua_State *L) {
       lua_setfield(L, -2, "x");
       lua_pushnumber(L, e->y);
       lua_setfield(L, -2, "y");
+      lua_pushnumber(L, e->ui_x);
+      lua_setfield(L, -2, "ui_x");
+      lua_pushnumber(L, e->ui_y);
+      lua_setfield(L, -2, "ui_y");
       break;
     case PAL_EV_BUTTON:
       lua_pushstring(L, "button");
@@ -595,6 +657,10 @@ static int l_poll_events(lua_State *L) {
       lua_setfield(L, -2, "x");
       lua_pushnumber(L, e->y);
       lua_setfield(L, -2, "y");
+      lua_pushnumber(L, e->ui_x);
+      lua_setfield(L, -2, "ui_x");
+      lua_pushnumber(L, e->ui_y);
+      lua_setfield(L, -2, "ui_y");
       break;
     case PAL_EV_WHEEL:
       lua_pushstring(L, "wheel");
@@ -762,6 +828,9 @@ static const luaL_Reg pal_funcs[] = {
     {"x_fov", l_x_fov},
     {"x_set_window_size", l_x_set_window_size},
     {"x_set_fullscreen", l_x_set_fullscreen},
+    {"x_ui_target", l_x_ui_target},
+    {"x_target", l_x_target},
+    {"x_compose", l_x_compose},
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
     {"draw_quads", l_draw_quads},
