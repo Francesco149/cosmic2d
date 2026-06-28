@@ -4,7 +4,47 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M8 — viewport & editor UX (D036): FEATURE-COMPLETE** (pending the
+**Phase**: **M10 — the studio (in-engine sprite/animation editor): DESIGN
+CAPTURED, building Phase 1 (foundation).** New direction this session (human
+spec): build a solid in-editor asset editor — the keystone that unblocks all
+content authoring, so **pulled ahead of M9 (audio)**. M8 (viewport) is
+feature-complete and M7 (movement) is feel-approved; both stand below as history.
+
+### M10 the studio — where we are
+- **Design is captured** (the careful-design deliverable the human asked for):
+  **`docs/STUDIO.md`** is the full design bible (determinism class, document
+  model, `.spr` format, the full-window studio UX + tool roster, the gradient
+  system, the animation model, the asset browser, the bake pipeline, the phased
+  plan, and an explicit "usability traps" section). **ADR D040** is the binding
+  decision; **PLAN M10** + **GAME §10** point at STUDIO.md.
+- **The three structural forks (human's calls 2026-06-28)**: a **dedicated
+  full-window studio mode** (`F2`); a **native layered `.spr` doc that bakes to
+  the strip atlas** the game already draws (truecolor + palette, not indexed);
+  **solid paint foundation first** (Phase 1).
+- **The keystone insight (D040 §1)**: a sprite's pixels are a **render-only
+  asset** (boot-loaded like a PNG / `map.dat`), NOT sim state — so the studio
+  carries **no determinism tax**: no EVAL plumbing, no trace recording, never in
+  `--verify`/golden runs. Totally unlike `cm.editor` (the world editor, where
+  the tilemap IS sim state). This is what makes it a free, good creative tool.
+- **Module plan**: `cm.paint` (pure no-AA rasterizers, selftest-covered),
+  `cm.sprite` (doc model + `.spr` save/load + bake), `cm.studio` (mode + UI on
+  the ui canvas, sim paused, `F2`), `cm.anim` (pure clip evaluator). Assets in
+  `<project>/art/`.
+
+**Next step (resume here): Phase 1a** — write `cm.paint` (get/set, Bresenham
+line, rect, midpoint ellipse, 4-connected exact flood fill, blit/stamp, flip,
+rotate90 — all integer/no-AA) and add selftest KATs for it. Then 1b `cm.sprite`
+(doc + `.spr` + bake + `buf_delta1` undo), 1c the `cm.studio` shell (F2 mode,
+checkerboard canvas, composite-to-texture, cursor-anchored pan/zoom, grid,
+hover), 1d tools + palette + HSV/hex picker + save/bake + asset browser. Phase 1
+exit: a human can paint, palette, save, bake, and reopen a single-layer sprite.
+See STUDIO.md §10 for the full phased plan. Visual progress → llm-feed.
+
+---
+
+## M8/M7 (previous milestones, still current as shipped) — history below
+
+**Phase (M8)**: **M8 — viewport & editor UX (D036): FEATURE-COMPLETE** (pending the
 golden re-cut, which is deferred — see below). The whole D036 model ships:
 variable-FOV two-target composite (editor chrome at its own scale **around** the
 game viewport), the resize ladder, alt+enter borderless fullscreen (**human-

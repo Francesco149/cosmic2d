@@ -1000,3 +1000,69 @@ movable/resizable viewport (D036) needs the compose rect to be drag-driven
 - **Options window-size presets are now fill-the-window resolutions** (720×540,
   960×540, 1440×1080, 1920×1080 — a 4:3 + a 16:9 at two heights), each a whole
   multiple of a FOV ≤ the reference so the ladder fills with no letterbox.
+
+## D040 — the asset studio: a sprite/animation editor over render-only assets (M10, human spec 2026-06-28)
+
+**Context**: M10 needs an in-engine sprite/animation editor (GAME.md §10), and
+the human pulled it ahead of M9 (audio) because no world content gets built
+until assets can be authored in-engine (M10 exit: *the human authors a sprite +
+a portrait in the studio*). The brief: palette + color picker + custom palette
+slots; no-AA pixel lines/curves/shapes; layers; non-destructive gradient fills
+(tweak type/center/phase); brushes incl. a sprite-as-brush; rotate/scale/flip/
+copy/paste/undo/redo; an asset browser with previews; then a standardized way to
+make + edit animations in the same tool. The human chose the three structural
+forks (2026-06-28): a **dedicated full-window studio mode** (over floating
+panels / an F1 sub-tab); a **native layered document that bakes to the strip
+atlas** (over flat PNG / an indexed-palette doc); and **a solid paint foundation
+as the first slice** (over gradients-first / a thin end-to-end slice).
+**Decision**: the studio (`cm.studio`) is a **dev/render-class** tool (the D021
+family — like `cm.editor`/`cm.console`/`cm.inspect`) over assets that are
+**render-only files, not sim state**. The keystone realization: a sprite's
+pixels are loaded at boot like a PNG / `map.dat` / a baked font — "file bytes are
+not sim input" — so unlike the world editor (`cm.editor`, where the tilemap *is*
+sim state and every cell is a recorded EVAL, D022/D026), the studio has **no
+determinism tax at all**: it owns no sim state, never records into a trace, never
+runs in `--verify`/golden runs, and may use float / `math.random` / libm freely.
+The on-disk model is a **native layered `.spr`** (truecolor; layers, palette,
+frames, clips, non-destructive gradient fills) over `cm.chunk`'s tagged
+container; it **bakes** to `art/<name>.png` — a horizontal strip in the exact
+convention the game already draws (`player.lua build_sprite`) — plus
+`art/<name>.anim` (clip table as canonical doc bytes). The game consumes the
+baked PNG through the unchanged `cm.gfx.texture` path: **zero engine change to
+consume**. Decomposition: pure rasterizers `cm.paint` (selftest-covered),
+document/format/bake `cm.sprite`, the mode+UI `cm.studio` (full-window on the ui
+canvas at `ui_scale`, sim paused, input captured, `F2`), the pure clip evaluator
+`cm.anim`. Undo reuses the frozen `pal.buf_delta1` sparse-XOR codec. The full
+design is **STUDIO.md**; phased build there (foundation → layers/shapes/transforms
+→ gradients → animation → procgen/LUT polish).
+**Why**: §1 of every other tool decision here is "is it sim state?" — and for
+art the honest answer is no, which collapses the whole problem. No EVAL plumbing,
+no golden churn, no replay: the studio is a free creative app, and that freedom
+is what lets it be a *good* tool instead of a determinism-constrained one. Native
+layered doc (not flat PNG) is forced by the art direction: gradients are the
+signature technique (GAME.md §10), and non-destructive gradient fills + layers
+need an editable object model PNG can't hold; baking to the existing strip
+convention keeps the runtime untouched. Truecolor (not indexed) because gradients
+need many colors; an indexed/palette-swap mode is an optional later overlay.
+Studio mode (not floating panels) because real authoring — the M10 exit bar —
+wants maximum canvas + a real panel layout. Mechanism-in-engine / policy-in-
+cartridge for animation (the clip evaluator is pure; the cartridge owns
+state→clip + the playhead) mirrors D030/D035 and adds **zero** new sim-state
+surface — cosmetic clips recompute from the frame counter, sim-relevant clips
+ride the controller's existing named buffer.
+**Iron rule held**: the sim never reads asset pixels — they are render-only,
+boot-loaded, never snapshotted, never traced. The studio is live/dev-only
+(headless/`--verify`/golden runs never instantiate it), so the golden suite +
+`record→verify` are byte-untouched; Phase 4's proof is wiring the sandbox player
+to a baked studio sprite and showing `record→verify` stays byte-exact (a
+render-only asset cannot perturb a trace). The pure `cm.paint` rasterizers are
+deterministic by nature and get selftest KATs — insurance, not a determinism
+requirement.
+**Snapshot story**: none — documents, palettes, undo stacks, tool/canvas state
+are all dev-side (D021 class), never sim state, never recorded. Baked assets are
+files adopted at boot like `map.dat`/`knobs.dat` (boot-time-only by rule).
+**Revisit if**: an asset ever needs to be *generated from sim state at runtime*
+(then it's a render target, not an authored asset — different mechanism); or
+per-cell PNG compression / a `pal.x_tex_update` in-place upload is wanted for big
+canvases (both additive, neither blocks); or indexed-palette authoring is
+promoted from optional to a first-class mode.

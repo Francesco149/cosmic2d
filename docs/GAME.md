@@ -250,7 +250,9 @@ dread from the plot. Everything is pixel art.
 
 - **Coloring is simple**; the most sophisticated technique is **gradients**
   (some lines and fills are gradients). The in-engine **sprite editor** must
-  comfortably author character **sprites and portraits** with gradients.
+  comfortably author character **sprites and portraits** with gradients — its
+  design + build plan is **STUDIO.md** (M10, ADR D040), with non-destructive
+  gradient fills as a first-class feature.
 - **Procedural sprites** for particles, liquids, and dust (the M-art procgen:
   noise/shape/gradient/bevel/blend) — feeds slash trails, the teleport
   afterimage, sonic-boom rings, death scatter, liquids.

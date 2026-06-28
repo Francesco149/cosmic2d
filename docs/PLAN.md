@@ -158,8 +158,13 @@ needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
   feedback, a few algorithms), patches/sequencing in Lua, sfx for jump/land/
   flash-jump/slice/teleport, music, PCM-hash audio goldens.
 - **M10 — sprite & procedural art tools** (folds old M8 procgen + M9 LUT + the
-  sprite editor): in-engine **sprite/animation editor** (portraits + sprites +
-  gradients), **procedural sprite generator** (noise/shape/gradient/bevel/blend)
+  sprite editor; **pulled ahead of M9** 2026-06-28 — the editor unblocks all
+  content authoring, so it comes before audio. Design bible: **STUDIO.md**; the
+  binding ADR: **D040**): in-engine **sprite/animation editor** ("the studio",
+  `cm.studio` — portraits + sprites + gradients, a dedicated full-window mode
+  over native layered docs that bake to the strip atlas; assets are render-only,
+  so the studio carries no determinism tax),
+  **procedural sprite generator** (noise/shape/gradient/bevel/blend)
   for particles/liquids/dust + environment, **LUT post pass** + palette/LUT
   editor. Begin upgrading placeholders → real Wadanohara-style assets (human
   authors, agent integrates). *Exit*: the human authors a character sprite +
