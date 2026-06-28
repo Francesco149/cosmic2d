@@ -48,6 +48,12 @@ local function parse_args()
     elseif arg == "--shot" then
       i = i + 1
       a.shot = argv[i] or error("--shot needs a path")
+    elseif arg == "--win" then -- headless capture: composite at WxH (dev/debug)
+      i = i + 1
+      local s = argv[i] or error("--win needs WxH")
+      a.win_w, a.win_h = s:match("^(%d+)x(%d+)$")
+      a.win_w = math.tointeger(a.win_w) or error("--win wants WxH, got " .. s)
+      a.win_h = math.tointeger(a.win_h)
     elseif arg == "--record" then
       i = i + 1
       a.record = argv[i] or error("--record needs a path")
@@ -107,6 +113,7 @@ function M.boot()
   M.contain = not (args.frames or args.verify)
   if args.frames or args.verify then pal.exit_on_error(true) end
   if args.verify then args.headless = true end -- verify never pops a window
+  if args.win_w then args.headless = true end -- composite capture is headless
 
   local proj = load_project(args.project)
   M.proj = proj
@@ -119,6 +126,9 @@ function M.boot()
     headless = args.headless,
     vsync = not args.no_vsync,
   }
+  -- headless composite capture (--win WxH): present into an offscreen target at
+  -- that window size so a --shot shows the editor-around-game layout (dev/debug)
+  if args.win_w then pal.x_capture(args.win_w, args.win_h) end
 
   M.state = cm.require("cm.state")
   M.input = cm.require("cm.input")
@@ -130,8 +140,9 @@ function M.boot()
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")
   -- the resize ladder runs only live: headless/verify keep the fixed project
-  -- FOV so goldens + determinism never see a window-derived size (D036).
-  M.view.set_enabled(not args.headless)
+  -- FOV so goldens + determinism never see a window-derived size (D036). The
+  -- --win capture is the one headless exception (it wants the live layout).
+  M.view.set_enabled(not args.headless or args.win_w ~= nil)
   cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream
@@ -321,8 +332,13 @@ function M.tick()
   M.ticks = M.ticks + 1
   if M.args.frames and M.ticks >= M.args.frames then
     if M.args.shot then
-      local w, h = pal.gfx_size()
-      pal.png_write(M.args.shot, pal.read_pixels(), w, h)
+      local s, w, h
+      if M.args.win_w then -- the full composite (editor + game), window-sized
+        s, w, h = pal.x_capture_read()
+      else -- the game internal target (the golden/screenshot default)
+        s, w, h = pal.read_pixels(), pal.gfx_size()
+      end
+      pal.png_write(M.args.shot, s, w, h)
       pal.log("shot: " .. M.args.shot)
     end
     pal.quit()

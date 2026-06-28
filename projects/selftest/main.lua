@@ -1324,6 +1324,40 @@ local function t_ladder()
   rung(480, 360, 240, 180, 2, "narrow, cropped both ways")
 end
 
+-- ---- pal.x_capture: headless composite readback (M8.4) ----
+-- The composite (game viewport + ui canvas) only lives in the swapchain;
+-- x_capture renders it into an offscreen target so a headless --shot (and this
+-- test) can see the editor-around-game layering. Also guards the headless blit
+-- pipeline (the bug where pipe_blit was only built for a window).
+local function t_capture()
+  pal.x_fov(100, 100)
+  pal.x_ui_target(200, 200)
+  pal.x_capture(200, 200)
+  pal.x_compose({ x = 50, y = 50, scale = 1, ui_scale = 1 }) -- game at (50,50)
+  pal.begin_frame(0, 0, 0, 1)
+  pal.quad(0, 0, 100, 100, 1, 0, 0, 1)  -- game target: fill red
+  pal.x_target("ui")
+  pal.quad(0, 0, 200, 20, 0, 1, 0, 1)   -- ui canvas: a green bar across the top
+  pal.x_target("game")
+  pal.present()
+  local s, w, h = pal.x_capture_read()
+  check(w == 200 and h == 200 and #s == 200 * 200 * 4, "capture: 200x200 RGBA")
+  local function px(x, y)
+    local i = (y * 200 + x) * 4
+    return s:byte(i + 1), s:byte(i + 2), s:byte(i + 3)
+  end
+  local r, g = px(100, 100)        -- inside the game viewport (50,50..150,150)
+  check(r == 255 and g == 0, "capture: game shows red in the viewport rect")
+  local r2, g2 = px(5, 5)          -- outside the game, under the green ui bar
+  check(r2 == 0 and g2 == 255, "capture: ui bar composites over the top")
+  local r3, g3, b3 = px(5, 100)    -- left edge below the bar: transparent -> black
+  check(r3 == 0 and g3 == 0 and b3 == 0, "capture: transparent ui shows through")
+  pal.x_capture(0, 0)
+  pal.x_ui_target(0, 0)
+  pal.x_compose()
+  pal.x_fov(64, 64)
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1348,6 +1382,7 @@ function game.init()
   t_ring()
   t_viewport()
   t_ladder()
+  t_capture()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

@@ -417,6 +417,33 @@ static int l_x_ui_target(lua_State *L) {
   return 2;
 }
 
+/* pal.x_capture(w, h) : enable a headless capture target sized w x h (0 frees +
+ * disables). When on, present() composites into it; pal.x_capture_read() reads
+ * it back. Lets a headless --shot capture the editor-around-game composite that
+ * otherwise lives only in the window. Render/dev. */
+static int l_x_capture(lua_State *L) {
+  check_gfx(L);
+  int w = (int)luaL_optinteger(L, 1, 0);
+  int h = (int)luaL_optinteger(L, 2, 0);
+  if (!pal_gfx_capture(w, h))
+    return luaL_error(L, "x_capture: failed (see log)");
+  return 0;
+}
+
+/* pal.x_capture_read() -> pixels, w, h : the capture target as RGBA8 (top-left,
+ * tightly packed), post-present. */
+static int l_x_capture_read(lua_State *L) {
+  check_gfx(L);
+  size_t len;
+  const void *p = pal_gfx_cap_read_begin(&len);
+  if (!p) return luaL_error(L, "x_capture_read: no capture target / failed");
+  lua_pushlstring(L, p, len);
+  lua_pushinteger(L, G.cap_w);
+  lua_pushinteger(L, G.cap_h);
+  pal_gfx_cap_read_end();
+  return 3;
+}
+
 /* pal.x_target("game"|"ui") : route subsequent quads to a target. Reset to
  * "game" by every begin_frame. Render. */
 static int l_x_target(lua_State *L) {
@@ -831,6 +858,8 @@ static const luaL_Reg pal_funcs[] = {
     {"x_ui_target", l_x_ui_target},
     {"x_target", l_x_target},
     {"x_compose", l_x_compose},
+    {"x_capture", l_x_capture},
+    {"x_capture_read", l_x_capture_read},
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
     {"draw_quads", l_draw_quads},

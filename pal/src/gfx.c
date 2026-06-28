@@ -187,17 +187,19 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
 
   G.pipe_scene = make_pipeline(quad_vs, quad_fs,
                                SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, true, true);
-  if (!G.headless)
-    /* blended: the UI canvas composites over the game layer by its alpha
-     * (transparent ui texels show the game through). The game blit is opaque
-     * (alpha 1) so blending it over the black clear is a no-op (D036). */
-    G.pipe_blit = make_pipeline(blit_vs, quad_fs,
-                                SDL_GetGPUSwapchainTextureFormat(G.dev, G.win),
-                                true, false);
+  /* blended: the UI canvas composites over the game layer by its alpha
+   * (transparent ui texels show the game through). The game blit is opaque
+   * (alpha 1) so blending it over the black clear is a no-op (D036). Built for
+   * the swapchain format when windowed, or the UNORM offscreen format headless
+   * (so pal.x_capture can composite the same way without a window). */
+  SDL_GPUTextureFormat blit_fmt =
+      G.headless ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
+                 : SDL_GetGPUSwapchainTextureFormat(G.dev, G.win);
+  G.pipe_blit = make_pipeline(blit_vs, quad_fs, blit_fmt, true, false);
   SDL_ReleaseGPUShader(G.dev, quad_vs);
   SDL_ReleaseGPUShader(G.dev, quad_fs);
   SDL_ReleaseGPUShader(G.dev, blit_vs);
-  if (!G.pipe_scene || (!G.headless && !G.pipe_blit)) return false;
+  if (!G.pipe_scene || !G.pipe_blit) return false;
 
   G.readback_cap = (uint32_t)(cfg->w * cfg->h * 4);
   G.readback = SDL_CreateGPUTransferBuffer(
@@ -417,6 +419,44 @@ static void blit_layer(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pp,
   SDL_DrawGPUPrimitives(pp, 6, 1, 0, 0);
 }
 
+/* composite the game target (into its viewport rect) + the ui canvas (over the
+ * whole window) into a destination texture of sw x sh px. Sets lay_* (the
+ * window -> game-viewport -> FOV mouse map). Shared by the live swapchain
+ * present and the headless capture, so a screenshot matches the window. */
+static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
+                      int sh) {
+  /* game viewport (window px) + integer scale: explicit via pal.x_compose, else
+   * a centered integer letterbox (shipped game / default). */
+  float gs;
+  if (G.compose_set) {
+    gs = (float)G.vp_scale;
+    G.lay_ox = (float)G.vp_x;
+    G.lay_oy = (float)G.vp_y;
+  } else {
+    int s = (int)SDL_min((Uint32)sw / (Uint32)G.iw, (Uint32)sh / (Uint32)G.ih);
+    if (s < 1) s = 1;
+    gs = (float)s;
+    G.lay_ox = ((float)sw - (float)G.iw * gs) / 2.0f;
+    G.lay_oy = ((float)sh - (float)G.ih * gs) / 2.0f;
+  }
+  G.lay_s = gs;
+
+  SDL_GPUColorTargetInfo pct = {
+      .texture = dst,
+      .clear_color = {0, 0, 0, 1},
+      .load_op = SDL_GPU_LOADOP_CLEAR,
+      .store_op = SDL_GPU_STOREOP_STORE,
+  };
+  SDL_GPURenderPass *pp = SDL_BeginGPURenderPass(cmd, &pct, 1, NULL);
+  SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
+  blit_layer(cmd, pp, G.target, G.lay_ox, G.lay_oy, (float)G.iw * gs,
+             (float)G.ih * gs, (float)sw, (float)sh);
+  if (G.ui_target && G.ui_scale > 0)
+    blit_layer(cmd, pp, G.ui_target, 0, 0, (float)G.ui_w * G.ui_scale,
+               (float)G.ui_h * G.ui_scale, (float)sw, (float)sh);
+  SDL_EndGPURenderPass(pp);
+}
+
 bool pal_gfx_present(void) {
   SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
   if (!cmd) { pal_log("gfx: acquire cmd: %s", SDL_GetError()); return false; }
@@ -459,9 +499,14 @@ bool pal_gfx_present(void) {
     scene_pass(cmd, G.ui_target, G.ui_w, G.ui_h, 1, transparent);
   }
 
-  /* present composite: game target -> viewport rect, then (if present) the ui
-   * canvas -> the whole window at its own integer scale, alpha-over the game */
-  if (!G.headless && G.win) {
+  /* present composite: into the live swapchain, or the offscreen capture target
+   * (pal.x_capture) so a headless screenshot can show the editor-around-game
+   * composite that otherwise only exists in the window. */
+  if (G.cap_on && G.cap_target) {
+    G.win_w = G.cap_w;
+    G.win_h = G.cap_h;
+    composite(cmd, G.cap_target, G.cap_w, G.cap_h);
+  } else if (!G.headless && G.win) {
     SDL_GPUTexture *swap = NULL;
     Uint32 sw = 0, sh = 0;
     if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, G.win, &swap, &sw, &sh)) {
@@ -472,37 +517,7 @@ bool pal_gfx_present(void) {
     if (swap) { /* NULL = minimized; skip presentation */
       G.win_w = (int)sw; /* cache real swapchain px for pal.x_window_size */
       G.win_h = (int)sh;
-      /* game viewport (window px) + integer scale: explicit via pal.x_compose,
-       * else a centered integer letterbox (shipped game / default). lay_* is
-       * the game-space mouse mapping (window -> FOV). */
-      float gs;
-      if (G.compose_set) {
-        gs = (float)G.vp_scale;
-        G.lay_ox = (float)G.vp_x;
-        G.lay_oy = (float)G.vp_y;
-      } else {
-        int s = (int)SDL_min(sw / (Uint32)G.iw, sh / (Uint32)G.ih);
-        if (s < 1) s = 1;
-        gs = (float)s;
-        G.lay_ox = ((float)sw - (float)G.iw * gs) / 2.0f;
-        G.lay_oy = ((float)sh - (float)G.ih * gs) / 2.0f;
-      }
-      G.lay_s = gs;
-
-      SDL_GPUColorTargetInfo pct = {
-          .texture = swap,
-          .clear_color = {0, 0, 0, 1},
-          .load_op = SDL_GPU_LOADOP_CLEAR,
-          .store_op = SDL_GPU_STOREOP_STORE,
-      };
-      SDL_GPURenderPass *pp = SDL_BeginGPURenderPass(cmd, &pct, 1, NULL);
-      SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
-      blit_layer(cmd, pp, G.target, G.lay_ox, G.lay_oy, (float)G.iw * gs,
-                 (float)G.ih * gs, (float)sw, (float)sh);
-      if (G.ui_target && G.ui_scale > 0)
-        blit_layer(cmd, pp, G.ui_target, 0, 0, (float)G.ui_w * G.ui_scale,
-                   (float)G.ui_h * G.ui_scale, (float)sw, (float)sh);
-      SDL_EndGPURenderPass(pp);
+      composite(cmd, swap, (int)sw, (int)sh);
     }
   }
 
@@ -530,6 +545,75 @@ const void *pal_gfx_read_begin(size_t *len) {
 }
 
 void pal_gfx_read_end(void) { SDL_UnmapGPUTransferBuffer(G.dev, G.readback); }
+
+bool pal_gfx_capture(int w, int h) {
+  if (w <= 0 || h <= 0) { /* disable + free */
+    if (G.cap_target) SDL_ReleaseGPUTexture(G.dev, G.cap_target);
+    G.cap_target = NULL;
+    G.cap_w = G.cap_h = 0;
+    G.cap_on = false;
+    return true;
+  }
+  if (w > 4096) w = 4096;
+  if (h > 4096) h = 4096;
+  if (!(G.cap_target && w == G.cap_w && h == G.cap_h)) {
+    SDL_GPUTexture *nt = SDL_CreateGPUTexture(
+        G.dev, &(SDL_GPUTextureCreateInfo){
+                   .type = SDL_GPU_TEXTURETYPE_2D,
+                   .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                   .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                            SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                   .width = (Uint32)w,
+                   .height = (Uint32)h,
+                   .layer_count_or_depth = 1,
+                   .num_levels = 1});
+    if (!nt) {
+      pal_log("gfx: capture %dx%d: %s", w, h, SDL_GetError());
+      return false;
+    }
+    if (G.cap_target) SDL_ReleaseGPUTexture(G.dev, G.cap_target);
+    G.cap_target = nt;
+    G.cap_w = w;
+    G.cap_h = h;
+  }
+  G.cap_on = true;
+  G.win_w = w; /* so pal.x_window_size reports the captured window size */
+  G.win_h = h;
+  return true;
+}
+
+const void *pal_gfx_cap_read_begin(size_t *len) {
+  if (!G.cap_target) return NULL;
+  uint32_t need = (uint32_t)(G.cap_w * G.cap_h * 4);
+  if (need > G.cap_readback_cap) {
+    if (G.cap_readback) SDL_ReleaseGPUTransferBuffer(G.dev, G.cap_readback);
+    G.cap_readback = SDL_CreateGPUTransferBuffer(
+        G.dev, &(SDL_GPUTransferBufferCreateInfo){
+                   .usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, .size = need});
+    if (!G.cap_readback) { pal_log("gfx: cap readback alloc: %s", SDL_GetError()); return NULL; }
+    G.cap_readback_cap = need;
+  }
+  SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
+  SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
+  SDL_DownloadFromGPUTexture(
+      cp,
+      &(SDL_GPUTextureRegion){
+          .texture = G.cap_target, .w = (Uint32)G.cap_w, .h = (Uint32)G.cap_h, .d = 1},
+      &(SDL_GPUTextureTransferInfo){.transfer_buffer = G.cap_readback,
+                                    .pixels_per_row = (Uint32)G.cap_w,
+                                    .rows_per_layer = (Uint32)G.cap_h});
+  SDL_EndGPUCopyPass(cp);
+  SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+  if (!fence) { pal_log("gfx: cap readback submit: %s", SDL_GetError()); return NULL; }
+  SDL_WaitForGPUFences(G.dev, true, &fence, 1);
+  SDL_ReleaseGPUFence(G.dev, fence);
+  *len = (size_t)G.cap_w * G.cap_h * 4;
+  return SDL_MapGPUTransferBuffer(G.dev, G.cap_readback, false);
+}
+
+void pal_gfx_cap_read_end(void) {
+  SDL_UnmapGPUTransferBuffer(G.dev, G.cap_readback);
+}
 
 int pal_gfx_tex_create(const void *pixels, int w, int h) {
   return tex_slot_create(pixels, w, h);

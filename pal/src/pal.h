@@ -108,6 +108,14 @@ typedef struct {
   uint32_t gpubuf_cap; /* bytes in vbuf/tbuf */
   SDL_GPUTransferBuffer *readback;
   uint32_t readback_cap; /* bytes in readback; grows if the FOV/target grows */
+  /* headless capture of the full composite (pal.x_capture): the present
+   * composite renders into cap_target instead of a swapchain, so a screenshot
+   * can show the editor-around-game layout that only exists in the window. */
+  SDL_GPUTexture *cap_target;
+  int cap_w, cap_h;
+  bool cap_on;
+  SDL_GPUTransferBuffer *cap_readback;
+  uint32_t cap_readback_cap;
 
   /* current letterbox layout (for mouse mapping), updated each present */
   float lay_ox, lay_oy, lay_s;
@@ -179,6 +187,12 @@ bool pal_gfx_target_resize(int w, int h);
 /* create/resize the editor/dev UI canvas (D036). w==0 || h==0 frees it (no ui
  * layer). No-op (true) if unchanged. Render-only. */
 bool pal_gfx_ui_target_resize(int w, int h);
+/* enable/resize a headless capture target (w==0 frees + disables). When on,
+ * present() composites into it instead of a swapchain. Render/dev. */
+bool pal_gfx_capture(int w, int h);
+/* readback the capture target (RGBA8, top-left); read_end before any gfx call */
+const void *pal_gfx_cap_read_begin(size_t *len);
+void pal_gfx_cap_read_end(void);
 void pal_gfx_begin(float r, float g, float b, float a);
 void pal_gfx_quad(float x, float y, float w, float h, float u0, float v0,
                   float u1, float v1, uint32_t rgba, int tex);
