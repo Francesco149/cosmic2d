@@ -1310,24 +1310,23 @@ end
 -- policy, so it is safe to compute headless (it just doesn't get applied).
 local function t_ladder()
   local view = cm.require("cm.view")
-  local function rung(W, H, ew, eh, es, label, cap)
-    local fw, fh, s = view.ladder(W, H, cap)
+  local function rung(W, H, ew, eh, es, label)
+    local fw, fh, s = view.ladder(W, H)
     check(fw == ew and fh == eh and s == es,
-      ("ladder%s %dx%d -> %dx%d@%d (got %dx%d@%d) [%s]")
-      :format(cap and "(cap)" or "", W, H, ew, eh, es, fw, fh, s, label))
+      ("ladder %dx%d -> %dx%d@%d (got %dx%d@%d) [%s]")
+      :format(W, H, ew, eh, es, fw, fh, s, label))
   end
-  -- fill mode (play): the FOV fills the window, no letterbox
+  -- max-of-fits + hard-cap at the reference: fills the common cases, never
+  -- exceeds 480x270 (so the render never bleeds past the level's edges)
   rung(960, 540, 480, 270, 2, "reference 2x")
-  rung(1920, 1080, 480, 270, 4, "full FOV at 4x")
-  rung(1920, 1040, 480, 260, 4, "maximized: fills, a few less px of FOV")
-  rung(1280, 720, 640, 360, 2, "fills at 2x, more world (no letterbox)")
-  rung(720, 540, 360, 270, 2, "4:3 cropped width")
+  rung(1920, 1080, 480, 270, 4, "full FOV at 4x, fills")
+  rung(1920, 1040, 480, 260, 4, "maximized 16:9: fills, a few less px of FOV")
+  rung(1280, 720, 480, 270, 2, "capped at the reference (no bleed; letterboxed)")
+  rung(720, 540, 360, 270, 2, "4:3 cropped width, fills")
   rung(640, 360, 320, 180, 2, "smallest, cropped both ways")
   rung(480, 360, 240, 180, 2, "narrow, cropped both ways")
-  -- cap mode (editor preview): FOV hard-capped at the reference (no parallax
-  -- bleed below the level); crops below on a small rect, margins on a large one
-  rung(1548, 994, 480, 270, 3, "editor@1080p: capped at the reference", true)
-  rung(588, 514, 294, 257, 2, "editor@960x600: cropped below the reference", true)
+  rung(1548, 994, 480, 270, 3, "editor avail @1080p: capped, centered")
+  rung(588, 514, 294, 257, 2, "editor avail @960x600: cropped below the ref")
 end
 
 -- ---- pal.x_capture: headless composite readback (M8.4) ----
