@@ -107,6 +107,19 @@ local function guarded(fn, ...)
   return ok
 end
 
+-- a quit request from any in-app source (the window close button, the
+-- options-menu "quit" button). A game may intercept it to run a save/confirm
+-- hook (on_quit); otherwise we quit. Single path so every quit affordance
+-- behaves the same — notably the only in-app exit in borderless fullscreen,
+-- which has no window chrome (Esc opens the options menu, not quits).
+function M.request_quit()
+  if M.game and M.game.on_quit and not M.game_err then
+    guarded(M.game.on_quit)
+  else
+    pal.quit()
+  end
+end
+
 function M.boot()
   local args = parse_args()
   M.args = args
@@ -272,14 +285,7 @@ function M.tick()
   local t0 = pal.time_ns()
   local events = pal.poll_events()
   for _, e in ipairs(events) do
-    if e.type == "quit" then
-      -- game code may intercept (pause menus, save prompts); default quits
-      if M.game and M.game.on_quit and not M.game_err then
-        guarded(M.game.on_quit)
-      else
-        pal.quit()
-      end
-    end
+    if e.type == "quit" then M.request_quit() end
   end
   -- engine UI sees raw events; the game sees what the UI didn't capture
   events = M.ui.frame(events)

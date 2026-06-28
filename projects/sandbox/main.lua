@@ -13,7 +13,8 @@
 --   d                hold = continuous slice (enemies arrive at M12)
 --   `                console — poke doc.knobs.* live, game.demo(1)
 --   f1               editor mode — paint the map, collider overlay (M4)
---   escape           quit
+--   escape           options menu (resolution / ui scale / fullscreen / quit)
+--   alt+enter        toggle borderless fullscreen
 --
 -- Module split: level (tiles + map + backdrop), player (controller),
 -- props (crate physics; the player no longer grabs — the sandbox grab/throw
@@ -165,7 +166,9 @@ function game.init()
     { "grapple", input.key.q },
     { "teleport", input.key.r },
     { "attack", input.key.d },
-    { "quit", input.key.escape },
+    -- Esc is NOT bound here: it's engine-reserved for the options menu
+    -- (cm.options, like ` for the console). A cartridge that quit on Esc would
+    -- fire alongside the menu toggle and kill the game before it could open.
   })
 
   -- the M4 editor: what to paint, where the camera is, which boxes to
@@ -273,7 +276,6 @@ local function cam_step()
 end
 
 function game.step()
-  if input.down("quit") then pal.quit() end
   local ctl = build_ctl()
   player.step(ctl)
   props.step()

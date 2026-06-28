@@ -37,10 +37,12 @@ function M.frame()
   end
   if not M.on then return end
   ui.capture_mouse() -- clicks land on the menu, not the game/world beneath
+  ui.capture_keys() -- ...and held keys don't drive the game behind the menu
+                    -- (up-events still pass, so nothing sticks — see cm.ui)
 
   local st = ui.style
   local SW, SH = view.surface_size()
-  local w, h = 184, 122
+  local w, h = 184, 140
   local x, y = (SW - w) // 2, (SH - h) // 2
   ui.begin_panel("options", x, y, w, h, { title = "options" })
 
@@ -69,6 +71,11 @@ function M.frame()
   end
 
   if ui.button("close") then M.on = false end
+  ui.separator() -- set the destructive action apart from "close"
+  if ui.button("quit game", { color = st.error }) then
+    M.on = false
+    cm.main.request_quit() -- the only in-app exit when borderless-fullscreen
+  end
   ui.end_panel()
 end
 
