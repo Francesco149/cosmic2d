@@ -796,6 +796,23 @@ updated):
   the whole grapple** (extend and reel) until it's cancelled — it's a committed
   vertical move (hop was already gated; jump still cancels).
 
+**Feel pass 4 (2026-06-28).**
+- **Flutter is a rhythmic hold, not a glide.** The old flutter was a continuous
+  slow-fall (`flutter_fall`/`flutter_decel`) that engaged after a frame-count
+  grace. Reworked per the human: it now **only begins once you've started FALLING**
+  (past the hop's apex) while still holding E — so the "must be falling" gate
+  replaces `flutter_grace` as the tap guard (a hop released before the fall is a
+  clean hop, no cd). Instead of a glide it delivers a **rhythmic mini-hop every
+  `flutter_interval` frames, `flutter_boosts` times** (≈ a few s): each a
+  height-based up-kick `flutter_h` (`v=√(2·g·h)`, like hop/up-jump — survives
+  gravity retunes) sized to **roughly HOLD altitude** over the beat, plus a small
+  forward nudge `flutter_vx` (< `hop_vx`, the "diagonal like the hop but smaller").
+  Normal gravity acts between beats; the cd (`hop_cd`) arms on release / timeout /
+  land. Knobs replace `flutter_grace`/`flutter_max`/`flutter_fall`/`flutter_decel`
+  with `flutter_interval`/`flutter_boosts`/`flutter_h`/`flutter_vx`. Verified: the
+  demo's flutter holds y≈480 (no net drift) while drifting forward; KITCHECK +
+  TOUR still record→verify byte-exact. Default magnitudes are the human's feel call.
+
 ## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
 
 **Context**: the human wants (a) an **editor-only UI scale** independent of the

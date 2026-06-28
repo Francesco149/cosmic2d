@@ -108,19 +108,19 @@ local KITCHECK = {
   -- hop once per airtime (1-frame TAPs — a multi-frame hold would flutter and
   -- arm the 10 s cooldown, which would then block every later hop test)
   { 8, "jump" }, { 5 },
-  { 6, "hop" }, -- HOP #1 (a normal-length TAP, under flutter_grace)
+  { 6, "hop" }, -- HOP #1 (a TAP — released before the fall, so no flutter)
   { 5 },
   { 6, "hop" }, -- HOP #2 -> ignored (once per airtime)
   { 26 }, -- land
   -- a normal TAP hop never arms the flutter cooldown
   { 8, "jump" }, { 5 }, { 6, "hop" }, { 28 }, -- tap, land
   { 8, "jump" }, { 5 }, { 6, "hop" }, { 26 }, -- WORKS next airtime (no cd)
-  -- a FLUTTER (E held past flutter_grace) arms the cooldown; the next
-  -- airtime's hop is blocked. Kept LAST: its 10 s cd blocks any hop after it.
+  -- a FLUTTER (E held into the FALL) rhythm-boosts then arms the cooldown; the
+  -- next airtime's hop is blocked. Kept LAST: its 10 s cd blocks any hop after.
   { 8, "jump" }, { 5 },
   { 4, "hop" }, -- hop...
-  { 40, "hop" }, -- ...HOLD E past the grace -> flutter (arms hop_cd)
-  { 30 }, -- land
+  { 95, "hop" }, -- ...HOLD E into the fall -> rhythmic flutter (arms hop_cd)
+  { 40 }, -- land
   { 8, "jump" }, { 5 },
   { 6, "hop" }, -- hop -> BLOCKED (hop_cd still counting)
   { 26 }, -- land

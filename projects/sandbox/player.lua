@@ -21,9 +21,12 @@
 --               landing. Time it late for less height.
 --   5 HOP       E — diagonal up-forward boost, the trajectory fine-tuner.
 --               Chains anywhere. Once per airtime (and never on flutter cd).
---   6 FLUTTER   hold E after a hop — hover / slow-fall up to flutter_max.
---               On release/timeout hop goes on hop_cd (a plain TAP hop never
---               arms the cooldown). Cooldown persists across airtimes.
+--   6 FLUTTER   hold E after a hop AND keep holding once you START FALLING —
+--               a rhythmic mini-hop (up + a little forward) every
+--               flutter_interval frames, flutter_boosts times (~a few s), each
+--               sized to roughly HOLD your height. Not a glide. On
+--               release/timeout/land hop goes on hop_cd (a plain TAP hop —
+--               released before you fall — never arms it). Cd persists.
 --   7 GRAPPLE   q (the spec's ` is the dev console — see main.lua) — reel up
 --               to a standable top above, preferring targets past ½ a
 --               screenful. Slow accel. Once per airtime, 3 s cooldown. Jump
@@ -362,39 +365,43 @@ function M.step(ctl)
     puff(x + W * 0.5, y + H, 4, 0.8)
   end
 
-  -- ===== FLUTTER (hold E after a hop) — hover; arms hop_cd ONLY if you enter
-  -- the hover. hop_active counts airborne frames since the hop; the hover (and
-  -- thus flutter_t / the cooldown) begins only after flutter_grace frames, so a
-  -- normal TAP — not just a 1-frame one — is a clean hop with no cooldown. The
-  -- cd then starts on release / timeout (or landing, below). =====
+  -- ===== FLUTTER (hold E after a hop) — once you've started FALLING (past the
+  -- hop's apex) and you're STILL holding, HOVER by rhythm: a small up+forward
+  -- boost (a mini hop, height-based) every flutter_interval frames, flutter_
+  -- boosts times (~a few s), each sized (flutter_h) to roughly hold your
+  -- altitude over the beat — NOT a continuous glide. flutter_t counts frames
+  -- since the hover began; the cooldown (hop_cd) arms when it ends (release /
+  -- timeout / land, below), so a plain TAP — E let go before you fall — is a
+  -- clean hop with no cd (the "must be falling" gate IS the tap guard). =====
+  local flutter_total = k.flutter_interval * m.max(1, k.flutter_boosts)
   if hop_active > 0 then
-    if not ctl.hop_held or flutter_t >= k.flutter_max
-       or grappling ~= 0 or ctl.attack_held then
-      if flutter_t > 0 then hop_cd = k.hop_cd end -- only if the hover was entered
-      fluttering, hop_active, flutter_t = 0, 0, 0 -- reset ft so a later teleport
-      -- (which re-arms hop_cd while ft>0) can't refresh the cooldown
-    elseif not grounded then
-      hop_active = hop_active + 1
-      if hop_active > k.flutter_grace then -- past the tap window: hover begins
-        fluttering = 1
-        flutter_t = flutter_t + 1
+    local hold = ctl.hop_held and grappling == 0 and not ctl.attack_held
+    if fluttering == 1 then
+      if not hold or grounded or flutter_t >= flutter_total then
+        hop_cd = k.hop_cd -- a real flutter happened -> cooldown
+        fluttering, hop_active, flutter_t = 0, 0, 0 -- reset ft so a later
+        -- teleport (which re-arms hop_cd while ft>0) can't refresh the cd
       else
-        fluttering = 0 -- still within the tap grace: normal hop arc, no hover
+        if flutter_t % k.flutter_interval == 0 then -- the beat: a mini hop
+          vy = -m.sqrt(2.0 * g_rise * k.flutter_h)  -- up (~holds height/beat)
+          vx = m.clamp(vx + facing * k.flutter_vx, -k.fj_vx, k.fj_vx) -- +forward
+          puff(x + W * 0.5, y + H, 2, 2.4)
+        end
+        flutter_t = flutter_t + 1
       end
-    else
-      fluttering = 0 -- pre-liftoff (a grounded hop's own frame)
+    elseif not hold or grounded then
+      hop_active = 0 -- released / landed before falling: a clean hop, no cd
+    elseif vy > 0 then -- started falling while holding: the hover begins
+      fluttering, flutter_t = 1, 0
     end
   end
 
-  -- ===== GRAVITY (normal during the extend phase; the reel drives vy itself;
-  -- flutter eases to a slow sink) ===
+  -- ===== GRAVITY (normal during the extend phase; the reel drives vy itself.
+  -- Flutter no longer eases gravity — it rhythm-boosts vy above, so normal
+  -- gravity acts between the beats) ===
   if grappling ~= 2 then
-    if fluttering == 1 then
-      vy = approach(vy, k.flutter_fall, k.flutter_decel * DT)
-    else
-      local g = (vy < 0) and g_rise or (g_rise * k.fall_mul)
-      vy = m.min(vy + g * DT, k.fall_max)
-    end
+    local g = (vy < 0) and g_rise or (g_rise * k.fall_mul)
+    vy = m.min(vy + g * DT, k.fall_max)
   end
 
   -- ===== MOVE + COLLIDE (the frozen exact mover) =====

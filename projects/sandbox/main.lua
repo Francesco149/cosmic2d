@@ -66,11 +66,16 @@ local KNOBS = {
     fj_vx = 186, fj_vy = -52,
     -- up jump: rise upjump_h px above the launch (jump→up-jump chain)
     upjump_h = 56,
-    -- hop + flutter (hold E → hover up to flutter_max, then hop_cd). hop_h =
-    -- the hop's rise px. flutter_grace: airborne frames you can hold E before
-    -- the hover (and its cooldown) engages — so a normal TAP never arms a cd.
-    hop_vx = 120, hop_h = 18, flutter_grace = 10,
-    flutter_max = 600, flutter_fall = 26, flutter_decel = 520, hop_cd = 600,
+    -- hop + flutter. hop_h = the hop's rise px. FLUTTER: hold E after a hop and
+    -- keep holding once you've started FALLING → a rhythmic mini-hop every
+    -- flutter_interval frames, flutter_boosts times (≈ interval×boosts/60 s),
+    -- each a height-based up-kick (flutter_h, sized to ~hold altitude over the
+    -- beat — raise it for more hold / a bigger bob, lower it for a gentle
+    -- descent) + a small forward nudge (flutter_vx < hop_vx). Then hop_cd (a
+    -- plain TAP — E released before you fall — never arms it).
+    hop_vx = 120, hop_h = 18,
+    flutter_interval = 60, flutter_boosts = 4, flutter_h = 45, flutter_vx = 70,
+    hop_cd = 600,
     -- grapple: the hook EXTENDS to a top above at grapple_extend px/s (~1
     -- screenful/s) under gravity, THEN reels you in (slow accel), STOPPING
     -- grapple_stop_ch character-heights short of the platform so the residual
@@ -329,7 +334,8 @@ local function draw_cd_hud()
             or "air: all ready", { r = 0.85, g = 0.8, b = 0.7, a = 0.85 })
   local mode = d.tp_mode > 0.5 and "B back/phase" or "A fwd/solid"
   local fl = d.fluttering > 0.5
-            and ("  flutter %.1fs"):format((k.flutter_max - d.flutter_t) / 60)
+            and ("  flutter %.1fs"):format(
+              (k.flutter_interval * k.flutter_boosts - d.flutter_t) / 60)
             or ""
   text.draw(3, 46, "phase: " .. mode .. fl,
             { r = 0.55, g = 0.88, b = 0.95, a = 0.85 })
