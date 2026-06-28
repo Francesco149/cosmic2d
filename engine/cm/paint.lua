@@ -272,6 +272,14 @@ function M.blit(dst, dx, dy, src, sx, sy, sw, sh, mode)
   end
 end
 
+-- copy a rectangular region out into a fresh w*h image (a selection lift /
+-- clipboard grab). Out-of-bounds source reads come back transparent.
+function M.copy_region(img, x, y, w, h)
+  local out = M.image(w, h)
+  M.blit(out, 0, 0, img, x, y, w, h, "set")
+  return out
+end
+
 function M.flip_h(img)
   local w, h = img.w, img.h
   for y = 0, h - 1 do

@@ -45,8 +45,9 @@ local LROW = 12 -- a layers-panel row
 local KEY_F2 = 59
 local ALT_L, ALT_R, CTRL_L, CTRL_R = 226, 230, 224, 228
 local SHIFT_L, SHIFT_R = 225, 229
+local KEY_RET, KEY_DEL, KEY_BKSP = 40, 76, 42
 local SC = { z = 29, y = 28, s = 22, b = 5, e = 8, g = 10, i = 12, x = 27,
-             l = 15, r = 21, o = 18, f = 9 }
+             l = 15, r = 21, o = 18, f = 9, m = 16, v = 25, c = 6, d = 7 }
 
 local TOOLS = {
   { id = "pencil",  key = "B", tip = "pencil" },
@@ -56,6 +57,8 @@ local TOOLS = {
   { id = "rect",    key = "R", tip = "rectangle (Shift = square)" },
   { id = "ellipse", key = "O", tip = "ellipse (Shift = circle)" },
   { id = "pick",    key = "I", tip = "eyedropper (or hold Alt)" },
+  { id = "select",  key = "M", tip = "marquee select" },
+  { id = "move",    key = "V", tip = "move selection / float" },
 }
 local SHAPE = { line = true, rect = true, ellipse = true }
 
@@ -95,6 +98,7 @@ function M.cell() return sprite.cell(M.doc) end
 function M.new_doc(w, h)
   M.doc = sprite.new(w or 32, h or 32)
   M.dirty, M.need_fit = true, true
+  if M.reset_sel then M.reset_sel() end
 end
 
 function M.toggle(on)
@@ -109,7 +113,7 @@ end
 
 -- open (optionally adopt a doc) and enter the mode. Usable from the console.
 function M.open(doc)
-  if doc then M.doc, M.dirty, M.need_fit = doc, true, true end
+  if doc then M.doc, M.dirty, M.need_fit = doc, true, true; M.reset_sel() end
   if not M.doc then M.new_doc(32, 32) end
   M.toggle(true)
 end
@@ -268,6 +272,97 @@ function M.rebuild_tex()
   M.dirty = false
 end
 
+-- ---- selection + floating selection + clipboard (Phase 2) ----
+-- M.sel = {x,y,w,h} marquee (doc px). M.float = {img,x,y,w,h} a lifted/pasted
+-- selection drawn OVER the canvas, not yet stamped in. M.clip = the clipboard.
+
+local function free_float_tex()
+  if M.float_tex then pal.tex_free(M.float_tex); M.float_tex = nil end
+end
+
+local function build_float_tex()
+  local f = M.float
+  if not f then return end
+  free_float_tex()
+  M.float_tex = pal.tex_create(f.w, f.h, f.img.buf:str(0, f.w * f.h * 4))
+end
+
+-- drop all selection state (a new / loaded doc, or an explicit deselect)
+function M.reset_sel()
+  M.sel, M.float, M.selecting, M.moving = nil, nil, false, false
+  free_float_tex()
+end
+
+-- stamp the floating selection into the active cell (one undo step); the
+-- selection rect follows it so you can keep nudging.
+function M.commit_float()
+  local f = M.float
+  if not f then return end
+  sprite.begin_edit(M.doc)
+  paint.blit(M.cell(), floor(f.x), floor(f.y), f.img, 0, 0, f.w, f.h, "stamp")
+  sprite.end_edit(M.doc)
+  M.sel = { x = floor(f.x), y = floor(f.y), w = f.w, h = f.h }
+  M.float = nil
+  free_float_tex()
+  M.dirty = true
+end
+
+-- lift the current selection off the layer into a float (cuts a hole)
+function M.lift_selection()
+  local s = M.sel
+  if not s or M.float then return end
+  local img = paint.copy_region(M.cell(), s.x, s.y, s.w, s.h)
+  sprite.begin_edit(M.doc)
+  paint.rect(M.cell(), s.x, s.y, s.w, s.h, 0, true) -- clear the source region
+  sprite.end_edit(M.doc)
+  M.float = { img = img, x = s.x, y = s.y, w = s.w, h = s.h }
+  build_float_tex()
+  M.dirty = true
+end
+
+function M.copy()
+  if M.float then M.clip = paint.copy_region(M.float.img, 0, 0, M.float.w, M.float.h)
+  elseif M.sel then M.clip = paint.copy_region(M.cell(), M.sel.x, M.sel.y, M.sel.w, M.sel.h) end
+end
+
+function M.cut()
+  if M.float then
+    M.clip = paint.copy_region(M.float.img, 0, 0, M.float.w, M.float.h)
+    M.float = nil; free_float_tex(); M.dirty = true
+  elseif M.sel then
+    M.clip = paint.copy_region(M.cell(), M.sel.x, M.sel.y, M.sel.w, M.sel.h)
+    sprite.begin_edit(M.doc)
+    paint.rect(M.cell(), M.sel.x, M.sel.y, M.sel.w, M.sel.h, 0, true)
+    sprite.end_edit(M.doc)
+    M.dirty = true
+  end
+end
+
+function M.paste()
+  if not M.clip then return end
+  M.commit_float() -- land any existing float first
+  local cw, ch = M.clip.w, M.clip.h
+  local px = M.sel and M.sel.x or floor((M.doc.w - cw) / 2)
+  local py = M.sel and M.sel.y or floor((M.doc.h - ch) / 2)
+  M.float = { img = paint.copy_region(M.clip, 0, 0, cw, ch), x = px, y = py, w = cw, h = ch }
+  build_float_tex()
+  M.tool = "move"
+  M.dirty = true
+end
+
+-- Delete: drop a float (its hole stays), else clear the selected region.
+function M.clear_sel_region()
+  if M.float then M.float = nil; free_float_tex(); M.dirty = true; return end
+  if M.sel then
+    sprite.begin_edit(M.doc)
+    paint.rect(M.cell(), M.sel.x, M.sel.y, M.sel.w, M.sel.h, 0, true)
+    sprite.end_edit(M.doc)
+    M.dirty = true
+  end
+end
+
+function M.deselect() M.commit_float(); M.sel = nil end
+
 -- ---- input ----
 
 local function handle_keys()
@@ -281,7 +376,11 @@ local function handle_keys()
       if M.ctrl then
         if sc == SC.z then sprite.undo(M.doc); M.dirty = true
         elseif sc == SC.y then sprite.redo(M.doc); M.dirty = true
-        elseif sc == SC.s then M.save() end
+        elseif sc == SC.s then M.save()
+        elseif sc == SC.c then M.copy()
+        elseif sc == SC.x then M.cut()
+        elseif sc == SC.v then M.paste()
+        elseif sc == SC.d then M.deselect() end
       elseif sc == SC.b then M.tool = "pencil"
       elseif sc == SC.e then M.tool = "eraser"
       elseif sc == SC.g then M.tool = "fill"
@@ -289,7 +388,11 @@ local function handle_keys()
       elseif sc == SC.r then M.tool = "rect"
       elseif sc == SC.o then M.tool = "ellipse"
       elseif sc == SC.i then M.tool = "pick"
+      elseif sc == SC.m then M.tool = "select"
+      elseif sc == SC.v then M.tool = "move"
       elseif sc == SC.f then M.fill_shapes = not M.fill_shapes
+      elseif sc == KEY_RET then M.commit_float()
+      elseif sc == KEY_DEL or sc == KEY_BKSP then M.clear_sel_region()
       elseif sc == SC.x then M.prim, M.sec = M.sec, M.prim; M.set_prim(M.prim) end
     end
   end
@@ -367,6 +470,54 @@ local function dab(px, py)
   M.dirty = true
 end
 
+-- two corner pixels -> a normalized {x,y,w,h} clamped inside the image
+local function norm_rect(ax, ay, bx, by, W, H)
+  ax, bx = clamp(ax, 0, W - 1), clamp(bx, 0, W - 1)
+  ay, by = clamp(ay, 0, H - 1), clamp(by, 0, H - 1)
+  local x0, x1 = min(ax, bx), max(ax, bx)
+  local y0, y1 = min(ay, by), max(ay, by)
+  return { x = x0, y = y0, w = x1 - x0 + 1, h = y1 - y0 + 1 }
+end
+
+-- the marquee (select) + move-the-float tools
+local function handle_select(over)
+  local inp = ui.inp
+  local pressed = inp.clicked[1]
+  local held = inp.buttons[1]
+  if M.tool == "select" then
+    if over and pressed and not ui.active then
+      M.commit_float() -- a fresh marquee lands any floating selection first
+      local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      M.sel_ax, M.sel_ay, M.selecting = px, py, true
+    end
+    if M.selecting and held then
+      local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      M.sel = norm_rect(M.sel_ax, M.sel_ay, px, py, M.doc.w, M.doc.h)
+    elseif M.selecting and not held then
+      M.selecting = false
+      if M.sel and (M.sel.w < 1 or M.sel.h < 1) then M.sel = nil end
+    end
+  elseif M.tool == "move" then
+    if pressed and not ui.active then
+      local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      -- press inside the selection lifts it into a float (if not already)
+      if not M.float and M.sel and px >= M.sel.x and px < M.sel.x + M.sel.w
+         and py >= M.sel.y and py < M.sel.y + M.sel.h then
+        M.lift_selection()
+      end
+      if M.float then
+        M.grab_dx, M.grab_dy, M.moving = px - M.float.x, py - M.float.y, true
+      end
+    end
+    if M.moving and held and M.float then
+      local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      M.float.x, M.float.y = px - M.grab_dx, py - M.grab_dy
+    elseif M.moving and not held then
+      M.moving = false
+    end
+  end
+end
+
 local function handle_paint(over)
   local inp = ui.inp
   local tool = M.alt and "pick" or M.tool
@@ -387,6 +538,13 @@ local function handle_paint(over)
     end
     return
   end
+
+  -- selection tools (Alt overrides them with the temporary eyedropper, below)
+  if not M.alt and (M.tool == "select" or M.tool == "move") then
+    handle_select(over); return
+  end
+  -- choosing a paint/shape tool lands any floating selection onto the layer
+  if M.float and not (M.tool == "select" or M.tool == "move") then M.commit_float() end
 
   if tool == "pick" then
     if over and pressed and dpx then
@@ -455,6 +613,25 @@ end
 
 -- ---- drawing ----
 
+-- marching-ants rectangle (screen px): alternating 4px white/black dashes that
+-- crawl with the render clock. Used for the selection + the floating selection.
+local function draw_marquee(x, y, w, h)
+  local t = ui.ticks // 6
+  local function seg(px, py, horiz, len)
+    local i = 0
+    while i < len do
+      local s = min(4, len - i)
+      local on = (((i // 4) + t) % 2) == 0
+      ui.rect(horiz and px + i or px, horiz and py or py + i,
+              horiz and s or 1, horiz and 1 or s,
+              on and { 1, 1, 1, 1 } or { 0, 0, 0, 1 })
+      i = i + s
+    end
+  end
+  seg(x, y, true, w); seg(x, y + h - 1, true, w)
+  seg(x, y, false, h); seg(x + w - 1, y, false, h)
+end
+
 local function draw_canvas(r)
   local st = ui.style
   ui.rect(r.x, r.y, r.w, r.h, { 0.07, 0.07, 0.09, 1 }) -- the canvas void
@@ -481,6 +658,16 @@ local function draw_canvas(r)
   if M.has_preview and M.preview_tex then
     pal.quad(ix, iy, iw, ih, 1, 1, 1, 1, M.preview_tex, 0, 0, 1, 1)
   end
+  -- the floating selection (its pixels lifted/pasted, drawn over the canvas)
+  -- and the selection marquee (ants follow the float when one is active)
+  local sel = M.sel
+  if M.float and M.float_tex then
+    local f = M.float
+    pal.quad(ix + floor(f.x) * z, iy + floor(f.y) * z, f.w * z, f.h * z,
+             1, 1, 1, 1, M.float_tex, 0, 0, 1, 1)
+    sel = { x = floor(f.x), y = floor(f.y), w = f.w, h = f.h }
+  end
+  if sel then draw_marquee(ix + sel.x * z, iy + sel.y * z, sel.w * z, sel.h * z) end
   -- pixel grid when zoomed in enough to place pixels by it
   if z >= 8 then
     local grid = { 1, 1, 1, 0.06 }
@@ -777,7 +964,10 @@ local function draw_browser(uw, uh)
     ui.text(cx, cy + cell + 1, it.name, st.text_dim)
     if clicked then
       local doc = sprite.load(it.path)
-      if doc then M.doc, M.dirty, M.need_fit, M.browser = doc, true, true, false end
+      if doc then
+        M.doc, M.dirty, M.need_fit, M.browser = doc, true, true, false
+        M.reset_sel()
+      end
     end
   end
 end
@@ -787,8 +977,17 @@ local function draw_timeline(r)
   ui.rect(r.x, r.y, r.w, r.h, st.panel)
   ui.rect(r.x, r.y, r.w, 1, st.panel_edge)
   ui.text(r.x + 4, r.y + (r.h - st.gh) // 2, "TIMELINE", st.text_dim)
-  ui.text(r.x + 64, r.y + (r.h - st.gh) // 2,
-          "frame 1/1   (animation: phase 4)", st.text_dim)
+  local mid = "frame 1/1   (animation: phase 4)"
+  if M.tool == "select" or M.tool == "move" then
+    if M.float then
+      mid = "floating   Enter stamp   ^C/^X   Del"
+    elseif M.sel then
+      mid = ("%dx%d   V move   ^C/^X/^V   Del   ^D"):format(M.sel.w, M.sel.h)
+    else
+      mid = "drag selects   ^V paste"
+    end
+  end
+  ui.text(r.x + 64, r.y + (r.h - st.gh) // 2, mid, st.text_dim)
   -- right side: tool (+ shape dims / fill mode) + cursor + zoom status
   local tool = M.alt and "pick" or M.tool
   local extra = ""

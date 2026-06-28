@@ -1476,6 +1476,16 @@ local function t_paint()
   check(paint.get(dst, 1, 1) == RED and paint.get(dst, 2, 2) == GRN,
         "paint: blit stamp copies opaque, skips transparent")
 
+  -- copy_region lifts a rectangle into a fresh image, OOB reads transparent
+  local cr = paint.image(4, 4)
+  paint.set(cr, 1, 1, RED); paint.set(cr, 2, 1, GRN)
+  local reg = paint.copy_region(cr, 1, 1, 2, 2)
+  check(reg.w == 2 and reg.h == 2 and paint.get(reg, 0, 0) == RED
+        and paint.get(reg, 1, 0) == GRN and paint.get(reg, 0, 1) == 0,
+        "paint: copy_region grabs the rect")
+  local oob = paint.copy_region(cr, 3, 3, 2, 2) -- partly outside
+  check(oob.w == 2 and paint.get(oob, 1, 1) == 0, "paint: copy_region OOB is clear")
+
   -- HSV <-> RGB (the color picker's math)
   check(paint.hsv(0, 1, 1) == RED and paint.hsv(1 / 3, 1, 1) == GRN
         and paint.hsv(2 / 3, 1, 1) == paint.pack(0, 0, 255), "paint: hsv primaries")
