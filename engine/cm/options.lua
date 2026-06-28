@@ -26,11 +26,6 @@ function M.toggle(on)
   end
 end
 
-local function set_size(w, h)
-  view.toggle_fullscreen(false) -- leave fullscreen so SetWindowSize takes effect
-  pal.x_set_window_size(w, h)
-end
-
 function M.frame()
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep and k.scancode == KEY_ESC then M.toggle() end
@@ -55,7 +50,7 @@ function M.frame()
     for c = r, math.min(r + 1, #SIZES) do
       local s = SIZES[c]
       if ui.button(s[1] .. "x" .. s[2], { id = "sz" .. c }) then
-        set_size(s[1], s[2])
+        view.set_window_size(s[1], s[2]) -- leaves fullscreen + persists
       end
     end
   end
@@ -66,7 +61,7 @@ function M.frame()
     local on = view.cfg.ui_scale == s
     if ui.button(s .. "x", { id = "uis" .. s,
                              color = on and st.accent or st.text }) then
-      view.cfg.ui_scale = s
+      view.set_ui_scale(s) -- persists
     end
   end
 

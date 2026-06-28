@@ -157,6 +157,11 @@ function M.boot()
   -- FOV so goldens + determinism never see a window-derived size (D036). The
   -- --win capture is the one headless exception (it wants the live layout).
   M.view.set_enabled(not args.headless or args.win_w ~= nil)
+  -- adopt the persisted video options (M8.6) before the first frame. Interactive
+  -- windowed sessions only: headless / capped captures (--frames) / --verify keep
+  -- the project's fixed FOV, so goldens + captures stay byte-stable (render-only,
+  -- D036). cm.view writes video.dat back on any options-menu change.
+  if not args.headless and not args.frames then M.view.load_video() end
   cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- the console is the engine's output surface: print joins the log stream

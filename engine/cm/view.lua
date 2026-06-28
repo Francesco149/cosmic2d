@@ -9,7 +9,7 @@
 local M = {}
 
 -- Live-tunable knobs. Deliberately NOT in doc.knobs (that is sim state, D028).
--- The options menu (M8.6) mutates these; persistence lands with it.
+-- The options menu (M8.6) mutates these; they persist via save_video/load_video.
 M.cfg = {
   base_scale = 2, -- default art zoom: a 960x540 window = a 480x270 FOV at 2x
   ref_w = 480,    -- target FOV / art reference; the ladder fills around it (D036)
@@ -26,6 +26,12 @@ M.ui_active = false
 M.ui_w, M.ui_h = M.cfg.ref_w, M.cfg.ref_h
 M.fullscreen = M.fullscreen or false -- borderless desktop (alt+enter / options)
 M.alt_down = false                   -- modifier tracking for the alt+enter combo
+-- last WINDOWED size (px): update() keeps it current every windowed frame (so a
+-- drag-resize is remembered too); it's what we restore on leaving fullscreen and
+-- save to video.dat. x_window_size() reports the SCREEN while fullscreen, so we
+-- can't requery it then — hence we track it continuously.
+M.win_w = M.win_w or M.cfg.ref_w * M.cfg.base_scale
+M.win_h = M.win_h or M.cfg.ref_h * M.cfg.base_scale
 local ALT_L, ALT_R, KEY_ENTER = 226, 230, 40
 
 function M.set_enabled(on) M.enabled = on and true or false end
@@ -39,6 +45,75 @@ function M.toggle_fullscreen(on)
     M.fullscreen = on and true or false
   end
   pal.x_set_fullscreen(M.fullscreen)
+  M.save_video() -- persist the choice (no-op headless / pre-boot)
+end
+
+-- ---- the options menu's persisted choices (M8.6 follow-up) ----
+-- Window size / fullscreen / ui scale persist across launches in
+-- <project>/video.dat (canonical bytes via cm.state, like the sandbox's
+-- knobs.dat). Machine-local + render/dev ONLY: it is NOT doc-tree state (never a
+-- sim input — D028/D036), so it is read only in interactive windowed sessions
+-- and written only on a user change; headless / --frames / --verify / --win keep
+-- the project's fixed FOV and never touch it (goldens, captures + determinism
+-- stay byte-stable). Gitignored. The options menu (cm.options) routes all three
+-- changes through here, so the mutation and the save live in one place.
+
+local function video_path()
+  local a = cm.main and cm.main.args
+  return (a and a.project) and (a.project .. "/video.dat") or nil
+end
+
+function M.save_video()
+  local path = video_path()
+  if not path then return end -- headless / before boot wired args: nothing to do
+  local t = { ui_scale = M.cfg.ui_scale, fullscreen = M.fullscreen,
+              win_w = M.win_w, win_h = M.win_h }
+  pal.write_file(path, cm.require("cm.state").canon(t))
+end
+
+-- pick a windowed preset (the options menu): leave fullscreen first — SDL
+-- ignores SetWindowSize in fullscreen — then apply, remember, persist.
+function M.set_window_size(w, h)
+  if M.fullscreen then
+    M.fullscreen = false
+    pal.x_set_fullscreen(false)
+  end
+  M.win_w, M.win_h = w, h
+  pal.x_set_window_size(w, h)
+  M.save_video()
+end
+
+function M.set_ui_scale(s)
+  M.cfg.ui_scale = s
+  M.save_video()
+end
+
+-- boot (interactive windowed sessions only): adopt the saved choices before the
+-- first frame. Seeds the windowed-size baseline from the live window, then lays
+-- the file over it. Unreadable / absent file → silently keep the defaults.
+function M.load_video()
+  local cw, ch = pal.x_window_size()
+  if cw and cw > 0 then M.win_w, M.win_h = cw, ch end
+  local path = video_path()
+  local bytes = path and pal.read_file(path)
+  if not bytes then return end
+  local ok, t = pcall(cm.require("cm.state").parse, bytes)
+  if not ok or type(t) ~= "table" then
+    pal.log("[video] " .. tostring(path) .. " unreadable; using defaults")
+    return
+  end
+  if type(t.ui_scale) == "number" and t.ui_scale >= 1 and t.ui_scale <= 8 then
+    M.cfg.ui_scale = t.ui_scale
+  end
+  if type(t.win_w) == "number" and type(t.win_h) == "number" then
+    M.win_w, M.win_h = t.win_w, t.win_h
+  end
+  if t.fullscreen then
+    M.fullscreen = true
+    pal.x_set_fullscreen(true)
+  else
+    pal.x_set_window_size(M.win_w, M.win_h)
+  end
 end
 
 -- The surface the dev UI lays out + hit-tests against: the ui canvas when the
@@ -96,6 +171,9 @@ function M.update()
   end
   local W, H = pal.x_window_size()
   if W < 1 or H < 1 then return end
+  -- track the live windowed size for persistence (a drag-resize too); while
+  -- fullscreen W/H is the SCREEN, so leave the remembered windowed size alone.
+  if not M.fullscreen then M.win_w, M.win_h = W, H end
 
   local ed = cm.require("cm.editor")
   local editor_on = ed and ed.on and not ed.locked()

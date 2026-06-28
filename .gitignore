@@ -15,3 +15,7 @@
 # time-machine ring exports (the scrubber's "save .ctrace"; share via
 # tests/traces or the feed, don't commit by accident)
 /projects/*/ring-f*.ctrace
+
+# per-machine video options (the options menu's saved resolution / ui scale /
+# fullscreen — cm.view.save_video); machine-local, like knobs.dat / map.dat
+/projects/*/video.dat
