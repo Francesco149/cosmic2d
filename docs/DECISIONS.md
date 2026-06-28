@@ -814,10 +814,15 @@ updated):
   TOUR still record→verify byte-exact. Default magnitudes are the human's feel call.
   **Tuned same day (round 4b):** the human wanted the boosts way smaller, upward
   only, more frequent — so `flutter_h` 45→**11** (¼: vy peak ~169→~84), `flutter_vx`
-  70→**0** (upward only) **plus a horizontal-momentum dump at hover-start** (air
-  control then steers/damps it, so a hop's forward fling doesn't coast through the
-  hover), and `flutter_interval` 60→**30** (2/s). Verified on TOUR: x stays put,
-  vy flips every 30f at ~−84, y bobs ~11px holding altitude (gentle ~4px/s sink).
+  70→**0** (the boost is straight up), and `flutter_interval` 60→**30** (2/s).
+  Verified on TOUR: vy flips every 30f at ~−84, y bobs ~11px holding altitude
+  (gentle ~4px/s sink). **Round 4c (same day):** 4b also DUMPED horizontal momentum
+  at hover-start — wrong: the human wants a flash-jump's momentum to **carry
+  through** the hover (and a held dir to ADD to it). Removed the dump; the flutter
+  now applies **no air drag** to horizontal while hovering (momentum preserved),
+  only the vertical boosts — holding a dir still accelerates via air control, and
+  `flutter_vx`=0 leaves horizontal completely untouched on the beat. Verified: x
+  drifts at the carried ~120 through the TOUR hover; determinism byte-exact.
   NB the KITCHECK flutter sub-test no longer triggers (its hop hold lands in a
   merged airtime under the new trajectories — choreography drift, not a logic bug;
   TOUR exercises the flutter, determinism is intact); re-choreograph once the
