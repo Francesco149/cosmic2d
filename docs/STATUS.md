@@ -4,14 +4,14 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** The core is built,
-committed, and **visually self-verified** (M8.1–M8.4 + the capture tooling +
-D039). The headline behavior — editor chrome at its own scale **around** the game
-viewport — is confirmed correct via headless capture (3 shots on llm-feed:
-editor@1080p game-inset-3×, editor@960×600 game-2×, play@1080p full-window-4×).
-It now **awaits the human's win11 taste pass** (the look/feel, not correctness).
-Both linux + windows builds compile clean. M7 movement remains FEEL-APPROVED; its
-deferred items (CW≈26 scale, slice VFX, golden re-cut) still wait on M8 + assets.
+**Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** Core built +
+committed + visually self-verified (M8.1–M8.4 + capture + D039); the
+editor-around-game **layout is human-approved** ("it looks correct yes",
+2026-06-28). One feel pass applied (`bf58389`): **fill-the-window ladder** (no
+more letterbox on maximize) + **alt+enter borderless fullscreen**. Open: confirm
+`cfg.ui_scale` (2× vs 1×) on win11; then M8.6/M8.5. Both linux + windows builds
+compile clean. M7 movement remains FEEL-APPROVED; its deferred items (CW≈26
+scale, slice VFX, golden re-cut) still wait on M8 + assets.
 **Done this session (M8.1–M8.4 + capture, all on `main`, selftest 22312→22348,
 determinism byte-exact, uigallery golden byte-identical, goldens else unaffected):**
 - **M8.1** `ea7dc9a` — PAL **api 4→5**: `pal.x_fov(w,h)` (the variable game FOV =
@@ -42,16 +42,22 @@ determinism byte-exact, uigallery golden byte-identical, goldens else unaffected
   --shot /tmp/e.png --eval "cm.editor.toggle(true)"`.
 - **Docs**: **D039** (the two-target composite realizing D036) + the
   **ARCHITECTURE api v5 table**.
-**HUMAN CHECKPOINT (open) — please win11 feel-test M8.4:** F1 toggles the editor;
-expect the game inset at 2× with the toolbar across the top + inspector on the
-right at the UI scale; painting/prop-spawn should still land on the world; F1
-back to play = game fills the window; resize to feel the FOV ladder. **Knob to
-tune**: `cm.view.cfg.ui_scale` (chrome size) — I defaulted **2×** for
-readability; D036 says "1×", but 5×8 text at native 1080p is tiny, so I went
-readable. It's live-tunable and the options menu (M8.6) will expose it.
-**Next:** await the feel-test, then **M8.6** (options menu — you flagged it) and
-**M8.5** (golden re-cut + multi-file/subdir hot-reload at scale). Then close M7's
-deferred items (set FOV/scale + `move.cw/ch` for the CW≈26 anchor; slice VFX).
+
+### M8 feedback round 1 (2026-06-28, win11) — `bf58389`
+Layout approved. Applied: **fill-the-window ladder** — a maximized window was
+letterboxing the game in black bars (the old min-of-floors + 480×270 cap); now
+the scale is chosen to keep the FOV near the reference and the FOV fills the
+window at that scale (1920×1040 → 480×260@4×; the editor inset sits snug, no
+margins). **alt+enter** toggles borderless fullscreen (`pal.x_set_fullscreen`).
+selftest 22349; verified by `--win` capture (maximized play fills edge-to-edge;
+editor inset fills the central rect) on llm-feed. **Still open**: confirm
+`cfg.ui_scale` (2× readable vs D036's literal 1×) on win11; test the alt+enter
+toggle natively (headless can't).
+
+**Next:** **M8.6** (options menu — set resolution/scale/fullscreen directly; the
+PAL hooks + the fullscreen toggle exist) and **M8.5** (golden re-cut +
+multi-file/subdir hot-reload at scale). Then close M7's deferred items (set
+FOV/scale + `move.cw/ch` for the CW≈26 anchor; slice VFX).
 
 ## This session (2026-06-27) — M7 moveset
 
