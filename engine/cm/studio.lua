@@ -30,6 +30,7 @@ M.pan_y = M.pan_y or 0
 M.tool = M.tool or "pencil" -- pencil | eraser | fill | pick
 M.prim = M.prim or paint.pack(246, 248, 252) -- primary color (LMB)
 M.sec = M.sec or paint.pack(32, 28, 44) -- secondary color (RMB)
+M.hsv = M.hsv or { h = 0.58, s = 0.03, v = 0.99 } -- the picker's H/S/V state
 M.dirty = true -- the canvas composite texture needs a rebuild
 M.alt, M.ctrl = false, false
 
@@ -64,6 +65,15 @@ local function hexstr(rgba)
   local r, g, b, a = paint.unpack(rgba)
   if a == 0 then return "(clear)" end
   return ("#%02X%02X%02X"):format(r, g, b)
+end
+
+local function clamp(v, lo, hi) return v < lo and lo or (v > hi and hi or v) end
+
+local function parse_hex(s)
+  s = (s or ""):gsub("^%s*#?", ""):gsub("%s*$", "")
+  if not s:match("^%x%x%x%x%x%x$") then return nil end
+  return paint.pack(tonumber(s:sub(1, 2), 16), tonumber(s:sub(3, 4), 16),
+                    tonumber(s:sub(5, 6), 16), 255)
 end
 
 function M.locked()
@@ -122,6 +132,93 @@ function M.save()
              or ("[studio] save FAILED: " .. tostring(err)))
 end
 
+-- ---- color + palette ----
+
+-- set the primary from outside the picker (palette / eyedropper / hex / swap)
+-- and sync the HSV picker to it. The picker writes M.prim + M.hsv directly.
+function M.set_prim(rgba)
+  M.prim = rgba
+  M.hsv.h, M.hsv.s, M.hsv.v = paint.to_hsv(rgba)
+end
+
+local function palettes_path()
+  local proj = cm.main and cm.main.args and cm.main.args.project
+  return proj and (proj .. "/art/palettes.dat") or nil
+end
+
+-- named palette preset slots, shared across all assets in a project (render/dev
+-- state, like cm.view's video.dat — not sim state). Canonical doc bytes.
+function M.load_palettes()
+  M.palettes = {}
+  local p = palettes_path()
+  local bytes = p and pal.read_file(p)
+  if not bytes then return end
+  local ok, t = pcall(cm.require("cm.state").parse, bytes)
+  if ok and type(t) == "table" then
+    for i, slot in ipairs(t) do if type(slot) == "table" then M.palettes[i] = slot end end
+  end
+end
+
+function M.save_palettes()
+  local p = palettes_path()
+  if not p then return end
+  pal.mkdir((p:gsub("/[^/]*$", "")))
+  pal.write_file(p, cm.require("cm.state").canon(M.palettes))
+end
+
+-- the HSV color-picker textures: the saturation/value square (regenerated when
+-- the hue changes) and the static hue strip.
+local function rebuild_sv()
+  local n = 84
+  M.sv = M.sv or paint.image(n, n)
+  local h = M.hsv.h
+  for y = 0, n - 1 do
+    local v = 1 - y / (n - 1)
+    for x = 0, n - 1 do M.sv.buf:u32((y * n + x) * 4, paint.hsv(h, x / (n - 1), v)) end
+  end
+  if M.sv_tex then pal.tex_free(M.sv_tex) end
+  M.sv_tex = pal.tex_create(n, n, M.sv.buf:str(0, n * n * 4))
+  M.sv_hue = h
+end
+
+local function build_hue()
+  local n = 84
+  local img = paint.image(1, n)
+  for y = 0, n - 1 do img.buf:u32(y * 4, paint.hsv(y / (n - 1), 1, 1)) end
+  if M.hue_tex then pal.tex_free(M.hue_tex) end
+  M.hue_tex = pal.tex_create(1, n, img.buf:str(0, n * 4))
+end
+
+-- ---- asset browser ----
+
+-- scan <project>/art for .spr documents, bake a thumbnail texture for each
+function M.scan_assets()
+  if M.browse_items then
+    for _, it in ipairs(M.browse_items) do if it.tex then pal.tex_free(it.tex) end end
+  end
+  M.browse_items = {}
+  local proj = cm.main and cm.main.args and cm.main.args.project
+  if not proj then return end
+  local dir = proj .. "/art"
+  local names = pal.list_dir(dir) or {}
+  table.sort(names)
+  for _, n in ipairs(names) do
+    if n:match("%.spr$") then
+      local doc = sprite.load(dir .. "/" .. n)
+      if doc then
+        local strip = sprite.bake_image(doc)
+        M.browse_items[#M.browse_items + 1] = {
+          path = dir .. "/" .. n, name = (n:gsub("%.spr$", "")),
+          tex = pal.tex_create(strip.w, strip.h, strip.buf:str(0, strip.w * strip.h * 4)),
+          w = strip.w, h = strip.h,
+        }
+      end
+    end
+  end
+end
+
+function M.open_browser() M.browser = true; M.scan_assets() end
+
 -- ---- canvas mapping ----
 
 -- the doc pixel under a ui-canvas point, or nil if outside the image
@@ -158,11 +255,12 @@ end
 -- ---- input ----
 
 local function handle_keys()
+  local typing = ui.focus ~= nil -- the hex field owns the keyboard; no shortcuts
   for _, k in ipairs(ui.inp.keys) do
     local sc = k.scancode
     if sc == ALT_L or sc == ALT_R then M.alt = k.down end
     if sc == CTRL_L or sc == CTRL_R then M.ctrl = k.down end
-    if k.down and not k.rep then
+    if k.down and not k.rep and not typing then
       if M.ctrl then
         if sc == SC.z then sprite.undo(M.doc); M.dirty = true
         elseif sc == SC.y then sprite.redo(M.doc); M.dirty = true
@@ -171,7 +269,7 @@ local function handle_keys()
       elseif sc == SC.e then M.tool = "eraser"
       elseif sc == SC.g then M.tool = "fill"
       elseif sc == SC.i then M.tool = "pick"
-      elseif sc == SC.x then M.prim, M.sec = M.sec, M.prim end
+      elseif sc == SC.x then M.prim, M.sec = M.sec, M.prim; M.set_prim(M.prim) end
     end
   end
 end
@@ -199,7 +297,7 @@ local function handle_paint(over)
   if tool == "pick" then
     if over and pressed and dpx then
       local c = paint.get(M.cell(), dpx, dpy)
-      if which == "prim" then M.prim = c else M.sec = c end
+      if which == "prim" then M.set_prim(c) else M.sec = c end
     end
     return
   end
@@ -331,28 +429,96 @@ end
 
 local function draw_dock(r)
   local st = ui.style
+  local inp = ui.inp
   ui.rect(r.x, r.y, r.w, r.h, st.panel)
   ui.frame_rect(r.x, r.y, r.w, r.h, st.panel_edge)
   local x, y = r.x + 4, r.y + 4
-  ui.text(x, y, "PALETTE", st.accent); y = y + 11
-  local cols = (r.w - 8) // (SWATCH + 1)
-  for i, c in ipairs(M.doc.palette) do
-    local cx = x + ((i - 1) % cols) * (SWATCH + 1)
-    local cy = y + ((i - 1) // cols) * (SWATCH + 1)
-    swatch(c, cx, cy)
-  end
-  y = y + (ceil(#M.doc.palette / cols)) * (SWATCH + 1) + 6
+  local cw = r.w - 8
 
+  -- PALETTE: swatch grid + add-current + preset slots
+  ui.text(x, y, "PALETTE", st.accent); y = y + 11
+  local cols = (cw + 1) // (SWATCH + 1)
+  for i, c in ipairs(M.doc.palette) do
+    swatch(c, x + ((i - 1) % cols) * (SWATCH + 1),
+           y + ((i - 1) // cols) * (SWATCH + 1))
+  end
+  y = y + ceil(#M.doc.palette / cols) * (SWATCH + 1) + 3
+  if ui.button("+ add color", { rect = { x, y, cw, 12 }, id = "st_addcol" }) then
+    local has = false
+    for _, c in ipairs(M.doc.palette) do if c == M.prim then has = true end end
+    if not has then M.doc.palette[#M.doc.palette + 1] = M.prim; M.doc.dirty = true end
+  end
+  y = y + 15
+  ui.text(x, y, "slots  L=load R=save", st.text_dim); y = y + 10
+  local psw = (cw - 5 * 2) // 6
+  for k = 1, 6 do
+    local bx = x + (k - 1) * (psw + 2)
+    local filled = M.palettes and M.palettes[k]
+    local hot = pin(inp.mx, inp.my, bx, y, psw, 12)
+    ui.rect(bx, y, psw, 12, hot and st.widget_hot or st.widget)
+    ui.frame_rect(bx, y, psw, 12, filled and st.accent or st.panel_edge)
+    ui.text(bx + (psw - st.gw) // 2, y + 2, tostring(k),
+            filled and st.accent or st.text_dim)
+    if hot and inp.clicked[1] and filled then
+      M.doc.palette = {}
+      for i, c in ipairs(M.palettes[k]) do M.doc.palette[i] = c end
+      M.doc.dirty = true
+    elseif hot and inp.clicked[3] then
+      M.palettes = M.palettes or {}
+      M.palettes[k] = {}
+      for i, c in ipairs(M.doc.palette) do M.palettes[k][i] = c end
+      M.save_palettes()
+    end
+  end
+  y = y + 18
+
+  -- COLOR: primary/secondary chips, the HSV picker, hex entry
   ui.text(x, y, "COLOR", st.accent); y = y + 11
-  -- primary / secondary chips (LMB / RMB) + hex
-  ui.rect(x, y, 18, 18, { 0.25, 0.25, 0.29, 1 }); ui.rect(x, y, 18, 18, col(M.prim))
-  ui.frame_rect(x, y, 18, 18, st.accent)
-  ui.rect(x + 22, y, 14, 14, { 0.25, 0.25, 0.29, 1 }); ui.rect(x + 22, y, 14, 14, col(M.sec))
-  ui.frame_rect(x + 22, y, 14, 14, st.panel_edge)
-  ui.text(x + 42, y, "L", st.text_dim); ui.text(x + 42, y + 9, "R", st.text_dim)
-  ui.text(x, y + 21, hexstr(M.prim), st.text)
-  if ui.button("swap (X)", { rect = { x, y + 32, r.w - 8, 12 } }) then
-    M.prim, M.sec = M.sec, M.prim
+  ui.rect(x, y, 20, 20, { 0.25, 0.25, 0.29, 1 }); ui.rect(x, y, 20, 20, col(M.prim))
+  ui.frame_rect(x, y, 20, 20, st.accent)
+  ui.rect(x + 24, y, 16, 16, { 0.25, 0.25, 0.29, 1 }); ui.rect(x + 24, y, 16, 16, col(M.sec))
+  ui.frame_rect(x + 24, y, 16, 16, st.panel_edge)
+  if ui.button("swap", { rect = { x + 44, y, cw - 44, 9 }, id = "st_swap" }) then
+    M.prim, M.sec = M.sec, M.prim; M.set_prim(M.prim)
+  end
+  ui.text(x + 44, y + 11, "L / R  (X)", st.text_dim)
+  y = y + 24
+
+  if not M.sv_tex or M.sv_hue ~= M.hsv.h then rebuild_sv() end
+  if not M.hue_tex then build_hue() end
+  local sq = 84
+  pal.quad(x, y, sq, sq, 1, 1, 1, 1, M.sv_tex, 0, 0, 1, 1)
+  ui.frame_rect(x - 1, y - 1, sq + 2, sq + 2, st.panel_edge)
+  local hx = x + sq + 4
+  pal.quad(hx, y, 12, sq, 1, 1, 1, 1, M.hue_tex, 0, 0, 1, 1)
+  ui.frame_rect(hx - 1, y - 1, 14, sq + 2, st.panel_edge)
+  -- drag picks (continues past the widget edges while the button is held)
+  if inp.clicked[1] and pin(inp.mx, inp.my, x, y, sq, sq) then M.pick = "sv" end
+  if inp.clicked[1] and pin(inp.mx, inp.my, hx, y, 12, sq) then M.pick = "hue" end
+  if not inp.buttons[1] then M.pick = nil end
+  if M.pick == "sv" then
+    M.hsv.s = clamp((inp.mx - x) / (sq - 1), 0, 1)
+    M.hsv.v = clamp(1 - (inp.my - y) / (sq - 1), 0, 1)
+    M.prim = paint.hsv(M.hsv.h, M.hsv.s, M.hsv.v)
+  elseif M.pick == "hue" then
+    M.hsv.h = clamp((inp.my - y) / (sq - 1), 0, 1)
+    M.prim = paint.hsv(M.hsv.h, M.hsv.s, M.hsv.v)
+  end
+  -- cursors
+  local sxp, syp = x + floor(M.hsv.s * (sq - 1)), y + floor((1 - M.hsv.v) * (sq - 1))
+  ui.frame_rect(sxp - 2, syp - 2, 5, 5, { 0, 0, 0, 1 })
+  ui.frame_rect(sxp - 1, syp - 1, 3, 3, { 1, 1, 1, 1 })
+  ui.frame_rect(hx - 1, y + floor(M.hsv.h * (sq - 1)) - 1, 14, 3, { 1, 1, 1, 1 })
+  y = y + sq + 5
+
+  -- hex entry (synced to prim when not being typed into)
+  if ui.focus ~= "st_hex" then M.hex_edit = hexstr(M.prim) end
+  local newhex, hchanged, hsub = ui.text_input("st_hex", M.hex_edit or hexstr(M.prim),
+    { hint = "#rrggbb", rect = { x, y, cw, 11 } })
+  M.hex_edit = newhex
+  if hchanged or hsub then
+    local p = parse_hex(newhex)
+    if p then M.set_prim(p) end
   end
 end
 
@@ -366,12 +532,56 @@ local function draw_menu(r)
     or "no document"
   ui.text(r.x + 52, r.y + 3, name .. (M.doc and M.doc.dirty and " *" or ""), st.text)
   -- right-aligned actions
-  local bw = 34
-  local bx = r.x + r.w - (bw + 2) * 3 - 2
-  if ui.button("new", { rect = { bx, r.y + 1, bw, r.h - 2 } }) then M.new_doc(32, 32) end
-  if ui.button("save", { rect = { bx + bw + 2, r.y + 1, bw, r.h - 2 } }) then M.save() end
-  if ui.button("close", { rect = { bx + (bw + 2) * 2, r.y + 1, bw, r.h - 2 } }) then
-    M.on = false
+  local acts = { { "browse", M.open_browser }, { "new", function() M.new_doc(32, 32) end },
+                 { "save", M.save }, { "close", function() M.on = false end } }
+  local bw = 40
+  local bx = r.x + r.w - (bw + 2) * #acts - 2
+  for i, a in ipairs(acts) do
+    if ui.button(a[1], { rect = { bx + (i - 1) * (bw + 2), r.y + 1, bw, r.h - 2 },
+                         id = "st_mb" .. i }) then a[2]() end
+  end
+end
+
+-- the asset browser overlay (modal): a grid of baked thumbnails from the
+-- project's art dir; click opens, plus new / refresh / close.
+local function draw_browser(uw, uh)
+  local st = ui.style
+  ui.capture_mouse(); ui.capture_keys()
+  ui.rect(0, 0, uw, uh, { 0.05, 0.05, 0.07, 1 })
+  local proj = (cm.main and cm.main.args and cm.main.args.project) or "?"
+  ui.text(8, 7, "ASSET BROWSER", st.accent)
+  ui.text(8 + 15 * st.gw, 7, proj .. "/art", st.text_dim)
+  local bw = 50
+  local acts = { { "new", function() M.new_doc(32, 32); M.browser = false end },
+                 { "refresh", M.scan_assets }, { "close", function() M.browser = false end } }
+  for i, a in ipairs(acts) do
+    if ui.button(a[1], { rect = { uw - (bw + 2) * (#acts - i + 1) - 6, 4, bw, 12 },
+                         id = "br_act" .. i }) then a[2]() end
+  end
+  local items = M.browse_items or {}
+  if #items == 0 then
+    ui.text(8, 32, "no .spr assets yet — paint one and Save, then it appears here.",
+            st.text_dim)
+    return
+  end
+  local cell, gap = 76, 12
+  local cols = max(1, (uw - 16) // (cell + gap))
+  for i, it in ipairs(items) do
+    local cx = 8 + ((i - 1) % cols) * (cell + gap)
+    local cy = 26 + ((i - 1) // cols) * (cell + gap + 10)
+    local clicked, hot = ui.hit("br_it" .. i, cx, cy, cell, cell)
+    ui.rect(cx, cy, cell, cell, hot and st.widget_hot or st.widget)
+    local s = min((cell - 10) / it.w, (cell - 10) / it.h)
+    local dw, dh = max(1, floor(it.w * s)), max(1, floor(it.h * s))
+    local tx, ty = cx + (cell - dw) // 2, cy + (cell - dh) // 2
+    ui.rect(tx, ty, dw, dh, { 0.18, 0.18, 0.21, 1 }) -- transparency backdrop
+    pal.quad(tx, ty, dw, dh, 1, 1, 1, 1, it.tex, 0, 0, 1, 1)
+    ui.frame_rect(cx, cy, cell, cell, hot and st.accent or st.panel_edge)
+    ui.text(cx, cy + cell + 1, it.name, st.text_dim)
+    if clicked then
+      local doc = sprite.load(it.path)
+      if doc then M.doc, M.dirty, M.need_fit, M.browser = doc, true, true, false end
+    end
   end
 end
 
@@ -401,8 +611,10 @@ function M.frame()
   ui.capture_mouse()
   ui.capture_keys()
   if not M.doc then M.new_doc(32, 32) end
+  if not M.palettes then M.load_palettes() end
 
   local uw, uh = view.surface_size()
+  if M.browser then draw_browser(uw, uh); return end -- modal overlay
   local body_h = uh - MENU_H - TIME_H
   M.menu = { x = 0, y = 0, w = uw, h = MENU_H }
   M.rail = { x = 0, y = MENU_H, w = RAIL_W, h = body_h }

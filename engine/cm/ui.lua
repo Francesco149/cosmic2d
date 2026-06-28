@@ -27,8 +27,8 @@
 -- frames as long as the call structure is; pass explicit ids in loops.
 --
 -- Placement: widgets normally take the next layout slot (panel strip or
--- pending row column). label/button/checkbox/slider/number also accept
--- opts.rect = {x, y, w, h} to place explicitly — for editors inside
+-- pending row column). label/button/checkbox/slider/number/text_input also
+-- accept opts.rect = {x, y, w, h} to place explicitly — for editors inside
 -- virtualized ui.list rows (the inspector), where the row rect is handed
 -- to draw_row instead of flowing through the layout. Rect widgets in
 -- loops need opts.id as usual.
@@ -781,7 +781,7 @@ function M.text_input(id, txt, opts)
   txt = txt or ""
   local st = M.style
   id = qid(id)
-  local r = lay_next()
+  local r = lay_next(nil, opts) -- opts.rect places it explicitly (panel-free)
   local s = widget_state(id)
   s.cursor = math.min(s.cursor or #txt + 1, #txt + 1)
 

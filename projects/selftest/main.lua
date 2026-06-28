@@ -1475,6 +1475,16 @@ local function t_paint()
   paint.blit(dst, 1, 1, src, 0, 0, 2, 2, "stamp")
   check(paint.get(dst, 1, 1) == RED and paint.get(dst, 2, 2) == GRN,
         "paint: blit stamp copies opaque, skips transparent")
+
+  -- HSV <-> RGB (the color picker's math)
+  check(paint.hsv(0, 1, 1) == RED and paint.hsv(1 / 3, 1, 1) == GRN
+        and paint.hsv(2 / 3, 1, 1) == paint.pack(0, 0, 255), "paint: hsv primaries")
+  check(paint.hsv(0, 0, 1) == paint.pack(255, 255, 255), "paint: hsv white")
+  local hh, ss, vv = paint.to_hsv(RED)
+  check(hh == 0 and ss == 1 and vv == 1, "paint: to_hsv red")
+  local c = paint.pack(200, 120, 40)
+  local rh, rs, rv = paint.to_hsv(c)
+  check(paint.hsv(rh, rs, rv) == c, "paint: hsv round-trip")
 end
 
 -- ---- cm.sprite: the studio document — model, .spr codec, bake, undo (M10) ----

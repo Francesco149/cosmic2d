@@ -20,6 +20,7 @@
 local M = select(2, ...) or {}
 
 local floor, ceil, sqrt, abs = math.floor, math.ceil, math.sqrt, math.abs
+local max, min = math.max, math.min
 
 -- ---- color packing (0..255 ints <-> RGBA8 u32) ----
 
@@ -32,6 +33,41 @@ function M.unpack(rgba)
 end
 
 M.CLEAR = 0 -- transparent (all-zero RGBA)
+
+-- HSV (all components 0..1; h wraps) -> packed RGBA. The studio's color picker
+-- and the Phase-3 gradient ramps both work in HSV. Pure float, dev-class.
+function M.hsv(h, s, v, a)
+  h = (h - floor(h)) * 6
+  local i = floor(h)
+  local f = h - i
+  local p, q, t = v * (1 - s), v * (1 - s * f), v * (1 - s * (1 - f))
+  local r, g, b
+  if i == 0 then r, g, b = v, t, p
+  elseif i == 1 then r, g, b = q, v, p
+  elseif i == 2 then r, g, b = p, v, t
+  elseif i == 3 then r, g, b = p, q, v
+  elseif i == 4 then r, g, b = t, p, v
+  else r, g, b = v, p, q end
+  return M.pack(floor(r * 255 + 0.5), floor(g * 255 + 0.5), floor(b * 255 + 0.5), a)
+end
+
+-- packed RGBA -> h, s, v (each 0..1; alpha dropped). Inverse of M.hsv for
+-- saturated colors; grayscale returns h=0.
+function M.to_hsv(rgba)
+  local r, g, b = M.unpack(rgba)
+  r, g, b = r / 255, g / 255, b / 255
+  local mx, mn = max(r, g, b), min(r, g, b)
+  local d = mx - mn
+  local h = 0
+  if d > 0 then
+    if mx == r then h = ((g - b) / d) % 6
+    elseif mx == g then h = (b - r) / d + 2
+    else h = (r - g) / d + 4 end
+    h = h / 6
+    if h < 0 then h = h + 1 end
+  end
+  return h, mx == 0 and 0 or d / mx, mx
+end
 
 -- ---- images ----
 
