@@ -830,10 +830,13 @@ updated):
   vertical, <45°). Net: carried momentum is killed, then the small diagonal boosts
   build a gentle forward drift that air drag holds to ~20–34px/s (vs 4c's full ~120).
   Verified on TOUR: x drifts ~gently, vy still flips every 30f at ~−84, y holds.
-  NB the KITCHECK flutter sub-test no longer triggers (its hop hold lands in a
-  merged airtime under the new trajectories — choreography drift, not a logic bug;
-  TOUR exercises the flutter, determinism is intact); re-choreograph once the
-  flutter knobs settle.
+  **Feel-APPROVED** (2026-06-28, "this feels good, we'll go with this"). With the
+  knobs settled, the KITCHECK flutter sub-test was **re-choreographed** to match
+  (it had drifted to an airborne jump→flash-jump under the changed arcs): a `{44}`
+  settle lands the player first so the test's jump+hop fires from a fresh grounded
+  airtime, and the hold is `{130}` so the full 4-boost timeout runs — it now
+  triggers, arms hop_cd (~f=590) and blocks the following hop, restoring the
+  flutter→cd oracle coverage. KITCHECK + TOUR record→verify byte-exact.
 
 ## D036 — viewport model: variable FOV, resize ladder, editor-only UI scale (human ask, 2026-06-27)
 

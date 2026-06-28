@@ -120,11 +120,13 @@ Three asks from the human's first real play:
   gentle, hold a dir to steer. Replaces the `flutter_grace`/`_max`/`_fall`/`_decel`
   glide knobs; the "must be falling" gate is the tap guard. **4b** tuned the boosts
   ¼ smaller + 2/s; **4c** kept momentum (too far); **4d** cancel + slight diagonal
-  (the keeper). Verified on TOUR: x drifts gently ~20–34px/s, vy flips every 30f at
-  ~−84, y holds; selftest 22351; KITCHECK + TOUR record→verify byte-exact;
-  montage on llm-feed. **KITCHECK's flutter sub-test no longer triggers** (hop hold
-  lands in a merged airtime under the new trajectories — choreography drift, not a
-  bug; re-choreograph once the knobs settle). Magnitudes are the human's feel call.
+  (the keeper) — **FEEL-APPROVED** ("this feels good, we'll go with this"). Verified
+  on TOUR: x drifts gently ~20–34px/s, vy flips every 30f at ~−84, y holds; selftest
+  22351; KITCHECK + TOUR record→verify byte-exact; montage on llm-feed. With the
+  knobs settled, the **KITCHECK flutter sub-test was re-choreographed** (a `{44}`
+  settle so its jump+hop fires from a fresh grounded airtime + a `{130}` hold for the
+  full 4-boost timeout): it triggers again, arms hop_cd (~f=590) and blocks the next
+  hop — flutter→cd oracle coverage restored.
 
 **Still open / deferred**:
 - **`cfg.ui_scale`** default (2× now; D036 says 1×) — the human's taste call,
@@ -134,12 +136,13 @@ Three asks from the human's first real play:
   (M10); the `.ptrace`→`.ctrace` trace re-cut waits on confirming the rename
   (D033, human's call). selftest (22351) is the live net meanwhile.
 
-**Next:** native pass on the round-3/4 interactive feel (Esc opens the menu;
-fill presets; ui_scale rescales the menu in play; **the flutter** — does it hold
-height well, is the bob / forward drift right, is `flutter_h`/`flutter_vx` to
-taste) + the ui_scale default taste on win11; the deferred golden re-cut; then M9
-(audio) or M7's asset-gated items (CW≈26 scale via FOV/scale + `move.cw/ch`;
-slice VFX once the editor's particle work lands).
+**Next:** the **flutter is feel-approved** (round 4d) — M7's last open feel knob
+to be dialed by hand is settled; the moveset is approved end-to-end. Remaining:
+the `cfg.ui_scale` default taste (2× vs D036's 1×) on win11; the deferred golden
+re-cut; then **M9 (audio)** or circle back to M7's asset-gated items (the CW≈26
+absolute scale via FOV/scale + `move.cw/ch`; the slice VFX once the editor's
+particle-emitter work lands). Good `/clear` point — M8 + the M7 feel passes are
+committed and STATUS is current.
 
 ## This session (2026-06-27) — M7 moveset
 

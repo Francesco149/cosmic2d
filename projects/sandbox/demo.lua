@@ -117,9 +117,11 @@ local KITCHECK = {
   { 8, "jump" }, { 5 }, { 6, "hop" }, { 26 }, -- WORKS next airtime (no cd)
   -- a FLUTTER (E held into the FALL) rhythm-boosts then arms the cooldown; the
   -- next airtime's hop is blocked. Kept LAST: its 10 s cd blocks any hop after.
+  { 44 }, -- land FULLY first — the prior arcs leave you airborne here, and an
+          -- airborne jump below would fire as a flash jump (the flutter'd miss)
   { 8, "jump" }, { 5 },
-  { 4, "hop" }, -- hop...
-  { 95, "hop" }, -- ...HOLD E into the fall -> rhythmic flutter (arms hop_cd)
+  { 4, "hop" }, -- hop (a fresh grounded airtime)...
+  { 130, "hop" }, -- ...HOLD E into the fall -> rhythmic flutter (arms hop_cd)
   { 40 }, -- land
   { 8, "jump" }, { 5 },
   { 6, "hop" }, -- hop -> BLOCKED (hop_cd still counting)
