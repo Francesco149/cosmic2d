@@ -58,6 +58,8 @@ local ease = cm.require("cm.ease")
 local pix = cm.require("pix")
 local level = cm.require("level")
 local fx = cm.require("fx")
+local gfx = cm.require("cm.gfx")
+local anim = cm.require("cm.anim")
 
 local M = {}
 
@@ -520,12 +522,20 @@ function M.step(ctl)
   buf:f32(O.tp_flash, m.max(0, buf:f32(O.tp_flash) - 0.12))
 end
 
--- ---- sprite (procedural placeholder: 11 frames, mecha-girl-ish) ----
--- 0 idle | 1-2 walk | 3 rise | 4 fall | 5 dash(FJ) | 6 up-jump |
--- 7 hop | 8 hover(flutter) | 9 grapple | 10 attack. White/cyan bodysuit
--- nodding at the art direction (GAME.md §10); the human pixels the real art.
+-- ---- sprite ----
+-- The sprite is a RENDER-ONLY asset (STUDIO.md §1, D040): the game loads the
+-- studio-baked strip art/girl.png + clips art/girl.anim at boot — file bytes are
+-- NOT sim input (D026), exactly like a texture or map.dat — so authoring it in
+-- the F2 studio cannot perturb a trace (the M10 Phase 4 payoff). The strip is
+-- 16x24 cells laid L→R: poses 0..10 are the moveset frames, selected from sim
+-- state below (the state-driven mode, STUDIO.md §7); frame 11 is the idle-breath
+-- the timed "idle" CLIP cycles via cm.anim. NF is derived from the loaded width.
+--
+-- build_sprite below is the PROCEDURAL FALLBACK, used only if the asset is
+-- missing (a fresh tree / a project with no art) — same 0..10 pose set, 11 frames.
+-- Regenerate the asset: --eval "cm.require('genart').girl()" (see genart.lua).
 
-local FW, FH, NF = 16, 24, 11
+local FW, FH = 16, 24
 
 local function build_sprite()
   local img = pix.img(NF * FW, FH)
@@ -643,7 +653,21 @@ local function build_sprite()
   return img.tex()
 end
 
-local sprite = build_sprite()
+-- load the baked strip + clips (render-only; pcall so a missing asset cleanly
+-- falls back to the procedural build_sprite at 11 frames with no clips).
+local function load_sprite()
+  local proj = cm.main and cm.main.args and cm.main.args.project
+  if proj then
+    local ok, tex = pcall(gfx.texture, proj .. "/art/girl.png")
+    if ok and tex then
+      return tex, m.max(1, tex.w // FW), anim.load(proj .. "/art/girl.anim")
+    end
+  end
+  return build_sprite(), 11, nil
+end
+
+local sprite, NF, clips = load_sprite()
+local idle_clip = clips and anim.find(clips, "idle")
 
 function M.draw()
   local k = state.doc.knobs.move
@@ -678,7 +702,11 @@ function M.draw()
     else f = 4 end
   elseif m.abs(vx) > 6 then
     f = m.floor(buf:f32(O.anim)) % 2 == 0 and 1 or 2
-  else f = 0 end
+  else -- idle: play the timed BREATH clip if the asset shipped one — a COSMETIC
+    f = idle_clip and anim.frame_at(idle_clip, state.frame()) or 0 -- clip off the
+  end                                  -- integer frame counter (D030: zero stored
+  f = m.min(f, NF - 1)                 -- state, pure, render-only — can't perturb
+                                       -- the trace). Clamp guards a short fallback.
 
   -- squash & stretch around the feet
   local sx, sy = 1.0, 1.0
@@ -705,8 +733,8 @@ function M.draw()
   local dw, dh = W * sx, H * sy
   local dx = x + W * 0.5 - dw * 0.5
   local dy = y + H - dh -- feet-anchored
-  local u0 = (f * FW) / (NF * FW)
-  local u1 = (f * FW + FW) / (NF * FW)
+  local u0 = (f * FW) / sprite.w
+  local u1 = (f * FW + FW) / sprite.w
   if facing < 0 then u0, u1 = u1, u0 end
   pal.quad(dx, dy, dw, dh, tr, tg, tb, ta, sprite.id, u0, 0, u1, 1)
 end
