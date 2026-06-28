@@ -1680,6 +1680,43 @@ local function t_sprite()
   local cap = sprite.new(2, 2)
   for _ = 1, 80 do sprite.add_layer(cap) end
   check(#cap._undo <= 64, "sprite: undo stack is capped")
+
+  -- gradient fills (Phase 3): bound to a layer, applied at composite masked by
+  -- the layer's alpha, non-destructive; set/clear/stamp undoable; .spr round-trips.
+  local fd = sprite.new(4, 1)
+  local fc = sprite.cell(fd)
+  for px = 0, 3 do paint.set(fc, px, 0, RED) end -- a 4px opaque row (the mask)
+  local two = { { pos = 0, rgba = paint.pack(0, 0, 0) },
+                { pos = 1, rgba = paint.pack(255, 255, 255) } }
+  sprite.set_fill(fd, 1, { type = "linear", p0 = { x = 0, y = 0 }, p1 = { x = 3, y = 0 },
+                           stops = two, levels = 2, dither = 0, bayer = 2, phase = 0 })
+  check(fd.layers[1].fill ~= nil and sprite.can_undo(fd), "sprite: set_fill is undoable")
+  local fo = paint.image(4, 1)
+  sprite.composite_into(fd, 1, fo)
+  check(paint.get(fo, 0, 0) == paint.pack(0, 0, 0, 255)
+        and paint.get(fo, 3, 0) == paint.pack(255, 255, 255, 255),
+        "sprite: composite applies the gradient fill (band split, masked)")
+  check(paint.get(fc, 0, 0) == RED, "sprite: fill leaves the layer pixels untouched")
+
+  local fd2 = sprite.decode(sprite.encode(fd))
+  local f2 = fd2.layers[1].fill
+  check(f2 and f2.type == "linear" and f2.p1.x == 3 and #f2.stops == 2
+        and f2.stops[2].rgba == paint.pack(255, 255, 255),
+        "sprite: .spr round-trips the FILL chunk")
+
+  sprite.stamp_fill(fd, 1)
+  check(fd.layers[1].fill == nil and paint.get(fc, 3, 0) == paint.pack(255, 255, 255, 255),
+        "sprite: stamp_fill bakes pixels + clears the fill")
+  sprite.undo(fd) -- a structural undo swaps in snapshot cells (fc is now stale)
+  check(fd.layers[1].fill ~= nil and paint.get(sprite.cell(fd), 3, 0) == RED,
+        "sprite: undo stamp_fill restores pixels + the fill")
+
+  sprite.dup_layer(fd, 1)
+  check(fd.layers[2].fill ~= nil and fd.layers[2].fill ~= fd.layers[1].fill,
+        "sprite: dup_layer deep-copies the fill")
+  sprite.clear_fill(fd, 2)
+  check(fd.layers[2].fill == nil and fd.layers[1].fill ~= nil,
+        "sprite: clear_fill removes only that layer's fill")
 end
 
 function game.init()

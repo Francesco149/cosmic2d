@@ -9,12 +9,19 @@
 --
 -- A document:
 --   { name, w, h, frames, palette={rgba…},
---     layers = { { name, opacity=0..255, hidden, locked, cells={img per frame} } },
+--     layers = { { name, opacity=0..255, hidden, locked, cells={img per frame},
+--                  fill = nil | {type,p0,p1,stops,levels,dither,bayer,phase} } },
 --     clips  = { … },                 -- animation (Phase 4)
 --     pivot  = {x,y},                  -- in-game origin
 --     -- runtime-only (never serialized): cur_layer, cur_frame, path, dirty,
---     --   _undo/_redo/_scratch }
+--     --   _undo/_redo/_scratch/_shade/_struct }
 -- A cell is a cm.paint image ({w,h,buf}); layers are bottom→top.
+--
+-- Gradient fills (Phase 3, STUDIO.md §6) are NON-DESTRUCTIVE: a fill is a small
+-- editable object bound to a layer (layer.fill), re-rendered at composite/bake
+-- time masked by that layer's per-frame alpha — the .spr keeps it live, bake
+-- flattens it. Bound to the LAYER (not a doc-global fills[] keyed by index) so
+-- it survives reorder/dup/delete for free; the FILL chunk carries the binding.
 
 local M = select(2, ...) or {}
 
@@ -76,11 +83,22 @@ local function clone_cell(src, w, h)
   return img
 end
 
+-- deep-copy a layer's gradient fill (so a snapshot / dup is independent of the
+-- live one — nested p0/p1/stops cloned). nil stays nil.
+local function clone_fill(f)
+  if not f then return nil end
+  local stops = {}
+  for i, s in ipairs(f.stops) do stops[i] = { pos = s.pos, rgba = s.rgba } end
+  return { type = f.type, p0 = { x = f.p0.x, y = f.p0.y },
+           p1 = { x = f.p1.x, y = f.p1.y }, stops = stops,
+           levels = f.levels, dither = f.dither, bayer = f.bayer, phase = f.phase }
+end
+
 local function clone_layer(l, w, h, frames)
   local cells = {}
   for f = 1, frames do cells[f] = clone_cell(l.cells[f], w, h) end
   return { name = l.name, opacity = l.opacity, hidden = l.hidden,
-           locked = l.locked, cells = cells }
+           locked = l.locked, cells = cells, fill = clone_fill(l.fill) }
 end
 
 -- the whole structural state (the layer stack + frame count + cursors) as a
@@ -159,6 +177,66 @@ function M.move_layer(doc, li, dir)
   push_struct(doc, before)
 end
 
+-- ---- gradient fills (non-destructive; Phase 3, STUDIO.md §6) ----
+
+-- A generic structural-undo bracket for a studio gesture that spans frames (e.g.
+-- dragging a gradient axis live): begin captures `before`, commit pushes the one
+-- step, cancel drops it. Use when a per-stroke delta bracket won't fit because
+-- the mutation isn't a single cell edit.
+function M.begin_struct(doc) doc._struct = capture_struct(doc) end
+function M.commit_struct(doc)
+  if doc._struct then push_struct(doc, doc._struct); doc._struct = nil end
+end
+function M.cancel_struct(doc) doc._struct = nil end
+
+-- set / replace a layer's gradient fill (one undo step). Takes ownership of
+-- `fill`. Pass nil via clear_fill, not here.
+function M.set_fill(doc, li, fill)
+  li = li or doc.cur_layer
+  local l = doc.layers[li]
+  if not l then return end
+  local before = capture_struct(doc)
+  l.fill = fill
+  push_struct(doc, before)
+end
+
+function M.clear_fill(doc, li)
+  li = li or doc.cur_layer
+  local l = doc.layers[li]
+  if not l or not l.fill then return end
+  local before = capture_struct(doc)
+  l.fill = nil
+  push_struct(doc, before)
+end
+
+-- bake a layer's fill into its pixels (DESTRUCTIVE) and drop the fill object —
+-- one undo step (a structural snapshot covers both the recolored pixels and the
+-- removed fill). Recolors every frame's visible pixels by the same geometry.
+function M.stamp_fill(doc, li)
+  li = li or doc.cur_layer
+  local l = doc.layers[li]
+  if not l or not l.fill then return end
+  local before = capture_struct(doc)
+  for f = 1, doc.frames do paint.grad_fill(l.cells[f], l.fill, l.cells[f]) end
+  l.fill = nil
+  push_struct(doc, before)
+end
+
+-- the cell to composite for a layer+frame: the raw cell, or — if the layer has a
+-- gradient fill — a shaded copy (the fill recolored over the cell's alpha) in a
+-- per-doc reuse scratch. The shade is transient; the live pixels are untouched.
+local function shaded_cell(doc, l, fi)
+  local cell = l.cells[fi]
+  if not l.fill then return cell end
+  local s = doc._shade
+  if not s or s.w ~= doc.w or s.h ~= doc.h then
+    s = paint.image(doc.w, doc.h); doc._shade = s
+  end
+  paint.fill(s, 0)
+  paint.grad_fill(s, l.fill, cell)
+  return s
+end
+
 -- ---- compositing + bake ----
 
 -- flatten the VISIBLE layers of one frame into `out` (a w*h image), bottom→top,
@@ -168,7 +246,7 @@ function M.composite_into(doc, fi, out)
   paint.fill(out, 0)
   for _, l in ipairs(doc.layers) do
     if not l.hidden and l.opacity > 0 then
-      local cell = l.cells[fi]
+      local cell = shaded_cell(doc, l, fi)
       if l.opacity >= 255 then
         for i = 0, doc.w * doc.h - 1 do
           local c = cell.buf:u32(i * 4)
@@ -209,6 +287,22 @@ local function layer_flags(l)
   return (l.hidden and 1 or 0) | (l.locked and 2 or 0)
 end
 
+-- gradient-fill type <-> a stable u8 id for the FILL chunk
+local FILL_TYPES = { "linear", "radial", "angular", "mirror" }
+local FILL_TID = {}
+for i, t in ipairs(FILL_TYPES) do FILL_TID[t] = i end
+
+-- one fill record: layer index (the binding) + the def. Floats keep fractional
+-- handle coords; spaces in the pack format are ignored (readability only).
+local FILL_FMT = "<I4 I1 ffff ff I2 I1 I1"
+local function encode_fill(idx, f)
+  local parts = { pack(FILL_FMT, idx, FILL_TID[f.type] or 1,
+    f.p0.x, f.p0.y, f.p1.x, f.p1.y, f.dither or 0, f.phase or 0,
+    f.levels or 2, f.bayer or 4, #f.stops) }
+  for _, s in ipairs(f.stops) do parts[#parts + 1] = pack("<fI4", s.pos, s.rgba) end
+  return table.concat(parts)
+end
+
 function M.encode(doc)
   local w = chunk.writer("CSPR")
   w.chunk("HEAD", 1, pack("<I4I4I4I4I4i4i4s2",
@@ -222,6 +316,14 @@ function M.encode(doc)
     local parts = { pack("<s2I1I1", l.name, l.opacity, layer_flags(l)) }
     for f = 1, doc.frames do parts[#parts + 1] = l.cells[f].buf:str(0, cellbytes) end
     w.chunk("LAYR", 1, table.concat(parts))
+  end
+  -- FILL: the non-destructive gradient fills (one record per layer that has one)
+  local fills = {}
+  for i, l in ipairs(doc.layers) do
+    if l.fill then fills[#fills + 1] = encode_fill(i, l.fill) end
+  end
+  if #fills > 0 then
+    w.chunk("FILL", 1, pack("<I4", #fills) .. table.concat(fills))
   end
   -- CLIP is written in Phase 4; TAIL is the integrity check
   w.chunk("TAIL", 1, pack("<I4I4", #doc.layers, doc.frames))
@@ -256,6 +358,25 @@ function M.decode(blob)
         pos = pos + cellbytes
       end
       doc.layers[li] = l
+    elseif c.tag == "FILL" and c.version == 1 and doc then
+      -- comes after the LAYR chunks (encode order), so the layers exist
+      local nf, pos = unpack("<I4", c.payload)
+      for _ = 1, nf do
+        local idx, tid, p0x, p0y, p1x, p1y, dith, ph, lv, by, ns
+        idx, tid, p0x, p0y, p1x, p1y, dith, ph, lv, by, ns, pos =
+          unpack(FILL_FMT, c.payload, pos)
+        local stops = {}
+        for i = 1, ns do
+          stops[i] = {}
+          stops[i].pos, stops[i].rgba, pos = unpack("<fI4", c.payload, pos)
+        end
+        local l = doc.layers[idx]
+        if l then
+          l.fill = { type = FILL_TYPES[tid] or "linear",
+                     p0 = { x = p0x, y = p0y }, p1 = { x = p1x, y = p1y },
+                     stops = stops, dither = dith, phase = ph, levels = lv, bayer = by }
+        end
+      end
     end
     -- unknown tags/versions skipped (forward-compatible by rule)
   end
