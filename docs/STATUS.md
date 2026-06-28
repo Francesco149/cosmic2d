@@ -4,16 +4,18 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M7 — movement overhaul (the heart; D035 / GAME.md §4).** M0–M6
-complete. The full MapleStory moveset is built as pure cartridge controller
-policy (no PAL/engine change), the attract demo is re-choreographed, and
-determinism is proven. **The human did a first live feel pass (win11): "feels
-approximately right"** — feedback now applied (flash once/airtime, teleport
-alternates fwd/back, flutter cooldown fixed, 1.5× airtime, a cooldown HUD).
-**Final knob tuning + the golden re-cut wait for the real ART** (the human's
-call — feel tweaks land with real sprites); the mechanics are otherwise done.
-**Next: more feel passes as art arrives; the fancy slice VFX is deferred to the
-editor/particle work; re-cut goldens once knobs lock.**
+**Phase**: **M7 movement — mechanically complete + FEEL-APPROVED.** The full
+MapleStory moveset (D035 / GAME.md §4) is built as pure cartridge controller
+policy (no PAL/engine change), deterministic (selftest 22312 + record→verify both
+timelines), every value a live knob. The human signed off after **three live
+feel passes** on win11 ("this feels good") — see the feedback rounds below.
+**Remaining M7 items are deliberately deferred until real assets land**: final
+knob tuning, the **CW≈26 absolute scale** (needs M8 zoom), the **fancy slice
+VFX** (needs the editor's live particle-emitter work), and the **golden re-cut**
+(the placeholder sprite + scale will change, so pinning now would just be re-cut
+again — selftest is the live net meanwhile).
+**Next: M8 — viewport & editor UX (D036)**, which unblocks the zoom (real scale)
+and live VFX authoring; then circle back to close M7's deferred items.
 
 ## This session (2026-06-27) — M7 moveset
 
@@ -161,25 +163,29 @@ Latest build (both fixes) deployed to `C:\temp\cosmic`. **Human-verified
 2026-06-27**: windowed run is perfectly smooth — input releases cleanly, no
 frame spikes from a WSL terminal.
 
-## Next step (close M7)
+## Next step — M8 (viewport & editor UX, D036), then close M7's deferred items
 
-1. **Human feel sign-off, native on win11** (the exit gate). Build the windows
-   package (`nix build .#cosmic-windows`) or run the linux binary; play the
-   moveset and tune `doc.knobs.move` live (F1 inspector / `` ` `` console). Keys:
-   arrows · space=jump (hold=auto-repeat; airborne=flash, Up+space=up-jump) ·
-   e=hop (hold=flutter) · **q=grapple** · r=teleport · d=slice. Save tuned
-   knobs with `game.save_knobs()`.
-2. **Re-cut the golden suite** (deferred until knobs lock — tuning invalidates
-   any sandbox golden cut now). The committed traces are still old `.ptrace`
-   (dormant; the suite globs `.ctrace`). Plan: **delete** the obsolete-mechanic
-   traces (boostcap, boostlock, divecancel, djscale, jumpfeel, platformer_dive,
-   platformer, platformer_locked, sandbox_ease, old kitcheck, sandbox); **re-cut
-   as `.ctrace`** the engine-feature goldens that ride the sandbox (editpaint,
-   inspectpoke, propspawn, mantle) + churn/evalfix (their own cartridges); **add**
-   a fresh `kitcheck.ctrace` from `game.demo(2)`; **re-shoot** the pixel goldens
-   (sandbox_idle, sandbox_tour). selftest 22312 is the live net meanwhile.
-3. Then M7 is closed; suggest `/clear` → M8 (viewport/zoom, D036) which also
-   delivers the CW≈26 absolute calibration.
+**M7 feel is signed off** (2026-06-28). Movement is mechanically done, tunable,
+deterministic. Start **M8** next; it unblocks two of M7's deferred items.
+
+1. **M8 — viewport & editor UX (D036)**: variable-FOV internal target,
+   window-resize ladder, editor-only UI scale, movable/resizable game viewport,
+   integer zoom. The **zoom** is what finally delivers the GAME.md §4 anchor
+   (6 CW ≈ ⅓ screen, CW≈26) — at M8 set the zoom + `move.cw/ch` together. Also:
+   the editor's live particle-emitter/logic editing the human wants for the
+   **fancy slice VFX** (orbiting energy blades + trails) — author it then.
+2. **Then close M7's deferred items** (once scale + assets settle): final knob
+   tuning with the real sprite; the slice VFX; and **re-cut the golden suite** —
+   committed traces are still dormant `.ptrace` (suite globs `.ctrace`). Plan:
+   **delete** the obsolete-mechanic traces (boostcap/boostlock/divecancel/djscale/
+   jumpfeel/platformer*/sandbox_ease/old kitcheck/sandbox); **re-cut as `.ctrace`**
+   the engine-feature goldens (editpaint, inspectpoke, propspawn, mantle) +
+   churn/evalfix; **add** a fresh `kitcheck.ctrace`; **re-shoot** the pixel
+   goldens (sandbox_idle, sandbox_tour). selftest 22312 is the live net until then.
+
+Controls (dev): arrows · space=jump (hold=auto-repeat; airborne=flash, Up=up-jump)
+· e=hop (hold=flutter) · **q=grapple** · r=teleport · d=slice. `game.save_knobs()`
+persists tuning. The temporary cooldown HUD shows hop/grapple/tp timers.
 
 ## Known small items / debts
 
