@@ -960,3 +960,18 @@ needs a translucent game layer (then a non-blended game blit + blended ui blit);
 or fractional UI scaling is wanted (opt-in; default stays integer); or the
 movable/resizable viewport (D036) needs the compose rect to be drag-driven
 (already expressible via `x_compose`, just not yet wired to a drag handle).
+
+**Revision (2026-06-28, feedback round 4).** Two corrections from live use:
+- **ui_scale applies in play mode too, not only the editor.** D036/D039 first
+  built the ui canvas only when the editor owned the chrome; in play mode the dev
+  panels (options menu / console / perf / scrub) drew on the game target at the
+  *game* scale, so changing ui_scale with the editor closed did nothing. Now
+  `cm.view.update` **always** allocates the ui canvas at `ui_scale` (the game is
+  composed under it — inset in the editor, centered full-window in play), and
+  `cm.main` routes the dev panels to it after `editor.frame` regardless of editor
+  state. So ui_scale rescales the dev UI live in either mode. (Game-space HUD the
+  *cartridge* draws stays on the game target at game scale — correct: it's game
+  content, not dev chrome.) Still render-only / live-only — goldens untouched.
+- **Options window-size presets are now fill-the-window resolutions** (720×540,
+  960×540, 1440×1080, 1920×1080 — a 4:3 + a 16:9 at two heights), each a whole
+  multiple of a FOV ≤ the reference so the ladder fills with no letterbox.

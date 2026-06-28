@@ -332,6 +332,10 @@ function M.tick()
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
   M.editor.frame() -- editor chrome above the game, under perf/console
+  -- the dev panels (scrub/perf/console/options) draw on the ui canvas at
+  -- ui_scale. The editor already routed there when it's open; in play mode it
+  -- returned early, so switch here (no-op headless / when the canvas is off).
+  if M.view.ui_active then pal.x_target("ui") end
   M.scrub.frame() -- the time machine rides above the editor
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything

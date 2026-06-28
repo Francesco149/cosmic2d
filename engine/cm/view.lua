@@ -175,38 +175,32 @@ function M.update()
   -- fullscreen W/H is the SCREEN, so leave the remembered windowed size alone.
   if not M.fullscreen then M.win_w, M.win_h = W, H end
 
+  -- The dev chrome ALWAYS rides a ui canvas at cfg.ui_scale — in the editor AND
+  -- in play (so the options menu / console / perf / scrub honor ui_scale with
+  -- the editor closed too, not only when it's open). The game target composes
+  -- UNDER it: inset into the central rect when the editor owns the chrome (the
+  -- toolbar across the top + the inspector down the right), else centered
+  -- full-window. So ui_scale rescales the dev UI live in either mode.
+  local us = math.max(1, M.cfg.ui_scale)
+  local uw, uh = math.ceil(W / us), math.ceil(H / us)
+  pal.x_ui_target(uw, uh)
+  M.ui_w, M.ui_h = uw, uh
+
   local ed = cm.require("cm.editor")
   local editor_on = ed and ed.on and not ed.locked()
+  local top = editor_on and ed.TB_H * us or 0 -- chrome insets (window px)
+  local right = editor_on and (ed.show_insp and ed.IW or 0) * us or 0
+  local aw = math.max(1, W - right)
+  local ah = math.max(1, H - top)
+  local fw, fh, gs = M.ladder(aw, ah)
+  M.fov_w, M.fov_h, M.scale = fw, fh, gs
+  pal.x_fov(fw, fh)
+  local vx = (aw - fw * gs) // 2 -- center the game in the available rect
+  local vy = top + (ah - fh * gs) // 2
+  pal.x_compose { x = vx, y = vy, scale = gs, ui_scale = us }
+  M.ui_active = true
 
-  if editor_on then
-    local us = math.max(1, M.cfg.ui_scale)
-    local uw, uh = math.ceil(W / us), math.ceil(H / us)
-    pal.x_ui_target(uw, uh)
-    M.ui_w, M.ui_h = uw, uh
-    -- chrome insets (window px): the editor owns the sizes (ui-canvas px) — the
-    -- toolbar across the top, the inspector down the right when shown.
-    local top = ed.TB_H * us
-    local right = (ed.show_insp and ed.IW or 0) * us
-    local aw = math.max(1, W - right)
-    local ah = math.max(1, H - top)
-    local fw, fh, gs = M.ladder(aw, ah)
-    M.fov_w, M.fov_h, M.scale = fw, fh, gs
-    pal.x_fov(fw, fh)
-    -- center the game in the available rect
-    local vx = (aw - fw * gs) // 2
-    local vy = top + (ah - fh * gs) // 2
-    pal.x_compose { x = vx, y = vy, scale = gs, ui_scale = us }
-    M.ui_active = true
-  else
-    pal.x_ui_target(0, 0) -- free the canvas: no ui layer in play mode
-    local fw, fh, gs = M.ladder(W, H)
-    M.fov_w, M.fov_h, M.scale = fw, fh, gs
-    pal.x_fov(fw, fh)
-    pal.x_compose()
-    M.ui_active = false
-  end
-
-  cm.require("cm.ui").ui_space = M.ui_active -- panels hit-test in this space
+  cm.require("cm.ui").ui_space = true -- dev panels hit-test in ui-canvas space
 end
 
 return M
