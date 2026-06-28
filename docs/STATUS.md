@@ -31,14 +31,35 @@ feature-complete and M7 (movement) is feel-approved; both stand below as history
   the ui canvas, sim paused, `F2`), `cm.anim` (pure clip evaluator). Assets in
   `<project>/art/`.
 
-**Next step (resume here): Phase 1a** — write `cm.paint` (get/set, Bresenham
-line, rect, midpoint ellipse, 4-connected exact flood fill, blit/stamp, flip,
-rotate90 — all integer/no-AA) and add selftest KATs for it. Then 1b `cm.sprite`
-(doc + `.spr` + bake + `buf_delta1` undo), 1c the `cm.studio` shell (F2 mode,
-checkerboard canvas, composite-to-texture, cursor-anchored pan/zoom, grid,
-hover), 1d tools + palette + HSV/hex picker + save/bake + asset browser. Phase 1
-exit: a human can paint, palette, save, bake, and reopen a single-layer sprite.
-See STUDIO.md §10 for the full phased plan. Visual progress → llm-feed.
+### M10 build progress (this session)
+- **1a DONE** `f2b72c1` — `cm.paint`: the pure no-AA rasterizers (get/set/over,
+  line/rect/ellipse, exact flood fill, blit/stamp, flip, rotate90). selftest
+  +23.
+- **1b DONE** `b3b8f72` — `cm.sprite`: document model (layers×frames, palette,
+  pivot), the `.spr` container (CSPR over cm.chunk), composite + bake to the
+  strip PNG, `buf_delta1` undo/redo. selftest +19.
+- **1c DONE** `0a1c219` — `cm.studio`: the F2 full-window studio (shell + canvas
+  + core tools), wired into cm.main (pause gate + frame() on the ui canvas).
+  Canvas: checkerboard, composite→one texture, cursor-anchored zoom, middle-drag
+  pan, grid, hover. Tools: pencil/eraser/bucket/eyedropper, primary/secondary
+  (LMB/RMB), Alt=pick, X=swap, Ctrl+Z/Y undo, Ctrl+S save. Palette panel.
+- **selftest 22351→22393** (+42, cm.paint + cm.sprite KATs); all green.
+- **Screenshot pushed to llm-feed** ("M10 the studio — Phase 1 MVP"): a 32×32
+  demo motif painted through the real pipeline. **Awaiting the human's
+  layout/UX taste read** before building more chrome.
+
+**Next step (resume here): finish Phase 1d** — the rest of the "solid paint
+foundation": (1) an **HSV + hex color picker** in the dock (mix free colors, not
+only the palette); (2) **custom palette save-slots** (save/load named palettes
+to a project-level file, "add current color" to the palette); (3) the **asset
+browser** — a grid of baked thumbnails from `<project>/art/`, new/open/dup/
+delete (you can't open a second asset yet). Phase 1 exit: a human paints,
+palettes, saves, bakes, and reopens a sprite. Then Phase 2 (layers/shapes/
+transforms/clipboard) → 3 (gradients) → 4 (animation + game wiring). Full plan:
+STUDIO.md §10. Visual progress → llm-feed; the human is the taste gate.
+
+Controls (studio): F2 toggle · B/E/G/I tools · LMB primary / RMB secondary ·
+Alt=eyedropper · X swap · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save.
 
 ---
 
