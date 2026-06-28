@@ -67,14 +67,15 @@ local KNOBS = {
     -- up jump: rise upjump_h px above the launch (jump→up-jump chain)
     upjump_h = 56,
     -- hop + flutter. hop_h = the hop's rise px. FLUTTER: hold E after a hop and
-    -- keep holding once you've started FALLING → a rhythmic mini-hop every
-    -- flutter_interval frames, flutter_boosts times (≈ interval×boosts/60 s),
-    -- each a height-based up-kick (flutter_h, sized to ~hold altitude over the
-    -- beat — raise it for more hold / a bigger bob, lower it for a gentle
-    -- descent) + a small forward nudge (flutter_vx < hop_vx). Then hop_cd (a
-    -- plain TAP — E released before you fall — never arms it).
+    -- keep holding once you've started FALLING → a small UPWARD mini-hop every
+    -- flutter_interval frames, flutter_boosts times (≈ interval×boosts/60 s).
+    -- Each is a height-based up-kick (flutter_h; small + frequent ~holds
+    -- altitude with a gentle bob — raise it for more lift, lower it to descend)
+    -- + an OPTIONAL forward nudge (flutter_vx, 0 = straight up); horizontal is
+    -- otherwise steered/damped by air control. Then hop_cd (a plain TAP — E
+    -- released before you fall — never arms it).
     hop_vx = 120, hop_h = 18,
-    flutter_interval = 60, flutter_boosts = 4, flutter_h = 45, flutter_vx = 70,
+    flutter_interval = 30, flutter_boosts = 4, flutter_h = 11, flutter_vx = 0,
     hop_cd = 600,
     -- grapple: the hook EXTENDS to a top above at grapple_extend px/s (~1
     -- screenful/s) under gravity, THEN reels you in (slow accel), STOPPING

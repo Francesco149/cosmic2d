@@ -110,15 +110,19 @@ Three asks from the human's first real play:
   `editor.frame` regardless of editor state. So changing ui_scale with the editor
   closed rescales the menu live (it didn't before — it drew at the game scale).
   Render-only / live-only; goldens untouched.
-- **Flutter is a rhythmic hold, not a glide** (M7 feel pass 4, GAME.md §4 + D035):
-  hold E after a hop and KEEP holding once you START FALLING → a height-based
-  mini-hop every `flutter_interval`(60f), `flutter_boosts`(4) times, sized
-  (`flutter_h`=45) to roughly HOLD altitude over the beat + a small forward nudge
-  (`flutter_vx`=70). Replaces the `flutter_grace`/`flutter_max`/`flutter_fall`/
-  `flutter_decel` glide knobs. The "must be falling" gate is the tap guard (a hop
-  released before the fall is a clean hop, no cd). Verified: the demo holds y≈480
-  (no net drift) + drifts forward; selftest 22351; KITCHECK + TOUR record→verify
-  byte-exact; montage on llm-feed. Default magnitudes are the human's feel call.
+- **Flutter is a rhythmic hold, not a glide** (M7 feel pass 4 + 4b, GAME.md §4 +
+  D035): hold E after a hop and KEEP holding once you START FALLING → a small
+  UPWARD height-based mini-hop every `flutter_interval`(30f≈2/s), `flutter_boosts`
+  (4) times, sized (`flutter_h`=11) to roughly HOLD altitude with a gentle ~11px
+  bob. Horizontal momentum is dumped at hover-start (air control then steers/damps
+  it), so it's upward-only (`flutter_vx`=0). Replaces the `flutter_grace`/`_max`/
+  `_fall`/`_decel` glide knobs; the "must be falling" gate is the tap guard.
+  **Round 4b** tuned the round-4 boosts ¼ smaller + upward-only + 2/s per the
+  human. Verified on TOUR: x stays put, vy flips every 30f at ~−84, y holds with a
+  gentle ~4px/s sink; selftest 22351; KITCHECK + TOUR record→verify byte-exact;
+  montage on llm-feed. **KITCHECK's flutter sub-test no longer triggers** (hop hold
+  lands in a merged airtime under the new trajectories — choreography drift, not a
+  bug; re-choreograph once the knobs settle). Magnitudes are the human's feel call.
 
 **Still open / deferred**:
 - **`cfg.ui_scale`** default (2× now; D036 says 1×) — the human's taste call,

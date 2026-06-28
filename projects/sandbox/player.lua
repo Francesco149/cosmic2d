@@ -22,11 +22,11 @@
 --   5 HOP       E — diagonal up-forward boost, the trajectory fine-tuner.
 --               Chains anywhere. Once per airtime (and never on flutter cd).
 --   6 FLUTTER   hold E after a hop AND keep holding once you START FALLING —
---               a rhythmic mini-hop (up + a little forward) every
---               flutter_interval frames, flutter_boosts times (~a few s), each
---               sized to roughly HOLD your height. Not a glide. On
---               release/timeout/land hop goes on hop_cd (a plain TAP hop —
---               released before you fall — never arms it). Cd persists.
+--               small UPWARD mini-hops (flutter_vx=0; horizontal steers via air
+--               control) every flutter_interval frames, flutter_boosts times,
+--               each sized to roughly hold height with a gentle bob. Not a
+--               glide. On release/timeout/land hop goes on hop_cd (a plain TAP
+--               hop — released before you fall — never arms it). Cd persists.
 --   7 GRAPPLE   q (the spec's ` is the dev console — see main.lua) — reel up
 --               to a standable top above, preferring targets past ½ a
 --               screenful. Slow accel. Once per airtime, 3 s cooldown. Jump
@@ -316,8 +316,8 @@ function M.step(ctl)
       else
         vx = approach(vx, 0, k.ground_fric * DT)
       end
-    elseif fluttering ~= 1 then
-      if dir ~= 0 then -- minimal: only trims the committed arc
+    else -- airborne (incl. flutter — its boosts are vertical, so air control
+      if dir ~= 0 then -- steers / damps the horizontal): trims the committed arc
         vx = m.clamp(vx + dir * k.air_accel * DT, -k.fj_vx, k.fj_vx)
       else
         vx = approach(vx, 0, k.air_fric * DT)
@@ -366,10 +366,11 @@ function M.step(ctl)
   end
 
   -- ===== FLUTTER (hold E after a hop) — once you've started FALLING (past the
-  -- hop's apex) and you're STILL holding, HOVER by rhythm: a small up+forward
-  -- boost (a mini hop, height-based) every flutter_interval frames, flutter_
-  -- boosts times (~a few s), each sized (flutter_h) to roughly hold your
-  -- altitude over the beat — NOT a continuous glide. flutter_t counts frames
+  -- hop's apex) and you're STILL holding, HOVER by rhythm: a small UPWARD boost
+  -- (a mini hop, height-based; + an optional forward nudge flutter_vx) every
+  -- flutter_interval frames, flutter_boosts times, each sized (flutter_h) to
+  -- roughly hold your altitude over the beat — NOT a continuous glide. flutter_t
+  -- counts frames
   -- since the hover began; the cooldown (hop_cd) arms when it ends (release /
   -- timeout / land, below), so a plain TAP — E let go before you fall — is a
   -- clean hop with no cd (the "must be falling" gate IS the tap guard). =====
@@ -384,15 +385,16 @@ function M.step(ctl)
       else
         if flutter_t % k.flutter_interval == 0 then -- the beat: a mini hop
           vy = -m.sqrt(2.0 * g_rise * k.flutter_h)  -- up (~holds height/beat)
-          vx = m.clamp(vx + facing * k.flutter_vx, -k.fj_vx, k.fj_vx) -- +forward
+          vx = m.clamp(vx + facing * k.flutter_vx, -k.fj_vx, k.fj_vx) -- +opt fwd
           puff(x + W * 0.5, y + H, 2, 2.4)
         end
         flutter_t = flutter_t + 1
       end
     elseif not hold or grounded then
       hop_active = 0 -- released / landed before falling: a clean hop, no cd
-    elseif vy > 0 then -- started falling while holding: the hover begins
-      fluttering, flutter_t = 1, 0
+    elseif vy > 0 then -- started falling while holding: the hover begins.
+      fluttering, flutter_t = 1, 0 -- drop carried (hop) momentum so it's a
+      vx = 0                       -- clean UPWARD hover; hold a dir to steer
     end
   end
 
