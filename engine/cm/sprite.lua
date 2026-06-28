@@ -28,6 +28,7 @@ local M = select(2, ...) or {}
 local paint = cm.require("cm.paint")
 local chunk = cm.require("cm.chunk")
 local anim = cm.require("cm.anim")
+local state = cm.require("cm.state")
 local pack, unpack = string.pack, string.unpack
 
 M.DEFAULT_DUR = 5 -- ticks per new clip frame (~12 fps at 60 Hz)
@@ -124,6 +125,7 @@ local function capture_struct(doc)
   local layers = {}
   for i, l in ipairs(doc.layers) do layers[i] = clone_layer(l, doc.w, doc.h, doc.frames) end
   return { layers = layers, frames = doc.frames, clips = clone_clips(doc.clips),
+           pivot = { x = doc.pivot.x, y = doc.pivot.y },
            cur_layer = doc.cur_layer, cur_frame = doc.cur_frame }
 end
 
@@ -133,6 +135,7 @@ local function restore_struct(doc, snap)
   doc.layers = snap.layers
   doc.frames = snap.frames
   if snap.clips then doc.clips = snap.clips end
+  if snap.pivot then doc.pivot = snap.pivot end
   doc.cur_layer = math.min(snap.cur_layer or 1, #snap.layers)
   doc.cur_frame = math.min(snap.cur_frame or 1, snap.frames)
 end
@@ -302,6 +305,24 @@ end
 
 function M.delete_clip(doc, ci)
   if doc.clips[ci] then table.remove(doc.clips, ci); doc.dirty = true end
+end
+
+-- ---- pivot / origin (Phase 5, STUDIO.md §3) ----
+-- The in-game anchor: the pixel of the cell that the game pins to an entity's
+-- position (feet on the ground, a hand on a weapon). Per-doc for v1 (per-frame is
+-- a documented follow-up). It is baked into the .meta sidecar the game reads; the
+-- studio drags it live (its own struct-undo bracket, one step per drag).
+
+-- set the pivot to a clamped pixel, one undo step (a no-op when unchanged). The
+-- studio's live drag mutates doc.pivot directly inside a begin/commit_struct
+-- bracket instead — this is for numeric / programmatic sets (e.g. a reset).
+function M.set_pivot(doc, x, y)
+  x = math.max(0, math.min(doc.w - 1, math.floor(x)))
+  y = math.max(0, math.min(doc.h - 1, math.floor(y)))
+  if doc.pivot.x == x and doc.pivot.y == y then return end
+  local before = capture_struct(doc)
+  doc.pivot.x, doc.pivot.y = x, y
+  push_struct(doc, before)
 end
 
 -- ---- gradient fills (non-destructive; Phase 3, STUDIO.md §6) ----
@@ -579,6 +600,41 @@ local function with_ext(path, ext)
   return (path:gsub("%.spr$", "")) .. ext
 end
 
+-- ---- the .meta sidecar (sprite RUNTIME metadata the game reads) ----
+-- The .png is pixels and the .anim is clips; the .meta carries the rest the game
+-- needs at draw time — the pivot (and, Phase 5b, named slices). It is the doc's
+-- geometry as canonical doc bytes (cm.state.canon, like .anim / knobs.dat): a
+-- dev/asset-class file, boot-loaded, never sim input (D026). A separate sidecar
+-- keeps cm.anim purely about animation; the .spr stays the editable source.
+
+-- the runtime metadata as a plain doc tree (integers floored so canon is stable).
+function M.meta_of(doc)
+  return { pivot = { x = math.floor(doc.pivot.x), y = math.floor(doc.pivot.y) } }
+end
+
+function M.encode_meta(doc) return state.canon(M.meta_of(doc)) end
+
+-- decode .meta bytes to a normalized { pivot = {x,y} } (defaults on any garbage,
+-- so a missing / corrupt file degrades cleanly to a feet-center fallback caller-side).
+function M.decode_meta(bytes)
+  local ok, t = pcall(state.parse, bytes)
+  if not ok or type(t) ~= "table" then return nil end
+  local p = type(t.pivot) == "table" and t.pivot or {}
+  return { pivot = { x = math.floor(tonumber(p.x) or 0),
+                     y = math.floor(tonumber(p.y) or 0) } }
+end
+
+function M.save_meta(path, doc)
+  return pal.write_file(path, M.encode_meta(doc)) and true or nil
+end
+
+-- the game's read path (render-only, like anim.load): nil on any failure.
+function M.load_meta(path)
+  local bytes = pal.read_file(path)
+  if not bytes then return nil end
+  return M.decode_meta(bytes)
+end
+
 -- write <path>.spr (editable source) + bake the build product the game loads:
 -- <path>.png (the flattened strip) and, when the doc has clips, <path>.anim (the
 -- clip table as canonical bytes — cm.anim.save). The caller (studio) ensures the
@@ -590,6 +646,7 @@ function M.save(doc, path)
   pal.png_write(with_ext(path, ".png"), strip.buf:str(0, strip.w * strip.h * 4),
                 strip.w, strip.h)
   if #doc.clips > 0 then anim.save(with_ext(path, ".anim"), doc.clips) end
+  M.save_meta(with_ext(path, ".meta"), doc) -- pivot (+ slices) the game reads
   doc.path, doc.dirty = path, false
   return true
 end

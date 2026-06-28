@@ -60,6 +60,7 @@ local level = cm.require("level")
 local fx = cm.require("fx")
 local gfx = cm.require("cm.gfx")
 local anim = cm.require("cm.anim")
+local sprite = cm.require("cm.sprite")
 
 local M = {}
 
@@ -660,14 +661,20 @@ local function load_sprite()
   if proj then
     local ok, tex = pcall(gfx.texture, proj .. "/art/girl.png")
     if ok and tex then
-      return tex, m.max(1, tex.w // FW), anim.load(proj .. "/art/girl.anim")
+      return tex, m.max(1, tex.w // FW), anim.load(proj .. "/art/girl.anim"),
+             sprite.load_meta(proj .. "/art/girl.meta")
     end
   end
-  return build_sprite(), 11, nil
+  return build_sprite(), 11, nil, nil
 end
 
-local sprite, NF, clips = load_sprite()
+local sprite_tex, NF, clips, meta = load_sprite()
 local idle_clip = clips and anim.find(clips, "idle")
+-- the in-game anchor: the cell pixel pinned to the foot point. From the studio-
+-- authored .meta when present (render-only file bytes, D026 — can't perturb a
+-- trace); else feet-center of the cell (the procedural fallback's old behavior).
+local PIV_X = meta and meta.pivot.x or FW * 0.5
+local PIV_Y = meta and meta.pivot.y or FH
 
 function M.draw()
   local k = state.doc.knobs.move
@@ -731,12 +738,17 @@ function M.draw()
   end
 
   local dw, dh = W * sx, H * sy
-  local dx = x + W * 0.5 - dw * 0.5
-  local dy = y + H - dh -- feet-anchored
-  local u0 = (f * FW) / sprite.w
-  local u1 = (f * FW + FW) / sprite.w
+  -- anchor the authored pivot pixel (cell space FWxFH) to the foot point
+  -- (x+W/2, y+H): map the pivot through the draw quad, mirrored when facing left.
+  -- squash/stretch then scales around that pivot (feet stay planted, as before).
+  local ax, ay = x + W * 0.5, y + H
+  local ox = facing < 0 and (FW - PIV_X) or PIV_X
+  local dx = ax - (ox / FW) * dw
+  local dy = ay - (PIV_Y / FH) * dh
+  local u0 = (f * FW) / sprite_tex.w
+  local u1 = (f * FW + FW) / sprite_tex.w
   if facing < 0 then u0, u1 = u1, u0 end
-  pal.quad(dx, dy, dw, dh, tr, tg, tb, ta, sprite.id, u0, 0, u1, 1)
+  pal.quad(dx, dy, dw, dh, tr, tg, tb, ta, sprite_tex.id, u0, 0, u1, 1)
 end
 
 return M

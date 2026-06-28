@@ -71,7 +71,7 @@ local KEY_RET, KEY_DEL, KEY_BKSP = 40, 76, 42
 local KEY_LBRK, KEY_RBRK = 47, 48
 local SC = { z = 29, y = 28, s = 22, b = 5, e = 8, g = 10, i = 12, x = 27,
              l = 15, r = 21, o = 18, f = 9, m = 16, v = 25, c = 6, d = 7,
-             h = 11, j = 13 }
+             h = 11, j = 13, p = 19 }
 
 local TOOLS = {
   { id = "pencil",  key = "B", tip = "pencil" },
@@ -84,6 +84,7 @@ local TOOLS = {
   { id = "pick",    key = "I", tip = "eyedropper (or hold Alt)" },
   { id = "select",  key = "M", tip = "marquee select" },
   { id = "move",    key = "V", tip = "move selection / float" },
+  { id = "pivot",   key = "P", tip = "pivot / anchor (drag the crosshair)" },
 }
 local SHAPE = { line = true, rect = true, ellipse = true }
 
@@ -689,6 +690,7 @@ local function handle_keys()
       elseif sc == SC.i then M.tool = "pick"
       elseif sc == SC.m then M.tool = "select"
       elseif sc == SC.v then M.tool = "move"
+      elseif sc == SC.p then M.tool = "pivot"
       elseif sc == SC.f then M.fill_shapes = not M.fill_shapes
       elseif sc == SC.h then M.flip(true)
       elseif sc == SC.j then M.flip(false)
@@ -845,6 +847,30 @@ local function handle_select(over)
   end
 end
 
+-- the pivot tool: drag the in-game anchor crosshair to a pixel (clamped). The
+-- whole drag is ONE undo step (a begin/commit_struct bracket, committed only when
+-- the pivot actually moved — like the gradient axis drag).
+local function handle_pivot(over)
+  local doc, inp = M.doc, ui.inp
+  if over and (inp.clicked[1] or inp.clicked[3]) and not ui.active then
+    sprite.begin_struct(doc)
+    M.piv_drag, M.piv_ox, M.piv_oy = true, doc.pivot.x, doc.pivot.y
+  end
+  if M.piv_drag then
+    if inp.buttons[1] or inp.buttons[3] then
+      local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      doc.pivot.x, doc.pivot.y = clamp(px, 0, doc.w - 1), clamp(py, 0, doc.h - 1)
+    else
+      M.piv_drag = false
+      if doc.pivot.x ~= M.piv_ox or doc.pivot.y ~= M.piv_oy then
+        sprite.commit_struct(doc)
+      else
+        sprite.cancel_struct(doc)
+      end
+    end
+  end
+end
+
 local function handle_paint(over)
   if M.playing then return end -- the canvas shows the playhead; no editing mid-play
   local inp = ui.inp
@@ -881,6 +907,7 @@ local function handle_paint(over)
   if M.float and not (M.tool == "select" or M.tool == "move") then M.commit_float() end
 
   if tool == "gradient" then handle_gradient(over); return end
+  if tool == "pivot" then handle_pivot(over); return end
 
   if tool == "pick" then
     if over and pressed and dpx then
@@ -1054,6 +1081,19 @@ local function draw_canvas(r)
   end
   pal.clip()
   ui.frame_rect(ix - 1, iy - 1, iw + 2, ih + 2, st.panel_edge) -- image border
+  -- the pivot crosshair (the in-game anchor pixel): a dark halo + a bright cross so
+  -- it reads on any pixels. Bright when the pivot tool is active, faint otherwise.
+  do
+    local p = M.doc.pivot
+    local cxp = ix + floor((p.x + 0.5) * z)
+    local cyp = iy + floor((p.y + 0.5) * z)
+    local a = (M.tool == "pivot") and 1 or 0.45
+    local arm = max(4, z)
+    ui.rect(cxp - arm, cyp - 1, arm * 2 + 1, 3, { 0, 0, 0, a * 0.7 })
+    ui.rect(cxp - 1, cyp - arm, 3, arm * 2 + 1, { 0, 0, 0, a * 0.7 })
+    ui.rect(cxp - arm, cyp, arm * 2 + 1, 1, { 1, 0.85, 0.2, a })
+    ui.rect(cxp, cyp - arm, 1, arm * 2 + 1, { 1, 0.85, 0.2, a })
+  end
   -- gradient axis + endpoint handles (gradient tool active + this layer has a fill)
   local gl = M.doc.layers[M.doc.cur_layer]
   if M.tool == "gradient" and gl.fill then draw_grad_handles(r, ix, iy, z, gl.fill) end
@@ -1633,6 +1673,8 @@ local function draw_timeline(r)
     extra = ("  %dx%d"):format(math.abs(ex - sx) + 1, math.abs(ey - sy) + 1)
   elseif SHAPE[tool] then
     extra = M.fill_shapes and "  fill" or "  outl"
+  elseif tool == "pivot" then
+    extra = ("  @%d,%d"):format(doc.pivot.x, doc.pivot.y)
   end
   local dpx, dpy = M.doc_pixel(inp.mx, inp.my)
   local stat = ("%s%s  %s  %dx"):format(

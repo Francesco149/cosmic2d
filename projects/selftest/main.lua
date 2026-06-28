@@ -1655,6 +1655,28 @@ local function t_sprite()
         "sprite: load round-trip (" .. tostring(err) .. ")")
   check(pal.read_file((tmp:gsub("%.spr$", ".png"))) ~= nil, "sprite: bake png written")
 
+  -- pivot (Phase 5): default feet-center, round-trips the .spr HEAD + the .meta
+  -- sidecar, set_pivot is one clamped undo step, and save bakes the .meta.
+  local pv = sprite.new(8, 6)
+  check(pv.pivot.x == 4 and pv.pivot.y == 5, "sprite: default pivot is feet-center")
+  pv.pivot = { x = 3, y = 1 }
+  local pv2 = sprite.decode(sprite.encode(pv))
+  check(pv2.pivot.x == 3 and pv2.pivot.y == 1, "sprite: pivot round-trips the .spr HEAD")
+  local mt = sprite.decode_meta(sprite.encode_meta(pv))
+  check(mt and mt.pivot.x == 3 and mt.pivot.y == 1, "sprite: pivot round-trips the .meta")
+  sprite.set_pivot(pv, 99, -4) -- clamps to the cell bounds
+  check(pv.pivot.x == 7 and pv.pivot.y == 0, "sprite: set_pivot clamps to bounds")
+  check(sprite.can_undo(pv), "sprite: set_pivot is undoable")
+  sprite.undo(pv)
+  check(pv.pivot.x == 3 and pv.pivot.y == 1, "sprite: undo restores the pivot")
+  local n0 = #pv._undo
+  sprite.set_pivot(pv, 3, 1) -- unchanged → no step
+  check(#pv._undo == n0, "sprite: set_pivot no-op pushes nothing")
+  check(sprite.save(pv, tmp) == true, "sprite: save (pivot) ok")
+  local lm = sprite.load_meta((tmp:gsub("%.spr$", ".meta")))
+  check(lm and lm.pivot.x == 3 and lm.pivot.y == 1, "sprite: save bakes the .meta sidecar")
+  check(sprite.decode_meta("garbage!!") == nil, "sprite: decode_meta rejects garbage")
+
   -- undo / redo a stroke (the delta1 codec), and a no-op pushes nothing
   local d = sprite.new(4, 4)
   local c = sprite.cell(d)

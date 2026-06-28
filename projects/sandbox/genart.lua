@@ -121,6 +121,9 @@ function M.girl(proj)
   proj = proj or (cm.main and cm.main.args and cm.main.args.project) or "projects/sandbox"
   local doc = sprite.new(16, 24, { name = "girl" })
   doc.frames = #FRAMES
+  -- the in-game anchor (Phase 5): center-x, just below the boots (the moveset
+  -- poses plant the feet around y=21) — so the game pins her feet to the ground.
+  doc.pivot = { x = 8, y = 22 }
   local cells = doc.layers[1].cells
   for f = 2, doc.frames do cells[f] = paint.image(16, 24) end
   for f, draw in ipairs(FRAMES) do draw(cells[f]) end
