@@ -900,3 +900,46 @@ as designed, so the golden contract (D015 rule 6) extends to Windows for free.
 platform `#ifdef` (then: isolate it behind the contract, never leak it to engine
 code); or end-user shipping wants a windowed (`-mwindows`, no console) subsystem
 build (M15: an additive flag).
+
+## D039 — M8 viewport: the two-target composite realizes D036 (2026-06-28)
+
+**Context**: D036 specified the viewport model (variable FOV, the resize ladder,
+an editor-only UI scale, a movable/resizable game viewport) and guessed the
+shape would be "a small additive PAL surface (present into a sub-rect at a chosen
+scale; a separate UI-scale pass)". M8 had to turn that into a concrete renderer.
+The pre-M8 PAL rendered **one** fixed internal target integer-scaled to fill the
+window.
+**Decision**: the binding constraint is D036's exit criterion — *editor chrome
+at 1× around the game at 2×*. The editor must render into a **higher-resolution
+surface than the game FOV**, so one target cannot serve both. M8 is therefore a
+**two-target composite** (exactly D036's sketch): a **game target** sized to the
+variable FOV (`pal.x_fov`, ≤480×270, crops below / integer-upscales above) and a
+separate **editor/UI canvas** (`pal.x_ui_target`, ~window/ui_scale). Quads route
+per target (`pal.x_target`); `present()` runs a scene pass per target then
+composites them into the swapchain (`pal.x_compose`): the game blits to its
+viewport rect at an integer game scale, the ui canvas blits over the whole window
+at its own integer scale, alpha-over (transparent ui texels show the game). Born
+`pal.x_*` (api 4→5, experimental ns; pre-1.0 so still movable). The **resize
+ladder** + the editor-vs-play layout live in Lua (`cm.view`): `scale =
+max(base, min(⌊W/ref_w⌋, ⌊H/ref_h⌋))`, `FOV = min(ref, ⌊window/scale⌋)` — which
+reconciles D036's "widen → wider FOV" with "FOV maxes at 480×270" (widening
+widens the cropped FOV up to the cap). The mouse splits into game-space (`x,y`,
+the sim + world placement) and ui-canvas-space (`ui_x,ui_y`, the editor chrome).
+**Why**: keeps "mechanism in C, policy in Lua" — the PAL moves pixels between
+two targets and composites at chosen rects/scales; *where* the viewport sits,
+the ladder rungs, the chrome insets and the UI scale are all Lua knobs. One
+window can host the game and the editor at independent integer pixel scales,
+which is the whole point of D036.
+**Iron rule held**: the sim never reads window/FOV/viewport. FOV/compose/ui are
+render-only; `cm.view` runs live-only (headless/verify keep the project's fixed
+FOV), so the golden suite + record→verify are byte-untouched. Verified:
+selftest 22312→22344 (FOV resize incl. readback grow, target-routing isolation,
+the ladder rungs, the dual-mouse split); sandbox record→verify byte-exact;
+uigallery pixel golden byte-identical (the game-target render is unchanged).
+**Snapshot story**: none — viewport / FOV / UI canvas / compose are render +
+dev-side state (D021 class), never sim, never recorded (as D036 required).
+**Revisit if**: the alpha-over game-blit assumption (game clears opaque) ever
+needs a translucent game layer (then a non-blended game blit + blended ui blit);
+or fractional UI scaling is wanted (opt-in; default stays integer); or the
+movable/resizable viewport (D036) needs the compose rect to be drag-driven
+(already expressible via `x_compose`, just not yet wired to a drag handle).

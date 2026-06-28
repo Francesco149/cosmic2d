@@ -574,5 +574,33 @@ untouched). The crash parachute keeps its own inline stat (error-state only),
 so reboot-on-edit still works even when the thread never started (e.g. a
 boot-time engine crash).
 
+### PAL API v5 additions (M8 — viewport, D036)
+
+The viewport surface: a **variable game FOV** + a **two-target composite** (game
+viewport + a separate editor/UI canvas at its own scale). All born in the `x_`
+experimental namespace (contract rule 3; pre-1.0 the shapes can still move).
+Every entry is render/dev class — **the sim never reads window/FOV/viewport**
+(D036 iron rule), so nothing here is recorded or snapshotted, and headless /
+verify runs never call them (the engine drives them live-only), keeping the
+golden suite + determinism untouched.
+
+| fn | class | notes |
+| --- | --- | --- |
+| `pal.x_window_size()` | render/dev | real swapchain px `sw,sh`, cached each present (headless: the created `w*scale`). The resize ladder (cm.view) reads this |
+| `pal.x_fov(w,h)` → `w,h` | render/dev | resize the game internal target — the **variable FOV** (visible world in internal px). Grows the readback buffer if needed; no-op if unchanged. Flows into `gfx_size`/scene projection/`read_pixels`. The 480×270 policy cap lives in Lua, not here |
+| `pal.x_set_window_size(w,h)` | render/dev | resize the OS window (windowed only; live-only, headless no-op) — for the options menu |
+| `pal.x_set_fullscreen(on)` | render/dev | borderless-desktop fullscreen / windowed (mode NULL → OS res untouched; live-only) |
+| `pal.x_ui_target(w,h)` → `w,h` | render/dev | create/resize the **editor/UI canvas** (the second target). `w==0\|\|h==0` frees it (no ui layer = shipped game) |
+| `pal.x_target("game"\|"ui")` | render | route subsequent quads to a target; every `begin_frame` resets to `"game"`. Segments carry a target id; one shared vertex buffer, two filtered scene passes |
+| `pal.x_compose{x,y,scale,ui_scale}` | render/dev | define the present composite: the game target blits to `(x,y)` at integer `scale`; if `ui_scale>0` and a ui target exists, the ui canvas blits over the whole window at that integer scale, alpha-over the game. `pal.x_compose()` (no arg) → centered letterbox, no ui layer |
+| event `ui_x,ui_y` (motion/button) | input | the ui-canvas-space mouse, alongside game-space `x,y`. The editor chrome hit-tests `ui_x/ui_y`; the world overlay + the recorded sim mouse stay `x,y` |
+
+`present()` is factored into `scene_pass(target,id,clear)` (game → game target,
+opaque clear; ui segs → ui canvas, transparent clear so the viewport shows
+through) + `blit_layer()` (each target → its window rect). The blit pipeline is
+alpha-blended; the game layer is opaque so it composites unchanged. The window
+→ game-viewport → FOV mouse map (`G.lay_*`) is set by the composite each present.
+See **D039** for the two-target rationale and **cm.view** for the resize ladder.
+
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.

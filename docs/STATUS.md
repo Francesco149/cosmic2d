@@ -4,36 +4,45 @@
 > should be able to resume from this file alone (see PROCESS.md).
 
 **Date**: 2026-06-28
-**Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** The PAL viewport
-foundation + the resize ladder are built, committed, and verified (M8.1–M8.3).
-M7 movement remains mechanically complete + FEEL-APPROVED (3 live win11 passes —
-see the feedback rounds below); its deferred items (CW≈26 scale, slice VFX,
-golden re-cut) still wait on M8 + real assets.
-**Done this session (M8.1–M8.3, all on `main`, selftest 22312→22340, determinism
-byte-exact, goldens unaffected):**
-- **M8.1** `ea7dc9a` — PAL **api 4→5**: `pal.x_fov(w,h)` (the variable game FOV
-  = resizable internal target), `pal.x_window_size()`, plus `x_set_window_size`/
-  `x_set_fullscreen` for the options menu. Additive `x_*` (experimental ns).
+**Phase**: **M8 — viewport & editor UX (D036), IN PROGRESS.** The core is built,
+committed, and verified-as-far-as-headless (M8.1–M8.4 + D039 ADR). The headline
+behavior (editor chrome at its own scale **around** the game viewport) is
+mechanically done and **awaits a win11 visual feel-test** — its correctness is
+purely visual and unobservable headless (read_pixels/--shot capture the game
+target, not the swapchain composite; WSLg/dzn isn't representative). M7 movement
+remains FEEL-APPROVED; its deferred items (CW≈26 scale, slice VFX, golden re-cut)
+still wait on M8 + real assets.
+**Done this session (M8.1–M8.4, all on `main`, selftest 22312→22344, determinism
+byte-exact, uigallery golden byte-identical, goldens otherwise unaffected):**
+- **M8.1** `ea7dc9a` — PAL **api 4→5**: `pal.x_fov(w,h)` (the variable game FOV =
+  resizable internal target), `pal.x_window_size()`, `x_set_window_size`/
+  `x_set_fullscreen` (options menu). Additive `x_*` (experimental ns).
 - **M8.2** `f11ab36` — PAL **two-target composite**: `pal.x_ui_target` (a second
   editor/UI canvas), `pal.x_target("game"|"ui")` routing, `pal.x_compose{…}`
   (game→sub-rect at integer scale, ui→whole window at its own scale, alpha-over).
-  Mouse events now carry BOTH game-space `x,y` (sim, unchanged) and ui-canvas
-  `ui_x,ui_y` (editor chrome). present() factored into scene_pass + blit_layer.
+  Mouse events carry BOTH game-space `x,y` (sim, unchanged) + ui-canvas `ui_x,
+  ui_y` (editor chrome). present() factored into scene_pass + blit_layer.
 - **M8.3** `758dd40` — `cm.view`: the D036 resize **ladder** (scale =
   max(2,min(⌊W/480⌋,⌊H/270⌋)); FOV = min(480,⌊W/scale⌋)×min(270,⌊H/scale⌋)),
-  applied live only (headless/verify keep the fixed FOV). The game now fills the
-  window with a variable FOV; the editor-on-the-ui-canvas layer is M8.4.
-**Architecture decision (realizing D036)**: the editor-at-1×-around-game-at-2×
-requirement forces a **two-target composite** (game FOV target + higher-res UI
-canvas) — exactly D036's "present into a sub-rect + a separate UI-scale pass".
-That is the M8 rendering model. ADR write-up + ARCHITECTURE api5 table = M8.5.
-**HUMAN CHECKPOINT (open)**: the variable FOV (M8.3) is the first visible M8
-behavior — needs a win11 feel-test (resize the window → FOV crops below 960×540,
-integer-upscales above). And M8.4's **editor layout** (where chrome sits around
-the game viewport, default UI scale) is a taste call before that refactor.
-**Next: M8.4** (editor + dev UI draw into the ui canvas at their own scale; world
-overlay stays game-space; panels hit-test in ui-space) → **M8.6** options menu →
-**M8.5** docs/goldens. Then circle back to close M7's deferred items.
+  live only (headless/verify keep the fixed FOV). Game fills the window at a
+  variable FOV in play mode.
+- **M8.4** `6c07b6a` — editor + dev UI on the **ui canvas** at its own scale
+  (`cfg.ui_scale`, default **2×** — see knob note); the game becomes an **inset
+  viewport** (window minus the toolbar/inspector) at its own integer scale. The
+  mouse splits: `inp.gx/gy` game-space (world placement), `inp.mx/my` ui-canvas
+  (panel hit-test). console/scrub/perf re-homed via `view.surface_size()`.
+- **Docs**: **D039** (the two-target composite realizing D036) + the
+  **ARCHITECTURE api v5 table** are written (commit alongside this STATUS).
+**HUMAN CHECKPOINT (open) — please win11 feel-test M8.4:** F1 toggles the editor;
+expect the game inset at 2× with the toolbar across the top + inspector on the
+right at the UI scale; painting/prop-spawn should still land on the world; F1
+back to play = game fills the window; resize to feel the FOV ladder. **Knob to
+tune**: `cm.view.cfg.ui_scale` (chrome size) — I defaulted **2×** for
+readability; D036 says "1×", but 5×8 text at native 1080p is tiny, so I went
+readable. It's live-tunable and the options menu (M8.6) will expose it.
+**Next:** await the feel-test, then **M8.6** (options menu — you flagged it) and
+**M8.5** (golden re-cut + multi-file/subdir hot-reload at scale). Then close M7's
+deferred items (set FOV/scale + `move.cw/ch` for the CW≈26 anchor; slice VFX).
 
 ## This session (2026-06-27) — M7 moveset
 
