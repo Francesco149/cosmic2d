@@ -12,7 +12,7 @@ local M = {}
 -- The options menu (M8.6) mutates these; persistence lands with it.
 M.cfg = {
   base_scale = 2, -- default art zoom: a 960x540 window = a 480x270 FOV at 2x
-  ref_w = 480,    -- the FOV cap / art reference resolution (D036)
+  ref_w = 480,    -- target FOV / art reference; the ladder fills around it (D036)
   ref_h = 270,
   ui_scale = 2,   -- editor chrome scale, independent of the game's (D036)
 }
@@ -24,8 +24,22 @@ M.scale, M.fov_w, M.fov_h = M.cfg.base_scale, M.cfg.ref_w, M.cfg.ref_h
 -- two-target composite); ui_w/ui_h is that canvas size.
 M.ui_active = false
 M.ui_w, M.ui_h = M.cfg.ref_w, M.cfg.ref_h
+M.fullscreen = M.fullscreen or false -- borderless desktop (alt+enter / options)
+M.alt_down = false                   -- modifier tracking for the alt+enter combo
+local ALT_L, ALT_R, KEY_ENTER = 226, 230, 40
 
 function M.set_enabled(on) M.enabled = on and true or false end
+
+-- Borderless desktop fullscreen toggle (alt+enter, or the options menu M8.6).
+-- The window becomes the screen; the ladder then fills it like any other size.
+function M.toggle_fullscreen(on)
+  if on == nil then
+    M.fullscreen = not M.fullscreen
+  else
+    M.fullscreen = on and true or false
+  end
+  pal.x_set_fullscreen(M.fullscreen)
+end
 
 -- The surface the dev UI lays out + hit-tests against: the ui canvas when the
 -- editor owns the chrome (two-target composite), else the game FOV (the dev
@@ -36,19 +50,23 @@ function M.surface_size()
   return pal.gfx_size()
 end
 
--- The resize ladder (D036). Widening the window widens the FOV up to the cap;
--- below the cap the FOV crops at the base scale, above it the game upscales by
--- whole multiples. One formula reproduces every rung the human specified
--- (960x540->480x270@2x, 1920x1080->480x270@4x, 720x540->360x270@2x 4:3 crop,
--- 640x360->320x180@2x and 480x360->240x180@2x, the smallest, cropped both ways):
---   scale = max(base, min(floor(W/ref_w), floor(H/ref_h)))
---   FOV   = min(ref_w, floor(W/scale)) x min(ref_h, floor(H/scale))
+-- The resize ladder (D036, refined per the human's feel-test 2026-06-28). Pick
+-- the integer scale that keeps the FOV NEAR the 480x270 reference, then let the
+-- FOV FILL the window at that scale — a few px off the reference, no letterbox —
+-- rather than hard-capping at 480x270 and letterboxing the slack (which made a
+-- maximized window sit in big black bars). The FOV maxes ~softly~ at the
+-- reference: bigger windows raise the scale, not the FOV.
+--   scale = max(base, floor(W/ref_w), floor(H/ref_h))   -- the higher fit wins
+--   FOV   = floor(W/scale) x floor(H/scale)             -- fills (slack < scale px)
+-- Rungs: 960x540->480x270@2x, 1920x1080->480x270@4x, 1920x1040->480x260@4x
+-- (maximized: fills, "a few less px of FOV"), 1280x720->640x360@2x (fills, more
+-- world), 720x540->360x270@2x (4:3), 640x360->320x180@2x, 480x360->240x180@2x.
 function M.ladder(W, H)
   local c = M.cfg
-  local scale = math.max(c.base_scale, math.min(W // c.ref_w, H // c.ref_h))
+  local scale = math.max(c.base_scale, W // c.ref_w, H // c.ref_h)
   if scale < 1 then scale = 1 end
-  local fw = math.min(c.ref_w, W // scale)
-  local fh = math.min(c.ref_h, H // scale)
+  local fw = W // scale
+  local fh = H // scale
   if fw < 1 then fw = 1 end
   if fh < 1 then fh = 1 end
   return fw, fh, scale
@@ -63,6 +81,14 @@ end
 --                integer scale. x_fov / x_ui_target no-op when unchanged.
 function M.update()
   if not M.enabled then return end
+  -- alt+enter toggles borderless fullscreen (live dev convenience; the options
+  -- menu M8.6 also exposes it). Track Alt held across frames, fire on Enter-down.
+  for _, k in ipairs(cm.require("cm.ui").inp.keys) do
+    if k.scancode == ALT_L or k.scancode == ALT_R then M.alt_down = k.down end
+    if k.down and not k.rep and k.scancode == KEY_ENTER and M.alt_down then
+      M.toggle_fullscreen()
+    end
+  end
   local W, H = pal.x_window_size()
   if W < 1 or H < 1 then return end
 
