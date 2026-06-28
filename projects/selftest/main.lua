@@ -1719,6 +1719,72 @@ local function t_sprite()
         "sprite: clear_fill removes only that layer's fill")
 end
 
+-- cm.anim: the pure clip evaluator (loop/once/pingpong at boundaries),
+-- duration, the .anim canonical-bytes round-trip, normalization + find.
+local function t_anim()
+  local anim = cm.require("cm.anim")
+
+  -- a 2-frame loop: frame 0 for 2 ticks, frame 5 for 3 ticks; total 5
+  local loop = { name = "a", loop = "loop",
+                 frames = { { frame = 0, dur = 2 }, { frame = 5, dur = 3 } } }
+  check(anim.duration(loop) == 5, "anim: duration sums durs")
+  check(anim.frame_at(loop, 0) == 0 and anim.frame_at(loop, 1) == 0,
+        "anim: loop frame 0 window")
+  check(anim.frame_at(loop, 2) == 5 and anim.frame_at(loop, 4) == 5,
+        "anim: loop frame 1 window")
+  check(anim.frame_at(loop, 5) == 0 and anim.frame_at(loop, 7) == 5,
+        "anim: loop wraps at total")
+  check(anim.frame_at(loop, -3) == 0, "anim: negative elapsed clamps to 0")
+
+  -- once: play through then HOLD the final frame forever
+  local once = { name = "b", loop = "once",
+                 frames = { { frame = 0, dur = 2 }, { frame = 5, dur = 3 } } }
+  check(anim.frame_at(once, 1) == 0 and anim.frame_at(once, 2) == 5,
+        "anim: once plays through")
+  check(anim.frame_at(once, 4) == 5 and anim.frame_at(once, 999) == 5,
+        "anim: once holds the last frame")
+
+  -- pingpong: A,B,C bounces as A,B,C,B (interior reversed, endpoints once)
+  local pp = { name = "c", loop = "pingpong", frames = {
+    { frame = 0, dur = 1 }, { frame = 1, dur = 1 }, { frame = 2, dur = 1 } } }
+  local seen = {}
+  for e = 0, 7 do seen[e] = anim.frame_at(pp, e) end
+  check(seen[0] == 0 and seen[1] == 1 and seen[2] == 2 and seen[3] == 1
+        and seen[4] == 0 and seen[5] == 1 and seen[6] == 2 and seen[7] == 1,
+        "anim: pingpong bounces A,B,C,B")
+  local pp2 = { loop = "pingpong",
+                frames = { { frame = 0, dur = 1 }, { frame = 1, dur = 1 } } }
+  check(anim.frame_at(pp2, 0) == 0 and anim.frame_at(pp2, 1) == 1
+        and anim.frame_at(pp2, 2) == 0, "anim: 2-frame pingpong is a plain loop")
+
+  -- degenerate clips
+  check(anim.frame_at({ frames = {} }, 4) == 0, "anim: empty clip → 0")
+  check(anim.frame_at({ frames = { { frame = 7, dur = 3 } } }, 9) == 7,
+        "anim: single frame ignores elapsed")
+
+  -- normalization: dur floored to ≥1, bad loop → loop, negative frame → 0
+  local norm = anim.decode(anim.encode({
+    { name = "z", loop = "bogus",
+      frames = { { frame = -4, dur = 0 }, { frame = 2, dur = 3 } } } }))
+  check(norm[1].loop == "loop" and norm[1].frames[1].dur == 1
+        and norm[1].frames[1].frame == 0, "anim: normalize clamps loop/dur/frame")
+
+  -- .anim canonical-bytes round-trip: decode∘encode preserves, encode is a fixpoint
+  local clips = {
+    { name = "idle", loop = "loop", frames = { { frame = 0, dur = 48 },
+                                               { frame = 11, dur = 48 } } },
+    { name = "walk", loop = "pingpong", frames = { { frame = 1, dur = 6 },
+                                                   { frame = 2, dur = 6 } } } }
+  local bytes = anim.encode(clips)
+  local rt = anim.decode(bytes)
+  check(#rt == 2 and rt[1].name == "idle" and rt[2].loop == "pingpong"
+        and rt[1].frames[2].frame == 11 and rt[1].frames[2].dur == 48,
+        "anim: .anim round-trip preserves clips")
+  check(anim.encode(rt) == bytes, "anim: encode is a fixpoint")
+  check(anim.find(rt, "walk") == rt[2] and anim.find(rt, "nope") == nil,
+        "anim: find by name")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -1747,6 +1813,7 @@ function game.init()
   t_paint()
   t_grad()
   t_sprite()
+  t_anim()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
