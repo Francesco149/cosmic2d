@@ -46,8 +46,10 @@ local KEY_F2 = 59
 local ALT_L, ALT_R, CTRL_L, CTRL_R = 226, 230, 224, 228
 local SHIFT_L, SHIFT_R = 225, 229
 local KEY_RET, KEY_DEL, KEY_BKSP = 40, 76, 42
+local KEY_LBRK, KEY_RBRK = 47, 48
 local SC = { z = 29, y = 28, s = 22, b = 5, e = 8, g = 10, i = 12, x = 27,
-             l = 15, r = 21, o = 18, f = 9, m = 16, v = 25, c = 6, d = 7 }
+             l = 15, r = 21, o = 18, f = 9, m = 16, v = 25, c = 6, d = 7,
+             h = 11, j = 13 }
 
 local TOOLS = {
   { id = "pencil",  key = "B", tip = "pencil" },
@@ -363,6 +365,74 @@ end
 
 function M.deselect() M.commit_float(); M.sel = nil end
 
+-- ---- transforms + custom brush (Phase 2) ----
+-- A transform acts on the floating selection if one exists; else it lifts the
+-- current selection into a float and acts on that; else it acts on the whole
+-- active-layer cell (one undo step).
+
+local function ensure_float_from_sel()
+  if not M.float and M.sel then M.lift_selection() end
+end
+
+function M.flip(horiz)
+  ensure_float_from_sel()
+  if M.float then
+    if horiz then paint.flip_h(M.float.img) else paint.flip_v(M.float.img) end
+    build_float_tex()
+  else
+    sprite.begin_edit(M.doc)
+    if horiz then paint.flip_h(M.cell()) else paint.flip_v(M.cell()) end
+    sprite.end_edit(M.doc)
+  end
+  M.dirty = true
+end
+
+-- rotate 90° (dir +1 CW, -1 CCW). A float / selection rotates freely; the whole
+-- cell only when the sprite is square (rotation swaps width and height).
+function M.rotate(dir)
+  ensure_float_from_sel()
+  if M.float then
+    M.float.img = paint.rotate90(M.float.img, dir)
+    M.float.w, M.float.h = M.float.img.w, M.float.img.h
+    build_float_tex()
+  elseif M.doc.w == M.doc.h then
+    local rot = paint.rotate90(M.cell(), dir)
+    sprite.begin_edit(M.doc)
+    M.cell().buf:copy(0, rot.buf, 0, M.doc.w * M.doc.h * 4)
+    sprite.end_edit(M.doc)
+  else
+    pal.log("[studio] rotate: select a region (a non-square sprite can't rotate whole)")
+    return
+  end
+  M.dirty = true
+end
+
+-- scale the float / selection by a factor (nearest, no AA). Whole-sprite resize
+-- is a later feature (it changes the document dimensions).
+function M.scale(factor)
+  ensure_float_from_sel()
+  if not M.float then
+    pal.log("[studio] scale: select a region first (whole-sprite resize is later)")
+    return
+  end
+  local nw, nh = max(1, floor(M.float.w * factor)), max(1, floor(M.float.h * factor))
+  M.float.img = paint.scale(M.float.img, nw, nh)
+  M.float.w, M.float.h = nw, nh
+  build_float_tex()
+  M.dirty = true
+end
+
+-- a custom brush captured from the selection / float (sprite-as-brush); the
+-- pencil then stamps it (alpha-masked). clear_brush returns to the 1px pencil.
+function M.brush_from_sel()
+  if M.float then M.brush = paint.copy_region(M.float.img, 0, 0, M.float.w, M.float.h)
+  elseif M.sel then M.brush = paint.copy_region(M.cell(), M.sel.x, M.sel.y, M.sel.w, M.sel.h)
+  else return end
+  M.tool = "pencil"
+end
+
+function M.clear_brush() M.brush = nil end
+
 -- ---- input ----
 
 local function handle_keys()
@@ -391,6 +461,10 @@ local function handle_keys()
       elseif sc == SC.m then M.tool = "select"
       elseif sc == SC.v then M.tool = "move"
       elseif sc == SC.f then M.fill_shapes = not M.fill_shapes
+      elseif sc == SC.h then M.flip(true)
+      elseif sc == SC.j then M.flip(false)
+      elseif sc == KEY_LBRK then M.rotate(-1)
+      elseif sc == KEY_RBRK then M.rotate(1)
       elseif sc == KEY_RET then M.commit_float()
       elseif sc == KEY_DEL or sc == KEY_BKSP then M.clear_sel_region()
       elseif sc == SC.x then M.prim, M.sec = M.sec, M.prim; M.set_prim(M.prim) end
@@ -459,12 +533,23 @@ local function build_preview()
 end
 
 local function dab(px, py)
-  local color = M.tool == "eraser" and 0 or (M.stroke == "prim" and M.prim or M.sec)
   local cell = M.cell()
-  if M.last_px then
-    paint.line(cell, M.last_px, M.last_py, px, py, color)
+  if M.brush and M.tool == "pencil" then
+    -- a custom brush: stamp it (alpha-masked) along the stroke, centered
+    local b = M.brush
+    local ox, oy = b.w // 2, b.h // 2
+    local function plot(img, x, y)
+      paint.blit(img, x - ox, y - oy, b, 0, 0, b.w, b.h, "stamp")
+    end
+    if M.last_px then paint.line(cell, M.last_px, M.last_py, px, py, 0, plot)
+    else plot(cell, px, py) end
   else
-    paint.set(cell, px, py, color)
+    local color = M.tool == "eraser" and 0 or (M.stroke == "prim" and M.prim or M.sec)
+    if M.last_px then
+      paint.line(cell, M.last_px, M.last_py, px, py, color)
+    else
+      paint.set(cell, px, py, color)
+    end
   end
   M.last_px, M.last_py = px, py
   M.dirty = true
@@ -712,6 +797,19 @@ local function draw_rail(r)
   if on then ui.rect(r.x + 5, fy + 4, bw - 6, bh - 8, st.accent) -- a filled glyph
   else ui.frame_rect(r.x + 5, fy + 4, bw - 6, bh - 8, st.text) end  -- hollow glyph
   if clicked then M.fill_shapes = not M.fill_shapes end
+  -- custom brush: capture from the selection (lit while a brush is active),
+  -- and a clear-brush button back to the 1px pencil
+  local by = fy + bh + 4
+  local bon = M.brush ~= nil
+  local bclick, bhot = ui.hit("tool/brush", r.x + 2, by, bw, bh)
+  ui.rect(r.x + 2, by, bw, bh, bon and st.widget_active or (bhot and st.widget_hot or st.widget))
+  ui.frame_rect(r.x + 2, by, bw, bh, bon and st.accent or st.panel_edge)
+  ui.text(r.x + 2 + (bw - 3 * st.gw) // 2, by + (bh - st.gh) // 2, "brs",
+          bon and st.accent or st.text)
+  if bclick then M.brush_from_sel() end
+  if ui.button("1px", { rect = { r.x + 2, by + bh + 2, bw, bh }, id = "tool/nobrush" }) then
+    M.clear_brush()
+  end
 end
 
 local function swatch(rgba, x, y)
@@ -924,6 +1022,16 @@ local function draw_menu(r)
     if ui.button(a[1], { rect = { bx + (i - 1) * (bw + 2), r.y + 1, bw, r.h - 2 },
                          id = "st_mb" .. i }) then a[2]() end
   end
+  -- edit cluster: flip / rotate / scale (the selection/float, else the layer)
+  local xf = { { "fH", function() M.flip(true) end },  { "fV", function() M.flip(false) end },
+               { "rL", function() M.rotate(-1) end },   { "rR", function() M.rotate(1) end },
+               { "x2", function() M.scale(2) end },     { "/2", function() M.scale(0.5) end } }
+  local xw = 18
+  local xstart = bx - (xw + 1) * #xf - 6
+  for i, a in ipairs(xf) do
+    if ui.button(a[1], { rect = { xstart + (i - 1) * (xw + 1), r.y + 1, xw, r.h - 2 },
+                         id = "st_xf" .. i }) then a[2]() end
+  end
 end
 
 -- the asset browser overlay (modal): a grid of baked thumbnails from the
@@ -990,6 +1098,7 @@ local function draw_timeline(r)
   ui.text(r.x + 64, r.y + (r.h - st.gh) // 2, mid, st.text_dim)
   -- right side: tool (+ shape dims / fill mode) + cursor + zoom status
   local tool = M.alt and "pick" or M.tool
+  if tool == "pencil" and M.brush then tool = "stamp" end
   local extra = ""
   if M.shape_drawing then
     local sx, sy, ex, ey = resolve_shape()

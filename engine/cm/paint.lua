@@ -304,6 +304,21 @@ function M.flip_v(img)
   end
 end
 
+-- nearest-neighbour resample to nw*nh (NO interpolation — pixel art stays
+-- crisp, blocks just multiply/decimate). Returns a NEW image.
+function M.scale(img, nw, nh)
+  local out = M.image(nw, nh)
+  local sw, sh = img.w, img.h
+  for y = 0, nh - 1 do
+    local sy = floor(y * sh / nh)
+    for x = 0, nw - 1 do
+      local sx = floor(x * sw / nw)
+      out.buf:u32((y * nw + x) * 4, img.buf:u32((sy * sw + sx) * 4))
+    end
+  end
+  return out
+end
+
 -- rotate 90°; dir 1 = clockwise, -1 = counter-clockwise. Returns a NEW image
 -- with width/height swapped (the caller adopts it; the source is untouched).
 function M.rotate90(img, dir)

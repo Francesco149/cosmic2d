@@ -1467,6 +1467,17 @@ local function t_paint()
         "paint: rotate90 CW")
   check(paint.get(paint.rotate90(ra, -1), 0, 3) == RED, "paint: rotate90 CCW")
 
+  -- scale: nearest-neighbour, blocks replicate up / decimate down (no AA)
+  local su = paint.image(2, 2)
+  paint.set(su, 0, 0, RED); paint.set(su, 1, 1, GRN)
+  local up = paint.scale(su, 4, 4)
+  check(up.w == 4 and up.h == 4 and paint.get(up, 0, 0) == RED
+        and paint.get(up, 1, 1) == RED and paint.get(up, 3, 3) == GRN,
+        "paint: scale 2x replicates blocks")
+  local dn = paint.scale(up, 2, 2)
+  check(dn.w == 2 and paint.get(dn, 0, 0) == RED and paint.get(dn, 1, 1) == GRN,
+        "paint: scale down decimates")
+
   -- blit stamp respects transparency
   local src = paint.image(2, 2)
   paint.set(src, 0, 0, RED) -- one opaque texel
