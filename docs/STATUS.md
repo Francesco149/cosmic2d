@@ -341,7 +341,14 @@ Three asks from the human's use of the now-resizable studio:
   Curve preview + large-doc composite captures on llm-feed.
 
 ### Studio feedback round 3 follow-ups (2026-06-29)
-Three quick asks after using the above:
+A few quick asks after using the above:
+- **Rename the sprite** — the doc was always saved as `untitled.spr` with no way
+  to name it. The menubar filename is now an **inline editable field**: type a
+  name, Save writes `<name>.spr` (+ `.png`/`.anim`/`.meta`) under the project's
+  `art/`. Editing sets `doc.name` and clears `doc.path` so the new name takes
+  effect — a rename for an unsaved doc, a save-as (old file stays) for one loaded
+  from disk. Name is sanitized to a bare filename (no path separators; a typed
+  `.spr` is dropped so the file isn't double-extensioned).
 - **Curve renders clean 1px** (was staircasing — fat 2-wide steps on near-diagonal
   spans). `cm.paint.curve` now oversamples to the distinct pixels it crosses then
   **drops staircase L-corners** (a pixel whose before/after neighbours are

@@ -236,8 +236,10 @@ without it).
   (Animation is Phase 4; the strip is reserved from the start so the layout
   doesn't lurch when it lands.)
 - **Top menubar** — file (new / open / save / save-as / export-png / bake),
-  edit (undo / redo / cut / copy / paste / flip / rotate / scale), the asset
-  name, the **browser** toggle.
+  edit (undo / redo / cut / copy / paste / flip / rotate / scale), the **asset
+  name as an inline editable field** (type a name → Save writes `<name>.spr`;
+  editing clears `doc.path`, so it is a rename for an unsaved doc and a save-as
+  for a loaded one), the **browser** toggle.
 
 **The asset browser** — an overlay grid of baked thumbnails scanned from
 `<project>/art/`, with new / open / duplicate / delete. Click opens a doc.

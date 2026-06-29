@@ -1769,10 +1769,30 @@ local function draw_menu(r)
   ui.rect(r.x, r.y, r.w, r.h, st.title)
   ui.rect(r.x, r.y + r.h - 1, r.w, 1, st.panel_edge)
   ui.text(r.x + 3, r.y + 3, "STUDIO", st.accent)
-  local name = M.doc and (M.doc.name ..
-    ("  %dx%d  %d/%d"):format(M.doc.w, M.doc.h, M.doc.cur_frame, M.doc.frames))
-    or "no document"
-  ui.text(r.x + 52, r.y + 3, name .. (M.doc and M.doc.dirty and " *" or ""), st.text)
+  -- the doc name is an inline editable field: type a name, Enter; Save then
+  -- writes <name>.spr (+ .png/.anim/.meta) under the project's art/. Editing
+  -- clears doc.path so the new name takes effect — a rename for an unsaved doc,
+  -- a save-as (the old file stays) for one loaded from disk.
+  local nx, nfw = r.x + 48, 96
+  if M.doc then
+    if ui.focus ~= "st_name" then M.name_edit = M.doc.name end
+    local nm, nch, nsub = ui.text_input("st_name", M.name_edit or M.doc.name,
+      { rect = { nx, r.y + 1, nfw, r.h - 2 }, hint = "name" })
+    M.name_edit = nm:gsub("[/\\]", "") -- a bare filename, never a path
+    if (nch or nsub) and M.name_edit ~= "" then
+      M.doc.name = (M.name_edit:gsub("%.spr$", "")) -- the file gets the .spr
+      M.doc.path = nil                              -- save() rebuilds <name>.spr
+      M.doc.dirty = true
+    end
+    ui.text(nx + nfw + 5, r.y + 3,
+      ("%dx%d  %d/%d%s"):format(M.doc.w, M.doc.h, M.doc.cur_frame, M.doc.frames,
+                                M.doc.dirty and " *" or ""), st.text_dim)
+    if pin(ui.inp.mx, ui.inp.my, nx, r.y + 1, nfw, r.h - 2) then
+      M.tip = "filename: click to rename; Save writes <name>.spr"
+    end
+  else
+    ui.text(nx, r.y + 3, "no document", st.text_dim)
+  end
   -- right-aligned actions
   local acts = { { "browse", M.open_browser }, { "new", function() M.new_doc(32, 32) end },
                  { "size", M.open_resize },
@@ -1813,7 +1833,7 @@ local function draw_browser(uw, uh)
   end
   local items = M.browse_items or {}
   if #items == 0 then
-    ui.text(8, 32, "no .spr assets yet — paint one and Save, then it appears here.",
+    ui.text(8, 32, "no .spr assets yet - paint one and Save, then it appears here.",
             st.text_dim)
     return
   end
