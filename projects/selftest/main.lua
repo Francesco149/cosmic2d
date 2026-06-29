@@ -1576,12 +1576,16 @@ local function t_paint()
 
   -- curve (cubic Bézier, the MS-Paint tool): controls at the chord's thirds make
   -- it the exact straight line; a pulled control bows the path off the chord;
-  -- the endpoints are always plotted.
+  -- the endpoints are always plotted. A 45° curve is a CLEAN 1px diagonal — one
+  -- pixel per step, no staircase (corner-removal drops the L-corners).
   local cvl = paint.image(10, 10)
   paint.curve(cvl, 0, 0, 3, 3, 6, 6, 9, 9, RED) -- collinear thirds == diagonal
-  check(paint.get(cvl, 0, 0) == RED and paint.get(cvl, 9, 9) == RED
-        and paint.get(cvl, 5, 5) == RED and paint.get(cvl, 0, 9) == 0,
-        "paint: curve with collinear controls is a straight line")
+  local don, doff = 0, 0
+  for d = 0, 9 do if paint.get(cvl, d, d) == RED then don = don + 1 end end
+  for y = 0, 9 do for x = 0, 9 do
+    if x ~= y and paint.get(cvl, x, y) == RED then doff = doff + 1 end
+  end end
+  check(don == 10 and doff == 0, "paint: curve is a clean 1px diagonal (no staircase)")
   local cvb = paint.image(16, 16)
   paint.curve(cvb, 0, 15, 5, 0, 10, 0, 15, 15, RED) -- pull the middle up
   check(paint.get(cvb, 0, 15) == RED and paint.get(cvb, 15, 15) == RED,

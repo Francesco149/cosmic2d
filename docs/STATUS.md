@@ -340,6 +340,24 @@ Three asks from the human's use of the now-resizable studio:
   two sandbox pixel goldens mismatch as before (pre-existing M5-era staleness).
   Curve preview + large-doc composite captures on llm-feed.
 
+### Studio feedback round 3 follow-ups (2026-06-29)
+Three quick asks after using the above:
+- **Curve renders clean 1px** (was staircasing — fat 2-wide steps on near-diagonal
+  spans). `cm.paint.curve` now oversamples to the distinct pixels it crosses then
+  **drops staircase L-corners** (a pixel whose before/after neighbours are
+  diagonally adjacent collapses to one diagonal pixel) — a 45° curve is now a
+  single-pixel diagonal (KAT pins it: collinear-control curve = exactly N
+  on-diagonal pixels, zero off-diagonal). Sampling gaps stay line-bridged.
+- **Hover tooltips on the rail** — a one-frame `M.tip` fed by whatever the cursor
+  is over (every tool button via its `tip`, plus the shape-mode / `brs` / `1px`
+  buttons), drawn last near the cursor. The bottom-right status already names the
+  active tool. (Answered a question too: the wordless **square button below the
+  tools is the shape FILL/OUTLINE toggle**, `F` — filled = rect/ellipse solid,
+  hollow glyph = outline; now self-documenting via its tooltip.)
+- ASCII-only tip text (the 5x8 font has no `·`/`°`; were rendering as `??`).
+- selftest still 22536 (curve KAT strengthened to assert the no-staircase
+  property); determinism re-verified (sandbox 200f record→verify byte-exact).
+
 ### M10 Phase 5 — pivots + slices (this session) — `082eb0b`, `7cf0b29`
 The keystone authoring metadata, end to end (D041): the sprite's runtime
 *geometry* the game needs at draw time. Both per-doc for v1; per-frame keys

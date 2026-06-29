@@ -78,7 +78,7 @@ local TOOLS = {
   { id = "pencil",  key = "B", tip = "pencil" },
   { id = "eraser",  key = "E", tip = "eraser" },
   { id = "fill",    key = "G", tip = "bucket fill" },
-  { id = "line",    key = "L", tip = "line (Shift = 45°)" },
+  { id = "line",    key = "L", tip = "line (Shift = 45deg)" },
   { id = "rect",    key = "R", tip = "rectangle (Shift = square)" },
   { id = "ellipse", key = "O", tip = "ellipse (Shift = circle)" },
   { id = "curve",   key = "C", tip = "curve: drag the ends, then drag 2 bends" },
@@ -1236,6 +1236,7 @@ local function tool_button(t, x, y, w, h)
   ui.frame_rect(x, y, w, h, active and st.accent or st.panel_edge)
   ui.text(x + (w - ui.style.gw) // 2, y + (h - ui.style.gh) // 2, t.key,
           active and st.accent or st.text)
+  if hot then M.tip = t.key .. "  " .. t.tip end
   if clicked then M.tool = t.id end
 end
 
@@ -1247,7 +1248,8 @@ local function draw_rail(r)
   for i, t in ipairs(TOOLS) do
     tool_button(t, r.x + 2, r.y + 2 + (i - 1) * (bh + 2), bw, bh)
   end
-  -- shape fill/outline mode (lit when filling); also keyed to F
+  -- shape fill/outline mode (lit = filled; hollow glyph = outline); keyed to F.
+  -- Controls whether rect / ellipse draw solid or just a 1px outline.
   local fy = r.y + 2 + #TOOLS * (bh + 2) + 4
   local on = M.fill_shapes
   local clicked, hot = ui.hit("tool/fillmode", r.x + 2, fy, bw, bh)
@@ -1255,6 +1257,10 @@ local function draw_rail(r)
   ui.frame_rect(r.x + 2, fy, bw, bh, on and st.accent or st.panel_edge)
   if on then ui.rect(r.x + 5, fy + 4, bw - 6, bh - 8, st.accent) -- a filled glyph
   else ui.frame_rect(r.x + 5, fy + 4, bw - 6, bh - 8, st.text) end  -- hollow glyph
+  if hot then
+    M.tip = on and "F  shape mode: FILLED (rect/ellipse solid)"
+                or "F  shape mode: OUTLINE (rect/ellipse hollow)"
+  end
   if clicked then M.fill_shapes = not M.fill_shapes end
   -- custom brush: capture from the selection (lit while a brush is active),
   -- and a clear-brush button back to the 1px pencil
@@ -1265,10 +1271,14 @@ local function draw_rail(r)
   ui.frame_rect(r.x + 2, by, bw, bh, bon and st.accent or st.panel_edge)
   ui.text(r.x + 2 + (bw - 3 * st.gw) // 2, by + (bh - st.gh) // 2, "brs",
           bon and st.accent or st.text)
+  if bhot then M.tip = "brs  brush from the selection (pencil stamps it)" end
   if bclick then M.brush_from_sel() end
-  if ui.button("1px", { rect = { r.x + 2, by + bh + 2, bw, bh }, id = "tool/nobrush" }) then
-    M.clear_brush()
-  end
+  local nclick, nhot = ui.hit("tool/nobrush", r.x + 2, by + bh + 2, bw, bh)
+  ui.rect(r.x + 2, by + bh + 2, bw, bh, nhot and st.widget_hot or st.widget)
+  ui.frame_rect(r.x + 2, by + bh + 2, bw, bh, st.panel_edge)
+  ui.text(r.x + 2 + (bw - 3 * st.gw) // 2, by + bh + 2 + (bh - st.gh) // 2, "1px", st.text)
+  if nhot then M.tip = "1px  clear the custom brush (back to 1px pencil)" end
+  if nclick then M.clear_brush() end
 end
 
 local function swatch(rgba, x, y)
@@ -2017,6 +2027,19 @@ local function draw_timeline(r)
           st.text_dim)
 end
 
+-- a hover tooltip near the cursor (set by any widget into M.tip this frame, drawn
+-- last so it sits on top). Tool buttons, the shape-mode + brush buttons feed it.
+local function draw_tip(uw, uh)
+  if not M.tip then return end
+  local st, inp = ui.style, ui.inp
+  local tw = #M.tip * st.gw + 8
+  local tx = min(inp.mx + 14, uw - tw - 2)
+  local ty = min(inp.my + 16, uh - 15)
+  ui.rect(tx, ty, tw, 13, { 0.05, 0.05, 0.09, 0.97 })
+  ui.frame_rect(tx, ty, tw, 13, st.accent)
+  ui.text(tx + 4, ty + 3, M.tip, st.text)
+end
+
 -- ---- per-tick entry (cm.main: after editor.frame, on the ui canvas) ----
 
 function M.frame()
@@ -2040,6 +2063,7 @@ function M.frame()
   M.canvas = { x = RAIL_W, y = MENU_H, w = uw - RAIL_W - DOCK_W, h = body_h }
   M.time = { x = 0, y = uh - TIME_H, w = uw, h = TIME_H }
   if M.need_fit then M.fit(); M.need_fit = nil end
+  M.tip = nil -- repopulated by whatever the cursor hovers this frame
 
   handle_keys()
   local over = pin(ui.inp.mx, ui.inp.my, M.canvas.x, M.canvas.y, M.canvas.w, M.canvas.h)
@@ -2056,6 +2080,7 @@ function M.frame()
   draw_rail(M.rail)
   draw_dock(M.dock)
   draw_timeline(M.time)
+  draw_tip(uw, uh)
 end
 
 return M

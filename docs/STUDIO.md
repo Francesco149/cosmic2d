@@ -212,9 +212,15 @@ without it).
 
 - **Left tool rail** — vertical icon buttons: pencil, eraser, bucket, line,
   rect, ellipse, **curve**, gradient, eyedropper, select(marquee), move, pivot,
-  slice. Active tool lit. The **curve** (C) is the MS-Paint two-bend cubic: drag
-  the two endpoints (a straight line), then drag twice to pull each control point
-  — the second release commits (status shows `drag ends` → `bend 1/2` → `2/2`).
+  slice. Active tool lit; **hovering any button shows a tooltip** (its key +
+  description), and the bottom-right status names the active tool. Below the tools
+  sit the **shape fill/outline toggle** (a wordless square — filled = rect/ellipse
+  solid, hollow = outline; key `F`) and the **brs / 1px** custom-brush buttons.
+  The **curve** (C) is the MS-Paint two-bend cubic: drag the two endpoints (a
+  straight line), then drag twice to pull each control point — the second release
+  commits (status shows `drag ends` → `bend 1/2` → `2/2`). It rasterizes as a
+  **clean single-pixel path** (8-connected, diagonal steps, no staircase — it
+  drops L-corners so a 45° span is one diagonal pixel wide, not two).
   Below it: the **primary/secondary** color chips (MS-Paint model: LMB paints
   primary, RMB secondary; `X` swaps; eraser writes transparent).
 - **Center canvas** — the dominant space. Checkerboard shows true transparency;

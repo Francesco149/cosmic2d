@@ -170,11 +170,13 @@ function M.line(img, x0, y0, x1, y1, rgba, plot)
 end
 
 -- a cubic Bézier from P0 to P3 with control points C1, C2 (the MS-Paint curve),
--- drawn as connected no-AA line segments. Float sampling for the path, integer
--- pixels for output — the same "float in the test, never a blended edge" rule as
--- the ellipse. The sample count tracks the control-polygon length (an upper
--- bound on arc length) so segments stay sub-pixel-short — no gaps on long
--- curves, no oversampling on tiny ones.
+-- as a CLEAN single-pixel path: 8-connected, diagonal steps where the curve runs
+-- diagonal (never a 2-wide staircase). Float sampling for the path, integer
+-- pixels for output (the same "float in the test, never a blended edge" rule as
+-- the ellipse). Method: oversample to the distinct pixels the curve crosses, then
+-- drop "staircase corners" — a pixel whose neighbour-before and neighbour-after
+-- are diagonally adjacent is an L-corner, so the step collapses to one diagonal
+-- pixel. Consecutive survivors are 8-adjacent; a rare sampling gap is line-filled.
 function M.curve(img, x0, y0, c1x, c1y, c2x, c2y, x3, y3, rgba, plot)
   plot = plot or M.set
   local function seg(ax, ay, bx, by)
@@ -182,16 +184,34 @@ function M.curve(img, x0, y0, c1x, c1y, c2x, c2y, x3, y3, rgba, plot)
     return sqrt(dx * dx + dy * dy)
   end
   local poly = seg(x0, y0, c1x, c1y) + seg(c1x, c1y, c2x, c2y) + seg(c2x, c2y, x3, y3)
-  local n = max(2, min(512, ceil(poly)))
-  local px, py = floor(x0 + 0.5), floor(y0 + 0.5)
-  for i = 1, n do
+  local n = max(2, min(4096, ceil(poly * 2))) -- oversample so no pixel transition is skipped
+  local xs, ys, m = {}, {}, 0
+  local lx, ly
+  for i = 0, n do
     local t = i / n
     local u = 1 - t
     local a, b, c, d = u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t
-    local xx = floor(a * x0 + b * c1x + c * c2x + d * x3 + 0.5)
-    local yy = floor(a * y0 + b * c1y + c * c2y + d * y3 + 0.5)
-    M.line(img, px, py, xx, yy, rgba, plot)
-    px, py = xx, yy
+    local ix = floor(a * x0 + b * c1x + c * c2x + d * x3 + 0.5)
+    local iy = floor(a * y0 + b * c1y + c * c2y + d * y3 + 0.5)
+    if ix ~= lx or iy ~= ly then
+      if m >= 2 and abs(ix - xs[m - 1]) == 1 and abs(iy - ys[m - 1]) == 1
+         and (xs[m] == xs[m - 1] or ys[m] == ys[m - 1]) -- before→corner orthogonal
+         and (xs[m] == ix or ys[m] == iy) then          -- corner→after orthogonal
+        xs[m], ys[m] = ix, iy                            -- corner is an L: replace it
+      else
+        m = m + 1; xs[m], ys[m] = ix, iy
+      end
+      lx, ly = ix, iy
+    end
+  end
+  if m == 0 then return end
+  plot(img, xs[1], ys[1], rgba)
+  for i = 2, m do
+    if abs(xs[i] - xs[i - 1]) <= 1 and abs(ys[i] - ys[i - 1]) <= 1 then
+      plot(img, xs[i], ys[i], rgba)            -- 8-adjacent: one clean pixel
+    else
+      M.line(img, xs[i - 1], ys[i - 1], xs[i], ys[i], rgba, plot) -- gap: bridge it
+    end
   end
 end
 
