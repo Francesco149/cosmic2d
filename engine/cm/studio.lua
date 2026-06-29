@@ -84,7 +84,7 @@ local TOOLS = {
   { id = "curve",   key = "C", tip = "curve: drag the ends, then drag 2 bends" },
   { id = "gradient", key = "D", tip = "gradient fill (drag an axis)" },
   { id = "pick",    key = "I", tip = "eyedropper (or hold Alt)" },
-  { id = "select",  key = "M", tip = "marquee select" },
+  { id = "select",  key = "M", tip = "marquee (drag=select, click=clear; ^D)" },
   { id = "move",    key = "V", tip = "move selection / float" },
   { id = "pivot",   key = "P", tip = "pivot / anchor (drag the crosshair)" },
   { id = "slice",   key = "K", tip = "slice region (drag a rect; name it in the dock)" },
@@ -846,14 +846,16 @@ local function handle_select(over)
     if over and pressed and not ui.active then
       M.commit_float() -- a fresh marquee lands any floating selection first
       local px, py = M.doc_pixel_raw(inp.mx, inp.my)
-      M.sel_ax, M.sel_ay, M.selecting = px, py, true
+      M.sel_ax, M.sel_ay, M.selecting, M.sel_moved = px, py, true, false
     end
     if M.selecting and held then
       local px, py = M.doc_pixel_raw(inp.mx, inp.my)
+      if px ~= M.sel_ax or py ~= M.sel_ay then M.sel_moved = true end
       M.sel = norm_rect(M.sel_ax, M.sel_ay, px, py, M.doc.w, M.doc.h)
     elseif M.selecting and not held then
       M.selecting = false
-      if M.sel and (M.sel.w < 1 or M.sel.h < 1) then M.sel = nil end
+      -- a drag makes the marquee; a plain click (no drag) clears the selection
+      if not M.sel_moved then M.sel = nil end
     end
   elseif M.tool == "move" then
     if pressed and not ui.active then
@@ -1095,9 +1097,12 @@ end
 -- ---- drawing ----
 
 -- marching-ants rectangle (screen px): alternating 4px white/black dashes that
--- crawl with the render clock. Used for the selection + the floating selection.
+-- crawl. Used for the selection + the floating selection. The phase advances on
+-- the WALL CLOCK (~3 steps/s) so it's framerate-independent — ui.ticks counts
+-- render frames, so the old phase crawled far too fast on a high-refresh display.
+-- (studio is dev/render-only, D040 §1 — pal.time_ns never enters a trace.)
 local function draw_marquee(x, y, w, h)
-  local t = ui.ticks // 6
+  local t = floor(pal.time_ns() / 1e9 * 3)
   local function seg(px, py, horiz, len)
     local i = 0
     while i < len do
@@ -1291,9 +1296,36 @@ local function swatch(rgba, x, y)
   if M.prim == rgba then ui.frame_rect(x, y, SWATCH, SWATCH, st.accent)
   elseif hot then ui.frame_rect(x, y, SWATCH, SWATCH, st.widget_hot) end
   if hot then
-    if inp.clicked[1] then M.prim = rgba end
+    if inp.clicked[1] then M.set_prim(rgba) end -- sync the picker (square/strip/sliders) to it
     if inp.clicked[3] then M.sec = rgba end
   end
+end
+
+-- one color-channel slider: a per-column gradient track (grad(t)->rgba previews
+-- the result across the channel's 0..1 range), a draggable handle, the channel
+-- letter + the value. A different model from the SV square / hue strip — RGB &
+-- HSV, for precise tweaks (drag V down for a darker shade of the same colour).
+-- The drag latches on M.pick (shared with the square/strip, so it doesn't fight
+-- the dock wheel) and is pure value math → framerate-independent. Returns the new
+-- 0..maxv integer while this slider is being dragged, else nil.
+local function color_slider(x, y, w, label, val, maxv, grad, id)
+  local st, inp = ui.style, ui.inp
+  local tx = x + 8                 -- channel-letter gutter
+  local tw = max(4, w - 8 - 20)    -- leave room for the value readout
+  for i = 0, tw - 1 do
+    ui.rect(tx + i, y, 1, 9, col(grad(tw > 1 and i / (tw - 1) or 0)))
+  end
+  ui.frame_rect(tx, y, tw, 9, st.panel_edge)
+  local hp = tx + floor((maxv > 0 and val / maxv or 0) * (tw - 1))
+  ui.rect(hp - 1, y - 1, 3, 11, { 0, 0, 0, 1 })
+  ui.rect(hp, y, 1, 9, { 1, 1, 1, 1 })
+  ui.text(x, y + 1, label, st.text_dim)
+  ui.text(tx + tw + 3, y + 1, tostring(val), st.text)
+  if inp.clicked[1] and pin(inp.mx, inp.my, tx, y, tw, 9) then M.pick = id end
+  if M.pick == id then
+    return floor(clamp((inp.mx - tx) / max(1, tw - 1), 0, 1) * maxv + 0.5)
+  end
+  return nil
 end
 
 -- LAYERS: the active layer's opacity, add/dup/delete/reorder, and the stack
@@ -1750,7 +1782,40 @@ local function draw_dock(r)
     local p = parse_hex(newhex)
     if p then M.set_prim(p) end
   end
+  y = y + 13
+
+  -- RGB + HSV channel sliders: alternates to the square/strip above. RGB edits go
+  -- through set_prim (re-derives H/S/V); HSV edits write M.hsv then repack M.prim
+  -- (so an HSV slide keeps its hue instead of drifting through an rgb round-trip —
+  -- e.g. drag V to 0 for black and the hue is still there when you drag it back).
+  local pr, pg, pb = paint.unpack(M.prim)
+  local nv
+  nv = color_slider(x, y, cw, "R", pr, 255,
+    function(t) return paint.pack(floor(t * 255 + 0.5), pg, pb) end, "cr")
+  if nv then M.set_prim(paint.pack(nv, pg, pb)) end
   y = y + 11
+  nv = color_slider(x, y, cw, "G", pg, 255,
+    function(t) return paint.pack(pr, floor(t * 255 + 0.5), pb) end, "cg")
+  if nv then M.set_prim(paint.pack(pr, nv, pb)) end
+  y = y + 11
+  nv = color_slider(x, y, cw, "B", pb, 255,
+    function(t) return paint.pack(pr, pg, floor(t * 255 + 0.5)) end, "cb")
+  if nv then M.set_prim(paint.pack(pr, pg, nv)) end
+  y = y + 13
+
+  local hv = M.hsv
+  nv = color_slider(x, y, cw, "H", floor(hv.h * 360 + 0.5), 360,
+    function(t) return paint.hsv(t, 1, 1) end, "ch")
+  if nv then hv.h = nv / 360; M.prim = paint.hsv(hv.h, hv.s, hv.v) end
+  y = y + 11
+  nv = color_slider(x, y, cw, "S", floor(hv.s * 100 + 0.5), 100,
+    function(t) return paint.hsv(hv.h, t, hv.v) end, "cs")
+  if nv then hv.s = nv / 100; M.prim = paint.hsv(hv.h, hv.s, hv.v) end
+  y = y + 11
+  nv = color_slider(x, y, cw, "V", floor(hv.v * 100 + 0.5), 100,
+    function(t) return paint.hsv(hv.h, hv.s, t) end, "cv")
+  if nv then hv.v = nv / 100; M.prim = paint.hsv(hv.h, hv.s, hv.v) end
+  y = y + 13
 
   -- measure the content, reset the clip, draw a scroll thumb when it overflows
   local content_h = y - (r.y - M.dock_scroll)

@@ -365,6 +365,31 @@ A few quick asks after using the above:
 - selftest still 22536 (curve KAT strengthened to assert the no-staircase
   property); determinism re-verified (sandbox 200f record→verify byte-exact).
 
+### Studio feedback round 4 (2026-06-29) — selection + color picker polish
+Four asks from more studio use (all in `cm.studio`, dev/render-only — no engine/
+sim/binary change, D040 §1; selftest still 22536, sandbox unaffected):
+- **Clear the selection** — a plain click (no drag) with the select tool now
+  drops the marquee (it used to leave a stray 1×1 selection). `handle_select`
+  tracks whether the pointer moved; no-move on release ⇒ `M.sel = nil`. `^D` and
+  a fresh drag still work; the tool tooltip now says `drag=select, click=clear; ^D`.
+- **Marquee ants too fast** — `draw_marquee` crawled off `ui.ticks` (render
+  frames), so on a high-refresh display the dashes flew. Now it advances on the
+  **wall clock** (`pal.time_ns`, ~3 steps/s) → framerate-independent (studio is
+  render-only, so `pal.time_ns` never enters a trace).
+- **Picker snap** — clicking a **palette** swatch set `M.prim` directly without
+  syncing the picker, so the SV-square cursor / hue / sliders didn't move to the
+  picked colour. The swatch now calls `M.set_prim` (the same sync the eyedropper /
+  hex / swap already used) → the picker snaps, so you can pick a colour then nudge
+  a darker shade off it.
+- **More ways to adjust a colour** (not just the MS-paint square) — added **R/G/B
+  + H/S/V channel sliders** under the SV square, each with a result-gradient track
+  (`color_slider`: previews the colour across that channel's range), a handle, and
+  the value. **Drag V down = a darker shade of the same hue** (HSV edits write
+  `M.hsv` then repack so the hue survives a trip to black; RGB edits go through
+  `set_prim`). Drags latch on `M.pick` (shared with the square/strip → don't fight
+  the dock wheel). Verified by `--win` captures (snap-to-red; the full slider
+  stack); both pushed to llm-feed.
+
 ### M10 Phase 5 — pivots + slices (this session) — `082eb0b`, `7cf0b29`
 The keystone authoring metadata, end to end (D041): the sprite's runtime
 *geometry* the game needs at draw time. Both per-doc for v1; per-frame keys
@@ -435,7 +460,8 @@ V(move)·**P(pivot)**·**K(slice)** · LMB primary / RMB secondary · Alt=eyedro
 Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save (**live-
 reloads the in-game sprite — no restart**) · ^C/^X/
 ^V/^D clipboard (**paste → new layer**) · Enter stamp float · Del clear · with a
-marquee, paint/fill/shape **clip to the selection** · H/J flip · `[`/`]` rotate ·
+marquee, paint/fill/shape **clip to the selection**; **select tool: drag=marquee,
+click=clear (or ^D)** · H/J flip · `[`/`]` rotate ·
 menubar fH/fV/rL/rR/x2//2 + browse/new/**size** (resize doc: canvas/scale +
 anchor)/save/close · rail brs/1px · palette slots
 L=load R=save · **LAYERS** panel: add/dup/del · up/dn/**merge** (flatten onto
@@ -450,7 +476,9 @@ entry, RMB=remove, "+ add frame N"), per-entry dur. **Pivot (P)**: drag the
 yellow crosshair to set the in-game anchor (baked to `.meta`; the game pins it to
 the feet). **Slice (K)**: drag a rect → a named region; the **SLICES** dock panel
 lists/selects/renames/deletes them (attach points / hit boxes; baked to `.meta`,
-queryable via `cm.sprite.find_slice`).
+queryable via `cm.sprite.find_slice`). **COLOR** dock panel: SV square + hue strip
++ hex + **R/G/B & H/S/V sliders** (pick a colour and drag V for a darker shade);
+clicking a palette swatch snaps the whole picker to it.
 
 ---
 
