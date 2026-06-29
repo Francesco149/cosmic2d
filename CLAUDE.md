@@ -53,7 +53,8 @@ The art targets a Wadanohara-like pixel style. See `docs/GAME.md`.
 
 ```sh
 nix develop -c make -C pal                                   # build bin/cosmic
-bin/cosmic projects/sandbox                                  # run windowed
+bin/cosmic projects/sandbox                                  # run windowed (moveset testbed)
+bin/cosmic projects/cosmic                                   # the cosmic game greybox (Rim Hub + South Trail)
 bin/cosmic --studio                                          # launch the sprite/anim studio (or F2 in-game)
 bin/cosmic projects/sandbox --headless --frames 120 --shot /tmp/s.png
 nix run .#test                                               # goldens (M1+)

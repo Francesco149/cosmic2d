@@ -85,7 +85,11 @@ target:
   better-lit venue. Drops a half-melted "dread banner" (a cosmetic / lore gag).
   The gulch portal lights in her wake.
 
-## Dialogue sketches
+## Scenes & dialogue
+
+> **Full scene script — staging, cast, and the complete dialogue (incl. Gemma's
+> debut): [`south-trail.scenes.md`](south-trail.scenes.md).** The sketches below
+> are early seeds, superseded by it.
 
 > **GEMMA:** Behold! **Gemma — Archduchess of the Sundered Veil, She Who Folds the
 > Dark!** This canyon kneels to—

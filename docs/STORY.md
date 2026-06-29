@@ -39,10 +39,20 @@ In story terms, the three things cosmic2d is (GAME.md §1):
 2. **power-fantasy spectacle** — slicing the leak-hordes back into the weave;
 3. **forgiving cozy exploration** — the town and canyon she comes to (*ugh*) care about.
 
-## 2. The dread engine — how cozy and cosmic-dread coexist
+## 2. Tone & the dread engine — how cozy and cosmic-dread coexist
+
+**Tone calibration (human, 2026-06-29): mostly cozy; the game does NOT take
+itself too seriously.** Day-to-day cosmic2d is funny, cute, and comfortable —
+banter, idol gigs, a clown rival, knocking crates around. Dread is used
+**sparingly**: a *few* obvious, earned moments (chiefly the Whisper Gulch
+deep-vein beat) plus quiet **hints for the acute fans** — a too-cold work-order,
+an animation that rhymes with the Sweep, a Vesper slip she walks back. The dread
+is **seasoning, not the meal.** When in doubt, play the scene for warmth or a
+laugh; let the unease land once, cleanly, then return to cozy.
 
 The surface is warm: golden-hour rim town, coffee, an idol's stage, a clownish
-rival. The dread is **dramatic irony**, applied with a light hand and escalating:
+rival. The dread is **dramatic irony**, applied with a light hand and (slowly)
+escalating — but kept rare per the calibration above:
 
 - **The player knows where she ends up.** Anyone who's met the 3D Auditor knows
   Vesper is destined to become the thing that *unrenders* worlds. Every cozy beat

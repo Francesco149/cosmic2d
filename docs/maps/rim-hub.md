@@ -90,7 +90,11 @@ Thereafter the Rim tracks story time (dusk after the Trail, *night* after the
 Gulch's dread beat — her glow lights the empty plaza; cheapest emotional
 instrument we own).
 
-## Dialogue sketches
+## Scenes & dialogue
+
+> **Full scene script — staging, cast, and the complete dialogue:
+> [`rim-hub.scenes.md`](rim-hub.scenes.md).** The sketches below are early seeds,
+> superseded by it.
 
 > **VESPER:** *(brushing juniper off her hat, surveying the bunting)* …This
 > generator is producing *decorations.* That's not — output doesn't *do* that.

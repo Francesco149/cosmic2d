@@ -44,15 +44,38 @@ Wrote (docs only):
 - Cross-linked from **GAME.md** (intro + §9) and **CLAUDE.md** (doc index); ADR
   **D042** logged in DECISIONS.md.
 
-**Next step (resume here):** human **taste pass** on the writing — names (esp.
-**Lumi**), Vesper's tsundere voice, the cozy↔dread balance, and the shopkeep
-(Bridger cameo vs. new face). Then, in either order: **(a)** greybox the **Rim
-Hub** in the editor (procedural tilemap + a **portal interactable** + the Star
-Mote) so Q1 is playable on today's moveset; **(b)** the human pixels the cast in
-the **studio** (M10) — Vesper refinement + Gemma/Lumi sprites + a Rim tileset —
-feeding real art back into the map pages. Combat (hordes/boss) is **M12**, sandbox
-is **M-physics**, the dread shader/LUT is **M-look** — each map page flags what its
-beats lean on. Good `/clear` point (docs committed, STATUS current).
+### M-content — greybox + scene scripts (this session, cont.)
+- **Tone calibrated** (human): **mostly cozy, doesn't take itself too seriously;
+  dread used sparingly** — a few earned moments + quiet hints for the acute fans.
+  STORY §2 updated with the calibration.
+- **Greyboxed the first 2 maps** in a NEW cartridge **`projects/cosmic/`** (copied
+  from the sandbox so the proven M7 moveset works as-is; the sandbox + its
+  determinism goldens/selftest stay **untouched** — a new project is in no golden
+  suite). A multi-map **host** (`level.lua`: registry + portal travel
+  `game.travel`/`level.go`), two annotated map modules (`maps/rim_hub.lua`,
+  `maps/south_trail.lua`) = blockout geometry + **MARKERS** carrying the plan
+  (spawn · portals · Lumi stage · shop · sandbox nook · rooftop/grapple/tp gym ·
+  horde arena · hidden tp-vault · Gemma's overlook…), a render-only **plan
+  overlay** (labeled boxes, `M` toggles), **portals** (stand in one, press Up; `N`
+  cycles maps for dev), and a `player.warp`. Run: `bin/cosmic projects/cosmic`.
+  Two annotated montages on llm-feed (Rim Hub · South Trail).
+- **Scene scripts written** (the screenplay layer — staging, cast, full dialogue,
+  comedic timing, tied to the greybox markers): **`docs/maps/rim-hub.scenes.md`**
+  (Q1: the drop · reception/Star-Mote tutorial · meet Lumi · the coffee gag ·
+  light the trail + the dusk restage) and **`docs/maps/south-trail.scenes.md`**
+  (Q2 the gem · the Sunshelf horde + the *one* dread hint · the hidden vault ·
+  **Gemma's full comedic debut** + duel + the fond defeat · Lumi payoff).
+
+**Next step (resume here):** the human **mocks the art** — the cast (Vesper
+tsundere tweak, Gemma, Lumi) + a Rim/Trail look — and refines sprites in the
+**studio** (M10, F2), walking the greybox (`bin/cosmic projects/cosmic`) to feel
+the spaces and drag-cropping the llm-feed montages for layout notes. **Then we
+code the logic:** a dialogue runner + triggers, portal/quest state, combat (M12)
+for the hordes + Gemma, the sandbox (M-physics). **Deferred (human's call):**
+richer **map rendering** — baked zoomed/dimmed parallax layers + a non-grid
+decor/props layer — comes *after* the art mockup; the map modules leave
+`parallax`/`decor` slots open for it (the human may mock whole scenes as studio
+layers first). Good `/clear` point (committed, STATUS current).
 
 ---
 

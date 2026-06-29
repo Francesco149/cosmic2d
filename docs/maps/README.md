@@ -19,6 +19,11 @@ Reading order = play order (the opening arc):
 2. [South Trail — "The Long Light"](south-trail.md) — first region; Q2 (Lumi) + Q3 (Gemma)
 3. [Whisper Gulch — "The Whisper Below"](whisper-gulch.md) — vertical gym; Q4, first dread beat
 
+**Scene scripts** (full staging + dialogue): [`rim-hub.scenes.md`](rim-hub.scenes.md)
+· [`south-trail.scenes.md`](south-trail.scenes.md).
+**Greybox** (walkable blockout + the plan overlay): `projects/cosmic/` — run
+`bin/cosmic projects/cosmic`; geometry + markers in `projects/cosmic/maps/*.lua`.
+
 *Later areas (mock board, not yet designed):* Echo Falls, Echo Reach, Sun Vault,
 Night Cave, Blue Garden Spring, Fold Observatory, Raven Exchange, Bright Inside.
 
