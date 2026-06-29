@@ -542,22 +542,10 @@ function M.composite_into(doc, fi, out)
   for _, l in ipairs(doc.layers) do
     if not l.hidden and l.opacity > 0 then
       local cell = shaded_cell(doc, l, fi)
-      if l.opacity >= 255 then
-        for i = 0, doc.w * doc.h - 1 do
-          local c = cell.buf:u32(i * 4)
-          if (c >> 24) ~= 0 then paint.over(out, i % doc.w, i // doc.w, c) end
-        end
-      else
-        for i = 0, doc.w * doc.h - 1 do
-          local c = cell.buf:u32(i * 4)
-          local a = (c >> 24) & 255
-          if a ~= 0 then
-            a = a * l.opacity // 255
-            paint.over(out, i % doc.w, i // doc.w,
-                       (c & 0x00ffffff) | (a << 24))
-          end
-        end
-      end
+      -- one C src-over blit per layer (mode 1), the per-layer opacity scaling
+      -- source alpha — byte-identical to the old per-pixel paint.over loop.
+      pal.blit32(out.buf, doc.w, doc.h, 0, 0, cell.buf, doc.w, doc.h, 0, 0,
+                 doc.w, doc.h, 1, l.opacity)
     end
   end
   return out
@@ -576,15 +564,8 @@ function M.merge_down(doc, li)
   for f = 1, doc.frames do
     if bot.fill then paint.grad_fill(bot.cells[f], bot.fill, bot.cells[f]) end
     local src = shaded_cell(doc, top, f) -- top's pixels incl. its own fill
-    local dst = bot.cells[f]
-    for i = 0, doc.w * doc.h - 1 do
-      local c = src.buf:u32(i * 4)
-      local a = (c >> 24) & 255
-      if a ~= 0 then
-        if op < 255 then a = a * op // 255 end
-        paint.over(dst, i % doc.w, i // doc.w, (c & 0x00ffffff) | (a << 24))
-      end
-    end
+    pal.blit32(bot.cells[f].buf, doc.w, doc.h, 0, 0, src.buf, doc.w, doc.h,
+               0, 0, doc.w, doc.h, 1, op) -- src-over with the top's opacity
   end
   bot.fill = nil
   table.remove(doc.layers, li)

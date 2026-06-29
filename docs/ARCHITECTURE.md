@@ -597,6 +597,23 @@ golden suite + determinism untouched.
 | `pal.x_capture_read()` → `pixels,w,h` | dev/test | the capture target as RGBA8 (top-left, tight), post-present |
 | event `ui_x,ui_y` (motion/button) | input | the ui-canvas-space mouse, alongside game-space `x,y`. The editor chrome hit-tests `ui_x/ui_y`; the world overlay + the recorded sim mouse stay `x,y` |
 
+### PAL API v6 additions (M10 — render-only 2D compositor primitives)
+
+The studio composited / cleared / re-uploaded large images with per-pixel Lua
+loops, which made half-1080p editing crawl (an ~800 ms recomposite per stroke).
+These three C primitives move that bulk pixel work into one call each. They are
+**render/dev class** (the studio is render-only, D040) but the blend math is the
+exact integer source-over of `cm.paint.over`, so a C-accelerated composite/bake
+is **byte-identical** to the old Lua — the baked `.png` the game loads, and the
+selftest KATs, do not shift. Reusable engine-wide (any 2D blit/clear/dynamic
+texture), not editor-specific.
+
+| fn | class | notes |
+| --- | --- | --- |
+| `pal.blit32(dst,dw,dh, dx,dy, src,sw,sh, sx,sy, w,h, mode [,op])` | render | clipped RGBA8 rectangular blit between two `pal.buf`s. mode 0 copy / 1 src-over (== `cm.paint.over`) / 2 stamp (copy where srcA≠0); `op` 0..255 scales source alpha (per-layer opacity). Clips the window to **both** buffers; the one reusable compositor (layer flatten, bake, brush, paste, resize) |
+| `buf:fill32(byte_off, count, value)` | sim | write `count` native-endian u32s (a 32-bit `:fill`); `byte_off` 4-aligned. Clears / solid-fills an image in one call |
+| `pal.tex_update(id, buf, w, h)` → bool | render | re-upload pixels straight from a `pal.buf` into an existing same-size texture in place (no GPU realloc, no Lua-string copy). Returns false if the slot is free or the size differs — caller then `tex_free` + `tex_create` |
+
 `present()` is factored into `scene_pass(target,id,clear)` (game → game target,
 opaque clear; ui segs → ui canvas, transparent clear so the viewport shows
 through) + `blit_layer()` (each target → its window rect). The blit pipeline is

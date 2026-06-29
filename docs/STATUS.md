@@ -305,6 +305,41 @@ whole-sprite resize deferred since Phase 2d). Now done, end to end:
   pure render-only studio code (D040 §1 — no determinism tax). Five `--win`
   captures on… (push to llm-feed). No engine/binary/sim change.
 
+### Studio feedback round 3 (2026-06-29) — crash fix · large-image perf · curve
+Three asks from the human's use of the now-resizable studio:
+- **Crash fixed** — `studio.lua` `build_preview` called `sel_clip()` which was a
+  `local function` defined *below* it, so the call hit a nil global and crashed
+  any shape-tool drag. Moved `sel_clip` above its first use. (A latent bug, not
+  from the resize work; surfaced now that bigger canvases get more shape use.)
+- **Large-image performance — the big one (PAL api 5→6).** The studio composited
+  / cleared / re-uploaded with per-pixel Lua loops; at half-1080p a single
+  recomposite was **~800 ms** (≈1 fps per stroke — unusable). Added three
+  **portable, reusable** C primitives (ARCHITECTURE api v6 table) and routed the
+  bulk pixel work through them:
+  - **`pal.blit32`** — the engine's one clipped RGBA8 2D compositor (copy / src-
+    over / stamp + per-layer opacity). Its over-blend is the **exact integer
+    math** of `cm.paint.over`, so composite/bake stay **byte-identical** (proven:
+    a re-bake of `girl.spr` is `cmp`-identical to the committed `girl.png`).
+  - **`buf:fill32`** — a 32-bit `:fill` (C u32 memset) for clears/solid fills.
+  - **`pal.tex_update`** — re-upload into an existing same-size texture in place
+    (no GPU realloc, no Lua-string copy); the canvas/thumbs/float pool ids via
+    `cm.studio.tex_upload`. (This is the upgrade STUDIO §8 had predicted.)
+  Wired into `composite_into`, `merge_down`, `paint.fill`, `paint.blit` (clip-off
+  fast path; the clipped brush path stays Lua), and the studio upload sites.
+  **Measured: 960×540×4 layers 813 ms → 9.5 ms (~86×); 1920×1080 3245 → 37 ms.**
+- **Curve tool (C) — MS-Paint style.** `cm.paint.curve` (cubic Bézier as
+  connected no-AA segments, sample count ∝ control-polygon length). Studio tool
+  `M.curve` state machine: drag the two endpoints (straight-line preview), then
+  drag twice to pull each control point (a cubic), the second release commits;
+  switching tools abandons it. Reuses the shape preview overlay; status shows the
+  phase.
+- selftest **22524→22536** (+12: `fill32`, `blit32` copy/stamp/over-parity/
+  opacity/edge-clip, `tex_update` ×3, `curve` ×3). All green. **Determinism
+  intact** (render-only): sandbox 300f record→verify byte-exact; uigallery pixel
+  golden byte-identical; **both linux + windows build clean** (portable C). The
+  two sandbox pixel goldens mismatch as before (pre-existing M5-era staleness).
+  Curve preview + large-doc composite captures on llm-feed.
+
 ### M10 Phase 5 — pivots + slices (this session) — `082eb0b`, `7cf0b29`
 The keystone authoring metadata, end to end (D041): the sprite's runtime
 *geometry* the game needs at draw time. Both per-doc for v1; per-frame keys
@@ -369,8 +404,9 @@ The keystone that makes the studio a real authoring tool: **paint in F2 → Ctrl
 project defaults to projects/sandbox) — or `F2` in any running session. The
 `--studio` flag is live/capture-only (gated out of `--verify`).
 
-Controls (studio): F2 toggle · tools B/E/G·L/R/O·**D(gradient)**·I·M(select)/
+Controls (studio): F2 toggle · tools B/E/G·L/R/O·**C(curve)**·**D(gradient)**·I·M(select)/
 V(move)·**P(pivot)**·**K(slice)** · LMB primary / RMB secondary · Alt=eyedropper · X swap · F fill-mode ·
+**curve: drag the ends, then drag 2 bends (2nd release commits)** ·
 Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save (**live-
 reloads the in-game sprite — no restart**) · ^C/^X/
 ^V/^D clipboard (**paste → new layer**) · Enter stamp float · Del clear · with a

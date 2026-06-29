@@ -78,6 +78,34 @@ static SDL_GPUGraphicsPipeline *make_pipeline(SDL_GPUShader *vs,
   return p;
 }
 
+/* upload w*h RGBA8 pixels into an existing GPU texture (shared by create +
+ * update): stage in a transfer buffer, copy on a one-shot command buffer. */
+static bool tex_upload(SDL_GPUTexture *tex, const void *pixels, int w, int h) {
+  Uint32 bytes = (Uint32)(w * h * 4);
+  SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(
+      G.dev, &(SDL_GPUTransferBufferCreateInfo){
+                 .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = bytes});
+  if (!tb) return false;
+  void *p = SDL_MapGPUTransferBuffer(G.dev, tb, false);
+  memcpy(p, pixels, bytes);
+  SDL_UnmapGPUTransferBuffer(G.dev, tb);
+
+  SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
+  SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
+  SDL_UploadToGPUTexture(
+      cp,
+      &(SDL_GPUTextureTransferInfo){.transfer_buffer = tb,
+                                    .pixels_per_row = (Uint32)w,
+                                    .rows_per_layer = (Uint32)h},
+      &(SDL_GPUTextureRegion){
+          .texture = tex, .w = (Uint32)w, .h = (Uint32)h, .d = 1},
+      false);
+  SDL_EndGPUCopyPass(cp);
+  SDL_SubmitGPUCommandBuffer(cmd);
+  SDL_ReleaseGPUTransferBuffer(G.dev, tb);
+  return true;
+}
+
 static int tex_slot_create(const void *pixels, int w, int h) {
   int id = -1;
   for (int i = 0; i < PAL_MAX_TEX; i++)
@@ -96,28 +124,10 @@ static int tex_slot_create(const void *pixels, int w, int h) {
   SDL_GPUTexture *tex = SDL_CreateGPUTexture(G.dev, &ti);
   if (!tex) { pal_log("gfx: tex_create: %s", SDL_GetError()); return -1; }
 
-  Uint32 bytes = (Uint32)(w * h * 4);
-  SDL_GPUTransferBuffer *tb = SDL_CreateGPUTransferBuffer(
-      G.dev, &(SDL_GPUTransferBufferCreateInfo){
-                 .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = bytes});
-  if (!tb) { SDL_ReleaseGPUTexture(G.dev, tex); return -1; }
-  void *p = SDL_MapGPUTransferBuffer(G.dev, tb, false);
-  memcpy(p, pixels, bytes);
-  SDL_UnmapGPUTransferBuffer(G.dev, tb);
-
-  SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
-  SDL_GPUCopyPass *cp = SDL_BeginGPUCopyPass(cmd);
-  SDL_UploadToGPUTexture(
-      cp,
-      &(SDL_GPUTextureTransferInfo){.transfer_buffer = tb,
-                                    .pixels_per_row = (Uint32)w,
-                                    .rows_per_layer = (Uint32)h},
-      &(SDL_GPUTextureRegion){
-          .texture = tex, .w = (Uint32)w, .h = (Uint32)h, .d = 1},
-      false);
-  SDL_EndGPUCopyPass(cp);
-  SDL_SubmitGPUCommandBuffer(cmd);
-  SDL_ReleaseGPUTransferBuffer(G.dev, tb);
+  if (!tex_upload(tex, pixels, w, h)) {
+    SDL_ReleaseGPUTexture(G.dev, tex);
+    return -1;
+  }
 
   G.texs[id] = (PalTexture){.tex = tex, .w = w, .h = h, .used = true};
   return id;
@@ -617,6 +627,14 @@ void pal_gfx_cap_read_end(void) {
 
 int pal_gfx_tex_create(const void *pixels, int w, int h) {
   return tex_slot_create(pixels, w, h);
+}
+
+/* re-upload into an existing texture in place (no GPU realloc). false if the id
+ * is free or the size changed — the caller should free + create instead. */
+bool pal_gfx_tex_update(int id, const void *pixels, int w, int h) {
+  if (id <= 0 || id >= PAL_MAX_TEX || !G.texs[id].used) return false;
+  if (G.texs[id].w != w || G.texs[id].h != h) return false;
+  return tex_upload(G.texs[id].tex, pixels, w, h);
 }
 
 bool pal_gfx_tex_free(int id) {

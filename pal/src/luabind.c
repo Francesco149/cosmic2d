@@ -86,6 +86,22 @@ static int l_buf_fill(lua_State *L) {
   return 0;
 }
 
+/* buf:fill32(byte_off, count, value) — write `count` native-endian u32s. The
+ * 32-bit sibling of :fill (a byte memset): clears / solid-fills an RGBA8 image
+ * in one C call (cm.paint.fill) instead of a per-pixel Lua loop. byte_off must
+ * be 4-aligned (image offsets always are: pixel n is at n*4). */
+static int l_buf_fill32(lua_State *L) {
+  BufView *v = checkview(L);
+  lua_Integer off = luaL_checkinteger(L, 2);
+  lua_Integer count = luaL_checkinteger(L, 3);
+  uint32_t val = (uint32_t)luaL_checkinteger(L, 4);
+  uint8_t *p = view_span(L, v, off, count * 4);
+  if ((off & 3) != 0) return luaL_error(L, "fill32: offset must be 4-aligned");
+  uint32_t *w = (uint32_t *)p;
+  for (lua_Integer i = 0; i < count; i++) w[i] = val;
+  return 0;
+}
+
 static int l_buf_str(lua_State *L) {
   BufView *v = checkview(L);
   lua_Integer off = luaL_checkinteger(L, 2);
@@ -117,6 +133,85 @@ static int l_buf_copy(lua_State *L) {
   return 0;
 }
 
+/* RGBA8 straight-alpha source-over, integer math IDENTICAL to cm.paint.over —
+ * so a C-accelerated composite / bake is byte-for-byte the Lua result (the
+ * baked .png the game loads, and the selftest KATs, must not shift). */
+static inline uint32_t blend_over(uint32_t s, uint32_t d) {
+  uint32_t sa = s >> 24;
+  if (sa == 0) return d;
+  if (sa == 255) return s;
+  uint32_t da = d >> 24;
+  uint32_t ia = 255 - sa;
+  uint32_t dterm = (da * ia + 127) / 255;
+  uint32_t oa = sa + dterm;
+  if (oa == 0) return 0;
+  uint32_t sr = s & 255, sg = (s >> 8) & 255, sb = (s >> 16) & 255;
+  uint32_t dr = d & 255, dg = (d >> 8) & 255, db = (d >> 16) & 255;
+  uint32_t r = (sr * sa + dr * dterm + oa / 2) / oa;
+  uint32_t g = (sg * sa + dg * dterm + oa / 2) / oa;
+  uint32_t b = (sb * sa + db * dterm + oa / 2) / oa;
+  return r | (g << 8) | (b << 16) | (oa << 24);
+}
+
+/* pal.blit32(dst,dw,dh, dx,dy, src,sw,sh, sx,sy, w,h, mode [,op]) — the engine's
+ * one reusable 2D RGBA8 compositor: a clipped rectangular blit between two
+ * pal.bufs. It is what makes layer-flatten, bake, brush stamp, float paste and
+ * document resize one C call instead of a per-pixel Lua loop. mode: 0 copy
+ * (replace), 1 src-over (alpha blend, matches cm.paint.over), 2 stamp (copy
+ * where src alpha != 0). op (0..255, default 255) scales source alpha first
+ * (per-layer opacity). The w*h window is clipped to BOTH buffers; pixels that
+ * fall outside either are skipped. */
+static int l_blit32(lua_State *L) {
+  BufView *dv = checkview_at(L, 1);
+  long dw = (long)luaL_checkinteger(L, 2), dh = (long)luaL_checkinteger(L, 3);
+  long dx = (long)luaL_checkinteger(L, 4), dy = (long)luaL_checkinteger(L, 5);
+  BufView *sv = luaL_checkudata(L, 6, BUFVIEW_MT);
+  if (!sv->b->alive) return luaL_error(L, "blit32: source buffer was freed");
+  long sw = (long)luaL_checkinteger(L, 7), sh = (long)luaL_checkinteger(L, 8);
+  long sx = (long)luaL_checkinteger(L, 9), sy = (long)luaL_checkinteger(L, 10);
+  long w = (long)luaL_checkinteger(L, 11), h = (long)luaL_checkinteger(L, 12);
+  int mode = (int)luaL_checkinteger(L, 13);
+  long op = (long)luaL_optinteger(L, 14, 255);
+  if (dw < 0 || dh < 0 || sw < 0 || sh < 0)
+    return luaL_error(L, "blit32: negative dimension");
+  if ((size_t)(dw * dh * 4) > dv->b->size)
+    return luaL_error(L, "blit32: dst smaller than dw*dh*4");
+  if ((size_t)(sw * sh * 4) > sv->b->size)
+    return luaL_error(L, "blit32: src smaller than sw*sh*4");
+  /* clip the w*h window to src@(sx,sy) and dst@(dx,dy) simultaneously */
+  if (sx < 0) { dx -= sx; w += sx; sx = 0; }
+  if (sy < 0) { dy -= sy; h += sy; sy = 0; }
+  if (dx < 0) { sx -= dx; w += dx; dx = 0; }
+  if (dy < 0) { sy -= dy; h += dy; dy = 0; }
+  if (sx + w > sw) w = sw - sx;
+  if (sy + h > sh) h = sh - sy;
+  if (dx + w > dw) w = dw - dx;
+  if (dy + h > dh) h = dh - dy;
+  if (w <= 0 || h <= 0) return 0;
+  uint32_t *dp = (uint32_t *)dv->b->data;
+  const uint32_t *sp = (const uint32_t *)sv->b->data;
+  bool scale_a = op < 255;
+  for (long j = 0; j < h; j++) {
+    uint32_t *drow = dp + (dy + j) * dw + dx;
+    const uint32_t *srow = sp + (sy + j) * sw + sx;
+    for (long i = 0; i < w; i++) {
+      uint32_t s = srow[i];
+      if (scale_a) {
+        uint32_t a = (s >> 24) * (uint32_t)op / 255;
+        s = (s & 0x00ffffffu) | (a << 24);
+      }
+      if (mode == 1) {
+        drow[i] = blend_over(s, drow[i]);
+      } else if (mode == 2) {
+        if (s >> 24) drow[i] = s;
+      } else {
+        drow[i] = s;
+      }
+    }
+  }
+  return 0;
+}
+
 static int l_buf_hash(lua_State *L) {
   BufView *v = checkview(L);
   lua_Integer off = luaL_optinteger(L, 2, 0);
@@ -137,7 +232,7 @@ static const luaL_Reg bufview_methods[] = {
     {"i16", l_buf_i16}, {"u32", l_buf_u32},     {"i32", l_buf_i32},
     {"i64", l_buf_i64}, {"f32", l_buf_f32},     {"f64", l_buf_f64},
     {"size", l_buf_size}, {"name", l_buf_name}, {"fill", l_buf_fill},
-    {"str", l_buf_str}, {"setstr", l_buf_setstr},
+    {"fill32", l_buf_fill32}, {"str", l_buf_str}, {"setstr", l_buf_setstr},
     {"copy", l_buf_copy}, {"hash", l_buf_hash}, {NULL, NULL}};
 
 static void push_view(lua_State *L, PalBuf *b, bool anon) {
@@ -633,6 +728,23 @@ static int l_tex_create(lua_State *L) {
   return 1;
 }
 
+/* pal.tex_update(id, buf, w, h) — re-upload pixels straight from a pal.buf into
+ * an existing same-size texture (no GPU realloc, no Lua-string copy: the cheap
+ * path for a canvas that changes every frame). Returns false if the slot is
+ * free or the size differs — the caller then tex_free + tex_create instead. */
+static int l_tex_update(lua_State *L) {
+  check_gfx(L);
+  int id = (int)luaL_checkinteger(L, 1);
+  BufView *v = luaL_checkudata(L, 2, BUFVIEW_MT);
+  if (!v->b->alive) return luaL_error(L, "tex_update: buffer was freed");
+  int w = (int)luaL_checkinteger(L, 3);
+  int h = (int)luaL_checkinteger(L, 4);
+  if (w < 1 || h < 1 || (size_t)w * h * 4 > v->b->size)
+    return luaL_error(L, "tex_update: buffer smaller than w*h*4");
+  lua_pushboolean(L, pal_gfx_tex_update(id, v->b->data, w, h));
+  return 1;
+}
+
 static int l_tex_free(lua_State *L) {
   check_gfx(L);
   lua_pushboolean(L, pal_gfx_tex_free((int)luaL_checkinteger(L, 1)));
@@ -870,7 +982,9 @@ static const luaL_Reg pal_funcs[] = {
     {"png_write", l_png_write},
     {"png_read", l_png_read},
     {"tex_create", l_tex_create},
+    {"tex_update", l_tex_update},
     {"tex_free", l_tex_free},
+    {"blit32", l_blit32},
     {"poll_events", l_poll_events},
     {"scancode_name", l_scancode_name},
     {"text_input", l_text_input},

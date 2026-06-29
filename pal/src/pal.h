@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 5
+#define PAL_VERSION_API 6
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -203,6 +203,7 @@ bool pal_gfx_present(void);
 const void *pal_gfx_read_begin(size_t *len);
 void pal_gfx_read_end(void);
 int pal_gfx_tex_create(const void *pixels, int w, int h);
+bool pal_gfx_tex_update(int id, const void *pixels, int w, int h);
 bool pal_gfx_tex_free(int id);
 
 /* buf.c */

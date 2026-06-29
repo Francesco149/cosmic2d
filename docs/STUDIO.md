@@ -211,7 +211,10 @@ without it).
 ```
 
 - **Left tool rail** — vertical icon buttons: pencil, eraser, bucket, line,
-  rect, ellipse, gradient, eyedropper, select(marquee), move. Active tool lit.
+  rect, ellipse, **curve**, gradient, eyedropper, select(marquee), move, pivot,
+  slice. Active tool lit. The **curve** (C) is the MS-Paint two-bend cubic: drag
+  the two endpoints (a straight line), then drag twice to pull each control point
+  — the second release commits (status shows `drag ends` → `bend 1/2` → `2/2`).
   Below it: the **primary/secondary** color chips (MS-Paint model: LMB paints
   primary, RMB secondary; `X` swaps; eraser writes transparent).
 - **Center canvas** — the dominant space. Checkerboard shows true transparency;
@@ -333,26 +336,33 @@ so it cannot perturb the trace — a clean demonstration of §1).
 
 ## 8. Rendering the canvas (perf)
 
-The canvas must stay O(1) draw calls regardless of sprite size:
+The canvas must stay O(1) draw calls AND cheap per pixel regardless of size:
 
 - On edit, composite the **visible** layers (respecting opacity/hidden, plus any
-  live gradient fills) into one `w*h` RGBA8 scratch buffer — but only the
-  **dirty cell**, gated by a dirty flag (not every frame).
+  live gradient fills) into one `w*h` RGBA8 scratch buffer, gated by a dirty flag
+  (not every frame). Each layer is **one `pal.blit32` src-over call** (api v6),
+  not a per-pixel Lua loop — at half-1080p that took the recomposite from ~800 ms
+  to ~10 ms (≈85×), the difference between unusable and smooth on a big mock. The
+  blit math is byte-identical to `cm.paint.over`, so the bake is unchanged.
 - Upload that to a texture and draw it as **one quad** scaled by the integer
   zoom. The pixel grid, hover outline, selection marquee and gradient handles
   are a handful of overlay quads on top.
-- The PAL has `tex_create`/`tex_free` but no in-place update, so a change does
-  `tex_free(old)` + `tex_create(new)` — fine at human edit rates (≤ once/frame
-  while dragging). If profiling ever demands it, a `pal.x_tex_update(id,…)`
-  primitive is the obvious additive PAL upgrade (note, not a blocker).
+- The upload reuses the texture **in place** via `pal.tex_update` (api v6) — no
+  GPU realloc and no whole-buffer Lua-string copy each stroke (the predicted
+  upgrade, now landed). It only `tex_free`+`tex_create`s on an actual size
+  change. The canvas, the per-frame thumbnails and the float share one pooled-id
+  helper (`cm.studio.tex_upload`).
+- `cm.paint.fill` is one `buf:fill32` (a C u32 memset); `blit`/`composite`/
+  `bake`/`set_size` all route through `pal.blit32` when no write-clip is active.
 - Onion-skin = the same composite for neighbor frames at low alpha.
 
 ## 9. Module decomposition
 
 - **`cm.paint`** — pure pixel rasterizers on a cell buffer: get/set, line
-  (Bresenham), rect, ellipse (midpoint), flood fill (4-connected exact), blit /
-  stamp (alpha-masked), flip H/V, rotate90, gradient eval + ordered dither.
-  No UI, no state — deterministic functions, **selftest-covered**.
+  (Bresenham), rect, ellipse (midpoint), **curve (cubic Bézier as no-AA
+  segments)**, flood fill (4-connected exact), blit / stamp (alpha-masked, C via
+  `pal.blit32`), fill (C via `buf:fill32`), flip H/V, rotate90, gradient eval +
+  ordered dither. No UI, no state — deterministic functions, **selftest-covered**.
 - **`cm.sprite`** — the document model, `.spr` load/save (`cm.chunk`), bake to
   strip PNG + `.anim`, undo stack (`buf_delta1`). Shared by the studio and the
   game runtime (the game uses only the load+bake-consume half).

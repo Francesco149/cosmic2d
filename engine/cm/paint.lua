@@ -134,11 +134,10 @@ function M.over(img, x, y, rgba)
   img.buf:u32(off, M.pack(orr, og, ob, oa))
 end
 
--- fill the whole image with one color (default transparent = clear).
+-- fill the whole image with one color (default transparent = clear). One C
+-- memset-of-u32s (pal.buf:fill32) instead of a per-pixel Lua loop.
 function M.fill(img, rgba)
-  rgba = rgba or 0
-  local n = img.w * img.h
-  for i = 0, n - 1 do img.buf:u32(i * 4, rgba) end
+  img.buf:fill32(0, img.w * img.h, rgba or 0)
 end
 
 -- recolor every pixel exactly equal to `from` → `to` (palette edits / swaps).
@@ -167,6 +166,32 @@ function M.line(img, x0, y0, x1, y1, rgba, plot)
     local e2 = 2 * err
     if e2 >= dy then err = err + dy; x0 = x0 + sx end
     if e2 <= dx then err = err + dx; y0 = y0 + sy end
+  end
+end
+
+-- a cubic Bézier from P0 to P3 with control points C1, C2 (the MS-Paint curve),
+-- drawn as connected no-AA line segments. Float sampling for the path, integer
+-- pixels for output — the same "float in the test, never a blended edge" rule as
+-- the ellipse. The sample count tracks the control-polygon length (an upper
+-- bound on arc length) so segments stay sub-pixel-short — no gaps on long
+-- curves, no oversampling on tiny ones.
+function M.curve(img, x0, y0, c1x, c1y, c2x, c2y, x3, y3, rgba, plot)
+  plot = plot or M.set
+  local function seg(ax, ay, bx, by)
+    local dx, dy = bx - ax, by - ay
+    return sqrt(dx * dx + dy * dy)
+  end
+  local poly = seg(x0, y0, c1x, c1y) + seg(c1x, c1y, c2x, c2y) + seg(c2x, c2y, x3, y3)
+  local n = max(2, min(512, ceil(poly)))
+  local px, py = floor(x0 + 0.5), floor(y0 + 0.5)
+  for i = 1, n do
+    local t = i / n
+    local u = 1 - t
+    local a, b, c, d = u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t
+    local xx = floor(a * x0 + b * c1x + c * c2x + d * x3 + 0.5)
+    local yy = floor(a * y0 + b * c1y + c * c2y + d * y3 + 0.5)
+    M.line(img, px, py, xx, yy, rgba, plot)
+    px, py = xx, yy
   end
 end
 
@@ -275,10 +300,20 @@ end
 -- copy a src region (sx,sy,sw,sh; defaults whole src) into dst at (dx,dy).
 -- mode "set" replaces, "stamp" writes only non-transparent texels (a sprite
 -- brush / paste that respects transparency), "over" alpha-composites.
+local BLIT_MODE = { set = 0, over = 1, stamp = 2 }
+
 function M.blit(dst, dx, dy, src, sx, sy, sw, sh, mode)
   sx, sy = sx or 0, sy or 0
   sw, sh = sw or src.w, sh or src.h
   mode = mode or "set"
+  -- fast path: with no write-clip, one C blit (clips to both buffers in C).
+  if clip_x0 == nil then
+    pal.blit32(dst.buf, dst.w, dst.h, dx, dy, src.buf, src.w, src.h,
+               sx, sy, sw, sh, BLIT_MODE[mode] or 0, 255)
+    return
+  end
+  -- clipped path (a brush stamp confined to the selection): per-pixel via the
+  -- clip-aware writers, so set_clip is honored.
   for j = 0, sh - 1 do
     for i = 0, sw - 1 do
       local c = M.get(src, sx + i, sy + j)

@@ -81,6 +81,7 @@ local TOOLS = {
   { id = "line",    key = "L", tip = "line (Shift = 45°)" },
   { id = "rect",    key = "R", tip = "rectangle (Shift = square)" },
   { id = "ellipse", key = "O", tip = "ellipse (Shift = circle)" },
+  { id = "curve",   key = "C", tip = "curve: drag the ends, then drag 2 bends" },
   { id = "gradient", key = "D", tip = "gradient fill (drag an axis)" },
   { id = "pick",    key = "I", tip = "eyedropper (or hold Alt)" },
   { id = "select",  key = "M", tip = "marquee select" },
@@ -412,11 +413,22 @@ local function free_anim_tex()
 end
 M.free_anim_tex = free_anim_tex
 
--- composite frame `fi` into the reuse scratch + upload a fresh texture (caller
--- owns it). Used for onion neighbors + the per-frame thumbnails.
-local function comp_tex(doc, fi, scratch)
+-- upload an image into a texture, reusing the GPU slot IN PLACE when the
+-- dimensions match (pal.tex_update, no realloc + no Lua-string copy) — the
+-- every-edit canvas / thumbnail / float path. Only on an actual size change
+-- does it free + create. id=nil creates. Returns the (possibly new) id.
+local function tex_upload(id, img)
+  if id and pal.tex_update(id, img.buf, img.w, img.h) then return id end
+  if id then pal.tex_free(id) end
+  return pal.tex_create(img.w, img.h, img.buf:str(0, img.w * img.h * 4))
+end
+M.tex_upload = tex_upload
+
+-- composite frame `fi` into the reuse scratch + upload into `id` in place (or
+-- create). Used for onion neighbors + the per-frame thumbnails.
+local function comp_tex(doc, fi, scratch, id)
   sprite.composite_into(doc, fi, scratch)
-  return pal.tex_create(doc.w, doc.h, scratch.buf:str(0, doc.w * doc.h * 4))
+  return tex_upload(id, scratch)
 end
 
 function M.rebuild_tex()
@@ -426,23 +438,22 @@ function M.rebuild_tex()
     M.comp = paint.image(doc.w, doc.h)
   end
   sprite.composite_into(doc, M.disp_frame(), M.comp)
-  if M.canvas_tex then pal.tex_free(M.canvas_tex) end
-  M.canvas_tex = pal.tex_create(doc.w, doc.h, M.comp.buf:str(0, doc.w * doc.h * 4))
+  M.canvas_tex = tex_upload(M.canvas_tex, M.comp)
   -- M.comp is now uploaded; reuse it as the composite scratch below.
-  -- onion neighbors (prev/next frame at low alpha) — edit-time only
-  if M.onion_prev then pal.tex_free(M.onion_prev); M.onion_prev = nil end
-  if M.onion_next then pal.tex_free(M.onion_next); M.onion_next = nil end
-  if M.onion and not M.playing and doc.frames > 1 then
-    if doc.cur_frame > 1 then M.onion_prev = comp_tex(doc, doc.cur_frame - 1, M.comp) end
-    if doc.cur_frame < doc.frames then M.onion_next = comp_tex(doc, doc.cur_frame + 1, M.comp) end
-  end
-  -- per-frame thumbnails for the timeline strip (skip during playback — pixels
-  -- aren't changing then, only the playhead moves; but always build once so a
-  -- play started right after creation still has a strip)
+  -- onion neighbors (prev/next frame at low alpha) — edit-time only; pooled
+  if M.onion and not M.playing and doc.frames > 1 and doc.cur_frame > 1 then
+    M.onion_prev = comp_tex(doc, doc.cur_frame - 1, M.comp, M.onion_prev)
+  elseif M.onion_prev then pal.tex_free(M.onion_prev); M.onion_prev = nil end
+  if M.onion and not M.playing and doc.frames > 1 and doc.cur_frame < doc.frames then
+    M.onion_next = comp_tex(doc, doc.cur_frame + 1, M.comp, M.onion_next)
+  elseif M.onion_next then pal.tex_free(M.onion_next); M.onion_next = nil end
+  -- per-frame thumbnails for the timeline strip — a STABLE pool updated in
+  -- place (skip during playback; build once so a play right after has a strip)
   if not M.playing or not M.thumbs then
-    if M.thumbs then for _, t in ipairs(M.thumbs) do pal.tex_free(t) end end
-    M.thumbs = {}
-    for f = 1, doc.frames do M.thumbs[f] = comp_tex(doc, f, M.comp) end
+    local old = M.thumbs and #M.thumbs or 0
+    M.thumbs = M.thumbs or {}
+    for f = 1, doc.frames do M.thumbs[f] = comp_tex(doc, f, M.comp, M.thumbs[f]) end
+    for f = old, doc.frames + 1, -1 do pal.tex_free(M.thumbs[f]); M.thumbs[f] = nil end
   end
   M.dirty = false
 end
@@ -458,15 +469,14 @@ end
 local function build_float_tex()
   local f = M.float
   if not f then return end
-  free_float_tex()
-  M.float_tex = pal.tex_create(f.w, f.h, f.img.buf:str(0, f.w * f.h * 4))
+  M.float_tex = tex_upload(M.float_tex, f.img) -- reuses the slot unless size changed
 end
 
 -- drop all selection state (a new / loaded doc, or an explicit deselect); also
 -- the animation playhead + per-doc timeline textures (frame count may change).
 function M.reset_sel()
   M.sel, M.float, M.selecting, M.moving = nil, nil, false, false
-  M.grad_drag, M.g_sel = nil, nil
+  M.grad_drag, M.g_sel, M.curve = nil, nil, nil
   M.clip_i, M.clip_entry, M.playing, M.tl_scroll = nil, nil, false, 0
   free_float_tex()
   free_anim_tex()
@@ -699,6 +709,7 @@ local function handle_keys()
       elseif sc == SC.l then M.tool = "line"
       elseif sc == SC.r then M.tool = "rect"
       elseif sc == SC.o then M.tool = "ellipse"
+      elseif sc == SC.c then M.tool = "curve"
       elseif sc == SC.d then M.tool = "gradient"
       elseif sc == SC.i then M.tool = "pick"
       elseif sc == SC.m then M.tool = "select"
@@ -759,33 +770,37 @@ local function resolve_shape()
   return sx, sy, ex, ey
 end
 
+-- set the cm.paint write-clip to the active selection so a stroke / fill / shape
+-- only touches it (STUDIO.md §5.1: "selection restricts editing"); always paired
+-- with paint.clip_off(). A floating selection means a move/paste gesture (not
+-- painting), so no clip then. (Defined before build_preview, which calls it.)
+local function sel_clip()
+  local s = M.sel
+  if s and not M.float then paint.set_clip(s.x, s.y, s.x + s.w, s.y + s.h) end
+end
+
 -- rebuild the shape-preview texture (a transparent cell with just the shape) so
 -- draw_canvas can overlay it as one quad — nothing touches real pixels until
 -- release. Called each tick; clears the flag when no shape is in progress.
 local function build_preview()
-  if not M.shape_drawing then M.has_preview = false; return end
+  if not (M.shape_drawing or M.curve) then M.has_preview = false; return end
   local doc = M.doc
   if not M.preview or M.preview.w ~= doc.w or M.preview.h ~= doc.h then
     M.preview = paint.image(doc.w, doc.h)
   end
   paint.fill(M.preview, 0)
-  local sx, sy, ex, ey = resolve_shape()
-  sel_clip() -- preview the shape clipped exactly as it will commit
-  stroke_shape(M.preview, sx, sy, ex, ey,
-               M.shape_which == "prim" and M.prim or M.sec)
+  sel_clip() -- preview clipped exactly as it will commit
+  if M.curve then
+    local cv = M.curve
+    paint.curve(M.preview, cv.x0, cv.y0, cv.c1x, cv.c1y, cv.c2x, cv.c2y,
+                cv.x1, cv.y1, cv.which == "prim" and M.prim or M.sec)
+  else
+    local sx, sy, ex, ey = resolve_shape()
+    stroke_shape(M.preview, sx, sy, ex, ey, M.shape_which == "prim" and M.prim or M.sec)
+  end
   paint.clip_off()
-  if M.preview_tex then pal.tex_free(M.preview_tex) end
-  M.preview_tex = pal.tex_create(doc.w, doc.h, M.preview.buf:str(0, doc.w * doc.h * 4))
+  M.preview_tex = tex_upload(M.preview_tex, M.preview) -- reuse the slot in place
   M.has_preview = true
-end
-
--- set the cm.paint write-clip to the active selection so a stroke / fill / shape
--- only touches it (STUDIO.md §5.1: "selection restricts editing"); always paired
--- with paint.clip_off(). A floating selection means a move/paste gesture (not
--- painting), so no clip then.
-local function sel_clip()
-  local s = M.sel
-  if s and not M.float then paint.set_clip(s.x, s.y, s.x + s.w, s.y + s.h) end
 end
 
 local function dab(px, py)
@@ -914,6 +929,56 @@ local function handle_slice(over)
   end
 end
 
+-- the MS-Paint curve tool, a small state machine (M.curve):
+--   1. "ends"  — press + drag lays the two endpoints (a straight line preview).
+--   2. "bend"  — then each press+drag pulls a control point toward the cursor
+--      (first drag = the P0 side, second = the P3 side, a cubic Bézier); the
+--      second release commits. A click without dragging just sets that bend at
+--      the click. Switching tools abandons an in-progress curve (handle_paint).
+-- Control points may be dragged off-canvas (doc_pixel_raw, no in-bounds clamp);
+-- the rasterizer clips per pixel. Preview lives in build_preview.
+local function handle_curve(over)
+  local inp = ui.inp
+  local px, py = M.doc_pixel_raw(inp.mx, inp.my) -- raw: control points can leave the canvas
+  local pressed = inp.clicked[1] or inp.clicked[3]
+  local held = inp.buttons[1] or inp.buttons[3]
+  local cv = M.curve
+  if not cv then
+    if over and pressed and not ui.active then
+      M.curve = { phase = "ends", x0 = px, y0 = py, x1 = px, y1 = py,
+                  c1x = px, c1y = py, c2x = px, c2y = py, adj = 0,
+                  which = inp.clicked[1] and "prim" or "sec" }
+    end
+    return
+  end
+  if cv.phase == "ends" then
+    cv.x1, cv.y1 = px, py -- the far endpoint tracks the cursor
+    if not held then      -- release fixes the endpoints; controls start straight
+      cv.c1x, cv.c1y, cv.c2x, cv.c2y = cv.x0, cv.y0, cv.x1, cv.y1
+      cv.phase = "bend"
+    end
+    M.dirty = true
+    return
+  end
+  -- bend: drag control point `adj` (0 = P0 side, 1 = P3 side); 2 releases commit
+  if held then
+    if cv.adj == 0 then cv.c1x, cv.c1y = px, py else cv.c2x, cv.c2y = px, py end
+    cv.dragging, M.dirty = true, true
+  elseif cv.dragging then
+    cv.dragging = false
+    cv.adj = cv.adj + 1
+    if cv.adj >= 2 then
+      sprite.begin_edit(M.doc)
+      sel_clip()
+      paint.curve(M.cell(), cv.x0, cv.y0, cv.c1x, cv.c1y, cv.c2x, cv.c2y,
+                  cv.x1, cv.y1, cv.which == "prim" and M.prim or M.sec)
+      paint.clip_off()
+      sprite.end_edit(M.doc)
+      M.curve, M.dirty = nil, true
+    end
+  end
+end
+
 local function handle_paint(over)
   if M.playing then return end -- the canvas shows the playhead; no editing mid-play
   local inp = ui.inp
@@ -937,6 +1002,13 @@ local function handle_paint(over)
     end
     return
   end
+
+  -- the curve tool (multi-phase): an in-progress curve owns the gesture; picking
+  -- another tool abandons it. A fresh curve only starts when curve is the tool
+  -- and Alt isn't held (Alt = the temporary eyedropper, like the shape tools).
+  if M.curve and M.tool ~= "curve" then M.curve = nil end
+  if M.curve then handle_curve(over); return end
+  if tool == "curve" then handle_curve(over); return end
 
   -- a gradient axis drag in progress owns the gesture until release (an Alt tap
   -- can't divert it), exactly like a shape stroke
@@ -1860,7 +1932,12 @@ local function draw_timeline(r)
   local tool = M.alt and "pick" or M.tool
   if tool == "pencil" and M.brush then tool = "stamp" end
   local extra = ""
-  if M.shape_drawing then
+  if M.curve then
+    extra = M.curve.phase == "ends" and "  drag ends"
+            or ("  bend %d/2"):format(M.curve.adj + 1)
+  elseif tool == "curve" then
+    extra = "  (drag the ends)"
+  elseif M.shape_drawing then
     local sx, sy, ex, ey = resolve_shape()
     extra = ("  %dx%d"):format(math.abs(ex - sx) + 1, math.abs(ey - sy) + 1)
   elseif SHAPE[tool] then

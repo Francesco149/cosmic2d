@@ -1150,3 +1150,43 @@ identity — Bridger cameo vs. new — is open). Canon-binding is loose *by choi
 and may tighten if the 3D project wants it. Lumi's "cold smile" range leaves a
 later turn parked (a hidden stake), not promised. The first-arc map pages are
 design targets — when a built map diverges, the map wins, fix the page.
+
+## D043 — render-only C compositor primitives: blit32 / fill32 / tex_update (M10 perf, PAL api 6, 2026-06-29)
+
+The studio's pixel bulk-work (composite the visible layers on every edit, clear a
+scratch, re-upload the canvas texture) was pure per-pixel **Lua**. At the sizes
+the human now reaches with the canvas-resize feature (half-1080p, "a big sprite
+sheet or a mock") a single recomposite ran **~800 ms** — about 1 fps per stroke,
+unusable. Decision: add three small **portable C** primitives to the PAL and route
+the bulk work through them (api 5→6, additive):
+
+- **`pal.blit32(dst,dw,dh,dx,dy, src,sw,sh,sx,sy, w,h, mode[,op])`** — the
+  engine's one reusable clipped RGBA8 2D compositor: copy / src-over / stamp +
+  a 0..255 source-alpha (per-layer opacity) scale, clipped to both buffers.
+- **`buf:fill32(off,count,value)`** — a 32-bit `:fill` (C u32 memset).
+- **`pal.tex_update(id,buf,w,h)`** — in-place re-upload into an existing same-size
+  texture (no GPU realloc, no Lua-string copy); false on a size change → recreate.
+
+**The binding constraint**: `blit32`'s src-over is the **bit-exact integer math**
+of `cm.paint.over`. Compositing/baking is where the `.png` the game loads is
+produced, and the selftest pins exact pixels — so a C-accelerated path that
+diverged by even one LSB would shift the committed art and break goldens. It does
+not: a re-bake of `girl.spr` is `cmp`-identical to the committed `girl.png`, and
+the existing composite/blit/fill KATs pass unchanged. Measured win: 960×540×4
+layers **813 ms → 9.5 ms (~86×)**; 1920×1080 **3245 → 37 ms**.
+
+**Why a general primitive, not an editor helper** (the human's framing): a 2D
+RGBA8 blit with src-over + opacity + clipping is exactly what *any* part of the
+engine needs for layer flatten, bake, brush stamp, paste, document resize, and
+future dynamic-texture work — so it earns its place in the PAL contract. It is
+**render/dev class** (D040 §1 — the studio carries no determinism tax), and it is
+not in the sim path (the game draws baked PNGs + quads, never `cm.paint`), so it
+**cannot perturb a trace** — confirmed by a 300-frame sandbox record→verify.
+
+**Revisit**: if per-edit composite ever dominates again at extreme sizes / frame
+counts, the next step is **dirty-rect** compositing (re-blit only the touched
+region) and partial `tex_update` sub-rect upload — both layer cleanly on top of
+these primitives without changing the contract. A SIMD/wide-word inner loop is a
+pure C-internal optimization if profiling asks. The byte-exact-match-to-Lua rule
+is **permanent** as long as both paths exist (a new blend mode adds a new `mode`
+number; it never changes an existing one's rounding).

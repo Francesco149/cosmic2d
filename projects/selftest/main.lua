@@ -1361,6 +1361,16 @@ local function t_capture()
   pal.x_ui_target(0, 0)
   pal.x_compose()
   pal.x_fov(64, 64)
+
+  -- tex_update (api6): in-place re-upload. true when the size matches the slot,
+  -- false when it differs or the id is free (caller then recreates).
+  local px4 = string.rep("\0", 4 * 4 * 4)
+  local tid = pal.tex_create(4, 4, px4)
+  local b = pal.buf(nil, 8 * 8 * 4) -- big enough for both probes below
+  check(pal.tex_update(tid, b, 4, 4) == true, "tex_update: same size updates in place")
+  check(pal.tex_update(tid, b, 8, 8) == false, "tex_update: size change refuses (recreate)")
+  pal.tex_free(tid)
+  check(pal.tex_update(tid, b, 4, 4) == false, "tex_update: freed slot refuses")
 end
 
 -- ---- cm.paint: the studio's pure no-AA rasterizers (M10, D040) ----
@@ -1529,6 +1539,56 @@ local function t_paint()
   paint.clip_off()
   check(paint.get(fl, 1, 1) == RED and paint.get(fl, 4, 1) == 0,
         "paint: flood stays inside the write-clip")
+
+  -- the C primitives (api6): buf:fill32 + pal.blit32. paint.fill/blit route here,
+  -- so the rasterizer KATs above already exercise them — these pin the contract
+  -- directly: 32-bit fill, the three modes, opacity, edge clipping, and that the
+  -- src-over math is byte-identical to the Lua paint.over (the bake must not shift).
+  local f32 = paint.image(4, 4)
+  f32.buf:fill32(0, 16, RED)
+  check(count(f32, RED) == 16, "paint: buf:fill32 writes u32s")
+  -- blit32 copy / stamp / over via paint.blit (clip off → C path)
+  local src = paint.image(2, 2)
+  paint.set(src, 0, 0, RED); paint.set(src, 1, 1, GRN) -- two opaque, two clear
+  local dc = paint.image(4, 4); paint.blit(dc, 1, 1, src, 0, 0, 2, 2, "set")
+  check(paint.get(dc, 1, 1) == RED and paint.get(dc, 2, 1) == 0
+        and paint.get(dc, 2, 2) == GRN, "paint: blit32 copy places + clears")
+  local ds = paint.image(4, 4); paint.fill(ds, RED)
+  paint.blit(ds, 0, 0, src, 0, 0, 2, 2, "stamp") -- only the opaque src pixels land
+  check(paint.get(ds, 0, 0) == RED and paint.get(ds, 1, 0) == RED
+        and paint.get(ds, 1, 1) == GRN, "paint: blit32 stamp skips transparent src")
+  -- over math parity: half-alpha white over opaque red == cm.paint.over's result
+  local half = paint.pack(255, 255, 255, 128)
+  local ref = paint.image(1, 1); paint.set(ref, 0, 0, RED); paint.over(ref, 0, 0, half)
+  local hb = paint.image(1, 1); paint.set(hb, 0, 0, RED)
+  local hs = paint.image(1, 1); paint.set(hs, 0, 0, half)
+  pal.blit32(hb.buf, 1, 1, 0, 0, hs.buf, 1, 1, 0, 0, 1, 1, 1, 255) -- mode 1 = over
+  check(paint.get(hb, 0, 0) == paint.get(ref, 0, 0), "paint: blit32 over == paint.over")
+  -- opacity scales source alpha (op=128 over transparent dst → alpha 128)
+  local ob = paint.image(1, 1); local os = paint.image(1, 1); paint.set(os, 0, 0, RED)
+  pal.blit32(ob.buf, 1, 1, 0, 0, os.buf, 1, 1, 0, 0, 1, 1, 1, 128)
+  check(((paint.get(ob, 0, 0) >> 24) & 255) == 128, "paint: blit32 opacity scales src alpha")
+  -- negative destination offset clips at the edge (no OOB write/crash): only
+  -- src(1,1)=GRN lands at dst(0,0); the other three fall off the top-left.
+  local ec = paint.image(4, 4); paint.blit(ec, -1, -1, src, 0, 0, 2, 2, "set")
+  check(paint.get(ec, 0, 0) == GRN and paint.get(ec, 1, 1) == 0,
+        "paint: blit32 clips a negative dst offset")
+
+  -- curve (cubic Bézier, the MS-Paint tool): controls at the chord's thirds make
+  -- it the exact straight line; a pulled control bows the path off the chord;
+  -- the endpoints are always plotted.
+  local cvl = paint.image(10, 10)
+  paint.curve(cvl, 0, 0, 3, 3, 6, 6, 9, 9, RED) -- collinear thirds == diagonal
+  check(paint.get(cvl, 0, 0) == RED and paint.get(cvl, 9, 9) == RED
+        and paint.get(cvl, 5, 5) == RED and paint.get(cvl, 0, 9) == 0,
+        "paint: curve with collinear controls is a straight line")
+  local cvb = paint.image(16, 16)
+  paint.curve(cvb, 0, 15, 5, 0, 10, 0, 15, 15, RED) -- pull the middle up
+  check(paint.get(cvb, 0, 15) == RED and paint.get(cvb, 15, 15) == RED,
+        "paint: curve plots both endpoints")
+  local bowed = false
+  for x = 0, 15 do if paint.get(cvb, x, 4) == RED then bowed = true end end
+  check(bowed, "paint: curve bows toward its control points")
 end
 
 -- ---- cm.paint gradients: eval + ordered dither (M10 Phase 3, STUDIO.md §6) ----
