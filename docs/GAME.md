@@ -2,9 +2,11 @@
 
 The flagship game the engine is built around. This file is the design source
 of truth; `PLAN.md` sequences the work, `DECISIONS.md` records the binding
-calls (game identity D034, movement D035). Where this doc proposes something
-not yet ratified by the human it is marked **(proposal)** — those are the open
-questions at the bottom.
+calls (game identity D034, movement D035, narrative direction D042). The
+**narrative layer** — story spine, cast, tone, and per-map quest design — lives
+in **`STORY.md`** + **`docs/maps/`**. Where this doc proposes something not yet
+ratified by the human it is marked **(proposal)** — those are the open questions
+at the bottom.
 
 > Status: design pass 1 (2026-06-27). Identity and the movement spec are
 > ratified; the fiction spine, progression details and area list are proposals
@@ -241,6 +243,15 @@ just claimed — the engine's regression infra doubles as an anti-cheat oracle.
   designs map layouts and stylish scenery from simple primitives and writes the
   story / quests / challenges. This is the long tail (M-content), interleaved
   once the hub + movement exist.
+
+**First arc drafted (2026-06-29, D042):** the story/cast bible is **`STORY.md`**;
+the opening maps + quests are one-pagers in **`docs/maps/`** — **Rim Hub**
+("First Survey": hub + tutorial) → **South Trail** ("The Long Light": first
+hordes + Gemma's debut) → **Whisper Gulch** ("The Whisper Below": grapple gym +
+the first cosmic-dread beat). Protagonist **Vesper** is written as a *tsundere
+villain-origin*; **Gemma** (chuuni succubus-cosplaying rival architect) is a
+recurring comedic antagonist; **Lumi** is the human hub idol (+ an early
+side-quest); mobs are reality-leak **cosmic creatures**.
 
 ## 10. Art direction
 

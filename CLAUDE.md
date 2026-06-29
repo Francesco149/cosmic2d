@@ -25,6 +25,9 @@ The art targets a Wadanohara-like pixel style. See `docs/GAME.md`.
 - **PLAN.md** — vision, pillars, milestone roadmap with exit criteria.
 - **GAME.md** — the cosmic game design bible: identity, gameplay loop,
   movement spec, combat/spectacle, sandbox, art direction, story.
+- **STORY.md** — the narrative bible: premise, cast (Vesper / Gemma / Lumi),
+  tone + the dread engine, world/areas, the quest spine. Per-map quest+layout
+  one-pagers live in **`docs/maps/`**.
 - **ARCHITECTURE.md** — two-layer design, state model, determinism iron
   rules, PAL API contract.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.

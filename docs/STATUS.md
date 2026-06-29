@@ -3,6 +3,59 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-06-29
+**Phase**: **M-content — opening-arc writing pass (story + first maps).** M10 (the
+studio) is feature-complete; with asset authoring unblocked, this session opened
+**M-content**: the narrative layer + the first quests/maps the human asked for.
+**Docs only — no engine/sim/binary/selftest change.** (M10 history + its
+next-steps are preserved below.)
+
+### M-content — first quests + first maps (this session) — D042
+The human's brief: write the first few quests + design the first few maps; fold in
+**gemma-san** (a rival cosmic architect → chuunibyou succubus cosplayer) and a
+**bunny-girl idol**; mobs are **cosmic creatures**. References consulted: the mock
+board `F:\Pictures\cosmic2d-mocks` (world look — *explicitly NOT* the target art
+style per the human, just inspiration; notably the mocks set cosmic2d in the
+**same Grand Canyon** as the 3D game and label gemma **"RIVAL ARCHITECT"** with a
+ready mob roster), the character sheets `F:\Pictures\oc\{gemma-san,bunny-girl}`,
+and the 3D universe bible `F:\Documents\cosmic\docs`.
+
+Four directional calls (human, via the question prompt → **ADR D042**):
+- **Protagonist = Vesper as a _tsundere villain-origin_** (3D canon NOT locked —
+  cosmic2d shapes her; the 3D game leans cozy too).
+- **Setting = the shared Grand Canyon** (reuse 3D locations; the Rim is the hub).
+- **Gemma = recurring comedic antagonist** (Team-Rocket clown; chuuni succubus
+  *cosplay* — she's an architect, the horns/wings/tail are hard-light).
+- **Lumi (idol) = hub idol + an early side-quest**; mobs = reality-leak creatures
+  (slicing one *files it back* — the proto-Sweep gesture, the dread).
+
+Wrote (docs only):
+- **`docs/STORY.md`** — story/cast bible: premise, the **dread engine** (cozy ↔
+  cosmic dread via dramatic irony — her stabilization is a rehearsal of the
+  Sweep), full cast (Vesper / Gemma / **Lumi** + the shop + the Works), the **mob
+  roster** (Star Mote · Fold Slime · Pebble Drone · Cactus Satellite · Glyph
+  Beetle · Thread Imp · Mirror Wisp · Tiny Floodfish), world/areas, the opening
+  **quest spine** (Q1–Q4), and a names/open-questions list.
+- **`docs/maps/`** — the map-page format (README) + three one-pagers: **rim-hub.md**
+  ("First Survey" — Q1 hub+tutorial, meet Lumi, light the trail portal),
+  **south-trail.md** ("The Long Light" — Q2 the idol's stolen gem + Q3 Gemma's
+  debut duel), **whisper-gulch.md** ("The Whisper Below" — Q4 grapple/teleport gym
+  + the first cosmic-dread beat + the Works' first work-order).
+- Cross-linked from **GAME.md** (intro + §9) and **CLAUDE.md** (doc index); ADR
+  **D042** logged in DECISIONS.md.
+
+**Next step (resume here):** human **taste pass** on the writing — names (esp.
+**Lumi**), Vesper's tsundere voice, the cozy↔dread balance, and the shopkeep
+(Bridger cameo vs. new face). Then, in either order: **(a)** greybox the **Rim
+Hub** in the editor (procedural tilemap + a **portal interactable** + the Star
+Mote) so Q1 is playable on today's moveset; **(b)** the human pixels the cast in
+the **studio** (M10) — Vesper refinement + Gemma/Lumi sprites + a Rim tileset —
+feeding real art back into the map pages. Combat (hordes/boss) is **M12**, sandbox
+is **M-physics**, the dread shader/LUT is **M-look** — each map page flags what its
+beats lean on. Good `/clear` point (docs committed, STATUS current).
+
+---
+
 **Date**: 2026-06-28
 **Phase**: **M10 — the studio (in-engine sprite/animation editor): Phases 1–4 ALL
 COMPLETE (paint · layers/shapes/selection/transforms · gradients · animation +

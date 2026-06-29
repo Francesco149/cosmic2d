@@ -1099,3 +1099,54 @@ never traced — the studio authors it, the game adopts the baked bytes like
 `SLCE`/`HEAD` schema, readers stay back-compatible); or the three sidecars want
 folding into one container; or `headless --bake` lands (then `.png`/`.anim`/
 `.meta` all become regenerable build product, no longer committed).
+
+## D042 — cosmic2d narrative direction: Vesper's tsundere villain-origin, the shared canyon, the cast (M-content, human call 2026-06-29)
+
+**Context**: M10 (the studio) is feature-complete, so content authoring is
+unblocked; the human opened **M-content** with a writing/design pass — first
+quests + first maps — plus two new characters to fold in (gemma-san; a bunny-girl
+idol) and a mob concept (cosmic creatures). D034 ratified the *identity*
+(mecha-girl spin-off) but left the **fiction spine, cast, and area list open**
+(GAME.md §11); this fills them in. Reference art + the human's mock board informed
+it (`F:\Pictures\cosmic2d-mocks`, `F:\Pictures\oc\{gemma-san,bunny-girl}`); the 3D
+universe bible is the canon source (`F:\Documents\cosmic\docs`).
+**Decision** (the human's four calls):
+1. **Protagonist = Vesper, written as a _tsundere villain-origin_.** You play the
+   3D game's antagonist Auditor *before the ice set in* — proud/prickly/secretly
+   soft, in a cozy world. The **3D canon is explicitly NOT locked**: cosmic2d may
+   *shape* Vesper's character and the cozy direction, and the 3D game is expected
+   to lean cozy too (influence is now bidirectional, not inherited).
+2. **Setting = the shared Grand Canyon** seam-world of the 3D game (reuse its
+   locations — Rim, Whisper Gulch, Echo Reach, Sun Vault, Night Cave, Raven
+   Exchange — confirmed by the mock board). The **Rim** is the cozy town hub.
+3. **Gemma = a recurring comedic antagonist** (Team-Rocket trajectory): a rival
+   cosmic architect who got obsessed with human media and cosplays as a
+   chuunibyou dark-fantasy succubus (horns/wings/tail are hard-light cosplay),
+   convinced it's how to commune with humans. Not a hub ally.
+4. **Lumi = the human local idol** (bunny-girl): hub stage + flavor/shop, plus an
+   **early side-quest**. **Mobs = "cosmic creatures"** — reality leaking into
+   creature-form where the seam wears thin; slicing one *files it back* (the
+   proto-Sweep gesture — the dread, run in reverse).
+The narrative layer is **STORY.md** (premise, the dread engine, cast, mob roster,
+world, quest spine) + **`docs/maps/`** (one pager per map). First arc drafted:
+**Rim Hub** (Q1 First Survey) → **South Trail** (Q2 the idol's gem · Q3 Gemma's
+debut) → **Whisper Gulch** (Q4 the first dread beat + the Works' first work-order).
+**Why**: a tsundere origin makes the eventual cold-Auditor freeze *tragic* (her
+warmth is what she buries — "Nothing I take is lost" is the line she hasn't
+learned yet), turning the spin-off into a real prequel with emotional stakes
+instead of a disconnected side-story; reusing the canyon is cheap, coherent, and
+the mocks already assume it; a recurring-clown rival + a cozy idol + cute
+leak-creatures all serve the cute-cozy-with-cosmic-dread pillars (GAME.md §1) and
+give the hub the personality it needs to be "fun to simply exist in" (§6). Keeping
+the 3D canon unlocked avoids a continuity straitjacket and lets the stronger cozy
+direction flow *back* into the 3D project.
+**Snapshot story**: n/a — design/narrative-level; no engine or sim surface. Each
+content system documents its own determinism story as it lands (combat M12,
+sandbox M-physics, economy M13, the dread shader/LUT M-look — the map pages flag
+what each beat leans on).
+**Revisit**: the human owns the fiction and has final cut on **names** (Lumi is a
+proposed placeholder; Gemma's chuuni titles are throwaway gags; the shopkeep's
+identity — Bridger cameo vs. new — is open). Canon-binding is loose *by choice*
+and may tighten if the 3D project wants it. Lumi's "cold smile" range leaves a
+later turn parked (a hidden stake), not promised. The first-arc map pages are
+design targets — when a built map diverges, the map wins, fix the page.
