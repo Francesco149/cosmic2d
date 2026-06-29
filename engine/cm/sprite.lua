@@ -134,7 +134,7 @@ local function capture_struct(doc)
   local layers = {}
   for i, l in ipairs(doc.layers) do layers[i] = clone_layer(l, doc.w, doc.h, doc.frames) end
   return { layers = layers, frames = doc.frames, clips = clone_clips(doc.clips),
-           slices = clone_slices(doc.slices),
+           slices = clone_slices(doc.slices), w = doc.w, h = doc.h,
            pivot = { x = doc.pivot.x, y = doc.pivot.y },
            cur_layer = doc.cur_layer, cur_frame = doc.cur_frame }
 end
@@ -142,6 +142,7 @@ end
 -- adopt a snapshot's layer stack (it is used exactly once then dropped, so no
 -- clone needed — the doc takes ownership of the snapshot's buffers).
 local function restore_struct(doc, snap)
+  if snap.w then doc.w, doc.h, doc._shade = snap.w, snap.h, nil end -- size rides undo (set_size)
   doc.layers = snap.layers
   doc.frames = snap.frames
   if snap.clips then doc.clips = snap.clips end
@@ -393,6 +394,82 @@ function M.find_slice(src, name)
   local arr = (type(src) == "table" and src.slices) or src
   for _, s in ipairs(arr or {}) do if s.name == name then return s end end
   return nil
+end
+
+-- ---- canvas / document size (whole-doc resize; STUDIO.md §3) ----
+-- Change the document's pixel dimensions, rebuilding every cell of every layer
+-- and frame, in one undo step. Two modes:
+--   "canvas" (default) — keep pixels at their native resolution, anchored by
+--     `opts.anchor` (a 3x3 grid: nw/n/ne/w/c/e/sw/s/se); the canvas grows with
+--     transparent margin or crops the overflow. For a bigger sheet / a mock.
+--   "scale"  — nearest-neighbour resample the content to fill the new size.
+-- The pivot, slices, and gradient-fill handles ride the same transform. The
+-- struct snapshot now carries w/h, so undo restores the old size too.
+local ANCHOR = { -- name -> {hx, hy}; 0 = near edge, 1 = centered, 2 = far edge
+  nw = { 0, 0 }, n = { 1, 0 }, ne = { 2, 0 },
+  w  = { 0, 1 }, c = { 1, 1 }, e  = { 2, 1 },
+  sw = { 0, 2 }, s = { 1, 2 }, se = { 2, 2 },
+}
+M.ANCHOR = ANCHOR -- shared with the studio's anchor picker / preview
+
+function M.set_size(doc, nw, nh, opts)
+  opts = opts or {}
+  nw = math.max(1, math.floor(nw or doc.w))
+  nh = math.max(1, math.floor(nh or doc.h))
+  if nw == doc.w and nh == doc.h then return false end
+  local ow, oh = doc.w, doc.h
+  local scale = opts.mode == "scale"
+  local ox, oy = 0, 0
+  if not scale then
+    local a = ANCHOR[opts.anchor] or ANCHOR.nw
+    ox = a[1] * (nw - ow) // 2
+    oy = a[2] * (nh - oh) // 2
+  end
+  local before = capture_struct(doc)
+  for _, l in ipairs(doc.layers) do
+    for fi, cell in ipairs(l.cells) do
+      local img
+      if scale then
+        img = paint.scale(cell, nw, nh) -- resample (returns a new image)
+      else
+        img = paint.image(nw, nh)       -- transparent; blit clips at both edges
+        paint.blit(img, ox, oy, cell, 0, 0, ow, oh, "set")
+      end
+      l.cells[fi] = img
+    end
+  end
+  doc.w, doc.h, doc._shade = nw, nh, nil -- gradient scratch re-sizes lazily
+  -- remap geometry into the new space
+  if scale then
+    local sx, sy = nw / ow, nh / oh
+    local function rnd(v) return math.floor(v + 0.5) end
+    doc.pivot.x = math.max(0, math.min(nw - 1, rnd(doc.pivot.x * sx)))
+    doc.pivot.y = math.max(0, math.min(nh - 1, rnd(doc.pivot.y * sy)))
+    for _, s in ipairs(doc.slices) do
+      s.x, s.y, s.w, s.h = clamp_rect(doc, rnd(s.x * sx), rnd(s.y * sy),
+        math.max(1, rnd(s.w * sx)), math.max(1, rnd(s.h * sy)))
+    end
+    for _, l in ipairs(doc.layers) do
+      local f = l.fill
+      if f then
+        f.p0.x, f.p0.y, f.p1.x, f.p1.y = f.p0.x * sx, f.p0.y * sy, f.p1.x * sx, f.p1.y * sy
+      end
+    end
+  else
+    doc.pivot.x = math.max(0, math.min(nw - 1, doc.pivot.x + ox))
+    doc.pivot.y = math.max(0, math.min(nh - 1, doc.pivot.y + oy))
+    for _, s in ipairs(doc.slices) do
+      s.x, s.y, s.w, s.h = clamp_rect(doc, s.x + ox, s.y + oy, s.w, s.h)
+    end
+    for _, l in ipairs(doc.layers) do
+      local f = l.fill
+      if f then
+        f.p0.x, f.p0.y, f.p1.x, f.p1.y = f.p0.x + ox, f.p0.y + oy, f.p1.x + ox, f.p1.y + oy
+      end
+    end
+  end
+  push_struct(doc, before)
+  return true
 end
 
 -- ---- gradient fills (non-destructive; Phase 3, STUDIO.md §6) ----

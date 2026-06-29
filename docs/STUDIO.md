@@ -130,6 +130,16 @@ technique, §6) need many colors and an indexed mode would fight them. (An
 optional indexed/palette-swap mode can come later for those who want it; it is
 not the default.)
 
+**Document size** is set at `new` and changeable any time via `cm.sprite.set_size(
+doc, w, h, {mode, anchor})` (menubar **size**, STUDIO.md §5) — so you can start
+small and grow into a big sprite sheet or block out a whole-scene mock. Two modes:
+**canvas** (default) keeps pixels at native resolution, anchored by a 3×3 grid
+(`nw`…`se`), growing with transparent margin or cropping the overflow; **scale**
+nearest-neighbour resamples the content to fill the new size. It rebuilds every
+cell of every layer/frame and remaps the pivot, slices, and gradient-fill handles
+into the new space — all one undo step (the struct snapshot carries `w/h`, so undo
+restores the old dimensions too).
+
 **Undo/redo** reuses the PAL's frozen sparse-XOR codec: each stroke records a
 `pal.buf_delta1(before, after)` of the touched cell; undo is `buf_apply_delta1`
 (self-inverse). Structural ops (add/remove/reorder layer, resize, paste-commit)

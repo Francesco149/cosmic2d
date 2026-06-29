@@ -263,8 +263,9 @@ runs a clip but not frame-stepped; **onion shows only the immediate neighbors**
 (±1); **clip editing isn't separately undoable** (only frame ops are — clips
 carry no pixels). **Gradient** fills aren't clipped by the selection (they're
 masked by layer alpha instead — a possible future nicety); a gradient fill only
-recolors a layer's existing pixels (by design); **one fill per layer**; whole-
-sprite **resize/rotate of a non-square doc** is deferred; the dock can need its
+recolors a layer's existing pixels (by design); **one fill per layer**; whole-doc
+**resize is now done** (menubar size / `cm.sprite.set_size`, see round 2 below) —
+only **rotate of a non-square doc** stays deferred; the dock can need its
 scroll on short windows. None blocking.
 
 ### Studio feedback round 1 (2026-06-28) — `35b150a`
@@ -281,6 +282,28 @@ Two asks from the human's first real use ("feels great so far"):
   the one below — `sprite.merge_down` (opacity + gradient fill honored, one undo
   step). selftest +3. Verified by `--win` captures (clipped fill, paste→2 layers,
   merge→1).
+
+### Studio feedback round 2 (2026-06-29) — image-size / canvas resize
+The human's ask: "set the image size to anything, so I can work on a big sprite
+sheet or a mock" — the studio had no way to change a doc's dimensions (the
+whole-sprite resize deferred since Phase 2d). Now done, end to end:
+- **`cm.sprite.set_size(doc, w, h, {mode, anchor})`** — rebuilds every cell of
+  every layer/frame in one undo step. **canvas** mode (default) keeps pixels at
+  native resolution, anchored by a 3×3 grid (`nw`…`se`) — grow with transparent
+  margin or crop the overflow (for a bigger sheet / a mock); **scale** mode
+  nearest-neighbour resamples the content to fill. Remaps the pivot, slices, and
+  gradient-fill handles into the new space. **Key fix**: the struct-undo snapshot
+  now carries `w/h` (capture/restore_struct), so undo restores the old dimensions
+  alongside the old-sized cells — previously snapshots assumed a fixed size.
+- **Studio UI**: a menubar **size** button opens an **IMAGE SIZE** modal (W/H
+  digit fields, a canvas-vs-scale toggle, the 3×3 anchor picker, and a live
+  preview of where the existing pixels land in the new canvas). Enter applies;
+  apply commits a pending float first so no pixels are lost. Modal follows the
+  asset-browser takeover pattern (`M.resize`, gated in `M.frame`).
+- selftest **22506→22524** (+18 KATs: canvas grow/crop, anchors, scale-resample,
+  pivot/slice remap, undo restores size+pixels, no-op returns false). All green;
+  pure render-only studio code (D040 §1 — no determinism tax). Five `--win`
+  captures on… (push to llm-feed). No engine/binary/sim change.
 
 ### M10 Phase 5 — pivots + slices (this session) — `082eb0b`, `7cf0b29`
 The keystone authoring metadata, end to end (D041): the sprite's runtime
@@ -352,7 +375,8 @@ Shift constrain · wheel zoom · middle-drag pan · Ctrl+Z/Y · Ctrl+S save (**l
 reloads the in-game sprite — no restart**) · ^C/^X/
 ^V/^D clipboard (**paste → new layer**) · Enter stamp float · Del clear · with a
 marquee, paint/fill/shape **clip to the selection** · H/J flip · `[`/`]` rotate ·
-menubar fH/fV/rL/rR/x2//2 + browse/new/save/close · rail brs/1px · palette slots
+menubar fH/fV/rL/rR/x2//2 + browse/new/**size** (resize doc: canvas/scale +
+anchor)/save/close · rail brs/1px · palette slots
 L=load R=save · **LAYERS** panel: add/dup/del · up/dn/**merge** (flatten onto
 below). **Gradient**: drag an axis on a layer → a non-destructive fill
 masked to its pixels; drag the p0/p1 handles; the dock panel tunes type / ramp

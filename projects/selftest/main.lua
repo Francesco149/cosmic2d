@@ -1704,6 +1704,50 @@ local function t_sprite()
   sprite.undo(sl)
   check(#sl.slices == 1, "sprite: undo restores the deleted slice")
 
+  -- set_size (whole-doc resize): canvas crop/pad (anchored) or scale-resample,
+  -- one undo step; the struct snapshot now carries w/h so undo restores the size.
+  local rz = sprite.new(4, 4)
+  paint.set(sprite.cell(rz), 0, 0, RED)   -- top-left marker
+  paint.set(sprite.cell(rz), 3, 3, GRN)   -- bottom-right marker
+  rz.pivot = { x = 2, y = 3 }
+  sprite.add_slice(rz, "box"); sprite.set_slice_rect(rz, 1, 1, 1, 2, 2)
+  local und0 = #rz._undo
+  check(sprite.set_size(rz, 8, 6, { mode = "canvas", anchor = "nw" }) == true,
+        "sprite: set_size returns true on a real change")
+  check(rz.w == 8 and rz.h == 6, "sprite: set_size grew the doc")
+  check(paint.get(sprite.cell(rz), 0, 0) == RED, "sprite: nw-anchored pixel stays put")
+  check(paint.get(sprite.cell(rz), 3, 3) == GRN, "sprite: nw-anchored interior kept")
+  check(paint.get(sprite.cell(rz), 7, 5) == 0, "sprite: grown margin is transparent")
+  check(rz.pivot.x == 2 and rz.pivot.y == 3, "sprite: nw resize keeps pivot coords")
+  check(rz.slices[1].x == 1 and rz.slices[1].w == 2, "sprite: nw resize keeps slice rect")
+  check(#rz._undo == und0 + 1, "sprite: set_size is one undo step")
+  -- undo restores BOTH the old size and the old pixels (the w/h-in-snapshot fix)
+  sprite.undo(rz)
+  check(rz.w == 4 and rz.h == 4, "sprite: undo restores the old size")
+  check(paint.get(sprite.cell(rz), 3, 3) == GRN, "sprite: undo restores the old pixels")
+  sprite.redo(rz)
+  check(rz.w == 8 and paint.get(sprite.cell(rz), 0, 0) == RED, "sprite: redo re-applies the resize")
+  local und1 = #rz._undo
+  check(sprite.set_size(rz, 8, 6) == false, "sprite: set_size no-op returns false")
+  check(#rz._undo == und1, "sprite: set_size no-op pushes nothing")
+  -- center anchor offsets the content; the near edge is padded transparent
+  local rc = sprite.new(2, 2)
+  paint.set(sprite.cell(rc), 0, 0, RED)
+  sprite.set_size(rc, 6, 6, { mode = "canvas", anchor = "c" }) -- offset (2,2)
+  check(paint.get(sprite.cell(rc), 2, 2) == RED, "sprite: center anchor offsets content")
+  check(paint.get(sprite.cell(rc), 0, 0) == 0, "sprite: center anchor pads the near edge")
+  -- shrink crops a pixel outside the new bounds (nw anchor)
+  local rk = sprite.new(4, 4)
+  paint.set(sprite.cell(rk), 3, 3, RED)
+  sprite.set_size(rk, 2, 2, { mode = "canvas", anchor = "nw" })
+  check(rk.w == 2 and paint.get(sprite.cell(rk), 1, 1) == 0, "sprite: shrink crops overflow")
+  -- scale mode resamples + remaps the pivot: a solid 2x2 stays solid at 4x4
+  local rsz = sprite.new(2, 2)
+  paint.fill(sprite.cell(rsz), RED); rsz.pivot = { x = 1, y = 1 }
+  sprite.set_size(rsz, 4, 4, { mode = "scale" })
+  check(rsz.w == 4 and paint.get(sprite.cell(rsz), 3, 3) == RED, "sprite: scale resamples content")
+  check(rsz.pivot.x == 2 and rsz.pivot.y == 2, "sprite: scale remaps the pivot")
+
   -- undo / redo a stroke (the delta1 codec), and a no-op pushes nothing
   local d = sprite.new(4, 4)
   local c = sprite.cell(d)

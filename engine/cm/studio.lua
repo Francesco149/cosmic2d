@@ -326,6 +326,17 @@ end
 
 function M.open_browser() M.browser = true; M.scan_assets() end
 
+-- open the IMAGE SIZE modal (resize the whole document — STUDIO.md §3), seeding
+-- the W/H fields from the current doc and keeping the last-used mode/anchor.
+function M.open_resize()
+  if not M.doc then return end
+  M.resize = true
+  M.rs_w, M.rs_h = tostring(M.doc.w), tostring(M.doc.h)
+  M.rs_mode = M.rs_mode or "canvas"
+  M.rs_anchor = M.rs_anchor or "nw"
+  ui.blur() -- start with neither field focused
+end
+
 -- ---- canvas mapping ----
 
 -- the doc pixel under a ui-canvas point, or nil if outside the image
@@ -1682,6 +1693,7 @@ local function draw_menu(r)
   ui.text(r.x + 52, r.y + 3, name .. (M.doc and M.doc.dirty and " *" or ""), st.text)
   -- right-aligned actions
   local acts = { { "browse", M.open_browser }, { "new", function() M.new_doc(32, 32) end },
+                 { "size", M.open_resize },
                  { "save", M.save }, { "close", function() M.on = false end } }
   local bw = 40
   local bx = r.x + r.w - (bw + 2) * #acts - 2
@@ -1745,6 +1757,93 @@ local function draw_browser(uw, uh)
       end
     end
   end
+end
+
+-- the IMAGE SIZE modal (resize the whole document): W/H fields, a canvas-vs-scale
+-- toggle, a 3x3 anchor picker (canvas mode), and a live preview of where the
+-- existing pixels land in the new canvas. Apply calls sprite.set_size (one undo
+-- step); Enter in a field applies, the cancel button dismisses.
+local function draw_resize(uw, uh)
+  local st, doc = ui.style, M.doc
+  ui.capture_mouse(); ui.capture_keys()
+  ui.rect(0, 0, uw, uh, { 0.04, 0.04, 0.06, 1 }) -- opaque base (modal takeover)
+  local pw, ph = 300, 196
+  local px, py = (uw - pw) // 2, (uh - ph) // 2
+  ui.rect(px, py, pw, ph, st.panel)
+  ui.frame_rect(px, py, pw, ph, st.accent)
+  local x = px + 12
+  ui.text(x, py + 9, "IMAGE SIZE", st.accent)
+  ui.text(x + 11 * st.gw, py + 9, ("(now %dx%d)"):format(doc.w, doc.h), st.text_dim)
+
+  -- W / H fields (digits only). Enter on either applies.
+  local y, fw = py + 26, 56
+  ui.text(x, y + 3, "W", st.text)
+  local wv, _, wsub = ui.text_input("rs_w", M.rs_w or "", { rect = { x + 14, y, fw, 13 } })
+  M.rs_w = wv:gsub("%D", "")
+  ui.text(x + 14 + fw + 12, y + 3, "H", st.text)
+  local hv, _, hsub = ui.text_input("rs_h", M.rs_h or "", { rect = { x + 14 + fw + 26, y, fw, 13 } })
+  M.rs_h = hv:gsub("%D", "")
+
+  -- mode toggle
+  y = y + 22
+  ui.text(x, y + 3, "mode", st.text_dim)
+  local mw = 92
+  if ui.button("canvas (crop/pad)", { rect = { x + 34, y, mw, 13 }, id = "rs_mc",
+      color = M.rs_mode == "canvas" and st.accent or st.text_dim }) then M.rs_mode = "canvas" end
+  if ui.button("scale (resample)", { rect = { x + 34 + mw + 4, y, mw, 13 }, id = "rs_ms",
+      color = M.rs_mode == "scale" and st.accent or st.text_dim }) then M.rs_mode = "scale" end
+
+  -- anchor 3x3 grid (canvas mode) — where the existing pixels stick
+  y = y + 22
+  local canvas_mode = M.rs_mode ~= "scale"
+  ui.text(x, y + 16, "anchor", canvas_mode and st.text_dim or st.track)
+  local gx, cs = x + 44, 14
+  for i, a in ipairs({ "nw", "n", "ne", "w", "c", "e", "sw", "s", "se" }) do
+    local cxx = gx + ((i - 1) % 3) * (cs + 2)
+    local cyy = y + ((i - 1) // 3) * (cs + 2)
+    local clicked, hot = ui.hit("rs_a" .. a, cxx, cyy, cs, cs)
+    if clicked and canvas_mode then M.rs_anchor = a end
+    local sel = canvas_mode and M.rs_anchor == a
+    ui.rect(cxx, cyy, cs, cs, sel and st.accent or (hot and canvas_mode and st.widget_hot or st.widget))
+    ui.frame_rect(cxx, cyy, cs, cs, st.panel_edge)
+  end
+
+  -- live preview: the new canvas with the existing content's footprint inside
+  -- (sits to the right of the anchor grid so it clears the wide mode buttons)
+  local pv, prx, pry = 72, px + pw - 84, y + 8
+  ui.text(prx, pry - 11, "preview", st.text_dim)
+  local nw = max(1, tonumber(M.rs_w) or doc.w)
+  local nh = max(1, tonumber(M.rs_h) or doc.h)
+  local s = min(pv / nw, pv / nh)
+  local cw, ch = max(1, floor(nw * s)), max(1, floor(nh * s))
+  local cx, cy = prx + (pv - cw) // 2, pry + (pv - ch) // 2
+  ui.rect(cx, cy, cw, ch, st.track); ui.frame_rect(cx, cy, cw, ch, st.panel_edge)
+  if not canvas_mode then
+    ui.rect(cx, cy, cw, ch, st.widget_active) -- content fills the whole new canvas
+  else
+    local a = sprite.ANCHOR[M.rs_anchor] or sprite.ANCHOR.nw
+    local ox = a[1] * (nw - doc.w) // 2
+    local oy = a[2] * (nh - doc.h) // 2
+    local rx0, ry0 = cx + floor(ox * s), cy + floor(oy * s)
+    local rx1, ry1 = rx0 + floor(doc.w * s), ry0 + floor(doc.h * s)
+    rx0, ry0 = max(rx0, cx), max(ry0, cy) -- clip the footprint to the canvas box
+    rx1, ry1 = min(rx1, cx + cw), min(ry1, cy + ch)
+    if rx1 > rx0 and ry1 > ry0 then ui.rect(rx0, ry0, rx1 - rx0, ry1 - ry0, st.widget_active) end
+  end
+
+  -- apply / cancel
+  local function apply()
+    local aw = max(1, min(4096, tonumber(M.rs_w) or doc.w))
+    local ah = max(1, min(4096, tonumber(M.rs_h) or doc.h))
+    M.commit_float() -- stamp a pending move/paste first so its pixels aren't lost
+    sprite.set_size(doc, aw, ah, { mode = M.rs_mode, anchor = M.rs_anchor })
+    M.dirty, M.need_fit, M.resize = true, true, false
+    M.reset_sel()
+  end
+  local by = py + ph - 22
+  if ui.button("apply", { rect = { px + pw - 126, by, 58, 15 }, id = "rs_ok" }) then apply() end
+  if ui.button("cancel", { rect = { px + pw - 64, by, 54, 15 }, id = "rs_no" }) then M.resize = false end
+  if wsub or hsub then apply() end
 end
 
 -- the bottom timeline (STUDIO.md §5): the frame thumbnail strip (select / add /
@@ -1856,6 +1955,7 @@ function M.frame()
 
   local uw, uh = view.surface_size()
   if M.browser then draw_browser(uw, uh); return end -- modal overlay
+  if M.resize then draw_resize(uw, uh); return end    -- modal overlay
   local body_h = uh - MENU_H - TIME_H
   M.menu = { x = 0, y = 0, w = uw, h = MENU_H }
   M.rail = { x = 0, y = MENU_H, w = RAIL_W, h = body_h }
