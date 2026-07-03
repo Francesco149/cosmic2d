@@ -131,17 +131,18 @@ function M.generate(seed, knobs)
   d.scheme = pin(knobs.outfit_scheme, rng:pick({ "mono", "complement", "analogous", "triad" }))
   local triad_flip, ana_amt, ana_sign =
     rng:chance(0.5), rng:uniform(0.08, 0.16), (rng:chance(0.5) and 1 or -1)
-  local out_h
-  if d.scheme == "mono" then out_h = hair_h
-  elseif d.scheme == "complement" then out_h = (hair_h + 0.5) % 1
-  elseif d.scheme == "triad" then out_h = (hair_h + (triad_flip and 1 or 2) / 3) % 1
-  else out_h = (hair_h + ana_amt * ana_sign) % 1 end
-  local out_s = rng:uniform(0.35, 0.6)
-  local out_v = rng:uniform(0.75, 0.95)
+  local scheme_h
+  if d.scheme == "mono" then scheme_h = hair_h
+  elseif d.scheme == "complement" then scheme_h = (hair_h + 0.5) % 1
+  elseif d.scheme == "triad" then scheme_h = (hair_h + (triad_flip and 1 or 2) / 3) % 1
+  else scheme_h = (hair_h + ana_amt * ana_sign) % 1 end
+  local out_h = pin(knobs.out_h, scheme_h)
+  local out_s = pin(knobs.out_s, rng:uniform(0.35, 0.6))
+  local out_v = pin(knobs.out_v, rng:uniform(0.75, 0.95))
   local outR = palgen.ramp(out_h, out_s, out_v, 4)
   local out2_h = (out_h + rng:uniform(0.4, 0.6)) % 1
   local out2R = palgen.ramp(out2_h, rng:uniform(0.2, 0.45), rng:uniform(0.85, 1.0), 3)
-  local accent = paint.hsv((eye_h + rng:uniform(-0.06, 0.06)) % 1, 0.75, 1.0)
+  local accent = paint.hsv(pin(knobs.accent_h, (eye_h + rng:uniform(-0.06, 0.06)) % 1), 0.75, 1.0)
   local blushC = paint.hsv(0.98, 0.42, 1.0)
   local dark = palgen.outline(out_h, out_s, out_v)
 

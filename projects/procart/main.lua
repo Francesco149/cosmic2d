@@ -30,7 +30,7 @@ local tilegen = cm.require("tilegen")
 local W, H = pal.gfx_size()
 local game = {}
 
-local PAGES = { "cast", "moods", "tiles", "marry", "terrain" }
+local PAGES = { "cast", "moods", "trio", "tiles", "marry", "terrain" }
 
 local BG = paint.pack(30, 26, 40, 255) -- deep violet-gray checker
 local BG2 = paint.pack(38, 33, 51, 255)
@@ -87,6 +87,41 @@ function build.moods(page, labels, seed)
   end
   label(labels, 8, 6, ("MOODS - seed %d (%s/%s), one knob turned"):format(
     seed, base.hair, base.outfit), HEADC)
+end
+
+-- the designed-cast proof: pin the knobs that ARE the character, let the
+-- seed fill the rest — the intended production workflow (PROCART.md §2)
+local TRIO = {
+  { name = "vesper?", note = "cool tsundere architect", knobs = {
+    mood = "cool", hair = "long", fringe = "m", outfit = "suit", acc = "ahoge",
+    back = "crystal", hair_h = 0.62, hair_s = 0.06, hair_v = 0.97,
+    eye_h = 0.50, out_h = 0.13, out_s = 0.10, out_v = 0.96, accent_h = 0.50,
+    head_w = 14, head_h = 10, stature = 1 } },
+  { name = "gemma?", note = "chuuni succubus cosplay", knobs = {
+    mood = "smug", hair = "twintail", fringe = "swept", outfit = "suit",
+    acc = "horns", back = "butterfly", hair_h = 0.76, hair_s = 0.38,
+    hair_v = 0.92, eye_h = 0.88, out_h = 0.83, out_s = 0.55, out_v = 0.30,
+    accent_h = 0.12, head_w = 14, head_h = 10, stature = 0 } },
+  { name = "lumi?", note = "bunny idol on stage", knobs = {
+    mood = "sunny", hair = "buns", fringe = "straight", outfit = "dress",
+    acc = "bunny_ears", back = "none", hair_h = 0.66, hair_s = 0.08,
+    hair_v = 0.95, eye_h = 0.99, out_h = 0.78, out_s = 0.30, out_v = 0.95,
+    accent_h = 0.13, head_w = 14, head_h = 10, stature = 0 } },
+}
+
+function build.trio(page, labels, seed)
+  checker(page)
+  for i, t in ipairs(TRIO) do
+    local x = 44 + (i - 1) * 140
+    local img, d = chargen.generate(seed + i, t.knobs)
+    blit_scaled(page, img, x, 40, 4)
+    label(labels, x, 172, t.name, HEADC)
+    label(labels, x, 181, t.note, DIMC)
+    label(labels, x, 190, d.mood .. "/" .. d.hair .. "/" .. d.outfit, DIMC)
+  end
+  label(labels, 8, 6, ("TRIO - the cast via pinned knobs + seed %d fill"):format(seed), HEADC)
+  label(labels, 8, 220, "pin what IS the character (hair/outfit/palette/mood),", DIMC)
+  label(labels, 8, 229, "reroll the seed for everything else", DIMC)
 end
 
 function build.tiles(page, labels, seed)
@@ -205,7 +240,7 @@ function game.init()
     { "prev", input.key.left }, { "next", input.key.right },
     { "reroll", input.key.r },
     { "p1", input.key["1"] }, { "p2", input.key["2"] }, { "p3", input.key["3"] },
-    { "p4", input.key["4"] }, { "p5", input.key["5"] },
+    { "p4", input.key["4"] }, { "p5", input.key["5"] }, { "p6", input.key["6"] },
   })
 end
 
