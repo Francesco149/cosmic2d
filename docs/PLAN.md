@@ -174,9 +174,12 @@ needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
   animation) shipped, and the exit *proof* is hit (the sandbox player draws a
   studio-authored, clip-animated sprite, `record→verify` byte-exact). Phase 5 in
   progress — **pivots + named slices DONE** (studio tools + a `.meta` sidecar +
-  the game anchors the pivot; D041); procedural generator · LUT pass · asset
-  hot-reload · headless `--bake` + the human authoring real assets remain.** See
-  STATUS.md.
+  the game anchors the pivot; D041); LUT pass · headless `--bake` + the human
+  authoring real assets remain. The **procedural sprite generator** expanded
+  into the standalone **procart experiment** (2026-07-03, D044,
+  **PROCART.md**): `projects/procart/` — procedural characters with a
+  personality dial + terrain materials that tile cleanly and marry at borders;
+  promote / mine / abandon on the human's taste pass.** See STATUS.md.
 - **M11 — rotational physics & destruction**: a box2d-lite-style rigid-body
   solver — deterministic, born a versioned PAL kernel (`name@1`, contract rule
   4) — plus breakables, knock-over props, throw. *Exit*: throwing/knocking

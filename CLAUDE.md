@@ -30,6 +30,8 @@ The art targets a Wadanohara-like pixel style. See `docs/GAME.md`.
   one-pagers live in **`docs/maps/`**.
 - **ARCHITECTURE.md** — two-layer design, state model, determinism iron
   rules, PAL API contract.
+- **PROCART.md** — the procedural pixel-art experiment (`projects/procart/`):
+  character/tile generators, the marry bake, verdict criteria (D044).
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.
 - **PROCESS.md** — session protocol, commits, build/test/verify commands,
   llm-feed recipes, when to ask the human.

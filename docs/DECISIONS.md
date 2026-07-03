@@ -1190,3 +1190,37 @@ these primitives without changing the contract. A SIMD/wide-word inner loop is a
 pure C-internal optimization if profiling asks. The byte-exact-match-to-Lua rule
 is **permanent** as long as both paths exist (a new blend mode adds a new `mode`
 number; it never changes an existing one's rounding).
+
+## D044 — procart: the procedural-art experiment cartridge (2026-07-03)
+
+The human asked for an **experimental separate project** testing whether
+mostly-procedural pixel art can hit the cute-with-personality bar — procedural
+characters (knobs + a sprinkle of baked choices, enough variety for a full
+cast) and procedural terrain primitives that tile cleanly and **marry** two
+tiles at a border without a visible seam. This also absorbs and expands the
+open M10 "procedural sprite generator" next-step into a full pipeline probe.
+
+Decisions:
+
+- **A separate cartridge, `projects/procart/`** — never in a golden suite; the
+  experiment may be promoted, mined for parts, or abandoned without touching
+  the game projects. Design + verdict criteria live in **docs/PROCART.md**.
+- **Art generation gets its own pure PRNG** (`prng.lua`, splitmix64 + coord
+  hashes) — never `cm.rand`: assets are pure fn(seed, knobs), and the sim
+  stream must not move when art is generated. Dev/render class per D040
+  (proved by record→verify with generation running in draw).
+- **World-space hashing is the tiling strategy**: materials are pixel
+  functions of world coordinates, so region bakes are seam-free by
+  construction; the same functions run in periodic mode (feature periods
+  divide the tile) for self-wrapping atlas tiles.
+- **Border marrying = per-material indicator fields + per-material noise
+  wobble + Bayer-dithered tie band** (never alpha blends); "air" is a
+  material, so ground silhouettes get the same organic treatment.
+- **Hue-shifted ramps (`palgen`) are the shared color logic** for every
+  generated asset — the coherence mechanism.
+- **Knob-pinning must not reshuffle the seed's other choices** (constant rng
+  draw count): one seed can wear every mood — the personality dial.
+
+Revisit triggers: the human's taste pass on the llm-feed gallery (promote /
+mine / abandon); if promoted, how bakes enter the M10 asset pipeline
+(.spr layers for hand-finishing vs direct PNG strips).
