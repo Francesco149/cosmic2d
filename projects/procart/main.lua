@@ -33,6 +33,7 @@ local input = cm.require("cm.input")
 local text = cm.require("cm.text")
 local paint = cm.require("cm.paint")
 local chargen = cm.require("chargen")
+local chargen2 = cm.require("chargen2")
 local tilegen = cm.require("tilegen")
 
 local W, H = pal.gfx_size()
@@ -78,64 +79,50 @@ local build = {}
 
 function build.cast(page, labels, seed)
   checker(page)
-  for i = 0, 11 do
-    local col, row = i % 6, i // 6
-    local x, y = 8 + col * 79, 22 + row * 118
-    local img, d = chargen.generate(seed * 1000 + i)
-    blit_scaled(page, img, x, y, 3)
-    label(labels, x, y + 98, d.mood)
-    label(labels, x, y + 106, d.hair .. "/" .. d.outfit, DIMC)
+  for i = 0, 9 do
+    local col, row = i % 5, i // 5
+    local x, y = 4 + col * 96, 14 + row * 124
+    local img, d = chargen2.generate(seed * 1000 + i)
+    blit_scaled(page, img, x, y, 2)
+    label(labels, x + 26, y + 106, d.mood)
+    label(labels, x + 12, y + 114, d.hair .. "/" .. d.outfit, DIMC)
   end
-  label(labels, 8, 6, ("CAST - 12 characters, seeds %d000+"):format(seed), HEADC)
+  label(labels, 8, 4, ("CAST - 10 characters at 48x64, seeds %d000+"):format(seed), HEADC)
 end
 
 function build.moods(page, labels, seed)
   checker(page)
-  local _, base = chargen.generate(seed) -- design sheet for the caption
-  for i, m in ipairs(chargen.MOOD_NAMES) do
+  local _, base = chargen2.generate(seed) -- design sheet for the caption
+  for i, m in ipairs(chargen2.MOOD_NAMES) do
     local x = i <= 4 and (28 + (i - 1) * 108) or (82 + (i - 5) * 108)
-    local y = i <= 4 and 22 or 142
-    local img = chargen.generate(seed, { mood = m })
-    blit_scaled(page, img, x, y, 3)
-    label(labels, x, y + 98, m)
+    local y = i <= 4 and 16 or 142
+    local img = chargen2.generate(seed, { mood = m })
+    blit_scaled(page, img, x, y, 2)
+    label(labels, x + 34, y + 108, m)
   end
-  label(labels, 8, 6, ("MOODS - seed %d (%s/%s), one knob turned"):format(
+  label(labels, 8, 4, ("MOODS - seed %d (%s/%s), one knob turned"):format(
     seed, base.hair, base.outfit), HEADC)
 end
 
--- the designed-cast proof: pin the knobs that ARE the character, let the
--- seed fill the rest — the intended production workflow (PROCART.md §2)
-local TRIO = {
-  { name = "vesper?", note = "cool tsundere architect", knobs = {
-    mood = "cool", hair = "long", fringe = "m", outfit = "suit", acc = "ahoge",
-    back = "crystal", hair_h = 0.62, hair_s = 0.06, hair_v = 0.97,
-    eye_h = 0.50, out_h = 0.13, out_s = 0.10, out_v = 0.96, accent_h = 0.50,
-    head_w = 14, head_h = 10, stature = 1 } },
-  { name = "gemma?", note = "chuuni succubus cosplay", knobs = {
-    mood = "smug", hair = "twintail", fringe = "swept", outfit = "suit",
-    acc = "horns", back = "butterfly", hair_h = 0.76, hair_s = 0.38,
-    hair_v = 0.92, eye_h = 0.88, out_h = 0.83, out_s = 0.55, out_v = 0.30,
-    accent_h = 0.12, head_w = 14, head_h = 10, stature = 0 } },
-  { name = "lumi?", note = "bunny idol on stage", knobs = {
-    mood = "sunny", hair = "buns", fringe = "straight", outfit = "dress",
-    acc = "bunny_ears", back = "none", hair_h = 0.66, hair_s = 0.08,
-    hair_v = 0.95, eye_h = 0.99, out_h = 0.78, out_s = 0.30, out_v = 0.95,
-    accent_h = 0.13, head_w = 14, head_h = 10, stature = 0 } },
+-- the designed-cast proof, round 2: the baked cast bundles live in
+-- chargen2.CAST — pin what IS the character, the seed fills the rest
+local TRIO_NOTES = {
+  vesper = "the auditor (protagonist)",
+  gemma = "rival architect, cosplay",
+  lumi = "the bunny idol",
 }
 
 function build.trio(page, labels, seed)
   checker(page)
-  for i, t in ipairs(TRIO) do
-    local x = 44 + (i - 1) * 140
-    local img, d = chargen.generate(seed + i, t.knobs)
-    blit_scaled(page, img, x, 40, 4)
-    label(labels, x, 172, t.name, HEADC)
-    label(labels, x, 181, t.note, DIMC)
-    label(labels, x, 190, d.mood .. "/" .. d.hair .. "/" .. d.outfit, DIMC)
+  for i, name in ipairs(chargen2.CAST_NAMES) do
+    local x = 24 + (i - 1) * 152
+    local img, d = chargen2.generate(seed + i, chargen2.CAST[name])
+    blit_scaled(page, img, x, 22, 3)
+    label(labels, x + 40, 216, name, HEADC)
+    label(labels, x + 8, 225, TRIO_NOTES[name], DIMC)
+    label(labels, x + 8, 234, d.mood .. "/" .. d.hair .. "/" .. d.outfit, DIMC)
   end
-  label(labels, 8, 6, ("TRIO - the cast via pinned knobs + seed %d fill"):format(seed), HEADC)
-  label(labels, 8, 220, "pin what IS the character (hair/outfit/palette/mood),", DIMC)
-  label(labels, 8, 229, "reroll the seed for everything else", DIMC)
+  label(labels, 8, 4, ("TRIO - the baked cast (chargen2.CAST) + seed %d fill"):format(seed), HEADC)
 end
 
 function build.mobs(page, labels, seed)
