@@ -8,6 +8,9 @@
 /result
 /.direnv/
 
+# agent-harness local settings
+/.claude/
+
 # scratch
 /tmp/
 /tests/out/
