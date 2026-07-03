@@ -1,9 +1,11 @@
 # procart — the procedural pixel-art experiment
 
-> Status: round 1 shipped 2026-07-03 (ADR D044). **An experiment, explicitly
-> allowed to fail**: it may be promoted into the cosmic asset pipeline, mined
-> for parts, or abandoned for hand-made art in the studio (M10). The human's
-> taste pass on the llm-feed gallery decides.
+> Status: round 1 shipped 2026-07-03 (ADR D044); **human verdict same day:
+> "promising enough to warrant more exploration" — PROMOTED to round 2.**
+> Round-2 brief (see STATUS.md): terrain style exploration targeting the
+> Grand Canyon hub map with tunable style/mood knobs; characters at double
+> resolution (48x64), more anime-ish per the references, with hairstyles/
+> faces/body types baked from the actual cast.
 
 ## 1. The question
 

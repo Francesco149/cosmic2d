@@ -49,16 +49,27 @@ generator" next-step. **No engine/sim/binary change** (all new code is the
 - All 7 pages pushed to llm-feed with notes. `.claude/` gitignored; the
   human's mock/untitled studio files left untracked as asked.
 
-**Next step (resume here):** the **human's taste pass** on the llm-feed gallery
-decides promote / mine-for-parts / abandon (PROCART.md §3 has the agent's
-read: palette coherence + MOODS + TERRAIN strongest; outfits-below-collar +
-tiny accessories weakest). If promoted, the natural follow-ups (PROCART.md §4):
-bake married terrain for the cosmic greybox maps, procedural NPC crowds +
-portraits (chargen at 48x64), mobgen → real mob sprites w/ 2-3 frame bob
-anims, K-Centroid port as a studio import command, and a studio "generate →
-hand-finish" bridge (drop a procart result into a .spr as layers). Otherwise
-M-content resumes where the 2026-06-29 entry below left off (the human mocks
-the art; then dialogue runner + triggers + combat M12).
+**Taste pass verdict (human, 2026-07-03): "promising enough to warrant more
+exploration" — PROMOTED to round 2.** The next-session brief, verbatim intent:
+
+1. **Terrain styles**: explore *different styles* for the terrain — try
+   several looks for generating the **Grand Canyon hub map** (rim-hub; use
+   `docs/maps/rim-hub.md` + the human's mock `projects/cosmic/art/mock.png`
+   as the anchor), and ideally a **demo with tunable style/mood knobs**
+   (style presets + mood dials on the material palettes/shapes — palgen hue/
+   sat/value anchors, facet scale, dither amount, LUT-ish dusk/day/dread
+   grading are the natural knobs).
+2. **Characters need more tweaking**: try **double resolution** (24x32 →
+   48x64), **more anime-ish** in the style of the references
+   (`F:\Pictures\pixel-art-ref`, the oc sheets); potentially **bake in
+   hairstyles, faces, and body types based on our actual cast**
+   (Vesper/Gemma/Lumi first, more once the cast aesthetic is locked) —
+   i.e. shift the baked:procedural ratio toward baked for the identity
+   carriers while keeping procedural variety for crowds.
+
+Deferred/backlog from round 1 (PROCART.md §4): mob bob anims, K-Centroid
+studio import, the studio "generate → hand-finish" bridge, NPC crowds.
+M-content (dialogue runner, combat M12) resumes after the art exploration.
 
 ---
 
