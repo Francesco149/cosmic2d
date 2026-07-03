@@ -30,7 +30,7 @@ local tilegen = cm.require("tilegen")
 local W, H = pal.gfx_size()
 local game = {}
 
-local PAGES = { "cast", "moods", "trio", "tiles", "marry", "terrain" }
+local PAGES = { "cast", "moods", "trio", "mobs", "tiles", "marry", "terrain" }
 
 local BG = paint.pack(30, 26, 40, 255) -- deep violet-gray checker
 local BG2 = paint.pack(38, 33, 51, 255)
@@ -122,6 +122,20 @@ function build.trio(page, labels, seed)
   label(labels, 8, 6, ("TRIO - the cast via pinned knobs + seed %d fill"):format(seed), HEADC)
   label(labels, 8, 220, "pin what IS the character (hair/outfit/palette/mood),", DIMC)
   label(labels, 8, 229, "reroll the seed for everything else", DIMC)
+end
+
+function build.mobs(page, labels, seed)
+  checker(page)
+  local mobgen = cm.require("mobgen")
+  for row, kind in ipairs(mobgen.KINDS) do
+    local y = 20 + (row - 1) * 40
+    label(labels, 8, y + 12, kind, LABC)
+    for i = 0, 5 do
+      local img = mobgen.generate(kind, seed * 100 + i)
+      blit_scaled(page, img, 70 + i * 66, y, 4)
+    end
+  end
+  label(labels, 8, 6, ("MOBS - Bollinger half-masks + the cute stamp (seed %d)"):format(seed), HEADC)
 end
 
 function build.tiles(page, labels, seed)
@@ -241,6 +255,7 @@ function game.init()
     { "reroll", input.key.r },
     { "p1", input.key["1"] }, { "p2", input.key["2"] }, { "p3", input.key["3"] },
     { "p4", input.key["4"] }, { "p5", input.key["5"] }, { "p6", input.key["6"] },
+    { "p7", input.key["7"] },
   })
 end
 
