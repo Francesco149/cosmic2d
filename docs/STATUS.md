@@ -3,6 +3,43 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-03 (second session)
+**Phase**: **procart round 2 SHIPPED (both tracks of the promoted brief) —
+awaiting the human's taste pass.** Commits `797f58c` (terrain styles) +
+`ef74527` (chargen2) + this docs pass; PROCART.md §6 is the full round-2
+record. No engine/sim/binary change; 60f record→verify PASS both tracks.
+
+### What shipped this session
+- **Terrain STYLE system** (`tilegen.style(preset, grade, over)`): presets
+  soft (=round 1, default) / **canyon** (the mock — strata-slab rock:
+  wobbled shelf lines, running-bond slab courses, near-black crevices,
+  warm crest) / painterly / flat, × grades **day/dusk/dread** (palette-
+  anchor color grading + sky stops). Gallery **page 8 CANYON** = the
+  rim-hub-shaped scene with LIVE knobs (S style · G grade · F facet ·
+  D dither — all sim state), **page 9 STYLES** = all presets side by side.
+- **chargen2** (48x64, anime-ish per the refs): big gradient-iris eyes w/
+  catchlight (sharp deletes it = Vesper's deadpan), domed 2-tone hair caps,
+  chunky fringes, rounded head + jaw taper, body types. **The cast is baked
+  as knob bundles** (`chargen2.CAST.{vesper,gemma,lumi}`) + identity stamps
+  (fin crest / curved horns + hard-light wings / bunny ears + huge S-curve
+  twintails) + outfit builders (armor / bodysuit / idol). Pages 1–3
+  (cast/moods/trio) now render chargen2; old chargen kept for crowds.
+- 7 shots on llm-feed (canyon dusk/day/dread, styles grid, trio, cast,
+  moods). Pin-stability proven over 50 seeds.
+
+**Next step (resume here):** the human's **taste pass on llm-feed** →
+round 3 by verdict. Known weak points to attack if promoted again
+(PROCART.md §6): outfit interiors below the collar (folds/trim), Gemma's
+wings read as stripes behind the hair sheet, more body-type variety; plus
+the round-1 backlog (mob bob anims, K-Centroid studio import, the
+"generate → hand-finish" studio bridge, NPC crowds). If the terrain styles
+pass, the natural next move is **baking married canyon strips for the
+cosmic greybox maps** (rim = rock/dirt/grass at canyon/dusk) behind the
+M10 pipeline. Note: WSLg's wayland socket was down this session — headless
+runs needed `SDL_VIDEO_DRIVER=offscreen` (shots render fine through it).
+
+---
+
 **Date**: 2026-07-03
 **Phase**: **procart — the procedural pixel-art experiment (D044, docs/PROCART.md).**
 The human's brief: a separate experimental project probing whether

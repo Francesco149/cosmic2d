@@ -2,10 +2,11 @@
 
 > Status: round 1 shipped 2026-07-03 (ADR D044); **human verdict same day:
 > "promising enough to warrant more exploration" — PROMOTED to round 2.**
-> Round-2 brief (see STATUS.md): terrain style exploration targeting the
-> Grand Canyon hub map with tunable style/mood knobs; characters at double
-> resolution (48x64), more anime-ish per the references, with hairstyles/
-> faces/body types baked from the actual cast.
+> **Round 2 shipped later that day** (both tracks of the brief): the terrain
+> STYLE system (presets x day/dusk/dread grades + live dials) targeting the
+> Grand Canyon rim-hub look, and chargen2 — 48x64 anime-ish characters with
+> the actual cast (Vesper/Gemma/Lumi) baked in as knob bundles. §6 has the
+> round-2 read; the human's taste pass is pending.
 
 ## 1. The question
 
@@ -24,15 +25,19 @@ Where it lives: **`projects/procart/`**, a separate experimental cartridge —
 never in a golden suite, zero risk to the game projects. Run:
 
 ```sh
-bin/cosmic projects/procart        # gallery: <-/-> or 1..5 pages, R rerolls
+bin/cosmic projects/procart        # gallery: <-/-> or 1..9 pages, R rerolls
 ```
 
-Pages: **1 CAST** (12 seeds) · **2 MOODS** (one seed, every mood knob — the
-personality proof) · **3 TRIO** (Vesper/Gemma/Lumi via pinned knobs — the
-production-workflow proof) · **4 MOBS** (cosmic creatures from Bollinger
-half-masks + the cute stamp) · **5 TILES** (repeating tile + 3x3 self-tile
-proof) · **6 MARRY** (hard seam vs married border) · **7 TERRAIN** (a composed
-material map under a dithered dusk sky — the "could this be a game?" shot).
+Pages: **1 CAST** (10 crowd seeds at 48x64) · **2 MOODS** (one seed, every
+mood knob — the personality proof) · **3 TRIO** (the baked cast bundles,
+`chargen2.CAST`) · **4 MOBS** (cosmic creatures from Bollinger half-masks +
+the cute stamp) · **5 TILES** (repeating tile + 3x3 self-tile proof) ·
+**6 MARRY** (hard seam vs married border) · **7 TERRAIN** (a composed
+material map under a dithered dusk sky) · **8 CANYON** (the rim-hub-shaped
+scene under the style system; **S**=style **G**=grade **F**=facet dial
+**D**=dither dial live) · **9 STYLES** (the same scene in all four presets,
+side by side). Pages 1–3 are round-2 chargen2; 8–9 are the round-2 terrain
+demo.
 
 ## 2. Architecture (what carries the aesthetic)
 
@@ -42,19 +47,22 @@ uploaded to a texture, never sim state (proved: 60f `record→verify` PASS with
 the heavy bake in draw).
 
 ```
-prng.lua    splitmix64 stream + stateless hash2(seed,x,y)   [NOT cm.rand —
-            art gen must never touch the sim stream]
-pnoise.lua  value noise / fbm / worley over hash2, in two modes:
-              world-space  — seam-free across regions BY CONSTRUCTION
-              periodic     — a single tile that wraps against itself
-palgen.lua  hue-shifted shading ramps: shadows rotate toward violet + gain
-            saturation, lights rotate toward warm cream + lose it. ONE color
-            logic for every character and material = the sheet-wide coherence.
-chargen.lua characters (below)
-mobgen.lua  cosmic-creature mobs: Bollinger half-mask templates + the cute
-            stamp (body-aware eyes/catchlight/blush/glow) — see §5
-tilegen.lua materials + the marry bake (below)
-main.lua    the gallery cartridge (sim state = {page, seed} only)
+prng.lua     splitmix64 stream + stateless hash2(seed,x,y)   [NOT cm.rand —
+             art gen must never touch the sim stream]
+pnoise.lua   value noise / fbm / worley over hash2, in two modes:
+               world-space  — seam-free across regions BY CONSTRUCTION
+               periodic     — a single tile that wraps against itself
+palgen.lua   hue-shifted shading ramps: shadows rotate toward violet + gain
+             saturation, lights rotate toward warm cream + lose it. ONE color
+             logic for every character and material = the sheet-wide coherence.
+chargen.lua  round-1 characters, 24x32 (kept for in-game-scale crowds;
+             also owns MOODS + the sel-out pass chargen2 shares)
+chargen2.lua round-2 characters, 48x64 anime-ish + the baked CAST (below)
+mobgen.lua   cosmic-creature mobs: Bollinger half-mask templates + the cute
+             stamp (body-aware eyes/catchlight/blush/glow) — see §5
+tilegen.lua  materials + the marry bake + round 2's STYLE system (below)
+main.lua     the gallery cartridge (sim state = {page, seed} + the style/
+             grade/facet/dither knob indices, all input-edge driven)
 ```
 
 ### Characters (`chargen.generate(seed, knobs) → img, design`)
@@ -187,3 +195,68 @@ reference→asset:
 experiments). Conclusion: our own loop (llm-feed taste passes + the studio +
 procart's knob galleries + agent-side screenshot self-review) *is* the
 current state of the art for this workflow. Keep investing in it.
+
+## 6. Round 2 (2026-07-03): the style system + the 48x64 cast
+
+### Terrain styles (`tilegen.style(preset, grade, over)`)
+
+A **style instance** is a bundle of dials every material shade fn reads —
+facet size, strata strength/height, contrast (ramp value-range expansion),
+texture amplitude, marry dither band, border wobble, rim-light strength,
+crevice mode, palette sat/val, hue swing — plus a per-instance cache of
+**graded ramps**. A **grade** (day / dusk / dread) rotates every material's
+HSV anchors toward an hour-of-day hue and scales sat/val *before* the ramps
+are built, and carries the sky gradient stops the demo pages use. Presets:
+
+- **soft** — the round-1 cobble look, still the default (round-1 pages
+  render identically).
+- **canyon** — the mock: rock switches to a **strata-slab path** — wobbled
+  horizontal shelf lines, each course split into big slabs on a running
+  bond (per-course widths + offsets), calm per-slab tones, near-black
+  crevices, warm sun-lit crest. Canyon strata read as giant irregular
+  brickwork, and drawing them that way beats worley for this. (Worley
+  stays for wrap tiles — banding can't wrap for free — and for `soft`.)
+- **painterly** — ragged borders (big wobble + wide dither band), heavy
+  hue swing, more texture.
+- **flat** — Wadanohara-ish cel: low texture, crisp borders (tiny dither
+  band), low contrast, crevice lines doing the outlines.
+
+`facet_mul`/`band_mul` are the live-dial hooks (the CANYON page's F/D keys).
+Learned in the making: **grading belongs on the palette anchors, not the
+pixels** (ramps stay bandy and exact — a LUT post pass would blur the
+carefully banded colors), and the dusk grade wants *gentle* saturation
+(1.04; the first attempt at 1.12 turned every brown pink).
+
+### Characters (`chargen2.generate(seed, knobs)`, 48x64)
+
+Same contract as chargen (pure of (seed, knobs); pin() consumes rolls so
+pinning never reshuffles the seed's other choices — proven over 50 seeds).
+What doubling the resolution actually bought:
+
+- **The eyes carry the anime read**: a 5-wide iris shaded dark(top) →
+  light(bottom) under a heavy lash cap, 2x2 catchlight high-outer, 1px
+  reflection low-inner. Sharp (Vesper) deletes the catchlight — deadpan is
+  the absence of the cuteness carrier, same trick as round 1.
+- **The cast is baked as knob bundles** (`M.CAST`), not as code forks:
+  vesper/gemma/lumi are ~15 pinned knobs each over the same generator, plus
+  three identity stamps in the baked menus (fin crest, curved horns + wing
+  silhouettes, kinked bunny ears + S-curve twintails) and three outfit
+  builders (armor/bodysuit/idol). Crowds keep rolling the civilian menus.
+- **Body types** (slim/std/soft → head/body widths) + stature + a pinnable
+  legs knob (skin/stock/dark) — cheap silhouette variety.
+- Gotcha that cost a debug session: helper arg order (`hline(img, x0, x1,
+  y)`) — a transposed call painted the hair-cap dome into the torso as a
+  "mystery wedge" on every character. Pixel-dump + knob-bisect found it;
+  eyeballing the code did not.
+
+### Round-2 verdict (agent's read — human's taste pass pending)
+
+- The canyon/dusk CANYON page is the closest procgen has come to the mock;
+  the four presets are genuinely distinct on the STYLES page and the grade
+  dial (esp. **dread**) is the cheapest mood lever we own.
+- TRIO at 48x64: all three identities read at a glance (horns/bunny/fins
+  do heavy lifting). MOODS still proves personality at the new res.
+- Weakest points now: outfit interiors below the collar still read simple
+  (flat panels; the refs have folds/trim), Gemma's wings read as epaulette
+  stripes behind the hair sheet, and crowd characters share one silhouette
+  family (three body types is not many).
