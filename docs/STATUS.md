@@ -26,6 +26,11 @@ record. No engine/sim/binary change; 60f record→verify PASS both tracks.
   (cast/moods/trio) now render chargen2; old chargen kept for crowds.
 - 7 shots on llm-feed (canyon dusk/day/dread, styles grid, trio, cast,
   moods). Pin-stability proven over 50 seeds.
+- **Feedback round 1 applied** (`6c223d1`, human: "shorter legs, very round
+  heads"): the head + hair cap are now one paint.ellipse (cap = the same
+  ellipse clipped above the fringe line), feet rose to 56+stature and hems
+  dropped (visible leg ~4-7 rows). Human is now playing with the gallery to
+  probe style variety — expect direct knob/style feedback next.
 
 **Next step (resume here):** the human's **taste pass on llm-feed** →
 round 3 by verdict. Known weak points to attack if promoted again
