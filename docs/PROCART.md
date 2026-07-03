@@ -26,9 +26,11 @@ bin/cosmic projects/procart        # gallery: <-/-> or 1..5 pages, R rerolls
 ```
 
 Pages: **1 CAST** (12 seeds) · **2 MOODS** (one seed, every mood knob — the
-personality proof) · **3 TILES** (repeating tile + 3x3 self-tile proof) ·
-**4 MARRY** (hard seam vs married border) · **5 TERRAIN** (a composed material
-map under a dithered dusk sky — the "could this be a game?" shot).
+personality proof) · **3 TRIO** (Vesper/Gemma/Lumi via pinned knobs — the
+production-workflow proof) · **4 MOBS** (cosmic creatures from Bollinger
+half-masks + the cute stamp) · **5 TILES** (repeating tile + 3x3 self-tile
+proof) · **6 MARRY** (hard seam vs married border) · **7 TERRAIN** (a composed
+material map under a dithered dusk sky — the "could this be a game?" shot).
 
 ## 2. Architecture (what carries the aesthetic)
 
@@ -47,6 +49,8 @@ palgen.lua  hue-shifted shading ramps: shadows rotate toward violet + gain
             saturation, lights rotate toward warm cream + lose it. ONE color
             logic for every character and material = the sheet-wide coherence.
 chargen.lua characters (below)
+mobgen.lua  cosmic-creature mobs: Bollinger half-mask templates + the cute
+            stamp (body-aware eyes/catchlight/blush/glow) — see §5
 tilegen.lua materials + the marry bake (below)
 main.lua    the gallery cartridge (sim state = {page, seed} only)
 ```
@@ -120,6 +124,64 @@ main.lua    the gallery cartridge (sim state = {page, seed} only)
 
 ## 5. Deep-research notes (2026-07-03)
 
-*Pending — the research workflow's findings land here: procgen-heavy pixel
-art prior art, local-AI-model assessment for the available GPUs, and
-LLM/agent art-direction tooling.*
+Multi-agent research run (105 agents, every claim 3-vote adversarially
+verified against primary sources; all survivors were 3-0). What matters:
+
+### Procedural pixel-art prior art
+
+- **Bollinger mask templates** (pixelspaceships → zfedoran/pixel-sprite-
+  generator, davebollinger.org): a small integer half-mask (always-border /
+  empty / maybe-body / body-or-border) randomized + mirrored — one template
+  yields a silhouette family; ~5 numeric style knobs. **Applied: `mobgen.lua`**
+  (the MOBS page) — templates authored for STORY.md's mob roster. Gotcha: the
+  mirror axis is the mask's inner edge; body mass must hug it.
+- **The verified caveat that validates procart's whole design**: Deep-Fold's
+  and Lospec's generators (both fetched/verified) admit mask/noise generators
+  alone produce *abstract filler needing manual touch-up* — rich
+  parameterization (palette, outline style, proportions, accessories) is
+  exactly what must be added for personality. That's chargen's mood dial +
+  palgen ramps + baked archetypes, and mobgen's "cute stamp" (eyes/blush).
+- **Herringbone Wang tiles** (Sean Barrett, nothings.org; reference C in
+  `stb_herringbone_wang_tile.h`): square Wang grids leave straight-line seam
+  artifacts; herringbone's 1:2 rectangles (≅ hexagonal tiling, 6 edge
+  orientations) break them. *Relevant only if we ever ship fixed small
+  atlases* — procart's world-space hashing sidesteps repetition entirely
+  (nothing repeats, so nothing aligns). Noted, not adopted.
+- **GAN sprite generation is a verified negative** (Coutinho & Chaimowicz,
+  SBGames 2022 / Graphical Models 2024): works only on modular datasets it
+  can memorize; 184–347-image datasets → "unusable" noise. Don't go there.
+
+### Local AI on the available GPUs (8GB RTX 5060 win / 16GB RX 7800 XT nix-lab)
+
+Honest verdict: diffusion never emits true pixel art — **the grid/palette
+constraints come from the post-process, not the model**. If we ever want AI
+reference→asset:
+
+- **Pixel Art XL LoRA** (nerijs, Civitai #120096): the leading free SDXL
+  LoRA; author's own instructions mandate 8x nearest-neighbor downscale.
+  Runs on either GPU (ComfyUI CUDA / ROCm — the nix-lab comfyui setup).
+- **ComfyUI-PixelArt-Detector** (dimtoneff, active v1.7.3): the complete
+  open snapping pipeline (downscale, palette detect/convert, dither) as 6
+  ComfyUI nodes; quantization algorithms are all standard + reimplementable.
+- **K-Centroid** (Astropulse) — **the most actionable**: per-output-pixel
+  k-means over the source tile, pick the dominant cluster centroid. The
+  reference implementation is ~3.6 kB of pure Lua (Aseprite extension,
+  github.com/Astropulse/K-Centroid-Aseprite) — a direct port candidate for
+  a future studio "import image → snap to pixel art" command.
+- **Retro Diffusion** (Astropulse, itch.io): strongest purpose-built local
+  generator (true grid/palette output, a seamless-Tiling modifier, palette
+  transfer; $20 lite / $65 full one-time, runs in Aseprite). Comfortable on
+  the RTX 5060 (a 1050 Ti manages 64x64 in ~2.5 min); **Radeon unsupported
+  on Windows**, 7000-series-on-Linux supported-but-caveated.
+- Recommendation: park AI. Round-1 procgen already beats "reference
+  material only" quality for tiles/mobs; revisit K-Centroid when the studio
+  grows an import tool, and Retro Diffusion (RTX 5060) if the human wants an
+  AI ideation channel inside Aseprite.
+
+### LLM/agent art-direction tooling
+
+**No surviving verified claims** — the strand produced nothing established
+(aseprite MCP servers exist but nothing passed verification as more than
+experiments). Conclusion: our own loop (llm-feed taste passes + the studio +
+procart's knob galleries + agent-side screenshot self-review) *is* the
+current state of the art for this workflow. Keep investing in it.

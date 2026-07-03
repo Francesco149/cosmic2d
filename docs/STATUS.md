@@ -3,6 +3,65 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-03
+**Phase**: **procart — the procedural pixel-art experiment (D044, docs/PROCART.md).**
+The human's brief: a separate experimental project probing whether
+mostly-procedural art can nail a cute aesthetic *with personality* — multiple
+characters from procedural knobs (a sprinkle of baked choices is fine, with
+enough variety for a full cast), plus procedural terrain primitives that tile
+cleanly and **marry** two tiles at a border with no visible seam; deep research
+on procgen pixel-art prior art, local AI models for the available GPUs, and
+LLM art-direction tooling. Explicitly allowed to fail / be abandoned for
+manual art. This also expands and closes M10's open "procedural sprite
+generator" next-step. **No engine/sim/binary change** (all new code is the
+`projects/procart/` cartridge + docs).
+
+### procart — what shipped (3 commits, all on main)
+- **`projects/procart/`** — a 7-page gallery cartridge (`bin/cosmic
+  projects/procart`; ←/→ or 1..7 pages, R rerolls; sim state = {page, seed}
+  only; 60f record→verify PASS proves generation is render-only):
+  CAST (12 seeds) · MOODS (one seed, 7 mood knobs — the personality proof) ·
+  TRIO (Vesper/Gemma/Lumi via pinned knobs — the production-workflow proof) ·
+  MOBS (STORY.md's roster via Bollinger half-masks + the cute stamp) ·
+  TILES (wrap tile + 3x3 self-tile proof) · MARRY (hard vs married seam) ·
+  TERRAIN (a composed married material map under a dithered dusk sky).
+- **Core modules** (each a pure fn of (seed, knobs), dev/render class D040):
+  `prng` (splitmix64 + coord hashes — deliberately NOT cm.rand; art gen never
+  moves the sim stream), `pnoise` (value/fbm/worley; world-space = seam-free
+  by construction, periodic = self-tiling), `palgen` (hue-shifted ramps =
+  the sheet-wide coherence), `chargen` (baked archetype menus × procedural
+  proportions/palettes + the MOOD dial; sel-out outlines; pin() keeps knob
+  overrides from reshuffling the seed's other choices), `mobgen` (mask
+  templates + body-aware eyes/blush/glow), `tilegen` (6 materials as
+  world-space pixel fns; the marry bake = per-material indicator fields +
+  noise wobble + Bayer tie-band dither; air is a material → organic ground
+  silhouettes + surface rim light + grass tufts).
+- **Deep research done** (105-agent verified run; distilled in PROCART.md §5):
+  Bollinger masks (applied → mobgen), the personality-needs-parameterization
+  caveat (validates chargen's design), herringbone Wang tiles (noted, not
+  needed — world-space hashing never repeats), GAN sprites = verified negative,
+  AI = diffusion + mandatory snapping (Pixel Art XL LoRA + ComfyUI-PixelArt-
+  Detector free on either GPU; **K-Centroid is ~3.6 kB of pure Lua — a direct
+  studio-import-tool port candidate**; Retro Diffusion strongest local option,
+  RTX 5060 comfortable / RX 7800 XT caveated); LLM art-direction tooling:
+  **no verified prior art exists** — our llm-feed + studio + knob-gallery loop
+  is the state of the art. Recommendation: park AI, keep procgen.
+- All 7 pages pushed to llm-feed with notes. `.claude/` gitignored; the
+  human's mock/untitled studio files left untracked as asked.
+
+**Next step (resume here):** the **human's taste pass** on the llm-feed gallery
+decides promote / mine-for-parts / abandon (PROCART.md §3 has the agent's
+read: palette coherence + MOODS + TERRAIN strongest; outfits-below-collar +
+tiny accessories weakest). If promoted, the natural follow-ups (PROCART.md §4):
+bake married terrain for the cosmic greybox maps, procedural NPC crowds +
+portraits (chargen at 48x64), mobgen → real mob sprites w/ 2-3 frame bob
+anims, K-Centroid port as a studio import command, and a studio "generate →
+hand-finish" bridge (drop a procart result into a .spr as layers). Otherwise
+M-content resumes where the 2026-06-29 entry below left off (the human mocks
+the art; then dialogue runner + triggers + combat M12).
+
+---
+
 **Date**: 2026-06-29
 **Phase**: **M-content — opening-arc writing pass (story + first maps).** M10 (the
 studio) is feature-complete; with asset authoring unblocked, this session opened
