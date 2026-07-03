@@ -164,19 +164,19 @@ function M.generate(seed, knobs)
   local hair_dark = palgen.outline(hair_h, hair_s, hair_v)
   local WHITE = 0xffffffff
 
-  -- --- layout (48x64; roughly 1:1 head:body — the refs' chibi) ---
+  -- --- layout (48x64; the refs' chibi: a BIG round head, stubby legs) ---
   local hw = ({ slim = 26, std = 28, soft = 28 })[d.body]
-  local hh = 21
+  local hh = 23
   local hx0 = (M.W - hw) // 2
   local hx1 = hx0 + hw - 1
-  local hy0 = 9
+  local hy0 = 10
   local hy1 = hy0 + hh - 1 -- chin
-  local feet = 58 + d.stature -- shoe bottom row
+  local feet = 56 + d.stature -- shoe bottom row (low hems keep legs short)
   local sy0 = hy1 + 2 -- shoulders (1 neck row)
   local bw = ({ slim = 12, std = 14, soft = 16 })[d.body]
   local bx0 = (M.W - bw) // 2
   local bx1 = bx0 + bw - 1
-  local capy0 = hy0 - 4 -- hair cap top
+  local capy0 = hy0 - 2 -- hair cap top (the cap rides the head ellipse)
 
   local img = paint.image(M.W, M.H)
 
@@ -198,9 +198,9 @@ function M.generate(seed, knobs)
     -- Lumi's: two enormous tails from high on the head down past the knees,
     -- swaying outward then back in — drawn as stacked rows whose center
     -- drifts on a hash-wobbled S-curve, 2-tone banded
-    local tl = feet - 6 - (hy0 + 1)
+    local tl = feet - 6 - (hy0 + 3)
     for i = 0, tl do
-      local yy = hy0 + 1 + i
+      local yy = hy0 + 3 + i
       local t = i / tl
       -- the S: out fast, hold, drift a little further at the tip
       -- (quadratic ease, not libm trig — pixels must match cross-platform)
@@ -272,7 +272,7 @@ function M.generate(seed, knobs)
   if d.outfit == "bodysuit" then hem_y = feet - 3 -- the suit IS the legs
   elseif d.outfit == "armor" then hem_y = sy0 + rng:range(12, 13)
   elseif d.outfit == "idol" then hem_y = sy0 + rng:range(11, 12)
-  else hem_y = sy0 + rng:range(11, 14) end
+  else hem_y = sy0 + rng:range(12, 14) end
   hem_y = math.min(hem_y, feet - 4)
 
   local leg_x = CX - 5 -- inner-left leg column (legs are 3 wide each)
@@ -392,38 +392,22 @@ function M.generate(seed, knobs)
     rng:range(7, 9); rng:chance(0.5)
   end
 
-  -- ---- 4. head (rounded chibi mask) ----
-  rect(img, hx0, hy0, hw, hh, skinR[3])
-  -- corner rounding: cut 3/2/1 stairs
-  for _, c in ipairs({ { 3, 0 }, { 2, 1 }, { 1, 2 } }) do
-    local cut, row = c[1], c[2]
-    for i = 0, cut - 1 do
-      px(img, hx0 + i, hy0 + row, 0); px(img, hx1 - i, hy0 + row, 0)
-    end
-  end
-  -- jaw taper: 4/2-px cuts up from the chin
-  for _, c in ipairs({ { 5, 0 }, { 3, 1 }, { 1, 2 } }) do
-    local cut, row = c[1], c[2]
-    for i = 0, cut - 1 do
-      px(img, hx0 + i, hy1 - row, 0); px(img, hx1 - i, hy1 - row, 0)
-    end
-  end
-  hline(img, hx0 + 6, hx1 - 6, hy1, skinR[2]) -- chin shade
-  hline(img, hx0 + 4, hx1 - 4, hy1 - 1, skinR[3])
+  -- ---- 4. head (a truly round chibi mask: one filled ellipse) ----
+  paint.ellipse(img, hx0, hy0, hx1, hy1, skinR[3], true)
+  hline(img, hx0 + 9, hx1 - 9, hy1, skinR[2]) -- chin shade
   -- neck
   rect(img, CX - 2, hy1 + 1, 4, 2, skinR[2])
 
   -- ---- 5. front hair ----
-  -- cap: a dome over the skull, 2-tone with a shine arc
-  for i = 0, 3 do
-    hline(img, hx0 - 1 + (3 - i), hx1 + 1 - (3 - i), capy0 + i, hairR[3])
-  end
-  rect(img, hx0 - 1, capy0 + 4, hw + 2, 3, hairR[3])
-  hline(img, hx0 + 4, hx0 + hw // 2 + 2, capy0 + 1, hairR[4]) -- shine arc
-  hline(img, hx0 + 3, hx0 + hw // 2 - 1, capy0 + 2, hairR[4])
+  local fy0 = hy0 + 4 -- first fringe row
+  -- cap: the head ellipse grown 1px, drawn only above the fringe line — the
+  -- cap follows the skull's curve exactly (this is what keeps heads ROUND)
+  paint.ellipse(img, hx0 - 1, hy0 - 2, hx1 + 1, hy1 + 2, hairR[3], true,
+    function(im, x, y, c) if y < fy0 then paint.set(im, x, y, c) end end)
+  hline(img, hx0 + 5, hx0 + hw // 2 + 2, hy0 - 1, hairR[4]) -- shine arc
+  hline(img, hx0 + 4, hx0 + hw // 2 - 1, hy0, hairR[4])
 
   -- fringe: chunky teeth from the cap down over the brow line
-  local fy0 = capy0 + 7 -- first fringe row
   local ncol = hw - 4
   for i = 0, ncol - 1 do
     local xx = hx0 + 2 + i
@@ -450,19 +434,19 @@ function M.generate(seed, knobs)
   -- side locks framing the face
   local lock_len = ({ bob = 9, long = 14, twin_huge = 7, ponytail = 6,
     buns = 6, short = 4 })[d.hair]
-  symrect(img, hx0 - 2, hy0 - 1, 2, lock_len + 1, hairR[3])
-  symv(img, hx0, hy0 + 1, hy0 + lock_len - 2, hairR[2])
-  sym(img, hx0 - 2, hy0 + lock_len, hairR[2]) -- lock tip
+  symrect(img, hx0 - 2, hy0 + 2, 2, lock_len + 1, hairR[3])
+  symv(img, hx0, hy0 + 3, hy0 + lock_len - 1, hairR[2])
+  sym(img, hx0 - 2, hy0 + lock_len + 3, hairR[2]) -- lock tip
   if d.hair == "bob" then -- the bob flips outward at the jaw
-    sym(img, hx0 - 3, hy0 + lock_len - 1, hairR[3])
-    sym(img, hx0 - 3, hy0 + lock_len, hairR[2])
+    sym(img, hx0 - 3, hy0 + lock_len + 2, hairR[3])
+    sym(img, hx0 - 3, hy0 + lock_len + 3, hairR[2])
   elseif d.hair == "buns" then
     symrect(img, hx0 + 4, capy0 - 3, 5, 4, hairR[3])
     sym(img, hx0 + 5, capy0 - 3, hairR[4])
     sym(img, hx0 + 4, capy0 - 4, hairR[2])
   elseif d.hair == "twin_huge" then -- tie ribbons where the tails start
-    sym(img, hx0 - 1, hy0 + 1, accent)
-    sym(img, hx0 - 2, hy0, accent)
+    sym(img, hx0 - 1, hy0 + 3, accent)
+    sym(img, hx0 - 2, hy0 + 2, accent)
   end
 
   -- ---- 6. face (drawn over the fringe — anime brows/eyes read on top) ----
