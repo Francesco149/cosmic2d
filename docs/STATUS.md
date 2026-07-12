@@ -37,6 +37,11 @@ applied (ADR D054); moving to R7 next.**
   (render-side read of the live size; sim reads the design res at boot
   — smoke just crops today, which is legal but unpolished).
 
+**UX round 4 (feedback on round 3: "feels good" + fonts)**: code ed
+default font 13→26 px with per-window `a−`/`a+` header adjust (the
+override in `win.px`, captured); asset browser chrome 10.5→16 px
+(1.5×); fresh code windows spawn 760×520 for the new size (`8450d5b`).
+
 **R7a BUILT (same session, in ../cosmic2d-game — see its STATUS.md +
 docs/GRAYBOX.md):** the graybox reboot at 960×540 (D054 540 family):
 M7 px knobs doubled (feel by construction), checkerboard solids + slim
