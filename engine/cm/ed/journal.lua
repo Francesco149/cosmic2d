@@ -52,13 +52,16 @@ end
 -- open (or start) the journal for an asset. A corrupt file degrades to a
 -- fresh journal with one log line — history is a convenience, never a boot
 -- blocker. pos lands on the last entry (jpos, when given, re-parks it —
--- the session-restored cursor).
-function M.open(root, asset_path, jpos)
+-- the session-restored cursor). cap overrides M.CAP per asset kind
+-- (sprite journals are full .spr snapshots — EDITOR.md §12.6 caps them
+-- lower than text).
+function M.open(root, asset_path, jpos, cap)
   local j = {
     path = M.file(root, asset_path),
     dir = root .. "/.ed/journal",
     entries = {},
     pos = 0,
+    cap = cap or M.CAP,
   }
   local blob = pal.read_file(j.path)
   if blob then
@@ -74,9 +77,9 @@ function M.open(root, asset_path, jpos)
               j.path .. " — starting fresh")
     end
   end
-  if #j.entries > M.CAP then -- over cap from an older, bigger cap
+  if #j.entries > j.cap then -- over cap from an older, bigger cap
     local keep = {}
-    for i = #j.entries - M.CAP + 1, #j.entries do keep[#keep + 1] = j.entries[i] end
+    for i = #j.entries - j.cap + 1, #j.entries do keep[#keep + 1] = j.entries[i] end
     j.entries = keep
     rewrite(j)
   end
@@ -108,7 +111,7 @@ function M.push(j, bytes, flags, t)
   end
   j.entries[#j.entries + 1] = e
   j.pos = #j.entries
-  if #j.entries > M.CAP then
+  if #j.entries > (j.cap or M.CAP) then
     table.remove(j.entries, 1)
     j.pos = #j.entries
     rewrite(j)

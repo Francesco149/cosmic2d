@@ -7,7 +7,7 @@
 -- Controls: arrows move (down+jump drops through planks) · space jump /
 -- flash-jump / up-jump · e hop (hold = flutter) · q grapple · r teleport ·
 -- d slice(stub) · ` console (game.demo(1) = the KITCHECK choreography) ·
--- F1 editor · F2 studio · Esc options.
+-- F1 editor · Esc options (the sprite ed lives in --edit since R4, D051).
 --
 -- Determinism: sim state in named buffers (smoke.*) + doc tree only;
 -- randomness from cm.rand; trig from cm.math; fixed dt (ARCHITECTURE

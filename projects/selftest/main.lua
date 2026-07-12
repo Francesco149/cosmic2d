@@ -2436,18 +2436,19 @@ local function t_ed_journal()
   check(#j4.entries == 2 and j4.entries[2].bytes == "fork",
         "ed.journal: branch rewrite persisted")
 
-  -- the cap drops the oldest
-  local cap = journal.CAP
-  journal.CAP = 3
-  journal.push(j4, "x1", 0, 6)
-  journal.push(j4, "x2", 0, 7) -- 5th entry against cap 3
-  check(#j4.entries == 3 and j4.entries[1].bytes == "fork",
+  -- the cap drops the oldest (per-open cap — R4d/§12.6 sprite journals)
+  local j4c = journal.open(root, "a.txt", nil, 3)
+  journal.push(j4c, "x1", 0, 6)
+  journal.push(j4c, "x2", 0, 7) -- 4th entry against cap 3
+  check(#j4c.entries == 3 and j4c.entries[1].bytes == "fork",
         "ed.journal: cap drops the oldest")
-  check(j4.pos == 3 and journal.at(j4).bytes == "x2",
+  check(j4c.pos == 3 and journal.at(j4c).bytes == "x2",
         "ed.journal: cap keeps the tip current")
-  local j5 = journal.open(root, "a.txt")
+  local j5 = journal.open(root, "a.txt", nil, 3)
   check(#j5.entries == 3, "ed.journal: capped file persisted")
-  journal.CAP = cap
+  local j5b = journal.open(root, "a.txt", nil, 2) -- tighter cap on reopen
+  check(#j5b.entries == 2 and j5b.entries[2].bytes == "x2",
+        "ed.journal: reopen trims to a smaller cap")
 
   -- a corrupt journal degrades to fresh, never an error
   pal.write_file(journal.file(root, "bad.txt"), "CJRNnotachunk")

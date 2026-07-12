@@ -3,11 +3,7 @@
 -- convention; see boot.lua header).
 --
 -- Flags: [project_dir] --headless --frames N --shot PATH --no-vsync
---        --record PATH --verify PATH --eval CODE --studio --edit
---   --studio          boot straight into the asset studio (the F2 sprite/
---                     animation editor), dropping into the project's art
---                     browser. The easy launcher: `bin/cosmic --studio`
---                     (project defaults to projects/sandbox). Live only.
+--        --record PATH --verify PATH --eval CODE --edit
 --   --edit            boot the editor shell (R3, cm.ed/EDITOR.md): the
 --                     infinite canvas, maximized window. The sim runs with
 --                     all input swallowed; live + --win capture only (a
@@ -73,7 +69,6 @@ local function parse_args()
       i = i + 1
       a.evals = a.evals or {}
       a.evals[#a.evals + 1] = argv[i] or error("--eval needs code")
-    elseif arg == "--studio" then a.studio = true
     elseif arg == "--edit" then a.edit = true
     elseif arg:sub(1, 2) ~= "--" then a.project = arg
     else error("unknown flag: " .. arg) end
@@ -168,8 +163,8 @@ function M.boot()
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")
   M.options = cm.require("cm.options")
-  M.studio = cm.require("cm.studio") -- the asset studio (F2; M10, render-only)
-  M.ed = cm.require("cm.ed") -- the editor shell (R3, D050)
+  M.ed = cm.require("cm.ed") -- the editor shell (R3/R4, D050/D051; the F2
+  -- studio died here at R4 — sprite ed is a canvas window, D046 Q4)
   -- the resize ladder runs only live: headless/verify keep the fixed project
   -- FOV so goldens + determinism never see a window-derived size (D036). The
   -- --win capture is the one headless exception (it wants the live layout).
@@ -225,12 +220,8 @@ function M.boot()
   if args.evals then -- after record_start: the drain lands in frame 1
     for _, code in ipairs(args.evals) do M.repl.submit(code) end
   end
-  -- --studio: open the asset studio at boot (a top-level dev launcher, same as
-  -- booting + F2). Live/capture only — --verify returned above; pure headless is
-  -- a harmless no-op. The studio pauses the sim while open.
-  if args.studio then M.studio.launch() end
-  -- --edit: the R3 editor shell. Same class as --studio (live/capture);
-  -- under plain headless the shell loads but its ig frame is a no-op.
+  -- --edit: the editor shell (live/capture; under plain headless the shell
+  -- loads but its ig frame is a no-op)
   if args.edit then M.ed.launch(args.project) end
 end
 
@@ -336,8 +327,8 @@ function M.tick()
     -- paused on the autopsy table: no stepping, repl runs immediately
     M.repl.drain()
     M.acc, M.last = 0, nil -- no catch-up pileup across the pause
-  elseif M.scrub.paused() or M.studio.on then
-    -- time machine / asset studio open: sim frozen, queued evals wait
+  elseif M.scrub.paused() then
+    -- time machine open: sim frozen, queued evals wait
     M.acc, M.last = 0, nil
   elseif M.args.headless then
     step_guarded()
@@ -366,7 +357,6 @@ function M.tick()
   -- ui_scale. The editor already routed there when it's open; in play mode it
   -- returned early, so switch here (no-op headless / when the canvas is off).
   if M.view.ui_active then pal.x_target("ui") end
-  M.studio.frame() -- the asset studio (F2): full-window, under the dev panels
   M.scrub.frame() -- the time machine rides above the editor
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything

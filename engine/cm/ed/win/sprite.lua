@@ -1,0 +1,594 @@
+-- cm.ed.win.sprite — the sprite ed (R4, EDITOR.md §12.6): the studio's
+-- successor as a canvas citizen. READ-ONLY by default (the composited
+-- current frame over a checker, aspect-fit) with an obvious edit toggle
+-- in the header.
+--
+-- The working state is the CSPR bytes — doc.assets[path].spr — so the §6
+-- three-layer model applies verbatim: dirty = bytes ≠ disk, journal
+-- entries are full .spr snapshots (cap 512 — they're big), Ctrl+Z/Y walk
+-- them, revert is an edit, restart survival rides session.dat. The
+-- decoded cm.sprite doc + its GPU textures are ephemeral plumbing keyed
+-- by path. One gesture (stroke / fill / structure op) = one encode + one
+-- journal push — the studio's in-memory undo is not used.
+--
+-- v1 roster (D051 — deliberately lean): pencil / eraser / bucket /
+-- eyedropper, the doc palette + hex add, layer list (select/eye/add/del),
+-- frame chips (select/add/dup/del), wheel zoom + middle-drag pan.
+-- Gradients/transforms/clips/pivot editing return as content work
+-- demands them (.spr carries them; saving preserves what we don't show).
+
+local M = select(2, ...) or {}
+local journal = cm.require("cm.ed.journal")
+local sprite = cm.require("cm.sprite")
+local paint = cm.require("cm.paint")
+
+M.kind = "sprite"
+M.DEF_W, M.DEF_H = 460, 380
+M.JCAP = 512
+
+local COL = {
+  rail = 0x1a1728ff, btn = 0x262238ff, btn_on = 0x4a4370ff,
+  btn_hot = 0x3a3560ff, text = 0xd8d2f2ff, dim = 0x8a84b0ff,
+  hot = 0xE8E4FFff, accent = 0x7fd8a8ff, danger = 0xf07a7aff,
+  checker_a = 0x232030ff, checker_b = 0x2b2838ff,
+}
+
+local TOOLS = { { "pen", "P" }, { "eraser", "E" }, { "fill", "F" },
+                { "pick", "K" } }
+
+function M.defaults()
+  return { path = "", edit = false, tool = "pen", color = 0xffffffff }
+end
+
+function M.title(win)
+  local base = win.path:match("([^/]+)$") or "sprite"
+  return base .. (win.edit and "" or "  · view")
+end
+
+function M.accepts(win, path)
+  return path:lower():find("%.spr$") ~= nil
+end
+
+function M.rebind(win, ed, path)
+  win.path = path
+  win.zoom, win.px, win.py = nil, nil, nil
+  ed.touch()
+end
+
+-- ---- plumbing (ephemeral, on ed.g.sw[path]) ----
+
+local function plumb(ed, path)
+  local g = ed.g
+  g.sw = g.sw or {}
+  local p = g.sw[path]
+  if not p then
+    p = {}
+    g.sw[path] = p
+  end
+  return p
+end
+
+local function working(ed, path)
+  ed.doc.assets = ed.doc.assets or {}
+  return ed.doc.assets[path]
+end
+
+local function decode_into(p, bytes)
+  local ok, doc = pcall(sprite.decode, bytes)
+  if ok then
+    p.doc = doc
+    p.err = nil
+  else
+    p.doc = nil
+    p.err = tostring(doc)
+  end
+  p.comp_dirty = true
+end
+
+local function open_asset(ed, path)
+  local a = working(ed, path)
+  local p = plumb(ed, path)
+  if p.j then return a, p end
+  local disk = pal.read_file(ed.root .. "/" .. path)
+  p.disk = disk or ""
+  if not a then
+    local bytes = p.disk
+    if #bytes == 0 then -- a new sprite: start a fresh 32x32 doc
+      local name = path:match("([^/]+)%.spr$") or "sprite"
+      bytes = sprite.encode(sprite.new(32, 32, { name = name }))
+    end
+    a = { spr = bytes, jpos = 0 }
+    ed.doc.assets[path] = a
+  end
+  p.j = journal.open(ed.root, path, a.jpos > 0 and a.jpos or nil, M.JCAP)
+  if #p.j.entries == 0 and #p.disk > 0 then
+    journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
+  end
+  local tip = journal.at(p.j)
+  if tip and a.spr ~= tip.bytes and p.j.pos == #p.j.entries then
+    journal.push(p.j, a.spr, 0, pal.time_ns() // 1000000)
+  end
+  a.jpos = p.j.pos
+  decode_into(p, a.spr)
+  ed.touch()
+  return a, p
+end
+
+-- public open (spawn-time adoption, console driving, proofs)
+function M.open_win(win, ed)
+  if win.path ~= "" then return open_asset(ed, win.path) end
+end
+
+-- one finished gesture: re-encode the doc into the working bytes + journal
+local function commit(ed, path, flags)
+  local a, p = open_asset(ed, path)
+  if not p.doc then return end
+  a.spr = sprite.encode(p.doc)
+  if journal.push(p.j, a.spr, flags or 0, pal.time_ns() // 1000000) then
+    a.jpos = p.j.pos
+  end
+  ed.touch()
+end
+
+-- ---- the focused-window commands (§6 contract) ----
+
+function M.dirty(win, ed)
+  if win.path == "" then return false end
+  local a = working(ed, win.path)
+  local p = ed.g.sw and ed.g.sw[win.path]
+  return a and p and p.disk ~= nil and a.spr ~= p.disk or false
+end
+
+function M.save(win, ed)
+  if win.path == "" then return end
+  local a, p = open_asset(ed, win.path)
+  if not p.doc then return end
+  a.spr = sprite.encode(p.doc)
+  local dir = win.path:match("^(.*)/[^/]+$")
+  if dir then pal.mkdir(ed.root .. "/" .. dir) end
+  local ok, err = sprite.save(p.doc, ed.root .. "/" .. win.path)
+  if ok then
+    p.disk = a.spr
+    commit(ed, win.path, journal.SAVED)
+    pal.log("[ed] saved + baked " .. win.path)
+  else
+    pal.log("[ed] SAVE FAILED " .. win.path .. ": " .. tostring(err))
+  end
+end
+
+function M.undo(win, ed)
+  if win.path == "" then return end
+  local a, p = open_asset(ed, win.path)
+  local e = journal.undo(p.j)
+  if e then
+    a.spr, a.jpos = e.bytes, p.j.pos
+    decode_into(p, e.bytes)
+    ed.touch()
+  end
+end
+
+function M.redo(win, ed)
+  if win.path == "" then return end
+  local a, p = open_asset(ed, win.path)
+  local e = journal.redo(p.j)
+  if e then
+    a.spr, a.jpos = e.bytes, p.j.pos
+    decode_into(p, e.bytes)
+    ed.touch()
+  end
+end
+
+function M.revert(win, ed)
+  if win.path == "" then return end
+  local a, p = open_asset(ed, win.path)
+  a.spr = p.disk or ""
+  decode_into(p, a.spr)
+  commit(ed, win.path)
+end
+
+-- ---- header: the edit toggle (the board's "obvious toggle") ----
+
+function M.header(win, ctx)
+  local z = ctx.z
+  local px = math.max(4, 10.5 * z)
+  local label = win.edit and "done" or "edit"
+  local w = pal.x_ig_text_size(label, px, 0) + 14 * z
+  local x = ctx.hx - w
+  local i = cm.require("cm.ui").inp
+  local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+              and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
+  pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
+                     win.edit and COL.btn_on or COL.btn, 4 * z)
+  pal.x_ig_text(x + 7 * z, ctx.hy + (ctx.hh - px) * 0.45, px,
+                (hov or win.edit) and COL.hot or COL.dim, label, 0)
+  if hov and i.clicked[1] then
+    win.edit = not win.edit
+    ctx.ed.touch()
+  end
+  return w + 4 * z
+end
+
+-- ---- view helpers ----
+
+local function checker(x, y, w, h, z)
+  pal.x_ig_rect_fill(x, y, w, h, COL.checker_a, 3 * z)
+  local step = 10 * z
+  pal.x_ig_clip_push(x, y, w, h)
+  for iy = 0, math.ceil(h / step) - 1 do
+    for ix = 0, math.ceil(w / step) - 1 do
+      if (ix + iy) % 2 == 0 then
+        pal.x_ig_rect_fill(x + ix * step, y + iy * step, step, step,
+                           COL.checker_b)
+      end
+    end
+  end
+  pal.x_ig_clip_pop()
+end
+
+-- rebuild the composite texture for the current frame (fast path: blit32
+-- composite + tex_update in place, the studio's proven pipeline)
+local function refresh_tex(p)
+  local doc = p.doc
+  if not doc then return end
+  if not p.comp or p.comp.w ~= doc.w or p.comp.h ~= doc.h then
+    p.comp = paint.image(doc.w, doc.h)
+    if p.tex then
+      pal.tex_free(p.tex)
+      p.tex = nil
+    end
+  end
+  sprite.composite_into(doc, doc.cur_frame, p.comp)
+  if p.tex and pal.tex_update(p.tex, p.comp.buf, doc.w, doc.h) then
+    -- updated in place
+  else
+    if p.tex then pal.tex_free(p.tex) end
+    p.tex = pal.tex_create(doc.w, doc.h, p.comp.buf:str(0, doc.w * doc.h * 4))
+  end
+  p.comp_dirty = nil
+end
+
+-- content wheel: zoom the sprite view at the cursor (edit mode); view
+-- mode gives the wheel back to the canvas (return false)
+function M.wheel(win, ed, dy)
+  if not win.edit then return false end
+  local p = ed.g.sw and ed.g.sw[win.path]
+  local r = p and p.canvas_rect
+  if not (r and p.doc) then return false end
+  local i = cm.require("cm.ui").inp
+  local oldz = win.zoom or r.fit
+  local nz = math.max(0.25, math.min(64, oldz * (dy > 0 and 1.25 or 0.8)))
+  -- keep the sprite point under the cursor put: sprite coords of the
+  -- cursor at the old zoom → new screen origin → world-unit pan offsets
+  local sx = (i.wx - r.ox) / (oldz * r.wz)
+  local sy = (i.wy - r.oy) / (oldz * r.wz)
+  win.px = (i.wx - sx * nz * r.wz - r.cx) / r.wz
+  win.py = (i.wy - sy * nz * r.wz - r.cy) / r.wz
+  win.zoom = nz
+  ed.touch()
+  return true
+end
+
+-- middle-drag pans the sprite view (edit mode), not the canvas (§12.6)
+function M.takes_middle(win)
+  return win.edit == true
+end
+
+-- ---- structure rows (layers / frames / palette) ----
+
+local function button(i, ctx, x, y, w, h, label, on, px)
+  local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+              and i.wy >= y and i.wy < y + h
+  pal.x_ig_rect_fill(x, y, w, h, on and COL.btn_on
+                     or (hov and COL.btn_hot or COL.btn), 3 * ctx.z)
+  local tw = pal.x_ig_text_size(label, px, 1)
+  pal.x_ig_text(x + (w - tw) * 0.5, y + (h - px) * 0.45, px,
+                (on or hov) and COL.hot or COL.dim, label, 1)
+  return hov and i.clicked[1]
+end
+
+-- colors: win.color + doc.palette are in cm.paint's packing (R low byte —
+-- the buffer byte order); the drawlist wants 0xRRGGBBAA. Convert at draw.
+local function disp(c)
+  local r, g, b, a = paint.unpack(c)
+  return (r << 24) | (g << 16) | (b << 8) | a
+end
+
+local function hex_parse(s) -- "#RRGGBB[AA]" → paint packing
+  s = s:gsub("^#", ""):gsub("%s", "")
+  if not s:find("^%x+$") then return nil end
+  if #s == 6 then
+    local v = tonumber(s, 16)
+    return paint.pack((v >> 16) & 255, (v >> 8) & 255, v & 255, 255)
+  end
+  if #s == 8 then
+    local v = tonumber(s, 16)
+    return paint.pack((v >> 24) & 255, (v >> 16) & 255, (v >> 8) & 255,
+                      v & 255)
+  end
+  return nil
+end
+
+-- ---- content ----
+
+function M.draw(win, ctx)
+  local ed = ctx.ed
+  if win.path == "" then
+    pal.x_ig_text(ctx.cx + 8 * ctx.z, ctx.cy + 8 * ctx.z,
+                  math.max(4, 12 * ctx.z), COL.dim,
+                  "no sprite bound — drag a .spr from an assets window", 0)
+    return
+  end
+  local a, p = open_asset(ed, win.path)
+  local z = ctx.z
+  local px = math.max(4, 11 * z)
+  local i = cm.require("cm.ui").inp
+
+  if p.err or not p.doc then
+    pal.x_ig_text(ctx.cx + 8 * z, ctx.cy + 8 * z, px, COL.danger,
+                  "unreadable .spr: " .. tostring(p.err), 0)
+    return
+  end
+  local doc = p.doc
+  if p.comp_dirty then refresh_tex(p) end
+
+  -- ---- read-only: aspect-fit view ----
+  if not win.edit then
+    checker(ctx.cx, ctx.cy, ctx.cw, ctx.ch, z)
+    local m = 4 * z
+    local s = math.min((ctx.cw - 2 * m) / doc.w, (ctx.ch - 2 * m) / doc.h)
+    local dw, dh = doc.w * s, doc.h * s
+    if p.tex then
+      pal.x_ig_image(p.tex, ctx.cx + (ctx.cw - dw) * 0.5,
+                     ctx.cy + (ctx.ch - dh) * 0.5, dw, dh)
+    end
+    local info = ("%dx%d · %d frame%s · %d layer%s"):format(
+      doc.w, doc.h, doc.frames, doc.frames == 1 and "" or "s",
+      #doc.layers, #doc.layers == 1 and "" or "s")
+    pal.x_ig_text(ctx.cx + 6 * z, ctx.cy + ctx.ch - px * 1.4, px * 0.9,
+                  COL.dim, info, 1)
+    return
+  end
+
+  -- ---- edit mode layout ----
+  local TR = 26 * z -- tools rail
+  local LR = math.min(96 * z, ctx.cw * 0.3) -- layers rail
+  local BB = 40 * z -- palette + frames rows
+  local cvx, cvy = ctx.cx + TR, ctx.cy
+  local cvw, cvh = ctx.cw - TR - LR, ctx.ch - BB
+  if cvw < 40 or cvh < 40 then return end
+
+  -- tools rail
+  pal.x_ig_rect_fill(ctx.cx, ctx.cy, TR - 3 * z, cvh, COL.rail, 4 * z)
+  local ty = ctx.cy + 4 * z
+  for _, t in ipairs(TOOLS) do
+    if button(i, ctx, ctx.cx + 3 * z, ty, TR - 9 * z, TR - 9 * z, t[2],
+              win.tool == t[1], px) then
+      win.tool = t[1]
+      ctx.touch()
+    end
+    ty = ty + TR - 5 * z
+  end
+  -- current color swatch at the rail bottom
+  pal.x_ig_rect_fill(ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z,
+                     TR - 9 * z, TR - 9 * z, disp(win.color or 0xffffffff),
+                     3 * z)
+  pal.x_ig_rect(ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z,
+                TR - 9 * z, TR - 9 * z, 0x00000066, 1, 3 * z)
+
+  -- the canvas. zoom is SCREEN px per sprite px; win.px/py are pan
+  -- offsets in world units (zoom-independent, like every other captured
+  -- geometry field)
+  checker(cvx, cvy, cvw, cvh, z)
+  local fit = math.min((cvw - 8 * z) / doc.w, (cvh - 8 * z) / doc.h)
+  local zoom = win.zoom or fit
+  local ox, oy
+  if win.px then
+    ox = cvx + win.px * z
+    oy = cvy + win.py * z
+  else
+    ox = cvx + (cvw - doc.w * zoom) * 0.5
+    oy = cvy + (cvh - doc.h * zoom) * 0.5
+  end
+  p.canvas_rect = { cx = cvx, cy = cvy, w = cvw, h = cvh, ox = ox, oy = oy,
+                    fit = fit, wz = z }
+  pal.x_ig_clip_push(cvx, cvy, cvw, cvh)
+  if p.tex then
+    pal.x_ig_image(p.tex, ox, oy, doc.w * zoom, doc.h * zoom)
+  end
+  pal.x_ig_rect(ox - 1, oy - 1, doc.w * zoom + 2, doc.h * zoom + 2,
+                0x4a4370aa, 1)
+  pal.x_ig_clip_pop()
+
+  local over_canvas = not ctx.alt and i.wx >= cvx and i.wx < cvx + cvw
+                      and i.wy >= cvy and i.wy < cvy + cvh
+
+  -- middle-drag pans the view
+  if over_canvas and i.clicked[2] then
+    p.pan = { mx = i.wx, my = i.wy, ox = ox, oy = oy }
+  end
+  if p.pan then
+    if i.buttons[2] then
+      win.px = (p.pan.ox + (i.wx - p.pan.mx) - cvx) / z
+      win.py = (p.pan.oy + (i.wy - p.pan.my) - cvy) / z
+      win.zoom = zoom
+      ctx.touch()
+    else
+      p.pan = nil
+    end
+  end
+
+  -- paint gestures
+  local layer = doc.layers[doc.cur_layer]
+  local cell = layer and sprite.cell(doc, doc.cur_layer, doc.cur_frame)
+  local function pixel_at(wxp, wyp)
+    return math.floor((wxp - ox) / zoom), math.floor((wyp - oy) / zoom)
+  end
+  if over_canvas and cell and not (layer.locked) and not p.pan then
+    local mx, my = pixel_at(i.wx, i.wy)
+    -- hover cell outline
+    if paint.in_bounds(cell, mx, my) then
+      pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom,
+                    0xE8E4FF66, 1)
+    end
+    if i.clicked[1] then
+      if win.tool == "pick" then
+        local c = paint.get(p.comp, mx, my)
+        if c and c ~= 0 then
+          win.color = c
+          ctx.touch()
+        end
+      elseif win.tool == "fill" then
+        if paint.in_bounds(cell, mx, my) then
+          paint.flood(cell, mx, my, win.color or 0xffffffff)
+          p.comp_dirty = true
+          commit(ed, win.path)
+        end
+      else
+        p.stroke = { lx = mx, ly = my }
+        local c = win.tool == "eraser" and 0 or (win.color or 0xffffffff)
+        if paint.in_bounds(cell, mx, my) then paint.set(cell, mx, my, c) end
+        p.comp_dirty = true
+      end
+    end
+  end
+  if p.stroke then
+    if i.buttons[1] then
+      local mx, my = pixel_at(i.wx, i.wy)
+      if mx ~= p.stroke.lx or my ~= p.stroke.ly then
+        local c = win.tool == "eraser" and 0 or (win.color or 0xffffffff)
+        if cell then
+          paint.line(cell, p.stroke.lx, p.stroke.ly, mx, my, c)
+        end
+        p.stroke.lx, p.stroke.ly = mx, my
+        p.comp_dirty = true
+      end
+    else
+      p.stroke = nil
+      commit(ed, win.path) -- the gesture = one journal entry
+    end
+  end
+
+  -- layers rail (right)
+  local lx = ctx.cx + ctx.cw - LR + 3 * z
+  pal.x_ig_rect_fill(lx - 3 * z, ctx.cy, LR, cvh, COL.rail, 4 * z)
+  local ly = ctx.cy + 4 * z
+  local rh = px * 1.6
+  pal.x_ig_text(lx + 2 * z, ly, px * 0.85, COL.dim, "layers", 0)
+  ly = ly + px * 1.3
+  for li = #doc.layers, 1, -1 do
+    local l = doc.layers[li]
+    local on = doc.cur_layer == li
+    local hov = not ctx.alt and i.wx >= lx and i.wx < lx + LR - 8 * z
+                and i.wy >= ly and i.wy < ly + rh
+    if on or hov then
+      pal.x_ig_rect_fill(lx, ly, LR - 9 * z, rh,
+                         on and COL.btn_on or COL.btn_hot, 3 * z)
+    end
+    -- eye toggle
+    local ex = lx + 2 * z
+    local eyec = l.hidden and COL.dim or COL.accent
+    pal.x_ig_circle_fill(ex + 4 * z, ly + rh * 0.5, 2.5 * z, eyec)
+    if hov and i.clicked[1] then
+      if i.wx < ex + 9 * z then
+        l.hidden = not l.hidden
+        p.comp_dirty = true
+        commit(ed, win.path)
+      else
+        doc.cur_layer = li
+        ctx.touch()
+      end
+    end
+    pal.x_ig_clip_push(lx + 10 * z, ly, LR - 22 * z, rh)
+    pal.x_ig_text(lx + 12 * z, ly + (rh - px) * 0.45, px * 0.95,
+                  on and COL.hot or COL.text, l.name or ("layer " .. li), 0)
+    pal.x_ig_clip_pop()
+    ly = ly + rh + 2 * z
+  end
+  local bw = (LR - 14 * z) / 2
+  if button(i, ctx, lx, ly, bw, rh, "+", false, px) then
+    sprite.add_layer(doc)
+    p.comp_dirty = true
+    commit(ed, win.path)
+  end
+  if button(i, ctx, lx + bw + 2 * z, ly, bw, rh, "-", false, px)
+     and #doc.layers > 1 then
+    sprite.delete_layer(doc, doc.cur_layer)
+    p.comp_dirty = true
+    commit(ed, win.path)
+  end
+
+  -- palette row
+  local py0 = ctx.cy + cvh + 4 * z
+  local sw = math.max(8, 13 * z)
+  local sx0 = ctx.cx + 2 * z
+  local n = 0
+  for ci, c in ipairs(doc.palette) do
+    local x = sx0 + n * (sw + 2 * z)
+    if x + sw > ctx.cx + ctx.cw - 90 * z then break end
+    pal.x_ig_rect_fill(x, py0, sw, sw, disp(c), 2 * z)
+    if (win.color or 0) == c then
+      pal.x_ig_rect(x - 1, py0 - 1, sw + 2, sw + 2, COL.hot, 1, 2 * z)
+    end
+    local hov = not ctx.alt and i.wx >= x and i.wx < x + sw
+                and i.wy >= py0 and i.wy < py0 + sw
+    if hov and i.clicked[1] then
+      win.color = c
+      ctx.touch()
+    end
+    n = n + 1
+  end
+  -- hex add (enter commits)
+  local hx = ctx.cx + ctx.cw - 86 * z
+  pal.x_ig_rect(hx, py0, 82 * z, sw, 0x4a437088, 1, 2 * z)
+  if not ctx.occluded then
+    local text, _, _, st = pal.x_ig_edit {
+      id = "sphex" .. win.id, x = hx + 2 * z, y = py0 + 1,
+      w = 78 * z, h = sw - 2, text = p.hex or "", px = px * 0.9, font = 1,
+      enter = true, multiline = false,
+    }
+    p.hex = text
+    if st and st.submit then
+      local c = hex_parse(text)
+      if c then
+        win.color = c
+        doc.palette[#doc.palette + 1] = c
+        commit(ed, win.path)
+        p.hex = ""
+      end
+    end
+  end
+
+  -- frames row
+  local fy = py0 + sw + 3 * z
+  local fh = math.max(8, 14 * z)
+  local fx = sx0
+  for fi = 1, doc.frames do
+    local label = tostring(fi)
+    local fw = pal.x_ig_text_size(label, px * 0.9, 1) + 8 * z
+    if button(i, ctx, fx, fy, fw, fh, label, doc.cur_frame == fi, px * 0.9) then
+      doc.cur_frame = fi
+      p.comp_dirty = true
+      ctx.touch()
+    end
+    fx = fx + fw + 2 * z
+    if fx > ctx.cx + ctx.cw - 80 * z then break end
+  end
+  local ops = { { "+", function() sprite.add_frame(doc) end },
+                { "⧉", function() sprite.dup_frame(doc, doc.cur_frame) end },
+                { "-", function()
+                    if doc.frames > 1 then
+                      sprite.delete_frame(doc, doc.cur_frame)
+                    end
+                  end } }
+  local opx = ctx.cx + ctx.cw - 78 * z
+  for _, op in ipairs(ops) do
+    if button(i, ctx, opx, fy, 22 * z, fh, op[1], false, px * 0.9) then
+      op[2]()
+      p.comp_dirty = true
+      commit(ed, win.path)
+    end
+    opx = opx + 25 * z
+  end
+end
+
+return M

@@ -37,6 +37,7 @@ M.kinds = {
   console = cm.require("cm.ed.win.console"),
   assets = cm.require("cm.ed.win.assets"),
   image = cm.require("cm.ed.win.image"),
+  sprite = cm.require("cm.ed.win.sprite"),
 }
 
 -- open the right window kind for a file at a world position (double-click
@@ -341,8 +342,8 @@ local function interact(ig)
         local win = id and part == "content" and wm.get(doc, id)
         local kind = win and M.kinds[win.kind]
         if kind and kind.wheel then
-          kind.wheel(win, M, i.wheel)
-          routed = true
+          -- a hook may decline (sprite view mode) — then the canvas zooms
+          routed = kind.wheel(win, M, i.wheel) ~= false
         end
       end
     end
@@ -422,9 +423,18 @@ local function interact(ig)
   if owned or (ig.mouse and not g.alt) then return end
 
   -- empty canvas (or middle button / space anywhere): pan; right = pan or
-  -- the spawn menu on a still-click
-  local over = wm.hit(doc, wwx, wwy, inp.bo, inp.bi)
-  local b = (i.clicked[2] and 2) or (i.clicked[3] and 3)
+  -- the spawn menu on a still-click. A kind can claim the middle button
+  -- over its content (sprite ed pans its own view, §12.6).
+  local over, opart = wm.hit(doc, wwx, wwy, inp.bo, inp.bi)
+  local mid_taken = false
+  if i.clicked[2] and over and opart == "content" and not g.alt then
+    local w = wm.get(doc, over)
+    local kind = w and M.kinds[w.kind]
+    if kind and kind.takes_middle and kind.takes_middle(w) then
+      mid_taken = true
+    end
+  end
+  local b = (i.clicked[2] and not mid_taken and 2) or (i.clicked[3] and 3)
             or (i.clicked[1] and (g.space or not over) and 1) or nil
   if b and (b ~= 1 or not over) or (b and g.space) then
     g.pan = { b = b, sx = i.wx, sy = i.wy,
