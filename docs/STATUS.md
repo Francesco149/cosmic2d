@@ -3,6 +3,45 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (overnight session, cont. — R6 design + R6a/R6b)
+**Phase**: **REVAMP R6 — rewind: DESIGNED (docs/REWIND.md + ADR D053);
+R6a (the editor stream) + R6b (disk spill + budget) BUILT.** On top of
+the same-night R4 + R5 (below):
+
+- **docs/REWIND.md + D053** — the R6 design: the editor rides the D032
+  ring as per-frame `EDOC` chunks (CTRC stays v1 — skip-tolerant
+  readers); disk streaming = whole closed segments spilled to
+  `<project>/.ed/history` with `ring.budget_mb` (default 1024) bounding
+  retention and the seconds window demoted to RAM residency; browsing =
+  the scrub park model extended to the editor (stash the present ed
+  doc, restore the parked one, autosave/journals/file-writes suspended
+  — the §7b ephemeral discipline); resume adopts the shown doc; asset
+  bring-back = working-state copy (no file epochs). Build order
+  R6a…R6e in REWIND.md §8.
+- **R6a BUILT**: `cm.ed.touch` bumps `doc_rev`; the recorder
+  canon-encodes the ed doc only when the rev moved and the canon
+  changed → an EDOC after that frame's FRAM; keyframes carry the full
+  ed canon; `ring_state_at` returns `st.edoc`. selftest +8.
+- **R6b BUILT**: CSEG segment files, skeleton demotion + 4-deep
+  materialize-LRU, budget eviction (oldest files first), rewind file
+  cleanup, per-session wipe, graceful degrade on write failure; spill
+  on for real windowed sessions only (headless/CI write nothing —
+  goldens byte-identical). New `pal.x_remove`. selftest +9 (22693).
+  Proven live: a 200-frame smoke session streams seg_00000N files
+  (~21 KB per 60-frame segment).
+
+**Next step (resume here):** **R6c — park + ephemeral discipline**
+(REWIND.md §8): cm.scrub stashes/restores the ed doc around parking,
+cm.ed grows the suspension gate (autosave off / journal pushes off /
+file writes walled while parked; g.tw/g.sw dropped on park), resume
+adopts the shown doc; scripted proofs (park → poke → scrub = poke gone;
+resume = poke kept; park-quit-relaunch = the present comes back). Then
+**R6d** (the pill/bar UI on the shell overlay) and **R6e** (bring-back
++ the exit proof). The human's pending passes: the R4 exit session, the
+R5 zip double-click.
+
+---
+
 **Date**: 2026-07-12 (overnight session, cont. — R5 built too)
 **Phase**: **REVAMP R5 — picker + launcher: BUILT (ADR D052); awaiting
 the human's win11 zip double-click (the exit's last inch).** Built on
