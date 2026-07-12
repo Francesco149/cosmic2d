@@ -2704,6 +2704,23 @@ local function t_ed_game()
   text.fr_matches(fr2, lines2, a3.text)
   text.fr_apply({ id = 1, path = "t.txt" }, fed, a3, {}, fr2, lines2, true)
   check(a3.text == "ba__\ncab\n_no", "ed.text: replace all")
+
+  -- new code windows inherit the current one's size (UX round 6)
+  local ed = cm.require("cm.ed")
+  local wm2 = cm.require("cm.ed.wm")
+  local keep_doc = ed.doc
+  ed.doc = wm2.init({ cam = { x = 0, y = 0, zoom = 1 } })
+  local t1 = wm2.spawn(ed.doc, "text", 0, 0, 555, 444)
+  ed.doc.focus = t1.id
+  local w2, h2 = ed.text_spawn_size()
+  check(w2 == 555 and h2 == 444, "ed: text spawn inherits the focused size")
+  ed.doc.focus = 0
+  check(ed.text_spawn_size() == 555,
+        "ed: text spawn falls back to the topmost text window")
+  wm2.close(ed.doc, t1.id)
+  check(ed.text_spawn_size() == text.DEF_W,
+        "ed: text spawn uses the default when none exist")
+  ed.doc = keep_doc
 end
 
 local function t_ed_session()

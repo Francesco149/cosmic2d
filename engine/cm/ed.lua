@@ -40,6 +40,22 @@ M.kinds = {
   sprite = cm.require("cm.ed.win.sprite"),
 }
 
+-- new code windows open at the size you've made your current one
+-- (human, UX round 6): the focused text window's size, else the topmost
+-- text window's, else the kind default
+function M.text_spawn_size()
+  local doc = M.doc
+  local fw = doc and wm.get(doc, doc.focus)
+  if fw and fw.kind == "text" then return fw.w, fw.h end
+  if doc then
+    for i = #doc.wins, 1, -1 do
+      local w = doc.wins[i]
+      if w.kind == "text" then return w.w, w.h end
+    end
+  end
+  return M.kinds.text.DEF_W, M.kinds.text.DEF_H
+end
+
 -- open the right window kind for a file at a world position (double-click
 -- and drag-to-canvas in the asset picker, EDITOR.md §12.5)
 function M.open_asset_window(path, wx, wy)
@@ -49,8 +65,9 @@ function M.open_asset_window(path, wx, wy)
     return
   end
   local kind = M.kinds[kname]
-  local win = wm.spawn(M.doc, kname, wx, wy, kind.DEF_W or 300,
-                       kind.DEF_H or 240, kind.defaults())
+  local dw, dh = kind.DEF_W or 300, kind.DEF_H or 240
+  if kname == "text" then dw, dh = M.text_spawn_size() end
+  local win = wm.spawn(M.doc, kname, wx, wy, dw, dh, kind.defaults())
   if kname == "text" then
     M.kinds.text.navigate(win, M, path)
   else
@@ -789,7 +806,8 @@ local function draw_menu(ig, i)
       local kind = M.kinds[item[1]]
       local extra, dw, dh = kind.defaults()
       dw = dw or kind.DEF_W or 260
-      dh = (dh or kind.DEF_H or 180) + (item[1] == "game" and 0 or 0)
+      dh = dh or kind.DEF_H or 180
+      if item[1] == "text" then dw, dh = M.text_spawn_size() end
       wm.spawn(M.doc, item[1], m.wx, m.wy, dw, dh, extra)
       g.menu = nil
       M.touch()

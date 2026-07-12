@@ -716,8 +716,10 @@ function M.draw(win, ctx)
         if path then
           local wm = cm.require("cm.ed.wm")
           local cur = g.cursor or { wx = win.x + 40, wy = win.y + 40 }
+          local sw2, sh2 = ed.text_spawn_size() -- your current code
+                                                -- window's size (round 6)
           local nw = wm.spawn(ed.doc, "text", cur.wx + 20 / ctx.z,
-                              cur.wy + 20 / ctx.z, M.DEF_W, M.DEF_H,
+                              cur.wy + 20 / ctx.z, sw2, sh2,
                               { path = "", filter = "" })
           nw.hist = { win.path }
           nw.hpos = 1
