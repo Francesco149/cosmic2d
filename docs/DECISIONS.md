@@ -1634,3 +1634,54 @@ metrics (wrap/tab/IME edge — would force exposing more editor state
 through the C ABI instead); sprite journals at 512 full snapshots still
 grow painful (→ ENTR v2 deltas); or the human misses a studio feature
 weekly (→ that feature is the next sprite-ed round).
+
+## D052 — R5: the project picker + the thin launcher (2026-07-12)
+
+**Context**: R5 (REVAMP §6) gives the engine its front door: a
+teidraw-style project picker, and the board's shipped-game story — a
+thin launcher exe beside the project, editor/console disabled, the same
+zip openable through the editor. Two mechanisms had to be picked: how a
+running engine *switches projects* (boot loads exactly one), and how a
+renamed exe finds its game.
+
+**Decision**:
+
+1. **Project switch = a Lua VM reboot over surviving C state.** The
+   parachute already proves the shape (VM closed + re-booted, window and
+   named buffers intact). Additions: `pal.x_reboot()` (request the same
+   cycle without an error), the **`boot.next` named buffer** as the
+   carrier (named buffers survive reboots BY DESIGN — the picker writes
+   `"<path>\n<mode>"`, the next boot adopts + frees it), and
+   `pal_gfx_init` learns to **retarget on re-init** (resize the internal
+   target via the existing resize path, retitle, honor maximized)
+   instead of refusing a different-size project. On an adopted switch,
+   cm.main **sweeps all named buffers** first so the old project's sim
+   state can't leak into the new session's snapshots/traces.
+2. **The picker is a cartridge** (`projects/picker` — igcanvas
+   precedent): scans `projects/*` for project.lua + merges the recents
+   file (engine-root `.recent.dat`, plain lines, most-recent-first,
+   cap 12, gitignored — written by cm.main on every successful real
+   boot, which is how sibling-repo projects like ../cosmic2d-game/cosmic
+   get remembered). Tiles open in **editor mode by default** (the board:
+   the picker is the editor's front door); a ▶ affordance boots play
+   mode. `bin/cosmic` with no project argument boots the picker (the old
+   default, projects/sandbox, died at R0 anyway).
+3. **The launcher is exe-name magic, C-assisted, Lua-decided**:
+   `pal.exe` (argv[0]) is exposed; when boot has no project argument and
+   the exe basename isn't `cosmic`, cm.main looks for `<name>/` then
+   `projects/<name>/` (relative to the engine root the existing
+   fixup_cwd already established) and boots it **locked**: `proj.editor
+   = false` forced (the existing D-series lockdown every dev surface
+   already respects), `--edit` ignored. A shipped zip is therefore: the
+   renamed exe + `engine/` + the project dir; the same unzipped folder
+   opens fully in the editor via `cosmic <dir> --edit`.
+
+**Consequences**: no process re-exec, no second binary — the launcher IS
+cosmic.exe renamed, and switching projects reuses the most battle-tested
+path in the PAL (the parachute). The cost: gfx retarget-on-reboot is new
+surface area on an old function, and cross-project buffer hygiene is now
+cm.main's job (the sweep).
+
+**Revisit if**: a project needs boot-time gfx properties the retarget
+can't apply live (a fixed non-resizable window, say); or picker startup
+scanning gets slow enough to want a manifest cache.
