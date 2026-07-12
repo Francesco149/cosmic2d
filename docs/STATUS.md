@@ -3,6 +3,50 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (same session, cont.)
+**Phase**: **REVAMP R0 — the split: DONE.** The human resolved REVAMP §7
+(engine-first; smoke = cut-down cosmic; goldens re-cut at R0; the old studio
+dies at R4) + pre-answered the rewind browse gate (interactive-but-ephemeral,
+§7b) — ADR **D046**. Then the split shipped, all on main:
+
+- **`pre-revamp` branch** (keep forever) = the full old tree, INCLUDING the
+  human's previously-untracked files (sandbox map.dat, cosmic mock/untitled)
+  committed there so nothing is lost.
+- **`../cosmic2d-game`** (new repo, `1b677e1`): cosmic/ + GAME/STORY/maps
+  docs. Boots: `bin/cosmic ../cosmic2d-game/cosmic` (project paths resolve
+  against the ENGINE root — the binary chdirs there at boot). mock/untitled
+  stay untracked there (gitignored). Parked until R7.
+- **`../cosmic2d-demos`** (new repo, `66ff4d1`): procart/ + PROCART.md +
+  sandbox/ (ARCHIVED old testbed, map.dat committed). procart's round-2
+  taste pass folds into the art track later.
+- **`projects/smoke`** (`61ec00f`): ONE room (50x22) + 3 planks + the M7
+  moveset verbatim (player/fx/pix from cosmic, buffers renamed smoke.*).
+  demo.lua = the KITCHECK re-choreographed for the room + an attack section;
+  telemetry-verified every rule fires (grapple engage/cancel/block, FJ
+  once-per-airtime + re-arm, up-jump lockout, hop taps, flutter + hop_cd
+  arming + block, teleport rate-cap + A<->B flips). Fixed a latent nil in
+  player.lua's procedural fallback sprite (NF used before assignment —
+  never ran while girl.png existed; smoke is its first real user).
+- **Goldens re-cut** (`29f31c3`): smoke_kitcheck.ctrace (830f, verify PASS,
+  re-record byte-identical) + smoke_idle/smoke_kit pixel goldens (pinned
+  lavapipe); uigallery golden still byte-identical. **Found + fixed dead
+  fixtures**: churn/evalfix still used the pre-rename `pt.*` global — dead
+  since the cm rename, hidden because the flake's `*.ctrace` glob matched
+  nothing while traces were `*.ptrace` (so `nix run .#test` had silently
+  stopped after selftest). Ported to cm.*, re-recorded; the D033 ptrace→
+  ctrace rename is hereby confirmed + done. **`nix run .#test` is
+  end-to-end ALL GREEN** (selftest 22536 + 3 traces + 3 pixels) — the
+  trace+pixel stages actually run again. 3 shots on llm-feed.
+
+**Next step (resume here): R1 — the script-engine spike** (REVAMP.md §6):
+QuickJS vs Lua 5.4 bench (sim tick / quad-batch prep / UI churn) +
+determinism audit (bit-exact record→verify, integer semantics, iteration
+order) + embedding/hot-reload story → an ADR with numbers, migrate-or-stay.
+R2 (imgui + window model) prep can interleave. Good `/clear` point — R0 is
+committed everywhere and all three repos are green.
+
+---
+
 **Date**: 2026-07-12
 **Phase**: **THE REVAMP — kickoff (D045, docs/REVAMP.md). Plan written,
 awaiting the human's review; R0 (repo split) is the first build step.**
