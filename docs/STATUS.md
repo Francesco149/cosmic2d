@@ -3,6 +3,36 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12
+**Phase**: **THE REVAMP — kickoff (D045, docs/REVAMP.md). Plan written,
+awaiting the human's review; R0 (repo split) is the first build step.**
+
+The human arrived with a well-defined UX vision as a teidraw board
+(`cosmic2d` board; the diagram convention is now a CLAUDE.md section —
+boards live in `/mnt/f/Documents/teidraw/`, export via
+`/opt/src/teidraw/build/teidraw <boardDir> --export-txt/--export`). This
+session: learned the teidraw CLI, exported + read the board, and wrote the
+plan — **docs/REVAMP.md** (target UX · architecture deltas · repo split ·
+R0–R7 roadmap with exit criteria · open questions §7) + **ADR D045** +
+PLAN.md banner + CLAUDE.md pointers. Docs only, no code change.
+
+The gist: editor → teidraw-style infinite canvas with floating windows
+(code ed / asset pick / sprite ed / live game), imgui pulled in for complex
+widgets, QuickJS-vs-Lua decision gate BEFORE the editor rewrite, three-repo
+split (engine / `../cosmic2d-demos` / `../cosmic2d-game`), disk-streamed
+~1 GB rewind incl. editor state, game prototype reboots as a graybox
+keeping the M7 movement feel. procart pauses as-is (its round-2 taste pass
+folds into the graybox/art track later); the pure art modules survive.
+
+**Next step (resume here):** the human reviews REVAMP.md — especially the
+**open questions in §7** (sequencing of the game graybox, where the sandbox
+lands, golden re-cut timing, old-studio retirement). Then **R0 — the
+split**: `pre-revamp` backup branch → create `../cosmic2d-demos` +
+`../cosmic2d-game` → engine-only repo with a minimal smoke project,
+selftest green in all three. R1 (QuickJS spike) can prep in parallel.
+
+---
+
 **Date**: 2026-07-03 (second session)
 **Phase**: **procart round 2 SHIPPED (both tracks of the promoted brief) —
 awaiting the human's taste pass.** Commits `797f58c` (terrain styles) +

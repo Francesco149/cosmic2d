@@ -1224,3 +1224,52 @@ Decisions:
 Revisit triggers: the human's taste pass on the llm-feed gallery (promote /
 mine / abandon); if promoted, how bakes enter the M10 asset pipeline
 (.spr layers for hand-finishing vs direct PNG strips).
+
+## D045 — the revamp: teidraw-style editor UX + repo split (2026-07-12)
+
+**Context**: the human arrived with a clear, well-defined UX vision after
+months of daily-driving teidraw (`../teidraw`), captured as the teidraw board
+`cosmic2d` (the diagram convention is now in CLAUDE.md). The old editor shell
+grew ad hoc (docked chrome + the studio's separate full-window mode); the
+vision unifies everything.
+
+**Decision** (the human's, this is a directional ADR; **docs/REVAMP.md** is
+the plan): a multi-session revamp —
+
+- **The editor becomes an infinite canvas with floating windows** (code
+  editors, asset pick, sprite ed, the live playable game), a subset of
+  teidraw's UX with the same heuristics-for-intent philosophy (main action =
+  content interaction; move/select/close behind ALT; no title bars).
+- **Dear ImGui is pulled into the binary** for complex widgets (code-editor
+  text rendering/wrapping) rather than maintaining our own text stack; the
+  canvas grammar stays script-side. C++ is thereby allowed in the platform
+  binary ("portable C/C++ helpers").
+- **Script engine decision gate before the editor rewrite**: evaluate
+  QuickJS vs Lua 5.4 (perf + provable determinism); the editor is written
+  once, in the winner. (Bellard's upstream QuickJS got a major perf uplift;
+  a fork is probably unnecessary.)
+- **Three repos**: `cosmic2d` = engine only; `../cosmic2d-demos` =
+  experiments/demos; `../cosmic2d-game` = the cosmic game. Old demos/assets
+  archived; current tree preserved as a `pre-revamp` backup branch;
+  **breaking API changes are explicitly okay**.
+- **Rewind becomes a flagship feature**: ~1 GB adjustable disk-streamed state
+  history; frame-by-frame read-only browsing of everything *including the
+  editor*; asset bring-back from the past; game/editor switch while
+  rewinding. Consequence (supersedes the D040 exemption for the NEW shell):
+  editor state must live in named/snapshottable state so history capture
+  sees it. The old studio's exemption stands until the new sprite-ed window
+  replaces it.
+- **The game prototype reboots as a graybox** (movement feel kept verbatim,
+  checkerboard/rect placeholders, core loop iterated to feel-great; the
+  human fills in art as we go).
+
+**Why**: the engine's UX debt is the binding constraint on everything M10+
+taught us; teidraw proves the exact interaction model we want, natively, with
+source on disk to crib from. The determinism foundation (the engine's actual
+moat) is untouched — the revamp deepens it (rewind) rather than trading it
+away.
+
+**Revisit if**: the QuickJS spike fails determinism (stay on Lua — cheap,
+good outcome); imgui starts leaking into the canvas grammar (contain or drop
+it); the rewind's editor-state capture proves heavier than the feature is
+worth (descope to sim+assets history first).
