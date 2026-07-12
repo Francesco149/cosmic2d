@@ -1,9 +1,11 @@
-# the editor shell — the R3 design (D050)
+# the editor shell — the R3 design (D050) + R4 windows (D051)
 
 > The REVAMP §3.4/§6 design doc for **R3 — editor shell**: the infinite
 > canvas + floating-window system in Lua, the ALT interaction grammar, and
 > the unsaved-persists + undo-forever model. The D036/STUDIO.md successor.
-> Binding ADR: **D050**. Prior art: `../teidraw` (the interaction tuning is
+> §12 extends it with **R4 — the windows** (code ed / playable game /
+> console / asset pick / sprite ed). Binding ADRs: **D050** (shell),
+> **D051** (windows). Prior art: `../teidraw` (the interaction tuning is
 > lifted from its source, constants and all) and the human's `cosmic2d`
 > board (the ALT grammar is *its* spec — teidraw itself has no ALT layer,
 > because there the canvas IS the main action; in our editor the main
@@ -347,3 +349,181 @@ all back.
 - **WSLg flake** — feel iteration needs the live window; when wayland
   drops, `--win` captures keep the visual loop alive but the taste pass
   waits.
+
+## 12. R4 — the windows (D051)
+
+R4 fills the shell with the serious citizens (REVAMP §6 R4): **code ed**,
+the **playable game**, the **console** re-hosted, **asset pick**, and
+**sprite ed** — and the F2 studio dies (D046 Q4). The R3 state model is
+unchanged: every new durable field passes the §2 review test and lives in
+`cm.ed.doc`; bulky working state stays keyed by asset path.
+
+### 12.1 The ghost-widget split (the widget-z fix, and the code-ed shape)
+
+The one structural idea of R4: **`x_ig_edit` stops drawing text.** A code
+editor needs syntax color, a gutter, and a caret the widget can't give us
+— so Lua draws *every visible glyph* on the drawlist (which already obeys
+canvas z), and the widget becomes an invisible input machine: caret math,
+selection, mouse picking, clipboard, IME, key repeat — all the D049
+"miserable to hand-roll" machinery — rendered as nothing but the
+selection highlight. The §11 widget-z trap thereby dissolves: an occluded
+window simply skips its (invisible) widget and looks pixel-identical;
+there is no interleaved-z story left to design.
+
+Additive `x_ig_edit` opts (x_ tier, no api bump):
+
+- `ghost` — push a transparent text color around the widget (glyphs +
+  imgui's caret invisible; the `TextSelectedBg` highlight still draws).
+- `scroll_x, scroll_y` — when present, force the widget's scroll (the
+  multiline child window + `state->Scroll.x`) — session restore and
+  link jumps.
+- `enter` — `EnterReturnsTrue` (the console input line).
+- `focus` — grab keyboard focus this frame (`SetKeyboardFocusHere`).
+- `set` — adopt the passed `text` even while active (history nav, undo
+  while focused — the buffer normally re-syncs only when inactive).
+
+New 4th return: a state table `{sx, sy, caret, sa, sb, submit}` — scroll
+in px (read from the multiline child window, which persists while
+inactive), caret/selection **byte offsets** while active (from
+`GetInputTextState`; nil when inactive), and the enter flag. The child
+window is found by its 1.92.4 name shape (`"host/##t_%08X"`) — a
+vendored-pin-internal, revisited on any imgui bump.
+
+### 12.2 code ed (the text window grows up; kind stays `text`)
+
+- **Visible layer, all Lua drawlist**: line-number gutter (mono, dim,
+  right-aligned; the active line bright), per-line syntax color, our own
+  caret (blink on the wall clock, mono column metrics), current-line
+  tint. Only visible lines draw (scroll + line height = px); tokens memo
+  per line keyed by the line's string (interning makes the lookup cheap;
+  the cache is ephemeral).
+- **`cm.ed.lex`** — pure per-line tokenizers, selftestable: `lua`
+  (comments incl. long brackets via a per-line carry flag, strings,
+  numbers, keywords, punctuation), `md` (headings, code spans/fences,
+  links, emphasis markers), plain. Comment/string carry state is a
+  per-line-start array recomputed on change (cheap, correct across
+  multi-line strings).
+- **Docs are a special *code* format, not a rendered view**: .md keeps
+  the mono grid (the ghost overlay must match the widget's layout
+  glyph-for-glyph), but headings/links/code spans get faces. **Links**:
+  Ctrl+click any token that resolves to a project file (md link targets,
+  `require`-style dotted module names, bare relative paths) → **opens a
+  new code window** at the pointer (the board's rule). Each window keeps
+  **back/fwd history** (`win.hist`/`win.hpos`, captured): header ◀ ▶
+  buttons + mouse buttons 4/5 navigate the window through the files it
+  has visited (re-targeting the same window, teidraw-style).
+- Wheel over the content scrolls (the imgui child already captures it);
+  ALT+wheel always zooms the canvas (§12.6).
+
+### 12.3 The playable game window
+
+- **Focused = playing** (heuristics-for-intent: content-click focuses,
+  so *clicking into the game plays it*; clicking anywhere else stops).
+  Unfocused stays watch-only. The header reads `game — playing / live`.
+- `cm.ed.filter_events(events)` replaces cm.main's blanket swallow:
+  while a game window is focused (and ALT is up, and imgui doesn't want
+  the keyboard) **key events pass through to `cm.input.feed`**, and
+  motion/button events over the window's letterboxed image remap
+  `wx,wy → FOV px` through the image rect (recorded each draw,
+  ephemeral). Wheel over it feeds the sim. Everything else is swallowed
+  as before. Synthesized input rides the normal `cm.input` record path —
+  recorded, replayable, deterministic by construction.
+- **Plain-key shell hotkeys suspend while a game window is focused**
+  (`]`/`[`, arrows, shift+digit fits — they'd collide with gameplay);
+  the ALT layer, Esc, and Ctrl combos stay the shell's. Esc-to-shell is
+  the one deliberate theft (universal "get out").
+
+### 12.4 The console window (the §8 gate dies)
+
+- Kind `console`: scrollback pulled from the same `pal.log_lines` ring
+  the legacy console reads (shared incremental poll on the shell's g;
+  the ring is the source of truth — a rewound frame shows the live log,
+  which is honest: logs aren't editor state), filter + input line as
+  single-line ghost edits, Enter (`enter/focus/set` opts) submits to
+  `cm.repl` — the same recorded EVAL path; up/down walk `repl.history`.
+- In editor mode **grave spawns/focuses a console window** (and is
+  consumed); the legacy overlay stays for non-editor sessions. The §8
+  skip-ig-frame interim gate is deleted — the last legacy-chrome
+  coexistence hack goes with it. Contained-error notify opens/focuses
+  the console window when the shell is on.
+
+### 12.5 asset pick (+ the image window)
+
+- Kind `assets`: **no folders** — one flat list of project files
+  (filtered walk; `.ed`/`.git` pruned), **type chips** (all · code ·
+  image · sound) + **fuzzy search** (subsequence scorer, best-first),
+  a **size slider** (tile size 48–160 px-at-zoom), grid of tiles:
+  image files preview via `cm.gfx.texture` (`.spr` shows its baked
+  `.png` sibling), everything else a kind glyph + name.
+- **Double-click opens the right window**: text-ish → code ed, `.spr` →
+  sprite ed, image → the trivial `image` kind (texture view,
+  aspect-locked — also the drop preview for ref images), sound → none
+  yet (M9 never landed; glyph only).
+- **Drag-out = rebind**: dragging a tile ghosts a thumb on the overlay;
+  released over a window whose kind `accepts(win, path)` → that window
+  **re-targets to the file** (code ed opens it into its history; sprite
+  ed re-binds; image swaps); over empty canvas → spawns the right window
+  there.
+- **Drag-in from the OS = add to project**: new PAL event
+  `{type="drop", path, wx, wy}` (SDL_EVENT_DROP_FILE; additive event
+  kind, absent headless). Dropped **onto an assets window**, the file is
+  copied into the project (image → `art/`, sound → `sound/`, code/text →
+  the root; name collisions suffix `_2`), the list refreshes, the tile
+  flashes. Drops anywhere else are ignored (R4; window-targeted drops =
+  replace-the-asset can come later with the same event).
+
+### 12.6 sprite ed (the studio's successor; the F2 studio dies)
+
+- Kind `sprite`, bound to a `.spr` path. **Read-only by default** — the
+  composited current frame on a checkerboard, fit to the content rect —
+  with an **edit toggle in the header** (the board's "obvious toggle").
+- **The working state is the CSPR bytes** — `doc.assets[path] = { spr =
+  <bytes>, jpos }` — so the §6 three-layer model applies verbatim: dirty
+  = bytes ≠ disk, the journal entries are .spr snapshots, Ctrl+Z/Y walk
+  them, revert is an edit, restart survival rides session.dat. The
+  decoded `cm.sprite` doc + its textures are ephemeral plumbing keyed by
+  path (anonymous buffers — the reserved `ed.*` prefix stays unused).
+  One paint gesture (stroke/fill/toggle) = one encode + one journal
+  push, replacing the studio's in-memory undo entirely.
+- **Edit-mode roster (v1, deliberately lean)**: pencil / eraser / bucket
+  / eyedropper, the doc palette + add-color (hex field), layer list
+  (select, eye, add/del), frame strip (select/add/dup/del), sprite-view
+  zoom (wheel over content) + middle-drag pan. Ctrl+S = `cm.sprite.save`
+  (writes `.spr` + bakes `.png`/`.anim`/`.meta` — the game hot-reloads
+  on its own, closing the paint→see-it loop inside the canvas).
+- **Not in v1** (the .spr format carries them; the window just doesn't
+  expose them yet): gradients editing, marquee/transforms/brushes/curve,
+  clips/onion (animation is its own window later, per the board), HSV
+  picker, image-size modal, pivot/slice editing. The studio's authoring
+  depth returns window-by-window as content work demands it — D051
+  records the accepted gap.
+- **Journal growth** (§11): sprite journals cap at **512 entries**
+  (journal.open gets a per-open cap; text keeps 4096).
+- **`cm.studio` + `--studio` + F2 are deleted** (D046 Q4 — no
+  coexistence; `pre-revamp` + git history keep the code). cm.paint /
+  cm.sprite / cm.anim are untouched. cm.editor (the F1 *world* editor)
+  is NOT R4 scope — it dies when maps become a canvas window (R7-ish).
+
+### 12.7 Wheel routing (closing the R3 scope note)
+
+Priority per wheel event: **ALT held → canvas zoom, always.** Else if
+the cursor is over a window's content and the kind takes the wheel
+(game-focused → sim; sprite → sprite zoom; text/console/assets → their
+scroll, via imgui capture or `kind.wheel`) → the content takes it.
+Else → canvas zoom. (Pans/edge bands are unaffected.)
+
+### 12.8 R4 build order + exit
+
+1. **R4-pal**: the §12.1 edit extension + the drop event + absence KATs.
+2. **R4a code ed** (lex + gutter + links + history), **R4b game window**
+   (filter_events), **R4c console**, **R4d asset pick (+image)**,
+   **R4e sprite ed + studio removal** — each a commit + captures.
+3. **R4f proof**: selftest suites (lex, fuzzy, filter_events remap,
+   journal cap), `nix run .#test` green (goldens untouched by
+   construction), windows native selftest + trace verify + `--edit`
+   capture, llm-feed set, STATUS/docs.
+
+**Exit (REVAMP §6 R4)**: one real session without leaving the canvas —
+open the game and *play it in its window*, edit a script in code ed
+(highlighted, Ctrl+S hot-reloads the running game), tweak a sprite in
+sprite ed, drag an asset in from the OS — and the F2 studio is gone.

@@ -1565,3 +1565,72 @@ entries or the doc-tree text fields visibly slow (→ ENTR v2 deltas /
 `ed.*` buffers, both designed-for); or the R6 design finds captured
 state it needs that §2's captured/ephemeral line excluded (→ move the
 field into the doc, which is the whole point of the line).
+
+## D051 — R4: the windows — ghost-widget code ed, focused-play game window, console/assets/sprite-ed as canvas citizens (2026-07-12)
+
+**Context**: R4 (REVAMP §6) fills the R3 shell with its real citizens:
+code ed, the playable game window, the console re-host, asset pick, and
+sprite ed — and the F2 studio dies with no coexistence (D046 Q4). Three
+designs had to land first: how a syntax-highlighted code editor rides
+`x_ig_edit` without imgui leaking policy (and without the §11 widget-z
+trap), how a *focused* game window feeds the deterministic sim, and what
+of the studio's depth ships in sprite-ed v1. Full design: EDITOR.md §12.
+
+**Decision**:
+
+1. **The ghost-widget split**: `x_ig_edit` grows additive opts (`ghost`,
+   `scroll_x/scroll_y`, `enter`, `focus`, `set`) and a 4th return
+   (`{sx,sy,caret,sa,sb,submit}`). In ghost mode the widget draws no
+   glyphs — it is a pure input machine (caret/selection/mouse/clipboard/
+   IME) — and **Lua draws every visible glyph on the drawlist**: syntax
+   color, gutter, caret. This keeps imgui a mechanism (D049 §2 test
+   passes: teidraw could still be built on it) AND dissolves the
+   widget-z trap: occluded windows skip an invisible widget and render
+   pixel-identical. The multiline child's scroll + `GetInputTextState`
+   offsets are read behind the C ABI; the child-window name shape is a
+   vendored-pin internal (re-checked on any imgui bump).
+2. **Focused = playing**: content-click already focuses, so clicking
+   into the game window plays it. `cm.ed.filter_events` replaces the
+   blanket input swallow: keys pass through, mouse remaps through the
+   letterboxed image rect to FOV px, wheel feeds the sim — all through
+   the normal `cm.input.feed`, so synthesized input is recorded and
+   replayable by construction. Plain-key shell hotkeys suspend while a
+   game window is focused; ALT, Esc, and Ctrl stay the shell's.
+3. **Console = a window kind** reading the same `pal.log_lines` ring;
+   Enter submits to the recorded EVAL path; grave spawns/focuses it in
+   editor mode. The D050 §8 skip-ig-frame gate is deleted — the last
+   legacy-chrome coexistence hack.
+4. **Asset pick**: flat no-folder list, type chips + fuzzy subsequence
+   search, size slider, texture previews; double-click opens the right
+   kind (incl. a trivial `image` window); drag-out re-targets a window
+   (`kind.accepts`) or spawns one on empty canvas; **OS drag-in** lands
+   via a new additive PAL event `{type="drop", path, wx, wy}`
+   (SDL_EVENT_DROP_FILE) and copies into the project (image→`art/`,
+   sound→`sound/`, code→root).
+5. **Sprite ed works on CSPR bytes as its working state**
+   (`doc.assets[path].spr`), so D050's three-layer model applies
+   verbatim — journal entries are .spr snapshots (per-open cap 512),
+   one paint gesture = one entry, revert/restart-survival free. The
+   decoded doc + textures are ephemeral; `ed.*` buffers stay reserved.
+   Read-only by default with a header edit toggle. **v1 roster is
+   deliberately lean** (pencil/eraser/bucket/eyedropper, palette +
+   hex add, layers, frames, zoom/pan); gradients/transforms/clips/
+   HSV/pivot editing return window-by-window as content work demands —
+   an accepted, recorded gap. `cm.studio`, `--studio`, and F2 are
+   deleted (cm.paint/sprite/anim untouched; cm.editor the F1 world
+   editor survives until maps become a window).
+6. **Wheel routing**: ALT → canvas zoom always; else content that takes
+   the wheel (game/sprite/scrollers); else canvas zoom.
+
+**Consequences**: the code path everyone edits in daily is drawlist
+glyphs + an invisible widget — one philosophy, no second text renderer;
+the game is playable where it lives, and its input path is trace-clean;
+the studio's 2171-line full-window mode leaves the tree. The cost is
+sprite-ed v1's feature gap vs the studio it replaces, and a documented
+dependency on one imgui internal name shape.
+
+**Revisit if**: the ghost overlay ever misaligns with the widget's own
+metrics (wrap/tab/IME edge — would force exposing more editor state
+through the C ABI instead); sprite journals at 512 full snapshots still
+grow painful (→ ENTR v2 deltas); or the human misses a studio feature
+weekly (→ that feature is the next sprite-ed round).
