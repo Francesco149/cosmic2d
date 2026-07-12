@@ -74,15 +74,31 @@ local KITCHECK = {
   { 24 }, -- bow out
 }
 
+-- SLOPES (R8a, MAPS.md §3): walk the slope course (slopes.map — 22.5° up,
+-- plateau, 45° down) right then back left. The grounded flag must hold on
+-- every walking frame — the snap-up covers the ascents, the descent stick
+-- the way down. Run: level.reset("slopes") then game.demo(2).
+local SLOPES = {
+  { 12 }, -- settle onto the ground
+  { 330, "right" }, -- up the 22.5°, across the plateau, down the 45°
+  { 20 },
+  { 330, "left" }, -- and all the way back
+  { 20 },
+}
+
 -- exported for choreography tooling (boundary dumps, montages); data, not
 -- state — readers must not mutate it
 M.KITCHECK = KITCHECK
+M.SLOPES = SLOPES
 
--- is `action` held on relative frame `rel`? (pure; edges derive from rel-1)
-function M.down(rel, action)
+local SCRIPTS = { KITCHECK, SLOPES }
+
+-- is `action` held on relative frame `rel` of script `n` (default 1 =
+-- KITCHECK)? (pure; edges derive from rel-1)
+function M.down(rel, action, n)
   if rel < 0 then return false end
   local t = 0
-  for _, row in ipairs(KITCHECK) do
+  for _, row in ipairs(SCRIPTS[n or 1] or KITCHECK) do
     local t1 = t + row[1]
     if rel < t1 then
       for i = 2, #row do
@@ -95,9 +111,9 @@ function M.down(rel, action)
   return false
 end
 
-function M.length()
+function M.length(n)
   local t = 0
-  for _, row in ipairs(KITCHECK) do t = t + row[1] end
+  for _, row in ipairs(SCRIPTS[n or 1] or KITCHECK) do t = t + row[1] end
   return t
 end
 

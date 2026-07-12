@@ -16,10 +16,11 @@ M.spawn = { x = 80, y = 296 }
 
 -- load (or reload) the room from the asset. cm.map.use rebuilds the
 -- world buffer ("smoke.mapc") — sim state, snapshot/trace/rewind-proof.
-function M.reset()
-  local path = cm.main.args.project .. "/room.map"
+function M.reset(name) -- name: "room" (default) | "slopes" (the R8a proof)
+  name = name or "room"
+  local path = cm.main.args.project .. "/" .. name .. ".map"
   if not pal.read_file(path) then -- dev bootstrap; inert once committed
-    cm.require("genmap").write()
+    cm.require("genmap").write(name)
   end
   local inst = map.use{ path = path, name = "smoke.mapc" }
   M.inst, M.world = inst, inst.world

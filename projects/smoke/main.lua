@@ -6,8 +6,9 @@
 --
 -- Controls: arrows move (down+jump drops through planks) · space jump /
 -- flash-jump / up-jump · e hop (hold = flutter) · q grapple · r teleport ·
--- d slice(stub) · ` console (game.demo(1) = the KITCHECK choreography) ·
--- F1 editor · Esc options (the sprite ed lives in --edit since R4, D051).
+-- d slice(stub) · ` console (game.demo(1) = KITCHECK, game.demo(2) = the
+-- SLOPES walk) · Esc options (the sprite ed lives in --edit since R4; the
+-- F1 tile editor retired with the .map migration, R8a).
 --
 -- Determinism: sim state in named buffers (smoke.*) + doc tree only;
 -- randomness from cm.rand; trig from cm.math; fixed dt (ARCHITECTURE
@@ -114,10 +115,10 @@ end
 
 -- game.demo(1) in the console (or --eval, when recording the golden) hands
 -- the controls to the KITCHECK script; any real action press takes back.
-function game.demo(on)
+function game.demo(on) -- 1 = KITCHECK, 2 = SLOPES (demo.lua scripts)
   local d = state.doc
   if on and on ~= 0 then
-    d.demo = 1
+    d.demo = on
     d.demo_t0 = state.frame()
   else
     d.demo = 0
@@ -142,8 +143,8 @@ local function build_ctl()
   end
   if d.demo ~= 0 then
     local rel = state.frame() - d.demo_t0
-    local function dn(a) return demo.down(rel, a) end
-    local function was(a) return demo.down(rel - 1, a) end
+    local function dn(a) return demo.down(rel, a, d.demo) end
+    local function was(a) return demo.down(rel - 1, a, d.demo) end
     return {
       left = dn("left"), right = dn("right"),
       up = dn("up"), down = dn("down"),
@@ -218,7 +219,8 @@ function game.draw()
   text.draw((W - text.measure(title)) // 2, 3, title,
             { r = 1, g = 0.92, b = 0.7, a = 0.95 })
   if state.doc.demo ~= 0 then
-    local msg = "KITCHECK * press any key to play"
+    local msg = (state.doc.demo == 2 and "SLOPES" or "KITCHECK")
+                  .. " * press any key to play"
     text.draw((W - text.measure(msg)) // 2, 24, msg,
               { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
