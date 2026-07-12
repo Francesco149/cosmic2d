@@ -493,6 +493,139 @@ function M.snap_rect(doc, rect, opts)
   return dx or 0, dy or 0, guides
 end
 
+-- ---- the §7 point snap (collider authoring, R8c) ----
+-- Vertex-level snapping for drawing/dragging collider points. Targets
+-- are collected ONCE per gesture (the doc mutates live during a drag —
+-- a per-frame walk would self-snap), points snap per frame.
+--
+-- snap_targets(doc, opts) -> { verts = {{x,y}...}, segs = {{x0,y0,x1,y1}...} }
+--   opts.dims / opts.skip as snap_rect; opts.skipv = { o=, c=, v= } drops
+--   the dragged vertex + its adjacent segments (v = nil drops the whole
+--   collider — edge-drags move all of it). Owner o: 0 = free collider,
+--   else the placement index; c = collider index within the owner.
+function M.snap_targets(doc, opts)
+  opts = opts or {}
+  local dims = opts.dims or dim16
+  local skip = opts.skip
+  local sv = opts.skipv
+  local verts, segs = {}, {}
+  local function excl(o, c, v)
+    return sv and sv.o == o and sv.c == c and (sv.v == nil or sv.v == v)
+  end
+  local function excl_seg(o, c, v1, v2)
+    return sv and sv.o == o and sv.c == c
+           and (sv.v == nil or sv.v == v1 or sv.v == v2)
+  end
+  local function col(cobj, o, ci, ox, oy)
+    if cobj.kind == "circle" then return end
+    local v
+    if cobj.kind == "quad" then
+      v = { cobj.x, cobj.y, cobj.x + cobj.w, cobj.y,
+            cobj.x + cobj.w, cobj.y + cobj.h, cobj.x, cobj.y + cobj.h }
+    else
+      v = cobj.verts
+    end
+    local n = #v // 2
+    for i = 1, n do
+      if not excl(o, ci, i) then
+        verts[#verts + 1] = { v[i * 2 - 1] + ox, v[i * 2] + oy }
+      end
+    end
+    local last = (cobj.kind == "quad" or cobj.closed) and n or n - 1
+    for i = 1, last do
+      local j = i % n + 1
+      if not excl_seg(o, ci, i, j) then
+        segs[#segs + 1] = { v[i * 2 - 1] + ox, v[i * 2] + oy,
+                            v[j * 2 - 1] + ox, v[j * 2] + oy }
+      end
+    end
+  end
+  for ci, c in ipairs(doc.colliders) do col(c, 0, ci, 0, 0) end
+  for pi, pl in ipairs(doc.places) do
+    if not (skip and skip(pi)) then
+      for aci, c in ipairs(pl.cols or {}) do col(c, pi, aci, pl.x, pl.y) end
+      local x, y, w, h = M.place_rect(doc, pi, dims)
+      verts[#verts + 1] = { x, y }
+      verts[#verts + 1] = { x + w, y }
+      verts[#verts + 1] = { x + w, y + h }
+      verts[#verts + 1] = { x, y + h }
+      segs[#segs + 1] = { x, y, x + w, y }
+      segs[#segs + 1] = { x + w, y, x + w, y + h }
+      segs[#segs + 1] = { x + w, y + h, x, y + h }
+      segs[#segs + 1] = { x, y + h, x, y }
+    end
+  end
+  return { verts = verts, segs = segs }
+end
+
+local TAN22 = 0.41421356 -- tan(22.5 deg): the 8-sector boundary
+
+-- snap_pt(targets, x, y, opts) -> sx, sy (integers), guides, how
+--   §7 priority: vertices > edges (nearest point ON the segment — slopes
+--   snap true) > the 45-degree lock vs opts.ax/ay (drawing/dragging with
+--   a previous vertex; the anchor itself is never a vertex target) >
+--   grid (only without an anchor — the lock owns the ray).
+--   how = "vert"|"edge"|"45"|"grid".
+function M.snap_pt(tg, x, y, opts)
+  local thr = opts.thr or 6
+  local ax, ay = opts.ax, opts.ay
+  local bd2, bx, by
+  for _, v in ipairs(tg.verts) do
+    if not (ax and v[1] == ax and v[2] == ay) then
+      local dx, dy = v[1] - x, v[2] - y
+      if dx >= -thr and dx <= thr and dy >= -thr and dy <= thr then
+        local d2 = dx * dx + dy * dy
+        if not bd2 or d2 < bd2 then bd2, bx, by = d2, v[1], v[2] end
+      end
+    end
+  end
+  if bd2 then
+    return bx, by, { { t = "dot", x = bx, y = by } }, "vert"
+  end
+  local ed2, ex, ey, eseg
+  for _, s in ipairs(tg.segs) do
+    local ddx, ddy = s[3] - s[1], s[4] - s[2]
+    local len2 = ddx * ddx + ddy * ddy
+    if len2 > 0 then
+      local t = ((x - s[1]) * ddx + (y - s[2]) * ddy) / len2
+      if t < 0 then t = 0 elseif t > 1 then t = 1 end
+      local px2, py2 = s[1] + ddx * t, s[2] + ddy * t
+      local dx, dy = px2 - x, py2 - y
+      local d2 = dx * dx + dy * dy
+      if d2 <= thr * thr and (not ed2 or d2 < ed2) then
+        ed2, ex, ey, eseg = d2, px2, py2, s
+      end
+    end
+  end
+  if ed2 then
+    ex, ey = math.floor(ex + 0.5), math.floor(ey + 0.5)
+    return ex, ey,
+           { { t = "seg", x0 = eseg[1], y0 = eseg[2],
+               x1 = eseg[3], y1 = eseg[4] },
+             { t = "dot", x = ex, y = ey } }, "edge"
+  end
+  if ax then
+    local dx, dy = x - ax, y - ay
+    local adx = dx < 0 and -dx or dx
+    local ady = dy < 0 and -dy or dy
+    local sx2, sy2
+    if ady < adx * TAN22 then
+      sx2, sy2 = math.floor(x + 0.5), ay
+    elseif adx < ady * TAN22 then
+      sx2, sy2 = ax, math.floor(y + 0.5)
+    else
+      local t = math.floor((adx + ady) / 2 + 0.5)
+      sx2 = ax + (dx < 0 and -t or t)
+      sy2 = ay + (dy < 0 and -t or t)
+    end
+    return sx2, sy2,
+           { { t = "ray", x0 = ax, y0 = ay, x1 = sx2, y1 = sy2 } }, "45"
+  end
+  local step = opts.grid or 8
+  return math.floor(x / step + 0.5) * step,
+         math.floor(y / step + 0.5) * step, {}, "grid"
+end
+
 -- ---- header: giz / mk / fill chips ----
 
 local CHIPS = { { "giz", "giz" }, { "mk", "mk" }, { "fill", "fill" } }
@@ -1004,6 +1137,9 @@ function M.draw(win, ctx)
       elseif gl.t == "v" then
         pal.x_ig_line(ox + gl.x * zoom, cvy, ox + gl.x * zoom, cvy + cvh,
                       COL.guide, 1)
+      elseif gl.t == "seg" or gl.t == "ray" then -- the snapped edge / 45 ray
+        pal.x_ig_line(ox + gl.x0 * zoom, oy + gl.y0 * zoom,
+                      ox + gl.x1 * zoom, oy + gl.y1 * zoom, COL.guide, 1)
       else
         pal.x_ig_line(cvx, oy + gl.y * zoom, cvx + cvw, oy + gl.y * zoom,
                       COL.guide, 1)

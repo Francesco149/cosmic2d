@@ -3384,6 +3384,71 @@ local function t_ed_map()
   -- accepts/placeable split: .map rebinds, images place
   check(W.accepts(nil, "maps/x.map") ~= nil and not W.accepts(nil, "a.png"),
         "ed.map: accepts only .map")
+
+  -- ---- the §7 point snap (R8c): snap_targets + snap_pt ----
+  -- rebuild a clean doc (the ops above mutated it)
+  doc = {
+    name = "t", w = 320, h = 200, grid = 8,
+    colliders = {
+      { kind = "chain", verts = { 0, 180, 100, 180, 200, 130 } }, -- slope
+      { kind = "quad", x = 240, y = 100, w = 30, h = 30 },
+      { kind = "circle", cx = 300, cy = 50, r = 10 },             -- no targets
+    },
+    places = { { path = "a.png", x = 30, y = 100, layer = 0,
+                 cols = { { kind = "chain", oneway = true,
+                            verts = { 0, 0, 20, 0 } } } } },
+    markers = {},
+  }
+  local tg = W.snap_targets(doc, { dims = dims })
+  -- chain 3 + quad 4 + attached 2 + place corners 4 = 13 verts;
+  -- chain 2 + quad 4 (closed) + attached 1 + place edges 4 = 11 segs
+  check(#tg.verts == 13 and #tg.segs == 11,
+        "ed.map: snap_targets counts (" .. #tg.verts .. "," .. #tg.segs .. ")")
+  -- skipv drops the dragged vertex + its adjacent segments only
+  tg = W.snap_targets(doc, { dims = dims, skipv = { o = 0, c = 1, v = 2 } })
+  check(#tg.verts == 12 and #tg.segs == 9,
+        "ed.map: skipv drops vertex + adjacent segs")
+  -- skipv with v=nil drops the whole collider (edge-drag moves all of it)
+  tg = W.snap_targets(doc, { dims = dims, skipv = { o = 0, c = 2 } })
+  check(#tg.verts == 9 and #tg.segs == 7, "ed.map: skipv whole collider")
+  -- attached colliders ride their placement offset
+  tg = W.snap_targets(doc, { dims = dims })
+  local found = false
+  for _, v in ipairs(tg.verts) do
+    found = found or (v[1] == 50 and v[2] == 100) -- 30+20, 100+0
+  end
+  check(found, "ed.map: attached verts at world coords")
+
+  -- vert snap wins
+  local sx, sy, guides, how = W.snap_pt(tg, 98, 178, { thr = 6 })
+  check(sx == 100 and sy == 180 and how == "vert" and guides[1].t == "dot",
+        "ed.map: snap_pt vertex wins")
+  -- edge snap: nearest point ON the slope segment (100,180)-(200,130)
+  sx, sy, guides, how = W.snap_pt(tg, 150, 153, { thr = 6 })
+  check(how == "edge", "ed.map: snap_pt edge on a slope (" .. tostring(how) .. ")")
+  check(sx == 151 and sy == 155, -- the projection, rounded
+        "ed.map: snap_pt edge projects (" .. sx .. "," .. sy .. ")")
+  check(guides[1].t == "seg" and guides[2].t == "dot",
+        "ed.map: edge snap draws the segment guide")
+  -- the 45 lock (anchor set, nothing stronger near): horizontal sector
+  sx, sy, guides, how = W.snap_pt(tg, 60, 13, { thr = 6, ax = 20, ay = 10 })
+  check(sx == 60 and sy == 10 and how == "45", "ed.map: 45 lock horizontal")
+  -- vertical sector
+  sx, sy = W.snap_pt(tg, 22, 60, { thr = 6, ax = 20, ay = 10 })
+  check(sx == 20 and sy == 60, "ed.map: 45 lock vertical")
+  -- diagonal: dx=30 dy=34 -> t=32 both axes
+  sx, sy, guides, how = W.snap_pt(tg, 50, 44, { thr = 6, ax = 20, ay = 10 })
+  check(sx == 52 and sy == 42 and how == "45" and guides[1].t == "ray",
+        "ed.map: 45 lock diagonal (" .. sx .. "," .. sy .. ")")
+  -- the anchor itself is never a vertex target (no zero-length segments):
+  -- anchor ON the chain vertex (100,180), cursor right next to it
+  sx, sy, guides, how = W.snap_pt(tg, 103, 179, { thr = 6, ax = 100, ay = 180 })
+  check(how ~= "vert" or sx ~= 100 or sy ~= 180,
+        "ed.map: anchor excluded from vertex targets")
+  -- grid fallback (no anchor, far from everything)
+  sx, sy, guides, how = W.snap_pt({ verts = {}, segs = {} }, 61, 27,
+                                  { thr = 6, grid = 8 })
+  check(sx == 64 and sy == 24 and how == "grid", "ed.map: snap_pt grid")
 end
 
 local function t_ed_filter()
