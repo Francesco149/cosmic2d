@@ -1305,6 +1305,42 @@ local function t_uispace()
   ui.ui_space = was
 end
 
+-- ---- the ig surface absence contract (R2/D049) ----
+-- Plain headless sessions must never initialize imgui: x_ig_frame returns
+-- nil, every other x_ig_* call is a safe no-op, and pal.x_clipboard never
+-- errors. (This runs BEFORE t_capture: once a capture target exists ig
+-- *could* initialize, and the unavailability latch is per-process.)
+local function t_ig_absence()
+  check(pal.x_ig_frame() == nil, "ig: x_ig_frame is nil in plain headless")
+  local ok = pcall(function()
+    pal.x_ig_text(0, 0, 16, 0xffffffff, "nope")
+    pal.x_ig_rect(0, 0, 10, 10, 0xffffffff)
+    pal.x_ig_rect_fill(0, 0, 10, 10, 0xffffffff)
+    pal.x_ig_line(0, 0, 5, 5, 0xffffffff)
+    pal.x_ig_circle(3, 3, 2, 0xffffffff)
+    pal.x_ig_poly({ 0, 0, 4, 0, 4, 4 }, 0xffffffff)
+    pal.x_ig_image(0, 0, 0, 8, 8)
+    pal.x_ig_clip_push(0, 0, 4, 4)
+    pal.x_ig_clip_pop()
+    pal.x_ig_overlay(true)
+    pal.x_ig_overlay(false)
+  end)
+  check(ok, "ig: drawlist calls outside a frame are safe no-ops")
+  check(pal.x_ig_edit { id = "t", x = 0, y = 0, w = 10, h = 10, text = "x" }
+        == nil, "ig: x_ig_edit outside a frame returns nil")
+  check(pal.x_ig_text_size("abc", 16) == nil,
+        "ig: text_size is nil while ig is unavailable")
+  check(type(pal.x_clipboard()) == "string", "x_clipboard reads a string")
+
+  -- raw window-px mouse (v7): cm.ui keeps wx/wy from events, falling back to
+  -- game x/y when a synthetic event omits them
+  local ui = cm.require("cm.ui")
+  ui.frame({ { type = "motion", x = 3, y = 4, wx = 30, wy = 40 } })
+  check(ui.inp.wx == 30 and ui.inp.wy == 40, "ui: wx/wy taken from the event")
+  ui.frame({ { type = "motion", x = 7, y = 8 } })
+  check(ui.inp.wx == 7 and ui.inp.wy == 8, "ui: wx/wy fall back to game x/y")
+end
+
 -- ---- cm.view: the D036 resize ladder (M8.3) ----
 -- Pure window->FOV math; locks every rung the human specified. Render-only
 -- policy, so it is safe to compute headless (it just doesn't get applied).
@@ -1357,6 +1393,22 @@ local function t_capture()
   check(r2 == 0 and g2 == 255, "capture: ui bar composites over the top")
   local r3, g3, b3 = px(5, 100)    -- left edge below the bar: transparent -> black
   check(r3 == 0 and g3 == 0 and b3 == 0, "capture: transparent ui shows through")
+
+  -- x_compose{scale=0} (v7/D049): the game layer is NOT blitted (the ig-canvas
+  -- editor draws the game target itself); the ui layer still composites
+  pal.x_compose({ x = 50, y = 50, scale = 0, ui_scale = 1 })
+  pal.begin_frame(0, 0, 0, 1)
+  pal.quad(0, 0, 100, 100, 1, 0, 0, 1)  -- game target: red (must not appear)
+  pal.x_target("ui")
+  pal.quad(0, 0, 200, 20, 0, 1, 0, 1)   -- ui bar: still composites
+  pal.x_target("game")
+  pal.present()
+  s = pal.x_capture_read()
+  local rh, gh = px(100, 100)      -- where the game viewport WOULD be
+  check(rh == 0 and gh == 0, "compose scale=0: game layer not blitted")
+  local rb, gb = px(5, 5)
+  check(rb == 0 and gb == 255, "compose scale=0: ui layer still composites")
+
   pal.x_capture(0, 0)
   pal.x_ui_target(0, 0)
   pal.x_compose()
@@ -2087,6 +2139,7 @@ function game.init()
   t_bundle()
   t_ring()
   t_viewport()
+  t_ig_absence()
   t_ladder()
   t_capture()
   t_paint()
