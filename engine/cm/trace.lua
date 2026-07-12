@@ -71,7 +71,12 @@ M.ring = M.ring or { seconds = 30, kf = 60 }
 -- M._rec = active pin { path, project, kf, from_id }
 
 local function sorted_buf_list()
-  local list = pal.buf_list()
+  local list = {}
+  for _, b in ipairs(pal.buf_list()) do -- editor-domain (ed.*) buffers are
+    if state.sim_buffer(b.name) then -- never traced (D050; see cm.state)
+      list[#list + 1] = b
+    end
+  end
   table.sort(list, function(a, b) return a.name < b.name end)
   return list
 end

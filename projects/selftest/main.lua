@@ -2116,6 +2116,288 @@ local function t_asset_reload()
   check(t3 == t and t.w == 16, "asset: a failed reload keeps the old texture")
 end
 
+-- ---- cm.ed.* — the R3 editor shell's pure cores (EDITOR.md/D050) ----
+
+local function t_ed_cam()
+  local cam = cm.require("cm.ed.cam")
+  local c = cam.new()
+  c.x, c.y, c.zoom = 13.5, -7.25, 2.5
+
+  -- w2s/s2w round-trip
+  local sx, sy = cam.w2s(c, 100.0, -40.0)
+  local wx, wy = cam.s2w(c, sx, sy)
+  check(math.abs(wx - 100.0) < 1e-9 and math.abs(wy + 40.0) < 1e-9,
+        "ed.cam: w2s/s2w round-trip")
+
+  -- zoom-at-cursor keeps the world point under the cursor fixed
+  local px, py = 333.0, 121.0
+  local bx, by = cam.s2w(c, px, py)
+  cam.zoom_at(c, px, py, cam.wheel_factor(3))
+  local ax, ay = cam.s2w(c, px, py)
+  check(math.abs(ax - bx) < 1e-9 and math.abs(ay - by) < 1e-9,
+        "ed.cam: zoom anchors the cursor's world point")
+  check(math.abs(c.zoom - 2.5 * 1.16 ^ 3) < 1e-9, "ed.cam: 1.16 per notch")
+
+  -- clamps
+  cam.zoom_at(c, 0, 0, 1e9)
+  check(c.zoom == cam.ZMAX, "ed.cam: zoom clamps high")
+  cam.zoom_at(c, 0, 0, 1e-12)
+  check(c.zoom == cam.ZMIN, "ed.cam: zoom clamps low")
+
+  -- fit centers the rect at the fitting zoom
+  local f = cam.fit(100, 200, 400, 200, 1280, 800, 40)
+  check(math.abs(f.zoom - 3.0) < 1e-9, "ed.cam: fit picks min-axis zoom")
+  local cx, cy = cam.s2w(f, 640, 400)
+  check(math.abs(cx - 300) < 1e-9 and math.abs(cy - 300) < 1e-9,
+        "ed.cam: fit centers the rect")
+
+  -- the adaptive grid keeps the screen pitch in the comfy band
+  for _, z in ipairs({ 0.02, 0.11, 0.5, 1.0, 3.7, 24.0, 64.0 }) do
+    local step, alpha = cam.grid(z)
+    local pitch = step * z
+    check(pitch >= cam.GRID_LO * 0.5 and pitch <= cam.GRID_HI,
+          "ed.cam: grid pitch sane at zoom " .. z)
+    check(alpha >= 0.35 and alpha <= 1.0, "ed.cam: grid alpha in range")
+  end
+
+  -- lerp endpoints
+  local l0 = cam.lerp({ x = 1, y = 2, zoom = 1 }, { x = 5, y = 6, zoom = 3 }, 0)
+  local l1 = cam.lerp({ x = 1, y = 2, zoom = 1 }, { x = 5, y = 6, zoom = 3 }, 1)
+  check(l0.x == 1 and l0.zoom == 1 and l1.x == 5 and l1.zoom == 3,
+        "ed.cam: lerp endpoints")
+end
+
+local function t_ed_wm()
+  local wm = cm.require("cm.ed.wm")
+  local doc = wm.init({ cam = { x = 0, y = 0, zoom = 1 } })
+
+  -- spawn: ids advance, spawned window is selected + focused + topmost
+  local a = wm.spawn(doc, "note", 0, 0, 200, 100)
+  local b = wm.spawn(doc, "note", 150, 50, 200, 100)
+  check(a.id == 1 and b.id == 2 and doc.next_id == 3, "ed.wm: spawn ids")
+  check(doc.sel[1] == b.id and doc.focus == b.id, "ed.wm: spawn selects")
+  check(doc.wins[2].id == b.id, "ed.wm: spawn lands on top")
+
+  -- hit: topmost first in the overlap; edge parts around the border
+  local id, part = wm.hit(doc, 160, 60, 6)
+  check(id == b.id and part == "content", "ed.wm: hit topmost content")
+  id, part = wm.hit(doc, 10, 10, 6)
+  check(id == a.id and part == "content", "ed.wm: hit the lower window")
+  id, part = wm.hit(doc, 150, 60, 6) -- b's west band (y past the n band)
+  check(id == b.id and part == "w", "ed.wm: west edge band")
+  id, part = wm.hit(doc, 350, 150, 6) -- b's far corner
+  check(id == b.id and part == "se", "ed.wm: se corner band")
+  id = wm.hit(doc, 1000, 1000, 6)
+  check(id == nil, "ed.wm: miss is nil")
+
+  -- explicit z only
+  wm.to_front(doc, a.id)
+  check(doc.wins[2].id == a.id, "ed.wm: to_front")
+  wm.lower(doc, a.id)
+  check(doc.wins[1].id == a.id, "ed.wm: lower")
+  wm.raise(doc, a.id)
+  check(doc.wins[2].id == a.id, "ed.wm: raise")
+
+  -- resize from a gesture-start rect: east grows, west anchors the right
+  -- edge, min clamps
+  local r0 = { x = b.x, y = b.y, w = b.w, h = b.h }
+  wm.resize(doc, b.id, "e", r0, 40, 0)
+  check(b.w == 240, "ed.wm: e-resize grows")
+  wm.resize(doc, b.id, "w", r0, 60, 0)
+  check(b.w == 140 and b.x == 210 and b.x + b.w == 350,
+        "ed.wm: w-resize anchors the right edge")
+  wm.resize(doc, b.id, "nw", r0, 500, 500)
+  check(b.w == wm.MIN_W and b.h == wm.MIN_H, "ed.wm: min size clamps")
+  check(b.x + b.w == 350 and b.y + b.h == 150, "ed.wm: clamp keeps anchor")
+  wm.resize(doc, b.id, "se", r0, -500, -500)
+  check(b.x == 150 and b.y == 50, "ed.wm: se clamp keeps origin")
+
+  -- marquee geometry
+  local ids = wm.intersecting(doc, -10, -10, 20, 20)
+  check(#ids == 1 and ids[1] == a.id, "ed.wm: intersecting finds a only")
+  ids = wm.intersecting(doc, 500, 500, 80, 80) -- reversed corners
+  check(#ids == 2, "ed.wm: intersecting normalizes + finds both")
+
+  -- ---- the grammar state machine (synthetic frames) ----
+  local function inp(t)
+    t.band = t.band or 6
+    t.alt = t.alt or false
+    t.down1 = t.down1 or false
+    t.down3 = t.down3 or false
+    t.clicked1 = t.clicked1 or false
+    t.clicked3 = t.clicked3 or false
+    return t
+  end
+
+  -- deterministic stage for the grammar: b on top, overlapping a; b's se
+  -- quadrant (x > 200) is the only spot where b alone is hit
+  wm.to_front(doc, b.id)
+  -- A-click on a window = select the topmost hit
+  doc.sel, doc.focus = {}, 0
+  local g = {}
+  local own = wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60,
+                                      alt = true, down1 = true,
+                                      clicked1 = true }))
+  check(own and g.state == "alt_pend", "ed.wm: A-press arms")
+  own = wm.update(doc, g, inp({ wx = 161, wy = 61, sx = 161, sy = 61,
+                                alt = true }))
+  check(own and g.state == nil, "ed.wm: still-release completes the click")
+  check(doc.sel[1] == b.id and doc.focus == b.id, "ed.wm: A-click selects")
+
+  -- A-drag = move, in world units; an unselected target selects on cross
+  -- (press at 205,60: past a's right edge, so only b is under the cursor)
+  doc.sel = { a.id }
+  g = {}
+  wm.update(doc, g, inp({ wx = 205, wy = 60, sx = 205, sy = 60,
+                          alt = true, down1 = true, clicked1 = true }))
+  wm.update(doc, g, inp({ wx = 215, wy = 60, sx = 215, sy = 60,
+                          alt = true, down1 = true }))
+  check(g.state == "alt_move", "ed.wm: crossing 4px starts the move")
+  check(doc.sel[1] == b.id, "ed.wm: dragging an unselected window selects it")
+  local bx0 = b.x
+  wm.update(doc, g, inp({ wx = 245, wy = 90, sx = 245, sy = 90,
+                          alt = true, down1 = true }))
+  check(b.x == bx0 + 30, "ed.wm: move follows the world delta")
+  wm.update(doc, g, inp({ wx = 245, wy = 90, sx = 245, sy = 90, alt = true }))
+  check(g.state == nil, "ed.wm: release ends the move")
+
+  -- selected-first priority when overlapping: select a (the bottom one),
+  -- press where both overlap — the drag targets a, not topmost b
+  b.x, b.y = 150, 50 -- restore the overlap
+  doc.sel = { a.id }
+  g = {}
+  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60,
+                          alt = true, down1 = true, clicked1 = true }))
+  local ax0 = a.x
+  wm.update(doc, g, inp({ wx = 180, wy = 60, sx = 180, sy = 60,
+                          alt = true, down1 = true })) -- crossing frame
+  wm.update(doc, g, inp({ wx = 200, wy = 60, sx = 200, sy = 60,
+                          alt = true, down1 = true })) -- +20 from the cross
+  check(g.target == a.id and a.x == ax0 + 20,
+        "ed.wm: selected-first move priority")
+  wm.update(doc, g, inp({ wx = 200, wy = 60, sx = 200, sy = 60, alt = true }))
+
+  -- A-rightclick closes; asset state would survive by design (§6)
+  g = {}
+  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
+                          down3 = true, clicked3 = true }))
+  check(g.state == "alt_rpend", "ed.wm: A-rpress arms")
+  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true }))
+  check(wm.get(doc, b.id) == nil, "ed.wm: A-rightclick closes")
+  check(#doc.wins == 1, "ed.wm: one window left")
+
+  -- marquee: A-drag on empty selects the intersecting set
+  g = {}
+  wm.update(doc, g, inp({ wx = 500, wy = 500, sx = 500, sy = 500,
+                          alt = true, down1 = true, clicked1 = true }))
+  check(g.state == "marquee", "ed.wm: A-press on empty starts a marquee")
+  wm.update(doc, g, inp({ wx = -20, wy = -20, sx = -20, sy = -20,
+                          alt = true, down1 = true }))
+  wm.update(doc, g, inp({ wx = -20, wy = -20, sx = -20, sy = -20,
+                          alt = true }))
+  check(#doc.sel == 1 and doc.sel[1] == a.id, "ed.wm: marquee selects")
+
+  -- edge resize on plain drag (no alt)
+  g = {}
+  wm.update(doc, g, inp({ wx = a.x + a.w, wy = a.y + 50,
+                          sx = a.x + a.w, sy = a.y + 50,
+                          down1 = true, clicked1 = true }))
+  check(g.state == "resize" and g.part == "e", "ed.wm: edge press resizes")
+  wm.update(doc, g, inp({ wx = a.x + a.w + 25, wy = a.y + 50,
+                          sx = a.x + a.w + 25, sy = a.y + 50, down1 = true }))
+  check(a.w == 225, "ed.wm: resize follows the drag")
+  wm.update(doc, g, inp({ wx = 0, wy = 0, sx = 0, sy = 0 }))
+
+  -- content click (no alt): not owned, focuses, never raises
+  local c = wm.spawn(doc, "note", 400, 400, 100, 100)
+  wm.to_back(doc, c.id)
+  doc.focus = 0
+  g = {}
+  own = wm.update(doc, g, inp({ wx = 450, wy = 450, sx = 450, sy = 450,
+                                down1 = true, clicked1 = true }))
+  check(own == false and doc.focus == c.id, "ed.wm: content click focuses")
+  check(doc.wins[1].id == c.id, "ed.wm: content click never raises")
+
+  -- close cleans selection/focus references
+  doc.sel = { c.id }
+  doc.focus = c.id
+  wm.close(doc, c.id)
+  check(#doc.sel == 0 and doc.focus == 0, "ed.wm: close cleans refs")
+end
+
+local function t_ed_session()
+  local session = cm.require("cm.ed.session")
+  local wm = cm.require("cm.ed.wm")
+  local state = cm.require("cm.state")
+
+  -- the editor doc is canon-clean and survives encode/decode byte-exactly
+  local doc = wm.init({ v = 1, cam = { x = -80.5, y = 12.25, zoom = 1.16 } })
+  wm.spawn(doc, "note", 10, 20, 260, 180).text = "unsaved text\nsurvives"
+  wm.spawn(doc, "game", 300, 20, 480, 294)
+  doc.assets = { ["main.lua"] = { text = "-- working copy", jpos = 3 } }
+  local blob = session.encode(doc)
+  local back = session.decode(blob)
+  check(state.canon(back) == state.canon(doc),
+        "ed.session: encode/decode round-trips canon bytes")
+  check(back.wins[1].text == "unsaved text\nsurvives",
+        "ed.session: window fields survive")
+  check(back.assets["main.lua"].jpos == 3, "ed.session: asset state survives")
+
+  -- save/load through the real file path shape
+  local root = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_ed"
+  check(session.save(root, doc) == true, "ed.session: save writes")
+  local loaded = session.load(root)
+  check(loaded and state.canon(loaded) == state.canon(doc),
+        "ed.session: load round-trips")
+  check(session.load(root .. "_nope") == nil, "ed.session: missing = nil")
+
+  -- a corrupt session file degrades to nil (fresh boot), never an error
+  pal.write_file(session.path(root), "CEDSgarbage")
+  check(session.load(root) == nil, "ed.session: corrupt = nil")
+end
+
+local function t_ed_domain()
+  -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
+  local state = cm.require("cm.state")
+  check(state.sim_buffer("cm.sim") and state.sim_buffer("smoke.player"),
+        "ed domain: sim names pass")
+  check(not state.sim_buffer("ed.text") and not state.sim_buffer("ed."),
+        "ed domain: ed.* names excluded")
+  check(state.sim_buffer("edit.thing") and state.sim_buffer("ed"),
+        "ed domain: only the exact ed. prefix excludes")
+
+  local v = pal.buf("ed.selftest", 16)
+  v:u32(0, 0xdeadbeef)
+  local snap = state.parse_snapshot(state.snapshot())
+  for _, b in ipairs(snap.bufs) do
+    check(b.name ~= "ed.selftest", "ed domain: snapshot excludes ed.*")
+  end
+  -- restore of a snapshot without the ed buffer must not free it
+  state.restore_tables((function()
+    local m = {}
+    for _, b in ipairs(snap.bufs) do m[b.name] = b.bytes end
+    return m
+  end)(), snap.doct)
+  local still = false
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == "ed.selftest" then still = true end
+  end
+  check(still and pal.buf("ed.selftest", 16):u32(0) == 0xdeadbeef,
+        "ed domain: restore leaves ed.* alone")
+  pal.buf_free("ed.selftest")
+
+  -- headless absence: the shell frame is a no-op without an ig surface
+  local ed = cm.require("cm.ed")
+  local was_on, was_doc, was_root = ed.on, ed.doc, ed.root
+  local view = cm.require("cm.view")
+  local was_mode = view.mode
+  ed.launch((os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_ed")
+  ed.frame() -- x_ig_frame() is nil headless -> must return quietly
+  check(ed.on and ed.doc ~= nil, "ed: launch loads a doc headless")
+  ed.on, ed.doc, ed.root = was_on, was_doc, was_root
+  view.mode = was_mode
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -2147,6 +2429,10 @@ function game.init()
   t_sprite()
   t_anim()
   t_asset_reload()
+  t_ed_cam()
+  t_ed_wm()
+  t_ed_session()
+  t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

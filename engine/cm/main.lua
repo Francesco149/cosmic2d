@@ -3,11 +3,16 @@
 -- convention; see boot.lua header).
 --
 -- Flags: [project_dir] --headless --frames N --shot PATH --no-vsync
---        --record PATH --verify PATH --eval CODE --studio
+--        --record PATH --verify PATH --eval CODE --studio --edit
 --   --studio          boot straight into the asset studio (the F2 sprite/
 --                     animation editor), dropping into the project's art
 --                     browser. The easy launcher: `bin/cosmic --studio`
 --                     (project defaults to projects/sandbox). Live only.
+--   --edit            boot the editor shell (R3, cm.ed/EDITOR.md): the
+--                     infinite canvas, maximized window. The sim runs with
+--                     all input swallowed; live + --win capture only (a
+--                     no-op under --verify / plain headless per the D049
+--                     ig absence contract).
 --   --headless        no window; tick = exactly one sim step (lockstep).
 --                     Without --frames it paces to ~60Hz with hot reload +
 --                     parachute: a full live session minus the window (D013)
@@ -69,6 +74,7 @@ local function parse_args()
       a.evals = a.evals or {}
       a.evals[#a.evals + 1] = argv[i] or error("--eval needs code")
     elseif arg == "--studio" then a.studio = true
+    elseif arg == "--edit" then a.edit = true
     elseif arg:sub(1, 2) ~= "--" then a.project = arg
     else error("unknown flag: " .. arg) end
     i = i + 1
@@ -144,8 +150,9 @@ function M.boot()
     headless = args.headless,
     vsync = not args.no_vsync,
     -- editor-session shape (D049): the window opens maximized. Policy lives
-    -- here (project.lua opts in); the PAL just honors the flag when windowed.
-    maximized = proj.maximized or false,
+    -- here (project.lua opts in; --edit forces it); the PAL just honors the
+    -- flag when windowed.
+    maximized = proj.maximized or args.edit or false,
   }
   -- headless composite capture (--win WxH): present into an offscreen target at
   -- that window size so a --shot shows the editor-around-game layout (dev/debug)
@@ -162,6 +169,7 @@ function M.boot()
   M.view = cm.require("cm.view")
   M.options = cm.require("cm.options")
   M.studio = cm.require("cm.studio") -- the asset studio (F2; M10, render-only)
+  M.ed = cm.require("cm.ed") -- the editor shell (R3, D050)
   -- the resize ladder runs only live: headless/verify keep the fixed project
   -- FOV so goldens + determinism never see a window-derived size (D036). The
   -- --win capture is the one headless exception (it wants the live layout).
@@ -221,6 +229,9 @@ function M.boot()
   -- booting + F2). Live/capture only — --verify returned above; pure headless is
   -- a harmless no-op. The studio pauses the sim while open.
   if args.studio then M.studio.launch() end
+  -- --edit: the R3 editor shell. Same class as --studio (live/capture);
+  -- under plain headless the shell loads but its ig frame is a no-op.
+  if args.edit then M.ed.launch(args.project) end
 end
 
 local function poll_reload(now)
@@ -307,6 +318,9 @@ function M.tick()
   end
   -- engine UI sees raw events; the game sees what the UI didn't capture
   events = M.ui.frame(events)
+  -- editor shell on: the game sees NO input (EDITOR.md §5 — the sim keeps
+  -- running as the live-game window; input synthesis for it is R4)
+  if M.ed and M.ed.on then events = {} end
   -- ingest into live input state EVERY tick, decoupled from sim stepping, so a
   -- render loop faster than the 60 Hz sim never drops a press/release (the
   -- windowed key-stick bug); sim_step then samples the live state per step
@@ -344,6 +358,8 @@ function M.tick()
     -- no game frame to show: dark backdrop (also resets a half-built batch)
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
+  M.ed.frame() -- the editor shell canvas (R3): ig layer, native res; also
+  -- consumes the legacy panel toggle keys while on (EDITOR.md §8)
   M.editor.frame() -- editor chrome above the game, under perf/console
   -- the dev panels (scrub/perf/console/options) draw on the ui canvas at
   -- ui_scale. The editor already routed there when it's open; in play mode it

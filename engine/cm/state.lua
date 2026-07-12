@@ -171,8 +171,19 @@ end
 
 local SNAP_MAGIC = "CSNP"
 
+-- the SIM's buffers: name-sorted, excluding the editor domain. Buffer names
+-- prefixed "ed." belong to the R3+ editor's captured state (EDITOR.md §2 /
+-- D050) — never in sim snapshots, traces or goldens; restore never frees
+-- them. cm.trace applies the same filter.
+function M.sim_buffer(name)
+  return name:sub(1, 3) ~= "ed."
+end
+
 local function sorted_buf_list()
-  local list = pal.buf_list()
+  local list = {}
+  for _, b in ipairs(pal.buf_list()) do
+    if M.sim_buffer(b.name) then list[#list + 1] = b end
+  end
   table.sort(list, function(a, b) return a.name < b.name end)
   return list
 end
