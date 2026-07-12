@@ -1875,3 +1875,53 @@ ring reset). Suite ALL GREEN.
 resume misses (→ a game.on_resume hook); or the human wants play-mode
 (non-editor) sessions to resume too (→ drop the args.edit gate — the
 machinery doesn't care).
+
+## D057 — maps rework: colliders + freehand placement, not tilemaps (2026-07-12)
+
+**Context**: the human, pausing the graybox (R7b) for it: "I'd prefer
+a non pure tilemap approach for maps — a collider layer (collider
+lines with the ability to add slopes and such); for the visuals,
+everything is freehand placement of sprites, but tilemaps can also be
+placed and they behave as 1 baked sprite (editable in the tile
+editor). Workflow: drag assets from the picker to the map editor to
+place, drag to move, double-click opens the right editor; snapping
+tied to CTRL so we don't nudge pixels." Full design: **docs/MAPS.md**.
+
+**Decision** (the load-bearing points; MAPS.md carries the rest):
+
+1. **A map is three layers**: collider chains (sim truth — solid or
+   one-way, slopes by geometry, i32 px verts), freehand placements
+   (render-only, file order = z), markers (rects + kind/extras —
+   spawn/portals/prop_spots move here). New assets `.map` (CMAP) and
+   `.tm` (CTLM; tileset = a .spr whose frames are tiles; pure visual,
+   moved as one unit).
+2. **`cm.collide` keeps the frozen mover contract** (`move` →
+   nx,ny,hit{left,right,up,down,oneway}; `grounded`; `stand_ray` for
+   grapple/mantle) — axis-separated sweep vs classified segments
+   (|dy/dx| ≤ 1 = floor, steeper = wall), ground-stick on descent,
+   arithmetic only. Feel preserved by contract + flat-parity KATs.
+3. **The editor rides the existing models wholesale**: CMAP working
+   bytes in doc.assets (journals/dirty/restart/rewind free), save →
+   the sprite-style recorded hot-reload epoch (traces replay map
+   edits; rewind scrubs across them), new `kind.drop` hook for
+   place-on-drag-in, **CTRL = snap** (vertices > edges > 45° lock >
+   grid, guides drawn; ctrl+wheel dials grid step).
+4. **Graybox = the collider fill itself** (checkerboard fill of closed
+   solids, slim accent one-ways) — R7b never waits for the tilemap
+   window (R8d last).
+5. **Deliberate casualties**: smoke migrates first and its goldens
+   re-cut once (like R0); maps/*.lua build code, level.lua builders,
+   `cm.tilemap`'s mover, and the F1 `cm.editor` all die by R8e.
+
+**Build order**: R8a format+collision core → R8b map window
+select/place → R8c collider+marker editing → R8d tilemap window →
+R8e game migration (both maps re-authored in the editor = the dogfood
+exit); REVAMP §6 gains R8 between R7a and R7b.
+
+**Revisit if**: flat-parity KATs can't hold the kitcheck behavior on
+the migrated smoke room (→ keep TM:move alive under a compat flag and
+migrate the game only); slope feel needs sub-45° walls or curved
+segments (→ material/arc extensions in COLL, format has room); the
+per-cell .tm render shows up in profiles (→ the real bake to one
+texture, the format already reads "baked sprite"); CTRL-snap polarity
+feels backwards live (→ flip the boolean, grammar unchanged).

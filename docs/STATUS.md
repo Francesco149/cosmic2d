@@ -3,6 +3,49 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (day session — R8 designed: the map system, D057)
+**Phase**: **The human paused R7b for a map rework — DESIGNED
+(docs/MAPS.md + ADR D057 + REVAMP §6 R8); awaiting the human's read
+(MAPS.md §12 open questions), then R8a builds.** Docs only engine-side;
+two feel fixes shipped in ../cosmic2d-game first.
+
+- **The ask (verbatim intent)**: non-pure-tilemap maps — a **collider
+  layer** (lines with slopes), visuals = **freehand sprite placement**,
+  tilemaps placeable as one-baked-sprite objects (editable in a tile
+  editor); drag from the asset picker places, drag moves, double-click
+  opens the right editor; **snapping tied to CTRL**.
+- **The design (MAPS.md)**: `.map` (CMAP) = collider chains (solid/
+  one-way, i32 px verts) + placements (render-only, file order = z) +
+  markers (spawn/portals/prop_spots move here); `.tm` (CTLM) tilemap
+  objects, tileset = a .spr whose frames are tiles (window ships last —
+  R8d). **`cm.collide` keeps the frozen mover contract** (move/grounded/
+  stand_ray; |dy/dx|≤1 = floor; ground-stick on descent; arithmetic
+  only) — feel preserved by flat-parity KATs + the kitcheck. The map
+  window rides the sprite-ed models verbatim (CMAP working bytes in
+  doc.assets, journals cap 512, save → the recorded hot-reload epoch →
+  rewind scrubs map edits); new **`kind.drop`** hook (place ≠ rebind);
+  **CTRL = snap**: vertices > edges > 45° lock > grid (ctrl+wheel dials
+  step), guides drawn. **Graybox = the collider fill itself**
+  (checkerboard closed solids) so R7b never waits for tilemaps. Smoke
+  migrates first — goldens re-cut once, deliberately (like R0); the F1
+  cm.editor + the tilemap mover die at R8e. Build order R8a…R8e in
+  MAPS.md §11.
+- **Game repo (committed there)**: **up-jump locked out after a
+  flash-jump** (hop stays — the gate now checks fj_used; mutual
+  lockout) + **the plaza-left pit got escape planks** (rim_hub: 2
+  staggered planks in the wall/gate-post shaft, 4+3 tiles apart vs the
+  ~4.7-tile jump+upjump rise; verified headless by warping in — shot
+  on llm-feed).
+
+**Next step (resume here):** the human reads **MAPS.md §12** (snap
+polarity, graybox-as-collider-fill sign-off, grid default 8 px,
+one-way slopes, live-apply timing) + the outstanding R7a feel check
+with the two fixes in. Then **R8a — format + collision core**
+(MAPS.md §11): cm.map/cm.tmap codecs + cm.collide + smoke migration +
+the deliberate golden re-cut.
+
+---
+
 **Date**: 2026-07-12 (day session — editor UX round 3, D054)
 **Phase**: **The human's first feedback round on the built R3–R6 shell,
 applied (ADR D054); moving to R7 next.**

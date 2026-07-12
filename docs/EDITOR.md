@@ -564,7 +564,9 @@ vendored-pin-internal, revisited on any imgui bump.
 - **`cm.studio` + `--studio` + F2 are deleted** (D046 Q4 — no
   coexistence; `pre-revamp` + git history keep the code). cm.paint /
   cm.sprite / cm.anim are untouched. cm.editor (the F1 *world* editor)
-  is NOT R4 scope — it dies when maps become a canvas window (R7-ish).
+  is NOT R4 scope — it dies when maps become a canvas window (now
+  designed: **docs/MAPS.md**, D057/R8 — the `map`/`tmap` kinds, the
+  `kind.drop` place-on-drag-in hook, the CTRL-snap grammar).
 
 ### 12.7 Wheel routing (closing the R3 scope note)
 

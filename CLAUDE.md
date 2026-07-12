@@ -53,6 +53,10 @@ default windows-side save dir. Resolve it like this:
   shell — ALT grammar, the captured editor state domain (R6-ready),
   unsaved-persists + undo-forever journals, and §12 the windows (code ed /
   playable game / console / assets / sprite ed). The STUDIO.md successor.
+- **MAPS.md** — the R8 design (D057): the map system rework — collider
+  chains (slopes) + freehand placements + markers as `.map` assets,
+  tilemaps demoted to placeable `.tm` objects, the map/tilemap windows,
+  the CTRL-snap grammar.
 - *(moved at R0)* GAME.md / STORY.md / maps → `../cosmic2d-game/docs/`;
   PROCART.md → `../cosmic2d-demos/docs/`.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.

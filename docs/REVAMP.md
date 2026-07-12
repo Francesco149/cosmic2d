@@ -4,7 +4,7 @@
 > (`/mnt/f/Documents/teidraw/cosmic2d` — see CLAUDE.md "Diagrams" for how to
 > export it). This doc distills that board into a plan; when in doubt,
 > re-export the board — the human edits it as thinking evolves. Roadmap
-> milestones are **R0…R7** (the M-series is paused; game-driven M11+ work
+> milestones are **R0…R8** (the M-series is paused; game-driven M11+ work
 > resumes in the game repo after the revamp core lands). Binding ADR: D045.
 
 ## 1. What the revamp is
@@ -269,6 +269,20 @@ flex except: **R0 first** (everything else lands in the right repo) and
   per the human — the smoke project is the testbed until then): movement kit
   carried over, checkerboard/rect placeholders, core-loop graybox iterated to
   "the rects have personality" (human taste pass). Art fills in as we go.
+  *(R7a built 2026-07-12; the human then paused R7b for R8 — the graybox
+  continues on the new map system.)*
+- **R8 — the map system** (D057 + **docs/MAPS.md**; ordered between R7a and
+  R7b per the human, 2026-07-12): maps stop being pure tilemaps — a
+  **collider layer** (line chains, slopes, one-ways; `cm.collide` keeps the
+  frozen mover contract) + **freehand sprite placements** + **markers**, as
+  a real `.map` asset; tilemaps demoted to one placeable object (`.tm`,
+  editable in its own window, R8d). The **map window** on the canvas: drag
+  assets in from the picker to place, drag to move, double-click into the
+  right editor, **CTRL = snap** (vertices/edges/45°/grid). Graybox visuals =
+  the collider fill itself. Smoke migrates first (goldens re-cut once,
+  deliberately); the game maps re-author in the editor at R8e; the F1
+  `cm.editor` + the tilemap mover die. *Exit*: both game maps rebuilt as
+  `.map` in the map window, the human walks them, R7b resumes on top.
 
 ## 7. Open questions — RESOLVED (human, 2026-07-12; ADR D046)
 
