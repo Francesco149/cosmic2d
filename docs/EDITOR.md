@@ -414,7 +414,11 @@ vendored-pin-internal, revisited on any imgui bump.
 - **Visible layer, all Lua drawlist**: line-number gutter (mono, dim,
   right-aligned; the active line bright), per-line syntax color, our own
   caret (blink on the wall clock, mono column metrics), current-line
-  tint. Only visible lines draw (scroll + line height = px); tokens memo
+  tint. **Font: 26 px default** (UX round 4 — the human wanted double),
+  adjusted per window by the `a−`/`a+` header buttons (step 2, clamp
+  8–64); the override lives in `win.px` (captured — rides the session,
+  rewinds honestly). The asset browser's chrome runs at 16 px (1.5×)
+  from the same round. Only visible lines draw (scroll + line height = px); tokens memo
   per line keyed by the line's string (interning makes the lookup cheap;
   the cache is ephemeral).
 - **`cm.ed.lex`** — pure per-line tokenizers, selftestable: `lua`

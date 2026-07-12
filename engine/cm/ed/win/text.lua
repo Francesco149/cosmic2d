@@ -28,8 +28,9 @@ local journal = cm.require("cm.ed.journal")
 local lex = cm.require("cm.ed.lex")
 
 M.kind = "text"
-M.DEF_W, M.DEF_H = 460, 340
-M.PX = 13.0
+M.DEF_W, M.DEF_H = 760, 520 -- sized so the 26 px default shows ~55 cols
+M.PX = 26.0 -- default font px (human, UX round 4); per-window override
+            -- in win.px via the a−/a+ header buttons
 M.PUSH_MS = 600 -- idle time that ends an edit gesture (teidraw's coalesce)
 
 local EXT = { lua = true, md = true, txt = true, json = true, glsl = true }
@@ -333,7 +334,7 @@ M.project_files = project_files
 local function draw_picker(win, ctx)
   local ed = ctx.ed
   local z, pad = ctx.z, 8 * ctx.z
-  local px = math.max(4, M.PX * z)
+  local px = math.max(4, (win.px or M.PX) * z)
   if ctx.occluded then
     pal.x_ig_text(ctx.cx + pad + 4, ctx.cy + pad * 0.6 + 3, px, 0xffffffff,
                   win.filter or "", 1)
@@ -379,28 +380,45 @@ end
 
 -- ---- the editor content ----
 
--- header extras: ◀ ▶ history buttons (drawn by the shell's header pass
--- via kind.header, right-aligned before the dirty cluster)
+-- header extras: a−/a+ font size + ◀ ▶ history buttons (drawn by the
+-- shell's header pass via kind.header, right-aligned before the dirty
+-- cluster; buttons place right-to-left from ctx.hx). Font size is a
+-- per-window CAPTURED field (win.px over the M.PX default) — it rides
+-- the session and rewinds honestly.
 function M.header(win, ctx)
-  if not win.hist or #win.hist < 2 then return 0 end
   local z = ctx.z
   local px = math.max(4, 11 * z)
   local i = cm.require("cm.ui").inp
   local bw = px * 1.6
-  local x = ctx.hx - bw * 2 -- ctx.hx = right edge available to extras
-  for n, glyph in ipairs({ "<", ">" }) do
-    local dir = n == 1 and -1 or 1
-    local can = win.hpos and ((dir < 0 and win.hpos > 1)
-                or (dir > 0 and win.hpos < #win.hist))
-    local bx = x + (n - 1) * bw
-    local hov = not ctx.alt and i.wx >= bx and i.wx < bx + bw
+  local x, used = ctx.hx, 0
+  local function button(glyph, can)
+    x = x - bw
+    used = used + bw
+    local hov = not ctx.alt and i.wx >= x and i.wx < x + bw
                 and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
-    pal.x_ig_text(bx + px * 0.3, ctx.hy + (ctx.hh - px) * 0.45, px,
+    pal.x_ig_text(x + px * 0.3, ctx.hy + (ctx.hh - px) * 0.45, px,
                   can and (hov and 0xE8E4FFff or 0xb0a8dcff) or 0x5a5480ff,
                   glyph, 1)
-    if can and hov and i.clicked[1] then hist_go(win, ctx.ed, dir) end
+    return can and hov and i.clicked[1]
   end
-  return bw * 2
+  local cur = win.px or M.PX
+  if button("a+", cur < 64) then
+    win.px = math.min(64, cur + 2)
+    ctx.ed.touch()
+  end
+  if button("a-", cur > 8) then
+    win.px = math.max(8, cur - 2)
+    ctx.ed.touch()
+  end
+  if win.hist and #win.hist >= 2 then
+    if button(">", win.hpos and win.hpos < #win.hist) then
+      hist_go(win, ctx.ed, 1)
+    end
+    if button("<", win.hpos and win.hpos > 1) then
+      hist_go(win, ctx.ed, -1)
+    end
+  end
+  return used
 end
 
 function M.draw(win, ctx)
@@ -411,7 +429,7 @@ function M.draw(win, ctx)
   local ed = ctx.ed
   local a, p = open_asset(ed, win.path)
   local z = ctx.z
-  local px = math.max(4, M.PX * z)
+  local px = math.max(4, (win.px or M.PX) * z)
   local lang = lex.lang_of(win.path)
   local lines, carry = line_cache(p, a, lang)
 

@@ -171,7 +171,7 @@ local CHIPS = { "all", "code", "image", "sound" }
 
 local function chip_row(win, ctx, i)
   local z = ctx.z
-  local px = math.max(4, 10.5 * z)
+  local px = math.max(4, 16 * z) -- 1.5x (human, UX round 4)
   local x = ctx.cx + 4 * z
   local y = ctx.cy + 3 * z
   local h = px * 1.7
@@ -220,7 +220,7 @@ function M.draw(win, ctx)
   local ed = ctx.ed
   local g = ed.g
   local z = ctx.z
-  local px = math.max(4, 10.5 * z)
+  local px = math.max(4, 16 * z) -- 1.5x (human, UX round 4)
   local i = cm.require("cm.ui").inp
 
   local top = chip_row(win, ctx, i)
