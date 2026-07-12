@@ -250,12 +250,21 @@ flex except: **R0 first** (everything else lands in the right repo) and
   editor and poke around. *(Proven native: smoke.exe boots locked,
   cosmic.exe boots the picker, the picker→editor switch cycles — the
   human's actual zip + double-click is the remaining gate.)*
-- **R6 — rewind**: the disk-streamed ~1 GB delta history; frame browse of
-  everything including the editor (interactive-but-ephemeral, §7b); resume
-  from any frame; game/editor mode switch while rewinding; asset bring-back;
-  the pill + top-bar UI. Design doc first (extends D014/M5). *Exit*: scrub an
-  hour-long session, watch gameplay back, pull yesterday's sprite out of the
-  past; poke a rewound frame and confirm the poking evaporates on scrub.
+- **R6 — rewind** ✅ **BUILT a–e (2026-07-12, D053 + docs/REWIND.md;
+  awaiting the human's soak/feel pass)**: the disk-streamed history
+  (`ring.budget_mb`, default 1 GB; per-session `.ed/history` segment
+  files; the seconds window demoted to RAM residency) · frame browse of
+  everything including the editor (EDOC chunks in the D032 ring;
+  parking = interactive-but-ephemeral with the §7b suspension
+  discipline) · resume from any frame (adopts the shown editor doc,
+  pokes included) · game/editor both visible while rewinding (the game
+  is a canvas window — free) · asset bring-back (parked working bytes →
+  the present, journaled) · the pill + top-bar UI (reserved corner,
+  teidraw-timeout bar). *Exit*: scrub an hour-long session, watch
+  gameplay back, pull yesterday's sprite out of the past; poke a rewound
+  frame and confirm the poking evaporates on scrub. *(Mechanics all
+  KAT-proven + a scripted parked capture; the hour-long soak + feel pass
+  is the human's.)*
 - **R7 — game graybox revamp** (in cosmic2d-game; **after the editor phase**
   per the human — the smoke project is the testbed until then): movement kit
   carried over, checkerboard/rect placeholders, core-loop graybox iterated to

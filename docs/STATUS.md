@@ -3,10 +3,11 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
-**Date**: 2026-07-12 (overnight session, cont. — R6 design + R6a/R6b)
-**Phase**: **REVAMP R6 — rewind: DESIGNED (docs/REWIND.md + ADR D053);
-R6a (the editor stream) + R6b (disk spill + budget) BUILT.** On top of
-the same-night R4 + R5 (below):
+**Date**: 2026-07-12 (overnight session, cont. — R6 designed + BUILT a–e)
+**Phase**: **REVAMP R6 — rewind: DESIGNED (docs/REWIND.md + ADR D053)
+and BUILT a–e; awaiting the human's soak/feel pass. The engine phase of
+the revamp (R0–R6) is now fully built.** On top of the same-night
+R4 + R5 (below):
 
 - **docs/REWIND.md + D053** — the R6 design: the editor rides the D032
   ring as per-frame `EDOC` chunks (CTRC stays v1 — skip-tolerant
@@ -30,15 +31,35 @@ the same-night R4 + R5 (below):
   Proven live: a 200-frame smoke session streams seg_00000N files
   (~21 KB per 60-frame segment).
 
-**Next step (resume here):** **R6c — park + ephemeral discipline**
-(REWIND.md §8): cm.scrub stashes/restores the ed doc around parking,
-cm.ed grows the suspension gate (autosave off / journal pushes off /
-file writes walled while parked; g.tw/g.sw dropped on park), resume
-adopts the shown doc; scripted proofs (park → poke → scrub = poke gone;
-resume = poke kept; park-quit-relaunch = the present comes back). Then
-**R6d** (the pill/bar UI on the shell overlay) and **R6e** (bring-back
-+ the exit proof). The human's pending passes: the R4 exit session, the
-R5 zip double-click.
+**R6c/R6d/R6e BUILT too (same night):**
+
+- **R6c parking**: scrub's apply() parks the editor on the frame's EDOC
+  (present stashed; per-asset plumbing dropped so caches rebuild from
+  the shown doc); close restores the stash; resume adopts the shown doc
+  — pokes included — and trace.rewind rebases the ed stream. The §7b
+  discipline: autosave never arms parked (quit_flush unparks first),
+  journal pushes + parked reopens never touch CJRN files, Ctrl+S / OS
+  drops walled. selftest +8.
+- **R6d the pill/bar**: retained-span pill in the reserved corner;
+  hover expands the bar (timeline drag = park+seek, step/play, resume
+  here, close; Esc closes) — a front-end over cm.scrub, whose legacy
+  panel keeps serving play sessions. Proven in a scripted --edit
+  capture: parked on frame 12/81 with the game window drawing the
+  rewound sim (shot on llm-feed).
+- **R6e bring-back**: `cm.ed.bring_back` + the bar button — the parked
+  focused asset's working bytes copy into the present, journaled as one
+  undoable step. selftest +6 (**22707** total).
+- **Windows native re-verified on the full R4+R5+R6 tree**: selftest
+  22707 PASS, smoke_kitcheck byte-exact.
+
+**Next step (resume here):** the human's passes, in whatever order:
+**R4 exit session** (play/edit/tweak/drag on one canvas), **R5 zip
+double-click** on win11, **R6 soak/feel** (long live session: scrub the
+pill, poke the past + watch it evaporate, resume, bring back a sprite;
+watch ring_stats/perf while history streams). Fix-by-feedback rounds as
+they come. After that: **R7 — the game graybox revamp** (in
+../cosmic2d-game, REVAMP §6 — the engine phase of the revamp is now
+fully built). Good `/clear` point — everything committed, docs current.
 
 ---
 
