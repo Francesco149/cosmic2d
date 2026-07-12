@@ -28,10 +28,12 @@ local journal = cm.require("cm.ed.journal")
 local lex = cm.require("cm.ed.lex")
 
 M.kind = "text"
-M.DEF_W, M.DEF_H = 460, 340
-M.PX = 15.0 -- default font px (one tick up from the original 13 — UX
-            -- round 5; 26 was tried and reverted in round 4); per-window
-            -- override in win.px via a−/a+ or ctrl+wheel over the content
+-- defaults lifted from the human's live session (UX round 6b: "what i
+-- sized it to right now" — player.lua at 669x757, font ticked to 16):
+-- the fresh-editor fallback; open windows still inherit the current
+-- code window's size first (ed.text_spawn_size)
+M.DEF_W, M.DEF_H = 669, 757
+M.PX = 16.0 -- per-window override in win.px via a−/a+ or ctrl+wheel
 M.PUSH_MS = 600 -- idle time that ends an edit gesture (teidraw's coalesce)
 
 local EXT = { lua = true, md = true, txt = true, json = true, glsl = true }
