@@ -78,6 +78,22 @@ click deco.tm (or drag it onto a map window to place it).
 KAT'd) drops them only when a same-base .spr exists (plank.png
 stays). selftest 23761→**23762**; suite ALL GREEN; shot on llm-feed.
 
+**Round three (human, 2026-07-13): "anything that renders sprites
+cannot use this scaling filter."** The tiles showed seams/blurry edges
+and the game window wasn't sharp at 2x — the SDLGPU3 backend samples
+EVERYTHING bilinear. Fix in the PAL (ig.cpp, the ≥1.92.2 sanctioned
+hook): **`x_ig_image` now samples NEAREST** — a dedicated sampler,
+switched via drawlist callbacks that flip
+`ImGui_ImplSDLGPU3_RenderState.SamplerCurrent`; fonts + the baked
+AA-line/fringe textures keep linear. Switches are lazy per drawlist
+(a run of tile cells costs ONE callback; trailing resets before
+ImGui::Render so widget windows never inherit nearest). Verified in
+300% crops: hard tile edges at 231% zoom (no seams, no atlas bleed),
+exact doubled pixels in the 2x game window. IMGUI.md §5 records the
+contract. Suite ALL GREEN (headless never inits ig — goldens
+untouchable by construction); windows cross-build clean; shot on
+llm-feed.
+
 **Next step (resume here):** the human's passes (R7a feel, the
 R8a–R8d shots + the view-lock feel) — then **R8e — the game migration**
 (MAPS.md §10/§11, in ../cosmic2d-game): rim_hub + south_trail

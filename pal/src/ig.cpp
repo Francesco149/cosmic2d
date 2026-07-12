@@ -50,6 +50,14 @@ static struct {
   SDL_GPUTextureFormat fmt = SDL_GPU_TEXTUREFORMAT_INVALID;
   ImFont *fonts[2] = {nullptr, nullptr}; /* 0 = sans (Inter), 1 = mono (JBM) */
   uint64_t frame_no = 0;
+  /* pixel-art sampling (the human's ask, R8d round 3): images draw with a
+   * NEAREST sampler — sprites/tiles/the game target must never blur under
+   * the backend's bilinear default (seams between atlas tiles, soft 2x
+   * game pixels). Fonts + AA shape fringes stay linear: the flags track
+   * which sampler the tail of each drawlist currently wants (bg | fg), so
+   * switch callbacks are only inserted at image<->shape/text transitions. */
+  SDL_GPUSampler *nearest = nullptr;
+  bool px_bg = false, px_fg = false;
 } IG;
 
 static std::map<std::string, IgEdit> g_edits;
@@ -108,6 +116,21 @@ static bool ig_ensure(void) {
   IG.fonts[1] =
       load_font(io, "pal/vendor/fonts/JetBrainsMono-Regular.ttf", "mono");
   if (!IG.fonts[1]) IG.fonts[1] = IG.fonts[0];
+  {
+    /* the image sampler: nearest, clamped — the backend's linear one is
+     * right for fonts, wrong for pixel art (lives as long as G.dev) */
+    SDL_GPUSamplerCreateInfo si = {};
+    si.min_filter = SDL_GPU_FILTER_NEAREST;
+    si.mag_filter = SDL_GPU_FILTER_NEAREST;
+    si.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
+    si.address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    si.address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    si.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
+    si.min_lod = -1000.0f;
+    si.max_lod = 1000.0f;
+    IG.nearest = SDL_CreateGPUSampler(G.dev, &si);
+    if (!IG.nearest) pal_log("ig: nearest sampler failed (%s)", SDL_GetError());
+  }
   IG.inited = true;
   pal_log("ig: imgui %s up (%s, fmt %d)", IMGUI_VERSION,
           IG.windowed ? "windowed" : "capture", (int)IG.fmt);
@@ -134,8 +157,35 @@ extern "C" void pal_ig_sdl_event(const SDL_Event *e) {
   ImGui_ImplSDL3_ProcessEvent(e);
 }
 
+/* sampler-switch draw callbacks: the SDLGPU3 backend consults
+ * RenderState.SamplerCurrent per draw command and resets it to linear at
+ * the start of every RenderDrawData (the ≥1.92.2 sanctioned hook). */
+static void cb_sampler_nearest(const ImDrawList *, const ImDrawCmd *) {
+  ImGui_ImplSDLGPU3_RenderState *rs =
+      (ImGui_ImplSDLGPU3_RenderState *)ImGui::GetPlatformIO()
+          .Renderer_RenderState;
+  if (rs && IG.nearest) rs->SamplerCurrent = IG.nearest;
+}
+
+static void cb_sampler_default(const ImDrawList *, const ImDrawCmd *) {
+  ImGui_ImplSDLGPU3_RenderState *rs =
+      (ImGui_ImplSDLGPU3_RenderState *)ImGui::GetPlatformIO()
+          .Renderer_RenderState;
+  if (rs) rs->SamplerCurrent = rs->SamplerDefault;
+}
+
 extern "C" void pal_ig_render_prepare(SDL_GPUCommandBuffer *cmd) {
   if (IG.state != 1) return;
+  /* a drawlist ending on the nearest sampler would leak it into the lists
+   * that render after it (widget windows render between bg and fg) */
+  if (IG.px_bg) {
+    ImGui::GetBackgroundDrawList()->AddCallback(cb_sampler_default, nullptr);
+    IG.px_bg = false;
+  }
+  if (IG.px_fg) {
+    ImGui::GetForegroundDrawList()->AddCallback(cb_sampler_default, nullptr);
+    IG.px_fg = false;
+  }
   ImGui::Render();
   IG.state = 2;
   ImDrawData *dd = ImGui::GetDrawData();
@@ -165,6 +215,17 @@ extern "C" void pal_ig_render_draw(SDL_GPUCommandBuffer *cmd,
 static ImDrawList *dl(void) {
   return IG.overlay ? ImGui::GetForegroundDrawList()
                     : ImGui::GetBackgroundDrawList();
+}
+
+/* lazily switch the CURRENT drawlist's tail sampler: images want nearest
+ * (pixel art never blurs), everything else wants linear (glyph atlas +
+ * the baked AA-line/fringe textures need it). One callback per
+ * transition — a run of tile cells costs a single switch. */
+static void want_px(bool on) {
+  bool *f = IG.overlay ? &IG.px_fg : &IG.px_bg;
+  if (*f == on) return;
+  *f = on;
+  dl()->AddCallback(on ? cb_sampler_nearest : cb_sampler_default, nullptr);
 }
 
 /* colors cross the boundary as 0xRRGGBBAA (imgui packs ABGR internally) */
@@ -201,6 +262,7 @@ static int l_ig_frame(lua_State *L) {
   ImGui::NewFrame();
   IG.state = 1;
   IG.overlay = false;
+  IG.px_bg = IG.px_fg = false;
   IG.frame_no++;
   /* prune edit buffers whose widget vanished (window closed) */
   for (auto it = g_edits.begin(); it != g_edits.end();)
@@ -250,6 +312,7 @@ static int l_ig_line(lua_State *L) {
   float x1 = (float)luaL_checknumber(L, 3), y1 = (float)luaL_checknumber(L, 4);
   uint32_t c = (uint32_t)luaL_checkinteger(L, 5);
   float t = (float)luaL_optnumber(L, 6, 1.0);
+  want_px(false);
   dl()->AddLine(ImVec2(x0, y0), ImVec2(x1, y1), ig_col(c), t);
   return 0;
 }
@@ -261,6 +324,7 @@ static int l_ig_rect(lua_State *L) {
   uint32_t c = (uint32_t)luaL_checkinteger(L, 5);
   float t = (float)luaL_optnumber(L, 6, 1.0);
   float r = (float)luaL_optnumber(L, 7, 0.0);
+  want_px(false);
   dl()->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), ig_col(c), r, 0, t);
   return 0;
 }
@@ -271,6 +335,7 @@ static int l_ig_rect_fill(lua_State *L) {
   float w = (float)luaL_checknumber(L, 3), h = (float)luaL_checknumber(L, 4);
   uint32_t c = (uint32_t)luaL_checkinteger(L, 5);
   float r = (float)luaL_optnumber(L, 6, 0.0);
+  want_px(false);
   dl()->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), ig_col(c), r);
   return 0;
 }
@@ -281,6 +346,7 @@ static int l_ig_circle(lua_State *L) {
   float r = (float)luaL_checknumber(L, 3);
   uint32_t c = (uint32_t)luaL_checkinteger(L, 4);
   float t = (float)luaL_optnumber(L, 5, 1.0);
+  want_px(false);
   dl()->AddCircle(ImVec2(x, y), r, ig_col(c), 0, t);
   return 0;
 }
@@ -290,6 +356,7 @@ static int l_ig_circle_fill(lua_State *L) {
   float x = (float)luaL_checknumber(L, 1), y = (float)luaL_checknumber(L, 2);
   float r = (float)luaL_checknumber(L, 3);
   uint32_t c = (uint32_t)luaL_checkinteger(L, 4);
+  want_px(false);
   dl()->AddCircleFilled(ImVec2(x, y), r, ig_col(c), 0);
   return 0;
 }
@@ -316,6 +383,7 @@ static int l_ig_poly(lua_State *L) {
   uint32_t c = (uint32_t)luaL_checkinteger(L, 2);
   float t = (float)luaL_optnumber(L, 3, 1.0);
   bool closed = lua_toboolean(L, 4);
+  want_px(false);
   dl()->AddPolyline(pts.data(), (int)pts.size(), ig_col(c),
                     closed ? ImDrawFlags_Closed : ImDrawFlags_None, t);
   return 0;
@@ -326,6 +394,7 @@ static int l_ig_poly_fill(lua_State *L) {
   std::vector<ImVec2> pts;
   if (ig_read_pts(L, 1, pts) < 3) return 0;
   uint32_t c = (uint32_t)luaL_checkinteger(L, 2);
+  want_px(false);
   dl()->AddConvexPolyFilled(pts.data(), (int)pts.size(), ig_col(c));
   return 0;
 }
@@ -343,6 +412,7 @@ static int l_ig_text(lua_State *L) {
   ImFont *f = ig_font(L, 6);
   float wrap = (float)luaL_optnumber(L, 7, 0.0);
   if (px <= 0.0f || slen == 0) return 0;
+  want_px(false);
   ImDrawList *d = dl();
   if (px <= IG_MAX_GLYPH_PX) {
     d->AddText(f, px, ImVec2(x, y), ig_col(c), s, s + slen, wrap);
@@ -399,6 +469,7 @@ static int l_ig_image(lua_State *L) {
     if (tex < 0 || tex >= PAL_MAX_TEX || !G.texs[tex].used) return 0;
     t = G.texs[tex].tex;
   }
+  want_px(true);
   dl()->AddImage((ImTextureID)(intptr_t)t, ImVec2(x, y), ImVec2(x + w, y + h),
                  ImVec2(u0, v0), ImVec2(u1, v1), ig_col(c));
   return 0;
