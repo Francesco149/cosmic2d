@@ -1414,6 +1414,13 @@ end
 -- policy, so it is safe to compute headless (it just doesn't get applied).
 local function t_ladder()
   local view = cm.require("cm.view")
+  -- the rungs below are the human-specified 480x270@2x model; boot seeds
+  -- cfg from the PROJECT design res now (D054/R7 — selftest is 64x64), so
+  -- pin the classic cfg for the formula check and restore after
+  local keep = { view.cfg.ref_w, view.cfg.ref_h, view.cfg.base_scale }
+  view.cfg.ref_w, view.cfg.ref_h, view.cfg.base_scale = 480, 270, 2
+  check(keep[1] == 64 and keep[2] == 64,
+        "view: boot adopted the project design res as the ladder ref")
   local function rung(W, H, ew, eh, es, label)
     local fw, fh, s = view.ladder(W, H)
     check(fw == ew and fh == eh and s == es,
@@ -1431,6 +1438,8 @@ local function t_ladder()
   rung(480, 360, 240, 180, 2, "narrow, cropped both ways")
   rung(1548, 994, 480, 270, 3, "editor avail @1080p: capped, centered")
   rung(588, 514, 294, 257, 2, "editor avail @960x600: cropped below the ref")
+  view.cfg.ref_w, view.cfg.ref_h, view.cfg.base_scale =
+    keep[1], keep[2], keep[3]
 end
 
 -- ---- pal.x_capture: headless composite readback (M8.4) ----

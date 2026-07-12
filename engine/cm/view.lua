@@ -10,6 +10,9 @@ local M = {}
 
 -- Live-tunable knobs. Deliberately NOT in doc.knobs (that is sim state, D028).
 -- The options menu (M8.6) mutates these; they persist via save_video/load_video.
+-- ref/base_scale defaults are the classic 480x270@2x model; cm.main.boot
+-- re-seeds them from the project's design res (D054/R7 — games can be
+-- 960x540-family now, and the ladder's cap must be THEIR design res).
 M.cfg = {
   base_scale = 2, -- default art zoom: a 960x540 window = a 480x270 FOV at 2x
   ref_w = 480,    -- target FOV / art reference; the ladder fills around it (D036)

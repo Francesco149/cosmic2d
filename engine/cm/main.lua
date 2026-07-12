@@ -232,6 +232,12 @@ function M.boot()
   M.options = cm.require("cm.options")
   M.ed = cm.require("cm.ed") -- the editor shell (R3/R4, D050/D051; the F2
   -- studio died here at R4 — sprite ed is a canvas window, D046 Q4)
+  -- the ladder's reference = the project's design res (D054/R7): the cap
+  -- is load-bearing (render must never exceed what the sim planned), and
+  -- that plan is per-project now, not the classic 480x270
+  M.view.cfg.ref_w = proj.internal_w or 480
+  M.view.cfg.ref_h = proj.internal_h or 270
+  M.view.cfg.base_scale = proj.window_scale or 2
   -- the resize ladder runs only live: headless/verify keep the fixed project
   -- FOV so goldens + determinism never see a window-derived size (D036). The
   -- --win capture is the one headless exception (it wants the live layout).
