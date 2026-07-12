@@ -3532,6 +3532,16 @@ local function t_ed_maptool()
         "ed.maptool: attached edge pick at world coords")
   hit = W.col_pick(acols, 31, 99, 4, 30, 100)
   check(hit and hit.v == 1, "ed.maptool: attached vertex pick")
+
+  -- marker extras <-> the one-line k=v form
+  local ex = W.extras_parse("door=rim_hub  dir=left junk noeq")
+  check(ex and #ex == 2 and ex[1].k == "door" and ex[1].v == "rim_hub"
+        and ex[2].k == "dir" and ex[2].v == "left",
+        "ed.maptool: extras_parse keeps k=v, drops junk")
+  check(W.extras_fmt(ex) == "door=rim_hub dir=left",
+        "ed.maptool: extras_fmt round-trips")
+  check(W.extras_parse("") == nil and W.extras_fmt(nil) == "",
+        "ed.maptool: empty extras stay nil")
 end
 
 local function t_ed_filter()

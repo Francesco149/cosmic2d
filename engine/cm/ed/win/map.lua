@@ -9,19 +9,28 @@
 -- rewind (EDOC) for free. The decoded doc + fill geometry + textures are
 -- ephemeral plumbing keyed by path.
 --
--- R8b roster: view (wheel zoom at cursor, MMB pan, shift+1 fit), the
--- graybox fill + placements + marker rects + collider gizmos (header
--- chips giz/mk/fill), the SELECT tool end to end — click / shift-click /
--- marquee / drag-move / arrow nudge / del / [ ] z — with the §7 CTRL
--- snap for placements (vertices > edges/centers > grid; guides drawn;
--- ctrl+wheel dials the grid step), double-click a placement → its
--- editor, the inspector strip (x/y/name/flip), and kind.drop — drag a
--- .spr/.png/.tm from the picker and release over the map to PLACE it
--- (ghost preview + live snap during the carry). Save = write the .map +
--- submit the recorded cm.map.reload EVAL — the running game hot-reloads
--- (MAPS.md §9), so traces replay it and rewind scrubs across it.
--- Collider/marker AUTHORING is R8c; unsnapped colliders still show as
--- gizmos and snap targets here.
+-- R8b roster: view (wheel zoom at cursor, MMB pan, shift+1 fit; focused
+-- = the view lock — own pan/zoom priority over the canvas, EDITOR.md
+-- §12.7), the graybox fill + placements + marker rects + collider
+-- gizmos (header chips giz/mk/fill), the SELECT tool end to end — click
+-- / shift-click / marquee / drag-move / arrow nudge / del / [ ] z —
+-- with the §7 CTRL snap for placements (vertices > edges/centers >
+-- grid; guides drawn; ctrl+wheel dials the grid step), double-click a
+-- placement → its editor, the inspector strip (x/y/name/flip), and
+-- kind.drop — drag a .spr/.png/.tm from the picker and release over the
+-- map to PLACE it (ghost preview + live snap during the carry). Save =
+-- write the .map + submit the recorded cm.map.reload EVAL — the running
+-- game hot-reloads (MAPS.md §9), so traces replay it and rewind scrubs
+-- across it.
+--
+-- R8c roster: the COLLIDER tool (header tool chips sel/col/mkr) — line
+-- chains drawn click by click (enter/dblclick ends open, C closes, esc
+-- cancels), quads/circles dragged out, vertex/edge/whole-collider drag
+-- editing with insert-on-edge-click, the §7 point snap (vertices >
+-- edges > 45 lock > grid), one-way/closed flag chips; ATTACHED
+-- colliders on the select tool (+col auto-fit picker, editable only
+-- while the placement selects, del removes); the MARKER tool (drag =
+-- new rect, corner resize, kind/label/note/extras inspector fields).
 --
 -- Sim/editor line: everything here touches working bytes only; the one
 -- sim-facing op is the recorded repl.submit on save.
@@ -1043,13 +1052,20 @@ local function draw_gizmos(p, view, sel, tool, csel, asel)
   end
 end
 
--- marker inspector line (R8c grows editing; read-only here)
-local function mkline(mk)
-  local ex = ""
-  for _, e in ipairs(mk.extras or {}) do
-    ex = ex .. " " .. e.k .. "=" .. e.v
+-- marker extras <-> the one-line "k=v k2=v2" form (§6 inspector; pure)
+function M.extras_fmt(extras)
+  local out = {}
+  for _, e in ipairs(extras or {}) do out[#out + 1] = e.k .. "=" .. e.v end
+  return table.concat(out, " ")
+end
+
+function M.extras_parse(str)
+  local out = {}
+  for tok in str:gmatch("%S+") do
+    local k, v = tok:match("^([^=]+)=(.*)$")
+    if k then out[#out + 1] = { k = k, v = v } end
   end
-  return ("%s · %s%s"):format(mk.kind, mk.label ~= "" and mk.label or "—", ex)
+  return #out > 0 and out or nil
 end
 
 -- ---- content ----
@@ -1171,20 +1187,30 @@ function M.draw(win, ctx)
     end
   end
 
-  -- markers
-  if win.mk then
-    for _, mk in ipairs(doc.markers) do
+  -- markers (the marker tool forces them visible; §6)
+  local tool = win.tool or "select"
+  if win.mk or tool == "marker" then
+    for mi, mk in ipairs(doc.markers) do
       local sx0, sy0 = ox + mk.x * zoom, oy + mk.y * zoom
       pal.x_ig_rect(sx0, sy0, mk.w * zoom, mk.h * zoom, COL.marker,
                     math.max(1, 1.2 * z))
       pal.x_ig_text(sx0 + 2, sy0 + 1, math.max(4, 8.5 * z), COL.marker,
                     mk.kind, 0)
+      if tool == "marker" and p.sel and #p.sel == 1
+         and p.sel[1].t == "marker" and p.sel[1].i == mi then
+        local qv = M.quad_verts(mk) -- corner resize knobs
+        local kr = math.max(2.5, math.min(2.5, zoom) + 1.5)
+        for ki = 1, 4 do
+          pal.x_ig_rect_fill(ox + qv[ki * 2 - 1] * zoom - kr,
+                             oy + qv[ki * 2] * zoom - kr, 2 * kr, 2 * kr,
+                             COL.marker)
+        end
+      end
     end
   end
 
   -- collider gizmos — always on by default (the human's call, §6);
-  -- the collider tool adds editing handles + the selection accent
-  local tool = win.tool or "select"
+  -- the collider tool adds editing handles + the selection accent.
   -- the attached selection is only alive while its single placement is
   -- (§6: editable only while the object is selected)
   local apl = #p.sel == 1 and p.sel[1].t == "place"
@@ -1217,6 +1243,18 @@ function M.draw(win, ctx)
     return { dims = dims, thr = SNAP_PX / zoom,
              grid = win.grid or doc.grid or 8,
              skip = skipset and function(n) return skipset[n] end or nil }
+  end
+  -- point snap for the authoring tools (collider/marker): CTRL engages
+  local function ptsnap(gx, gy, tg2, ax, ay)
+    if not g.ctrl then
+      p.guides = nil
+      return math.floor(gx + 0.5), math.floor(gy + 0.5)
+    end
+    local sx2, sy2, gg = M.snap_pt(tg2, gx, gy,
+      { thr = SNAP_PX / zoom, grid = win.grid or doc.grid or 8,
+        ax = ax, ay = ay })
+    p.guides = gg
+    return sx2, sy2
   end
 
   -- middle-drag pans the view: the focus lock grabs from anywhere; an
@@ -1261,17 +1299,6 @@ function M.draw(win, ctx)
   -- ---- the collider tool (R8c, §6) ----
   if tool == "collider" then
     local thr = 7 / zoom -- handle pick radius, map px
-    local step = win.grid or doc.grid or 8
-    local function ptsnap(gx, gy, tg2, ax, ay)
-      if not g.ctrl then
-        p.guides = nil
-        return math.floor(gx + 0.5), math.floor(gy + 0.5)
-      end
-      local sx2, sy2, gg = M.snap_pt(tg2, gx, gy,
-        { thr = SNAP_PX / zoom, grid = step, ax = ax, ay = ay })
-      p.guides = gg
-      return sx2, sy2
-    end
     local function finish_chain(closed)
       local gd = p.g
       p.g, p.guides = nil, nil
@@ -1474,6 +1501,110 @@ function M.draw(win, ctx)
                   x0 = x0, y0 = y0 }
         end
         ctx.touch()
+      end
+    end
+
+  -- ---- the marker tool (§6): drag = new rect; move/resize/select ----
+  elseif tool == "marker" then
+    local thr = 7 / zoom
+    local smk = p.sel and #p.sel == 1 and p.sel[1].t == "marker"
+                and doc.markers[p.sel[1].i] or nil
+    if p.g then
+      local gd = p.g
+      if gd.mode == "mpress" then
+        if math.abs(i.wx - gd.sx) > 4 or math.abs(i.wy - gd.sy) > 4 then
+          gd.mode = gd.drag
+          gd.mutates = gd.drag ~= "mnew"
+        elseif not i.buttons[1] then
+          if gd.drag == "mnew" then
+            p.sel = {} -- a still-click on empty clears
+          end
+          p.g = nil
+          ctx.touch()
+        end
+      end
+      if gd.mode == "mmove" then
+        if i.buttons[1] then
+          local nx = gd.orig.x + (i.wx - gd.sx) / zoom
+          local ny = gd.orig.y + (i.wy - gd.sy) / zoom
+          p.guides = nil
+          if g.ctrl then
+            local dx, dy, gg = M.snap_rect(doc,
+              { x = nx, y = ny, w = gd.orig.w, h = gd.orig.h },
+              snap_opts(nil))
+            nx, ny, p.guides = nx + dx, ny + dy, gg
+          end
+          local mk2 = doc.markers[gd.item.i]
+          mk2.x, mk2.y = math.floor(nx + 0.5), math.floor(ny + 0.5)
+          gd.moved = true
+          ctx.touch()
+        else
+          if gd.moved then commit(ed, win.path) end
+          p.g, p.guides = nil, nil
+        end
+      elseif gd.mode == "mresz" then
+        if i.buttons[1] and smk then
+          local nx, ny = ptsnap(mx, my, gd.tg)
+          M.quad_drag(smk, gd.r0, gd.corner, nx, ny)
+          gd.moved = true
+          ctx.touch()
+        else
+          if gd.moved then commit(ed, win.path) end
+          p.g, p.guides = nil, nil
+        end
+      elseif gd.mode == "mnew" then
+        local nx, ny = ptsnap(mx, my, gd.tg)
+        local x0, x1 = math.min(gd.x0, nx), math.max(gd.x0, nx)
+        local y0, y1 = math.min(gd.y0, ny), math.max(gd.y0, ny)
+        pal.x_ig_rect(ox + x0 * zoom, oy + y0 * zoom, (x1 - x0) * zoom,
+                      (y1 - y0) * zoom, COL.marker, math.max(1, 1.2 * z))
+        if not i.buttons[1] then
+          p.g, p.guides = nil, nil
+          if x1 - x0 >= 2 and y1 - y0 >= 2 then
+            doc.markers[#doc.markers + 1] = { x = x0, y = y0, w = x1 - x0,
+              h = y1 - y0, kind = "marker", label = "", note = "" }
+            p.sel = { { t = "marker", i = #doc.markers } }
+            commit(ed, win.path)
+          end
+          ctx.touch()
+        end
+      end
+    elseif topmost and i.clicked[1] and not p.pan then
+      -- the selected marker's corner knobs resize; else pick/move; else new
+      local corner, cd2
+      if smk then
+        local qv = M.quad_verts(smk)
+        for ki = 1, 4 do
+          local dx, dy = mx - qv[ki * 2 - 1], my - qv[ki * 2]
+          local d2 = dx * dx + dy * dy
+          if d2 <= thr * thr and (not cd2 or d2 < cd2) then
+            corner, cd2 = ki, d2
+          end
+        end
+      end
+      if corner then
+        p.g = { mode = "mpress", drag = "mresz", corner = corner,
+                sx = i.wx, sy = i.wy,
+                tg = M.snap_targets(doc, { dims = dims }),
+                r0 = { x = smk.x, y = smk.y, w = smk.w, h = smk.h } }
+      else
+        local hit = M.pick(doc, mx, my, dims, true)
+        if hit and hit.t == "marker" then
+          p.sel = { hit }
+          local mk2 = doc.markers[hit.i]
+          p.g = { mode = "mpress", drag = "mmove", item = hit,
+                  sx = i.wx, sy = i.wy,
+                  orig = { x = mk2.x, y = mk2.y, w = mk2.w, h = mk2.h } }
+          ctx.touch()
+        elseif not hit then
+          local tg = M.snap_targets(doc, { dims = dims })
+          local x0, y0 = ptsnap(mx, my, tg)
+          p.g = { mode = "mpress", drag = "mnew", sx = i.wx, sy = i.wy,
+                  x0 = x0, y0 = y0, tg = tg }
+        else
+          p.sel = {} -- a placement under the marker tool: just deselect
+          ctx.touch()
+        end
       end
     end
 
@@ -1919,11 +2050,33 @@ function M.draw(win, ctx)
         pal.x_ig_clip_pop()
       end
     else
-      pal.x_ig_text(x, iy + (INSP - px) * 0.45, px * 0.9, COL.marker,
-                    mkline(o), 0)
+      -- marker fields (§6): kind / label / note / extras as one k=v line
+      got, x = field("mapik", "kind", o.kind or "", x, 46 * z)
+      if got and got ~= "" then
+        o.kind = got
+        commit(ed, win.path)
+      end
+      got, x = field("mapil", "label", o.label or "", x, 56 * z)
+      if got then
+        o.label = got
+        commit(ed, win.path)
+      end
+      got, x = field("mapin2", "note", o.note or "", x, 64 * z)
+      if got then
+        o.note = got
+        commit(ed, win.path)
+      end
+      local ew = math.max(40 * z, ctx.cx + ctx.cw - x - 40 * z)
+      got, x = field("mapie", "k=v", M.extras_fmt(o.extras), x, ew)
+      if got then
+        o.extras = M.extras_parse(got)
+        commit(ed, win.path)
+      end
     end
   else
     local hint = #p.sel > 1 and (#p.sel .. " selected")
+      or tool == "marker"
+        and "drag on empty = new marker · corners resize · del removes"
       or ("%dx%d · drag assets in to place · ctrl snaps · %d placement%s")
          :format(doc.w, doc.h, #doc.places, #doc.places == 1 and "" or "s")
     pal.x_ig_text(ctx.cx + 4 * z, iy + (INSP - px) * 0.45, px * 0.9,
