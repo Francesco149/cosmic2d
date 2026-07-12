@@ -203,6 +203,21 @@ static void pump_events(void) {
       push_event(
           (PalEvent){.type = PAL_EV_WHEEL, .x = e.wheel.x, .y = e.wheel.y});
       break;
+    case SDL_EVENT_DROP_FILE: {
+      /* an OS file dropped onto the window: the R4 asset-pick add path.
+       * Window px only (wx,wy) — the canvas hit-tests it like any ig-space
+       * point; game/ui spaces are meaningless for a drop. */
+      const char *path = e.drop.data;
+      size_t plen = path ? strlen(path) : 0;
+      if (plen == 0 || plen >= PAL_EV_DROP_MAX) {
+        pal_log("drop ignored (path %s)", plen ? "too long" : "empty");
+        break;
+      }
+      PalEvent ev = {.type = PAL_EV_DROP, .wx = e.drop.x, .wy = e.drop.y};
+      memcpy(ev.drop, path, plen + 1);
+      push_event(ev);
+      break;
+    }
     case SDL_EVENT_TEXT_INPUT: {
       /* split long IME commits into PAL_EV_TEXT_MAX-1 byte chunks, never
        * inside a utf-8 sequence (continuation bytes are 10xxxxxx) */

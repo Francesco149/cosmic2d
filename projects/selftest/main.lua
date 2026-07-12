@@ -2455,6 +2455,69 @@ local function t_ed_journal()
   check(#jb.entries == 0, "ed.journal: corrupt = fresh")
 end
 
+local function t_ed_lex()
+  -- cm.ed.lex — the code-ed tokenizers (R4, EDITOR.md §12.2). Pure KATs.
+  local lex = cm.require("cm.ed.lex")
+  check(lex.lang_of("a/b.lua") == "lua" and lex.lang_of("X.MD") == "md"
+        and lex.lang_of("noext") == "txt", "ed.lex: lang_of")
+
+  local function kinds(lang, s, carry)
+    local toks, out = lex.line(lang, s, carry)
+    local ks = {}
+    for _, t in ipairs(toks) do ks[#ks + 1] = t.k .. ":" .. s:sub(t.a, t.b) end
+    return table.concat(ks, "|"), out
+  end
+
+  local ks = kinds("lua", 'local x = "hi" -- note')
+  check(ks == 'kw:local|str:"hi"|com:-- note', "ed.lex: lua basics (" .. ks .. ")")
+  ks = kinds("lua", "if n == 0x1F or n == 42.5 then return end")
+  check(ks == "kw:if|num:0x1F|kw:or|num:42.5|kw:then|kw:return|kw:end",
+        "ed.lex: lua numbers + keywords (" .. ks .. ")")
+  ks = kinds("lua", [[s = 'it\'s' .. x]])
+  check(ks == [[str:'it\'s']], "ed.lex: escaped quote (" .. ks .. ")")
+
+  -- long comment across lines: carry threads
+  local ks1, c1 = kinds("lua", "x = 1 --[[ start")
+  check(ks1 == "num:1|com:--[[ start" and c1 == "c0",
+        "ed.lex: long comment opens (" .. ks1 .. " " .. tostring(c1) .. ")")
+  local ks2, c2 = kinds("lua", "still comment ]] print(1)", c1)
+  check(ks2 == "com:still comment ]]|num:1" and c2 == "",
+        "ed.lex: long comment closes (" .. ks2 .. ")")
+  local _, c3 = kinds("lua", "b = [==[ raw")
+  check(c3 == "s2", "ed.lex: long string carry level")
+  local ks4, c4 = kinds("lua", "body ]=] not yet ]==] x", c3)
+  check(c4 == "" and ks4:find("^str:body %]=%] not yet %]==%]"),
+        "ed.lex: level-matched close only (" .. ks4 .. ")")
+  -- carry_line agrees with line() on the carry it returns
+  local _, cl = lex.line("lua", "x = 1 --[[ start")
+  check(lex.carry_line("lua", "x = 1 --[[ start") == cl,
+        "ed.lex: carry_line agrees with line()")
+
+  -- md faces
+  ks = kinds("md", "## heading here")
+  check(ks == "h:## heading here", "ed.lex: md heading")
+  local toks = lex.line("md", "see [the doc](docs/EDITOR.md) and `code`")
+  check(toks[1].k == "link" and toks[1].t == "docs/EDITOR.md"
+        and toks[2].k == "code", "ed.lex: md link target + code span")
+  local _, f1 = kinds("md", "```lua")
+  check(f1 == "f", "ed.lex: md fence opens")
+  local ksf, f2 = kinds("md", "local inside = 1", f1)
+  check(ksf == "code:local inside = 1" and f2 == "f",
+        "ed.lex: fenced line is code")
+  local _, f3 = kinds("md", "```", f2)
+  check(f3 == "", "ed.lex: md fence closes")
+
+  -- link_at
+  local s = "see [x](a/b.md) or require('cm.ed.wm') or docs/PLAN.md ok"
+  local _, _, t1 = lex.link_at(s, 8)
+  check(t1 == "a/b.md", "ed.lex: link_at md (" .. tostring(t1) .. ")")
+  local _, _, t2 = lex.link_at(s, s:find("cm%.ed"))
+  check(t2 == "cm.ed.wm", "ed.lex: link_at quoted (" .. tostring(t2) .. ")")
+  local _, _, t3 = lex.link_at(s, s:find("PLAN"))
+  check(t3 == "docs/PLAN.md", "ed.lex: link_at bare path (" .. tostring(t3) .. ")")
+  check(lex.link_at("plain words only", 4) == nil, "ed.lex: no false link")
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -2532,6 +2595,7 @@ function game.init()
   t_ed_wm()
   t_ed_session()
   t_ed_journal()
+  t_ed_lex()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

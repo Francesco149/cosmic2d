@@ -344,8 +344,10 @@ local function draw_win(ig, win, zi)
   pal.x_ig_text(x + 8 * z, y + (hdr - tpx) * 0.45,
                 tpx, focused and C.title or C.title_dim, title, 0)
   pal.x_ig_clip_pop()
+  local hdr_right = x + w - 6 * z -- right edge available to header extras
   if kind and kind.dirty and kind.dirty(win, M) then
     pal.x_ig_circle_fill(x + w - 10 * z, y + hdr * 0.5, 3.5 * z, C.unsaved)
+    hdr_right = x + w - 16 * z
     -- the reset-to-saved button (EDITOR.md §6 — itself an undoable edit)
     if kind.revert and w > 120 * z then
       local rw = pal.x_ig_text_size("reset", tpx * 0.85, 0)
@@ -356,7 +358,13 @@ local function draw_win(ig, win, zi)
       pal.x_ig_text(rx, y + (hdr - tpx * 0.85) * 0.45, tpx * 0.85,
                     hov and C.hud or C.title_dim, "reset", 0)
       if hov and i.clicked[1] then kind.revert(win, M) end
+      hdr_right = rx - 8 * z
     end
+  end
+  -- kind header extras (history arrows, edit toggles…), right-aligned
+  if kind and kind.header then
+    kind.header(win, { z = z, alt = g.alt or false, ed = M,
+                       hx = hdr_right, hy = y, hh = math.min(hdr, h) })
   end
 
   -- content, inset from the panel so nothing sits on the rounded border
@@ -463,10 +471,16 @@ function M.frame()
   interact(ig)
   draw(ig)
   if M.g.save_due and pal.time_ns() >= M.g.save_due then save_now() end
-  if pal.quitting() then
-    M.kinds.text.flush(M) -- pending edit gestures reach their journals
-    save_now()
-  end
+end
+
+-- called from cm.main once the tick that raised the quit finishes — the
+-- only path that runs on EVERY quit shape (window close, --frames cap,
+-- headless --edit where frame() no-ops). In-frame saves are the debounce;
+-- this is the backstop that makes "unsaved persists" a guarantee.
+function M.quit_flush()
+  if not M.on then return end
+  M.kinds.text.flush(M) -- pending edit gestures reach their journals
+  save_now()
 end
 
 return M

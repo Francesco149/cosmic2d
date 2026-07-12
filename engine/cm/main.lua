@@ -395,6 +395,8 @@ function M.tick()
 
   -- flush the recording on ANY quit path (event, frame cap, game-initiated)
   if M.trace and pal.quitting() then M.trace.record_stop() end
+  -- same guarantee for the editor session + journals (unsaved-persists)
+  if M.ed and M.ed.on and pal.quitting() then M.ed.quit_flush() end
 end
 
 return M

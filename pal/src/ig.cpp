@@ -11,6 +11,9 @@
 #include "imgui.h"
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlgpu3.h"
+#include "imgui_internal.h" /* x_ig_edit state export (D051): GetInputTextState,
+                               FindWindowByName, SetScrollY — pin-internal use,
+                               re-checked on any imgui bump */
 #include "imgui_stdlib.h"
 
 #include <map>
@@ -415,12 +418,31 @@ static int l_ig_clip_pop(lua_State *L) {
   return 0;
 }
 
-/* pal.x_ig_edit{id,x,y,w,h,text,px[,font,readonly,multiline]}
- *   -> text, changed, active   (nil when no ig frame is open)
+/* pal.x_ig_edit{id,x,y,w,h,text,px[,font,readonly,multiline,
+ *               ghost,enter,focus,set,scroll_x,scroll_y]}
+ *   -> text, changed, active, state   (nil when no ig frame is open)
  * The hard widget (IMGUI.md §2): imgui text editing at an explicit rect. The
  * host keeps a per-id buffer; the passed `text` re-syncs it whenever the
  * widget is NOT active (external reload wins over a stale buffer). Chrome is
- * the caller's: the widget renders bare (transparent window + frame). */
+ * the caller's: the widget renders bare (transparent window + frame).
+ *
+ * The D051 ghost-widget split (EDITOR.md §12.1):
+ *   ghost      — draw NO glyphs (transparent text; imgui's caret goes with
+ *                it): the widget is a pure input machine and Lua draws every
+ *                visible glyph on the drawlist (syntax color / gutter / its
+ *                own caret). The selection highlight still renders.
+ *   enter      — EnterReturnsTrue (state.submit; single-line submit rows)
+ *   focus      — grab keyboard focus this frame
+ *   set        — adopt `text` even while ACTIVE (history nav / undo while
+ *                focused); deactivates first so imgui's copy can't win
+ *   scroll_x/y — force the widget's scroll this frame (restore / link jump;
+ *                applied next frame by imgui's scroll target). Omit to let
+ *                the widget own scrolling (wheel, caret-follow).
+ * state = {sx, sy, caret, sa, sb, submit}: scroll px (the multiline child's,
+ * which persists while inactive), caret/selection BYTE offsets while active
+ * (absent otherwise), and the enter flag. Reading these goes through imgui
+ * internals (GetInputTextState + the 1.92 child-window name shape) — a
+ * vendored-pin dependency, re-checked on any imgui bump. */
 static int l_ig_edit(lua_State *L) {
   luaL_checktype(L, 1, LUA_TTABLE);
   if (!in_frame()) {
@@ -446,56 +468,139 @@ static int l_ig_edit(lua_State *L) {
   bool readonly = lua_toboolean(L, -1);
   lua_getfield(L, 1, "multiline");
   bool multiline = lua_isnil(L, -1) ? true : lua_toboolean(L, -1);
+  lua_getfield(L, 1, "ghost");
+  bool ghost = lua_toboolean(L, -1);
+  lua_getfield(L, 1, "enter");
+  bool enter = lua_toboolean(L, -1);
+  lua_getfield(L, 1, "focus");
+  bool want_focus = lua_toboolean(L, -1);
+  lua_getfield(L, 1, "set");
+  bool force_set = lua_toboolean(L, -1);
+  lua_getfield(L, 1, "scroll_x");
+  bool has_sx = lua_isnumber(L, -1);
+  float set_sx = (float)lua_tonumber(L, -1);
+  lua_getfield(L, 1, "scroll_y");
+  bool has_sy = lua_isnumber(L, -1);
+  float set_sy = (float)lua_tonumber(L, -1);
   lua_getfield(L, 1, "text");
   size_t tlen = 0;
   const char *text = lua_tolstring(L, -1, &tlen);
   /* the strings stay valid after the pop: the arg table still references
    * them (Lua strings are immutable; the pointer lives as long as they do) */
-  lua_pop(L, 10);
+  lua_pop(L, 16);
   if (w < 8) w = 8;
   if (h < 8) h = 8;
   if (px <= 0) px = 16;
   if (px > IG_MAX_GLYPH_PX) px = IG_MAX_GLYPH_PX; /* widgets raster 1:1 */
 
+  char wname[160];
+  SDL_snprintf(wname, sizeof wname, "##ed_%s", id);
+
   IgEdit &eb = g_edits[id];
   eb.used = IG.frame_no;
-  if (!eb.active && text) eb.text.assign(text, tlen);
+  if (force_set && text && eb.active) {
+    /* external overwrite of an active widget: deactivate first, so imgui's
+     * internal copy can't write the old text back over ours */
+    ImGuiWindow *host = ImGui::FindWindowByName(wname);
+    if (host && ImGui::GetInputTextState(host->GetID("##t")))
+      ImGui::ClearActiveID();
+    eb.text.assign(text, tlen);
+    if (!want_focus) want_focus = true; /* keep the editing flow alive */
+  } else if ((!eb.active || force_set) && text) {
+    eb.text.assign(text, tlen);
+  }
 
   ImGui::SetNextWindowPos(ImVec2(x, y));
   ImGui::SetNextWindowSize(ImVec2(w, h));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
   ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
   ImGui::PushStyleColor(ImGuiCol_FrameBg, 0);
-  char wname[160];
-  SDL_snprintf(wname, sizeof wname, "##ed_%s", id);
+  if (ghost) ImGui::PushStyleColor(ImGuiCol_Text, 0);
   ImGuiWindowFlags wf = ImGuiWindowFlags_NoDecoration |
                         ImGuiWindowFlags_NoSavedSettings |
                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoNav |
                         ImGuiWindowFlags_NoBackground |
                         ImGuiWindowFlags_NoFocusOnAppearing;
-  bool changed = false;
+  bool changed = false, submit = false;
+  std::string before;
+  if (enter) before = eb.text; /* enter conflates the return; diff for real */
   ImGui::Begin(wname, nullptr, wf);
   ImGui::PushFont(f, px);
   ImGuiInputTextFlags tf =
       ImGuiInputTextFlags_AllowTabInput |
-      (readonly ? ImGuiInputTextFlags_ReadOnly : (ImGuiInputTextFlags)0);
+      (readonly ? ImGuiInputTextFlags_ReadOnly : (ImGuiInputTextFlags)0) |
+      (enter ? ImGuiInputTextFlags_EnterReturnsTrue : (ImGuiInputTextFlags)0);
+  if (want_focus) ImGui::SetKeyboardFocusHere();
+  bool ret;
   if (multiline)
-    changed = ImGui::InputTextMultiline("##t", &eb.text,
-                                        ImVec2(-FLT_MIN, -FLT_MIN), tf);
+    ret = ImGui::InputTextMultiline("##t", &eb.text,
+                                    ImVec2(-FLT_MIN, -FLT_MIN), tf);
   else {
     ImGui::SetNextItemWidth(-FLT_MIN);
-    changed = ImGui::InputText("##t", &eb.text, tf);
+    ret = ImGui::InputText("##t", &eb.text, tf);
+  }
+  if (enter) {
+    submit = ret;
+    changed = eb.text != before;
+  } else {
+    changed = ret;
   }
   eb.active = ImGui::IsItemActive();
+
+  /* state export (D051): caret/selection while active; scroll always */
+  ImGuiID tid = ImGui::GetCurrentWindow()->GetID("##t");
+  ImGuiInputTextState *st = ImGui::GetInputTextState(tid);
+  float out_sx = 0.0f, out_sy = 0.0f;
+  int caret = -1, sa = 0, sb = 0;
+  if (st) {
+    caret = st->GetCursorPos();
+    sa = st->GetSelectionStart();
+    sb = st->GetSelectionEnd();
+    if (sa > sb) {
+      int t = sa;
+      sa = sb;
+      sb = t;
+    }
+    if (has_sx) st->Scroll.x = set_sx;
+    out_sx = st->Scroll.x;
+  }
+  if (multiline) {
+    /* the child window InputTextEx begun for us: 1.92.4 names it
+     * "<host>/<label>_%08X" — it persists while inactive and owns Scroll.y */
+    char cname[224];
+    SDL_snprintf(cname, sizeof cname, "%s/%s_%08X", wname, "##t",
+                 (unsigned)tid);
+    ImGuiWindow *child = ImGui::FindWindowByName(cname);
+    if (child) {
+      if (has_sy) ImGui::SetScrollY(child, set_sy);
+      out_sy = child->Scroll.y;
+    }
+  }
   ImGui::PopFont();
   ImGui::End();
+  if (ghost) ImGui::PopStyleColor(1);
   ImGui::PopStyleColor(1);
   ImGui::PopStyleVar(2);
 
   lua_pushlstring(L, eb.text.data(), eb.text.size());
   lua_pushboolean(L, changed);
   lua_pushboolean(L, eb.active);
-  return 3;
+  lua_createtable(L, 0, 6);
+  lua_pushnumber(L, out_sx);
+  lua_setfield(L, -2, "sx");
+  lua_pushnumber(L, out_sy);
+  lua_setfield(L, -2, "sy");
+  if (caret >= 0) {
+    lua_pushinteger(L, caret);
+    lua_setfield(L, -2, "caret");
+    lua_pushinteger(L, sa);
+    lua_setfield(L, -2, "sa");
+    lua_pushinteger(L, sb);
+    lua_setfield(L, -2, "sb");
+  }
+  lua_pushboolean(L, submit);
+  lua_setfield(L, -2, "submit");
+  return 4;
 }
 
 static const luaL_Reg ig_funcs[] = {{"x_ig_frame", l_ig_frame},

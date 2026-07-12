@@ -18,6 +18,7 @@
 #define PAL_MAX_WATCH 64
 #define PAL_VERT_BYTES 20 /* x f32, y f32, u f32, v f32, rgba u8x4 */
 #define PAL_EV_TEXT_MAX 40 /* utf-8 bytes per text event (longer commits split) */
+#define PAL_EV_DROP_MAX 512 /* bytes per OS-drop path (longer paths ignored) */
 #define PAL_LOG_RING 256
 #define PAL_LOG_LINE_MAX 480 /* bytes kept per line (longer lines truncate) */
 
@@ -28,6 +29,7 @@ typedef enum {
   PAL_EV_BUTTON,
   PAL_EV_WHEEL,
   PAL_EV_TEXT,
+  PAL_EV_DROP, /* an OS file drag-dropped onto the window (R4 asset add) */
 } PalEventType;
 
 typedef struct {
@@ -39,6 +41,8 @@ typedef struct {
   float ui_x, ui_y; /* motion/button: ui-canvas px (editor chrome hit-test) */
   float wx, wy;     /* motion/button: raw window px (ig canvas hit-test, v7) */
   char text[PAL_EV_TEXT_MAX]; /* text: utf-8, NUL-terminated */
+  char drop[PAL_EV_DROP_MAX]; /* drop: the dropped file's OS path (a fixed
+                                 buffer on purpose — no alloc, no leak paths) */
 } PalEvent;
 
 /* log ring: every pal_log line lands here (C-owned, survives VM reboots) so

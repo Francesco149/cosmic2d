@@ -1,19 +1,31 @@
--- cm.ed.win.text — a real project file in a mono edit widget: the
--- journal-backed code-ed precursor (EDITOR.md §7). Proves the whole §6
--- model: working state in doc.assets[path] (survives restart via the
--- session), the CJRN journal (Ctrl+Z/Y across restarts), dirty computed
--- as working-vs-disk, Ctrl+S writes the file (and only then does the
--- engine see the change — hot reload reacts on its own), revert = a
--- normal, undoable edit. No highlighting/line numbers/links — that's R4.
+-- cm.ed.win.text — the code ed (R4, EDITOR.md §12.2): a real project file
+-- in a ghost x_ig_edit. The widget is a pure input machine (caret,
+-- selection, mouse picking, clipboard, IME — drawn only as the selection
+-- highlight); every visible glyph is OURS on the drawlist: line-number
+-- gutter, per-line syntax faces (cm.ed.lex), our own caret, the current-
+-- line tint. Since the visible layer is drawlist, it obeys canvas z — an
+-- occluded window skips the invisible widget and looks pixel-identical
+-- (the D051 dissolution of the R3 widget-z rule).
+--
+-- The §6 model is unchanged from R3: working state in doc.assets[path]
+-- (survives restart via the session), the CJRN journal (Ctrl+Z/Y across
+-- restarts), dirty computed as working-vs-disk, Ctrl+S writes the file,
+-- revert is a normal undoable edit.
+--
+-- Docs are a special CODE format (the board): .md keeps the mono grid but
+-- headings/links/code spans get faces. Ctrl+click a link → a NEW code
+-- window at the pointer, its history seeded with the source file; ◀ ▶
+-- header buttons + mouse buttons 4/5 walk a window's own history
+-- (win.hist/win.hpos, captured).
 --
 -- A window with path == "" is the file picker (filter field + a list of
 -- the project's text files); picking a file turns it into the editor.
--- Ephemeral per-asset plumbing (journal handles, disk cache, push
--- debounce) lives on the shell's g table, keyed by path — the captured
--- doc holds only {text, jpos} (EDITOR.md §2).
+-- Ephemeral per-asset plumbing (journal handles, disk cache, line/token
+-- caches, push debounce) lives on the shell's g table, keyed by path.
 
 local M = select(2, ...) or {}
 local journal = cm.require("cm.ed.journal")
+local lex = cm.require("cm.ed.lex")
 
 M.kind = "text"
 M.DEF_W, M.DEF_H = 460, 340
@@ -22,12 +34,22 @@ M.PUSH_MS = 600 -- idle time that ends an edit gesture (teidraw's coalesce)
 
 local EXT = { lua = true, md = true, txt = true, json = true, glsl = true }
 
+-- the code faces (over the shell's palette family)
+local FACE = {
+  base = 0xd8d2f2ff, kw = 0xc792eaff, str = 0x9fdc8fff, num = 0xf2b46eff,
+  com = 0x7a7498ff, h = 0xffd47eff, code = 0x9fdc8fff, link = 0x7fb8f0ff,
+  em = 0xE8E4FFff,
+  gutter = 0x5a5480ff, gutter_hot = 0xb0a8dcff, caret = 0xE8E4FFff,
+  line_tint = 0xffffff08,
+}
+
 function M.defaults()
   return { path = "", filter = "" }
 end
 
 function M.title(win)
-  return win.path == "" and "open file…" or win.path
+  if win.path == "" then return "open file…" end
+  return win.path:match("([^/]+)$") or win.path
 end
 
 -- ---- the per-asset plumbing (ephemeral, on ed.g) ----
@@ -100,6 +122,67 @@ function M.flush(ed)
   end
 end
 
+-- ---- history + navigation (EDITOR.md §12.2) ----
+
+-- re-target the window to another file, recording history. `nohist` = a
+-- back/fwd jump (the position moves, the list doesn't).
+function M.navigate(win, ed, path, nohist)
+  if win.path == path then return end
+  if win.path ~= "" then
+    local p = plumb(ed, win.path)
+    if p.due then push_now(ed, win.path) end -- close the open gesture
+  end
+  if not nohist then
+    win.hist = win.hist or (win.path ~= "" and { win.path } or {})
+    win.hpos = win.hpos or #win.hist
+    for i = #win.hist, win.hpos + 1, -1 do win.hist[i] = nil end
+    win.hist[#win.hist + 1] = path
+    win.hpos = #win.hist
+  end
+  win.path = path
+  win.filter = nil
+  win.sy, win.sx = 0, 0 -- a different file starts at the top
+  ed.g.wsy = ed.g.wsy or {}
+  ed.g.wsy[win.id] = nil -- force the widget to the fresh scroll
+  open_asset(ed, path)
+  ed.touch()
+end
+
+local function hist_go(win, ed, dir)
+  if not win.hist then return end
+  local np = (win.hpos or #win.hist) + dir
+  if np < 1 or np > #win.hist then return end
+  win.hpos = np
+  M.navigate(win, ed, win.hist[np], true)
+end
+M.hist_go = hist_go
+
+-- resolve a link target to an openable path (project-relative; the repo
+-- root is reachable via ../.. since project dirs sit two levels deep).
+-- Returns the path or nil.
+local function resolve_link(ed, target)
+  target = target:gsub("#.*$", ""):gsub("^%./", "")
+  if target == "" then return nil end
+  local cands = {}
+  local function add(c) cands[#cands + 1] = c end
+  add(target)
+  if not target:find("%.%w+$") then add(target .. ".lua") end
+  if target:find("^[%w_]+[%.%w_]*$") and target:find("%.") then
+    -- dotted module name: cm.* lives in engine/, projects resolve locally
+    local slashed = target:gsub("%.", "/") .. ".lua"
+    add(slashed)
+    add("../../engine/" .. slashed)
+  end
+  if target:find("^docs/") or target:find("^engine/") then
+    add("../../" .. target)
+  end
+  for _, c in ipairs(cands) do
+    local mt = pal.mtime(ed.root .. "/" .. c)
+    if mt and mt > 0 then return c end
+  end
+  return nil
+end
+
 -- ---- the focused-window commands (shell hotkeys, EDITOR.md §6) ----
 
 function M.dirty(win, ed)
@@ -128,6 +211,7 @@ function M.undo(win, ed)
   local e = journal.undo(p.j)
   if e then
     a.text, a.jpos = e.bytes, p.j.pos
+    p.force_set = true -- the widget may be active: overwrite its buffer
     ed.touch()
   end
 end
@@ -138,6 +222,7 @@ function M.redo(win, ed)
   local e = journal.redo(p.j)
   if e then
     a.text, a.jpos = e.bytes, p.j.pos
+    p.force_set = true
     ed.touch()
   end
 end
@@ -147,7 +232,72 @@ function M.revert(win, ed)
   if win.path == "" then return end
   local a, p = open_asset(ed, win.path)
   a.text = p.disk or ""
+  p.force_set = true
   push_now(ed, win.path)
+end
+
+-- the asset-pick drag-out contract (EDITOR.md §12.5)
+function M.accepts(win, path)
+  local ext = path:match("%.([%w_]+)$")
+  return ext ~= nil and EXT[ext:lower()] or false
+end
+
+function M.rebind(win, ed, path)
+  M.navigate(win, ed, path)
+end
+
+-- ---- the line/token caches (ephemeral) ----
+
+local function split_lines(text)
+  local lines = {}
+  local pos = 1
+  while true do
+    local nl = text:find("\n", pos, true)
+    if not nl then
+      lines[#lines + 1] = text:sub(pos)
+      break
+    end
+    lines[#lines + 1] = text:sub(pos, nl - 1)
+    pos = nl + 1
+  end
+  return lines
+end
+
+-- lines + the per-line-start carry array, rebuilt when the text changes
+local function line_cache(p, a, lang)
+  if p.lines_src == a.text then return p.lines, p.carry end
+  p.lines_src = a.text
+  p.lines = split_lines(a.text)
+  local carry = { "" }
+  local c = ""
+  for i = 1, #p.lines do
+    c = lex.carry_line(lang, p.lines[i], c)
+    carry[i + 1] = c
+  end
+  p.carry = carry
+  return p.lines, p.carry
+end
+
+-- token memo keyed by carry + line content (interned strings = cheap)
+local function tokens_for(p, lang, line, carry)
+  p.tok = p.tok or {}
+  p.tokn = p.tokn or 0
+  local key = carry .. "\1" .. line
+  local t = p.tok[key]
+  if not t then
+    if p.tokn > 8192 then
+      p.tok, p.tokn = {}, 0
+    end
+    t = (lex.line(lang, line, carry))
+    p.tok[key] = t
+    p.tokn = p.tokn + 1
+  end
+  return t
+end
+
+local function glyphs(s, a, b) -- glyph count of s[a..b] (utf8-aware, safe)
+  local n = utf8.len(s, a, b)
+  return n or (b - a + 1)
 end
 
 -- ---- the picker (path == "") ----
@@ -178,6 +328,7 @@ local function project_files(ed)
   end
   return g.files
 end
+M.project_files = project_files
 
 local function draw_picker(win, ctx)
   local ed = ctx.ed
@@ -218,10 +369,7 @@ local function draw_picker(win, ctx)
       pal.x_ig_text(ctx.cx + pad, y, px, hov and 0xE8E4FFff or 0xd8d2f2cc,
                     rel, 1)
       if hov and i.clicked[1] then
-        win.path = rel
-        win.filter = nil
-        open_asset(ed, rel)
-        ctx.touch()
+        M.navigate(win, ed, rel)
       end
       y = y + rh
       if y > ctx.cy + ctx.ch then break end
@@ -229,7 +377,31 @@ local function draw_picker(win, ctx)
   end
 end
 
--- ---- content ----
+-- ---- the editor content ----
+
+-- header extras: ◀ ▶ history buttons (drawn by the shell's header pass
+-- via kind.header, right-aligned before the dirty cluster)
+function M.header(win, ctx)
+  if not win.hist or #win.hist < 2 then return 0 end
+  local z = ctx.z
+  local px = math.max(4, 11 * z)
+  local i = cm.require("cm.ui").inp
+  local bw = px * 1.6
+  local x = ctx.hx - bw * 2 -- ctx.hx = right edge available to extras
+  for n, glyph in ipairs({ "<", ">" }) do
+    local dir = n == 1 and -1 or 1
+    local can = win.hpos and ((dir < 0 and win.hpos > 1)
+                or (dir > 0 and win.hpos < #win.hist))
+    local bx = x + (n - 1) * bw
+    local hov = not ctx.alt and i.wx >= bx and i.wx < bx + bw
+                and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
+    pal.x_ig_text(bx + px * 0.3, ctx.hy + (ctx.hh - px) * 0.45, px,
+                  can and (hov and 0xE8E4FFff or 0xb0a8dcff) or 0x5a5480ff,
+                  glyph, 1)
+    if can and hov and i.clicked[1] then hist_go(win, ctx.ed, dir) end
+  end
+  return bw * 2
+end
 
 function M.draw(win, ctx)
   if win.path == "" then
@@ -238,29 +410,66 @@ function M.draw(win, ctx)
   end
   local ed = ctx.ed
   local a, p = open_asset(ed, win.path)
-  local z, pad = ctx.z, 6 * ctx.z
+  local z = ctx.z
   local px = math.max(4, M.PX * z)
+  local lang = lex.lang_of(win.path)
+  local lines, carry = line_cache(p, a, lang)
 
-  -- inert when a higher window overlaps (the widget-z rule, ed.lua); the
-  -- ALT layer needs no swap — pal.x_ig_mouse gates the pointer in C.
-  -- +4,+3 matches imgui's FramePadding so inert text sits pixel-identical.
-  local active = false
-  if ctx.occluded then
-    pal.x_ig_text(ctx.cx + pad + 4, ctx.cy + pad * 0.5 + 3, px,
-                  0xffffffff, a.text, 1)
-  else
-    local text, changed
-    text, changed, active = pal.x_ig_edit {
-      id = "txt" .. win.id, x = ctx.cx + pad, y = ctx.cy + pad * 0.5,
-      w = ctx.cw - 2 * pad, h = ctx.ch - pad,
-      text = a.text, px = px, font = 1, multiline = true,
+  -- mouse buttons 4/5: this window's history (when focused)
+  local i = cm.require("cm.ui").inp
+  if ctx.focused and not ctx.occluded then
+    if i.clicked[4] then hist_go(win, ed, -1) end
+    if i.clicked[5] then hist_go(win, ed, 1) end
+  end
+
+  -- gutter geometry (mono metrics; one measure per draw)
+  local cw = pal.x_ig_text_size("0", px, 1)
+  local digits = #tostring(#lines)
+  local gw = math.max(2, digits) * cw + 10 * z
+  local tx, ty = ctx.cx + gw, ctx.cy
+  local tw, th = ctx.cw - gw, ctx.ch
+  if tw < 20 then return end
+
+  -- the widget (invisible input machine) — skipped when occluded
+  local g = ed.g
+  g.wsy = g.wsy or {}
+  local st, active, changed
+  if not ctx.occluded then
+    local text
+    local opts = {
+      id = "txt" .. win.id, x = tx, y = ty, w = tw, h = th,
+      text = a.text, px = px, font = 1, multiline = true, ghost = true,
     }
+    if p.force_set then
+      opts.set = true
+      p.force_set = nil
+    end
+    -- first draw of this window (spawn / restart / navigate): push the
+    -- remembered scroll INTO the widget; imgui applies the target next
+    -- frame, so the mirror below skips this frame (or it would clobber it)
+    local forced = g.wsy[win.id] == nil
+    if forced then
+      opts.scroll_y = win.sy or 0
+      opts.scroll_x = win.sx or 0
+      g.wsy[win.id] = true
+    end
+    text, changed, active, st = pal.x_ig_edit(opts)
     if changed then
       a.text = text
+      lines, carry = line_cache(p, a, lang)
       p.due = pal.time_ns() + M.PUSH_MS * 1000000
       ed.touch()
     end
+    -- mirror the widget's scroll into captured state (rewind + restore)
+    if st and not forced
+       and (st.sy ~= (win.sy or 0) or st.sx ~= (win.sx or 0)) then
+      win.sy, win.sx = st.sy, st.sx
+      ed.touch()
+    end
   end
+  local sx, sy = win.sx or 0, win.sy or 0
+  if st then sx, sy = st.sx, st.sy end
+
   -- gesture end: the widget deactivates (incl. going inert), or the idle
   -- debounce runs out — checked even while inert so no push is stranded
   if p.was_active and not active then
@@ -268,7 +477,108 @@ function M.draw(win, ctx)
   elseif p.due and pal.time_ns() >= p.due then
     push_now(ed, win.path)
   end
-  p.was_active = active
+  p.was_active = active or false
+
+  -- ---- the visible layer (ours, drawlist) ----
+  local ox, oy = tx + 4, ty + 3 -- imgui FramePadding — glyphs align 1:1
+  local first = math.max(1, math.floor(sy / px) + 1)
+  local last = math.min(#lines, first + math.ceil(th / px) + 1)
+
+  -- caret line (for the tint + gutter accent), from the byte offset
+  local cline, ccol
+  if st and st.caret then
+    local nl, pos = 0, 1
+    while true do
+      local f = a.text:find("\n", pos, true)
+      if not f or f > st.caret then break end
+      nl = nl + 1
+      pos = f + 1
+    end
+    cline = nl + 1
+    ccol = st.caret - pos + 1 -- byte col within the line (0-based length)
+  end
+
+  -- current-line tint under everything
+  if cline and cline >= first and cline <= last then
+    pal.x_ig_rect_fill(tx, oy + (cline - 1) * px - sy, tw, px, FACE.line_tint)
+  end
+
+  -- gutter
+  local gpx = px * 0.85
+  for li = first, last do
+    local num = tostring(li)
+    local nw = pal.x_ig_text_size(num, gpx, 1)
+    pal.x_ig_text(ctx.cx + gw - 6 * z - nw, oy + (li - 1) * px - sy + px * 0.08,
+                  gpx, li == cline and FACE.gutter_hot or FACE.gutter, num, 1)
+  end
+  pal.x_ig_line(tx - 1, ctx.cy, tx - 1, ctx.cy + th, 0x4a437066, 1)
+
+  -- text: per-line token spans (gaps = base face)
+  pal.x_ig_clip_push(tx, ty, tw, th)
+  for li = first, last do
+    local line = lines[li]
+    if #line > 0 then
+      local ly = oy + (li - 1) * px - sy
+      local toks = tokens_for(p, lang, line, carry[li])
+      local posb = 1
+      for _, t in ipairs(toks) do
+        if t.a > posb then
+          local seg = line:sub(posb, t.a - 1)
+          pal.x_ig_text(ox + glyphs(line, 1, posb - 1) * cw - sx, ly, px,
+                        FACE.base, seg, 1)
+        end
+        pal.x_ig_text(ox + glyphs(line, 1, t.a - 1) * cw - sx, ly, px,
+                      FACE[t.k] or FACE.base, line:sub(t.a, t.b), 1)
+        posb = t.b + 1
+      end
+      if posb <= #line then
+        pal.x_ig_text(ox + glyphs(line, 1, posb - 1) * cw - sx, ly, px,
+                      FACE.base, line:sub(posb), 1)
+      end
+    end
+  end
+
+  -- our caret (the ghost hides imgui's): blink on the wall clock
+  if cline and active then
+    local on = (pal.time_ns() // 1000000 % 1060) < 530
+    if on and cline >= first and cline <= last then
+      local line = lines[cline] or ""
+      local cx2 = ox + glyphs(line, 1, math.max(0, ccol)) * cw - sx
+      pal.x_ig_rect_fill(cx2, oy + (cline - 1) * px - sy,
+                         math.max(1, z), px, FACE.caret)
+    end
+  end
+  pal.x_ig_clip_pop()
+
+  -- Ctrl+click a link → a NEW code window at the pointer (EDITOR.md §12.2)
+  local g = ed.g
+  if g.ctrl and not g.alt and i.clicked[1] and not ctx.occluded
+     and i.wx >= tx and i.wx < tx + tw and i.wy >= ty and i.wy < ty + th then
+    local li = math.floor((i.wy - oy + sy) / px) + 1
+    local line = lines[li]
+    if line and #line > 0 then
+      local gi = math.floor((i.wx - ox + sx) / cw) + 1
+      local bpos = utf8.offset(line, math.min(gi, glyphs(line, 1, #line)))
+                   or math.min(gi, #line)
+      local la, lb, target = lex.link_at(line, math.max(1, bpos))
+      if target then
+        local path = resolve_link(ed, target)
+        if path then
+          local wm = cm.require("cm.ed.wm")
+          local cur = g.cursor or { wx = win.x + 40, wy = win.y + 40 }
+          local nw = wm.spawn(ed.doc, "text", cur.wx + 20 / ctx.z,
+                              cur.wy + 20 / ctx.z, M.DEF_W, M.DEF_H,
+                              { path = "", filter = "" })
+          nw.hist = { win.path }
+          nw.hpos = 1
+          M.navigate(nw, ed, path)
+          ed.touch()
+        else
+          pal.log("[ed] link target not found: " .. target)
+        end
+      end
+    end
+  end
 end
 
 return M

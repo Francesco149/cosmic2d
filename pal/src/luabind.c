@@ -827,6 +827,16 @@ static int l_poll_events(lua_State *L) {
       lua_pushstring(L, e->text);
       lua_setfield(L, -2, "text");
       break;
+    case PAL_EV_DROP:
+      lua_pushstring(L, "drop");
+      lua_setfield(L, -2, "type");
+      lua_pushstring(L, e->drop);
+      lua_setfield(L, -2, "path");
+      lua_pushnumber(L, e->wx);
+      lua_setfield(L, -2, "wx");
+      lua_pushnumber(L, e->wy);
+      lua_setfield(L, -2, "wy");
+      break;
     }
     lua_rawseti(L, -2, i + 1);
   }
