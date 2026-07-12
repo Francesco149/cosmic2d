@@ -1685,3 +1685,50 @@ cm.main's job (the sweep).
 **Revisit if**: a project needs boot-time gfx properties the retarget
 can't apply live (a fixed non-resizable window, say); or picker startup
 scanning gets slow enough to want a manifest cache.
+
+## D053 — R6: rewind — the editor stream, disk budget, park-ephemeral discipline (2026-07-12)
+
+**Context**: R6 (REVAMP §3.3/§6) is the flagship: ~1 GB of engine
+history, streamed from disk, browsable frame by frame *including the
+editor*, interactive-but-ephemeral (D046 §7b), with resume-from-frame
+and asset bring-back. The M5/D032 ring already does read-only
+reconstruction + rewind for the sim; the R3/R4 editor domain was
+designed to be capturable. Full design: **docs/REWIND.md**.
+
+**Decision** (the load-bearing choices):
+
+1. **The editor rides the existing ring as a new per-frame `EDOC`
+   chunk** (canon bytes of cm.ed.doc, written on change only via a
+   `doc_rev` bumped by `cm.ed.touch`; keyframes carry the full ed
+   canon). cm.chunk is skip-tolerant, so **CTRC stays v1** — old traces
+   load, the verifier ignores EDOC, no golden regenerates.
+2. **Disk streaming = whole closed segments spilled to
+   `<project>/.ed/history/`**, RAM keeps the open segment + a decode
+   LRU; `ring.budget_mb` (default 1024) evicts oldest files. History is
+   per-session (wiped at boot) — cross-session time travel is the
+   journals'/git's job.
+3. **Browsing = the scrub park model extended to the editor**: stash
+   the present ed doc, restore the parked frame's, let the normal shell
+   frame run against it (fully interactive). **Suspension discipline**
+   while parked: session autosave off, journal pushes off, file writes
+   walled (bring-back is the door). Scrub away = drop the poked copy;
+   **resume adopts the shown doc, pokes included** (least surprising).
+   Ephemeral per-asset plumbing (g.tw/g.sw) drops wholesale on park.
+4. **Bring-back = working-state copy, not file epochs**: a parked
+   frame's `doc.assets[path]` bytes journal-push into the present as
+   one undoable step. Assets never opened in a window are out of scope
+   (journals already cover everything the editor touched).
+5. **UI = the reserved top-right pill** expanding to a top bar
+   (timeline/park/play/resume/bring-back), shell overlay, editor
+   sessions only; the legacy F4 scrubber keeps play-mode sessions.
+
+**Consequences**: R6 is an extension, not a rewrite — the sim capture,
+reconstruction, rewind, and park machinery are reused verbatim; the new
+surface is one chunk kind, a spill layer, and discipline flags. The
+riskiest edge (the past leaking into session.dat) is contained to one
+gate with a park-quit-relaunch proof.
+
+**Revisit if**: soaks show EDOC canon encodes hurting frame time (→
+delta the ed canon, kind 2, format has room); or the per-session
+history bound turns out to matter to the human (→ a keep-history flag
+and boot adoption become an R6.5, the format already round-trips).
