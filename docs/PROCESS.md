@@ -77,6 +77,14 @@ the `cosmic2d-win` dir. Windows-only gotcha found this way: unix-absolute
 paths (`/tmp/...`) can't be `pal.mkdir`'d there — tests use the platform
 temp root; engine code is immune (project paths are engine-root-relative).
 
+**The staging is a SNAPSHOT** (bit us 2026-07-13): the human's live
+windows runs use whatever was staged last — after any engine/PAL change
+that should be visible there, RE-STAGE (the block above) before either
+side judges visuals natively ("the fix doesn't work" on windows usually
+means a stale `cosmic2d-win`). The recipe's `rm -rf` also wipes the
+staging's `projects/*/.ed` sessions — the human's windows-side layouts
+reset; warn when re-staging under them.
+
 - Goldens: `VK_DRIVER_FILES` is forced to the flake's lavapipe ICD by the
   test runner — never record goldens on hardware drivers (D007). State
   traces are driver-independent (sim is pure CPU); pixel goldens (M5) are

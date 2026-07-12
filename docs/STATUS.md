@@ -92,7 +92,13 @@ ImGui::Render so widget windows never inherit nearest). Verified in
 exact doubled pixels in the 2x game window. IMGUI.md §5 records the
 contract. Suite ALL GREEN (headless never inits ig — goldens
 untouchable by construction); windows cross-build clean; shot on
-llm-feed.
+llm-feed. **Follow-up (the human still saw seams): the windows
+staging was STALE** — the human's live runs are the `cosmic2d-win`
+exe, which predated the fix (the linux build was already clean).
+Re-staged per PROCESS.md (native selftest 23762 PASS, live launch
+verified clean by the human + a desktop-screenshot crop); PROCESS.md
+now records the staging-is-a-snapshot gotcha. The re-stage wiped the
+windows-side .ed sessions (the recipe's rm -rf).
 
 **Next step (resume here):** the human's passes (R7a feel, the
 R8a–R8d shots + the view-lock feel) — then **R8e — the game migration**
