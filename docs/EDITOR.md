@@ -94,8 +94,10 @@ teidraw's source; they are taste-approved by construction):
   `screen = (world - cam) * zoom` (igcanvas's w2s/s2w stay).
 - **Zoom**: wheel, **1.16× per notch**, clamped **0.02–64**, always
   anchored at the cursor (the world point under the cursor stays put).
-- **Pan**: left- or middle-drag on empty canvas; space+left-drag pans
-  from anywhere (teidraw).
+- **Pan**: **middle-drag only** (live round 3, D054 — a left-drag on
+  empty canvas is a marquee now); space+left-drag still pans from
+  anywhere (teidraw's hand tool). A right-drag is nothing (the spawn
+  menu stays on the right still-click).
 - **Zoom-to-fit**: Shift+1 = fit all windows, Shift+2 = fit selection,
   Shift+0 = 100%, animated over **280 ms ease-in-out-quart** (ephemeral
   ease; the camera lands in the doc every frame).
@@ -115,9 +117,14 @@ teidraw's source; they are taste-approved by construction):
   from day one so window *groups* can arrive later without a model
   change; R3 windows are all top-level leaves.
 - **Chrome**: rounded panel, 1 px edge, a slim header strip with the
-  kind glyph + name + the unsaved dot. The header is a **label, not a
-  handle** — there are no draggable title bars; movement lives behind
-  ALT (§5). Content is inset and clipped (`x_ig_clip_push`).
+  kind glyph + name + the unsaved dot. The header **is a drag handle**
+  (live round 3, D054 — the human kept reaching for it): a plain
+  left-drag on the title strip moves the window, a plain still-click
+  selects it; the strip lightens on hover. The zone occupied by header
+  *buttons* (reset, history arrows, edit toggles — each kind's `header`
+  hook returns its consumed width, recorded per frame) keeps its
+  clicks. ALT-move (§5) remains for grabbing a window anywhere.
+  Content is inset and clipped (`x_ig_clip_push`).
 - **Focus** = the most recently selected (or content-clicked) window;
   keyboard asset commands (§7 hotkeys) apply to it. Focus is captured
   state (it's visible: the focused window reads brighter).
@@ -144,12 +151,24 @@ Input routing priority, evaluated per event:
    editor is focused; realized as `pal.x_ig_mouse(false)` while ALT is
    held — the pointer is filtered off imgui in C, widgets render
    unchanged).
-2. **Edge bands** resize, ALT held or not (§4) — the band outranks both
+2. **Selection mode** (`alt+V`, live round 3): while armed, a left
+   press can ONLY select — it outranks even the edge bands. A
+   still-click selects the window under it (window or not), a drag
+   marquees. The mode **disarms itself the moment a select lands
+   something**; an empty select keeps it armed; Esc/alt+V exits. A
+   top-center chip shows it. (Exists because plain click-select only
+   lives on empty canvas — this is the "select anything anywhere"
+   escape hatch.)
+3. **Edge bands** resize, ALT held or not (§4) — the band outranks both
    the move grammar and content.
-3. **ALT held → the shell owns the mouse.** Content sees nothing.
-4. Otherwise events route to the **window content** under the cursor.
-5. **Empty canvas**: drag pans, wheel zooms, right-click (still-click,
-   < 4 px) opens the spawn menu (§8).
+4. **ALT held → the shell owns the mouse.** Content sees nothing.
+5. **Title strip** (no modifier, left of the header buttons): drag
+   moves, still-click selects (§4).
+6. Otherwise events route to the **window content** under the cursor.
+7. **Empty canvas** (live round 3): a left press is a **marquee** —
+   drag selects the intersecting set, a still-click clears the
+   selection. Panning is the **middle button** (or space+drag); wheel
+   zooms; right still-click (< 4 px) opens the spawn menu (§8).
 
 The grammar itself (click = release within **4 px** of press; drag =
 crossing 4 px; double-click = **320 ms / 6 px**, teidraw's thresholds):
@@ -433,6 +452,26 @@ vendored-pin-internal, revisited on any imgui bump.
   (`]`/`[`, arrows, shift+digit fits — they'd collide with gameplay);
   the ALT layer, Esc, and Ctrl combos stay the shell's. Esc-to-shell is
   the one deliberate theft (universal "get out").
+- **Sizing is always aspect-locked, and it drives the game's FOV**
+  (live round 3, D054). The supported game resolution range: **height
+  is fixed** at the project's internal height; width runs **4:3 →
+  16:9** of it (base 540 → 720..960), widened to include the project's
+  own design width so odd-aspect projects never get a forced res
+  change. A **horizontal** edge drag walks the FOV width through that
+  range at constant scale, then scales aspect-locked past the ends;
+  **vertical** edges and **corners** always scale at the current
+  width. **CTRL snaps the scale to integers** — the window lands on
+  exact multiples of the res. Mechanism: `kind.constrain` (threaded
+  through `wm.resize` via the inp snapshot) recomputes the window size
+  as `image(FOV×s) + chrome pads`; the chosen width lives in `win.fw`
+  (captured), reaches the target as `cm.view.canvas_fov` →
+  `pal.x_fov` before the next frame's game draw (render-only, D036 —
+  never sim state; goldens/verify never see it).
+- **Pixel-perfect**: the window spawns at `native + pads` so the image
+  sits 1:1; when the drawn scale lands on an integer (100% canvas zoom
+  × a res-multiple window — or any integer product) the draw snaps
+  scale and origin to exact px. Zero letterbox whenever the aspect
+  constraint holds.
 
 ### 12.4 The console window (the §8 gate dies)
 

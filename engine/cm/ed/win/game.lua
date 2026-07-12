@@ -1,6 +1,6 @@
 -- cm.ed.win.game — the live game window (EDITOR.md §7/§12.3): the game
 -- internal target drawn straight off the GPU via x_ig_image(-1), aspect-
--- locked to the project's internal size.
+-- locked to the game's internal size.
 --
 -- R4: FOCUSED = PLAYING (heuristics-for-intent: content-click focuses, so
 -- clicking into the game plays it; clicking anywhere else stops). While
@@ -8,19 +8,106 @@
 -- remaps mouse events over the letterboxed image (drawn rect recorded here
 -- each frame, ephemeral) into FOV px — the synthesized input rides the
 -- normal recorded path, so it is replayable by construction.
+--
+-- Live round 3 (D054): resizing is ALWAYS aspect-locked, and it drives the
+-- game's FOV. Height is fixed at the project's internal height; width runs
+-- 4:3 .. 16:9 of it (base 540 → 720..960). A horizontal edge drag walks
+-- the width through that range at constant scale, then scales past the
+-- ends; vertical/corner drags scale at the current width. CTRL snaps the
+-- scale to integers (the window lands on exact multiples of the res). The
+-- chosen width lands in win.fw (captured — a rewound frame shows it) and
+-- reaches the target via cm.view.canvas_fov → pal.x_fov before the next
+-- frame's game draw (render-only, D036 — never sim state).
 
 local M = select(2, ...) or {}
 
 M.kind = "game"
 M.wants_keys = true -- plain-key shell hotkeys suspend while focused (§12.3)
 
+-- window px ↔ game image px: the chrome around the letterboxed image.
+-- KEEP IN SYNC with cm.ed's draw_win geometry (content inset 4, HDR 24)
+-- plus our own well margin (3): a window sized image + PAD shows the
+-- image with zero letterbox — that is what makes pixel-perfect possible.
+local INSET, WELL, HDR = 4, 3, 24
+M.PAD_W = 2 * (INSET + WELL)        -- 14
+M.PAD_H = HDR + INSET + 2 * WELL    -- 34
+
+-- the game's DESIGN res (the project's, not the live target — x_fov moves
+-- the latter): height is the fixed axis, width is the boot choice
+local function base_res()
+  local proj = cm.main and cm.main.proj
+  if proj and proj.internal_w and proj.internal_h then
+    return proj.internal_w, proj.internal_h
+  end
+  return pal.gfx_size()
+end
+
+-- the supported FOV width range at the fixed internal height: 4:3 .. 16:9
+-- (the human's spec, D054 — base 540 → 720..960), widened to include the
+-- project's own design width so odd-aspect projects (selftest is 1:1)
+-- never get a forced res change
+local function res_range(tw, th)
+  return math.min(tw, math.ceil(th * 4 / 3)),
+         math.max(tw, math.floor(th * 16 / 9))
+end
+
 function M.defaults()
   local w, h = pal.gfx_size()
-  return {}, w, h -- spawn at the target's native size (world units 1:1)
+  -- spawn with the image at native 1:1 — pixel-perfect at 100% zoom
+  return {}, w + M.PAD_W, h + M.PAD_H
 end
 
 function M.title(win)
   return "game"
+end
+
+-- push the window's FOV width to the live target: cm.view applies it in
+-- canvas mode before the next frame's game draw (pal.x_fov must run
+-- before begin_frame). Multiple game windows: the last resized/loaded
+-- wins; the others letterbox the shared target.
+function M.apply_fov(win)
+  local tw, th = base_res()
+  if not th or th <= 0 then return end
+  local lo, hi = res_range(tw, th)
+  local fw = win.fw
+  if fw and fw >= lo and fw <= hi then
+    cm.require("cm.view").canvas_fov = { w = fw, h = th }
+  end
+end
+
+-- the resize constraint (threaded through wm.resize by the shell): sees
+-- the raw dragged size, returns the aspect-locked one. r0 is the
+-- gesture-start rect, so the start scale/width stay the gesture's anchor.
+function M.constrain(win, part, r0, ww, wh, ctrl)
+  local tw, th = base_res()
+  if not th or tw <= 0 or th <= 0 then return end
+  local lo, hi = res_range(tw, th)
+  local W = math.min(hi, math.max(lo, win.fw or tw)) -- current FOV width
+  local s0 = math.max((r0.h - M.PAD_H) / th, 1e-6)   -- gesture-start scale
+  local iw, ih = ww - M.PAD_W, wh - M.PAD_H          -- dragged image size
+  local s
+  if part == "e" or part == "w" then
+    -- horizontal: walk the width through the range at constant scale,
+    -- then scale past the ends (16:9 out, 4:3 in)
+    s = ctrl and math.max(1, math.floor(s0 + 0.5)) or s0
+    W = math.floor(math.min(hi, math.max(lo, iw / s)) + 0.5)
+    if iw > hi * s then s = iw / hi
+    elseif iw < lo * s then s = iw / lo end
+  elseif part == "n" or part == "s" then
+    s = ih / th -- vertical: pure scale at the current width
+  else
+    -- corner: scale at the current width, following the axis that moved
+    -- more (relative to the gesture-start scale)
+    local sw, sh = iw / W, ih / th
+    s = math.abs(sw - s0) > math.abs(sh - s0) and sw or sh
+  end
+  if ctrl then s = math.max(1, math.floor(s + 0.5)) end
+  s = math.max(s, 16 / th) -- never collapse
+  if win.fw ~= W then
+    win.fw = W
+    M.apply_fov(win)
+  end
+  return W * s + M.PAD_W, th * s + M.PAD_H
 end
 
 function M.draw(win, ctx)
@@ -30,13 +117,22 @@ function M.draw(win, ctx)
   local tw, th = pal.gfx_size()
   if tw <= 0 or th <= 0 then return end
   pal.x_ig_rect_fill(ctx.cx, ctx.cy, ctx.cw, ctx.ch, 0x0c0a14ff, 4 * ctx.z)
-  local m = 3 * ctx.z
+  local m = WELL * ctx.z
   local aw, ah = ctx.cw - 2 * m, ctx.ch - 2 * m
   if aw <= 0 or ah <= 0 then return end
   local s = math.min(aw / tw, ah / th)
+  -- pixel-perfect (D054): when the scale lands on (float noise of) an
+  -- integer — 100% canvas zoom, window a multiple of the res — snap the
+  -- scale and the origin to exact px so the game reads 1:1 crisp
+  local r = math.floor(s + 0.5)
+  local exact = r >= 1 and math.abs(s - r) < 0.002
+  if exact then s = r end
   local dw, dh = tw * s, th * s
   local ix = ctx.cx + m + (aw - dw) * 0.5
   local iy = ctx.cy + m + (ah - dh) * 0.5
+  if exact then
+    ix, iy = math.floor(ix + 0.5), math.floor(iy + 0.5)
+  end
   pal.x_ig_image(-1, ix, iy, dw, dh)
   -- the image rect in window px (ephemeral): filter_events remaps mouse
   -- events through it next tick (1-frame latency, same class as ig capture)

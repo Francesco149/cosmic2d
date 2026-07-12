@@ -2484,6 +2484,139 @@ local function t_ed_wm()
   doc.focus = c.id
   wm.close(doc, c.id)
   check(#doc.sel == 0 and doc.focus == 0, "ed.wm: close cleans refs")
+
+  -- ---- live round 3 (D054): the no-modifier grammar ----
+  -- plain press on EMPTY canvas = marquee: a drag selects, a still-click
+  -- clears (panning left the left button — it's the middle one's now)
+  doc = wm.init({ cam = { x = 0, y = 0, zoom = 1 } })
+  local d = wm.spawn(doc, "note", 0, 0, 100, 100)
+  local e = wm.spawn(doc, "note", 300, 0, 100, 100)
+  doc.sel, doc.focus = { d.id }, d.id
+  g = {}
+  own = wm.update(doc, g, inp({ wx = 500, wy = 300, sx = 500, sy = 300,
+                                down1 = true, clicked1 = true }))
+  check(own and g.state == "marquee",
+        "ed.wm: plain press on empty starts a marquee")
+  wm.update(doc, g, inp({ wx = 250, wy = -10, sx = 250, sy = -10,
+                          down1 = true }))
+  wm.update(doc, g, inp({ wx = 250, wy = -10, sx = 250, sy = -10 }))
+  check(#doc.sel == 1 and doc.sel[1] == e.id, "ed.wm: plain marquee selects")
+  g = {}
+  wm.update(doc, g, inp({ wx = 500, wy = 300, sx = 500, sy = 300,
+                          down1 = true, clicked1 = true }))
+  wm.update(doc, g, inp({ wx = 501, wy = 301, sx = 501, sy = 301 }))
+  check(#doc.sel == 0 and doc.focus == 0,
+        "ed.wm: still-click on empty clears the selection")
+
+  -- title-bar move (inp.hdrid, no modifier): a drag moves, a still-click
+  -- selects — the same pend as the ALT grammar
+  g = {}
+  wm.update(doc, g, inp({ wx = 20, wy = 10, sx = 20, sy = 10, hdrid = d.id,
+                          down1 = true, clicked1 = true }))
+  check(g.state == "alt_pend" and g.target == d.id,
+        "ed.wm: title press arms the move")
+  wm.update(doc, g, inp({ wx = 50, wy = 10, sx = 50, sy = 10,
+                          down1 = true }))
+  check(g.state == "alt_move" and doc.sel[1] == d.id,
+        "ed.wm: title drag moves with no modifier + selects the target")
+  wm.update(doc, g, inp({ wx = 60, wy = 30, sx = 60, sy = 30,
+                          down1 = true }))
+  check(d.x == 10 and d.y == 20, "ed.wm: title move follows the delta")
+  wm.update(doc, g, inp({ wx = 60, wy = 30, sx = 60, sy = 30 }))
+  doc.sel, doc.focus = {}, 0
+  g = {}
+  wm.update(doc, g, inp({ wx = 40, wy = 32, sx = 40, sy = 32, hdrid = d.id,
+                          down1 = true, clicked1 = true }))
+  wm.update(doc, g, inp({ wx = 40, wy = 32, sx = 40, sy = 32 }))
+  check(doc.sel[1] == d.id and doc.focus == d.id,
+        "ed.wm: title still-click selects")
+
+  -- selection mode (alt+V, g.selmode): the press can only select — it
+  -- marquees even over a window and outranks the edge band; it disarms
+  -- itself when a select lands, stays armed when one doesn't
+  doc.sel, doc.focus = {}, 0
+  g = { selmode = true }
+  own = wm.update(doc, g, inp({ wx = 350, wy = 50, sx = 350, sy = 50,
+                                down1 = true, clicked1 = true }))
+  check(own and g.state == "marquee" and g.sel_click == true,
+        "ed.wm: selection mode marquees even over a window")
+  wm.update(doc, g, inp({ wx = 351, wy = 51, sx = 351, sy = 51 }))
+  check(doc.sel[1] == e.id, "ed.wm: selection-mode click selects the window")
+  check(g.selmode == nil, "ed.wm: a landed select disarms the mode")
+  g = { selmode = true }
+  wm.update(doc, g, inp({ wx = 400, wy = 50, sx = 400, sy = 50,
+                          down1 = true, clicked1 = true }))
+  check(g.state == "marquee", "ed.wm: selection mode outranks the edge band")
+  wm.update(doc, g, inp({ wx = 800, wy = 800, sx = 800, sy = 800,
+                          down1 = true }))
+  wm.update(doc, g, inp({ wx = 800, wy = 800, sx = 800, sy = 800 }))
+  check(#doc.sel == 0 and g.selmode == true,
+        "ed.wm: an empty select keeps the mode armed")
+
+  -- resize threads a kind constraint (opt.constrain) + re-anchors w/n
+  local r02 = { x = e.x, y = e.y, w = e.w, h = e.h }
+  wm.resize(doc, e.id, "w", r02, -40, 0, {
+    constrain = function(_, _, _, ww2) return ww2, ww2 * 0.5 end,
+  })
+  check(e.w == 140 and e.h == 70 and e.x + e.w == 400,
+        "ed.wm: constrain replaces the size and keeps the w anchor")
+end
+
+local function t_ed_game()
+  local game = cm.require("cm.ed.win.game")
+  local view = cm.require("cm.view")
+  -- selftest's design res is 64x64 (1:1): the supported FOV range widens
+  -- to include it — lo = 64 (own width), hi = floor(64*16/9) = 113
+  local PW, PH = game.PAD_W, game.PAD_H
+  check(PW == 14 and PH == 34, "ed.game: chrome pads")
+
+  -- vertical drag = pure scale at the current width (aspect locked)
+  local win = { kind = "game" }
+  local r0 = { x = 0, y = 0, w = 64 + PW, h = 64 + PH } -- image 1:1
+  local w, h = game.constrain(win, "s", r0, 64 + PW, 128 + PH, false)
+  check(w == 64 * 2 + PW and h == 64 * 2 + PH,
+        "ed.game: vertical resize scales aspect-locked")
+  check(win.fw == 64, "ed.game: width pins to the design res")
+  check(view.canvas_fov and view.canvas_fov.w == 64 and
+        view.canvas_fov.h == 64, "ed.game: fov request follows")
+
+  -- horizontal drag walks the width through the range at constant scale
+  w, h = game.constrain(win, "e", r0, 94 + PW, 64 + PH, false)
+  check(w == 94 + PW and h == 64 + PH and win.fw == 94,
+        "ed.game: horizontal resize widens the fov, same scale")
+  check(view.canvas_fov.w == 94, "ed.game: fov request tracks the width")
+
+  -- past 16:9 the width caps and the drag becomes a scale
+  win.fw = 64
+  w, h = game.constrain(win, "e", r0, 150 + PW, 64 + PH, false)
+  local s = 150 / 113
+  check(win.fw == 113, "ed.game: width caps at 16:9")
+  check(math.abs(w - (113 * s + PW)) < 1e-9 and
+        math.abs(h - (64 * s + PH)) < 1e-9,
+        "ed.game: past 16:9 the drag scales")
+
+  -- under the low end the width floors and the drag becomes a scale
+  win.fw = 64
+  w, h = game.constrain(win, "e", r0, 32 + PW, 64 + PH, false)
+  check(win.fw == 64 and math.abs(w - (32 + PW)) < 1e-9 and
+        math.abs(h - (32 + PH)) < 1e-9,
+        "ed.game: under the low end the drag scales down")
+
+  -- CTRL snaps the scale to integers (multiples of the res)
+  win.fw = 64
+  w, h = game.constrain(win, "s", r0, 64 + PW, 100 + PH, true) -- s 1.56 -> 2
+  check(w == 64 * 2 + PW and h == 64 * 2 + PH,
+        "ed.game: ctrl snaps to a res multiple")
+  w, h = game.constrain(win, "s", r0, 64 + PW, 70 + PH, true) -- s 1.09 -> 1
+  check(w == 64 + PW and h == 64 + PH, "ed.game: ctrl snap floors at 1x")
+
+  -- corner drag follows the axis that moved more, at the current width
+  win.fw = 64
+  w, h = game.constrain(win, "se", r0, 70 + PW, 192 + PH, false)
+  check(w == 64 * 3 + PW and h == 64 * 3 + PH,
+        "ed.game: corner scales on the dominant axis")
+
+  view.canvas_fov = nil -- selftest hygiene: never applied (view disabled)
 end
 
 local function t_ed_session()
@@ -2923,6 +3056,7 @@ function game.init()
   t_asset_reload()
   t_ed_cam()
   t_ed_wm()
+  t_ed_game()
   t_ed_session()
   t_ed_journal()
   t_ed_lex()

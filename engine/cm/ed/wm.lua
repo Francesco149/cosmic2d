@@ -13,18 +13,27 @@
 -- The grammar (the board's spec; thresholds are teidraw's): click = release
 -- within DRAG_PX of press, drag = crossing DRAG_PX. A-click select (+ drill
 -- on a selected group's child), A-drag move (selected-first priority),
--- A-rightclick close, A-drag-on-empty marquee. Plain drag on the EDGE_PX
--- band resizes; no auto-raise (z moves only via raise/to_front hotkeys).
+-- A-rightclick close, marquee on ANY empty-canvas press (plain or ALT —
+-- the naked canvas selects; panning is the middle button's, live round 3).
+-- A plain press on a window's TITLE BAR moves it (inp.hdrid, no modifier);
+-- plain drag on the EDGE_PX band resizes; no auto-raise (z moves only via
+-- raise/to_front hotkeys). g.selmode (armed by alt+V in the shell) makes
+-- the next press select-only — a marquee that also click-selects windows;
+-- it disarms itself the moment a select lands something.
 --
 -- update(doc, g, inp) advances one frame. g is the EPHEMERAL gesture table
 -- (module-local to the shell, never captured — EDITOR.md §2). inp is a
 -- plain snapshot the shell builds:
 --   { wx, wy       = cursor in WORLD coords,
 --     sx, sy       = cursor in SCREEN px (for the drag threshold),
---     band         = edge band in world units (EDGE_PX / zoom),
---     alt          = the ALT layer is held,
+--     bo, bi       = edge band in world units (EDGE_OUT/IN / zoom),
+--     alt, ctrl    = modifier layers held,
+--     hdrid        = window id whose title strip (minus its header-button
+--                    zone) is under the cursor, or nil (shell-computed),
+--     constrain    = optional fn(win, part, r0, ww, wh, ctrl) -> w, h —
+--                    a kind's resize constraint (aspect/res locks),
 --     down1, down3 = left/right button held,
---     clicked1, clicked3, released1, released3 = edges this frame }
+--     clicked1, clicked3 = press edges this frame }
 -- Returns true while wm owns the mouse (the shell then skips pan/menu).
 
 local M = select(2, ...) or {}
@@ -217,8 +226,12 @@ function M.move_sel(doc, dx, dy)
 end
 
 -- resize by dragging the part edges ("n"/"se"/...) by (dx,dy) from the
--- gesture-start rect r0; min size clamped, anchored on the opposite edge
-function M.resize(doc, id, part, r0, dx, dy)
+-- gesture-start rect r0; min size clamped, anchored on the opposite edge.
+-- opt (usually the frame's inp) may carry a kind constraint: it sees the
+-- raw dragged size and returns the size to use instead (aspect locks,
+-- resolution steps, ctrl snapping); w/n anchors re-derive after it so the
+-- opposite edge stays put.
+function M.resize(doc, id, part, r0, dx, dy, opt)
   local w = M.get(doc, id)
   if not w then return end
   local x, y, ww, wh = r0.x, r0.y, r0.w, r0.h
@@ -231,6 +244,14 @@ function M.resize(doc, id, part, r0, dx, dy)
   if part:find("n") then
     wh = math.max(M.MIN_H, r0.h - dy)
     y = r0.y + r0.h - wh
+  end
+  if opt and opt.constrain then
+    local w2, h2 = opt.constrain(w, part, r0, ww, wh, opt.ctrl or false)
+    if w2 then
+      ww, wh = w2, h2
+      if part:find("w") then x = r0.x + r0.w - ww end
+      if part:find("n") then y = r0.y + r0.h - wh end
+    end
   end
   w.x, w.y, w.w, w.h = x, y, ww, wh
 end
@@ -326,15 +347,28 @@ function M.update(doc, g, inp)
   elseif st == "marquee" then
     g.mx1, g.my1 = inp.wx, inp.wy
     if not inp.down1 then
-      doc.sel = M.intersecting(doc, g.mx0, g.my0, g.mx1, g.my1)
+      local still = g.px
+        and dist2(inp.sx, inp.sy, g.px, g.py) <= M.DRAG_PX * M.DRAG_PX
+      if g.sel_click and still then
+        -- selection mode: a still-click selects the window under it too
+        local id = M.hit(doc, inp.wx, inp.wy, 0)
+        doc.sel = id and { M.resolve_target(doc, id) } or {}
+      else
+        doc.sel = M.intersecting(doc, g.mx0, g.my0, g.mx1, g.my1)
+      end
       doc.focus = doc.sel[#doc.sel] or 0
+      if g.sel_click and #doc.sel > 0 then
+        g.selmode = nil -- the mode ends the moment a select lands
+      end
+      g.sel_click = nil
       g.state = nil
       g.changed = true
     end
     return true
   elseif st == "resize" then
     if inp.down1 then
-      M.resize(doc, g.target, g.part, g.r0, inp.wx - g.wx0, inp.wy - g.wy0)
+      M.resize(doc, g.target, g.part, g.r0,
+               inp.wx - g.wx0, inp.wy - g.wy0, inp)
       g.changed = true
     else
       g.state = nil
@@ -344,7 +378,16 @@ function M.update(doc, g, inp)
 
   -- idle: do we begin a gesture this frame?
   if inp.clicked1 then
-    -- the edge band wins FIRST, ALT held or not ("dragging edges resizes"
+    -- selection mode (alt+V): the press can ONLY select — a marquee that
+    -- click-selects windows; it outranks even the edge bands
+    if g.selmode then
+      g.state = "marquee"
+      g.sel_click = true
+      g.px, g.py = inp.sx, inp.sy
+      g.mx0, g.my0, g.mx1, g.my1 = inp.wx, inp.wy, inp.wx, inp.wy
+      return true
+    end
+    -- the edge band wins next, ALT held or not ("dragging edges resizes"
     -- rides the same layer as the move grammar on the board)
     local id, part = M.hit(doc, inp.wx, inp.wy, inp.bo, inp.bi)
     if id and part ~= "content" then
@@ -365,7 +408,17 @@ function M.update(doc, g, inp)
         return true
       end
       g.state = "marquee" -- A-drag on empty canvas
+      g.px, g.py = inp.sx, inp.sy
       g.mx0, g.my0, g.mx1, g.my1 = inp.wx, inp.wy, inp.wx, inp.wy
+      return true
+    end
+    if inp.hdrid then
+      -- plain press on a title bar (left of its header buttons): the
+      -- window moves with no modifier (live round 3); the same pend as
+      -- the ALT grammar, so a still-click selects
+      g.state = "alt_pend"
+      g.target = inp.hdrid
+      g.px, g.py = inp.sx, inp.sy
       return true
     end
     if id then
@@ -373,7 +426,12 @@ function M.update(doc, g, inp)
       g.changed = true
       return false -- content owns the rest of the gesture
     end
-    return false
+    -- plain press on empty canvas: marquee — select lives on the naked
+    -- canvas (live round 3); a still-click clears the selection
+    g.state = "marquee"
+    g.px, g.py = inp.sx, inp.sy
+    g.mx0, g.my0, g.mx1, g.my1 = inp.wx, inp.wy, inp.wx, inp.wy
+    return true
   end
   if inp.alt and inp.clicked3 then
     local id = M.hit(doc, inp.wx, inp.wy, 0)

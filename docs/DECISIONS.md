@@ -1732,3 +1732,57 @@ gate with a park-quit-relaunch proof.
 delta the ed canon, kind 2, format has room); or the per-session
 history bound turns out to matter to the human (→ a keep-history flag
 and boot adoption become an R6.5, the format already round-trips).
+
+## D054 — editor UX round 3: the no-modifier grammar + the game-window FOV range (2026-07-12)
+
+**Context**: the human's live feedback on the R3–R6 shell: they kept
+trying to drag windows by the title bar ("which means it should work
+like that"), plain-LMB pan on empty canvas fought the select instinct,
+and the game window resized as a free rectangle (letterboxing instead
+of committing to a size). Plus a new engine contract: the range of
+resolutions a game must support.
+
+**Decision**:
+
+1. **The title strip is a drag handle** (no modifier): plain drag
+   moves, plain still-click selects; the header-button zone (each
+   kind's `header` hook returns its consumed width; recorded per frame,
+   1-frame latency like grect) keeps its clicks. ALT-move stays for
+   grabbing a window anywhere without aiming at the title.
+2. **Plain select lives on the naked canvas**: an empty-canvas left
+   press is a marquee (drag selects, still-click clears). **LMB never
+   pans; panning = middle button** (space+drag stays; a right-drag is
+   nothing — right still-click keeps the spawn menu).
+3. **Selection mode** (`alt+V`): the next press can only select — it
+   marquees even over windows and outranks the edge bands; a landed
+   select disarms it, an empty one keeps it armed; Esc/alt+V exits.
+   The escape hatch for "select a window without ALT".
+4. **The supported game resolution range** (engine contract, R7 games
+   build to it): internal **height fixed**, width **4:3 → 16:9** of it
+   — base 540 → **720..960** — widened to include the project's design
+   width (odd-aspect dev projects stay legal). The live FOV rides
+   `pal.x_fov` (render-only, D036: sim never reads it; headless/verify
+   keep the project res, goldens untouched).
+5. **The game window resize commits to that range**: always
+   aspect-locked; horizontal drags walk the FOV width through the
+   range at constant scale then scale past the ends; vertical/corner
+   drags scale at the current width; **CTRL snaps the scale to
+   integers** (res multiples). `kind.constrain` threads through
+   `wm.resize`; the width lives in `win.fw` (captured, restored on
+   relaunch), applied via `cm.view.canvas_fov` before the next game
+   draw. The window spawns at native+pads and the draw snaps integer
+   scales to exact px → **pixel-perfect at 100% (and multiples) with
+   zero letterbox**.
+
+**Proof**: selftest 22707→22732 (+25: the new grammar, constrain
+threading, the game constraint math); `nix run .#test` ALL GREEN
+(traces + pixels byte-identical); scripted `--edit` captures on
+llm-feed (the new HUD/chips; the FOV walked to 360x270 with the target
+really resizing and the image 1:1).
+
+**Revisit if**: the human's soak finds the header band vs inner edge
+band (top 4 px of the strip resizes, not moves) confusing (→ shrink
+EDGE_IN over headers); or games want non-540-family heights (the range
+math is per-height already — only the docs' example is 540); or two
+game windows fighting over one FOV (last resized wins) starts to
+matter (→ per-window targets is an R8+ PAL feature).

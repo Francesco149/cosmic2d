@@ -186,6 +186,15 @@ function M.update()
     -- ig-canvas session: full-window imgui at native res on top; the game
     -- target keeps the project's fixed FOV (the canvas decides how to show
     -- it); scale=0 = no game blit. The ui canvas stays for the dev chrome.
+    -- One exception (D054): the editor's game window may pick a FOV width
+    -- in the supported 4:3..16:9 range (a horizontal resize walks it);
+    -- apply it here so the target resizes BEFORE the game draws into it
+    -- (the x_fov contract). Render-only, exactly like the ladder below.
+    local f = M.canvas_fov
+    if f then
+      local gw, gh = pal.gfx_size()
+      if f.w ~= gw or f.h ~= gh then pal.x_fov(f.w, f.h) end
+    end
     local us = math.max(1, M.cfg.ui_scale)
     local uw, uh = math.ceil(W / us), math.ceil(H / us)
     pal.x_ui_target(uw, uh)

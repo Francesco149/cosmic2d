@@ -64,7 +64,8 @@ end
 local C = {
   bg = 0x141220ff, grid = 0x3a3560, -- grid alpha applied per zoom
   win = 0x1e1b2eff, win_edge = 0x4a4370ff, win_edge_hot = 0x6a60a0ff,
-  hdr = 0x262238ff, title = 0xcfc8ffff, title_dim = 0x8a84b0ff,
+  hdr = 0x262238ff, hdr_hot = 0x322d48ff,
+  title = 0xcfc8ffff, title_dim = 0x8a84b0ff,
   sel = 0x7fd8a8ff, marquee = 0x7fd8a8aa, focus_edge = 0x8878d0ff,
   hud = 0xE8E4FFff, hud_dim = 0x8a84b0ff, pill = 0x262238ee,
   menu = 0x1e1b2ef2, menu_hot = 0x3a3560ff, unsaved = 0xffb46eff,
@@ -73,20 +74,24 @@ local C = {
 local HDR = 24 -- header strip height, world units
 local K = { escape = 41, lbracket = 47, rbracket = 48, space = 44,
             n1 = 30, n2 = 31, n0 = 39, right = 79, left = 80,
-            down = 81, up = 82, s = 22, z = 29, y = 28,
+            down = 81, up = 82, s = 22, v = 25, z = 29, y = 28,
             f1 = 58, f2 = 59, f3 = 60, f4 = 61, grave = 53 }
 
 -- ---- boot ----
 
 local function fresh_doc()
   local doc = wm.init({ v = 1, cam = cam.new() })
-  local gw, gh = pal.gfx_size()
-  wm.spawn(doc, "game", 40, 40, gw, gh + HDR)
-  local n = wm.spawn(doc, "note", gw + 80, 40, 280, 220)
+  local gkind = cm.require("cm.ed.win.game")
+  local extra, gw, gh = gkind.defaults() -- padded so the image sits 1:1
+  wm.spawn(doc, "game", 40, 40, gw, gh, extra)
+  local n = wm.spawn(doc, "note", 40 + gw + 40, 40, 280, 220)
   n.text = "welcome to the editor shell (R3).\n\n" ..
-           "wheel  zoom at cursor\ndrag   pan the canvas\n" ..
-           "alt+click   select a window\nalt+drag    move it\n" ..
-           "alt+rclick  close it (never loses work)\n" ..
+           "wheel  zoom at cursor\nmiddle-drag / space  pan\n" ..
+           "drag a title bar   move a window\n" ..
+           "click/drag canvas  select\n" ..
+           "alt+drag    move from anywhere\n" ..
+           "alt+rclick  close (never loses work)\n" ..
+           "alt+v       selection mode\n" ..
            "edges       drag to resize\nrclick      spawn menu"
   doc.sel, doc.focus = {}, 0
   return doc
@@ -103,6 +108,10 @@ function M.launch(root)
   end
   M.on = true
   cm.require("cm.view").mode = "canvas" -- no game blit; we draw the target
+  -- a saved game window carries its FOV width choice (§12.3): re-apply
+  for _, w in ipairs(M.doc.wins) do
+    if w.kind == "game" and w.fw then M.kinds.game.apply_fov(w) end
+  end
   pal.log("[ed] editor shell on (" .. root .. ")")
 end
 
@@ -141,6 +150,7 @@ function M.park(edoc_bytes)
     end
   end
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
+  M.g.hdrx = nil
   M.doc_rev = (M.doc_rev or 0) + 1
 end
 
@@ -188,6 +198,7 @@ function M.unpark(adopt)
   M.g.stash = nil
   M.parked = false
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
+  M.g.hdrx = nil
   M.touch() -- re-arm the session debounce on the (possibly new) present
 end
 
@@ -353,8 +364,13 @@ local function hotkeys(ig, i)
       elseif g.ctrl and g.shift and sc == K.z then kind_call("redo")
       elseif g.ctrl and sc == K.z then kind_call("undo")
       elseif sc == K.grave then summon_console()
+      elseif g.alt and sc == K.v then
+        -- selection mode: the next press can only select, even over a
+        -- window; wm disarms it the moment a select lands something
+        g.selmode = not g.selmode or nil
       elseif sc == K.escape then
         if g.menu then g.menu = nil
+        elseif g.selmode then g.selmode = nil
         elseif cm.require("cm.scrub").paused() then
           cm.require("cm.scrub").close() -- parked: Esc = back to the present
         elseif play then doc.focus = 0 -- the universal "get out" of play
@@ -391,6 +407,15 @@ local function hotkeys(ig, i)
         M.touch()
       end
     end
+  end
+end
+
+-- a kind's resize constraint (wm threads it through M.resize): the game
+-- window locks aspect + walks the FOV range here (§12.3, live round 3)
+local function kind_constrain(win, part, r0, ww, wh, ctrl)
+  local kind = M.kinds[win.kind]
+  if kind and kind.constrain then
+    return kind.constrain(win, part, r0, ww, wh, ctrl)
   end
 end
 
@@ -483,24 +508,58 @@ local function interact(ig)
       doc.cam.y = g.pan.cy - (i.wy - g.pan.sy) / doc.cam.zoom
       M.touch()
     else
-      -- a right-drag that never left the click threshold = the spawn menu
-      if g.pan.b == 3 and not g.pan.moved then
-        g.menu = { sx = i.wx, sy = i.wy, wx = wwx, wy = wwy }
-      end
       g.pan = nil
-    end
-    if g.pan and (math.abs(i.wx - g.pan.sx) > wm.DRAG_PX
-                  or math.abs(i.wy - g.pan.sy) > wm.DRAG_PX) then
-      g.pan.moved = true
     end
     return
   end
 
-  -- the grammar (ALT layer + edge resize); true = wm owns the mouse
+  -- a right press in flight: a still-release opens the spawn menu; a
+  -- right-drag is nothing (panning is the middle button's, live round 3)
+  if g.rpend then
+    if math.abs(i.wx - g.rpend.sx) > wm.DRAG_PX
+       or math.abs(i.wy - g.rpend.sy) > wm.DRAG_PX then
+      g.rpend.moved = true
+    end
+    if not i.buttons[3] then
+      if not g.rpend.moved then
+        g.menu = { sx = g.rpend.sx, sy = g.rpend.sy,
+                   wx = g.rpend.wx, wy = g.rpend.wy }
+      end
+      g.rpend = nil
+    end
+    return
+  end
+
+  -- space+drag = the hand tool, from anywhere (teidraw); it outranks the
+  -- grammar so a space-press over a window still pans
+  if g.space and i.clicked[1] then
+    g.pan = { b = 1, sx = i.wx, sy = i.wy, cx = doc.cam.x, cy = doc.cam.y }
+    g.anim = nil
+    return
+  end
+
+  -- a plain press on a title bar moves the window (no modifier, live
+  -- round 3): the strip left of the header's button zone (recorded by
+  -- draw_win last frame — reset/history/etc. keep their clicks)
+  local hdrid
+  if i.clicked[1] and not g.alt then
+    local hid, hpart = wm.hit(doc, wwx, wwy, 0)
+    if hid and hpart == "content" then
+      local hw = wm.get(doc, hid)
+      if wwy < hw.y + HDR then
+        local cut = g.hdrx and g.hdrx[hid]
+        if not (cut and i.wx >= cut) then hdrid = hid end
+      end
+    end
+  end
+
+  -- the grammar (ALT layer + edge resize + title move + canvas select);
+  -- true = wm owns the mouse
   local inp = {
     wx = wwx, wy = wwy, sx = i.wx, sy = i.wy,
     bo = wm.EDGE_OUT / doc.cam.zoom, bi = wm.EDGE_IN / doc.cam.zoom,
-    alt = g.alt or false,
+    alt = g.alt or false, ctrl = g.ctrl or false, hdrid = hdrid,
+    constrain = kind_constrain,
     down1 = i.buttons[1] or false, down3 = i.buttons[3] or false,
     clicked1 = i.clicked[1] or false, clicked3 = i.clicked[3] or false,
   }
@@ -511,24 +570,26 @@ local function interact(ig)
   end
   if owned or (ig.mouse and not g.alt) then return end
 
-  -- empty canvas (or middle button / space anywhere): pan; right = pan or
-  -- the spawn menu on a still-click. A kind can claim the middle button
-  -- over its content (sprite ed pans its own view, §12.6).
-  local over, opart = wm.hit(doc, wwx, wwy, inp.bo, inp.bi)
-  local mid_taken = false
-  if i.clicked[2] and over and opart == "content" and not g.alt then
-    local w = wm.get(doc, over)
-    local kind = w and M.kinds[w.kind]
-    if kind and kind.takes_middle and kind.takes_middle(w) then
-      mid_taken = true
+  -- middle button pans (a kind can claim it over its content — sprite ed
+  -- pans its own view, §12.6); a right press arms the spawn-menu pend.
+  -- LMB never pans (live round 3 — the naked canvas selects instead).
+  if i.clicked[2] then
+    local over, opart = wm.hit(doc, wwx, wwy, 0)
+    local mid_taken = false
+    if over and opart == "content" and not g.alt then
+      local w = wm.get(doc, over)
+      local kind = w and M.kinds[w.kind]
+      if kind and kind.takes_middle and kind.takes_middle(w) then
+        mid_taken = true
+      end
     end
-  end
-  local b = (i.clicked[2] and not mid_taken and 2) or (i.clicked[3] and 3)
-            or (i.clicked[1] and (g.space or not over) and 1) or nil
-  if b and (b ~= 1 or not over) or (b and g.space) then
-    g.pan = { b = b, sx = i.wx, sy = i.wy,
-              cx = doc.cam.x, cy = doc.cam.y }
-    g.anim = nil
+    if not mid_taken then
+      g.pan = { b = 2, sx = i.wx, sy = i.wy,
+                cx = doc.cam.x, cy = doc.cam.y }
+      g.anim = nil
+    end
+  elseif i.clicked[3] then
+    g.rpend = { sx = i.wx, sy = i.wy, wx = wwx, wy = wwy }
   end
 end
 
@@ -590,8 +651,15 @@ local function draw_win(ig, win, zi)
     if g.state == "resize" and g.target == win.id then hot_part = g.part end
   end
 
+  -- the title strip is a drag handle now (live round 3): cue it on hover
+  local hdr_hot = g.state == nil and not hot_part and g.cursor
+    and g.cursor.wx >= win.x and g.cursor.wx < win.x + win.w
+    and g.cursor.wy >= win.y and g.cursor.wy < win.y + HDR
+    and not (g.hdrx and g.hdrx[win.id]
+             and cm.require("cm.ui").inp.wx >= g.hdrx[win.id])
   pal.x_ig_rect_fill(x, y, w, h, C.win, 6 * z)
-  pal.x_ig_rect_fill(x, y, w, math.min(hdr, h), C.hdr, 6 * z)
+  pal.x_ig_rect_fill(x, y, w, math.min(hdr, h),
+                     hdr_hot and C.hdr_hot or C.hdr, 6 * z)
   local edge = hot_part and C.win_edge_hot
                or (focused and C.focus_edge or C.win_edge)
   pal.x_ig_rect(x, y, w, h, edge, math.max(1, z), 6 * z)
@@ -634,11 +702,17 @@ local function draw_win(ig, win, zi)
       hdr_right = rx - 8 * z
     end
   end
-  -- kind header extras (history arrows, edit toggles…), right-aligned
+  -- kind header extras (history arrows, edit toggles…), right-aligned;
+  -- remember where the button zone begins (screen x, read next frame):
+  -- a press left of it is the title-bar move handle (live round 3)
+  local used = 0
   if kind and kind.header then
-    kind.header(win, { z = z, alt = g.alt or false, ed = M,
-                       hx = hdr_right, hy = y, hh = math.min(hdr, h) })
+    used = kind.header(win, { z = z, alt = g.alt or false, ed = M,
+                              hx = hdr_right, hy = y,
+                              hh = math.min(hdr, h) }) or 0
   end
+  g.hdrx = g.hdrx or {}
+  g.hdrx[win.id] = hdr_right - used
 
   -- content, inset from the panel so nothing sits on the rounded border
   local m = 4 * z
@@ -838,11 +912,20 @@ local function draw_hud(ig)
   pal.x_ig_rect_fill(ig.w - zw - 24 - 110, 8, zw + 24, 26, C.pill, 8)
   pal.x_ig_text(ig.w - zw - 12 - 110, 12, 15, C.hud, zs, 1)
   -- hint pill, bottom-left
-  local hint = "alt+click select · alt+drag move · alt+rclick close · " ..
-               "edges resize · rclick menu · ]/[ front/back · shift+1 fit"
+  local hint = "drag title move · drag canvas select · alt+drag move · " ..
+               "alt+rclick close · alt+v select mode · edges resize · " ..
+               "mid pan · rclick menu"
   local hw = pal.x_ig_text_size(hint, 11, 0)
   pal.x_ig_rect_fill(10, ig.h - 32, hw + 20, 24, C.pill, 8)
   pal.x_ig_text(20, ig.h - 27, 11, C.hud_dim, hint, 0)
+  -- selection mode: unmissable chip, top-center
+  if M.g.selmode then
+    local s = "SELECT — click or drag selects · esc/alt+v exits"
+    local sw = pal.x_ig_text_size(s, 12, 0)
+    pal.x_ig_rect_fill((ig.w - sw) * 0.5 - 12, 8, sw + 24, 26, 0x2c4438f0, 8)
+    pal.x_ig_rect((ig.w - sw) * 0.5 - 12, 8, sw + 24, 26, C.sel, 1, 8)
+    pal.x_ig_text((ig.w - sw) * 0.5, 14, 12, C.sel, s, 0)
+  end
   pal.x_ig_overlay(false)
 end
 
