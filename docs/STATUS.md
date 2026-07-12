@@ -37,6 +37,17 @@ applied (ADR D054); moving to R7 next.**
   (render-side read of the live size; sim reads the design res at boot
   — smoke just crops today, which is legal but unpolished).
 
+**UX round 6 + D056 (same day, third feedback round — "workflow feels
+great")**: new code windows open at the current one's size (focused →
+topmost → default), the fresh-editor default lifted from the human's
+live session (669×757, 16 px); the canvas-zoom scroll bug fixed
+(line-anchored scroll — the imgui child keeps px, px-per-line is
+font×zoom); **editor boots resume the stream's last frame** and the
+game window grew a **restart** button (boot state at the current
+frame, recorded-EVAL routed, frame counter kept = the timeline
+survives + the restart rewinds; ADR D056; rewind-onto-a-full-segment
+re-spill gap found + fixed). selftest **22753**.
+
 **UX round 5 + R6.5 (same day, second feedback round)**:
 
 - **MMB pans everywhere** — the ig.mouse early-return had eaten middle

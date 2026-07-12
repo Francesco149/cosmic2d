@@ -467,6 +467,13 @@ vendored-pin-internal, revisited on any imgui bump.
   (`]`/`[`, arrows, shift+digit fits — they'd collide with gameplay);
   the ALT layer, Esc, and Ctrl combos stay the shell's. Esc-to-shell is
   the one deliberate theft (universal "get out").
+- **The `restart` header button (D056)**: boot state at the current
+  frame — buffers/doc/rand reset, `game.init` re-runs, but the frame
+  counter keeps counting (it's the rewind timeline, D055: the restart
+  is a recorded delta, so the past survives and the restart itself
+  rewinds). Routed through the recorded EVAL path; walled while
+  parked. Editor boots also **resume the stream's last frame** (D056),
+  so quitting and reopening continues the same run.
 - **Sizing is always aspect-locked, and it drives the game's FOV**
   (live round 3, D054). The supported game resolution range: **height
   is fixed** at the project's internal height; width runs **4:3 →

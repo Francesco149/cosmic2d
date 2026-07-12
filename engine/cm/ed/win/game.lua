@@ -61,6 +61,29 @@ function M.title(win)
   return "game"
 end
 
+-- header: the restart button (D056) — boot state at the current frame,
+-- routed through the recorded EVAL path so recordings replay it (the
+-- frame counter keeps running: the restart itself is rewindable).
+-- Walled while parked (the past is read-only; resume first).
+function M.header(win, ctx)
+  local z = ctx.z
+  local px = math.max(4, 11 * z)
+  local i = cm.require("cm.ui").inp
+  local label = "restart"
+  local bw = pal.x_ig_text_size(label, px, 1) + px * 0.6
+  local x = ctx.hx - bw
+  local parked = cm.require("cm.scrub").paused()
+  local hov = not parked and not ctx.alt and i.wx >= x and i.wx < x + bw
+              and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
+  pal.x_ig_text(x + px * 0.3, ctx.hy + (ctx.hh - px) * 0.45, px,
+                parked and 0x5a5480ff
+                or (hov and 0xE8E4FFff or 0xb0a8dcff), label, 1)
+  if hov and i.clicked[1] then
+    cm.require("cm.repl").submit("cm.main.reset_game()")
+  end
+  return bw
+end
+
 -- push the window's FOV width to the live target: cm.view applies it in
 -- canvas mode before the next frame's game draw (pal.x_fov must run
 -- before begin_frame). Multiple game windows: the last resized/loaded

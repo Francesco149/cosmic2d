@@ -1835,3 +1835,43 @@ segment ticks/day markers + a zoomable bar); adopted-history resumes
 with drifted code confuse (→ spill bundles content-addressed next to
 segments); boot scans get slow at huge budgets (→ cap manifest length
 by rewriting on eviction too).
+
+## D056 — the editor resumes its stream; in-place game restart (2026-07-12)
+
+**Context**: the human, closing the workflow loop on D055: "editor
+should resume from last snapshotted frame when started, and the game
+should have a reset button to restart it."
+
+**Decision**:
+
+1. **Editor boots resume**: when the adopted history reaches the
+   present (it does, by the D055 seed), cm.main rewinds onto its last
+   frame right after `ring_start` — the sim continues exactly where the
+   previous session quit (current code, per D055's adopted-bundle
+   rule). Editor sessions only (`--edit`, live); play and headless
+   boots stay fresh. A failed resume logs and falls back to the fresh
+   boot.
+2. **`cm.main.reset_game()` — boot state at the current frame**: frees
+   every game named buffer (the `ed.*` domain and `cm.sim` stay),
+   clears the doc, zeroes + re-seeds rand like boot, re-runs
+   game.init. **The frame counter is deliberately kept** — it is the
+   rewind timeline; resetting it would fork and wipe the cross-session
+   stream. A restart is just a big recorded delta: the past survives,
+   and the restart itself rewinds.
+3. **The game window grows a `restart` header button**, routed through
+   the recorded EVAL path (cm.repl.submit — recordings replay it),
+   walled while parked (the past is read-only; resume first).
+4. Found + fixed while designing: `trace.rewind` onto a FULL segment
+   deleted its history file without re-spilling — a gap that would
+   sever the adoption chain at the next boot. It re-spills now.
+
+**Proof**: selftest 22752→**22753** (the re-spill gap); live triple:
+session A warps the player + quits → session B logs "resumed the
+session at frame 122" with the player where A left him → session C
+restarts via the EVAL path (player at spawn, frame 247 continuing, no
+ring reset). Suite ALL GREEN.
+
+**Revisit if**: games grow boot-time state outside buffers/doc that a
+resume misses (→ a game.on_resume hook); or the human wants play-mode
+(non-editor) sessions to resume too (→ drop the args.edit gate — the
+machinery doesn't care).

@@ -2297,6 +2297,12 @@ local function t_ring_spill()
   check(trace.hist_peek(root) == f0 + 33,
         "ring flush: the open tail joins the stream")
 
+  -- resume onto a FULL segment's last frame: it re-spills — no chain
+  -- gap for the next boot (found designing D056's boot-resume)
+  trace.rewind(f0 + 32)
+  check(trace.hist_peek(root) == f0 + 32,
+        "ring rewind: a full segment re-spills (no chain gap)")
+
   -- a forked timeline can't rejoin: a mismatched counter wipes clean
   sim:i64(0, f0 + 999)
   trace.ring_start({ project = root })

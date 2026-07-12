@@ -113,6 +113,30 @@ local function guarded(fn, ...)
   return ok
 end
 
+-- restart the game IN PLACE (the game window's restart button, D056):
+-- free every game named buffer (the ed.* editor domain and cm.sim stay),
+-- clear the doc, re-seed rand like boot, re-run game.init — boot state
+-- at the CURRENT frame. The frame counter is deliberately kept: it IS
+-- the rewind timeline (D055); a restart is just a big recorded delta,
+-- so the past stream survives and the restart itself rewinds. This
+-- mutates sim state — callers must route it through the recorded EVAL
+-- path (cm.repl.submit) so recordings replay it.
+function M.reset_game()
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name ~= "cm.sim" and not b.name:find("^ed%.") then
+      pal.buf_free(b.name)
+    end
+  end
+  local doc = M.state.doc
+  for k in pairs(doc) do doc[k] = nil end
+  local sim = pal.buf("cm.sim", 64)
+  local f = sim:i64(0)
+  for off = 8, 56, 8 do sim:i64(off, 0) end -- rand + reserved reset
+  cm.require("cm.rand").ensure_seeded(M.proj.seed or 0x70657474616e3264)
+  if M.game then guarded(M.game.init) end
+  pal.log(("[main] game restarted (frame %d)"):format(f))
+end
+
 -- a quit request from any in-app source (the window close button, the
 -- options-menu "quit" button). A game may intercept it to run a save/confirm
 -- hook (on_quit); otherwise we quit. Single path so every quit affordance
@@ -304,6 +328,23 @@ function M.boot()
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
   M.trace.ring_start({ project = args.project })
+  -- the editor resumes where the stream left off (D056): when the
+  -- adopted history reaches the present, restore its last frame so the
+  -- sim continues exactly where the previous session quit (the code
+  -- stays current — adopted segments carry no bundle, D055). Editor
+  -- sessions only; play/headless boots stay fresh.
+  if args.edit and not args.headless then
+    local _, hi = M.trace.ring_range()
+    if hi and hi > 0 and hi == M.state.frame() then
+      local ok, err = pcall(M.trace.rewind, hi)
+      if ok then
+        guarded(M.game.init)
+        pal.log(("[main] resumed the session at frame %d"):format(hi))
+      else
+        pal.log("[main] resume failed (" .. tostring(err) .. "); fresh boot")
+      end
+    end
+  end
   if args.record then
     M.trace.record_start(args.record, { project = args.project })
   end

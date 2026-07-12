@@ -858,7 +858,11 @@ function M.rewind(f)
   R.prev_edoc = st.edoc or "" -- rebase the editor stream at f (R6c);
   R.prev_edrev = nil -- force a re-check on the next recorded frame
   R.last_frame = f
-  if seg.frames >= ring_kf() then open_segment(R, f + 1) end
+  if seg.frames >= ring_kf() then
+    open_segment(R, f + 1)
+    spill_seg(R, seg) -- it re-closed full: back to disk — the chain must
+                      -- stay gapless for the next boot's adoption (D055)
+  end
   pal.log(("[trace] rewound to frame %d"):format(f))
 end
 
