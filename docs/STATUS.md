@@ -3,6 +3,46 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (day session — editor UX round 3, D054)
+**Phase**: **The human's first feedback round on the built R3–R6 shell,
+applied (ADR D054); moving to R7 next.**
+
+- **The no-modifier grammar** (the asks, verbatim intent): **title-bar
+  drag moves** a window (no modifier; the header-button zone keeps its
+  clicks via each kind's `header`-hook width, recorded per frame; strip
+  lightens on hover; still-click selects), **plain click/drag on empty
+  canvas selects** (marquee; still-click clears), **LMB never pans —
+  panning is the middle button** (space+drag stays; right-drag is
+  nothing, right still-click keeps the spawn menu), ALT grammar
+  unchanged (move-from-anywhere is why it stays). **`alt+V` selection
+  mode**: the next press can only select (marquees even over windows,
+  outranks the edge bands); disarms itself when a select lands, stays
+  armed on an empty one; Esc/alt+V exits; top-center chip.
+- **The game window commits to the supported resolution range**: height
+  fixed at the project's internal height, width **4:3 → 16:9** (base
+  540 → 720..960; widened to include the project's own design width).
+  Resize is **always aspect-locked**: horizontal drags walk the FOV
+  width through the range at constant scale then scale past the ends;
+  vertical/corner drags scale at the current width; **CTRL snaps to
+  res multiples**. `kind.constrain` threads through `wm.resize`;
+  `win.fw` (captured, relaunch-restored) → `cm.view.canvas_fov` →
+  `pal.x_fov` before the next game draw (render-only, D036 — goldens
+  never see it). Spawns at native+pads, integer scales snap to exact
+  px → **pixel-perfect at 100% + multiples, zero letterbox**.
+- **Proof**: selftest 22707→**22732** (+25); `nix run .#test` ALL
+  GREEN (traces + pixels byte-identical); 2 scripted `--edit` captures
+  on llm-feed (the new HUD/chips at 1:1; the FOV walked to 360x270 —
+  the target really resizes, hint bar crops, image stays 1:1).
+- Note for R7: games are now expected to *support* the width range
+  (render-side read of the live size; sim reads the design res at boot
+  — smoke just crops today, which is legal but unpolished).
+
+**Next step (resume here):** **R7 — the game graybox revamp**
+(../cosmic2d-game, REVAMP §6), with the human's soak passes on R4/R5/R6
++ this UX round folding in as feedback arrives.
+
+---
+
 **Date**: 2026-07-12 (overnight session, cont. — R6 designed + BUILT a–e)
 **Phase**: **REVAMP R6 — rewind: DESIGNED (docs/REWIND.md + ADR D053)
 and BUILT a–e; awaiting the human's soak/feel pass. The engine phase of
