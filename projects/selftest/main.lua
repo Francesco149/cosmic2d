@@ -2626,6 +2626,22 @@ local function t_ed_game()
         "ed.game: corner scales on the dominant axis")
 
   view.canvas_fov = nil -- selftest hygiene: never applied (view disabled)
+
+  -- ctrl+wheel size dials (UX round 4b): per-window captured overrides,
+  -- clamped to each kind's range
+  local text = cm.require("cm.ed.win.text")
+  local assets = cm.require("cm.ed.win.assets")
+  local ed_stub = { touch = function() end }
+  local twin = {}
+  text.ctrl_wheel(twin, ed_stub, 1)
+  check(twin.px == text.PX + 2, "ed.text: ctrl+wheel steps the font")
+  text.ctrl_wheel(twin, ed_stub, -40)
+  check(twin.px == 8, "ed.text: font clamps low")
+  local awin = {}
+  assets.ctrl_wheel(awin, ed_stub, 2)
+  check(awin.tile == 100, "ed.assets: ctrl+wheel steps the preview size")
+  assets.ctrl_wheel(awin, ed_stub, 40)
+  check(awin.tile == 160, "ed.assets: preview size clamps high")
 end
 
 local function t_ed_session()

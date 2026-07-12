@@ -414,11 +414,12 @@ vendored-pin-internal, revisited on any imgui bump.
 - **Visible layer, all Lua drawlist**: line-number gutter (mono, dim,
   right-aligned; the active line bright), per-line syntax color, our own
   caret (blink on the wall clock, mono column metrics), current-line
-  tint. **Font: 26 px default** (UX round 4 — the human wanted double),
-  adjusted per window by the `a−`/`a+` header buttons (step 2, clamp
-  8–64); the override lives in `win.px` (captured — rides the session,
-  rewinds honestly). The asset browser's chrome runs at 16 px (1.5×)
-  from the same round. Only visible lines draw (scroll + line height = px); tokens memo
+  tint. **Font: 13 px default** (the human tried 26 in UX round 4 and
+  came back), adjusted per window by the `a−`/`a+` header buttons or
+  **ctrl+wheel over the content** (step 2, clamp 8–64); the override
+  lives in `win.px` (captured — rides the session, rewinds honestly).
+  Ctrl+wheel over an assets window dials its preview size the same way
+  (win.tile, the header slider's 48–160 range). Only visible lines draw (scroll + line height = px); tokens memo
   per line keyed by the line's string (interning makes the lookup cheap;
   the cache is ephemeral).
 - **`cm.ed.lex`** — pure per-line tokenizers, selftestable: `lua`
@@ -550,11 +551,15 @@ vendored-pin-internal, revisited on any imgui bump.
 
 ### 12.7 Wheel routing (closing the R3 scope note)
 
-Priority per wheel event: **ALT held → canvas zoom, always.** Else if
-the cursor is over a window's content and the kind takes the wheel
-(game-focused → sim; sprite → sprite zoom; text/console/assets → their
-scroll, via imgui capture or `kind.wheel`) → the content takes it.
-Else → canvas zoom. (Pans/edge bands are unaffected.)
+Priority per wheel event: **ALT held → canvas zoom, always.** Else
+**CTRL held → the hovered kind's size dial** when it has one
+(`kind.ctrl_wheel`: code-ed font px, assets preview size — UX round
+4b; CTRL also gates the pointer off imgui like ALT does, so the code
+child can't scroll under the dial). Else if the cursor is over a
+window's content and the kind takes the wheel (game-focused → sim;
+sprite → sprite zoom; text/console/assets → their scroll, via imgui
+capture or `kind.wheel`) → the content takes it. Else → canvas zoom.
+(Pans/edge bands are unaffected.)
 
 ### 12.8 R4 build order + exit
 

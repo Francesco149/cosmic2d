@@ -32,6 +32,13 @@ function M.defaults()
   return { filter = "", chip = "all", tile = 84 }
 end
 
+-- ctrl+wheel over the content: the preview-size dial (same 48..160 range
+-- as the header slider; the shell routes it, EDITOR.md §12.7)
+function M.ctrl_wheel(win, ed, notches)
+  win.tile = math.max(48, math.min(160, (win.tile or 84) + 8 * notches))
+  ed.touch()
+end
+
 function M.title(win)
   return "assets"
 end
@@ -171,7 +178,7 @@ local CHIPS = { "all", "code", "image", "sound" }
 
 local function chip_row(win, ctx, i)
   local z = ctx.z
-  local px = math.max(4, 16 * z) -- 1.5x (human, UX round 4)
+  local px = math.max(4, 10.5 * z)
   local x = ctx.cx + 4 * z
   local y = ctx.cy + 3 * z
   local h = px * 1.7
@@ -220,7 +227,7 @@ function M.draw(win, ctx)
   local ed = ctx.ed
   local g = ed.g
   local z = ctx.z
-  local px = math.max(4, 16 * z) -- 1.5x (human, UX round 4)
+  local px = math.max(4, 10.5 * z)
   local i = cm.require("cm.ui").inp
 
   local top = chip_row(win, ctx, i)

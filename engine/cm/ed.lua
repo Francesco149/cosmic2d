@@ -424,8 +424,11 @@ local function interact(ig)
   local doc, g = M.doc, M.g
   track_mods(i.keys)
   -- the ALT layer owns the pointer: gate mouse off imgui in C (widgets
-  -- render unchanged — no shimmer — but can never take the A-click)
-  pal.x_ig_mouse(not g.alt)
+  -- render unchanged — no shimmer — but can never take the A-click).
+  -- CTRL gates it too (UX round 4b): ctrl+wheel is the kinds' size dial
+  -- and imgui must not also scroll its child on it (bonus: a ctrl+click
+  -- link-open no longer moves the widget caret)
+  pal.x_ig_mouse(not (g.alt or g.ctrl))
   hotkeys(ig, i)
   consume_legacy_keys(i.keys)
   step_anim()
@@ -437,12 +440,22 @@ local function interact(ig)
   local wwx, wwy = cam.s2w(doc.cam, i.wx, i.wy)
   g.cursor = { wx = wwx, wy = wwy } -- draw-side hover reuse
 
-  -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. Else content
-  -- that takes it (an edit widget via imgui capture, a playing game window
-  -- via filter_events, a kind.wheel hook) — else canvas zoom.
+  -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. CTRL → the
+  -- hovered kind's size dial (code-ed font, assets preview) when it has
+  -- one. Else content that takes it (an edit widget via imgui capture, a
+  -- playing game window via filter_events, a kind.wheel hook) — else
+  -- canvas zoom.
   if i.wheel ~= 0 and not g.wheel_taken then
     local routed = false
-    if not g.alt then
+    if g.ctrl and not g.alt then
+      local id, part = wm.hit(doc, wwx, wwy, 0)
+      local win = id and part == "content" and wm.get(doc, id)
+      local kind = win and M.kinds[win.kind]
+      if kind and kind.ctrl_wheel then
+        kind.ctrl_wheel(win, M, i.wheel)
+        routed = true
+      end
+    elseif not g.alt then
       if ig.mouse then
         routed = true -- an imgui child (code ed scroll) is taking it
       else

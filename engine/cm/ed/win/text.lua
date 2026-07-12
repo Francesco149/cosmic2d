@@ -28,9 +28,10 @@ local journal = cm.require("cm.ed.journal")
 local lex = cm.require("cm.ed.lex")
 
 M.kind = "text"
-M.DEF_W, M.DEF_H = 760, 520 -- sized so the 26 px default shows ~55 cols
-M.PX = 26.0 -- default font px (human, UX round 4); per-window override
-            -- in win.px via the a−/a+ header buttons
+M.DEF_W, M.DEF_H = 460, 340
+M.PX = 13.0 -- default font px (the human tried 26 and came back — UX
+            -- round 4b); per-window override in win.px via the a−/a+
+            -- header buttons or ctrl+wheel over the content
 M.PUSH_MS = 600 -- idle time that ends an edit gesture (teidraw's coalesce)
 
 local EXT = { lua = true, md = true, txt = true, json = true, glsl = true }
@@ -419,6 +420,14 @@ function M.header(win, ctx)
     end
   end
   return used
+end
+
+-- ctrl+wheel over the content: the font-size dial (same clamp as the
+-- a−/a+ header buttons; the shell routes it, EDITOR.md §12.7)
+function M.ctrl_wheel(win, ed, notches)
+  local cur = win.px or M.PX
+  win.px = math.max(8, math.min(64, cur + 2 * notches))
+  ed.touch()
 end
 
 function M.draw(win, ctx)

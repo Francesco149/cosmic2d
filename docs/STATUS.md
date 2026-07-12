@@ -37,10 +37,14 @@ applied (ADR D054); moving to R7 next.**
   (render-side read of the live size; sim reads the design res at boot
   — smoke just crops today, which is legal but unpolished).
 
-**UX round 4 (feedback on round 3: "feels good" + fonts)**: code ed
-default font 13→26 px with per-window `a−`/`a+` header adjust (the
-override in `win.px`, captured); asset browser chrome 10.5→16 px
-(1.5×); fresh code windows spawn 760×520 for the new size (`8450d5b`).
+**UX round 4 (feedback on round 3: "feels good" + fonts)**: tried
+code ed 26 px + assets 16 px (`8450d5b`); the human preferred the
+originals — **round 4b reverted the defaults** (13 px / 10.5 px,
+window 460×340) and kept the controls: per-window `a−`/`a+` header
+buttons AND **ctrl+wheel** dials — font px on the code ed, preview
+size on the asset browser (`kind.ctrl_wheel`; CTRL now gates the
+pointer off imgui like ALT so the code child can't scroll under it).
+Overrides live in `win.px`/`win.tile` (captured).
 
 **R7a BUILT (same session, in ../cosmic2d-game — see its STATUS.md +
 docs/GRAYBOX.md):** the graybox reboot at 960×540 (D054 540 family):
