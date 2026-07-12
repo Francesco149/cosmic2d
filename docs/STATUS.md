@@ -37,9 +37,20 @@ applied (ADR D054); moving to R7 next.**
   (render-side read of the live size; sim reads the design res at boot
   — smoke just crops today, which is legal but unpolished).
 
-**Next step (resume here):** **R7 — the game graybox revamp**
-(../cosmic2d-game, REVAMP §6), with the human's soak passes on R4/R5/R6
-+ this UX round folding in as feedback arrives.
+**R7a BUILT (same session, in ../cosmic2d-game — see its STATUS.md +
+docs/GRAYBOX.md):** the graybox reboot at 960×540 (D054 540 family):
+M7 px knobs doubled (feel by construction), checkerboard solids + slim
+one-way slabs + the rect player carrying the full feel kit, the width
+range honored as a render contract. Engine side here: **the view
+ladder's reference adopts the project design res** (`eef12ae`,
+selftest 22733) — the 480×270@2x cfg was M8's one game baked in.
+
+**Next step (resume here):** the human's passes — the **R7a feel
+check** (`bin/cosmic ../cosmic2d-game/cosmic`, walk both maps) plus
+the outstanding R4/R5/R6 soaks and this session's UX round, feedback
+folding in as it arrives. Then **R7b — the core loop graybox**
+(GRAYBOX.md §4: slice combat vs rect hordes, breakables, collectibles,
+the per-map loop end to end), then R7c personality rounds.
 
 ---
 
