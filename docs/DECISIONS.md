@@ -1273,3 +1273,36 @@ away.
 good outcome); imgui starts leaking into the canvas grammar (contain or drop
 it); the rewind's editor-state capture proves heavier than the feature is
 worth (descope to sim+assets history first).
+
+## D046 — revamp review round 1: smoke project · studio retirement · rewind browse semantics (2026-07-12)
+
+**Context**: the human reviewed REVAMP.md and resolved its §7 open questions,
+plus pre-answered a rewind design gate that would have surfaced in R6.
+
+**Decisions** (the human's):
+
+- **The engine keeps a minimal smoke project = a cut-down cosmic demo** —
+  just a room with a couple of platforms plus the movement code. It is the
+  testbed for the whole editor-rewrite phase and the golden/selftest carrier
+  (goldens re-cut on it once, at R0). The old sandbox testbed retires to the
+  `pre-revamp` branch; the game graybox (R7) comes **after** the editor
+  phase — the current greybox is a placeholder anyway.
+- **The old studio (F2 full-window mode) dies at R4** when the sprite-ed
+  window lands — no parity coexistence.
+- **Rewind browsing is interactive but ephemeral**: parked on a rewound
+  frame you can poke around — move windows, open assets as they were at that
+  point in time — but all such changes are **discarded the moment you scrub
+  to another frame**. No reconciliation logic ever runs (later-deleted
+  assets / closed windows are non-problems: nothing done while parked
+  outlives the frame). Explicit escape hatches only: bring-back-asset and
+  resume-from-frame.
+
+**Why**: the smoke keeps the engine repo self-testing without dragging game
+content along; a dead studio avoids maintaining two shells; the ephemeral
+browse keeps R6 tractable — immutable history + throwaway viewing state is
+strictly simpler than any merge/reconcile story, and matches user intent
+(you scrub to *look*, not to edit the past).
+
+**Revisit if**: ephemeral browsing feels like data loss in practice (then:
+an explicit "copy out of the past" affordance beyond assets — never
+in-place reconciliation).

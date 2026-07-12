@@ -93,8 +93,10 @@ What is replaced or rebooted:
 - Always **~1 GB of engine state history cached (adjustable), streamed from
   disk**.
 - **Replay the whole engine state _including the editor_ frame by frame**;
-  any frame can be **browsed as if you were in the editor** infinite canvas —
-  everything **read-only**.
+  any frame can be **browsed as if you were in the editor** infinite canvas.
+  Browsing is **interactive but ephemeral** (§7b): move windows, open assets
+  as they were at that moment — all of it discarded the instant you scrub to
+  another frame; the history itself is immutable.
 - **Bring back an asset from the past** (overwrites if it still exists,
   re-adds if missing).
 - **Switch between game and editor mode while rewinding** (e.g. to record /
@@ -169,10 +171,13 @@ flex except: **R0 first** (everything else lands in the right repo) and
 **R1 before R3** (don't write the editor twice).
 
 - **R0 — the split**: `pre-revamp` backup branch; create `../cosmic2d-demos`
-  (procart + sandbox-as-demo move here) and `../cosmic2d-game` (projects/
-  cosmic + GAME/STORY/maps docs move here); this repo goes engine-only with a
-  minimal smoke project for selftest/goldens. *Exit*: engine repo builds +
-  selftest green; game repo boots the cosmic greybox against the sibling
+  (procart moves here) and `../cosmic2d-game` (projects/cosmic + GAME/STORY/
+  maps docs move here); this repo goes engine-only with the **minimal smoke
+  project** (a cut-down cosmic demo: one room, a couple of platforms, the
+  movement code) which becomes the golden/selftest carrier — trace/pixel
+  goldens re-cut on it here, once (§7 Q3). The old sandbox testbed retires to
+  the backup branch. *Exit*: engine repo builds + selftest + goldens green on
+  the smoke project; game repo boots the cosmic greybox against the sibling
   engine; demos repo boots procart; old tree reachable via the backup branch.
 - **R1 — script-engine spike (decision gate)**: QuickJS vs Lua 5.4 bench on
   representative workloads (sim tick, quad-batch prep, UI immediate-mode
@@ -198,35 +203,53 @@ flex except: **R0 first** (everything else lands in the right repo) and
   navigation) · **asset pick** (previews, size slider, drag-in/drag-out
   semantics, fuzzy search) · **sprite ed** (re-host cm.paint/cm.sprite/
   cm.anim tools in a floating window; read-only default + edit toggle;
-  animation possibly its own window) · **live playable game** window.
+  animation possibly its own window) · **live playable game** window. The
+  old studio's full-window mode (F2) **dies here** — no coexistence (§7 Q4).
   *Exit*: a real session — open the game, edit a script in code ed, tweak a
-  sprite, drag an asset in from the OS — without leaving the canvas.
+  sprite, drag an asset in from the OS — without leaving the canvas; the F2
+  studio is gone.
 - **R5 — project picker + launcher**: teidraw-style picker as the front
   door; the thin same-name launcher exe (editor/console disabled); shipped
   game openable through the editor. *Exit*: zip a game, double-click the exe
   on win11, it plays; open the same zip in the editor and poke around.
 - **R6 — rewind**: the disk-streamed ~1 GB delta history; frame browse of
-  everything including the editor (read-only); resume from any frame;
-  game/editor mode switch while rewinding; asset bring-back; the pill +
-  top-bar UI. Design doc first (extends D014/M5). *Exit*: scrub an hour-long
-  session, watch gameplay back, pull yesterday's sprite out of the past.
-- **R7 — game graybox revamp** (in cosmic2d-game; can start any time after
-  R0, interleaved): movement kit carried over, checkerboard/rect
-  placeholders, core-loop graybox iterated to "the rects have personality"
-  (human taste pass). Art fills in as we go.
+  everything including the editor (interactive-but-ephemeral, §7b); resume
+  from any frame; game/editor mode switch while rewinding; asset bring-back;
+  the pill + top-bar UI. Design doc first (extends D014/M5). *Exit*: scrub an
+  hour-long session, watch gameplay back, pull yesterday's sprite out of the
+  past; poke a rewound frame and confirm the poking evaporates on scrub.
+- **R7 — game graybox revamp** (in cosmic2d-game; **after the editor phase**
+  per the human — the smoke project is the testbed until then): movement kit
+  carried over, checkerboard/rect placeholders, core-loop graybox iterated to
+  "the rects have personality" (human taste pass). Art fills in as we go.
 
-## 7. Open questions (for the human, none blocking R0)
+## 7. Open questions — RESOLVED (human, 2026-07-12; ADR D046)
 
-1. **Sequencing after R0**: engine-first as ordered above, or interleave R7
-   (game graybox) early for a morale/feel anchor while the editor is rebuilt?
-2. **Sandbox project**: demo (cosmic2d-demos) or the engine-repo smoke
-   project? (R0 proposes: moveset testbed → game repo territory; a minimal
-   new smoke cartridge stays in-engine for selftest/goldens.)
-3. **Goldens through the revamp**: keep selftest green throughout (proposed:
-   yes, always); pixel/trace goldens re-cut at R2 when the PAL contract
-   breaks (proposed: re-cut once, on the new smoke project).
-4. **The old studio's full-window mode**: kill immediately at R4 when the
-   sprite-ed window lands, or keep both until the window reaches parity?
+1. **Sequencing after R0**: **engine-first.** The minimal smoke project is
+   the testbed through the editor-rewrite phase (R1–R4); the game graybox
+   (R7) comes after — the current greybox is a placeholder anyway.
+2. **The smoke project**: the engine keeps a **minimal smoke = a cut-down
+   version of the cosmic demo** — just a room with a couple of platforms
+   plus the movement code. (The old sandbox moveset-testbed doesn't move
+   anywhere; it's reachable via the `pre-revamp` branch.)
+3. **Goldens through the revamp**: selftest stays green throughout; the
+   trace/pixel goldens are re-cut **once, at R0, on the smoke project**
+   (moving the golden-bearing projects out forces it at the split, not R2 —
+   a deliberate re-cut, not a regenerated failure).
+4. **The old studio's full-window mode**: **dies** when the sprite-ed window
+   lands at R4 — no parity coexistence period.
+
+## 7b. Rewind gate — browsing semantics (human, 2026-07-12; ADR D046)
+
+How do we handle poking around a rewound frame? **Interactive but
+ephemeral**: while parked on a frame you can poke around — move windows,
+open assets *as they were at that point in time* — but every such change is
+**discarded the moment you scrub to another frame**. No reconciliation ever
+happens (assets deleted since, windows closed since, etc. are non-problems
+because nothing you do while parked outlives the frame). The only doors out
+of the past are explicit: **bring back an asset** (§2 rewind) and **resume
+from this frame**. This replaces the earlier blanket "everything read-only"
+phrasing: the *history* is immutable, the *viewing* is interactive.
 
 ## 8. Risks / watch list (revamp-specific)
 
