@@ -4,12 +4,11 @@ Tiny 2D pixel-art engine / fantasy console: small C platform binary ("PAL") +
 hot-reloadable Lua engine/editor/games, deterministic to the bit, batteries
 included. You (the agent) are the primary developer.
 
-The engine now has a flagship game it is built around: **cosmic** — a cute /
-cozy, occasionally cosmic-dread action-exploration game starring the
-antagonist mecha girl of the `cosmic` universe (a spin-off / prequel).
-MapleStory-style movement and self-contained maps + portals, power-fantasy
-slice-through-hordes spectacle, and a Garry's-Mod-flavored physics sandbox.
-The art targets a Wadanohara-like pixel style. See `docs/GAME.md`.
+**This repo is engine-only since revamp R0 (D045/D046)**: the flagship game
+(**cosmic**) lives in **`../cosmic2d-game`** and experiments/demos in
+**`../cosmic2d-demos`** — each with its own CLAUDE.md. Pre-split history:
+branch `pre-revamp` (keep forever). The active roadmap is
+**docs/REVAMP.md**.
 
 ## Session start — do this first
 
@@ -46,15 +45,10 @@ default windows-side save dir. Resolve it like this:
   infinite-canvas editor UX reboot, repo split, script-engine gate, rewind.
   Distilled from the human's `cosmic2d` teidraw board (the source of truth —
   re-export it when direction is unclear).
-- **GAME.md** — the cosmic game design bible: identity, gameplay loop,
-  movement spec, combat/spectacle, sandbox, art direction, story.
-- **STORY.md** — the narrative bible: premise, cast (Vesper / Gemma / Lumi),
-  tone + the dread engine, world/areas, the quest spine. Per-map quest+layout
-  one-pagers live in **`docs/maps/`**.
 - **ARCHITECTURE.md** — two-layer design, state model, determinism iron
   rules, PAL API contract.
-- **PROCART.md** — the procedural pixel-art experiment (`projects/procart/`):
-  character/tile generators, the marry bake, verdict criteria (D044).
+- *(moved at R0)* GAME.md / STORY.md / maps → `../cosmic2d-game/docs/`;
+  PROCART.md → `../cosmic2d-demos/docs/`.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.
 - **PROCESS.md** — session protocol, commits, build/test/verify commands,
   llm-feed recipes, when to ask the human.
@@ -78,9 +72,9 @@ default windows-side save dir. Resolve it like this:
 
 ```sh
 nix develop -c make -C pal                                   # build bin/cosmic
-bin/cosmic projects/sandbox                                  # run windowed (moveset testbed)
-bin/cosmic projects/cosmic                                   # the cosmic game greybox (Rim Hub + South Trail)
+bin/cosmic projects/smoke                                    # the minimal test room (M7 moveset)
 bin/cosmic --studio                                          # launch the sprite/anim studio (or F2 in-game)
-bin/cosmic projects/sandbox --headless --frames 120 --shot /tmp/s.png
-nix run .#test                                               # goldens (M1+)
+bin/cosmic projects/smoke --headless --frames 120 --shot /tmp/s.png
+bin/cosmic ../cosmic2d-game/cosmic                           # the game (sibling repo; path is engine-root-relative)
+nix run .#test                                               # goldens (selftest + traces + pixels)
 ```

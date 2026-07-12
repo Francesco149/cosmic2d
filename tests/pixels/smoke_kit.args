@@ -1,6 +1,6 @@
-projects/sandbox
+projects/smoke
 --headless
 --frames
-600
+520
 --eval
 game.demo(1)

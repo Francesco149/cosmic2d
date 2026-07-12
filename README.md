@@ -29,7 +29,7 @@ Linux/WSL2 with Nix:
 
 ```sh
 nix develop -c make -C pal
-bin/cosmic projects/sandbox
+bin/cosmic projects/smoke
 ```
 
 Windows native builds land at milestone M7.

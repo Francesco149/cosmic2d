@@ -9,9 +9,9 @@
 -- queue again but nothing drains it — execution comes from the EVAL
 -- records; the queue is dev-side state and never compared.)
 
-local rand = pt.require("pt.rand")
-local state = pt.require("pt.state")
-local repl = pt.require("pt.repl")
+local rand = cm.require("cm.rand")
+local state = cm.require("cm.state")
+local repl = cm.require("cm.repl")
 
 local game = {}
 local sim
@@ -34,7 +34,7 @@ function game.step()
     -- an erroring command must replay identically (caught + logged), and
     -- commands after it still run
     repl.submit("error('deliberate')")
-    repl.submit("doc.eval.t = pt.state.frame()")
+    repl.submit("doc.eval.t = cm.state.frame()")
   end
 end
 

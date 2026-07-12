@@ -41,13 +41,13 @@ Everything runs inside the flake devshell (`nix develop -c <cmd>`):
 
 ```sh
 nix develop -c make -C pal          # build → bin/cosmic (+ shaders if changed)
-bin/cosmic projects/sandbox         # run windowed (WSLg window appears on the
+bin/cosmic projects/smoke           # run windowed (WSLg window appears on the
                                     #   Windows side; dzn/RTX or lavapipe)
-bin/cosmic projects/sandbox --headless --frames 120 --shot /tmp/shot.png
+bin/cosmic projects/smoke --headless --frames 120 --shot /tmp/shot.png
 bin/cosmic projects/selftest --headless --frames 1       # 22k engine checks
 bin/cosmic <proj> --headless --frames N --record t.ctrace  # capture a trace
 bin/cosmic <proj> --verify t.ctrace  # golden runner: byte-exact replay, exit 0/1
-bin/cosmic projects/sandbox --headless --frames N --eval "game.demo(1)" \
+bin/cosmic projects/smoke --headless --frames N --eval "game.demo(1)" \
   --shot /tmp/s.png     # --eval queues a console line for frame 1 (recorded
                         # as an EVAL chunk) — drives demos/knobs headlessly
 nix run .#test                      # selftest + all committed goldens (lavapipe)
@@ -62,8 +62,8 @@ nix flake check                     # same suite as a sandboxed derivation
   per line; the runner appends `--shot` and byte-compares). Record ON
   LAVAPIPE: `VK_DRIVER_FILES=$COSMIC_LVP_ICD bin/cosmic <args…> --shot
   tests/pixels/<name>.png` inside the devshell — and mind untracked local
-  state (a painted `projects/sandbox/map.dat` boots instead of the
-  procedural map; move it aside).
+  state (a stray machine-local file, e.g. a knobs.dat, can boot instead of
+  the committed defaults; move it aside).
 - Time machine (M5): F4 in any live session scrubs the always-on ring
   trace (last `cm.trace.ring.seconds`, default 30); "rewind here" truncates
   the future, "save .ctrace" exports the ring; replay a file with

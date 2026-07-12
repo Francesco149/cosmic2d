@@ -3,8 +3,8 @@
 -- mid-trace buffer create / free / resize (FRAM kinds 1 and 2), doc-tree
 -- key add/remove, and steady PRNG consumption.
 
-local rand = pt.require("pt.rand")
-local state = pt.require("pt.state")
+local rand = cm.require("cm.rand")
+local state = cm.require("cm.state")
 
 local game = {}
 local sim
