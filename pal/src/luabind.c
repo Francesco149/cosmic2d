@@ -844,6 +844,13 @@ static int l_poll_events(lua_State *L) {
   return 1;
 }
 
+/* pal.x_remove(path): delete a file (or empty dir). The R6 history
+ * spill's eviction/wipe path (D053); dev-side file hygiene only. */
+static int l_x_remove(lua_State *L) {
+  lua_pushboolean(L, SDL_RemovePath(luaL_checkstring(L, 1)));
+  return 1;
+}
+
 /* pal.x_reboot(): close + re-boot the Lua VM after this tick (D052 — the
  * picker's project switch; the parachute cycle without an error). */
 static int l_x_reboot(lua_State *L) {
@@ -1046,6 +1053,7 @@ static const luaL_Reg pal_funcs[] = {
     {"blit32", l_blit32},
     {"poll_events", l_poll_events},
     {"x_reboot", l_x_reboot},
+    {"x_remove", l_x_remove},
     {"scancode_name", l_scancode_name},
     {"text_input", l_text_input},
     {"frame_stats", l_frame_stats},

@@ -63,9 +63,14 @@ local repl = cm.require("cm.repl")
 
 local pack, unpack = string.pack, string.unpack
 
--- feel knobs (console-tunable; read live). seconds = retained window,
--- kf = frames per segment = keyframe cadence of exported traces
-M.ring = M.ring or { seconds = 30, kf = 60 }
+-- feel knobs (console-tunable; read live). seconds = the RAM-resident
+-- window, kf = frames per segment = keyframe cadence of exported traces.
+-- R6b (REWIND.md §3): spill = stream closed segments to
+-- <project>/.ed/history (cm.main turns it on for real windowed sessions;
+-- headless/CI never write); budget_mb bounds the total retained history
+-- (whole oldest segment files evicted past it). The seconds window is
+-- RAM residency, not the history bound, once spill is on.
+M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024 }
 
 -- M._R = ring session { project, segs, next_id, prev, prev_doc, last_frame }
 -- M._rec = active pin { path, project, kf, from_id }
@@ -135,17 +140,113 @@ local function seg_append(seg, tag, payload)
   seg.bytes = seg.bytes + #payload
 end
 
--- drop whole oldest segments while what remains still covers the window
--- (pinned segments are never dropped)
+-- ---- the disk tier (R6b, REWIND.md §3) ----
+
+local function hist_dir(R)
+  return R.project .. "/.ed/history"
+end
+
+-- write a closed segment to its history file (CSEG container: keyframe +
+-- the chunk stream verbatim). The bundle stays a RAM reference — shared
+-- between segments, cheap, and rewind needs it without a load. A failed
+-- write logs once and turns spill off (read-only checkouts, full disks —
+-- history is a convenience, never a session breaker).
+local function spill_seg(R, seg)
+  if not M.ring.spill or seg.spilled or R.project == "" then return end
+  local w = chunk.writer("CSEG")
+  w.chunk("HEAD", 1, pack("<I4I4", seg.first, seg.frames))
+  for _, b in ipairs(seg.kf_bufs) do
+    w.chunk("KFBF", 1, pack("<s4s4", b.name, b.bytes))
+  end
+  w.chunk("KFDC", 1, pack("<s4", seg.kf_doct))
+  w.chunk("KFED", 1, pack("<s4", seg.kf_edoc or ""))
+  for _, c in ipairs(seg.chunks) do w.chunk(c.tag, 1, c.payload) end
+  local blob = w.result()
+  pal.mkdir(hist_dir(R))
+  local path = ("%s/seg_%06d"):format(hist_dir(R), seg.id)
+  if not pal.write_file(path, blob) then
+    pal.log("[trace] history spill failed (" .. path .. "); spill off")
+    M.ring.spill = false
+    return
+  end
+  seg.file, seg.fbytes, seg.spilled = path, #blob, true
+end
+
+-- drop a spilled segment's RAM copy (the skeleton keeps id/first/frames/
+-- bytes/file/bundle — everything seek and rewind bookkeeping need)
+local function demote(seg)
+  seg.kf_bufs, seg.kf_doct, seg.kf_edoc, seg.chunks = nil, nil, nil, nil
+end
+
+-- materialize a demoted segment from its file; a tiny LRU caps how many
+-- spilled segments sit decoded at once (scrubbing hits neighbors)
+local function seg_load(R, seg)
+  if seg.kf_bufs then return seg end
+  local blob = pal.read_file(seg.file)
+    or error("history segment missing: " .. tostring(seg.file), 0)
+  local kf_bufs, chunks2, doct, edoc = {}, {}, "", ""
+  for _, c in ipairs(chunk.read(blob, "CSEG")) do
+    if c.tag == "HEAD" then -- id/first/frames live on the skeleton
+    elseif c.tag == "KFBF" then
+      local name, bytes = unpack("<s4s4", c.payload)
+      kf_bufs[#kf_bufs + 1] = { name = name, bytes = bytes }
+    elseif c.tag == "KFDC" then doct = unpack("<s4", c.payload)
+    elseif c.tag == "KFED" then edoc = unpack("<s4", c.payload)
+    else chunks2[#chunks2 + 1] = { tag = c.tag, payload = c.payload } end
+  end
+  seg.kf_bufs, seg.kf_doct, seg.kf_edoc, seg.chunks =
+    kf_bufs, doct, edoc, chunks2
+  R.loaded = R.loaded or {}
+  R.loaded[#R.loaded + 1] = seg
+  if #R.loaded > 4 then
+    local old = table.remove(R.loaded, 1)
+    if old ~= seg and old.spilled and old.kf_bufs then demote(old) end
+  end
+  return seg
+end
+
+-- wipe the history dir (boot / ring reset — history is per-session,
+-- REWIND.md §3; stale files can't be adopted safely)
+local function hist_wipe(R)
+  if not M.ring.spill or R.project == "" then return end
+  local names = pal.list_dir(hist_dir(R))
+  if not names then return end
+  for _, n in ipairs(names) do pal.x_remove(hist_dir(R) .. "/" .. n) end
+end
+
+-- Eviction. Spill OFF = the pre-R6 rule verbatim: drop whole oldest
+-- segments while the rest still covers the seconds window. Spill ON:
+-- the window is RAM residency (older spilled segments demote to
+-- skeletons); the disk budget bounds total retained bytes, oldest
+-- files first. Pinned segments never drop either way.
 local function evict(R)
   local want = math.max(1, math.floor((M.ring.seconds or 30) * 60))
   local total = 0
   for _, s in ipairs(R.segs) do total = total + s.frames end
-  while #R.segs > 1 do
+  if not M.ring.spill then
+    while #R.segs > 1 do
+      local s = R.segs[1]
+      if M._rec and s.id >= M._rec.from_id then break end
+      if total - s.frames < want then break end
+      total = total - s.frames
+      table.remove(R.segs, 1)
+    end
+    return
+  end
+  local ram = 0
+  for i = #R.segs, 1, -1 do
+    local s = R.segs[i]
+    ram = ram + s.frames
+    if ram > want and s.spilled and s.kf_bufs then demote(s) end
+  end
+  local budget = math.floor((M.ring.budget_mb or 1024) * 1024 * 1024)
+  local retained = 0
+  for _, s in ipairs(R.segs) do retained = retained + (s.fbytes or s.bytes) end
+  while #R.segs > 1 and retained > budget do
     local s = R.segs[1]
     if M._rec and s.id >= M._rec.from_id then break end
-    if total - s.frames < want then break end
-    total = total - s.frames
+    retained = retained - (s.fbytes or s.bytes)
+    if s.file then pal.x_remove(s.file) end
     table.remove(R.segs, 1)
   end
 end
@@ -153,6 +254,8 @@ end
 -- (re)initialize the mirrors from live state and open a fresh segment
 local function ring_init(R)
   R.segs = {}
+  R.loaded = nil
+  hist_wipe(R) -- history is per-session; a reset orphans the old files
   R.prev = {}
   for _, b in ipairs(sorted_buf_list()) do
     R.prev[b.name] = { mirror = mirror_of(pal.buf(b.name, b.size), b.size),
@@ -194,14 +297,22 @@ function M.ring_stats()
   local R = M._R
   if not R then return nil end
   local frames, bytes, kfbytes = 0, 0, 0
+  local spilled, disk_bytes = 0, 0
   for _, s in ipairs(R.segs) do
     frames = frames + s.frames
     bytes = bytes + s.bytes
-    for _, b in ipairs(s.kf_bufs) do kfbytes = kfbytes + #b.bytes end
+    if s.kf_bufs then -- demoted skeletons keep no keyframe in RAM (R6b)
+      for _, b in ipairs(s.kf_bufs) do kfbytes = kfbytes + #b.bytes end
+    end
+    if s.spilled then
+      spilled = spilled + 1
+      disk_bytes = disk_bytes + (s.fbytes or 0)
+    end
   end
   local lo, hi = M.ring_range()
   return { segs = #R.segs, frames = frames, chunk_bytes = bytes,
            keyframe_bytes = kfbytes, oldest = lo, newest = hi,
+           spilled = spilled, disk_bytes = disk_bytes,
            pinned = M._rec ~= nil }
 end
 
@@ -294,6 +405,7 @@ function M.record_frame(input_record, evals)
 
   if seg.frames >= ring_kf() then
     open_segment(R, f + 1) -- eager close: its keyframe = state after f
+    spill_seg(R, seg) -- the closed one streams to disk (R6b; no-op off)
     evict(R)
   end
 end
@@ -324,11 +436,11 @@ local function write_trace(path, project, kf, first_i)
   local head = { pack("<I4s4I4", kf, project, #names) }
   for _, n in ipairs(names) do head[#head + 1] = pack("<s4", n) end
   w.chunk("HEAD", 1, table.concat(head))
-  local s1 = R.segs[first_i]
+  local s1 = seg_load(R, R.segs[first_i]) -- spilled segments materialize
   w.chunk("SNAP", 1, state.encode_snapshot(s1.kf_bufs, s1.kf_doct, s1.bundle))
   local frames = 0
   for i = first_i, #R.segs do
-    local s = R.segs[i]
+    local s = seg_load(R, R.segs[i])
     if i > first_i then
       w.chunk("KEYF", 1, state.encode_snapshot(s.kf_bufs, s.kf_doct))
     end
@@ -484,7 +596,7 @@ function M.ring_state_at(f)
     error(("frame %s outside ring [%s..%s]")
           :format(tostring(f), tostring(lo), tostring(hi)), 2)
   end
-  local seg = seg_containing(R, f)
+  local seg = seg_load(R, seg_containing(R, f)) -- spilled segs materialize
   local scratch = {} -- name -> anon view (GC-owned)
   local sizes = {}
   for _, b in ipairs(seg.kf_bufs) do
@@ -543,6 +655,7 @@ function M.rewind(f)
   end
   local st = M.ring_state_at(f) -- validates the range
   local seg, si = seg_containing(R, f)
+  seg_load(R, seg)
 
   -- code as of frame f: the segment bundle + EPOCs that landed before it
   local files, order = {}, {}
@@ -579,8 +692,19 @@ function M.rewind(f)
   state.restore_tables(st.bufs, st.doct)
   if diff then cm.restore_bundle(list) end
 
-  -- truncate the ring after f and rebase the mirrors there
-  for i = #R.segs, si + 1, -1 do R.segs[i] = nil end
+  -- truncate the ring after f and rebase the mirrors there. Dropped
+  -- segments take their history files with them; the containing one's
+  -- file is now stale — remove it and forget the spill (it re-spills if
+  -- it ever closes again)
+  for i = #R.segs, si + 1, -1 do
+    if R.segs[i].file then pal.x_remove(R.segs[i].file) end
+    R.segs[i] = nil
+  end
+  if seg.file then
+    pal.x_remove(seg.file)
+    seg.file, seg.fbytes, seg.spilled = nil, nil, nil
+  end
+  R.loaded = nil
   for i = #seg.chunks, cut + 1, -1 do seg.chunks[i] = nil end
   seg.frames = need
   local bytes = 0

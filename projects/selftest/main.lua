@@ -2194,6 +2194,72 @@ local function tmproot()
          or os.getenv("TMPDIR") or "/tmp"
 end
 
+local function t_ring_spill()
+  -- R6b (REWIND.md §3/D053): closed segments spill to .ed/history, the
+  -- seconds window becomes RAM residency (demotion), the budget evicts
+  -- files, and rewind cleans stale files up
+  local trace = cm.require("cm.trace")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local root = tmproot() .. "/cosmic_selftest_hist"
+  pal.mkdir(root)
+  trace.ring.kf = 4
+  trace.ring.seconds = 8 / 60 -- RAM window = 8 frames = 2 segments
+  trace.ring.spill = true
+  trace.ring.budget_mb = 64 -- roomy: nothing budget-evicts yet
+  local b = pal.buf("st.spill", 8)
+  b:i32(0, 0)
+  trace.ring_start({ project = root })
+  local irec = ("\0"):rep(10)
+  local snaps = {}
+  local function drive(from, to)
+    for i = from, to do
+      b:i32(0, i * 3)
+      sim:i64(0, f0 + i)
+      snaps[i] = b:str(0, 8)
+      trace.record_frame(irec, nil)
+    end
+  end
+  drive(1, 20) -- segs 1..5 closed+spilled, seg 6 open; window demotes 1..3
+
+  local files = pal.list_dir(root .. "/.ed/history")
+  check(files and #files >= 4,
+        "ring spill: files exist (" .. tostring(files and #files) .. ")")
+  local st = trace.ring_stats()
+  check(st.spilled >= 4 and st.disk_bytes > 0, "ring spill: stats see disk")
+  local lo, hi = trace.ring_range()
+  check(hi == f0 + 20 and lo < f0 + 8,
+        "ring spill: span outlives the RAM window")
+  check(trace.ring_state_at(f0 + 2).bufs["st.spill"] == snaps[2],
+        "ring spill: demoted segment round-trips from disk")
+  check(trace.ring_state_at(f0 + 19).bufs["st.spill"] == snaps[19],
+        "ring spill: RAM tier intact")
+
+  -- rewind INTO a spilled segment: state restores, stale files go
+  trace.rewind(f0 + 6)
+  check(b:str(0, 8) == snaps[6], "ring spill: rewind from disk restores")
+  local _, hi2 = trace.ring_range()
+  check(hi2 == f0 + 6, "ring spill: rewind truncated")
+  drive(7, 24) -- resume + close a few more segments
+
+  -- a tiny budget drops the oldest files
+  trace.ring.budget_mb = 0.00001
+  drive(25, 28) -- one more close triggers evict
+  local lo3 = trace.ring_range()
+  check(lo3 > lo, "ring spill: budget evicted the oldest")
+
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.budget_mb = save_mb
+  trace.ring_start({ project = root }) -- wipes the history dir
+  trace.ring.spill = save_spill
+  pal.buf_free("st.spill")
+  local left = pal.list_dir(root .. "/.ed/history")
+  check(left == nil or #left == 0, "ring spill: boot wipe clears history")
+  trace.ring_start({ project = "selftest" }) -- leave a clean ring behind
+end
+
 local function t_ed_cam()
   local cam = cm.require("cm.ed.cam")
   local c = cam.new()
@@ -2733,6 +2799,7 @@ function game.init()
   t_bundle()
   t_ring()
   t_ring_edoc()
+  t_ring_spill()
   t_viewport()
   t_ig_absence()
   t_ladder()

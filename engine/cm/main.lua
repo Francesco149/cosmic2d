@@ -278,8 +278,11 @@ function M.boot()
     pal.quit(ok and 0 or 1)
     return
   end
-  -- the ring trace is always on in live sessions (D032); --record pins it
+  -- the ring trace is always on in live sessions (D032); --record pins it.
+  -- Real windowed sessions stream history to disk (R6b/REWIND.md §3);
+  -- headless/CI never write a byte.
   M.trace = cm.require("cm.trace")
+  M.trace.ring.spill = not args.headless
   M.trace.ring_start({ project = args.project })
   if args.record then
     M.trace.record_start(args.record, { project = args.project })
