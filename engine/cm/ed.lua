@@ -33,6 +33,7 @@ M.g = M.g or {}
 M.kinds = {
   note = cm.require("cm.ed.win.note"),
   game = cm.require("cm.ed.win.game"),
+  text = cm.require("cm.ed.win.text"),
 }
 
 -- the palette (igcanvas's, promoted)
@@ -132,13 +133,25 @@ local function step_anim()
   M.touch()
 end
 
+-- the focused window's asset commands (EDITOR.md §6): resolve the focused
+-- kind and call its hook when it has one
+local function kind_call(fn)
+  local win = wm.get(M.doc, M.doc.focus)
+  local kind = win and M.kinds[win.kind]
+  if kind and kind[fn] then kind[fn](win, M) end
+end
+
 local function hotkeys(ig, i)
   local doc, g = M.doc, M.g
   if ig.kb then return end -- an edit widget owns the keyboard
   for _, e in ipairs(i.keys) do
     if e.down and not e.rep then
       local sc = e.scancode
-      if sc == K.escape then
+      if g.ctrl and sc == K.s then kind_call("save")
+      elseif g.ctrl and sc == K.y then kind_call("redo")
+      elseif g.ctrl and g.shift and sc == K.z then kind_call("redo")
+      elseif g.ctrl and sc == K.z then kind_call("undo")
+      elseif sc == K.escape then
         if g.menu then g.menu = nil
         elseif doc.drill ~= 0 then doc.drill = 0
         else doc.sel = {} end
@@ -295,6 +308,17 @@ local function draw_win(ig, win)
   pal.x_ig_clip_pop()
   if kind and kind.dirty and kind.dirty(win, M) then
     pal.x_ig_circle_fill(x + w - 10 * z, y + hdr * 0.5, 3.5 * z, C.unsaved)
+    -- the reset-to-saved button (EDITOR.md §6 — itself an undoable edit)
+    if kind.revert and w > 120 * z then
+      local rw = pal.x_ig_text_size("reset", tpx * 0.85, 0)
+      local rx = x + w - 18 * z - rw
+      local i = cm.require("cm.ui").inp
+      local hov = not g.alt and i.wx >= rx - 4 * z and i.wx < x + w - 16 * z
+                  and i.wy >= y and i.wy < y + hdr
+      pal.x_ig_text(rx, y + (hdr - tpx * 0.85) * 0.45, tpx * 0.85,
+                    hov and C.hud or C.title_dim, "reset", 0)
+      if hov and i.clicked[1] then kind.revert(win, M) end
+    end
   end
 
   -- content
@@ -310,7 +334,8 @@ local function draw_win(ig, win)
   end
 end
 
-local MENU_ITEMS = { { "note", "note" }, { "game", "game window" } }
+local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
+                     { "game", "game window" } }
 
 local function draw_menu(ig, i)
   local g = M.g
@@ -399,7 +424,10 @@ function M.frame()
   interact(ig)
   draw(ig)
   if M.g.save_due and pal.time_ns() >= M.g.save_due then save_now() end
-  if pal.quitting() then save_now() end
+  if pal.quitting() then
+    M.kinds.text.flush(M) -- pending edit gestures reach their journals
+    save_now()
+  end
 end
 
 return M

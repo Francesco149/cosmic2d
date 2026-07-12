@@ -2356,6 +2356,76 @@ local function t_ed_session()
   check(session.load(root) == nil, "ed.session: corrupt = nil")
 end
 
+local function t_ed_journal()
+  local journal = cm.require("cm.ed.journal")
+  local root = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_ed"
+  local jf = journal.file(root, "sub/dir/file.lua")
+  check(jf == root .. "/.ed/journal/sub__dir__file.lua.jrn",
+        "ed.journal: path -> key mapping")
+
+  -- pal.x_file_append: creates, then appends
+  local ap = root .. "/append.bin"
+  pal.write_file(ap, "") -- reset across runs
+  check(pal.x_file_append(ap, "abc") == true, "x_file_append creates/writes")
+  check(pal.x_file_append(ap, "def") == true, "x_file_append appends")
+  check(pal.read_file(ap) == "abcdef", "x_file_append bytes land in order")
+
+  -- fresh journal: baseline + pushes + dedupe (reset any prior run's file)
+  pal.write_file(journal.file(root, "a.txt"), "")
+  local j = journal.open(root, "a.txt")
+  check(#j.entries == 0 and j.pos == 0, "ed.journal: fresh is empty")
+  check(journal.push(j, "one", journal.SAVED, 1) == true, "ed.journal: push 1")
+  check(journal.push(j, "two", 0, 2) == true, "ed.journal: push 2")
+  check(journal.push(j, "two", 0, 3) == false, "ed.journal: dedupe vs tip")
+  check(#j.entries == 2 and j.pos == 2, "ed.journal: two entries")
+
+  -- a save re-flags the identical tip (no new entry)
+  check(journal.push(j, "two", journal.SAVED, 4) == false,
+        "ed.journal: same-bytes save adds no entry")
+  check(j.entries[2].flags == journal.SAVED, "ed.journal: save re-flags tip")
+
+  -- undo/redo move the cursor over full snapshots
+  check(journal.undo(j).bytes == "one", "ed.journal: undo")
+  check(journal.undo(j) == nil, "ed.journal: undo stops at the baseline")
+  check(journal.redo(j).bytes == "two", "ed.journal: redo")
+  check(journal.redo(j) == nil, "ed.journal: redo stops at the tip")
+
+  -- persistence: the appended stream re-opens identically
+  local j2 = journal.open(root, "a.txt")
+  check(#j2.entries == 2 and j2.pos == 2 and j2.entries[1].bytes == "one"
+        and j2.entries[2].flags == journal.SAVED,
+        "ed.journal: reopen round-trips the appended stream")
+  local j3 = journal.open(root, "a.txt", 1) -- session-restored cursor
+  check(j3.pos == 1, "ed.journal: reopen re-parks a saved cursor")
+
+  -- branch: edit while rewound truncates the tail (and rewrites the file)
+  journal.undo(j2)
+  check(journal.push(j2, "fork", 0, 5) == true, "ed.journal: branch push")
+  check(#j2.entries == 2 and j2.entries[2].bytes == "fork",
+        "ed.journal: branch truncated the tail")
+  local j4 = journal.open(root, "a.txt")
+  check(#j4.entries == 2 and j4.entries[2].bytes == "fork",
+        "ed.journal: branch rewrite persisted")
+
+  -- the cap drops the oldest
+  local cap = journal.CAP
+  journal.CAP = 3
+  journal.push(j4, "x1", 0, 6)
+  journal.push(j4, "x2", 0, 7) -- 5th entry against cap 3
+  check(#j4.entries == 3 and j4.entries[1].bytes == "fork",
+        "ed.journal: cap drops the oldest")
+  check(j4.pos == 3 and journal.at(j4).bytes == "x2",
+        "ed.journal: cap keeps the tip current")
+  local j5 = journal.open(root, "a.txt")
+  check(#j5.entries == 3, "ed.journal: capped file persisted")
+  journal.CAP = cap
+
+  -- a corrupt journal degrades to fresh, never an error
+  pal.write_file(journal.file(root, "bad.txt"), "CJRNnotachunk")
+  local jb = journal.open(root, "bad.txt")
+  check(#jb.entries == 0, "ed.journal: corrupt = fresh")
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -2432,6 +2502,7 @@ function game.init()
   t_ed_cam()
   t_ed_wm()
   t_ed_session()
+  t_ed_journal()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

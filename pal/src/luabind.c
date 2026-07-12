@@ -912,6 +912,23 @@ static int l_write_file(lua_State *L) {
   return 1;
 }
 
+/* x_file_append(path, bytes) -> bool — append to a file, creating it if
+ * missing. Born for the R3 editor's undo journals (D050): an append-only
+ * chunk stream must not rewrite a multi-MB file per gesture. */
+static int l_x_file_append(lua_State *L) {
+  size_t len;
+  const char *data = luaL_checklstring(L, 2, &len);
+  SDL_IOStream *io = SDL_IOFromFile(luaL_checkstring(L, 1), "ab");
+  if (!io) {
+    lua_pushboolean(L, 0);
+    return 1;
+  }
+  size_t n = SDL_WriteIO(io, data, len);
+  bool ok = SDL_CloseIO(io) && n == len;
+  lua_pushboolean(L, ok);
+  return 1;
+}
+
 static int l_list_dir(lua_State *L) {
   int count = 0;
   char **names = SDL_GlobDirectory(luaL_checkstring(L, 1), NULL, 0, &count);
@@ -1020,6 +1037,7 @@ static const luaL_Reg pal_funcs[] = {
     {"buf_apply_delta1", l_buf_apply_delta1},
     {"read_file", l_read_file},
     {"write_file", l_write_file},
+    {"x_file_append", l_x_file_append},
     {"list_dir", l_list_dir},
     {"mtime", l_mtime},
     {"mkdir", l_mkdir},
