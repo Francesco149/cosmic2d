@@ -148,6 +148,11 @@ What is replaced or rebooted:
 4. **Undo-forever + unsaved-persists** (R3): every editable asset carries a
    very long cross-session undo journal (teidraw's `undo.jsonl` is the shape)
    and an unsaved working state distinct from the saved file.
+   **DESIGNED (2026-07-12, ADR D050 + docs/EDITOR.md)**: three layers keyed
+   by asset path (disk file / working state in the captured editor doc /
+   CJRN full-snapshot journal); dirty computed, never tracked; the R3
+   state model is R6-capturable by construction (`cm.ed.doc` + the
+   reserved `ed.*` buffer domain).
 5. **Window/viewport model** (R2): editor = maximized resizable canvas at UI
    scale; game = a canvas window (editor) or a real window (launcher,
    960×540 default, fullscreen upscales). Re-derive what's left of

@@ -1498,3 +1498,70 @@ text in the native-res editor world above it.
 design smell, not an exception to grant); or the R3 editor needs imgui
 internals (e.g. custom text shaping) that the drawlist can't express —
 then extend the *host*, not the surface.
+
+## D050 — R3: the editor shell — canvas grammar, the captured editor domain, undo-forever journals (2026-07-12)
+
+**Context**: R3 (REVAMP §6) rebuilds the editor as the teidraw-style
+infinite canvas with floating windows, in Lua on the D049 drawlist. Three
+things had to be designed before build: the interaction grammar (the
+board specs an ALT layer teidraw itself doesn't have — teidraw's canvas
+IS its main action; ours is window content), the unsaved-persists +
+undo-forever model, and — the REVAMP §8 risk — a state model R6 rewind
+can capture, the exact opposite of D040's "no determinism tax" studio.
+Full design: **docs/EDITOR.md**.
+
+**Decision**:
+
+1. **A second, parallel state domain for the editor.** Everything a
+   rewound frame must show lives in **`cm.ed.doc`** — a plain-data doc
+   tree serialized by the same canonical codec as the sim doc
+   (`cm.state.canon`), so R6 deltas/hashing come free. Mid-gesture
+   mechanics (drag anchors, hover, ease bookkeeping) are explicitly
+   ephemeral module-locals. Editor code need not be deterministic (R6
+   browsing is state reconstruction, not re-sim); its *state* must be
+   delta-able. Buffer names prefixed **`ed.`** are reserved for the
+   editor domain and excluded from sim snapshots/traces from day one
+   (KAT-pinned; no existing buffer collides, so no golden moves).
+2. **The ALT grammar is the board's spec, with teidraw's tuning**:
+   ALT gates all shell mouse interaction (A-click select + drill via
+   parent links, A-drag move with selected-first priority,
+   A-rightclick close, A-drag-on-empty marquee); plain drag on a 6 px
+   edge band resizes; `[`/`]` (+Shift) reorder z, no auto-raise; no
+   draggable title bars. Thresholds lifted from teidraw source: 4 px
+   click-vs-drag, 320 ms/6 px double-click, 1.16×/notch zoom clamped
+   0.02–64 at cursor, 280 ms quart eases, adaptive 32-wu dot grid.
+3. **Unsaved-persists via three layers keyed by asset path**: the file
+   on disk (the only thing the engine loads — unsaved never takes
+   effect), the working state in `cm.ed.doc.assets` (survives restart
+   via `<project>/.ed/session.dat`, the 400 ms-debounced CEDS canon
+   dump), and the **journal** (`.ed/journal/*.jrn`, a CJRN chunk stream
+   of full-snapshot ENTR entries — teidraw's undo.jsonl shape: append
+   on gesture end, dedupe vs tip, branch = truncate + rewrite, 4096
+   cap). Dirty is computed (working vs disk hash), never tracked.
+   Closing a window is non-destructive by construction (state is keyed
+   by asset, not window) — so A-rightclick needs no confirm dialog.
+4. **New PAL primitive `pal.x_file_append`** (portable C, additive x_
+   tier, no api bump) so journal pushes don't rewrite whole files.
+5. **Hosting**: `bin/cosmic <project> --edit` (live/`--win` only; no-op
+   under verify/plain headless per the D049 absence contract); the sim
+   keeps running with all input swallowed by the shell (game-window
+   input synthesis is R4); `view.mode = "canvas"`. Interim console
+   story: an open console suppresses the ig frame entirely — legacy
+   chrome stays usable until it re-hosts as a canvas window at R4.
+6. **R3 roster**: note (doc-only sticky), text (journal-backed real
+   file — the code-ed precursor), game (watch-only `x_ig_image(-1)`).
+   Modules: cm.ed + cm.ed.cam/wm/journal/session/win.* with pure,
+   headless-selftestable cores.
+
+**Consequences**: the editor becomes rewind-capturable before rewind
+exists — the cost is discipline (every durable field goes in the doc),
+bought cheap now instead of as an R6 rewrite. The journal's
+full-snapshot entries trade disk for simplicity (~400 MB worst-case per
+100 KB text asset at cap); delta entries are an ENTR v2 decision for R4
+asset kinds if needed.
+
+**Revisit if**: R4's sprite-ed working sets make full-snapshot journal
+entries or the doc-tree text fields visibly slow (→ ENTR v2 deltas /
+`ed.*` buffers, both designed-for); or the R6 design finds captured
+state it needs that §2's captured/ephemeral line excluded (→ move the
+field into the doc, which is the whole point of the line).
