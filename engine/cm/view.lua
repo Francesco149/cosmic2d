@@ -18,6 +18,13 @@ M.cfg = {
 }
 
 M.enabled = false -- true only for live windowed sessions
+-- nil = the classic play/editor-chrome model (the ladder below). "canvas" =
+-- an ig-canvas editor session (D049/R2): the game target is NOT blitted by
+-- the composite (the canvas draws it via pal.x_ig_image(-1)); the ui canvas
+-- stays up so the legacy dev chrome keeps working (it renders UNDER the ig
+-- layer — acceptable until R3/R4 re-host it). Cartridges/the editor shell
+-- set this in init (render/dev state, never sim).
+M.mode = M.mode or nil
 -- last applied layout (for the HUD / options menu / debugging)
 M.scale, M.fov_w, M.fov_h = M.cfg.base_scale, M.cfg.ref_w, M.cfg.ref_h
 -- ui-layer state: true while the editor owns a separate ui canvas (the
@@ -174,6 +181,20 @@ function M.update()
   -- track the live windowed size for persistence (a drag-resize too); while
   -- fullscreen W/H is the SCREEN, so leave the remembered windowed size alone.
   if not M.fullscreen then M.win_w, M.win_h = W, H end
+
+  if M.mode == "canvas" then
+    -- ig-canvas session: full-window imgui at native res on top; the game
+    -- target keeps the project's fixed FOV (the canvas decides how to show
+    -- it); scale=0 = no game blit. The ui canvas stays for the dev chrome.
+    local us = math.max(1, M.cfg.ui_scale)
+    local uw, uh = math.ceil(W / us), math.ceil(H / us)
+    pal.x_ui_target(uw, uh)
+    M.ui_w, M.ui_h = uw, uh
+    pal.x_compose { x = 0, y = 0, scale = 0, ui_scale = us }
+    M.ui_active = true
+    cm.require("cm.ui").ui_space = true
+    return
+  end
 
   -- The dev chrome ALWAYS rides a ui canvas at cfg.ui_scale — in the editor AND
   -- in play (so the options menu / console / perf / scrub honor ui_scale with

@@ -151,9 +151,10 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
           cfg->headless ? " (headless)" : "");
 
   if (!cfg->headless) {
+    SDL_WindowFlags wf = SDL_WINDOW_RESIZABLE;
+    if (cfg->maximized) wf |= SDL_WINDOW_MAXIMIZED; /* editor sessions (v7) */
     G.win = SDL_CreateWindow(cfg->title ? cfg->title : "cosmic2d",
-                             cfg->w * cfg->scale, cfg->h * cfg->scale,
-                             SDL_WINDOW_RESIZABLE);
+                             cfg->w * cfg->scale, cfg->h * cfg->scale, wf);
     if (!G.win) { pal_log("gfx: window: %s", SDL_GetError()); return false; }
     if (!SDL_ClaimWindowForGPUDevice(G.dev, G.win)) {
       pal_log("gfx: claim window: %s", SDL_GetError());
@@ -430,16 +431,20 @@ static void blit_layer(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pp,
 }
 
 /* composite the game target (into its viewport rect) + the ui canvas (over the
- * whole window) into a destination texture of sw x sh px. Sets lay_* (the
- * window -> game-viewport -> FOV mouse map). Shared by the live swapchain
- * present and the headless capture, so a screenshot matches the window. */
+ * whole window) + the ig layer (imgui, native res, topmost — D049) into a
+ * destination texture of sw x sh px. Sets lay_* (the window -> game-viewport
+ * -> FOV mouse map). Shared by the live swapchain present and the headless
+ * capture, so a screenshot matches the window. */
 static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
-                      int sh) {
+                      int sh, SDL_GPUTextureFormat fmt) {
   /* game viewport (window px) + integer scale: explicit via pal.x_compose, else
-   * a centered integer letterbox (shipped game / default). */
+   * a centered integer letterbox (shipped game / default). x_compose{scale=0}
+   * = don't blit the game layer at all (the R3 editor draws the game target
+   * itself via x_ig_image(-1); the blit would double it). */
+  bool hide_game = G.compose_set && G.vp_scale == 0;
   float gs;
   if (G.compose_set) {
-    gs = (float)G.vp_scale;
+    gs = G.vp_scale > 0 ? (float)G.vp_scale : 1.0f; /* 1 = sane mouse map */
     G.lay_ox = (float)G.vp_x;
     G.lay_oy = (float)G.vp_y;
   } else {
@@ -459,11 +464,15 @@ static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
   };
   SDL_GPURenderPass *pp = SDL_BeginGPURenderPass(cmd, &pct, 1, NULL);
   SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
-  blit_layer(cmd, pp, G.target, G.lay_ox, G.lay_oy, (float)G.iw * gs,
-             (float)G.ih * gs, (float)sw, (float)sh);
+  if (!hide_game)
+    blit_layer(cmd, pp, G.target, G.lay_ox, G.lay_oy, (float)G.iw * gs,
+               (float)G.ih * gs, (float)sw, (float)sh);
   if (G.ui_target && G.ui_scale > 0)
     blit_layer(cmd, pp, G.ui_target, 0, 0, (float)G.ui_w * G.ui_scale,
                (float)G.ui_h * G.ui_scale, (float)sw, (float)sh);
+  /* the ig layer (imgui draw data) renders last = above everything, at
+   * native destination resolution. No-op when no ig frame was prepared. */
+  pal_ig_render_draw(cmd, pp, fmt);
   SDL_EndGPURenderPass(pp);
 }
 
@@ -509,13 +518,20 @@ bool pal_gfx_present(void) {
     scene_pass(cmd, G.ui_target, G.ui_w, G.ui_h, 1, transparent);
   }
 
+  /* close + upload the ig frame (if one is open) BEFORE the composite pass —
+   * imgui's buffer/texture uploads need a copy pass, which can't nest inside
+   * a render pass. The frame is closed here even if presentation is skipped
+   * (minimized), so the ig state machine never strands an open frame. */
+  pal_ig_render_prepare(cmd);
+
   /* present composite: into the live swapchain, or the offscreen capture target
    * (pal.x_capture) so a headless screenshot can show the editor-around-game
    * composite that otherwise only exists in the window. */
   if (G.cap_on && G.cap_target) {
     G.win_w = G.cap_w;
     G.win_h = G.cap_h;
-    composite(cmd, G.cap_target, G.cap_w, G.cap_h);
+    composite(cmd, G.cap_target, G.cap_w, G.cap_h,
+              SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
   } else if (!G.headless && G.win) {
     SDL_GPUTexture *swap = NULL;
     Uint32 sw = 0, sh = 0;
@@ -527,7 +543,8 @@ bool pal_gfx_present(void) {
     if (swap) { /* NULL = minimized; skip presentation */
       G.win_w = (int)sw; /* cache real swapchain px for pal.x_window_size */
       G.win_h = (int)sh;
-      composite(cmd, swap, (int)sw, (int)sh);
+      composite(cmd, swap, (int)sw, (int)sh,
+                SDL_GetGPUSwapchainTextureFormat(G.dev, G.win));
     }
   }
 

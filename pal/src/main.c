@@ -161,11 +161,17 @@ static void map_mouse(float wx, float wy, PalEvent *ev) {
   float us = G.ui_scale > 0 ? G.ui_scale : G.lay_s; /* ui canvas: top-left */
   ev->ui_x = wx / us;
   ev->ui_y = wy / us;
+  ev->wx = wx; /* raw window px: the ig-canvas space (v7) */
+  ev->wy = wy;
 }
 
 static void pump_events(void) {
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
+    /* the imgui host sees every event too (no-op until it initializes);
+     * Lua decides per frame what the game still sees via the x_ig_frame
+     * capture flags — policy stays script-side (D049) */
+    pal_ig_sdl_event(&e);
     switch (e.type) {
     case SDL_EVENT_QUIT:
       push_event((PalEvent){.type = PAL_EV_QUIT});

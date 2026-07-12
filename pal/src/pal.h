@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 6
+#define PAL_VERSION_API 7
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -37,6 +37,7 @@ typedef struct {
   bool repeat; /* key */
   float x, y;       /* motion/button: game-space (FOV) px | wheel: scroll */
   float ui_x, ui_y; /* motion/button: ui-canvas px (editor chrome hit-test) */
+  float wx, wy;     /* motion/button: raw window px (ig canvas hit-test, v7) */
   char text[PAL_EV_TEXT_MAX]; /* text: utf-8, NUL-terminated */
 } PalEvent;
 
@@ -177,6 +178,7 @@ typedef struct {
   int w, h, scale;
   const char *title;
   bool headless, vsync;
+  bool maximized; /* create the window maximized (editor sessions, v7) */
 } PalGfxConfig;
 bool pal_gfx_init(const PalGfxConfig *cfg);
 /* resize the game internal target (the "FOV" — visible world in internal px).
@@ -215,5 +217,20 @@ uint64_t pal_buf_hash(const uint8_t *p, size_t len);
 
 /* luabind.c */
 void pal_lua_register(lua_State *L);
+
+/* ig.cpp — the Dear ImGui host (D049, docs/IMGUI.md). The PAL's one C++ TU;
+ * this C ABI is the whole boundary — imgui types never cross it. Render/dev
+ * class throughout: live windowed sessions + the --win capture path only. */
+bool pal_ig_forward_events(void); /* inited with a real window */
+void pal_ig_sdl_event(const SDL_Event *e); /* feed one SDL event to imgui */
+/* close the open ig frame + upload draw data (call once per present, before
+ * the composite render pass begins; no-op when no frame is open) */
+void pal_ig_render_prepare(SDL_GPUCommandBuffer *cmd);
+/* draw the prepared data into the composite pass (last = topmost layer).
+ * Skips with a log line if `fmt` differs from the pipeline's init format. */
+void pal_ig_render_draw(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pass,
+                        SDL_GPUTextureFormat fmt);
+/* register the pal.x_ig_* functions into the pal table at the stack top */
+void pal_ig_lua_register(lua_State *L);
 
 #endif

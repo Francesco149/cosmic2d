@@ -437,6 +437,8 @@ static int l_gfx_init(lua_State *L) {
   cfg.headless = lua_toboolean(L, -1);
   lua_getfield(L, 1, "vsync");
   cfg.vsync = lua_isnil(L, -1) ? true : lua_toboolean(L, -1);
+  lua_getfield(L, 1, "maximized");
+  cfg.maximized = lua_toboolean(L, -1);
   if (cfg.w < 1 || cfg.h < 1 || cfg.w > 4096 || cfg.h > 4096 || cfg.scale < 1)
     return luaL_error(L, "gfx_init: bad size/scale");
   if (!pal_gfx_init(&cfg))
@@ -554,10 +556,12 @@ static int l_x_target(lua_State *L) {
 }
 
 /* pal.x_compose{ x=, y=, scale=, ui_scale= } : define the present composite —
- * the game target blits to (x,y) at integer `scale` (window px); if `ui_scale`
- * > 0 and a ui target exists, it blits over the whole window at that integer
- * scale, alpha-over the game. pal.x_compose() (no arg) resets to the default
- * centered letterbox with no ui layer. Render/dev (D036). */
+ * the game target blits to (x,y) at integer `scale` (window px); `scale = 0`
+ * skips the game blit entirely (v7: the ig-canvas editor draws the game
+ * target itself via x_ig_image(-1)); if `ui_scale` > 0 and a ui target
+ * exists, it blits over the whole window at that integer scale, alpha-over
+ * the game. pal.x_compose() (no arg) resets to the default centered
+ * letterbox with no ui layer. Render/dev (D036). */
 static int l_x_compose(lua_State *L) {
   check_gfx(L);
   if (lua_isnoneornil(L, 1)) {
@@ -574,7 +578,7 @@ static int l_x_compose(lua_State *L) {
   int vy = (int)luaL_optinteger(L, -1, 0);
   lua_getfield(L, 1, "ui_scale");
   int us = (int)luaL_optinteger(L, -1, 0);
-  if (gscale < 1) gscale = 1;
+  if (gscale < 0) gscale = 0;
   G.vp_x = vx;
   G.vp_y = vy;
   G.vp_scale = gscale;
@@ -784,6 +788,10 @@ static int l_poll_events(lua_State *L) {
       lua_setfield(L, -2, "ui_x");
       lua_pushnumber(L, e->ui_y);
       lua_setfield(L, -2, "ui_y");
+      lua_pushnumber(L, e->wx);
+      lua_setfield(L, -2, "wx");
+      lua_pushnumber(L, e->wy);
+      lua_setfield(L, -2, "wy");
       break;
     case PAL_EV_BUTTON:
       lua_pushstring(L, "button");
@@ -800,6 +808,10 @@ static int l_poll_events(lua_State *L) {
       lua_setfield(L, -2, "ui_x");
       lua_pushnumber(L, e->ui_y);
       lua_setfield(L, -2, "ui_y");
+      lua_pushnumber(L, e->wx);
+      lua_setfield(L, -2, "wx");
+      lua_pushnumber(L, e->wy);
+      lua_setfield(L, -2, "wy");
       break;
     case PAL_EV_WHEEL:
       lua_pushstring(L, "wheel");
@@ -838,6 +850,17 @@ static int l_text_input(lua_State *L) {
       SDL_StopTextInput(G.win);
   }
   return 0;
+}
+
+/* pal.x_clipboard([s]) -> s : OS clipboard get (and set, when given). Dev
+ * class; headless/offscreen returns "" — never an error, never sim input. */
+static int l_x_clipboard(lua_State *L) {
+  if (lua_gettop(L) >= 1 && !lua_isnil(L, 1))
+    SDL_SetClipboardText(luaL_checkstring(L, 1));
+  char *t = SDL_GetClipboardText();
+  lua_pushstring(L, t ? t : "");
+  SDL_free(t);
+  return 1;
 }
 
 /* pal.frame_stats() -> counters from the last present + live resource counts */
@@ -972,6 +995,7 @@ static const luaL_Reg pal_funcs[] = {
     {"x_compose", l_x_compose},
     {"x_capture", l_x_capture},
     {"x_capture_read", l_x_capture_read},
+    {"x_clipboard", l_x_clipboard},
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
     {"draw_quads", l_draw_quads},
@@ -1012,6 +1036,7 @@ void pal_lua_register(lua_State *L) {
   lua_pop(L, 1);
 
   luaL_newlib(L, pal_funcs);
+  pal_ig_lua_register(L); /* the pal.x_ig_* surface (ig.cpp, D049) */
   lua_createtable(L, 0, 2);
   lua_pushinteger(L, PAL_VERSION_MAJOR);
   lua_setfield(L, -2, "major");

@@ -143,6 +143,9 @@ function M.boot()
     title = proj.name or "cosmic2d",
     headless = args.headless,
     vsync = not args.no_vsync,
+    -- editor-session shape (D049): the window opens maximized. Policy lives
+    -- here (project.lua opts in); the PAL just honors the flag when windowed.
+    maximized = proj.maximized or false,
   }
   -- headless composite capture (--win WxH): present into an offscreen target at
   -- that window size so a --shot shows the editor-around-game layout (dev/debug)

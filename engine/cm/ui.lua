@@ -77,10 +77,13 @@ M.ticks = M.ticks or 0 -- render ticks, for cursor blink only (never sim)
 -- two-target composite, D036): set M.ui_space when the editor's ui canvas owns
 -- the chrome so panels hit-test in ui-canvas coords, not the game FOV.
 M.inp = M.inp or { mx = -1000, my = -1000, gx = -1000, gy = -1000,
+                   wx = -1000, wy = -1000,
                    buttons = {}, clicked = {}, released = {}, wheel = 0,
                    keys = {}, text = "" }
 M.inp.gx = M.inp.gx or -1000 -- backfill across a hot reload onto an old snapshot
 M.inp.gy = M.inp.gy or -1000
+M.inp.wx = M.inp.wx or -1000 -- raw window px (the ig canvas space, v7)
+M.inp.wy = M.inp.wy or -1000
 M.ui_space = M.ui_space or false -- cm.view pushes this each frame
 
 M.cap_mouse = M.cap_mouse or false -- filters applied to THIS tick's events
@@ -190,6 +193,7 @@ end
 -- when the editor's ui layer owns the chrome (M.ui_space), else game px.
 local function set_mouse(i, e)
   i.gx, i.gy = e.x, e.y
+  i.wx, i.wy = e.wx or e.x, e.wy or e.y -- window px (ig canvas, v7)
   if M.ui_space then
     i.mx, i.my = e.ui_x or e.x, e.ui_y or e.y
   else
