@@ -1215,6 +1215,114 @@ local function t_collide()
   pal.buf_free("selftest.col.s")
 end
 
+-- ---- cm.map / cm.tmap (R8a): the CMAP/CTLM codecs + map instancing ----
+
+local function t_map()
+  local map = cm.require("cm.map")
+  local tmap = cm.require("cm.tmap")
+  local chunklib = cm.require("cm.chunk")
+
+  local doc = {
+    name = "t", w = 320, h = 200, grid = 8, bg = { 0.5, 0.25, 1 },
+    colliders = {
+      { kind = "chain", verts = { 0, 180, 320, 180 } },
+      { kind = "quad", x = 100, y = 140, w = 40, h = 40 },
+      { kind = "circle", cx = 30, cy = 30, r = 9 },
+    },
+    places = {
+      { path = "art/sign.png", x = 20, y = 160, layer = 0 },
+      { path = "art/awning.spr", x = 200, y = 120, name = "awn",
+        flip = true, layer = 1,
+        cols = { { kind = "chain", oneway = true,
+                   verts = { 0, 0, 48, 0 } } } },
+    },
+    markers = {
+      { x = 10, y = 150, w = 30, h = 30, kind = "spawn", label = "start",
+        note = "", extras = { { k = "name", v = "start" } } },
+      { x = 300, y = 150, w = 16, h = 30, kind = "portal", label = "out",
+        note = "n", extras = { { k = "to", v = "b" }, { k = "at", v = "x" } } },
+    },
+  }
+  local raw = map.encode(doc)
+  local d = map.decode(raw)
+  check(d.name == "t" and d.w == 320 and d.h == 200 and d.grid == 8,
+        "map: HEAD round trip")
+  check(d.bg[1] == 0.5 and d.bg[2] == 0.25 and d.bg[3] == 1,
+        "map: bg tint round trip")
+  check(#d.colliders == 3 and d.colliders[1].kind == "chain"
+        and d.colliders[1].verts[4] == 180 and d.colliders[2].kind == "quad"
+        and d.colliders[2].w == 40 and d.colliders[3].kind == "circle"
+        and d.colliders[3].r == 9, "map: colliders round trip")
+  check(#d.places == 2 and d.places[1].name == nil
+        and d.places[1].path == "art/sign.png" and d.places[2].name == "awn"
+        and d.places[2].flip == true and d.places[2].layer == 1
+        and d.places[2].cols[1].oneway
+        and d.places[2].cols[1].verts[3] == 48, "map: places round trip")
+  check(#d.markers == 2 and d.markers[1].kind == "spawn"
+        and d.markers[2].extras[2].v == "x"
+        and map.extras(d.markers[2]).to == "b", "map: markers round trip")
+  check(map.encode(d) == raw, "map: canonical bytes (encode∘decode = id)")
+
+  -- skip-tolerance: an unknown future chunk decodes right past
+  local w2 = chunklib.writer("CMAP")
+  for _, c in ipairs(chunklib.read(raw, "CMAP")) do
+    if c.tag == "TAIL" then w2.chunk("XTRA", 9, "future bytes") end
+    w2.chunk(c.tag, c.version, c.payload)
+  end
+  local d2 = map.decode(w2.result())
+  check(d2.w == 320 and #d2.places == 2, "map: unknown chunk skipped")
+
+  -- refusals
+  check(not pcall(map.decode, raw:sub(1, #raw - 12)), "map: no TAIL refused")
+  check(not pcall(map.decode, "CMAP"), "map: no HEAD refused")
+  check(not pcall(map.decode, "XXXXjunk"), "map: bad magic refused")
+
+  -- instancing: file -> collider buffer + tables (the level.lua successor)
+  local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest.map"
+  check(pal.write_file(tmp, raw) == true, "map: tmp write")
+  local inst = map.use{ path = tmp, name = "selftest.mapw" }
+  check(inst.doc.w == 320 and inst.world.w == 320 and inst.world.h == 200,
+        "map: use builds the world at map bounds")
+  -- the free quad blocks as a wall (its left face at 100)
+  local nx, ny, hit = inst.world:move(40, 150, 10, 14, 200, 0)
+  check(nx == 90 and hit.right, "map: quad collider blocks (" .. nx .. ")")
+  -- the attached one-way rides its placement offset (200,120)
+  nx, ny, hit = inst.world:move(210, 80, 10, 14, 0, 100)
+  check(ny == 120 - 14 and hit.down and hit.oneway,
+        "map: attached collider offset by placement (" .. ny .. ")")
+  -- the free ground line
+  nx, ny, hit = inst.world:move(60, 100, 10, 14, 0, 200)
+  check(ny == 180 - 14 and hit.down and not hit.oneway, "map: ground line")
+  -- circle instanced
+  check(#inst.world:circles(25, 25, 10, 10) == 1, "map: circle instanced")
+  -- named placement handle (render-only mutations)
+  local awn = map.get("awn")
+  check(awn and awn.x == 200 and map.get("nope") == nil,
+        "map: get(name) placement handle")
+  pal.buf_free("selftest.mapw")
+
+  -- ---- cm.tmap ----
+  local td = tmap.blank(4, 3, 16, "art/tiles.spr")
+  check(tmap.get(td, 1, 2) == 0 and tmap.get(td, -1, 0) == 0
+        and tmap.get(td, 4, 0) == 0, "tmap: blank + oob get")
+  tmap.set(td, 1, 2, 7)
+  tmap.set(td, -1, 0, 9) -- oob inert
+  tmap.set(td, 0, 3, 9)
+  check(tmap.get(td, 1, 2) == 7 and tmap.get(td, 0, 0) == 0,
+        "tmap: set/get, oob inert")
+  local traw = tmap.encode(td)
+  local td2 = tmap.decode(traw)
+  check(td2.w == 4 and td2.h == 3 and td2.tile == 16
+        and td2.tileset == "art/tiles.spr" and tmap.get(td2, 1, 2) == 7,
+        "tmap: round trip")
+  check(tmap.encode(td2) == traw, "tmap: canonical bytes")
+  local bad = chunklib.writer("CTLM")
+  bad.chunk("HEAD", 1, string.pack("<i4i4I4s4", 4, 3, 16, ""))
+  bad.chunk("GRID", 1, "\0\0") -- wrong size for 4x3
+  bad.chunk("TAIL", 1, "")
+  check(not pcall(tmap.decode, bad.result()), "tmap: grid mismatch refused")
+end
+
 -- ---- cm.state.buf_poke/buf_peek (the inspector's buffer eval unit) ----
 
 local function t_buf_poke()
@@ -3394,6 +3502,7 @@ function game.init()
   t_tilemap()
   t_tilemap_tools()
   t_collide()
+  t_map()
   t_inspect()
   t_bundle()
   t_ring()
