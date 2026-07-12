@@ -210,6 +210,46 @@ function M.get(name)
   return M.cur and M.cur.by_name[name] or nil
 end
 
+-- the map-editor hot-reload entry (MAPS.md §9): re-decode the saved file
+-- into the LIVE instance in place — cur.doc replaced, the collider buffer
+-- rebuilt through the same wrapper (held references stay live), by_name
+-- and the fill cache refreshed. Runs as a recorded EVAL (Ctrl+S in the map
+-- window submits it), so traces replay the change and rewind scrubs across
+-- it. A path that isn't the live map no-ops with a log.
+function M.reload(path)
+  local cur = M.cur
+  if not (cur and cur.path == path) then
+    pal.log("[map] reload ignored (not the live map): " .. tostring(path))
+    return false
+  end
+  local bytes = pal.read_file(path)
+  if not bytes then
+    pal.log("[map] reload FAILED (unreadable): " .. path)
+    return false
+  end
+  local ok, doc = pcall(M.decode, bytes)
+  if not ok then
+    pal.log("[map] reload FAILED (bad CMAP): " .. tostring(doc))
+    return false
+  end
+  local cols = {}
+  for _, c in ipairs(doc.colliders) do to_world(c, 0, 0, cols) end
+  for _, p in ipairs(doc.places) do
+    for _, c in ipairs(p.cols or {}) do to_world(c, p.x, p.y, cols) end
+  end
+  collide.rebuild(cur.world, { name = cur.name, w = doc.w, h = doc.h,
+                               colliders = cols })
+  cur.doc = doc
+  cur.by_name = {}
+  for _, p in ipairs(doc.places) do
+    if p.name and not cur.by_name[p.name] then cur.by_name[p.name] = p end
+  end
+  cur._fill = nil
+  cur._ptex = nil
+  pal.log("[map] reloaded " .. path)
+  return true
+end
+
 -- ---- the graybox fill (render-only; MAPS.md §5, D057b) ----
 --
 -- Draw the collider layer directly: closed solid chains (and quads) as
@@ -224,9 +264,10 @@ local FILL = { 0.36, 0.34, 0.32 }  -- flat solid gray
 local LIP = { 0.46, 0.44, 0.41 }   -- 1px top lip
 local ONEWAY = { 0.42, 0.78, 0.62 }-- the accent slab
 
-local function fill_geom(inst) -- lazy per-instance cache (render plumbing)
-  if inst._fill then return inst._fill
-  end
+-- the fill geometry of a decoded doc (pure — the map window draws the
+-- same shapes): closed solids as loops, one-ways as slab segments, open
+-- solids as stroke segments; attached colliders offset by their placement.
+function M.geom(doc)
   local loops, slabs, lines = {}, {}, {}
   local function take(c, ox, oy)
     if c.kind == "circle" then return end
@@ -252,16 +293,21 @@ local function fill_geom(inst) -- lazy per-instance cache (render plumbing)
       end
     end
   end
-  for _, c in ipairs(inst.doc.colliders) do take(c, 0, 0) end
-  for _, p in ipairs(inst.doc.places) do
+  for _, c in ipairs(doc.colliders) do take(c, 0, 0) end
+  for _, p in ipairs(doc.places) do
     for _, c in ipairs(p.cols or {}) do take(c, p.x, p.y) end
   end
-  inst._fill = { loops = loops, slabs = slabs, lines = lines }
+  return { loops = loops, slabs = slabs, lines = lines }
+end
+
+local function fill_geom(inst) -- lazy per-instance cache (render plumbing)
+  if not inst._fill then inst._fill = M.geom(inst.doc) end
   return inst._fill
 end
 
 -- column signature: even-odd intervals of all loops at cx, unioned
-local function column_ivs(loops, cx, out)
+-- (exported: the map window's strip fill samples the same function)
+function M.column_ivs(loops, cx, out)
   local n = 0
   for li = 1, #loops do
     local v = loops[li]
@@ -335,7 +381,7 @@ function M.draw_fill(inst, camx, camy)
     end
   end
   for cx = X0, X1 - 1 do
-    local ivs = column_ivs(geom.loops, cx + 0.5, scratch)
+    local ivs = M.column_ivs(geom.loops, cx + 0.5, scratch)
     local sig = table.concat(ivs, ",")
     if sig ~= run_sig then
       flush(cx)
@@ -395,6 +441,53 @@ function M.draw_fill(inst, camx, camy)
         local xx = floor(ax + (bx - ax) * ((cy + 0.5 - ay) / (by - ay)))
         if xx + 2 > X0 and xx < X1 then
           pal.quad(xx, cy, 2, 1, FILL[1], FILL[2], FILL[3], 1)
+        end
+      end
+    end
+  end
+end
+
+-- ---- placements (render-only; MAPS.md §5) ----
+
+-- the render size + image of a placement (nil image = nothing to draw).
+-- .png draws directly; .spr draws its baked .png sibling; .tm is R8d
+-- (placed/moved fine, renders nothing in-game until the tilemap window
+-- lands). Textures memoize in cm.gfx keyed by full path; a missing or
+-- unreadable file logs once per instance and skips.
+local function place_tex(inst, p)
+  inst._ptex = inst._ptex or {}
+  local hit = inst._ptex[p.path]
+  if hit ~= nil then return hit or nil end
+  local target
+  if p.path:lower():find("%.png$") then target = p.path
+  elseif p.path:lower():find("%.spr$") then
+    target = p.path:gsub("%.spr$", ".png")
+  end
+  local t = false
+  if target then
+    local root = (cm.main and cm.main.args and cm.main.args.project) or "."
+    local ok, tex = pcall(cm.require("cm.gfx").texture, root .. "/" .. target)
+    if ok then t = tex
+    else pal.log("[map] placement image unreadable: " .. p.path) end
+  end
+  inst._ptex[p.path] = t
+  return t or nil
+end
+
+-- draw the placements in file order (= z order) with gfx.layer(1) active,
+-- camera-culled; flip_x mirrors via swapped u. Art stacks on top of the
+-- collider fill until a per-map flag turns the fill off (§5).
+function M.draw_places(inst, camx, camy)
+  local vw, vh = pal.gfx_size()
+  for _, p in ipairs(inst.doc.places) do
+    if not p.hidden then
+      local t = place_tex(inst, p)
+      if t then
+        if p.x < camx + vw and p.x + t.w > camx
+           and p.y < camy + vh and p.y + t.h > camy then
+          local u0, u1 = 0, 1
+          if p.flip then u0, u1 = 1, 0 end
+          pal.quad(p.x, p.y, t.w, t.h, 1, 1, 1, 1, t.id, u0, 0, u1, 1)
         end
       end
     end

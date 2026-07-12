@@ -95,12 +95,9 @@ local function decode(self)
   end
 end
 
--- build{ name=, w=, h=, colliders= } — encode into the named buffer (frees
--- any previous shape) and return the wrapper. colliders = array of
---   { kind = "chain", oneway=, closed=, verts = {x0,y0,x1,y1,...} }
---   { kind = "circle", cx=, cy=, r= }
--- w/h = map bounds in px (the OOB walls). All coords integers.
-function M.build(o)
+-- encode { name=, w=, h=, colliders= } into the named buffer (frees any
+-- previous shape); shared by build (fresh wrapper) and rebuild (in place)
+local function encode_world(o)
   local name = o.name or error("collide.build: name", 2)
   local cols = o.colliders or {}
   local size = HDR
@@ -136,7 +133,37 @@ function M.build(o)
       end
     end
   end
-  return M.open(name)
+end
+
+-- build{ name=, w=, h=, colliders= } — encode into the named buffer (frees
+-- any previous shape) and return the wrapper. colliders = array of
+--   { kind = "chain", oneway=, closed=, verts = {x0,y0,x1,y1,...} }
+--   { kind = "circle", cx=, cy=, r= }
+-- w/h = map bounds in px (the OOB walls). All coords integers.
+function M.build(o)
+  encode_world(o)
+  return M.open(o.name)
+end
+
+-- re-encode into the same named buffer and refresh WORLD — the wrapper
+-- table keeps its identity, so every holder (level modules, game probes)
+-- sees the new geometry without re-plumbing (the map hot-reload path,
+-- MAPS.md §9). o.name must match the wrapper's.
+function M.rebuild(world, o)
+  o.name = o.name or world.name
+  if o.name ~= world.name then
+    error("collide.rebuild: name mismatch (" .. tostring(o.name) .. " vs "
+          .. world.name .. ")", 2)
+  end
+  encode_world(o)
+  local found
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == o.name then found = b break end
+  end
+  world.buf = pal.buf(o.name, found.size)
+  world.w, world.h = world.buf:i32(8), world.buf:i32(12)
+  decode(world)
+  return world
 end
 
 -- adopt an existing world buffer by name (post-snapshot/reboot path)

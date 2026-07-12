@@ -47,6 +47,7 @@ end
 
 function M.draw(camx, camy)
   map.draw_fill(M.inst, camx, camy)
+  map.draw_places(M.inst, camx, camy) -- art stacks on the graybox (R8b)
 end
 
 return M
