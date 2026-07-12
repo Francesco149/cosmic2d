@@ -151,6 +151,7 @@ byte convention. Calls outside an open ig frame are no-ops.
 | `pal.x_ig_edit{id,x,y,w,h,text,px[,font,readonly,multiline]}` → text,changed,active | the hard widget: imgui text editing (caret/selection/undo/IME) at an explicit rect. The host keeps a per-`id` buffer; `text` re-syncs it whenever the widget is not active (external reload wins); returns the buffer + a changed flag + focus state. Chrome-less styling — frame/scrollbar drawing stays ours |
 | `pal.x_clipboard([s])` → s | OS clipboard get/set (plain SDL, no imgui needed; the code-ed/canvas paste path) |
 | `pal.x_ig_mouse(on)` | gate mouse input to imgui (default on). The R3 shell turns it off while ALT is held: widgets render unchanged but hover/click/wheel never reach them — the §11 "filter in C behind Lua-set flags" fix, realized. Off-transition parks the pointer + releases buttons |
+| `pal.x_ig_event(e)` → bool | feed one pal-shaped event table (motion/button/wheel/text/key) into the imgui io — **capture mode only** (windowed no-ops: the SDL3 backend already forwards real events). The R8e proof-tape hook: a scripted driver that injects a synthetic tape into `pal.poll_events` mirrors the same events here, so `x_ig_edit` fields (inspector text, path fields) are tape-drivable in `--win` captures like everything else. Mouse events honor the `x_ig_mouse` gate; keys map a small scancode set (letters, digits, enter/backspace/tab/home/end/del/arrows, mods) |
 
 Additive non-ig v7 entries riding the same bump:
 

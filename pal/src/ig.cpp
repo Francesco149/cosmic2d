@@ -16,6 +16,7 @@
                                re-checked on any imgui bump */
 #include "imgui_stdlib.h"
 
+#include <cstring>
 #include <map>
 #include <string>
 #include <vector>
@@ -304,6 +305,102 @@ static int l_ig_mouse(lua_State *L) {
 static int l_ig_overlay(lua_State *L) {
   IG.overlay = lua_toboolean(L, 1);
   return 0;
+}
+
+/* pal.x_ig_event(e) — feed one pal-shaped event table into the imgui io.
+ * CAPTURE MODE ONLY: --win capture sessions have no platform backend, so
+ * nothing feeds the io — a scripted proof driver that injects a synthetic
+ * tape into pal.poll_events mirrors the same events here, and imgui
+ * widgets (x_ig_edit fields) become tape-drivable like everything else.
+ * Windowed sessions no-op (the SDL3 backend already forwards real events;
+ * a second feed would double them). Mouse events honor the x_ig_mouse
+ * gate exactly like pal_ig_sdl_event. Returns true when ingested. */
+static ImGuiKey ig_key_from_scancode(int sc) {
+  if (sc >= 4 && sc <= 29) return (ImGuiKey)(ImGuiKey_A + (sc - 4));
+  if (sc >= 30 && sc <= 38) return (ImGuiKey)(ImGuiKey_1 + (sc - 30));
+  switch (sc) {
+  case 39: return ImGuiKey_0;
+  case 40: return ImGuiKey_Enter;
+  case 41: return ImGuiKey_Escape;
+  case 42: return ImGuiKey_Backspace;
+  case 43: return ImGuiKey_Tab;
+  case 44: return ImGuiKey_Space;
+  case 74: return ImGuiKey_Home;
+  case 76: return ImGuiKey_Delete;
+  case 77: return ImGuiKey_End;
+  case 79: return ImGuiKey_RightArrow;
+  case 80: return ImGuiKey_LeftArrow;
+  case 81: return ImGuiKey_DownArrow;
+  case 82: return ImGuiKey_UpArrow;
+  case 224: case 228: return ImGuiMod_Ctrl;
+  case 225: case 229: return ImGuiMod_Shift;
+  case 226: case 230: return ImGuiMod_Alt;
+  default: return ImGuiKey_None;
+  }
+}
+
+static lua_Number ev_num(lua_State *L, const char *k, lua_Number def) {
+  lua_getfield(L, 1, k);
+  lua_Number v = lua_isnumber(L, -1) ? lua_tonumber(L, -1) : def;
+  lua_pop(L, 1);
+  return v;
+}
+
+static int l_ig_event(lua_State *L) {
+  luaL_checktype(L, 1, LUA_TTABLE);
+  if (!IG.inited || IG.windowed) {
+    lua_pushboolean(L, false);
+    return 1;
+  }
+  ImGuiIO &io = ImGui::GetIO();
+  lua_getfield(L, 1, "type");
+  const char *t = lua_tostring(L, -1);
+  lua_pop(L, 1);
+  bool ok = false;
+  if (!t) {
+    /* fall through: not an event table */
+  } else if (strcmp(t, "motion") == 0) {
+    if (IG.mouse_on)
+      io.AddMousePosEvent((float)ev_num(L, "wx", -FLT_MAX),
+                          (float)ev_num(L, "wy", -FLT_MAX));
+    ok = true;
+  } else if (strcmp(t, "button") == 0) {
+    if (IG.mouse_on) {
+      int b = (int)ev_num(L, "button", 0);
+      int igb = b == 1 ? 0 : (b == 3 ? 1 : (b == 2 ? 2 : -1));
+      lua_getfield(L, 1, "down");
+      bool down = lua_toboolean(L, -1);
+      lua_pop(L, 1);
+      lua_getfield(L, 1, "wx"); /* position rides the click when present */
+      bool has_pos = lua_isnumber(L, -1);
+      lua_pop(L, 1);
+      if (has_pos)
+        io.AddMousePosEvent((float)ev_num(L, "wx", 0), (float)ev_num(L, "wy", 0));
+      if (igb >= 0) io.AddMouseButtonEvent(igb, down);
+    }
+    ok = true;
+  } else if (strcmp(t, "wheel") == 0) {
+    if (IG.mouse_on)
+      io.AddMouseWheelEvent((float)ev_num(L, "dx", 0), (float)ev_num(L, "dy", 0));
+    ok = true;
+  } else if (strcmp(t, "text") == 0) {
+    lua_getfield(L, 1, "text");
+    const char *s = lua_tostring(L, -1);
+    if (s) io.AddInputCharactersUTF8(s);
+    lua_pop(L, 1);
+    ok = s != nullptr;
+  } else if (strcmp(t, "key") == 0) {
+    ImGuiKey k = ig_key_from_scancode((int)ev_num(L, "scancode", 0));
+    lua_getfield(L, 1, "down");
+    bool down = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+    if (k != ImGuiKey_None) {
+      io.AddKeyEvent(k, down);
+      ok = true;
+    }
+  }
+  lua_pushboolean(L, ok);
+  return 1;
 }
 
 static int l_ig_line(lua_State *L) {
@@ -690,6 +787,7 @@ static const luaL_Reg ig_funcs[] = {{"x_ig_frame", l_ig_frame},
                                     {"x_ig_clip_push", l_ig_clip_push},
                                     {"x_ig_clip_pop", l_ig_clip_pop},
                                     {"x_ig_edit", l_ig_edit},
+                                    {"x_ig_event", l_ig_event},
                                     {nullptr, nullptr}};
 
 extern "C" void pal_ig_lua_register(lua_State *L) {
