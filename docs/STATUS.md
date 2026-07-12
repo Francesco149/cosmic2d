@@ -60,6 +60,24 @@ R7a/R8a–R8d looks + the view lock).**
   untouched — the draw_places restructure is behavior-identical for
   .png/.spr and room.map carries no .tm).
 
+**Feedback round (same day, on the live R8d): three asks, all in.**
+(1) **The stock tileset went graybox** — platform-shaped but
+untextured: every tile a neutral checkerboard, differentiated by
+checker size/phase + slightly different near-gray tints, solid light
+lines for the platform silhouette. Six tiles now: top surface (fine
+warm + 2px lip) / interior fill (coarse cool) / left+right edges
+(side borders) / solo slab (boxed) / pillar (dark + rails).
+(2) **smoke grew a committed `deco.tm`** (10x6 sample assembling a
+platform + slab + pillar) so there's a .tm to double-click right
+after boot — the proof's deco.tm had been a wiped artifact; nothing
+places it in room.map, goldens untouched. Boot
+`bin/cosmic projects/smoke --edit`, open an assets window, double-
+click deco.tm (or drag it onto a map window to place it).
+(3) **The asset browser hides a .spr's baked build products** — the
+.png strip/.anim/.meta ghosts beside girl.spr; `prune_baked` (pure,
+KAT'd) drops them only when a same-base .spr exists (plank.png
+stays). selftest 23761→**23762**; suite ALL GREEN; shot on llm-feed.
+
 **Next step (resume here):** the human's passes (R7a feel, the
 R8a–R8d shots + the view-lock feel) — then **R8e — the game migration**
 (MAPS.md §10/§11, in ../cosmic2d-game): rim_hub + south_trail
