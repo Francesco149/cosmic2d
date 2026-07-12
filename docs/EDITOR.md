@@ -119,13 +119,14 @@ teidraw's source; they are taste-approved by construction):
 - **Focus** = the most recently selected (or content-clicked) window;
   keyboard asset commands (§7 hotkeys) apply to it. Focus is captured
   state (it's visible: the focused window reads brighter).
-- **Edge resize**: a **12 screen-px band** (±6 around the border; the
-  designed 6 was a 3-px target nobody could hit — human feedback, first
-  live pass) on borders + corners resizes
-  on plain drag (no ALT — the band is chrome, not content; it sits ON
-  the border, never inside content). Hover brightens the edge (no OS
-  cursor swap in v1). Min size clamped (64×48 world). Corners resize
-  both axes.
+- **Edge resize**: an **asymmetric band biased outward** — 10 screen-px
+  outside the border, 4 inside (live rounds 1+2: the original ±3 was
+  unhittable, and a symmetric band fought the ALT grammar for the
+  interior). The band wins **whether ALT is held or not** — "dragging
+  edges resizes" rides the same layer as the move grammar; the interior
+  moves (ALT) or routes to content (plain). Hover brightens the border
+  and accents the exact grabbed edge(s). Min size clamped (64×48 world).
+  Corners resize both axes.
 - **No auto-raise**: interacting with content does not reorder z;
   bring-to-front is explicit (§5 hotkeys) — mirroring teidraw.
 - Selected windows draw an accent outline; fades run 120 ms in / 150 ms
@@ -138,9 +139,12 @@ Input routing priority, evaluated per event:
 1. An **active `x_ig_edit` widget** owns mouse/kb/text while imgui says
    so (`ig.mouse/kb/text` capture flags) — except ALT-gated events,
    which the shell takes first (you can always A-drag a window whose
-   editor is focused).
-2. **ALT held → the shell owns the mouse.** Content sees nothing.
-3. **Edge bands** (no ALT): plain drag resizes (§4).
+   editor is focused; realized as `pal.x_ig_mouse(false)` while ALT is
+   held — the pointer is filtered off imgui in C, widgets render
+   unchanged).
+2. **Edge bands** resize, ALT held or not (§4) — the band outranks both
+   the move grammar and content.
+3. **ALT held → the shell owns the mouse.** Content sees nothing.
 4. Otherwise events route to the **window content** under the cursor.
 5. **Empty canvas**: drag pans, wheel zooms, right-click (still-click,
    < 4 px) opens the spawn menu (§8).

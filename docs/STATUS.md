@@ -3,10 +3,27 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
-**Date**: 2026-07-12 (R3 session, cont. — feedback round 1 + the windows PAL)
-**Phase**: **R3 feedback round 1 applied ("feels good" + 3 asks); the
-windows build now actually TESTED natively — selftest + cross-platform
-trace verify PASS on win11.**
+**Date**: 2026-07-12 (R3 session, cont. — feedback rounds 1+2 + the windows PAL)
+**Phase**: **R3 feedback rounds 1+2 applied ("feels good", "windows build
+is smooth" + asks); the windows build now actually TESTED natively —
+selftest + cross-platform trace verify PASS on win11.**
+
+Round 2 (human tried precise edge grabs, still failed — diagnosis: they
+resize under ALT, where the old grammar turned an edge press into a move
+(inside) or a marquee (just outside), exactly as reported):
+
+- **The edge band now wins over the ALT grammar** — pressing it resizes
+  whether ALT is held or not ("dragging edges resizes" rides the same
+  layer as move on the board). And the band is **asymmetric, biased
+  outward** (10 px outside / 4 inside): the rim just outside the border
+  resizes, the interior moves — so edge-vs-move never fight. Hover now
+  accents the exact grabbed edge(s), and the accent stays on while
+  resizing. KATs: ALT+edge press → resize (never move/marquee), outward
+  band geometry (selftest 22641→22644).
+- **Game window content got its margin + filler**: the target letterboxes
+  inside a rounded dark well inset from the panel (it used to sit flush
+  over the rounded border); all window content is inset 4 px-at-zoom
+  from the panel edges now.
 
 - **ALT shimmer fixed properly** (human: contents shifted + dimmed under
   ALT — it was our inert-text fallback, not WSLg: x_ig_edit renders with

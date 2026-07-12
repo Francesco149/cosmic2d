@@ -2200,6 +2200,14 @@ local function t_ed_wm()
   id = wm.hit(doc, 1000, 1000, 6)
   check(id == nil, "ed.wm: miss is nil")
 
+  -- the asymmetric outward band (bo=10, bi=4): 8px outside the east
+  -- border grabs the edge, 5px inside is already content (b's e border
+  -- is at x=350 here)
+  id, part = wm.hit(doc, 358, 100, 10, 4)
+  check(id == b.id and part == "e", "ed.wm: outward band grabs outside")
+  id, part = wm.hit(doc, 345, 100, 10, 4)
+  check(id == b.id and part == "content", "ed.wm: 5px inside is content")
+
   -- explicit z only
   wm.to_front(doc, a.id)
   check(doc.wins[2].id == a.id, "ed.wm: to_front")
@@ -2230,7 +2238,8 @@ local function t_ed_wm()
 
   -- ---- the grammar state machine (synthetic frames) ----
   local function inp(t)
-    t.band = t.band or 6
+    t.bo = t.bo or 6 -- symmetric band in the grammar KATs
+    t.bi = t.bi or 6
     t.alt = t.alt or false
     t.down1 = t.down1 or false
     t.down3 = t.down3 or false
@@ -2316,6 +2325,16 @@ local function t_ed_wm()
   wm.update(doc, g, inp({ wx = a.x + a.w + 25, wy = a.y + 50,
                           sx = a.x + a.w + 25, sy = a.y + 50, down1 = true }))
   check(a.w == 225, "ed.wm: resize follows the drag")
+  wm.update(doc, g, inp({ wx = 0, wy = 0, sx = 0, sy = 0 }))
+
+  -- the edge wins under ALT too (human feedback, live round 2): an
+  -- ALT-press 3px OUTSIDE the border resizes — never a move or marquee
+  g = {}
+  wm.update(doc, g, inp({ wx = a.x + a.w + 3, wy = a.y + 50,
+                          sx = a.x + a.w + 3, sy = a.y + 50, alt = true,
+                          down1 = true, clicked1 = true }))
+  check(g.state == "resize" and g.part == "e",
+        "ed.wm: ALT+edge press resizes, not moves")
   wm.update(doc, g, inp({ wx = 0, wy = 0, sx = 0, sy = 0 }))
 
   -- content click (no alt): not owned, focuses, never raises

@@ -235,7 +235,8 @@ local function interact(ig)
   -- the grammar (ALT layer + edge resize); true = wm owns the mouse
   local inp = {
     wx = wwx, wy = wwy, sx = i.wx, sy = i.wy,
-    band = wm.EDGE_PX / doc.cam.zoom, alt = g.alt or false,
+    bo = wm.EDGE_OUT / doc.cam.zoom, bi = wm.EDGE_IN / doc.cam.zoom,
+    alt = g.alt or false,
     down1 = i.buttons[1] or false, down3 = i.buttons[3] or false,
     clicked1 = i.clicked[1] or false, clicked3 = i.clicked[3] or false,
   }
@@ -248,7 +249,7 @@ local function interact(ig)
 
   -- empty canvas (or middle button / space anywhere): pan; right = pan or
   -- the spawn menu on a still-click
-  local over = wm.hit(doc, wwx, wwy, inp.band)
+  local over = wm.hit(doc, wwx, wwy, inp.bo, inp.bi)
   local b = (i.clicked[2] and 2) or (i.clicked[3] and 3)
             or (i.clicked[1] and (g.space or not over) and 1) or nil
   if b and (b ~= 1 or not over) or (b and g.space) then
@@ -305,17 +306,33 @@ local function draw_win(ig, win, zi)
   local selected = wm.selected(doc, win.id)
   local focused = doc.focus == win.id
 
-  -- hover on the resize band brightens the border (the affordance)
-  local hot = false
-  if g.cursor and not g.alt and g.state == nil then
-    local id, part = wm.hit(doc, g.cursor.wx, g.cursor.wy, wm.EDGE_PX / z)
-    hot = id == win.id and part ~= "content"
+  -- hover on the resize band: brighten the border + underline the grabbed
+  -- edge(s) so the affordance is unmissable (works under ALT too — the
+  -- edge wins over the move grammar)
+  local hot_part
+  if g.cursor and (g.state == nil or g.state == "resize") then
+    local id, part = wm.hit(doc, g.cursor.wx, g.cursor.wy,
+                            wm.EDGE_OUT / z, wm.EDGE_IN / z)
+    if id == win.id and part ~= "content" then hot_part = part end
+    if g.state == "resize" and g.target == win.id then hot_part = g.part end
   end
 
   pal.x_ig_rect_fill(x, y, w, h, C.win, 6 * z)
   pal.x_ig_rect_fill(x, y, w, math.min(hdr, h), C.hdr, 6 * z)
-  local edge = hot and C.win_edge_hot or (focused and C.focus_edge or C.win_edge)
+  local edge = hot_part and C.win_edge_hot
+               or (focused and C.focus_edge or C.win_edge)
   pal.x_ig_rect(x, y, w, h, edge, math.max(1, z), 6 * z)
+  if hot_part then -- accent the exact edge(s) under the cursor
+    local t = math.max(2, 2.5 * z)
+    if hot_part:find("n") then pal.x_ig_line(x + 4, y, x + w - 4, y, C.sel, t) end
+    if hot_part:find("s") then
+      pal.x_ig_line(x + 4, y + h, x + w - 4, y + h, C.sel, t)
+    end
+    if hot_part:find("w") then pal.x_ig_line(x, y + 4, x, y + h - 4, C.sel, t) end
+    if hot_part:find("e") then
+      pal.x_ig_line(x + w, y + 4, x + w, y + h - 4, C.sel, t)
+    end
+  end
   if selected then
     pal.x_ig_rect(x - 2, y - 2, w + 4, h + 4, C.sel, math.max(1, 1.5 * z), 8 * z)
   end
@@ -342,12 +359,13 @@ local function draw_win(ig, win, zi)
     end
   end
 
-  -- content
-  if kind and h > hdr + 2 then
+  -- content, inset from the panel so nothing sits on the rounded border
+  local m = 4 * z
+  if kind and h > hdr + 2 * m then
     local ctx = {
       ig = ig, z = z, alt = g.alt or false, doc = doc, ed = M,
       focused = focused, touch = M.touch, occluded = occluded(doc, zi),
-      cx = x + z, cy = y + hdr, cw = w - 2 * z, ch = h - hdr - z,
+      cx = x + m, cy = y + hdr, cw = w - 2 * m, ch = h - hdr - m,
     }
     pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, ctx.ch)
     kind.draw(win, ctx)

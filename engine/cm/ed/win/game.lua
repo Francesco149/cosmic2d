@@ -18,15 +18,19 @@ function M.title(win)
 end
 
 function M.draw(win, ctx)
-  -- letterbox the target into the content rect, preserving aspect
+  -- letterbox the target into a rounded filler well, preserving aspect —
+  -- the image sits inside a margin so it never touches the panel's
+  -- rounded border (human feedback, live round 2)
   local tw, th = pal.gfx_size()
   if tw <= 0 or th <= 0 then return end
-  local s = math.min(ctx.cw / tw, ctx.ch / th)
+  pal.x_ig_rect_fill(ctx.cx, ctx.cy, ctx.cw, ctx.ch, 0x0c0a14ff, 4 * ctx.z)
+  local m = 3 * ctx.z
+  local aw, ah = ctx.cw - 2 * m, ctx.ch - 2 * m
+  if aw <= 0 or ah <= 0 then return end
+  local s = math.min(aw / tw, ah / th)
   local dw, dh = tw * s, th * s
-  local dx = ctx.cx + (ctx.cw - dw) * 0.5
-  local dy = ctx.cy + (ctx.ch - dh) * 0.5
-  pal.x_ig_rect_fill(ctx.cx, ctx.cy, ctx.cw, ctx.ch, 0x0c0a14ff)
-  pal.x_ig_image(-1, dx, dy, dw, dh)
+  pal.x_ig_image(-1, ctx.cx + m + (aw - dw) * 0.5,
+                 ctx.cy + m + (ah - dh) * 0.5, dw, dh)
 end
 
 return M

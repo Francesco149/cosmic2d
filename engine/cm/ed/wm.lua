@@ -30,8 +30,13 @@
 local M = select(2, ...) or {}
 
 M.DRAG_PX = 4 -- click vs drag (screen px)
-M.EDGE_PX = 12 -- resize band (screen px; ±6 around the border — 6 total
-               -- was a 3-px target nobody could hit, human feedback R3)
+-- the resize band is asymmetric and biased OUTWARD (human feedback, live
+-- round 2): the rim just outside the border resizes, the interior moves/
+-- routes to content. The edge wins over the ALT grammar too — pressing
+-- the band resizes whether ALT is held or not ("dragging edges resizes"
+-- is part of the same family on the board).
+M.EDGE_OUT = 10 -- band outside the border (screen px)
+M.EDGE_IN = 4 -- band inside the border (screen px)
 M.MIN_W, M.MIN_H = 64, 48 -- world units
 
 -- ---- doc shape ----
@@ -128,21 +133,22 @@ local function inside(w, x, y)
   return x >= w.x and x < w.x + w.w and y >= w.y and y < w.y + w.h
 end
 
--- topmost window whose rect (grown by half the band, for the outer edge
--- half) contains the point; also reports the part:
---   "content", or an edge combo "n"/"s"/"e"/"w"/"ne"/"nw"/"se"/"sw"
-function M.hit(doc, x, y, band)
-  band = band or 0
-  local ho = band * 0.5 -- half band outside, half inside: the band sits ON
-  for i = #doc.wins, 1, -1 do -- the border (EDITOR.md §4)
+-- topmost window whose rect (grown by the outer band) contains the point;
+-- also reports the part: "content", or an edge combo "n"/"s"/"e"/"w"/
+-- "ne"/"nw"/"se"/"sw". bo/bi = band outside/inside the border in world
+-- units (bi defaults to bo — symmetric, the KAT-friendly form).
+function M.hit(doc, x, y, bo, bi)
+  bo = bo or 0
+  bi = bi or bo
+  for i = #doc.wins, 1, -1 do
     local w = doc.wins[i]
-    if x >= w.x - ho and x < w.x + w.w + ho
-       and y >= w.y - ho and y < w.y + w.h + ho then
+    if x >= w.x - bo and x < w.x + w.w + bo
+       and y >= w.y - bo and y < w.y + w.h + bo then
       local part = ""
-      if y < w.y + ho then part = "n"
-      elseif y >= w.y + w.h - ho then part = "s" end
-      if x < w.x + ho then part = part .. "w"
-      elseif x >= w.x + w.w - ho then part = part .. "e" end
+      if y < w.y + bi then part = "n"
+      elseif y >= w.y + w.h - bi then part = "s" end
+      if x < w.x + bi then part = part .. "w"
+      elseif x >= w.x + w.w - bi then part = part .. "e" end
       return w.id, part == "" and "content" or part
     end
   end
@@ -337,17 +343,37 @@ function M.update(doc, g, inp)
   end
 
   -- idle: do we begin a gesture this frame?
-  if inp.alt and inp.clicked1 then
-    local target = move_target(doc, inp.wx, inp.wy)
-    if target then
-      g.state = "alt_pend"
-      g.target = target
-      g.px, g.py = inp.sx, inp.sy
+  if inp.clicked1 then
+    -- the edge band wins FIRST, ALT held or not ("dragging edges resizes"
+    -- rides the same layer as the move grammar on the board)
+    local id, part = M.hit(doc, inp.wx, inp.wy, inp.bo, inp.bi)
+    if id and part ~= "content" then
+      local w = M.get(doc, id)
+      g.state = "resize"
+      g.target = id
+      g.part = part
+      g.r0 = { x = w.x, y = w.y, w = w.w, h = w.h }
+      g.wx0, g.wy0 = inp.wx, inp.wy
       return true
     end
-    g.state = "marquee" -- A-drag on empty canvas
-    g.mx0, g.my0, g.mx1, g.my1 = inp.wx, inp.wy, inp.wx, inp.wy
-    return true
+    if inp.alt then
+      local target = move_target(doc, inp.wx, inp.wy)
+      if target then
+        g.state = "alt_pend"
+        g.target = target
+        g.px, g.py = inp.sx, inp.sy
+        return true
+      end
+      g.state = "marquee" -- A-drag on empty canvas
+      g.mx0, g.my0, g.mx1, g.my1 = inp.wx, inp.wy, inp.wx, inp.wy
+      return true
+    end
+    if id then
+      doc.focus = id -- content-click focuses (never raises)
+      g.changed = true
+      return false -- content owns the rest of the gesture
+    end
+    return false
   end
   if inp.alt and inp.clicked3 then
     local id = M.hit(doc, inp.wx, inp.wy, 0)
@@ -358,23 +384,6 @@ function M.update(doc, g, inp)
       return true
     end
     return false
-  end
-  if not inp.alt and inp.clicked1 then
-    local id, part = M.hit(doc, inp.wx, inp.wy, inp.band)
-    if id and part ~= "content" then
-      local w = M.get(doc, id)
-      g.state = "resize"
-      g.target = id
-      g.part = part
-      g.r0 = { x = w.x, y = w.y, w = w.w, h = w.h }
-      g.wx0, g.wy0 = inp.wx, inp.wy
-      return true
-    end
-    if id then
-      doc.focus = id -- content-click focuses (never raises)
-      g.changed = true
-      return false -- content owns the rest of the gesture
-    end
   end
   return false
 end
