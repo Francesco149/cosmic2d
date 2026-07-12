@@ -637,6 +637,23 @@ local function interact(ig)
     return
   end
 
+  -- a plain press OUTSIDE the view-locked window releases the lock at
+  -- press time (the human's refinement): dragging on the canvas or
+  -- another window is a canvas action — don't wait for the release.
+  -- The banded hit keeps the lock through the window's own edge grabs;
+  -- ALT presses resolve focus through the grammar as ever.
+  if i.clicked[1] and not g.alt then
+    local fwin = M.view_locked()
+    if fwin then
+      local id = wm.hit(doc, wwx, wwy, wm.EDGE_OUT / doc.cam.zoom,
+                        wm.EDGE_IN / doc.cam.zoom)
+      if id ~= fwin.id then
+        doc.focus = 0
+        M.touch()
+      end
+    end
+  end
+
   -- a plain press on a title bar moves the window (no modifier, live
   -- round 3): the strip left of the header's button zone (recorded by
   -- draw_win last frame — reset/history/etc. keep their clicks)
@@ -676,7 +693,14 @@ local function interact(ig)
   -- — the naked canvas selects instead).
   if i.clicked[2] then
     local over, opart = wm.hit(doc, wwx, wwy, 0)
-    local mid_taken = M.view_locked() ~= nil
+    local fwin = M.view_locked()
+    local mid_taken = fwin ~= nil and over == fwin.id
+    if fwin and not mid_taken then
+      -- a middle-drag OUTSIDE the locked window is a canvas action:
+      -- let go and pan the canvas (the human's refinement)
+      doc.focus = 0
+      M.touch()
+    end
     if not mid_taken and over and opart == "content" and not g.alt then
       local w = wm.get(doc, over)
       local kind = w and M.kinds[w.kind]

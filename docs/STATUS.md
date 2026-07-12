@@ -87,6 +87,13 @@ the map window unfocused but it "still captures inputs" — and asked to
   untouched); glue proven live at canvas 200% (shot on llm-feed).
   Old sessions carry old-unit view fields — a one-time cosmetic zoom
   jump on first open, nothing else.
+- **Round three (human): a drag starting OUTSIDE the locked window
+  releases the lock at press time** — LMB/MMB presses outside it are
+  canvas actions (MMB pans the canvas, LMB marquees; before, the lock
+  routed MMB to the map from anywhere and LMB only refocused on
+  release). Exception: the window's own resize band keeps the lock.
+  Proven by a synthetic-tape repro (mmb-out / lmb-out / own-edge all
+  PASS); suite still ALL GREEN.
 
 **Next step (resume here):** the human's passes (R7a feel, the
 R8a/R8b/R8c shots + the view-lock feel) — then **R8d — the tilemap

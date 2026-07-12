@@ -596,7 +596,13 @@ view rect zooms about the view center. **Focus is the ONE gate**
 (the human's second round): an unfocused own_view window's view is
 INERT — no hover wheel/MMB fallback — so unfocusing visibly AND
 actually lets go (the hooks decline: `wheel`/`ctrl_wheel` return
-false, `takes_middle(win, ed)` answers false).
+false, `takes_middle(win, ed)` answers false). **A drag STARTING
+outside the locked window releases the lock at press time** (round
+three): LMB and MMB presses outside it are canvas actions — MMB pans
+the canvas, LMB marquees — with one exception: the window's own
+resize band (the banded hit) keeps the lock, so resizing the focused
+window doesn't drop it. Only the middle-drag *inside* the window
+pans its view.
 
 ### 12.9 cm.ed.winview — captured view state is WORLD units
 
