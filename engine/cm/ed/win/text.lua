@@ -568,7 +568,25 @@ function M.draw(win, ctx)
 
   -- the widget (invisible input machine) — skipped when occluded
   g.wsy = g.wsy or {}
-  local st, active, changed
+
+  -- the imgui child keeps its scroll in SCREEN px, but px-per-line is
+  -- font*zoom — so a canvas zoom (or a font tick) would re-scroll the
+  -- content (the human's zoom bug: lines shift unless you're at the
+  -- top). Rescale the scroll whenever this WINDOW's effective px moves
+  -- so the same LINE stays anchored, and force it into the widget.
+  -- (Keyed by window, not path — two windows on one file don't fight.)
+  g.wpx = g.wpx or {}
+  local lpx = g.wpx[win.id]
+  if lpx and math.abs(lpx - px) > 1e-9 then
+    local k = px / lpx
+    win.sy = (win.sy or 0) * k
+    win.sx = (win.sx or 0) * k
+    g.wsy[win.id] = nil -- force the rescaled scroll in
+    ed.touch()
+  end
+  g.wpx[win.id] = px
+
+  local st, active, changed, forced
   if not ctx.occluded then
     local text
     local opts = {
@@ -579,10 +597,11 @@ function M.draw(win, ctx)
       opts.set = true
       p.force_set = nil
     end
-    -- first draw of this window (spawn / restart / navigate): push the
-    -- remembered scroll INTO the widget; imgui applies the target next
-    -- frame, so the mirror below skips this frame (or it would clobber it)
-    local forced = g.wsy[win.id] == nil
+    -- first draw of this window (spawn / restart / navigate / a px
+    -- rescale): push the remembered scroll INTO the widget; imgui
+    -- applies the target next frame, so the mirror below skips this
+    -- frame (or it would clobber it)
+    forced = g.wsy[win.id] == nil
     if forced then
       opts.scroll_y = win.sy or 0
       opts.scroll_x = win.sx or 0
@@ -603,7 +622,8 @@ function M.draw(win, ctx)
     end
   end
   local sx, sy = win.sx or 0, win.sy or 0
-  if st then sx, sy = st.sx, st.sy end
+  if st and not forced then sx, sy = st.sx, st.sy end -- a forced frame
+  -- draws from win.sx/sy (the widget adopts them next frame)
 
   -- gesture end: the widget deactivates (incl. going inert), or the idle
   -- debounce runs out — checked even while inert so no push is stranded
