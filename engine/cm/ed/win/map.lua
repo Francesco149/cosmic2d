@@ -525,18 +525,31 @@ end
 
 -- ---- view plumbing ----
 
--- content wheel: zoom the map view at the cursor
+-- focused = the view lock (the human's ask, §6): wheel + middle-drag act
+-- on THIS window's camera from anywhere on the canvas; any canvas action
+-- or Esc unfocuses. An unbound window has no view to own.
+function M.own_view(win)
+  return win.path ~= ""
+end
+
+-- content wheel: zoom the map view at the cursor. Under the focus lock
+-- the wheel arrives from anywhere — a cursor outside the view anchors at
+-- the view center instead (zoom-at-cursor math would fling the pan).
 function M.wheel(win, ed, dy)
   local p = ed.g.mw and ed.g.mw[win.path]
   local r = p and p.view
   if not (r and p.doc) then return false end
   local i = cm.require("cm.ui").inp
+  local ax, ay = i.wx, i.wy
+  if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
+    ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
+  end
   local oldz = win.zoom or r.fit
   local nz = math.max(0.05, math.min(32, oldz * (dy > 0 and 1.25 or 0.8)))
-  local mx = (i.wx - r.ox) / oldz
-  local my = (i.wy - r.oy) / oldz
-  win.px = (i.wx - mx * nz - r.cx) / r.wz
-  win.py = (i.wy - my * nz - r.cy) / r.wz
+  local mx = (ax - r.ox) / oldz
+  local my = (ay - r.oy) / oldz
+  win.px = (ax - mx * nz - r.cx) / r.wz
+  win.py = (ay - my * nz - r.cy) / r.wz
   win.zoom = nz
   ed.touch()
   return true
@@ -847,8 +860,11 @@ function M.draw(win, ctx)
              skip = skipset and function(n) return skipset[n] end or nil }
   end
 
-  -- middle-drag pans the view
-  if topmost and i.clicked[2] then
+  -- middle-drag pans the view: the focus lock grabs from anywhere; an
+  -- unfocused window grabs over its content only, and yields when some
+  -- OTHER window holds the lock (priority is the lock's whole point)
+  local grab = ctx.focused or (topmost and not ed.view_locked())
+  if grab and i.clicked[2] then
     p.pan = { mx = i.wx, my = i.wy, ox = ox, oy = oy }
   end
   if p.pan then
@@ -1029,6 +1045,20 @@ function M.draw(win, ctx)
   local cw2 = pal.x_ig_text_size(chip, px * 0.85, 0)
   pal.x_ig_text(cvx + cvw - cw2 - 6 * z, cvy + 4 * z, px * 0.85, COL.dim,
                 chip, 0)
+
+  -- the focus lock, unmissable (the PLAYING-chip idiom): while focused
+  -- this view owns wheel + middle-drag everywhere — say so
+  if ctx.focused then
+    pal.x_ig_rect(cvx + 1, cvy + 1, cvw - 2, cvh - 2, COL.sel,
+                  math.max(1, 1.5 * z), 3 * z)
+    local fl = "EDITING — wheel/mmb here · esc out"
+    local fpx = math.max(4, 10 * z)
+    local fw2 = pal.x_ig_text_size(fl, fpx, 0)
+    pal.x_ig_rect_fill(cvx + 4 * z, cvy + 4 * z, fw2 + 10 * z, fpx * 1.5,
+                       0x7fd8a8cc, 4 * z)
+    pal.x_ig_text(cvx + 9 * z, cvy + 4 * z + fpx * 0.22, fpx, 0x10241aff,
+                  fl, 0)
+  end
 
   pal.x_ig_clip_pop()
 

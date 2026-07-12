@@ -240,6 +240,18 @@ local function playing_game()
   if win and M.kinds[win.kind].game_input then return win end
 end
 
+-- a kind that OWNS ITS VIEW while focused (the human's ask, MAPS.md §6):
+-- wheel + middle-drag act on the focused window's camera from ANYWHERE —
+-- priority over canvas zoom/pan — until the focus leaves (any canvas
+-- action or Esc unfocuses; the window draws its own unmissable cue).
+-- own_view(win) is the kind's predicate (a map window declines unbound).
+function M.view_locked()
+  if not M.doc then return nil end
+  local win = wm.get(M.doc, M.doc.focus)
+  local kind = win and M.kinds[win.kind]
+  if kind and kind.own_view and kind.own_view(win) then return win, kind end
+end
+
 -- What the game sees in editor mode (cm.main calls this in place of the
 -- R3 blanket swallow): nothing — unless a game window is FOCUSED (=
 -- playing, §12.3). Then keys pass through, and mouse events over the
@@ -494,15 +506,20 @@ local function interact(ig)
 
   -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. CTRL → the
   -- hovered kind's size dial (code-ed font, assets preview) when it has
-  -- one. Else content that takes it (an edit widget via imgui capture, a
-  -- playing game window via filter_events, a kind.wheel hook) — else
-  -- canvas zoom.
+  -- one. A focused view-owning window (own_view — the map window) outranks
+  -- hover for both: its camera takes the wheel from anywhere. Else content
+  -- that takes it (an edit widget via imgui capture, a playing game window
+  -- via filter_events, a kind.wheel hook) — else canvas zoom.
   if i.wheel ~= 0 and not g.wheel_taken then
     local routed = false
+    local fwin, fkind = M.view_locked()
     if g.ctrl and not g.alt then
-      local id, part = wm.hit(doc, wwx, wwy, 0)
-      local win = id and part == "content" and wm.get(doc, id)
-      local kind = win and M.kinds[win.kind]
+      local win, kind = fwin, fkind
+      if not win then
+        local id, part = wm.hit(doc, wwx, wwy, 0)
+        win = id and part == "content" and wm.get(doc, id)
+        kind = win and M.kinds[win.kind]
+      end
       if kind and kind.ctrl_wheel then
         kind.ctrl_wheel(win, M, i.wheel)
         routed = true
@@ -510,6 +527,8 @@ local function interact(ig)
     elseif not g.alt then
       if ig.mouse then
         routed = true -- an imgui child (code ed scroll) is taking it
+      elseif fwin then
+        routed = fkind.wheel(fwin, M, i.wheel) ~= false
       else
         local id, part = wm.hit(doc, wwx, wwy, 0)
         local win = id and part == "content" and wm.get(doc, id)
@@ -593,6 +612,10 @@ local function interact(ig)
     end
     if not i.buttons[3] then
       if not g.rpend.moved then
+        if M.view_locked() then -- a canvas action releases the view lock
+          doc.focus = 0
+          M.touch()
+        end
         g.menu = { sx = g.rpend.sx, sy = g.rpend.sy,
                    wx = g.rpend.wx, wy = g.rpend.wy }
       end
@@ -602,8 +625,13 @@ local function interact(ig)
   end
 
   -- space+drag = the hand tool, from anywhere (teidraw); it outranks the
-  -- grammar so a space-press over a window still pans
+  -- grammar so a space-press over a window still pans. A canvas action:
+  -- it releases a view-owning window's focus lock (MAPS.md §6)
   if g.space and i.clicked[1] then
+    if M.view_locked() then
+      doc.focus = 0
+      M.touch()
+    end
     g.pan = { b = 1, sx = i.wx, sy = i.wy, cx = doc.cam.x, cy = doc.cam.y }
     g.anim = nil
     return
@@ -643,12 +671,13 @@ local function interact(ig)
 
   -- middle button pans EVERYWHERE — even over an imgui-captured code ed
   -- (UX round 5); a kind can still claim it over its content (sprite ed
-  -- pans its own view, §12.6). LMB never pans (live round 3 — the naked
-  -- canvas selects instead).
+  -- pans its own view, §12.6), and a focused view-owning window claims it
+  -- from anywhere (its draw starts the pan). LMB never pans (live round 3
+  -- — the naked canvas selects instead).
   if i.clicked[2] then
     local over, opart = wm.hit(doc, wwx, wwy, 0)
-    local mid_taken = false
-    if over and opart == "content" and not g.alt then
+    local mid_taken = M.view_locked() ~= nil
+    if not mid_taken and over and opart == "content" and not g.alt then
       local w = wm.get(doc, over)
       local kind = w and M.kinds[w.kind]
       if kind and kind.takes_middle and kind.takes_middle(w) then

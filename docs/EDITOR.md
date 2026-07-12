@@ -580,6 +580,20 @@ sprite → sprite zoom; text/console/assets → their scroll, via imgui
 capture or `kind.wheel`) → the content takes it. Else → canvas zoom.
 (Pans/edge bands are unaffected.)
 
+**The focus view lock (`kind.own_view`, R8c — the human's ask)**: a
+focused window whose kind answers `own_view(win)` (the map window,
+when bound) owns wheel + ctrl+wheel + middle-drag from ANYWHERE on
+the canvas — priority over hover routing and canvas zoom/pan (an
+imgui-captured wheel, e.g. code-ed scroll under the cursor, still
+wins; ALT stays the canvas layer). Focus arrives by clicking the
+window's contents, as ever; ANY canvas action releases it —
+empty-canvas click/marquee, space-pan, the spawn menu, focusing
+another window — and Esc unfocuses through the usual cascade
+(gesture cancel → selection clear → unfocus). The locked window
+draws an unmissable cue (the map window: accent border + EDITING
+chip, the PLAYING-chip idiom). A wheel arriving from outside the
+view rect zooms about the view center.
+
 ### 12.8 R4 build order + exit
 
 1. **R4-pal**: the §12.1 edit extension + the drop event + absence KATs.

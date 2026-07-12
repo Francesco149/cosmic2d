@@ -211,7 +211,12 @@ field — a path with no file **creates a fresh map** (project design
 res, grid 8) whose first Ctrl+S writes the file (built at R8b).
 
 - **View**: own camera — wheel = zoom at cursor, middle-drag = pan
-  (`kind.takes_middle`), shift+1 fit. Zoom % chip. The map draws
+  (`kind.takes_middle`), shift+1 fit. Zoom % chip. **Focused = the
+  view lock** (the human's ask, built with R8c; EDITOR.md §12.7):
+  while the window is focused its camera takes wheel + middle-drag
+  from anywhere on the canvas — priority over canvas zoom/pan; any
+  canvas action or Esc unfocuses; an accent border + EDITING chip
+  make the lock unmissable. The map draws
   exactly as the game renders it, plus **collider gizmos — always on
   by default** (the human's call): solid lines in the accent, one-ways
   dashed, quads/circles outlined; attached ones tinted dimmer until

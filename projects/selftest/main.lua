@@ -3458,6 +3458,43 @@ local function t_ed_filter()
   ed.on, ed.doc, ed.root, ed.g = was_on, was_doc, was_root, was_g
 end
 
+local function t_ed_viewlock()
+  -- the focus view lock (MAPS.md §6, the human's ask): a focused map
+  -- window owns wheel + middle-drag from anywhere on the canvas; unbound
+  -- windows and other kinds never lock; a wheel arriving from outside
+  -- the view rect anchors its zoom at the view center.
+  local ed = cm.require("cm.ed")
+  local wm = cm.require("cm.ed.wm")
+  local was_doc, was_g, was_rev = ed.doc, ed.g, ed.doc_rev
+  ed.g = {}
+  ed.doc = wm.init({ v = 1 })
+  local mw = wm.spawn(ed.doc, "map", 0, 0, 400, 300, { path = "" })
+  ed.doc.focus = mw.id
+  check(ed.view_locked() == nil, "ed.viewlock: unbound map never locks")
+  mw.path = "maps/t.map"
+  check(ed.view_locked() == mw, "ed.viewlock: focused bound map locks")
+  local gw = wm.spawn(ed.doc, "game", 500, 0, 480, 300)
+  ed.doc.focus = gw.id
+  check(ed.view_locked() == nil, "ed.viewlock: game window never locks")
+  ed.doc.focus = 0
+  check(ed.view_locked() == nil, "ed.viewlock: no focus, no lock")
+
+  ed.doc.focus = mw.id
+  ed.g.mw = { ["maps/t.map"] = { doc = { w = 320, h = 200 },
+    view = { cx = 100, cy = 100, w = 200, h = 150,
+             ox = 100, oy = 100, zoom = 1, fit = 1, wz = 1 } } }
+  local ui = cm.require("cm.ui")
+  local W = cm.require("cm.ed.win.map")
+  local ux, uy = ui.inp.wx, ui.inp.wy
+  ui.inp.wx, ui.inp.wy = 900, 900 -- far off the view rect
+  check(W.wheel(mw, ed, 1) == true, "ed.viewlock: wheel lands on the view")
+  ui.inp.wx, ui.inp.wy = ux, uy
+  -- anchor = the view center (200,175): the map point under it stays put
+  check(mw.zoom == 1.25 and mw.px == -25 and mw.py == -18.75,
+        "ed.viewlock: off-view wheel anchors at the view center")
+  ed.doc, ed.g, ed.doc_rev = was_doc, was_g, was_rev
+end
+
 local function t_ed_park()
   -- R6c (REWIND.md §4): parking is interactive-but-ephemeral; close
   -- restores the stashed present; resume adopts the shown doc
@@ -3656,6 +3693,7 @@ function game.init()
   t_ed_assets()
   t_ed_map()
   t_ed_filter()
+  t_ed_viewlock()
   t_ed_park()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
