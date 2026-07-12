@@ -7,9 +7,12 @@
 > object kind* that behaves like a single baked sprite (editable in its
 > own tile editor). Maps get a real **map window** on the canvas —
 > drag assets in from the picker, drag placements around, double-click
-> into the right editor, **CTRL = snap**. This doc is the design;
-> ADR **D057** is the binding decision. The F1 world editor
-> (`cm.editor`) dies here, as EDITOR.md §12.6 prophesied.
+> into the right editor, **CTRL = snap** (confirmed; no snap by
+> default). Colliders are **typed gizmos** (line one-way / line solid
+> / quad / circle), freehand on the collider layer or **attached to a
+> placed object** so solid props move as one thing. This doc is the
+> design; ADR **D057** (+ addendum) is the binding decision. The F1
+> world editor (`cm.editor`) dies here, as EDITOR.md §12.6 prophesied.
 
 ## 1. Why (what pure tilemaps cost us)
 
@@ -33,10 +36,13 @@ The new model splits the three concerns a map actually has:
 | **visuals**   | freehand placements (sprites, images, tilemaps) | render only |
 | **markers**   | rects w/ kind+keys (spawn/portal/prop/arena…) | game logic  |
 
-Visuals never collide; colliders never render (except graybox/debug
-fill, §5); markers drive spawns/triggers. Placements moving never
-touches the sim; collider edits are sim-visible through one recorded
-path (§9).
+Placements never collide *by themselves* — but a collider can be
+**attached to a placement** (§3: refined by the human, 2026-07-12), so
+a solid prop / awning / platform sprite moves as one thing when the
+map gets redesigned. Colliders never render in-game (in the editor
+they're **always-visible gizmos**, §6; the graybox fill is §5); markers
+drive spawns/triggers. Collider edits reach the sim through one
+recorded path (§9).
 
 ## 2. The map asset (.map, CMAP)
 
@@ -45,13 +51,17 @@ A map is a **file asset** like a sprite — `maps/rim_hub.map` — a
 
 - **HEAD**: name, bounds w/h px, bg tint, grid step (the map's own
   snap default), version.
-- **COLL** (one per chain): flags (u32: solid|oneway|closed), material
-  (u8, future), vertex count, verts as **i32 px pairs** (integer px —
-  colliders sit on pixels; slopes come from non-axis-aligned segments,
-  not fractional coords).
+- **COLL** (one per *free* collider): shape (u8: **chain | quad |
+  circle**), flags (u32: solid|oneway|closed), material (u8, future),
+  then the geometry — chain: vertex count + verts as **i32 px pairs**
+  (integer px — colliders sit on pixels; slopes come from
+  non-axis-aligned segments, not fractional coords); quad: x/y/w/h
+  i32; circle: cx/cy/r i32.
 - **PLCE** (one per placement, file order = z order): layer id (u8),
   flags (u32: flip_x), x/y i32 px, path (project-relative; `.spr`,
-  `.png`, or `.tm`).
+  `.png`, or `.tm`), then **0..n attached colliders** (same encoding
+  as COLL, coords **relative to the placement origin** — they ride
+  the placement when it moves).
 - **LAYR** (optional, future): named layers with parallax factors.
   V1 renders one implicit layer; the format carries the slot so
   GRAYBOX's deferred parallax/decor lands here without a version bump.
@@ -75,7 +85,35 @@ New engine module; `cm.tilemap` keeps grid+draw for `.tm` rendering and
 **loses its mover role** (the `TM:move` sweep survives verbatim until
 smoke+game migrate, then dies).
 
-**The world** = the map's chains, instantiated into a named buffer
+**The collider roster** (refined by the human, 2026-07-12 — typed
+primitives, freehand or attached):
+
+| type            | what                                            | mover sweeps it |
+|-----------------|-------------------------------------------------|-----------------|
+| **line, solid** | open chain; blocks **both ways** (walls, thin floors/ceilings) | yes |
+| **line, one-way** | open chain; support from above only; sloped ok; `opts.drop` passes | yes |
+| **closed chain** | polygon solid (interior is ground — the §5 graybox fill) | yes (its edges) |
+| **quad**        | rect sugar — stored as x/y/w/h, swept as its 4-edge loop | yes |
+| **circle**      | overlap/point queries only in v1 (hazards, entity hit-zones) — the platformer AABB mover does **not** sweep circles | no |
+
+**Free vs attached**: a collider either lives on the map's collider
+layer (free — the terrain), or is **attached to a placement**
+(relative coords; instanced into the world offset by the placement's
+position at load). At sim level the two are identical static geometry
+— attachment is an *authoring* affordance: move the prop, its
+collision comes along. Attaching offers **auto-fit defaults** read
+from the asset's bounds (§6): the canonical case is the one-way
+platform sprite — attach "line one-way" and it defaults to the
+sprite's full width across its top, then edit points if needed.
+
+**Dynamic bodies** (design slot, built when R7b needs it): game
+entities (mobs, carried props) get `cm.collide.body_add / body_move /
+body_remove` handles on the world — insertion-ordered, so
+deterministic. Not on the R8 static path; props keep their own AABB
+logic until then (they swap their *world* queries to cm.collide like
+the player does).
+
+**The world** = all instanced static colliders in a named buffer
 (§9), plus a deterministic spatial index (coarse grid of segment lists,
 **insertion-ordered** — no hash-order dependence) rebuilt on load/epoch.
 
@@ -158,8 +196,11 @@ drag-out; keyed by path; multiple maps open fine.
 
 - **View**: own camera — wheel = zoom at cursor, middle-drag = pan
   (`kind.takes_middle`), shift+1 fit. Zoom % chip. The map draws
-  exactly as the game renders it (placements + collider fill/lines +
-  marker overlay, each toggleable via header chips).
+  exactly as the game renders it, plus **collider gizmos — always on
+  by default** (the human's call): solid lines in the accent, one-ways
+  dashed, quads/circles outlined; attached ones tinted dimmer until
+  their object is selected. Header chips toggle gizmos / markers /
+  the graybox fill.
 - **Working state = the CMAP bytes**: `doc.assets[path] = { map =
   <bytes>, jpos }` — the §6 EDITOR.md three-layer model verbatim:
   dirty = bytes ≠ disk, journal = CMAP snapshots (cap 512), one gesture
@@ -190,20 +231,30 @@ drag-out; keyed by path; multiple maps open fine.
   release, prefer `kind.drop` when the kind has one and it claims the
   path. OS file drops over the map window place the same way (copy
   into the project first, the assets-window path).
+- **Attached colliders** (the human's refinement): a selected
+  placement shows its attached colliders' handles — **editable only
+  while the object is selected** (visible-but-inert otherwise). The
+  inspector grows a **+col** button with a type picker (line one-way /
+  line solid / quad / circle) that **auto-fits from the asset's
+  bounds** — one-way: a line across the sprite's top at full width;
+  quad: the bounds; circle: inscribed — then handles/points edit as
+  usual. Del with a handle selected removes the collider.
 - **Inspector strip** (window bottom, one row): selection's x/y
-  (editable x_ig_edit fields), layer chip, flip_x toggle — markers
-  swap in kind/label/extras fields.
+  (editable x_ig_edit fields), layer chip, flip_x toggle, **+col** —
+  markers swap in kind/label/extras fields.
 
-**Collider tool**:
-- click = select chain (nearest edge); vertices show as handles.
-  Drag a handle = move vertex; drag an edge = move the chain;
-  **click an edge inserts a vertex** at that point; del = selected
-  vertex (chain if none).
-- **draw**: press on empty starts a chain, each click appends a
-  vertex, **Enter/double-click ends open, C closes** (closed+solid =
-  fillable ground); Esc cancels. CTRL snaps every placed vertex (§7).
-- Chain flags on the inspector strip: solid/one-way, closed. One-way
-  chains render dashed in the accent color.
+**Collider tool** (free colliders — the terrain layer; attached ones
+edit through their object, above):
+- type chips on the strip: **line / quad / circle**, plus the
+  solid/one-way flag (one-way applies to lines).
+- click = select the nearest collider (edge); vertices/handles show.
+  Drag a handle = move vertex (quad corners / circle radius likewise);
+  drag an edge = move the whole collider; **click an edge inserts a
+  vertex** (chains); del = selected vertex (whole collider if none).
+- **draw**: line — press on empty starts a chain, each click appends
+  a vertex, **Enter/double-click ends open, C closes** (closed+solid =
+  fillable ground); Esc cancels. Quad/circle — drag out. CTRL snaps
+  every placed vertex/edge (§7).
 - The whole gesture set journals per gesture (vertex drag end = one
   entry).
 
@@ -225,19 +276,26 @@ Snap resolution, strongest first, threshold ~6 px-at-zoom:
    cursor (align art to collision and chains to each other);
 2. **edges** — nearest collider line / placement edge (slide along
    it); placements also snap edge-to-edge and center-to-center with
-   neighbors (butting decor together seamlessly);
-3. **45° lock** — while *drawing/dragging collider vertices*, the
+   neighbors (butting decor together seamlessly). Over a placed
+   tilemap, its **tile edges** (the .tm grid at the placement's
+   offset) are edge targets too — line colliders click onto tile
+   boundaries;
+3. **edge-run** (the human's shorthand, line tool over a tilemap):
+   CTRL-hovering a solid tile's exposed edge proposes **the whole
+   contiguous run** — the preview line spans left/right until the
+   tiles stop — and one click lays the full segment. Long straight
+   sections in one click instead of two snapped vertices. *(Lands
+   with R8d, when .tm placements exist.)*
+4. **45° lock** — while *drawing/dragging collider vertices*, the
    segment to the previous vertex locks to 0/45/90° when no stronger
    snap hits (classic slope authoring);
-4. **grid** — the map's grid step (HEAD default 8 px; **ctrl+wheel
+5. **grid** — the map's grid step (HEAD default 8 px; **ctrl+wheel
    dials it** — the map ed's `kind.ctrl_wheel`, per-window override in
    `win.grid`).
 
 Active snap draws its guide (the teidraw-style thin line / highlight
 dot) so the lock is always legible. Marquee + resize snap the same
-way. (If CTRL-to-snap polarity feels backwards live — some humans
-expect snap-by-default — it's one boolean; the grammar survives
-either way. Flagged in §12.)
+way.
 
 ## 8. The tilemap window (kind `tmap`)
 
@@ -297,12 +355,16 @@ is insertion-ordered), collider buffer canonical.
   drag a sprite from the picker onto the map, snap-align it to a
   ledge, Ctrl+S, the game window shows it; undo/restart survival
   proven.
-- **R8c — collider editing**: the collider tool (draw/insert/drag/
-  flags), 45° lock + vertex/edge snap, marker tool + inspector.
-  *Exit*: author a new slope in a live session, walk it in the game
-  window; the whole edit rewinds and comes back.
-- **R8d — the tilemap window** (§8). *Exit*: build a small .tm from a
-  tileset .spr, place it, edit it through double-click, journaled.
+- **R8c — collider editing**: the collider tool (line/quad/circle,
+  draw/insert/drag/flags), **attached colliders** (+col auto-fit,
+  selected-only editing, gizmo tinting), 45° lock + vertex/edge snap,
+  marker tool + inspector. *Exit*: author a new slope in a live
+  session, walk it in the game window; attach a one-way to a platform
+  sprite and move them as one; the whole edit rewinds and comes back.
+- **R8d — the tilemap window** (§8) + the **edge-run snap** (§7).
+  *Exit*: build a small .tm from a tileset .spr, place it, edit it
+  through double-click, journaled; trace a collider run along its top
+  in one click.
 - **R8e — the game migration** (§10, in ../cosmic2d-game): both maps
   re-authored in the editor, movement/feel re-checked (the human),
   legacy map code deleted both repos. *Exit*: the human walks both
@@ -310,8 +372,9 @@ is insertion-ordered), collider buffer canonical.
 
 ## 12. Open questions (human)
 
-1. **Snap polarity** (§7): CTRL = snap (proposed) — or snap by
-   default, CTRL = free? One boolean either way; live feel decides.
+1. **Snap polarity** — ✅ **RESOLVED (human, 2026-07-12): CTRL =
+   snap, no snap by default.** (Same round: colliders refined into
+   typed free/attached primitives — folded into §§2/3/6/7.)
 2. **Graybox = collider fill** (§5): checkerboard fill of closed
    solids as *the* graybox visual — sign off? (It keeps R7b off the
    tilemap critical path entirely.)

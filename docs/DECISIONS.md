@@ -1925,3 +1925,39 @@ segments (→ material/arc extensions in COLL, format has room); the
 per-cell .tm render shows up in profiles (→ the real bake to one
 texture, the format already reads "baked sprite"); CTRL-snap polarity
 feels backwards live (→ flip the boolean, grammar unchanged).
+
+## D057a — colliders refined: typed + attachable (human, 2026-07-12)
+
+**Context**: the human's read of MAPS.md, same day. Snap polarity
+resolved (**CTRL = snap, no snap by default**) and the collider model
+sharpened: plain lines-on-a-layer shown as gizmos is right, but
+redesigning solid parts of the map shouldn't mean moving two things —
+and dynamic/solid objects (props, enemies, platform sprites) need
+collision that belongs to them.
+
+**Decision** (folded into MAPS.md §§2/3/6/7):
+
+1. **Typed collider primitives**: line one-way / line solid (blocks
+   both ways) / closed chain (polygon solid) / quad / circle. The
+   platformer mover sweeps lines/chains/quads; circles are
+   overlap-query colliders (hazards, hit-zones) in v1.
+2. **Free or attached**: a collider lives on the map's collider layer
+   OR attaches to a placement (relative coords, rides it when moved) —
+   identical static geometry at sim level; authoring affordance only.
+   Attaching **auto-fits from the asset's bounds** (the canonical
+   case: one-way line across a platform sprite's full top width),
+   points editable after. **Attached colliders edit only while their
+   object is selected**; gizmos for everything are **always visible
+   in the editor by default** (toggleable), attached ones dimmer when
+   unselected.
+3. **Tilemap-aware line snapping**: tile edges of placed .tm objects
+   are CTRL-snap targets, and **edge-run snap** lays one line along a
+   whole contiguous solid run in one click (the long-straight-section
+   shorthand; lands with R8d).
+4. Dynamic bodies (`body_add/move/remove`, insertion-ordered) stay a
+   design slot for R7b's mobs — not on the R8 static path.
+
+**Revisit if**: attached colliders turn out to want sharing across
+instances of the same asset (→ default colliders in the .spr/.meta,
+placement stores overrides only); circles need real sweeping (→ the
+mover grows arc support then, not before).

@@ -3,11 +3,19 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
-**Date**: 2026-07-12 (day session — R8 designed: the map system, D057)
+**Date**: 2026-07-12 (day session — R8 designed: the map system, D057+a)
 **Phase**: **The human paused R7b for a map rework — DESIGNED
-(docs/MAPS.md + ADR D057 + REVAMP §6 R8); awaiting the human's read
-(MAPS.md §12 open questions), then R8a builds.** Docs only engine-side;
-two feel fixes shipped in ../cosmic2d-game first.
+(docs/MAPS.md + ADR D057) and the human's first design round is IN
+(ADR D057a): CTRL = snap confirmed (no snap by default), and colliders
+refined into typed primitives (line one-way / line solid / quad /
+circle) that are freehand on the collider layer OR attached to a
+placed object (relative coords, auto-fit from asset bounds — the
+one-way-across-a-platform-sprite case; editable only while the object
+is selected; gizmos always visible by default), plus tile-edge +
+edge-run snapping against placed tilemaps. Remaining §12 opens:
+graybox-as-collider-fill, grid default, one-way slopes, live-apply.
+Then R8a builds.** Docs only engine-side; two feel fixes shipped in
+../cosmic2d-game first.
 
 - **The ask (verbatim intent)**: non-pure-tilemap maps — a **collider
   layer** (lines with slopes), visuals = **freehand sprite placement**,
