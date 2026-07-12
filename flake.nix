@@ -40,9 +40,10 @@
           buildInputs = [ pkgs.sdl3 ];
           buildPhase = "make -C pal";
           installPhase = ''
-            mkdir -p $out/pal
+            mkdir -p $out/pal/vendor
             cp -r bin engine projects tests $out/
             cp -r pal/shaders $out/pal/
+            cp -r pal/vendor/fonts $out/pal/vendor/
           '';
         };
 
@@ -60,12 +61,14 @@
           buildInputs = [ cross.sdl3 ];
           dontStrip = true;
           buildPhase = ''
-            make -C pal EXE=.exe LDFLAGS="-mconsole -static-libgcc"
+            make -C pal EXE=.exe \
+              LDFLAGS="-mconsole -static-libgcc -static-libstdc++"
           '';
           installPhase = ''
-            mkdir -p $out/pal
+            mkdir -p $out/pal/vendor
             cp -r bin engine projects tests $out/
             cp -r pal/shaders $out/pal/
+            cp -r pal/vendor/fonts $out/pal/vendor/
             cp ${cross.sdl3.out}/bin/SDL3.dll $out/bin/
           '';
           # the mingw stdenv symlinks runtime DLLs (libmcfgthread) into bin/;
