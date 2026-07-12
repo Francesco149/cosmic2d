@@ -39,6 +39,7 @@ local M = select(2, ...) or {}
 local journal = cm.require("cm.ed.journal")
 local map = cm.require("cm.map")
 local wm = cm.require("cm.ed.wm")
+local wv = cm.require("cm.ed.winview")
 
 M.kind = "map"
 M.DEF_W, M.DEF_H = 560, 420
@@ -853,15 +854,18 @@ end
 
 -- focused = the view lock (the human's ask, §6): wheel + middle-drag act
 -- on THIS window's camera from anywhere on the canvas; any canvas action
--- or Esc unfocuses. An unbound window has no view to own.
+-- or Esc unfocuses. An unbound window has no view to own. FOCUS IS THE
+-- ONE GATE (second round of the ask): an unfocused map window's view is
+-- INERT — no hover fallback — so Esc visibly AND actually lets go.
 function M.own_view(win)
   return win.path ~= ""
 end
 
--- content wheel: zoom the map view at the cursor. Under the focus lock
--- the wheel arrives from anywhere — a cursor outside the view anchors at
--- the view center instead (zoom-at-cursor math would fling the pan).
+-- content wheel: zoom the map view at the cursor (focused only). Under
+-- the focus lock the wheel arrives from anywhere — a cursor outside the
+-- view anchors at the center (zoom-at-cursor math would fling the pan).
 function M.wheel(win, ed, dy)
+  if ed.doc.focus ~= win.id then return false end
   local p = ed.g.mw and ed.g.mw[win.path]
   local r = p and p.view
   if not (r and p.doc) then return false end
@@ -870,23 +874,18 @@ function M.wheel(win, ed, dy)
   if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
     ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
   end
-  local oldz = win.zoom or r.fit
-  local nz = math.max(0.05, math.min(32, oldz * (dy > 0 and 1.25 or 0.8)))
-  local mx = (ax - r.ox) / oldz
-  local my = (ay - r.oy) / oldz
-  win.px = (ax - mx * nz - r.cx) / r.wz
-  win.py = (ay - my * nz - r.cy) / r.wz
-  win.zoom = nz
+  wv.wheel_zoom(win, r, ax, ay, dy, 0.05, 32)
   ed.touch()
   return true
 end
 
-function M.takes_middle(win)
-  return win.path ~= ""
+function M.takes_middle(win, ed)
+  return win.path ~= "" and ed ~= nil and ed.doc.focus == win.id
 end
 
--- ctrl+wheel: the grid-step dial (§7)
+-- ctrl+wheel: the grid-step dial (§7; focused only, like the rest)
 function M.ctrl_wheel(win, ed, notches)
+  if ed.doc.focus ~= win.id then return false end
   local p = ed.g.mw and ed.g.mw[win.path]
   local cur = win.grid or (p and p.doc and p.doc.grid) or 8
   local at = 1
@@ -1121,21 +1120,11 @@ function M.draw(win, ctx)
   local cvw, cvh = ctx.cw, ctx.ch - INSP - 2 * z
   if cvw < 60 or cvh < 60 then return end
 
-  -- view transform (sprite-ed shape: zoom = screen px per map px;
-  -- win.px/py = pan in world units)
+  -- view transform via cm.ed.winview — captured fields in WORLD units
+  -- (win.zoom = world units per map px), so canvas zoom cancels out
   pal.x_ig_rect_fill(cvx, cvy, cvw, cvh, COL.well, 3 * z)
-  local fit = math.min((cvw - 12 * z) / doc.w, (cvh - 12 * z) / doc.h)
-  local zoom = win.zoom or fit
-  local ox, oy
-  if win.px then
-    ox = cvx + win.px * z
-    oy = cvy + win.py * z
-  else
-    ox = cvx + (cvw - doc.w * zoom) * 0.5
-    oy = cvy + (cvh - doc.h * zoom) * 0.5
-  end
-  local view = { cx = cvx, cy = cvy, w = cvw, h = cvh, ox = ox, oy = oy,
-                 zoom = zoom, fit = fit, wz = z }
+  local view = wv.view(win, z, cvx, cvy, cvw, cvh, doc.w, doc.h)
+  local zoom, ox, oy = view.zoom, view.ox, view.oy
   p.view = view
   local function s2mx(sx2) return (sx2 - ox) / zoom end
   local function s2my(sy2) return (sy2 - oy) / zoom end
@@ -1257,18 +1246,15 @@ function M.draw(win, ctx)
     return sx2, sy2
   end
 
-  -- middle-drag pans the view: the focus lock grabs from anywhere; an
-  -- unfocused window grabs over its content only, and yields when some
-  -- OTHER window holds the lock (priority is the lock's whole point)
-  local grab = ctx.focused or (topmost and not ed.view_locked())
-  if grab and i.clicked[2] then
+  -- middle-drag pans the view — focused only (focus is the one gate):
+  -- the lock grabs from anywhere; an unfocused view is inert
+  if ctx.focused and i.clicked[2] then
     p.pan = { mx = i.wx, my = i.wy, ox = ox, oy = oy }
   end
   if p.pan then
     if i.buttons[2] then
-      win.px = (p.pan.ox + (i.wx - p.pan.mx) - cvx) / z
-      win.py = (p.pan.oy + (i.wy - p.pan.my) - cvy) / z
-      win.zoom = zoom
+      wv.pan(win, view, p.pan.ox, p.pan.oy, i.wx - p.pan.mx,
+             i.wy - p.pan.my)
       ctx.touch()
     else
       p.pan = nil
@@ -1836,7 +1822,7 @@ function M.draw(win, ctx)
       if e.down and not e.rep then
         local sc = e.scancode
         if sc == KEY.n1 and g.shift then
-          win.zoom, win.px, win.py = nil, nil, nil
+          wv.reset(win)
           ctx.touch()
         elseif tool == "collider" then
           if p.g and p.g.mode == "chain" then

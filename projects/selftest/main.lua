@@ -3650,7 +3650,71 @@ local function t_ed_viewlock()
   -- anchor = the view center (200,175): the map point under it stays put
   check(mw.zoom == 1.25 and mw.px == -25 and mw.py == -18.75,
         "ed.viewlock: off-view wheel anchors at the view center")
+
+  -- focus is the ONE gate (the human's Esc report): an unfocused map
+  -- window's view is inert — hover wheel/ctrl+wheel/MMB all decline
+  ed.doc.focus = 0
+  check(W.wheel(mw, ed, 1) == false,
+        "ed.viewlock: unfocused wheel declines (canvas zooms)")
+  check(W.ctrl_wheel(mw, ed, 1) == false,
+        "ed.viewlock: unfocused grid dial declines")
+  check(not W.takes_middle(mw, ed),
+        "ed.viewlock: unfocused MMB goes to the canvas")
+  ed.doc.focus = mw.id
+  check(W.takes_middle(mw, ed) == true,
+        "ed.viewlock: focused MMB stays the map's")
   ed.doc, ed.g, ed.doc_rev = was_doc, was_g, was_rev
+end
+
+local function t_ed_winview()
+  -- cm.ed.winview — THE INVARIANT: captured view fields live in WORLD
+  -- units, so canvas zoom cancels out (the generalized fix for the
+  -- assets/map/sprite screen-px drift family).
+  local wv = cm.require("cm.ed.winview")
+  local win = { zoom = 2, px = 8, py = 6 }
+  local function world_of(z) -- world coords of content point (30,20)
+    local v = wv.view(win, z, 100 * z, 50 * z, 400 * z, 300 * z, 64, 64)
+    return (v.ox + 30 * v.zoom) / z, (v.oy + 20 * v.zoom) / z
+  end
+  local x1, y1 = world_of(1)
+  local x2, y2 = world_of(2)
+  local x3, y3 = world_of(0.5)
+  check(x1 == x2 and y1 == y2 and x1 == x3 and y1 == y3,
+        "winview: content glued to the frame at any canvas zoom")
+  check(x1 == 100 + 8 + 60 and y1 == 50 + 6 + 40, "winview: transform math")
+
+  -- wheel anchor: the content point under the cursor stays put at z=2
+  -- (the sprite ed's old math drifted exactly here)
+  local v = wv.view(win, 2, 200, 100, 800, 600, 64, 64)
+  local ax, ay = v.ox + 30 * v.zoom, v.oy + 20 * v.zoom
+  wv.wheel_zoom(win, v, ax, ay, 1, 0.05, 32)
+  check(win.zoom == 2.5, "winview: wheel steps the world scale")
+  local v2 = wv.view(win, 2, 200, 100, 800, 600, 64, 64)
+  check(math.abs(v2.ox + 30 * v2.zoom - ax) < 1e-9
+        and math.abs(v2.oy + 20 * v2.zoom - ay) < 1e-9,
+        "winview: zoom anchors at the cursor under canvas zoom")
+
+  -- pan applies a screen delta; world storage
+  wv.pan(win, v2, v2.ox, v2.oy, 10, -6)
+  local v3 = wv.view(win, 2, 200, 100, 800, 600, 64, 64)
+  check(math.abs(v3.ox - (v2.ox + 10)) < 1e-9
+        and math.abs(v3.oy - (v2.oy - 6)) < 1e-9,
+        "winview: screen-delta pan")
+
+  wv.reset(win)
+  local vf = wv.view(win, 2, 0, 0, 812, 612, 64, 64, 3)
+  check(win.zoom == nil and math.abs(vf.fit - 9.375) < 1e-9,
+        "winview: reset returns to fit")
+
+  -- scroll: the visible top row is canvas-zoom invariant
+  local aw = {}
+  wv.scroll_by(aw, "sy", 1, 120) -- 120 screen px at z=1
+  check(aw.sy == 120, "winview: scroll stores world units")
+  check(wv.scroll_px(aw, "sy", 1) / (40 * 1) == 3
+        and wv.scroll_px(aw, "sy", 2) / (40 * 2) == 3,
+        "winview: top row stable under canvas zoom")
+  wv.scroll_by(aw, "sy", 2, -1000)
+  check(aw.sy == nil, "winview: scroll clamps at 0 (and re-nils)")
 end
 
 local function t_ed_park()
@@ -3857,6 +3921,7 @@ function game.init()
   t_ed_maptool()
   t_ed_filter()
   t_ed_viewlock()
+  t_ed_winview()
   t_ed_park()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))

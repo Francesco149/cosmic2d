@@ -592,7 +592,26 @@ another window — and Esc unfocuses through the usual cascade
 (gesture cancel → selection clear → unfocus). The locked window
 draws an unmissable cue (the map window: accent border + EDITING
 chip, the PLAYING-chip idiom). A wheel arriving from outside the
-view rect zooms about the view center.
+view rect zooms about the view center. **Focus is the ONE gate**
+(the human's second round): an unfocused own_view window's view is
+INERT — no hover wheel/MMB fallback — so unfocusing visibly AND
+actually lets go (the hooks decline: `wheel`/`ctrl_wheel` return
+false, `takes_middle(win, ed)` answers false).
+
+### 12.9 cm.ed.winview — captured view state is WORLD units
+
+The rule, learned three times (code ed at UX round 6, then the asset
+grid, map and sprite windows all drifting under canvas zoom in their
+own ways): **a window's captured view fields — zoom, pan, scroll —
+are stored in WORLD units (canvas units), never screen px**, so the
+canvas zoom cancels out and content stays glued to its frame.
+`cm.ed.winview` owns the math so the footgun is gone by construction:
+`view()` (frame transform: win.zoom = world units per content px,
+win.px/py = world-unit pan, nil = fit+center), `wheel_zoom()`
+(zoom-at-anchor), `pan()` (middle-drag), `reset()` (shift+1), and
+`scroll_px`/`scroll_by` for 1-D grids (the asset picker's win.sy).
+The code ed stores lines and the console stores rows — content units
+by another name. New kinds use winview instead of rolling their own.
 
 ### 12.8 R4 build order + exit
 

@@ -216,7 +216,9 @@ res, grid 8) whose first Ctrl+S writes the file (built at R8b).
   while the window is focused its camera takes wheel + middle-drag
   from anywhere on the canvas — priority over canvas zoom/pan; any
   canvas action or Esc unfocuses; an accent border + EDITING chip
-  make the lock unmissable. The map draws
+  make the lock unmissable. **Focus is the one gate**: an unfocused
+  map window's view is inert (no hover wheel/MMB — Esc actually lets
+  go). View state rides `cm.ed.winview` (world units, §12.9). The map draws
   exactly as the game renders it, plus **collider gizmos — always on
   by default** (the human's call): solid lines in the accent, one-ways
   dashed, quads/circles outlined; attached ones tinted dimmer until

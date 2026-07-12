@@ -280,7 +280,7 @@ function M.draw(win, ctx)
   local gy0 = ctx.cy + top
   local cols = math.max(1, math.floor((ctx.cw - 8 * z) / cell))
   local rows_vis = math.ceil((ctx.ch - top) / (cell + name_h)) + 1
-  local scroll = win.sy or 0
+  local scroll = cm.require("cm.ed.winview").scroll_px(win, "sy", z)
   local r0 = math.floor(scroll / (cell + name_h))
   pal.x_ig_clip_push(ctx.cx, gy0, ctx.cw, ctx.ch - top)
   local now = pal.time_ns()
@@ -360,9 +360,11 @@ function M.draw(win, ctx)
                 px * 0.85, COL.dim, tostring(#shown), 1)
 end
 
--- content wheel: scroll the grid (§12.7)
+-- content wheel: scroll the grid (§12.7). win.sy holds WORLD units
+-- (cm.ed.winview) so the top row stays put under canvas zoom.
 function M.wheel(win, ed, dy)
-  win.sy = math.max(0, (win.sy or 0) - dy * 40)
+  cm.require("cm.ed.winview").scroll_by(win, "sy", ed.doc.cam.zoom,
+                                        -dy * 40)
   ed.touch()
 end
 

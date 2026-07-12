@@ -521,8 +521,8 @@ local function interact(ig)
         kind = win and M.kinds[win.kind]
       end
       if kind and kind.ctrl_wheel then
-        kind.ctrl_wheel(win, M, i.wheel)
-        routed = true
+        -- a hook may decline (an unfocused own_view window) — canvas zooms
+        routed = kind.ctrl_wheel(win, M, i.wheel) ~= false
       end
     elseif not g.alt then
       if ig.mouse then
@@ -680,7 +680,7 @@ local function interact(ig)
     if not mid_taken and over and opart == "content" and not g.alt then
       local w = wm.get(doc, over)
       local kind = w and M.kinds[w.kind]
-      if kind and kind.takes_middle and kind.takes_middle(w) then
+      if kind and kind.takes_middle and kind.takes_middle(w, M) then
         mid_taken = true
       end
     end

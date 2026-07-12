@@ -60,6 +60,34 @@ R7a/R8a/R8b looks.**
   fixed both ways + KAT'd. selftest 23684→**23732**; `nix run .#test`
   ALL GREEN (goldens untouched — ed-only changes).
 
+**Feedback round (same day, on the live R8c): two bugs, one
+generalized fix.** The human: (1) the asset picker + map editor scroll/
+drift as the canvas zooms (the code ed's old bug), and (2) Esc shows
+the map window unfocused but it "still captures inputs" — and asked to
+**generalize the fix so the footgun doesn't exist**:
+
+- **`cm.ed.winview`** (EDITOR.md §12.9) — THE INVARIANT: captured view
+  fields (zoom/pan/scroll) are stored in **world units**, never screen
+  px, so canvas zoom cancels out by construction. view/wheel_zoom/pan/
+  reset + scroll_px/scroll_by. Ported: the **map** window (win.zoom was
+  screen-scale — content kept its screen size while the frame scaled),
+  the **sprite ed** (same, PLUS its wheel anchor mixed both conventions
+  — zoom-at-cursor drifted at canvas ≠ 100%), the **asset grid**
+  (win.sy was screen px over z-scaled rows — the top row wandered).
+  Code ed (lines) + console (rows) already stored content units.
+  Invariance KATs (glued-at-any-z, anchor, top-row stability).
+- **Esc, root-caused by a synthetic-tape repro**: focus DID clear —
+  but the R8b *hover* wheel/MMB routing kept acting on the still-
+  hovered content, reading as ghost capture (clicking elsewhere moves
+  the cursor, hence "works"). **Focus is now the ONE gate for an
+  own_view window**: unfocused = inert view (wheel/ctrl_wheel decline,
+  takes_middle(win, ed) answers false), canvas gets everything. Repro
+  re-run: after Esc the canvas zooms, win.zoom untouched. KAT'd.
+- selftest 23732→**23745**; `nix run .#test` ALL GREEN (goldens
+  untouched); glue proven live at canvas 200% (shot on llm-feed).
+  Old sessions carry old-unit view fields — a one-time cosmetic zoom
+  jump on first open, nothing else.
+
 **Next step (resume here):** the human's passes (R7a feel, the
 R8a/R8b/R8c shots + the view-lock feel) — then **R8d — the tilemap
 window** (MAPS.md §8/§11): the .tm editor (tile palette from a tileset

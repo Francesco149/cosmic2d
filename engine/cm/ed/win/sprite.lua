@@ -258,22 +258,15 @@ local function refresh_tex(p)
 end
 
 -- content wheel: zoom the sprite view at the cursor (edit mode); view
--- mode gives the wheel back to the canvas (return false)
+-- mode gives the wheel back to the canvas (return false). The math
+-- lives in cm.ed.winview (world-unit fields — canvas zoom cancels out).
 function M.wheel(win, ed, dy)
   if not win.edit then return false end
   local p = ed.g.sw and ed.g.sw[win.path]
   local r = p and p.canvas_rect
   if not (r and p.doc) then return false end
   local i = cm.require("cm.ui").inp
-  local oldz = win.zoom or r.fit
-  local nz = math.max(0.25, math.min(64, oldz * (dy > 0 and 1.25 or 0.8)))
-  -- keep the sprite point under the cursor put: sprite coords of the
-  -- cursor at the old zoom → new screen origin → world-unit pan offsets
-  local sx = (i.wx - r.ox) / (oldz * r.wz)
-  local sy = (i.wy - r.oy) / (oldz * r.wz)
-  win.px = (i.wx - sx * nz * r.wz - r.cx) / r.wz
-  win.py = (i.wy - sy * nz * r.wz - r.cy) / r.wz
-  win.zoom = nz
+  cm.require("cm.ed.winview").wheel_zoom(win, r, i.wx, i.wy, dy, 0.25, 64)
   ed.touch()
   return true
 end
@@ -385,22 +378,14 @@ function M.draw(win, ctx)
   pal.x_ig_rect(ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z,
                 TR - 9 * z, TR - 9 * z, 0x00000066, 1, 3 * z)
 
-  -- the canvas. zoom is SCREEN px per sprite px; win.px/py are pan
-  -- offsets in world units (zoom-independent, like every other captured
-  -- geometry field)
+  -- the canvas, via cm.ed.winview: captured fields in WORLD units
+  -- (win.zoom = world units per sprite px, win.px/py = world-unit pan)
+  -- so the content stays glued to the frame at any canvas zoom
   checker(cvx, cvy, cvw, cvh, z)
-  local fit = math.min((cvw - 8 * z) / doc.w, (cvh - 8 * z) / doc.h)
-  local zoom = win.zoom or fit
-  local ox, oy
-  if win.px then
-    ox = cvx + win.px * z
-    oy = cvy + win.py * z
-  else
-    ox = cvx + (cvw - doc.w * zoom) * 0.5
-    oy = cvy + (cvh - doc.h * zoom) * 0.5
-  end
-  p.canvas_rect = { cx = cvx, cy = cvy, w = cvw, h = cvh, ox = ox, oy = oy,
-                    fit = fit, wz = z }
+  local wv = cm.require("cm.ed.winview")
+  local view = wv.view(win, z, cvx, cvy, cvw, cvh, doc.w, doc.h, 4)
+  local zoom, ox, oy = view.zoom, view.ox, view.oy
+  p.canvas_rect = view
   pal.x_ig_clip_push(cvx, cvy, cvw, cvh)
   if p.tex then
     pal.x_ig_image(p.tex, ox, oy, doc.w * zoom, doc.h * zoom)
@@ -418,9 +403,8 @@ function M.draw(win, ctx)
   end
   if p.pan then
     if i.buttons[2] then
-      win.px = (p.pan.ox + (i.wx - p.pan.mx) - cvx) / z
-      win.py = (p.pan.oy + (i.wy - p.pan.my) - cvy) / z
-      win.zoom = zoom
+      wv.pan(win, view, p.pan.ox, p.pan.oy, i.wx - p.pan.mx,
+             i.wy - p.pan.my)
       ctx.touch()
     else
       p.pan = nil
