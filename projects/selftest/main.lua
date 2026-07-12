@@ -2745,6 +2745,7 @@ local function t_ed_park()
   local f0 = sim:i64(0)
   local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
   local was_on, was_doc, was_rev, was_g = ed.on, ed.doc, ed.doc_rev, ed.g
+  local was_root = ed.root
   local main = cm.main
   local saved_ar = main and main.after_restore
   if main then main.after_restore = nil end -- game.init here = the suite!
@@ -2795,7 +2796,50 @@ local function t_ed_park()
   check(hi == f0 + 2 and sim:i64(0) == f0 + 2,
         "ed park: resume truncated + rewound the sim")
 
+  -- bring-back (R6e, REWIND.md §5): a parked asset's working bytes copy
+  -- into the present, journaled there as one undoable step
+  local journal = cm.require("cm.ed.journal")
+  local root = tmproot() .. "/cosmic_selftest_bb"
+  pal.mkdir(root)
+  local jf = journal.file(root, "f.txt")
+  pal.x_remove(jf)
+  ed.g = {}
+  ed.on = true
+  ed.root = root
+  ed.doc = wm.init({ v = 1, assets = { ["f.txt"] = { text = "OLD", jpos = 0 } } })
+  local tw = wm.spawn(ed.doc, "text", 0, 0, 100, 100, { path = "f.txt" })
+  ed.doc_rev = 1
+  sim:i64(0, f0 + 2) -- continue on the truncated timeline
+  trace.ring_start({ project = "selftest" })
+  for i = 3, 5 do
+    if i == 4 then
+      ed.doc.assets["f.txt"].text = "NEW"
+      ed.touch()
+    end
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+  end
+  local present2 = ed.doc
+  scrub.open()
+  scrub.at = f0 + 3 -- park where the text was OLD
+  scrub.frame()
+  check(ed.parked and ed.doc.assets["f.txt"].text == "OLD",
+        "ed bring-back: the past shows OLD")
+  check(ed.doc.focus == tw.id, "ed bring-back: focus captured in history")
+  local got = ed.bring_back()
+  check(got == "f.txt", "ed bring-back: returns the path")
+  check(present2.assets["f.txt"].text == "OLD",
+        "ed bring-back: the present adopted the past bytes")
+  local j2 = journal.open(root, "f.txt")
+  check(journal.at(j2) and journal.at(j2).bytes == "OLD"
+        and present2.assets["f.txt"].jpos == j2.pos,
+        "ed bring-back: journaled in the present")
+  scrub.close()
+  check(ed.doc == present2 and ed.doc.assets["f.txt"].text == "OLD",
+        "ed bring-back: survives the unpark")
+
   ed.on, ed.doc, ed.doc_rev, ed.g = was_on, was_doc, was_rev, was_g
+  ed.root = was_root
   trace.ring.kf, trace.ring.seconds = save_kf, save_sec
   if main then main.after_restore = saved_ar end
   scrub.shown = nil

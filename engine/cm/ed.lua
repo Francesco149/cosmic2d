@@ -144,6 +144,38 @@ function M.park(edoc_bytes)
   M.doc_rev = (M.doc_rev or 0) + 1
 end
 
+-- bring back the focused asset from the past (R6e, REWIND.md §5 — door
+-- two): copy the parked frame's working bytes for the focused window's
+-- asset into the PRESENT (the stash), journaled there as one undoable
+-- step. Overwrites if it still exists, re-adds if it was closed since.
+function M.bring_back()
+  if not M.parked then return nil end
+  local win = wm.get(M.doc, M.doc.focus)
+  if not (win and win.path and win.path ~= "") then return nil end
+  local path = win.path
+  local parked_a = M.doc.assets and M.doc.assets[path]
+  if not parked_a then return nil end
+  local payload = parked_a.text or parked_a.spr
+  local field = parked_a.text ~= nil and "text" or "spr"
+  if not payload then return nil end
+  local journal = cm.require("cm.ed.journal")
+  local stash = M.g.stash.doc
+  stash.assets = stash.assets or {}
+  local pa = stash.assets[path] or { jpos = 0, [field] = "" }
+  stash.assets[path] = pa
+  pa[field] = payload
+  -- the present's journal gets the entry (a deliberate write from the
+  -- past — THE door; the parked gates don't apply to it)
+  local cap = field == "spr" and M.kinds.sprite.JCAP or nil
+  local j = journal.open(M.root, path, pa.jpos > 0 and pa.jpos or nil, cap)
+  journal.push(j, payload, 0, pal.time_ns() // 1000000)
+  pa.jpos = j.pos
+  M.g.stash.rev = (M.g.stash.rev or 0) + 1 -- the present changed under
+  -- the stash; unpark's touch() persists it
+  pal.log("[ed] brought back " .. path .. " from the past")
+  return path
+end
+
 -- leave the past. adopt=true (resume-from-frame): the SHOWN doc — pokes
 -- included — becomes the present (REWIND.md §4). adopt=false (scrub
 -- closed): the stashed present comes back untouched.
@@ -755,6 +787,19 @@ local function draw_rewind(ig, i)
     if rw_button(i, place(52), byy, 52, 22, "close") then scrub.close() end
     if rw_button(i, place(94), byy, 94, 22, "resume here", true) then
       scrub.rewind_here()
+    end
+    -- door two: the focused asset window's past state → the present
+    local fwin = wm.get(M.doc, M.doc.focus)
+    if fwin and fwin.path and fwin.path ~= "" and M.doc.assets
+       and M.doc.assets[fwin.path] then
+      if rw_button(i, place(88), byy, 88, 22, "bring back", true) then
+        local got = M.bring_back()
+        if got then g.rw_flash = { path = got, t = now } end
+      end
+    end
+    if g.rw_flash and now - g.rw_flash.t < 1.5e9 then
+      pal.x_ig_text(tx + 260, byy + 4, 12, C.sel,
+                    "brought back: " .. g.rw_flash.path, 0)
     end
     if rw_button(i, place(40), byy, 40, 22, scrub.play and "stop" or "play") then
       if scrub.play then
