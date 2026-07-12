@@ -93,6 +93,19 @@ end
 
 -- ---- the segment ring ----
 
+-- the editor stream (R6a, REWIND.md §2/D053): the ed doc's canon bytes
+-- ride the ring as EDOC chunks, written only when cm.ed.doc_rev moved
+-- AND the canon actually changed. Sessions without the shell contribute
+-- nothing. An observer like everything here — never sim-visible.
+local function ed_canon(R)
+  local ed = cm.require("cm.ed")
+  if not (ed.on and ed.doc) then return R.prev_edoc end
+  local rev = ed.doc_rev or 0
+  if rev == R.prev_edrev then return R.prev_edoc end
+  R.prev_edrev = rev
+  return state.canon(ed.doc)
+end
+
 -- keyframe = the mirrors' contents = state after the last recorded frame
 local function capture_keyframe(R)
   local names = {}
@@ -109,7 +122,8 @@ end
 local function open_segment(R, first)
   local bufs, doct = capture_keyframe(R)
   local seg = { id = R.next_id, first = first, kf_bufs = bufs,
-                kf_doct = doct, bundle = cm.modules(), chunks = {},
+                kf_doct = doct, kf_edoc = R.prev_edoc,
+                bundle = cm.modules(), chunks = {},
                 frames = 0, bytes = 0 }
   R.next_id = R.next_id + 1
   R.segs[#R.segs + 1] = seg
@@ -145,6 +159,8 @@ local function ring_init(R)
                        size = b.size }
   end
   R.prev_doc = state.doc_bytes()
+  R.prev_edoc, R.prev_edrev = "", nil
+  R.prev_edoc = ed_canon(R) or ""
   R.last_frame = state.frame()
   open_segment(R, R.last_frame + 1)
 end
@@ -266,6 +282,13 @@ function M.record_frame(input_record, evals)
     R.prev_doc = doc
   end
   seg_append(seg, "FRAM", table.concat(parts))
+  -- the editor stream (R6a): one EDOC after this frame's FRAM when the
+  -- ed doc changed; readers that don't know the tag skip it (cm.chunk)
+  local ec = ed_canon(R)
+  if ec ~= R.prev_edoc then
+    R.prev_edoc = ec
+    seg_append(seg, "EDOC", "\1" .. pack("<s4", ec))
+  end
   seg.frames = seg.frames + 1
   R.last_frame = f
 
@@ -470,11 +493,12 @@ function M.ring_state_at(f)
     scratch[b.name], sizes[b.name] = v, #b.bytes
   end
   local doct = seg.kf_doct
+  local edoc = seg.kf_edoc
   local irec
   local need, done = f - (seg.first - 1), 0
   for _, c in ipairs(seg.chunks) do
-    if done >= need then break end
     if c.tag == "FRAM" then
+      if done >= need then break end
       local recs, doc
       irec, recs, doc = decode_fram(c.payload)
       for _, r in ipairs(recs) do
@@ -494,11 +518,17 @@ function M.ring_state_at(f)
       end
       if doc then doct = doc end
       done = done + 1
+    elseif c.tag == "EDOC" and done <= need then
+      -- the editor stream (R6a): an EDOC follows its frame's FRAM, so
+      -- done == need means "frame f's own change" — included; the next
+      -- FRAM breaks the walk
+      edoc = unpack("<s4", c.payload, 2)
     end
   end
   local bufs = {}
   for name, v in pairs(scratch) do bufs[name] = v:str(0, sizes[name]) end
-  return { frame = f, bufs = bufs, doct = doct, input = irec }
+  return { frame = f, bufs = bufs, doct = doct, input = irec,
+           edoc = edoc ~= "" and edoc or nil }
 end
 
 -- ---- rewind (D032) ----

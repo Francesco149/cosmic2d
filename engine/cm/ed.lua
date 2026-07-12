@@ -108,6 +108,9 @@ end
 
 function M.touch() -- a captured-doc mutation: arm the session debounce
   M.g.save_due = pal.time_ns() + session.DEBOUNCE_NS
+  -- the R6 capture gate (REWIND.md §2): the ring re-encodes the ed doc
+  -- only when this rev moved — an idle editor costs the history nothing
+  M.doc_rev = (M.doc_rev or 0) + 1
 end
 
 -- the focused window is a playable game window (EDITOR.md §12.3)

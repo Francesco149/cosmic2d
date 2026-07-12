@@ -1098,6 +1098,72 @@ end
 -- drive: synthetic frames = mutate buffers, advance the counter by hand,
 -- call record_frame. Leaves state exactly as found.
 
+local function t_ring_edoc()
+  -- R6a (REWIND.md §2/D053): the editor stream rides the ring as EDOC
+  -- chunks — rev-gated, keyframe-carried, invisible to old readers
+  local trace = cm.require("cm.trace")
+  local chunklib = cm.require("cm.chunk")
+  local ed = cm.require("cm.ed")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local was_on, was_doc, was_rev = ed.on, ed.doc, ed.doc_rev
+  trace.ring.kf = 4
+  trace.ring.seconds = 10
+  ed.on = true
+  ed.doc = { v = 1, wins = {}, mark = 0 }
+  ed.doc_rev = 100
+  local b = pal.buf("st.redoc", 8)
+  b:i32(0, 0)
+  trace.ring_start({ project = "selftest" })
+  local irec = ("\0"):rep(10)
+  local canon_at = {}
+  for i = 1, 10 do
+    b:i32(0, i)
+    if i == 3 then
+      ed.doc.mark = 3
+      ed.doc_rev = ed.doc_rev + 1
+    elseif i == 5 then
+      ed.doc.mark = 5 -- NO rev bump: the gate must skip this mutation
+    elseif i == 7 then
+      ed.doc.mark = 7
+      ed.doc_rev = ed.doc_rev + 1
+    end
+    sim:i64(0, f0 + i)
+    canon_at[i] = state.canon(ed.doc)
+    trace.record_frame(irec, nil)
+  end
+  check(trace.ring_state_at(f0 + 2).edoc == canon_at[2],
+        "ring edoc: keyframe baseline")
+  check(trace.ring_state_at(f0 + 3).edoc == canon_at[3],
+        "ring edoc: a change lands on its own frame")
+  check(trace.ring_state_at(f0 + 4).edoc == canon_at[3],
+        "ring edoc: carried forward")
+  check(trace.ring_state_at(f0 + 6).edoc == canon_at[3]
+        and trace.ring_state_at(f0 + 6).edoc ~= canon_at[5],
+        "ring edoc: rev gate skips silent mutations")
+  check(trace.ring_state_at(f0 + 7).edoc == canon_at[7],
+        "ring edoc: second change")
+  -- frames 9/10 live in a segment opened AFTER the last change: their
+  -- reconstruction walks no EDOC chunk — the keyframe must carry it
+  check(trace.ring_state_at(f0 + 10).edoc == canon_at[7],
+        "ring edoc: keyframe carries the ed canon standalone")
+  -- exports carry EDOC (skip-tolerant readers ignore it)
+  local ok = trace.ring_export("/tmp/st_edoc.ctrace")
+  check(ok ~= nil, "ring edoc: export ok")
+  local saw = false
+  for _, c in ipairs(chunklib.read(
+      pal.read_file("/tmp/st_edoc.ctrace"), "CTRC")) do
+    if c.tag == "EDOC" then saw = true end
+  end
+  check(saw, "ring edoc: export carries the stream")
+
+  ed.on, ed.doc, ed.doc_rev = was_on, was_doc, was_rev
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  pal.buf_free("st.redoc")
+  trace.ring_start({ project = "selftest" }) -- leave a clean ring behind
+end
+
 local function t_ring()
   local trace = cm.require("cm.trace")
   local chunklib = cm.require("cm.chunk")
@@ -2666,6 +2732,7 @@ function game.init()
   t_inspect()
   t_bundle()
   t_ring()
+  t_ring_edoc()
   t_viewport()
   t_ig_absence()
   t_ladder()
