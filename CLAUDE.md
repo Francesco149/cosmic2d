@@ -77,6 +77,7 @@ nix develop -c make -C pal                                   # build bin/cosmic
 bin/cosmic projects/smoke                                    # the minimal test room (M7 moveset)
 bin/cosmic --studio                                          # launch the sprite/anim studio (or F2 in-game)
 bin/cosmic projects/smoke --headless --frames 120 --shot /tmp/s.png
+bin/cosmic projects/igcanvas                                 # the imgui canvas (R2); headless: --win 1280x800 --frames 40 --shot
 bin/cosmic ../cosmic2d-game/cosmic                           # the game (sibling repo; path is engine-root-relative)
 nix run .#test                                               # goldens (selftest + traces + pixels)
 ```

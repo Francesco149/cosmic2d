@@ -416,8 +416,10 @@ cosmic2d/
   README.md  LICENSE  flake.nix
   docs/                PLAN, ARCHITECTURE, DECISIONS, PROCESS, STATUS
   pal/
-    src/               C11 sources (main, gfx, lua bindings, buf, fs)
-    vendor/            lua-5.4.x (patched seed), stb headers
+    src/               C11 sources (main, gfx, lua bindings, buf) +
+                       ig.cpp (the C++ imgui host, D049)
+    vendor/            lua-5.4.x (patched seed), stb headers,
+                       imgui 1.92.4 + fonts (Inter, JetBrains Mono; OFL)
     shaders/           *.vert/*.frag GLSL + committed *.spv
     Makefile
   engine/
@@ -427,11 +429,12 @@ cosmic2d/
                        perf, tilemap, editor, inspect, scrub; assets/ =
                        baked fonts)
   projects/
-    sandbox/           the stock cartridge (M3: live-editable platformer —
-                       main/level/player/props/fx/demo/pix modules)
+    smoke/             the minimal test cartridge (R0/D046: one room + the
+                       M7 moveset; the golden/selftest carrier)
     selftest/          engine invariants cartridge (PRNG KATs, trig
                        accuracy, serializer/snapshot/input/ui/tilemap)
     uigallery/         living cm.ui reference, shaped like the M4 inspector
+    igcanvas/          living pal.x_ig_* reference (the R2 hello-canvas)
   tools/               dev scripts (bake_spleen, feed helpers)
   tests/
     traces/            golden traces (replay-forever, contract rule 6)
@@ -448,6 +451,13 @@ startup project + mode for end-user shipping.
 
 - C: C11, `-Wall -Wextra`, prefix `pal_`, no global mutable state outside the
   PAL context struct (the buffer registry lives there too).
+- C++ (D049): allowed ONLY for vendored C++ libraries and their host TUs
+  (`pal/src/*.cpp`, C++17); each exposes an `extern "C"` interface declared
+  in pal.h — no C++ types, exceptions, or RTTI cross the boundary. The link
+  driver is `$(CXX)` (mingw cross: `-static-libgcc -static-libstdc++`, no
+  new DLLs). First citizen: `ig.cpp` (the Dear ImGui host — docs/IMGUI.md).
+  The numpy model is language-agnostic: kernels stay pure state-in/state-out
+  over named buffers, versioned names, C or C++ alike.
 - Lua: engine namespace `cm` (e.g. `cm.gfx`, `cm.state`, `cm.ui`); modules
   loaded through the engine's own loader (reload-aware, project-jailed
   paths, forward slashes everywhere).
@@ -620,6 +630,45 @@ through) + `blit_layer()` (each target → its window rect). The blit pipeline i
 alpha-blended; the game layer is opaque so it composites unchanged. The window
 → game-viewport → FOV mouse map (`G.lay_*`) is set by the composite each present.
 See **D039** for the two-target rationale and **cm.view** for the resize ladder.
+
+### PAL API v7 additions (REVAMP R2 — the imgui host, D049)
+
+v7 is the revamp-era baseline: the PAL grows its one C++ TU (`pal/src/ig.cpp`)
+hosting **Dear ImGui 1.92.4** (vendored, SDL3 + SDLGPU3 backends) as a third,
+topmost render layer at **native window resolution** — above the game target
+and the ui canvas, straight into the present pass. Full design + the
+one-UI-philosophy containment rules: **docs/IMGUI.md**; the living reference
+cartridge is `projects/igcanvas`. No existing name changed semantics — the
+break R2 blesses turned out to be purely additive, and every pre-v7 golden
+replays byte-exact.
+
+The whole `x_ig_*` surface is **render/dev, live windowed + `--win` capture
+only**: in plain headless / `--verify`, `x_ig_frame` returns nil and every
+other call is a safe no-op (selftest pins this), so imgui can never touch the
+deterministic machine. Coordinates are window px; colors `0xRRGGBBAA`.
+
+| fn | class | notes |
+| --- | --- | --- |
+| `pal.x_ig_frame()` → nil \| `{mouse,kb,text,dpi,w,h}` | render/dev | begin the imgui frame (lazy init). nil = unavailable. The flags = imgui wants that input this frame; Lua policy filters what the game sees |
+| `pal.x_ig_line/rect/rect_fill/circle/circle_fill(…)` | render/dev | drawlist primitives (stroke thickness, corner rounding) |
+| `pal.x_ig_poly(pts,rgba[,thick,closed])` / `x_ig_poly_fill` | render/dev | flat `{x1,y1,…}` array; polyline / filled convex poly |
+| `pal.x_ig_text(x,y,px,rgba,text[,font,wrap_w])` | render/dev | text at ANY px: rasters ≤320 px (bounded atlas), vertex-scales above — crisp at every zoom. `font` 0 = Inter, 1 = JetBrains Mono (`pal/vendor/fonts/`) |
+| `pal.x_ig_text_size(text,px[,font,wrap_w])` → w,h | render/dev | measurement (nil while unavailable) |
+| `pal.x_ig_image(tex,x,y,w,h[,uv…,rgba])` | render/dev | a PAL texture on the drawlist; `tex == -1` = the game internal target (the live-game canvas window) |
+| `pal.x_ig_clip_push(x,y,w,h)` / `x_ig_clip_pop()` | render/dev | drawlist clip stack |
+| `pal.x_ig_overlay(on)` | render/dev | route subsequent drawlist calls to the foreground layer (above widgets — HUD pills); off = background (under widgets) |
+| `pal.x_ig_edit{id,x,y,w,h,text,px[,font,readonly,multiline]}` → text,changed,active | render/dev | the hard widget: imgui text editing at an explicit rect. Host keeps a per-id buffer; `text` re-syncs it while not active; chrome stays the caller's |
+| `pal.x_clipboard([s])` → s | dev | OS clipboard get/set (plain SDL; "" headless) |
+| `pal.gfx_init{…, maximized}` | — | open the window maximized (the editor-session shape; policy in Lua/project.lua) |
+| event `wx,wy` (motion/button) | input | raw window px alongside game `x,y` + ui `ui_x,ui_y`; cm.ui keeps them on `inp.wx/wy` |
+| `pal.x_compose{scale=0,…}` | render/dev | scale 0 = don't blit the game layer (the ig canvas draws the target itself via `x_ig_image(-1)`) |
+
+cm.view grows **`mode = "canvas"`** (the ig-canvas session): full-window ui
+canvas for the legacy dev chrome (which renders UNDER the ig layer until
+R3/R4 re-host it), `x_compose{scale=0}`, game FOV stays the project's fixed
+size. The classic ladder/two-target model is unchanged for play mode and
+shipped games (960×540 default window, fullscreen = upscale — the blessed
+launcher shape).
 
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.

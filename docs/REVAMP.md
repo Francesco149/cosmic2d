@@ -201,12 +201,17 @@ flex except: **R0 first** (everything else lands in the right repo) and
   iteration order, GC timing independence) + embedding-size/hot-reload story.
   *Exit*: an ADR — migrate (with a port plan) or stay on Lua; numbers in the
   doc, not vibes.
-- **R2 — platform layer revamp**: imgui hosted in the binary + the
+- **R2 — platform layer revamp** ✅ **DONE (2026-07-12, D049 +
+  docs/IMGUI.md)**: imgui hosted in the binary + the
   script-side surface for it; the new window model (maximized editor window /
   960×540 game window / fullscreen upscale); C/C++ helper layer formalized;
   PAL API break blessed (version bump, contract table rewritten). *Exit*:
   a script-driven imgui hello-canvas at display refresh; game window model
   works windowed + fullscreen; selftest green on the new contract.
+  *(Hit: `projects/igcanvas` — pan/zoom canvas, crisp text at any zoom,
+  edit widget, live game as a canvas image; PAL api 6→7 additive (no
+  golden regenerated); selftest 22545 + traces + pixels ALL GREEN;
+  windows cross build clean.)*
 - **R3 — editor shell**: the infinite canvas + floating-window system in the
   scripting language — pan/zoom, window chrome, the ALT interaction grammar
   (A-click/A-drag/A-rightclick, drill-down select, bring-to-front, edge

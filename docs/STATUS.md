@@ -3,6 +3,61 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (R2 session)
+**Phase**: **REVAMP R2 — platform layer revamp: DONE (ADR D049 +
+docs/IMGUI.md).** Design-doc-first per REVAMP §3.1, then built end to end:
+
+- **imgui in the PAL**: Dear ImGui **1.92.4 vendored** (teidraw's exact pin;
+  SDL3 + SDLGPU3 backends, demo excluded) + **Inter/JetBrains Mono** (OFL,
+  teidraw's fonts) in `pal/vendor/`. One C++17 TU — `pal/src/ig.cpp` —
+  hosts it behind the C ABI in pal.h; the rest of the PAL stays C11. The
+  C/C++ helper-layer rules are now in ARCHITECTURE Conventions (extern "C"
+  boundary, no exceptions/RTTI across, $(CXX) links, mingw static libstdc++).
+- **The split held to D049's shape**: Lua gets a native-res **drawlist**
+  (line/rect/circle/poly/text/image/clip + an overlay layer), **text at any
+  px** (dynamic font atlas; raster capped at 320px, vertices scale above —
+  crisp at every zoom), **x_ig_edit** (per-id buffered imgui text editing at
+  an explicit rect), and **x_ig_frame** capture flags. ImGui windows/layout/
+  styling are NOT exposed. imgui renders **last, into the present pass, at
+  native window resolution** — a third layer above game target + ui canvas.
+- **PAL api 6→7, purely additive** (no semantic break was needed; every
+  pre-v7 golden replays byte-exact, nothing regenerated): the x_ig_*
+  surface, `gfx_init{maximized}` (editor-session window), raw window-px
+  `wx,wy` on mouse events (cm.ui keeps `inp.wx/wy`), `x_compose{scale=0}`
+  (skip the game blit — the canvas draws the target via `x_ig_image(-1)`),
+  `pal.x_clipboard`. cm.view grew **mode="canvas"**; the classic ladder /
+  960×540 / fullscreen-upscale model is unchanged for play + shipped games.
+- **Headless visual loop works for ig**: in `--win WxH` capture mode the
+  host runs without the SDL3 platform backend (io driven manually) and
+  renders into the capture target — `--shot` shows the real canvas. Plain
+  headless/verify get nil + no-ops (**selftest 22536→22545** pins the
+  absence contract, wx/wy plumbing, and scale=0 compositing).
+- **`projects/igcanvas`** (the R2 exit, living x_ig_* reference like
+  uigallery): pan/zoom infinite canvas fully in Lua — floating panels, the
+  code-ed widget (mono), a type specimen 8–64px, the **live game target as
+  a canvas image**, arrow + HUD pills; boots **maximized**. Wheel = zoom at
+  cursor, drag = pan. 3 shots on llm-feed (100% / 260% / 42%).
+- **ALL GREEN**: `nix run .#test` end-to-end (selftest 22545 + 3 traces +
+  3 pixel goldens byte-identical); `nix build .#cosmic-windows` clean
+  (cosmic.exe, no new DLLs). Live windowed verified on WSLg (igcanvas
+  inits imgui; smoke never touches it). Fullscreen = the unchanged M8
+  alt+enter/ladder machinery (KATs green; live feel check = human's).
+  Known quirks (documented in IMGUI.md §11): legacy dev chrome renders
+  UNDER the ig layer in canvas mode until R3/R4 re-host it; SDL3-backend
+  text input vs pal.text_input shouldn't share a frame.
+
+**Next step (resume here): R3 — the editor shell** (REVAMP §6): the
+infinite canvas + floating-window system in Lua — pan/zoom, window chrome,
+the ALT interaction grammar (A-click/A-drag/A-rightclick, drill-down
+select, bring-to-front, edge resize), unsaved-persists + undo-forever
+journals. **Design doc first (EDITOR.md** — the D036/STUDIO.md successor;
+per REVAMP §8 design the R3 state model with R6 rewind capture in mind:
+window layout / open docs / unsaved buffers in named+snapshottable state,
+unlike the D040 studio). igcanvas is the sketchpad to steal from. Good
+`/clear` point — R2 is committed, docs current.
+
+---
+
 **Date**: 2026-07-12 (later session)
 **Phase**: **REVAMP R1 — script-engine gate: DONE. Decision: STAY ON LUA 5.4
 (ADR D047 + D048).** The QuickJS-vs-Lua spike ran end to end: a dual-host C
