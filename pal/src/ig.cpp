@@ -40,6 +40,10 @@ static struct {
   int state = 0; /* 0 idle | 1 frame open | 2 rendered (draw data ready) */
   bool overlay = false; /* drawlist target: background (default) | foreground */
   bool fmt_warned = false;
+  bool mouse_on = true; /* x_ig_mouse: Lua gates mouse events off imgui while
+                           the shell's ALT layer owns the pointer (the
+                           IMGUI.md §11 filter-in-C fix — widgets render
+                           normally but can never take the click) */
   SDL_GPUTextureFormat fmt = SDL_GPU_TEXTUREFORMAT_INVALID;
   ImFont *fonts[2] = {nullptr, nullptr}; /* 0 = sans (Inter), 1 = mono (JBM) */
   uint64_t frame_no = 0;
@@ -112,7 +116,19 @@ extern "C" bool pal_ig_forward_events(void) {
 }
 
 extern "C" void pal_ig_sdl_event(const SDL_Event *e) {
-  if (pal_ig_forward_events()) ImGui_ImplSDL3_ProcessEvent(e);
+  if (!pal_ig_forward_events()) return;
+  if (!IG.mouse_on) {
+    switch (e->type) {
+    case SDL_EVENT_MOUSE_MOTION:
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+    case SDL_EVENT_MOUSE_WHEEL:
+      return;
+    default:
+      break;
+    }
+  }
+  ImGui_ImplSDL3_ProcessEvent(e);
 }
 
 extern "C" void pal_ig_render_prepare(SDL_GPUCommandBuffer *cmd) {
@@ -202,6 +218,22 @@ static int l_ig_frame(lua_State *L) {
   lua_pushnumber(L, io.DisplaySize.y);
   lua_setfield(L, -2, "h");
   return 1;
+}
+
+/* pal.x_ig_mouse(on) — gate mouse input to imgui (default on). Off while
+ * the editor shell's ALT layer owns the pointer: widgets keep rendering
+ * (no visual change) but hover/click/wheel never reach them. On the
+ * off-transition the pointer is parked off-screen and buttons released so
+ * nothing sticks hovered or mid-drag. Safe any time (no-op before init). */
+static int l_ig_mouse(lua_State *L) {
+  bool on = lua_toboolean(L, 1);
+  if (IG.inited && IG.mouse_on && !on) {
+    ImGuiIO &io = ImGui::GetIO();
+    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+    for (int b = 0; b < 3; b++) io.AddMouseButtonEvent(b, false);
+  }
+  IG.mouse_on = on;
+  return 0;
 }
 
 static int l_ig_overlay(lua_State *L) {
@@ -467,6 +499,7 @@ static int l_ig_edit(lua_State *L) {
 }
 
 static const luaL_Reg ig_funcs[] = {{"x_ig_frame", l_ig_frame},
+                                    {"x_ig_mouse", l_ig_mouse},
                                     {"x_ig_overlay", l_ig_overlay},
                                     {"x_ig_line", l_ig_line},
                                     {"x_ig_rect", l_ig_rect},

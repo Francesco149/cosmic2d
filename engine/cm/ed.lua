@@ -192,6 +192,9 @@ local function interact(ig)
   local i = cm.require("cm.ui").inp
   local doc, g = M.doc, M.g
   track_mods(i.keys)
+  -- the ALT layer owns the pointer: gate mouse off imgui in C (widgets
+  -- render unchanged — no shimmer — but can never take the A-click)
+  pal.x_ig_mouse(not g.alt)
   hotkeys(ig, i)
   consume_legacy_keys(i.keys)
   step_anim()

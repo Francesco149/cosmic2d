@@ -119,7 +119,9 @@ teidraw's source; they are taste-approved by construction):
 - **Focus** = the most recently selected (or content-clicked) window;
   keyboard asset commands (§7 hotkeys) apply to it. Focus is captured
   state (it's visible: the focused window reads brighter).
-- **Edge resize**: a **6 screen-px band** on borders + corners resizes
+- **Edge resize**: a **12 screen-px band** (±6 around the border; the
+  designed 6 was a 3-px target nobody could hit — human feedback, first
+  live pass) on borders + corners resizes
   on plain drag (no ALT — the band is chrome, not content; it sits ON
   the border, never inside content). Hover brightens the edge (no OS
   cursor swap in v1). Min size clamped (64×48 world). Corners resize

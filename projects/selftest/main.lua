@@ -1322,6 +1322,8 @@ local function t_ig_absence()
     pal.x_ig_image(0, 0, 0, 8, 8)
     pal.x_ig_clip_push(0, 0, 4, 4)
     pal.x_ig_clip_pop()
+    pal.x_ig_mouse(false)
+    pal.x_ig_mouse(true)
     pal.x_ig_overlay(true)
     pal.x_ig_overlay(false)
   end)
@@ -2118,6 +2120,14 @@ end
 
 -- ---- cm.ed.* — the R3 editor shell's pure cores (EDITOR.md/D050) ----
 
+-- the platform temp root: windows has no /tmp (SDL can't create dirs under
+-- a unix-absolute path there — found running this selftest on the win exe);
+-- engine code never hits this (project paths are engine-root-relative)
+local function tmproot()
+  return (pal.platform == "windows" and os.getenv("TEMP"))
+         or os.getenv("TMPDIR") or "/tmp"
+end
+
 local function t_ed_cam()
   local cam = cm.require("cm.ed.cam")
   local c = cam.new()
@@ -2344,7 +2354,7 @@ local function t_ed_session()
   check(back.assets["main.lua"].jpos == 3, "ed.session: asset state survives")
 
   -- save/load through the real file path shape
-  local root = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_ed"
+  local root = tmproot() .. "/cosmic_selftest_ed"
   check(session.save(root, doc) == true, "ed.session: save writes")
   local loaded = session.load(root)
   check(loaded and state.canon(loaded) == state.canon(doc),
@@ -2358,7 +2368,7 @@ end
 
 local function t_ed_journal()
   local journal = cm.require("cm.ed.journal")
-  local root = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_ed"
+  local root = tmproot() .. "/cosmic_selftest_ed"
   local jf = journal.file(root, "sub/dir/file.lua")
   check(jf == root .. "/.ed/journal/sub__dir__file.lua.jrn",
         "ed.journal: path -> key mapping")
@@ -2461,7 +2471,7 @@ local function t_ed_domain()
   local was_on, was_doc, was_root = ed.on, ed.doc, ed.root
   local view = cm.require("cm.view")
   local was_mode = view.mode
-  ed.launch((os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_ed")
+  ed.launch(tmproot() .. "/cosmic_selftest_ed")
   ed.frame() -- x_ig_frame() is nil headless -> must return quietly
   check(ed.on and ed.doc ~= nil, "ed: launch loads a doc headless")
   ed.on, ed.doc, ed.root = was_on, was_doc, was_root

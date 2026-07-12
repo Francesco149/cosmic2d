@@ -657,6 +657,7 @@ deterministic machine. Coordinates are window px; colors `0xRRGGBBAA`.
 | `pal.x_ig_image(tex,x,y,w,h[,uv…,rgba])` | render/dev | a PAL texture on the drawlist; `tex == -1` = the game internal target (the live-game canvas window) |
 | `pal.x_ig_clip_push(x,y,w,h)` / `x_ig_clip_pop()` | render/dev | drawlist clip stack |
 | `pal.x_ig_overlay(on)` | render/dev | route subsequent drawlist calls to the foreground layer (above widgets — HUD pills); off = background (under widgets) |
+| `pal.x_ig_mouse(on)` | render/dev | gate mouse events to imgui (default on; the R3 ALT layer turns it off so widgets render unchanged but never take the pointer) |
 | `pal.x_ig_edit{id,x,y,w,h,text,px[,font,readonly,multiline]}` → text,changed,active | render/dev | the hard widget: imgui text editing at an explicit rect. Host keeps a per-id buffer; `text` re-syncs it while not active; chrome stays the caller's |
 | `pal.x_clipboard([s])` → s | dev | OS clipboard get/set (plain SDL; "" headless) |
 | `pal.gfx_init{…, maximized}` | — | open the window maximized (the editor-session shape; policy in Lua/project.lua) |

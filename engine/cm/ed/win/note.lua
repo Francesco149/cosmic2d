@@ -2,9 +2,10 @@
 -- whose content lives only in the editor doc (canvas furniture — no file,
 -- no journal). Proves chrome + edit capture + session persistence.
 --
--- While ALT is held the widget is not submitted (inert text draws instead)
--- so imgui can never steal an A-click — the shell's grammar owns the ALT
--- layer by construction (EDITOR.md §5 routing rule 1).
+-- Occluded windows draw inert text instead of the widget (the widget-z
+-- rule, ed.lua); the ALT layer needs no special casing here — the shell
+-- gates mouse off imgui in C (pal.x_ig_mouse), so the widget renders
+-- unchanged and still can't steal an A-click.
 
 local M = select(2, ...) or {}
 
@@ -24,9 +25,9 @@ end
 function M.draw(win, ctx)
   local px = math.max(4, M.PX * ctx.z)
   local pad = 6 * ctx.z
-  if ctx.alt or ctx.occluded then -- inert: ALT layer / overlapped (ed.lua)
+  if ctx.occluded then -- inert (widget-z rule); +4,+3 = imgui FramePadding
     pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, ctx.ch)
-    pal.x_ig_text(ctx.cx + pad, ctx.cy + pad * 0.7, px, 0xd8d2f2ff,
+    pal.x_ig_text(ctx.cx + pad + 4, ctx.cy + pad * 0.5 + 3, px, 0xffffffff,
                   win.text or "", 0)
     pal.x_ig_clip_pop()
     return

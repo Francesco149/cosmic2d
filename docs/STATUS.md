@@ -3,6 +3,41 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (R3 session, cont. — feedback round 1 + the windows PAL)
+**Phase**: **R3 feedback round 1 applied ("feels good" + 3 asks); the
+windows build now actually TESTED natively — selftest + cross-platform
+trace verify PASS on win11.**
+
+- **ALT shimmer fixed properly** (human: contents shifted + dimmed under
+  ALT — it was our inert-text fallback, not WSLg: x_ig_edit renders with
+  imgui FramePadding(4,3) + white text, the fallback didn't match). The
+  real fix is the one IMGUI.md §11 pre-blessed: **`pal.x_ig_mouse(on)`** —
+  the shell gates mouse events off imgui in C while ALT is held, so
+  widgets render UNCHANGED (zero shimmer) but can never take the A-click;
+  the off-transition parks the pointer + releases buttons. The inert swap
+  now exists only for the widget-z occlusion rule, and matches the widget
+  pixel-for-pixel (+4,+3, white).
+- **Edge resize was a 3-px target** (band 6 = ±3 around the border; a miss
+  outward started a pan — read as "doesn't work"). `wm.EDGE_PX` 6→12.
+- **The windows PAL, set up + tested for real** (recipe now in
+  PROCESS.md): staged at `C:\Users\headpats\cosmic2d-win` and driven via
+  WSL interop — **all 22641 selftest checks PASS on the native exe**, and
+  the linux-recorded golden traces (**smoke_kitcheck 830f + churn**)
+  **verify byte-exact on windows** — the first demonstration of
+  ARCHITECTURE's cross-PLATFORM determinism goal. The `--edit --win`
+  capture renders identically on host vulkan. One windows-only gotcha
+  found + fixed: unix-absolute `/tmp` dirs can't be mkdir'd there (ed
+  selftests now use the platform temp root; engine code was immune).
+- Live windows run for the human: `bin\cosmic.exe projects\smoke --edit`
+  from `cosmic2d-win`. Suite ALL GREEN on linux after all of it
+  (selftest 22641, traces, pixels byte-identical).
+
+**Next step (resume here):** human re-checks the two feel fixes live
+(ALT steadiness + edge resize) + optionally the native windows --edit;
+then **R4 — the windows** (see the R3 block below for the full brief).
+
+---
+
 **Date**: 2026-07-12 (R3 session)
 **Phase**: **REVAMP R3 — editor shell: BUILT (ADR D050 + docs/EDITOR.md);
 awaiting the human taste pass (the exit's feel half).** Design-doc-first

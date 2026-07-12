@@ -150,6 +150,7 @@ byte convention. Calls outside an open ig frame are no-ops.
 | `pal.x_ig_clip_push(x,y,w,h)` / `pal.x_ig_clip_pop()` | drawlist clip stack (window content clipping) |
 | `pal.x_ig_edit{id,x,y,w,h,text,px[,font,readonly,multiline]}` → text,changed,active | the hard widget: imgui text editing (caret/selection/undo/IME) at an explicit rect. The host keeps a per-`id` buffer; `text` re-syncs it whenever the widget is not active (external reload wins); returns the buffer + a changed flag + focus state. Chrome-less styling — frame/scrollbar drawing stays ours |
 | `pal.x_clipboard([s])` → s | OS clipboard get/set (plain SDL, no imgui needed; the code-ed/canvas paste path) |
+| `pal.x_ig_mouse(on)` | gate mouse input to imgui (default on). The R3 shell turns it off while ALT is held: widgets render unchanged but hover/click/wheel never reach them — the §11 "filter in C behind Lua-set flags" fix, realized. Off-transition parks the pointer + releases buttons |
 
 Additive non-ig v7 entries riding the same bump:
 

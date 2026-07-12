@@ -183,8 +183,8 @@ local function draw_picker(win, ctx)
   local ed = ctx.ed
   local z, pad = ctx.z, 8 * ctx.z
   local px = math.max(4, M.PX * z)
-  if ctx.alt or ctx.occluded then
-    pal.x_ig_text(ctx.cx + pad, ctx.cy + pad * 0.6, px, 0xd8d2f2ff,
+  if ctx.occluded then
+    pal.x_ig_text(ctx.cx + pad + 4, ctx.cy + pad * 0.6 + 3, px, 0xffffffff,
                   win.filter or "", 1)
   else
     local filter, changed = pal.x_ig_edit {
@@ -241,11 +241,13 @@ function M.draw(win, ctx)
   local z, pad = ctx.z, 6 * ctx.z
   local px = math.max(4, M.PX * z)
 
-  -- inert under the ALT layer (§5 rule 1: imgui never sees an A-click) and
-  -- when a higher window overlaps (the widget would render above it)
+  -- inert when a higher window overlaps (the widget-z rule, ed.lua); the
+  -- ALT layer needs no swap — pal.x_ig_mouse gates the pointer in C.
+  -- +4,+3 matches imgui's FramePadding so inert text sits pixel-identical.
   local active = false
-  if ctx.alt or ctx.occluded then
-    pal.x_ig_text(ctx.cx + pad, ctx.cy + pad * 0.7, px, 0xd8d2f2ff, a.text, 1)
+  if ctx.occluded then
+    pal.x_ig_text(ctx.cx + pad + 4, ctx.cy + pad * 0.5 + 3, px,
+                  0xffffffff, a.text, 1)
   else
     local text, changed
     text, changed, active = pal.x_ig_edit {

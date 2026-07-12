@@ -30,7 +30,8 @@
 local M = select(2, ...) or {}
 
 M.DRAG_PX = 4 -- click vs drag (screen px)
-M.EDGE_PX = 6 -- resize band (screen px)
+M.EDGE_PX = 12 -- resize band (screen px; ±6 around the border — 6 total
+               -- was a 3-px target nobody could hit, human feedback R3)
 M.MIN_W, M.MIN_H = 64, 48 -- world units
 
 -- ---- doc shape ----

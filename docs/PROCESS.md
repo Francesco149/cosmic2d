@@ -54,6 +54,29 @@ nix run .#test                      # selftest + all committed goldens (lavapipe
 nix flake check                     # same suite as a sandboxed derivation
 ```
 
+**Testing the Windows build (native, via WSL interop)** — the cross build
+is runnable directly from WSL; the exe runs on the Windows side (real
+win32 SDL3, host vulkan). Stage it on the Windows filesystem first (the
+exe can't live in the nix store):
+
+```sh
+nix build .#cosmic-windows
+rm -rf /mnt/c/Users/headpats/cosmic2d-win
+mkdir -p /mnt/c/Users/headpats/cosmic2d-win
+cp -rL result/* /mnt/c/Users/headpats/cosmic2d-win/
+chmod -R u+w /mnt/c/Users/headpats/cosmic2d-win
+cd /mnt/c/Users/headpats/cosmic2d-win
+./bin/cosmic.exe projects/selftest --headless --frames 1   # 22k checks, native
+./bin/cosmic.exe projects/smoke --verify tests/traces/smoke_kitcheck.ctrace
+   # ^ cross-platform determinism: linux-recorded traces verify byte-exact
+./bin/cosmic.exe projects/smoke --edit --win 1280x800 --frames 30 --shot ed.png
+```
+
+The human's live windows run: `bin\cosmic.exe projects\smoke --edit` from
+the `cosmic2d-win` dir. Windows-only gotcha found this way: unix-absolute
+paths (`/tmp/...`) can't be `pal.mkdir`'d there — tests use the platform
+temp root; engine code is immune (project paths are engine-root-relative).
+
 - Goldens: `VK_DRIVER_FILES` is forced to the flake's lavapipe ICD by the
   test runner — never record goldens on hardware drivers (D007). State
   traces are driver-independent (sim is pure CPU); pixel goldens (M5) are
