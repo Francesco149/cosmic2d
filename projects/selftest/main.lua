@@ -2518,6 +2518,66 @@ local function t_ed_lex()
   check(lex.link_at("plain words only", 4) == nil, "ed.lex: no false link")
 end
 
+local function t_ed_filter()
+  -- cm.ed.filter_events — the playable-game-window input gate (R4b,
+  -- EDITOR.md §12.3). Synthetic events against a faked shell state.
+  local ed = cm.require("cm.ed")
+  local wm = cm.require("cm.ed.wm")
+  local was_on, was_doc, was_root, was_g = ed.on, ed.doc, ed.root, ed.g
+
+  ed.on = false
+  local passthru = { { type = "key", scancode = 4, down = true } }
+  check(ed.filter_events(passthru) == passthru,
+        "ed.filter: shell off = events untouched")
+
+  ed.g = {}
+  ed.doc = wm.init({ v = 1 })
+  ed.on = true
+  local gw = wm.spawn(ed.doc, "game", 0, 0, 480, 300)
+
+  ed.doc.focus = 0 -- unfocused: swallowed, but releases pass (no stuck keys)
+  local ev = ed.filter_events({
+    { type = "key", scancode = 4, down = true },
+    { type = "key", scancode = 4, down = false },
+    { type = "motion", wx = 100, wy = 100, x = 0, y = 0 },
+    { type = "wheel", dy = 1 },
+  })
+  check(#ev == 1 and ev[1].type == "key" and ev[1].down == false,
+        "ed.filter: unfocused swallows all but releases")
+
+  ed.doc.focus = gw.id -- focused = playing
+  ed.g.grect = { [gw.id] = { x = 10, y = 20, s = 2, w = 960, h = 540 } }
+  ev = ed.filter_events({
+    { type = "key", scancode = 4, down = true },
+    { type = "key", scancode = 41, down = true }, -- Esc: the shell's
+    { type = "key", scancode = 53, down = true }, -- grave: the shell's
+    { type = "button", button = 1, down = true, wx = 110, wy = 120 },
+    { type = "motion", wx = 9, wy = 19 }, -- outside the image rect
+    { type = "quit" },
+  })
+  check(#ev == 3 and ev[1].scancode == 4 and ev[2].type == "button"
+        and ev[3].type == "quit",
+        "ed.filter: playing passes keys/buttons, steals esc+grave, gates rect")
+  check(ev[2].x == 50 and ev[2].y == 50, "ed.filter: wx,wy -> FOV remap")
+
+  local ui = cm.require("cm.ui")
+  local ux, uy = ui.inp.wx, ui.inp.wy
+  ui.inp.wx, ui.inp.wy = 200, 200 -- cursor over the image rect
+  ev = ed.filter_events({ { type = "wheel", dy = -1 } })
+  check(#ev == 1 and ed.g.wheel_taken, "ed.filter: wheel over playing = sim's")
+  ui.inp.wx, ui.inp.wy = ux, uy
+
+  ed.g.alt = true -- the ALT layer suspends play input (releases still pass)
+  ev = ed.filter_events({
+    { type = "key", scancode = 4, down = true },
+    { type = "button", button = 1, down = false, wx = 110, wy = 120 },
+  })
+  check(#ev == 1 and ev[1].type == "button",
+        "ed.filter: ALT suspends downs, releases pass")
+
+  ed.on, ed.doc, ed.root, ed.g = was_on, was_doc, was_root, was_g
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -2596,6 +2656,7 @@ function game.init()
   t_ed_session()
   t_ed_journal()
   t_ed_lex()
+  t_ed_filter()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

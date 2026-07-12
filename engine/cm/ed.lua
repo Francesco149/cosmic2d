@@ -86,6 +86,65 @@ function M.touch() -- a captured-doc mutation: arm the session debounce
   M.g.save_due = pal.time_ns() + session.DEBOUNCE_NS
 end
 
+-- the focused window is a playable game window (EDITOR.md §12.3)
+local function playing()
+  if not M.doc then return nil end
+  local win = wm.get(M.doc, M.doc.focus)
+  if win and M.kinds[win.kind] and M.kinds[win.kind].wants_keys then
+    return win
+  end
+end
+
+-- What the game sees in editor mode (cm.main calls this in place of the
+-- R3 blanket swallow): nothing — unless a game window is FOCUSED (=
+-- playing, §12.3). Then keys pass through, and mouse events over the
+-- window's letterboxed image remap wx,wy → FOV px through the rect its
+-- draw recorded (1-frame latency). Key/button RELEASES always pass so a
+-- key held across a focus change never sticks (the console's old rule).
+-- Everything rides cm.input.feed — recorded, replayable input.
+function M.filter_events(events)
+  if not M.on then return events end
+  local win = playing()
+  local g = M.g
+  local live = win and not g.alt and not g.ig_kb
+  local rect = win and g.grect and g.grect[win.id]
+  local out = {}
+  for _, e in ipairs(events) do
+    if e.type == "quit" then
+      out[#out + 1] = e
+    elseif e.type == "key" then
+      -- Esc + grave are the shell's (§12.3); releases always pass
+      if not e.down then
+        out[#out + 1] = e
+      elseif live and e.scancode ~= 41 and e.scancode ~= 53 then
+        out[#out + 1] = e
+      end
+    elseif e.type == "motion" or e.type == "button" then
+      local pass = e.type == "button" and not e.down -- releases always
+      if live and rect and e.wx >= rect.x and e.wx < rect.x + rect.w
+         and e.wy >= rect.y and e.wy < rect.y + rect.h then
+        pass = true
+      end
+      if pass then
+        if rect and rect.s > 0 then
+          e.x = (e.wx - rect.x) / rect.s
+          e.y = (e.wy - rect.y) / rect.s
+        end
+        out[#out + 1] = e
+      end
+    elseif e.type == "wheel" then
+      local i = cm.require("cm.ui").inp
+      if live and rect and i.wx >= rect.x and i.wx < rect.x + rect.w
+         and i.wy >= rect.y and i.wy < rect.y + rect.h then
+        out[#out + 1] = e
+        g.wheel_taken = true -- the canvas must not also zoom on it
+      end
+    end
+    -- text events never reach the game (it has no text input path)
+  end
+  return out
+end
+
 local function save_now()
   if M.doc and M.root then session.save(M.root, M.doc) end
   M.g.save_due = nil
@@ -144,6 +203,8 @@ end
 local function hotkeys(ig, i)
   local doc, g = M.doc, M.g
   if ig.kb then return end -- an edit widget owns the keyboard
+  local play = playing() -- plain-key hotkeys suspend while a game window
+                         -- is focused (§12.3); ALT/Esc/Ctrl stay ours
   for _, e in ipairs(i.keys) do
     if e.down and not e.rep then
       local sc = e.scancode
@@ -153,9 +214,11 @@ local function hotkeys(ig, i)
       elseif g.ctrl and sc == K.z then kind_call("undo")
       elseif sc == K.escape then
         if g.menu then g.menu = nil
+        elseif play then doc.focus = 0 -- the universal "get out" of play
         elseif doc.drill ~= 0 then doc.drill = 0
         else doc.sel = {} end
         M.touch()
+      elseif play then -- everything below collides with gameplay keys
       elseif sc == K.rbracket then
         for _, id in ipairs(doc.sel) do
           if g.shift then wm.to_front(doc, id) else wm.raise(doc, id) end
@@ -199,12 +262,17 @@ local function interact(ig)
   consume_legacy_keys(i.keys)
   step_anim()
 
-  -- wheel zoom at the cursor (unless an edit widget wants the mouse)
-  if i.wheel ~= 0 and not ig.mouse then
+  g.ig_kb = ig.kb -- filter_events (next tick) must not feed the game while
+                  -- an edit widget owns the keyboard
+
+  -- wheel zoom at the cursor — unless an edit widget wants the mouse, or a
+  -- playing game window took this tick's wheel (§12.7)
+  if i.wheel ~= 0 and not ig.mouse and not g.wheel_taken then
     g.anim = nil
     cam.zoom_at(doc.cam, i.wx, i.wy, cam.wheel_factor(i.wheel))
     M.touch()
   end
+  g.wheel_taken = nil
 
   local wwx, wwy = cam.s2w(doc.cam, i.wx, i.wy)
   g.cursor = { wx = wwx, wy = wwy } -- draw-side hover reuse

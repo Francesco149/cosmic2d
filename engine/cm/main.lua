@@ -318,9 +318,10 @@ function M.tick()
   end
   -- engine UI sees raw events; the game sees what the UI didn't capture
   events = M.ui.frame(events)
-  -- editor shell on: the game sees NO input (EDITOR.md §5 — the sim keeps
-  -- running as the live-game window; input synthesis for it is R4)
-  if M.ed and M.ed.on then events = {} end
+  -- editor shell on: the game sees nothing — unless a game window is
+  -- focused (= playing): keys pass, mouse remaps through the window's
+  -- image rect to FOV px (EDITOR.md §12.3; recorded, replayable input)
+  if M.ed and M.ed.on then events = M.ed.filter_events(events) end
   -- ingest into live input state EVERY tick, decoupled from sim stepping, so a
   -- render loop faster than the 60 Hz sim never drops a press/release (the
   -- windowed key-stick bug); sim_step then samples the live state per step
