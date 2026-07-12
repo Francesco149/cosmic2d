@@ -34,6 +34,7 @@ M.kinds = {
   note = cm.require("cm.ed.win.note"),
   game = cm.require("cm.ed.win.game"),
   text = cm.require("cm.ed.win.text"),
+  console = cm.require("cm.ed.win.console"),
 }
 
 -- the palette (igcanvas's, promoted)
@@ -50,7 +51,7 @@ local HDR = 24 -- header strip height, world units
 local K = { escape = 41, lbracket = 47, rbracket = 48, space = 44,
             n1 = 30, n2 = 31, n0 = 39, right = 79, left = 80,
             down = 81, up = 82, s = 22, z = 29, y = 28,
-            f1 = 58, f2 = 59, f3 = 60, f4 = 61 }
+            f1 = 58, f2 = 59, f3 = 60, f4 = 61, grave = 53 }
 
 -- ---- boot ----
 
@@ -163,17 +164,41 @@ local function track_mods(keys)
   end
 end
 
--- the legacy panel toggles (F1 editor / F2 studio / F3 perf / F4 scrub) and
--- the options-menu Esc would fire invisibly under the canvas — strip them
--- after the shell has had its look. The console grave stays live (§8).
+-- the legacy panel toggles (F1 editor / F3 perf / F4 scrub), the options-
+-- menu Esc, and the legacy console grave would fire invisibly under the
+-- canvas — strip them after the shell has had its look (the console is a
+-- canvas window since R4c; grave is handled in hotkeys()).
 local function consume_legacy_keys(keys)
   for i = #keys, 1, -1 do
     local sc = keys[i].scancode
     if sc == K.f1 or sc == K.f2 or sc == K.f3 or sc == K.f4
-       or sc == K.escape then
+       or sc == K.escape or sc == K.grave then
       table.remove(keys, i)
     end
   end
+end
+
+-- grave: spawn (or focus + front) a console window (EDITOR.md §12.4)
+local function summon_console()
+  local doc = M.doc
+  for _, win in ipairs(doc.wins) do
+    if win.kind == "console" then
+      doc.focus = win.id
+      doc.sel = { win.id }
+      wm.to_front(doc, win.id)
+      M.touch()
+      return
+    end
+  end
+  local ig = M.g.last_ig
+  local kind = M.kinds.console
+  local w, h = kind.DEF_W, kind.DEF_H
+  local cx, cy = doc.cam.x, doc.cam.y
+  local sw = ig and ig.w or 1280
+  local sh = ig and ig.h or 800
+  wm.spawn(doc, "console", cx + (sw / doc.cam.zoom - w) * 0.5,
+           cy + (sh / doc.cam.zoom - h) * 0.6, w, h, kind.defaults())
+  M.touch()
 end
 
 local function anim_to(target)
@@ -212,6 +237,7 @@ local function hotkeys(ig, i)
       elseif g.ctrl and sc == K.y then kind_call("redo")
       elseif g.ctrl and g.shift and sc == K.z then kind_call("redo")
       elseif g.ctrl and sc == K.z then kind_call("undo")
+      elseif sc == K.grave then summon_console()
       elseif sc == K.escape then
         if g.menu then g.menu = nil
         elseif play then doc.focus = 0 -- the universal "get out" of play
@@ -264,18 +290,36 @@ local function interact(ig)
 
   g.ig_kb = ig.kb -- filter_events (next tick) must not feed the game while
                   -- an edit widget owns the keyboard
-
-  -- wheel zoom at the cursor — unless an edit widget wants the mouse, or a
-  -- playing game window took this tick's wheel (§12.7)
-  if i.wheel ~= 0 and not ig.mouse and not g.wheel_taken then
-    g.anim = nil
-    cam.zoom_at(doc.cam, i.wx, i.wy, cam.wheel_factor(i.wheel))
-    M.touch()
-  end
-  g.wheel_taken = nil
+  g.last_ig = ig
 
   local wwx, wwy = cam.s2w(doc.cam, i.wx, i.wy)
   g.cursor = { wx = wwx, wy = wwy } -- draw-side hover reuse
+
+  -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. Else content
+  -- that takes it (an edit widget via imgui capture, a playing game window
+  -- via filter_events, a kind.wheel hook) — else canvas zoom.
+  if i.wheel ~= 0 and not g.wheel_taken then
+    local routed = false
+    if not g.alt then
+      if ig.mouse then
+        routed = true -- an imgui child (code ed scroll) is taking it
+      else
+        local id, part = wm.hit(doc, wwx, wwy, 0)
+        local win = id and part == "content" and wm.get(doc, id)
+        local kind = win and M.kinds[win.kind]
+        if kind and kind.wheel then
+          kind.wheel(win, M, i.wheel)
+          routed = true
+        end
+      end
+    end
+    if not routed then
+      g.anim = nil
+      cam.zoom_at(doc.cam, i.wx, i.wy, cam.wheel_factor(i.wheel))
+      M.touch()
+    end
+  end
+  g.wheel_taken = nil
 
   -- the spawn menu owns clicks while open (draw() hit-tests it)
   if g.menu then return end
@@ -450,7 +494,7 @@ local function draw_win(ig, win, zi)
 end
 
 local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
-                     { "game", "game window" } }
+                     { "game", "game window" }, { "console", "console" } }
 
 local function draw_menu(ig, i)
   local g = M.g
@@ -529,10 +573,14 @@ end
 
 function M.frame()
   if not M.on then return end
-  if cm.require("cm.console").open then
-    -- legacy chrome interim (EDITOR.md §8): console open = no ig frame at
-    -- all, so the ui-canvas panels are visible and interactive
-    return
+  -- the console is a canvas window now (R4c; the D050 §8 gate is gone).
+  -- Anything that opens the legacy overlay in editor mode (a contained
+  -- game error's notify, mainly) gets adopted into a console window.
+  local con = cm.require("cm.console")
+  if con.open then
+    con.open = false
+    con.slide = 0.0
+    if M.doc then summon_console() end
   end
   local ig = pal.x_ig_frame()
   if not ig then return end
