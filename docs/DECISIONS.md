@@ -1786,3 +1786,52 @@ EDGE_IN over headers); or games want non-540-family heights (the range
 math is per-height already — only the docs' example is 540); or two
 game windows fighting over one FOV (last resized wins) starts to
 matter (→ per-window targets is an R8+ PAL feature).
+
+## D055 — R6.5: cross-session rewind — one continuous past stream (2026-07-12)
+
+**Context**: the human, after the R6 build: "i want it to work across
+sessions, it should be one continuous past stream and not reset every
+time i restart the editor." Exactly the D053 revisit clause ("the
+per-session history bound turns out to matter to the human"). R6 §3 had
+deferred this ("the ring can't adopt foreign keyframes safely") — but
+R6a/b made segments standalone by construction (keyframes carry full
+buffers + doc canon + ed canon), so adoption for browsing was already
+safe; what was missing was the timeline and the boot plumbing.
+
+**Decision**:
+
+1. **The timeline is the sim frame counter, made continuous**: at boot
+   a live windowed session seeds `cm.sim`'s counter one past the last
+   retained on-disk frame (`trace.hist_peek`, called from cm.main
+   before game.init; headless/verify/captures keep 0 — goldens
+   byte-identical). `ring_start` then **adopts** the retained chain as
+   spilled skeletons; recording appends to the same stream.
+2. **A manifest makes adoption cheap**: `.ed/history/index`, one line
+   per spilled segment, appended at spill; existence-checked +
+   id-deduped at scan; only the newest file is fully parsed (the crash
+   candidate — corrupt tails delete and retry). Rewritten compact at
+   adoption.
+3. **Contiguity is the safety rule**: adopt only the chain ending
+   exactly at the present frame. Forked timelines (out-of-band restores
+   whose frame doesn't match) wipe — unchanged semantics for the reset
+   path.
+4. **Adopted segments have no code bundle** (bundles were RAM-only):
+   browsing/parking/bring-back are exact (state + editor doc ride the
+   files); a RESUME into one keeps the current code, logged.
+   `ring_export` starts after adopted segments (a CTRC needs a bundle).
+5. **The quit path flushes the open segment** (`trace.ring_flush` from
+   cm.main's single quit path) so a session's tail joins the stream —
+   previously those frames just died with the RAM ring.
+
+**Proof**: selftest 22742→**22749** (adopt span/decode, continued
+recording, resume-into-adopted + counter restore, quit flush joins,
+fork wipes); three live back-to-back smoke `--edit` sessions form one
+0..410 stream — session 3 decodes a session-1 frame with sim bufs AND
+the editor doc (bring-back across sessions works); suite ALL GREEN
+(goldens untouched — headless never adopts).
+
+**Revisit if**: the pill timeline gets unusable at multi-day spans (→
+segment ticks/day markers + a zoomable bar); adopted-history resumes
+with drifted code confuse (→ spill bundles content-addressed next to
+segments); boot scans get slow at huge budgets (→ cap manifest length
+by rewriting on eviction too).

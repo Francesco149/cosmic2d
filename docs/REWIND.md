@@ -54,9 +54,31 @@ replaces F4 in editor sessions.
   (default 1024, console-tunable) — whole oldest segments (files) are
   evicted once total retained bytes exceed it. The 30 s RAM window
   survives as the *RAM* residency knob, not the history bound.
-- History is **per-session**: `.ed/history/` is wiped at boot (a crashed
-  session's leftovers too — the ring can't adopt foreign keyframes
-  safely, and cross-session rewind is journals'/git's job, not R6's).
+- History is **one continuous stream across sessions** (R6.5/D055 —
+  the human asked; supersedes R6's per-session wipe): at boot, a live
+  session **seeds the sim frame counter one past the retained history**
+  (`hist_peek`, cm.main — before game.init, live windowed only) and
+  `ring_start` **adopts** the on-disk chain as skeleton segments.
+  Segments were standalone by construction (keyframes carry full
+  buffers + doc + ed canon), so browsing/parking adopted frames is
+  exact — including the editor doc, so **bring-back reaches previous
+  sessions**. The session boundary shows as an honest state jump (a
+  reboot happened).
+  - **The manifest** (`history/index`, one appended line per spill:
+    id/first/frames/bytes) makes adoption O(files) without reading the
+    blobs; stale lines drop on an existence check, a re-spilled id
+    dedupes last-wins, and the newest file — the only one a crash can
+    half-write — is fully parsed (corrupt → deleted, scan retries).
+  - **Contiguity is the adoption rule**: the chain must end exactly at
+    the present frame (guaranteed at boot by the seed). A mid-session
+    `ring_reset` (out-of-band restore) usually fits nothing — a forked
+    timeline can't rejoin — and wipes, the old behavior.
+  - **Resume into an adopted frame keeps the current code**: segment
+    bundles were RAM-only references and are not spilled; browsing
+    never needed them, and `rewind` logs the fallback. (`ring_export`
+    likewise starts after adopted segments — a CTRC needs a bundle.)
+  - **The quit path spills the open segment** (`ring_flush`, cm.main)
+    so the session tail joins the stream.
 - Spill is an **observer of an observer**: writes happen at segment
   close (every `ring.kf` frames), off the sim path, plain `pal.write_file`
   — a stall shows in perf as render time, never in sim state.

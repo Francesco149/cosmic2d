@@ -146,6 +146,21 @@ local function hist_dir(R)
   return R.project .. "/.ed/history"
 end
 
+-- the manifest (R6.5): one line per spilled segment ("id first frames
+-- fbytes"), appended at spill so boot adoption never has to read the
+-- segment blobs themselves. Stale lines (evicted/truncated files) are
+-- dropped at scan time by an existence check; a re-spilled id (rewind
+-- re-closed the same segment) is deduped last-wins.
+local function hist_index(dir)
+  return dir .. "/index"
+end
+
+local function index_append(R, seg)
+  pal.x_file_append(hist_index(hist_dir(R)),
+                    ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
+                                             seg.fbytes))
+end
+
 -- write a closed segment to its history file (CSEG container: keyframe +
 -- the chunk stream verbatim). The bundle stays a RAM reference — shared
 -- between segments, cheap, and rewind needs it without a load. A failed
@@ -170,6 +185,7 @@ local function spill_seg(R, seg)
     return
   end
   seg.file, seg.fbytes, seg.spilled = path, #blob, true
+  index_append(R, seg)
 end
 
 -- drop a spilled segment's RAM copy (the skeleton keeps id/first/frames/
@@ -205,13 +221,100 @@ local function seg_load(R, seg)
   return seg
 end
 
--- wipe the history dir (boot / ring reset — history is per-session,
--- REWIND.md §3; stale files can't be adopted safely)
-local function hist_wipe(R)
+-- ---- cross-session adoption (R6.5, REWIND.md §3) ----
+
+-- validated manifest entries, oldest first. Existence-checks every file
+-- (eviction/truncation leave stale lines), dedupes re-spilled ids
+-- last-wins, and fully parses the NEWEST file — the only one a crash
+-- can have half-written; a corrupt tail is deleted and the scan retries
+-- on the one before it.
+local function hist_scan(project)
+  if project == "" then return {} end
+  local dir = project .. "/.ed/history"
+  local blob = pal.read_file(hist_index(dir))
+  if not blob then return {} end
+  local byid, order = {}, {}
+  for id, first, frames, fbytes in
+      blob:gmatch("(%d+) (%d+) (%d+) (%d+)") do
+    id = tonumber(id)
+    if not byid[id] then order[#order + 1] = id end
+    byid[id] = { id = id, first = tonumber(first),
+                 frames = tonumber(frames), fbytes = tonumber(fbytes),
+                 file = ("%s/seg_%06d"):format(dir, id) }
+  end
+  local ent = {}
+  for _, id in ipairs(order) do
+    local e = byid[id]
+    local mt = pal.mtime(e.file)
+    if mt and mt > 0 then ent[#ent + 1] = e end
+  end
+  table.sort(ent, function(a, b) return a.first < b.first end)
+  while #ent > 0 do
+    local tail = ent[#ent]
+    local tb = pal.read_file(tail.file)
+    local ok = tb and pcall(chunk.read, tb, "CSEG")
+    if ok then break end
+    pal.log("[trace] dropping corrupt history tail " .. tail.file)
+    pal.x_remove(tail.file)
+    ent[#ent] = nil
+  end
+  return ent
+end
+
+-- the last retained frame of the project's on-disk history, or nil.
+-- cm.main seeds the sim frame counter from this BEFORE ring_start so a
+-- live session continues the same timeline (one continuous past stream
+-- across restarts — the human's ask, D055).
+function M.hist_peek(project)
+  local ent = hist_scan(project)
+  local e = ent[#ent]
+  return e and (e.first + e.frames - 1) or nil
+end
+
+-- adopt the on-disk history as skeleton segments: the contiguous chain
+-- ending exactly at the PRESENT frame (guaranteed at boot by the
+-- hist_peek seed; after an out-of-band restore usually nothing fits —
+-- a forked timeline can't rejoin). Files outside the chain are wiped;
+-- the manifest is rewritten compact. Adopted skeletons carry no RAM
+-- bundle (their sessions' code was never spilled): browsing/parking is
+-- exact; a RESUME into one keeps the current code (logged in rewind).
+local function hist_adopt(R)
   if not M.ring.spill or R.project == "" then return end
-  local names = pal.list_dir(hist_dir(R))
-  if not names then return end
-  for _, n in ipairs(names) do pal.x_remove(hist_dir(R) .. "/" .. n) end
+  local dir = hist_dir(R)
+  local ent = hist_scan(R.project)
+  local chain, expect = {}, state.frame()
+  for i = #ent, 1, -1 do
+    local e = ent[i]
+    if e.first + e.frames - 1 == expect and e.frames > 0 then
+      chain[#chain + 1] = e
+      expect = e.first - 1
+    else
+      break
+    end
+  end
+  local keep = {}
+  for _, e in ipairs(chain) do keep[e.file] = true end
+  local names = pal.list_dir(dir)
+  for _, n in ipairs(names or {}) do
+    local path = dir .. "/" .. n
+    if not keep[path] then pal.x_remove(path) end
+  end
+  if #chain == 0 then return end
+  local lines = {}
+  for i = #chain, 1, -1 do -- chain is newest-first; adopt oldest-first
+    local e = chain[i]
+    R.segs[#R.segs + 1] = {
+      id = e.id, first = e.first, frames = e.frames, bytes = 0,
+      file = e.file, fbytes = e.fbytes, spilled = true, adopted = true,
+    }
+    R.next_id = math.max(R.next_id, e.id + 1)
+    lines[#lines + 1] = ("%d %d %d %d\n"):format(e.id, e.first, e.frames,
+                                                 e.fbytes)
+  end
+  pal.mkdir(dir)
+  pal.write_file(hist_index(dir), table.concat(lines))
+  pal.log(("[trace] adopted %d history segments (frames %d..%d)")
+          :format(#chain, R.segs[1].first, state.frame()))
 end
 
 -- Eviction. Spill OFF = the pre-R6 rule verbatim: drop whole oldest
@@ -255,7 +358,8 @@ end
 local function ring_init(R)
   R.segs = {}
   R.loaded = nil
-  hist_wipe(R) -- history is per-session; a reset orphans the old files
+  hist_adopt(R) -- R6.5: the continuous cross-session stream — adopt the
+                -- on-disk chain ending at the present frame, wipe the rest
   R.prev = {}
   for _, b in ipairs(sorted_buf_list()) do
     R.prev[b.name] = { mirror = mirror_of(pal.buf(b.name, b.size), b.size),
@@ -468,11 +572,29 @@ function M.record_stop()
   evict(R) -- pins released
 end
 
--- "save what just happened": everything the ring still holds
+-- "save what just happened": everything the ring still holds. Adopted
+-- segments (R6.5) are skipped — a CTRC needs a code bundle for its SNAP
+-- and theirs was never spilled; the export covers this session's span.
 function M.ring_export(path)
   local R = M._R
   if not R or #R.segs == 0 then error("ring empty", 2) end
-  return write_trace(path, R.project, ring_kf(), 1)
+  local first_i = 1
+  while R.segs[first_i] and not R.segs[first_i].bundle do
+    first_i = first_i + 1
+  end
+  if not R.segs[first_i] then
+    error("ring holds only adopted history (nothing exportable)", 2)
+  end
+  return write_trace(path, R.project, ring_kf(), first_i)
+end
+
+-- quit path (R6.5): spill the open segment so the session tail joins
+-- the cross-session stream (closed segments already spilled)
+function M.ring_flush()
+  local R = M._R
+  if not R then return end
+  local seg = R.segs[#R.segs]
+  if seg and not seg.spilled and seg.frames > 0 then spill_seg(R, seg) end
 end
 
 -- load a .ctrace as the ring (replay playback, M5): the live ring is
@@ -657,36 +779,52 @@ function M.rewind(f)
   local seg, si = seg_containing(R, f)
   seg_load(R, seg)
 
-  -- code as of frame f: the segment bundle + EPOCs that landed before it
-  local files, order = {}, {}
-  for _, m in ipairs(seg.bundle) do
-    files[m.name] = { name = m.name, path = m.path, source = m.source }
-    order[#order + 1] = m.name
-  end
-  local need, done, cut = f - (seg.first - 1), 0, 0
-  for ci, c in ipairs(seg.chunks) do
-    if c.tag == "FRAM" then
-      done = done + 1
-      if done == need then cut = ci break end
-    elseif c.tag == "EPOC" and done < need then
-      local n, pos = unpack("<I4", c.payload)
-      for _ = 1, n do
-        local name, fpath, source
-        name, fpath, source, pos = unpack("<s4s4s4", c.payload, pos)
-        if not files[name] then order[#order + 1] = name end
-        files[name] = { name = name, path = fpath, source = source }
+  -- code as of frame f: the segment bundle + EPOCs that landed before
+  -- it. Adopted segments (R6.5) carry NO bundle — their sessions' code
+  -- was never spilled — so a resume into one keeps the current code
+  -- (browsing/parking never needed the bundle in the first place).
+  local need = f - (seg.first - 1)
+  local list, diff = {}, false
+  local cut = 0
+  if seg.bundle then
+    local files, order = {}, {}
+    for _, m in ipairs(seg.bundle) do
+      files[m.name] = { name = m.name, path = m.path, source = m.source }
+      order[#order + 1] = m.name
+    end
+    local done = 0
+    for ci, c in ipairs(seg.chunks) do
+      if c.tag == "FRAM" then
+        done = done + 1
+        if done == need then cut = ci break end
+      elseif c.tag == "EPOC" and done < need then
+        local n, pos = unpack("<I4", c.payload)
+        for _ = 1, n do
+          local name, fpath, source
+          name, fpath, source, pos = unpack("<s4s4s4", c.payload, pos)
+          if not files[name] then order[#order + 1] = name end
+          files[name] = { name = name, path = fpath, source = source }
+        end
       end
     end
-  end
-
-  -- only re-execute the bundle when it differs from the loaded code:
-  -- the common rewind (no reload since f) must not enter bundle mode
-  local cur = {}
-  for _, m in ipairs(cm.modules()) do cur[m.name] = m.source end
-  local list, diff = {}, false
-  for _, name in ipairs(order) do
-    list[#list + 1] = files[name]
-    if cur[name] ~= files[name].source then diff = true end
+    -- only re-execute the bundle when it differs from the loaded code:
+    -- the common rewind (no reload since f) must not enter bundle mode
+    local cur = {}
+    for _, m in ipairs(cm.modules()) do cur[m.name] = m.source end
+    for _, name in ipairs(order) do
+      list[#list + 1] = files[name]
+      if cur[name] ~= files[name].source then diff = true end
+    end
+  else
+    pal.log("[trace] resume into adopted history: code as of that frame " ..
+            "is unknown — keeping the current code")
+    local done = 0
+    for ci, c in ipairs(seg.chunks) do
+      if c.tag == "FRAM" then
+        done = done + 1
+        if done == need then cut = ci break end
+      end
+    end
   end
 
   state.restore_tables(st.bufs, st.doct)

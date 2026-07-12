@@ -829,8 +829,13 @@ local function draw_rewind(ig, i)
     label = "parked"
   elseif lo then
     local span = (hi - lo) // 60
-    label = span >= 60 and ("%dm%02ds"):format(span // 60, span % 60)
-            or ("%ds"):format(span)
+    if span >= 3600 then -- cross-session streams get long (R6.5)
+      label = ("%dh%02dm"):format(span // 3600, span % 3600 // 60)
+    elseif span >= 60 then
+      label = ("%dm%02ds"):format(span // 60, span % 60)
+    else
+      label = ("%ds"):format(span)
+    end
   else
     label = "·"
   end

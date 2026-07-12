@@ -37,6 +37,25 @@ applied (ADR D054); moving to R7 next.**
   (render-side read of the live size; sim reads the design res at boot
   — smoke just crops today, which is legal but unpolished).
 
+**UX round 5 + R6.5 (same day, second feedback round)**:
+
+- **MMB pans everywhere** — the ig.mouse early-return had eaten middle
+  clicks over the code ed; **code ed default 15 px** (one tick up).
+- **Find/replace** (EDITOR.md §12.2): Ctrl+F bar on the code window —
+  live literal find with wrap-cycling + scroll-to-match, highlights
+  under the glyphs, repl/all as journaled undo steps, Esc closes.
+  Ctrl+S/Ctrl+F are **pre-gate hotkeys** now (fire while typing).
+- **R6.5 — cross-session rewind (ADR D055)**: one continuous past
+  stream across restarts. Boot seeds the frame counter past the
+  retained history (live sessions only) and the ring adopts the
+  on-disk chain (manifest-indexed, contiguity-gated, crash-tail
+  validated); the quit path spills the open segment so tails join;
+  resume into adopted frames keeps current code (bundles were never
+  spilled); bring-back reaches previous sessions (EDOC rides the
+  files). Proven: three back-to-back live smoke sessions = one 0..410
+  stream, session 3 decodes a session-1 frame (sim + ed doc); selftest
+  22749; goldens untouched (headless never adopts).
+
 **UX round 4 (feedback on round 3: "feels good" + fonts)**: tried
 code ed 26 px + assets 16 px (`8450d5b`); the human preferred the
 originals — **round 4b reverted the defaults** (13 px / 10.5 px,

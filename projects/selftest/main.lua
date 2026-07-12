@@ -2214,6 +2214,10 @@ local function t_ring_spill()
   local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
   local root = tmproot() .. "/cosmic_selftest_hist"
   pal.mkdir(root)
+  -- a dev-iteration rerun may find a half-tested dir: start clean
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
   trace.ring.kf = 4
   trace.ring.seconds = 8 / 60 -- RAM window = 8 frames = 2 segments
   trace.ring.spill = true
@@ -2259,13 +2263,51 @@ local function t_ring_spill()
   local lo3 = trace.ring_range()
   check(lo3 > lo, "ring spill: budget evicted the oldest")
 
-  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
-  trace.ring.budget_mb = save_mb
-  trace.ring_start({ project = root }) -- wipes the history dir
-  trace.ring.spill = save_spill
-  pal.buf_free("st.spill")
+  -- ---- R6.5 (D055): the continuous cross-session stream ----
+  trace.ring.budget_mb = save_mb -- roomy again
+  drive(29, 40) -- fresh spilled history: 29..32, 33..36, 37..40 closed
+
+  -- "reboot": hist_peek finds the retained tail; ring_start at the same
+  -- counter adopts the chain — the stream spans the old session
+  check(trace.hist_peek(root) == f0 + 40,
+        "ring adopt: hist_peek finds the tail")
+  trace.ring_start({ project = root })
+  local lo5, hi5 = trace.ring_range()
+  check(hi5 == f0 + 40 and lo5 == f0 + 28,
+        "ring adopt: the stream spans the old session")
+  check(trace.ring_state_at(f0 + 30).bufs["st.spill"] == snaps[30],
+        "ring adopt: an adopted frame decodes from disk")
+
+  -- recording continues the same timeline on top of the adopted past
+  drive(41, 44)
+  local lo6, hi6 = trace.ring_range()
+  check(hi6 == f0 + 44 and lo6 == f0 + 28,
+        "ring adopt: recording continues the stream")
+
+  -- resume (rewind) INTO the adopted past: state + counter restore
+  -- (code stays current — adopted segments carry no bundle)
+  trace.rewind(f0 + 30)
+  check(b:str(0, 8) == snaps[30],
+        "ring adopt: resume into the past session restores")
+  check(sim:i64(0) == f0 + 30, "ring adopt: the counter rides the restore")
+
+  -- the quit flush spills the open tail so it joins the stream
+  drive(31, 33) -- 31..32 close the truncated segment; 33 sits open
+  trace.ring_flush()
+  check(trace.hist_peek(root) == f0 + 33,
+        "ring flush: the open tail joins the stream")
+
+  -- a forked timeline can't rejoin: a mismatched counter wipes clean
+  sim:i64(0, f0 + 999)
+  trace.ring_start({ project = root })
   local left = pal.list_dir(root .. "/.ed/history")
-  check(left == nil or #left == 0, "ring spill: boot wipe clears history")
+  check(left == nil or #left == 0,
+        "ring adopt: a forked timeline wipes clean")
+
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill = save_spill
+  sim:i64(0, f0)
+  pal.buf_free("st.spill")
   trace.ring_start({ project = "selftest" }) -- leave a clean ring behind
 end
 

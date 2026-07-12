@@ -249,6 +249,20 @@ function M.boot()
   if not args.headless and not args.frames then M.view.load_video() end
   cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
+  -- R6.5 (D055): a live session CONTINUES the project's past stream —
+  -- seed the sim frame counter one past the retained on-disk history so
+  -- the timeline never resets across restarts (ring_start then adopts
+  -- the chain, contiguous by construction). Live windowed sessions only,
+  -- matching the spill gate below: headless/verify/captures start at 0
+  -- and never touch history, so goldens stay byte-identical.
+  if not args.headless then
+    local last = cm.require("cm.trace").hist_peek(args.project)
+    if last then
+      pal.buf("cm.sim", 64):i64(0, last)
+      pal.log(("[trace] continuing the past stream at frame %d"):format(last + 1))
+    end
+  end
+
   -- the console is the engine's output surface: print joins the log stream
   print = function(...)
     local n = select("#", ...)
@@ -461,7 +475,11 @@ function M.tick()
   end -- capped headless runs free-run (D013)
 
   -- flush the recording on ANY quit path (event, frame cap, game-initiated)
-  if M.trace and pal.quitting() then M.trace.record_stop() end
+  if M.trace and pal.quitting() then
+    M.trace.record_stop()
+    M.trace.ring_flush() -- the open segment joins the cross-session
+                         -- stream (R6.5); no-op when spill is off
+  end
   -- same guarantee for the editor session + journals (unsaved-persists)
   if M.ed and M.ed.on and pal.quitting() then M.ed.quit_flush() end
 end
