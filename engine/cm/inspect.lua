@@ -1,7 +1,9 @@
 -- cm.inspect — the M4 entity/state inspector: a searchable tree over ALL
 -- live sim state — the doc tree and every named buffer — with in-place
--- editors. Engine editor chrome, drawn by cm.editor beside its toolbar;
--- dev/render class by the D021 iron rule (expansion state, lens choices
+-- editors. Currently HOSTLESS: cm.editor (F1), which drew it beside its
+-- toolbar, died at R8e (MAPS.md §10) — the module stays KAT'd and awaits
+-- a canvas-window host (an inspector window on the ed shell).
+-- Dev/render class by the D021 iron rule (expansion state, lens choices
 -- and the search string live on this module table, never recorded).
 --
 -- The D026 discipline, same as map painting: this module READS sim state
@@ -263,7 +265,7 @@ local function buffer_section(q)
   end
 end
 
--- ---- the panel (cm.editor places it while editor mode is on) ----
+-- ---- the panel (hostless since R8e; a future canvas window places it) ----
 
 function M.frame(x, y, w, h)
   local st = ui.style

@@ -12,7 +12,8 @@
 --     chain: nverts * (i32 x, i32 y)   circle: i32 cx, i32 cy, i32 r
 --
 -- The wrapper (build()/open()) is plain Lua glue rebuilt each reload; only
--- the buffer is truth (the cm.tilemap pattern). Vertices are integer px by
+-- the buffer is truth (the old cm.tilemap pattern; that module + its mover
+-- died at R8e — this is the one mover now). Vertices are integer px by
 -- format; slopes come from non-axis-aligned segments.
 --
 -- Collision model (deterministic: f64 + - * / floor/ceil compares only —
@@ -27,7 +28,9 @@
 --    walls don't exist: steep one-way segments are ignored.
 --  * move() sweeps axis-separated (x then y), TM:move's exact contract:
 --    returns nx, ny, hit { left, right, up, down, oneway }. On flat
---    axis-aligned worlds it reproduces cm.tilemap byte-for-byte (KAT'd).
+--    axis-aligned worlds it reproduced cm.tilemap byte-for-byte — pinned
+--    at R8a by a 3-world x 260-sample parity sweep (retired with the
+--    tilemap mover at R8e; the kitcheck golden pins the feel since).
 --  * slopes: while falling-or-level (dy >= 0) a solid floor penetrated by
 --    this call's own x motion snaps the AABB up onto the surface (the
 --    walk-uphill case; penetration can't exceed SMAX*|dx| by geometry, so

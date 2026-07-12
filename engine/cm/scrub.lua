@@ -50,7 +50,7 @@ local function apply(f)
 end
 
 function M.open()
-  if M.on or cm.require("cm.editor").locked() then return end
+  if M.on or cm.main.dev_locked() then return end
   local lo, hi = trace.ring_range()
   if not lo then return end
   M.on = true
@@ -95,7 +95,7 @@ function M.open_replay(path)
 end
 
 local function do_load(path)
-  if cm.require("cm.editor").locked() then return end
+  if cm.main.dev_locked() then return end
   local ok, lo = pcall(trace.ring_load, path)
   if not ok then
     pal.log("[scrub] replay load failed: " .. tostring(lo))

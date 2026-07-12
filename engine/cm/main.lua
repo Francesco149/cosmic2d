@@ -142,6 +142,13 @@ end
 -- hook (on_quit); otherwise we quit. Single path so every quit affordance
 -- behaves the same — notably the only in-app exit in borderless fullscreen,
 -- which has no window chrome (Esc opens the options menu, not quits).
+-- the D052 launcher lockdown: proj.editor == false disables every dev
+-- surface (console/perf/scrub/the editor shell). Lived on cm.editor
+-- until the F1 editor died at R8e.
+function M.dev_locked()
+  return (M.proj ~= nil and M.proj.editor == false) and true or false
+end
+
 function M.request_quit()
   if M.game and M.game.on_quit and not M.game_err then
     guarded(M.game.on_quit)
@@ -250,7 +257,6 @@ function M.boot()
   M.repl = cm.require("cm.repl")
   M.console = cm.require("cm.console")
   M.perf = cm.require("cm.perf")
-  M.editor = cm.require("cm.editor")
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")
   M.options = cm.require("cm.options")
@@ -482,8 +488,8 @@ function M.tick()
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
   M.ed.frame() -- the editor shell canvas (R3): ig layer, native res; also
-  -- consumes the legacy panel toggle keys while on (EDITOR.md §8)
-  M.editor.frame() -- editor chrome above the game, under perf/console
+  -- consumes the legacy panel toggle keys while on (EDITOR.md §8; the F1
+  -- cm.editor died at R8e — the map/tilemap windows are the map tools now)
   -- the dev panels (scrub/perf/console/options) draw on the ui canvas at
   -- ui_scale. The editor already routed there when it's open; in play mode it
   -- returned early, so switch here (no-op headless / when the canvas is off).

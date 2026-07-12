@@ -156,11 +156,11 @@ function M.frame()
   poll_log()
 
   -- toggle keys work no matter who has the keyboard (but shipped zips
-  -- lock the dev surfaces: project editor = false, see cm.editor.locked;
+  -- lock the dev surfaces: project editor = false, see cm.main.dev_locked;
   -- error banners still open the console programmatically)
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep then
-      if k.scancode == KEY.grave and not cm.editor.locked() then
+      if k.scancode == KEY.grave and not cm.main.dev_locked() then
         M.toggle()
       elseif k.scancode == KEY.esc and M.open and not M.error_msg then
         M.toggle(false)

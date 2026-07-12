@@ -48,7 +48,7 @@ end
 function M.frame()
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep and k.scancode == 60 -- F3; locked when shipped
-       and not cm.editor.locked() then M.toggle() end
+       and not cm.main.dev_locked() then M.toggle() end
   end
   if not M.open then return end
 
