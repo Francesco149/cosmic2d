@@ -154,36 +154,23 @@ end
 -- the LOWEST that is at least range_min_pref above (reach past close ones);
 -- if none qualify, fall back to the HIGHEST in range. Returns the surface y
 -- (the tile top the feet would land on) or nil.
-local function grapple_scan(tm, x, y, W, H, range_max, min_pref)
-  local t = tm.tile
+local function grapple_scan(world, x, y, W, H, range_max, min_pref)
   local feet = y + H
-  local c0 = m.floor(x / t)
-  local c1 = m.ceil((x + W) / t) - 1
-  local r_lo = m.floor((feet - range_max) / t)
-  local r_hi = m.ceil(feet / t) - 1 -- rows strictly above the feet
   local best_q, gap_q -- smallest gap among gap >= min_pref
   local best_a, gap_a -- largest gap overall
-  for r = r_lo, r_hi do
-    local standable = false
-    for c = c0, c1 do
-      local d = tm.tiles[tm:get(c, r)]
-      if d and (d.solid or d.oneway) then standable = true break end
-    end
-    if standable then
-      local clear = true -- room to stand: the row above must be solid-free
-      for c = c0, c1 do
-        local a = tm.tiles[tm:get(c, r - 1)]
-        if a and a.solid then clear = false break end
-      end
-      if clear then
-        local surface = r * t
-        local gap = feet - surface
-        if gap > 0 and gap <= range_max then
-          if gap >= min_pref and (not gap_q or gap < gap_q) then
-            best_q, gap_q = surface, gap
-          end
-          if not gap_a or gap > gap_a then best_a, gap_a = surface, gap end
+  local seen = {}
+  for _, c in ipairs(world:stand_span(x, W, feet - range_max, feet)) do
+    local surface = c.y
+    local gap = feet - surface
+    if gap > 0 and gap <= range_max and not seen[surface] then
+      seen[surface] = true -- dedupe adjacent segments at one height
+      -- room to stand: no solid interior just above the landing spot
+      -- (the old row-above check, as a point probe)
+      if not world:solid_at(x + W * 0.5, surface - 8) then
+        if gap >= min_pref and (not gap_q or gap < gap_q) then
+          best_q, gap_q = surface, gap
         end
+        if not gap_a or gap > gap_a then best_a, gap_a = surface, gap end
       end
     end
   end
@@ -193,27 +180,24 @@ end
 -- mantle leniency (D030): a descending near-miss at a standable lip within
 -- `mantle` px below the feet (column span extended toward a side bonk) hoists
 -- the player onto it. Returns the surface y and whether support is one-way.
-local function mantle_top(tm, x, y, W, H, mantle, ext_l, ext_r)
-  local t = tm.tile
+local function mantle_top(world, x, y, W, H, mantle, ext_l, ext_r)
   local feet = y + H
-  local r = m.ceil((feet - mantle) / t)
-  if r * t >= feet then return nil end
-  local c0 = m.floor(x / t) - (ext_l and 1 or 0)
-  local c1 = m.ceil((x + W) / t) - 1 + (ext_r and 1 or 0)
-  for c = c0, c1 do
-    local a = tm.tiles[tm:get(c, r - 1)]
-    if a and a.solid then return nil end
-  end
-  local found, solid = false, false
-  for c = c0, c1 do
-    local d = tm.tiles[tm:get(c, r)]
-    if d and (d.solid or d.oneway) then
-      found = true
-      solid = solid or (d.solid or false)
+  local sx = x - (ext_l and 16 or 0) -- the old one-tile side reach
+  local sw = W + (ext_l and 16 or 0) + (ext_r and 16 or 0)
+  local best, ow
+  for _, c in ipairs(world:stand_span(sx, sw, feet - mantle, feet)) do
+    if c.y < feet then -- strictly above the feet
+      if not best or c.y < best then
+        best, ow = c.y, c.oneway
+      elseif c.y == best then
+        ow = ow and c.oneway -- any solid at the lip -> not one-way
+      end
     end
   end
-  if not found then return nil end
-  return r * t, not solid
+  if not best then return nil end
+  -- headroom: the old row-above solid check, as a point probe
+  if world:solid_at(sx + sw * 0.5, best - 8) then return nil end
+  return best, ow
 end
 
 -- ctl (built in main.lua from live input or the demo script):
@@ -227,7 +211,7 @@ function M.step(ctl)
   local k = state.doc.knobs.move
   local feel = state.doc.knobs.feel
   local kf = state.doc.knobs.fx
-  local tm = level.tm
+  local world = level.world
 
   local W = m.max(4, m.floor(k.cw))
   local H = m.max(4, m.floor(k.ch))
@@ -272,7 +256,7 @@ function M.step(ctl)
   -- hazards/enemies — at M12). Max 2/s. =====
   if ctl.teleport_held and tp_cd <= 0 and grappling == 0 then -- locked while
     local tdir = tp_mode == 0 and facing or -facing -- grappling. A fwd / B back
-    local bx = tm:move(x, y, W, H, tdir * k.tp_dist, 0) -- clamps at solids
+    local bx = world:move(x, y, W, H, tdir * k.tp_dist, 0) -- clamps at solids
     if flutter_t > 0 then hop_cd = m.max(hop_cd, k.hop_cd) end
     fluttering, hop_active, flutter_t = 0, 0, 0
     ring(x + W * 0.5, y + H * 0.5, 12, 150, 2.0, 3.2, 0.14, 0.30) -- depart
@@ -290,7 +274,7 @@ function M.step(ctl)
   -- Jump cancels either phase. =====
   if ctl.grapple_pressed and grappling == 0 and grapple_cd <= 0
      and grapple_used == 0 then
-    local ty = grapple_scan(tm, x, y, W, H, k.grapple_range_max,
+    local ty = grapple_scan(world, x, y, W, H, k.grapple_range_max,
                             k.grapple_range_min_pref)
     if ty then
       grappling, gy, gx = 1, ty, x + W * 0.5 -- 1 = extending
@@ -420,10 +404,11 @@ function M.step(ctl)
   end
 
   -- ===== MOVE + COLLIDE (the frozen exact mover) =====
-  local nx, ny, hit = tm:move(x, y, W, H, vx * DT, vy * DT, { drop = drop > 0 })
+  local nx, ny, hit = world:move(x, y, W, H, vx * DT, vy * DT,
+                                 { drop = drop > 0, ground = was_grounded })
   if k.mantle > 0 and not hit.down and vy >= 0 and drop <= 0
      and grappling ~= 2 then
-    local top, ow = mantle_top(tm, nx, ny, W, H, k.mantle, hit.left, hit.right)
+    local top, ow = mantle_top(world, nx, ny, W, H, k.mantle, hit.left, hit.right)
     if top then
       ny = top - H
       hit.left, hit.right = false, false

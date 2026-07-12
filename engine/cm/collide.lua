@@ -335,6 +335,26 @@ function W:stand_ray(x, y0, y1)
   return out
 end
 
+-- standable floors overlapping the span [x, x+w): array of { y=, oneway= }
+-- where y is the segment's min over the overlap (the height landing there
+-- would clamp to), y in [y0, y1]; stored order (callers pick their own
+-- winner — the grapple/mantle span probes)
+function W:stand_span(x, w, y0, y1)
+  local out = {}
+  for i = 1, #self.segs do
+    local s = self.segs[i]
+    if s.floor and s.x0 < x + w and s.x1 > x then
+      local ox0 = s.x0 > x and s.x0 or x
+      local ox1 = s.x1 < x + w and s.x1 or x + w
+      local sy = y_minmax(s, ox0, ox1)
+      if sy >= y0 and sy <= y1 then
+        out[#out + 1] = { y = sy, oneway = s.oneway }
+      end
+    end
+  end
+  return out
+end
+
 -- is the point inside a closed solid chain (even-odd), or OOB-solid?
 function W:solid_at(px, py)
   if py < 0 then return false end -- open sky

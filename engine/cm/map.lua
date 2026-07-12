@@ -31,6 +31,7 @@ local chunk = cm.require("cm.chunk")
 local collide = cm.require("cm.collide")
 
 local pack, unpack = string.pack, string.unpack
+local floor = math.floor
 local MAGIC = "CMAP"
 
 -- ---- collider pack/unpack (shared by COLL and PLCE) ----
@@ -207,6 +208,197 @@ end
 -- mutate x/y/hidden freely, it is render-only state (like the camera).
 function M.get(name)
   return M.cur and M.cur.by_name[name] or nil
+end
+
+-- ---- the graybox fill (render-only; MAPS.md §5, D057b) ----
+--
+-- Draw the collider layer directly: closed solid chains (and quads) as
+-- flat untextured polygons — per-column even-odd strips at x+0.5, merged
+-- into runs where the column signature repeats, so flat terrain costs a
+-- handful of quads and slopes step per pixel — one-ways as slim slabs,
+-- open solid lines as 2 px strokes. This IS the graybox look until art
+-- placements take over. Draw under gfx.layer(1) (world coords). Circles
+-- are the game's to draw (hazard visuals are gameplay).
+
+local FILL = { 0.36, 0.34, 0.32 }  -- flat solid gray
+local LIP = { 0.46, 0.44, 0.41 }   -- 1px top lip
+local ONEWAY = { 0.42, 0.78, 0.62 }-- the accent slab
+
+local function fill_geom(inst) -- lazy per-instance cache (render plumbing)
+  if inst._fill then return inst._fill
+  end
+  local loops, slabs, lines = {}, {}, {}
+  local function take(c, ox, oy)
+    if c.kind == "circle" then return end
+    local v
+    if c.kind == "quad" then
+      v = { c.x + ox, c.y + oy, c.x + c.w + ox, c.y + oy,
+            c.x + c.w + ox, c.y + c.h + oy, c.x + ox, c.y + c.h + oy }
+    else
+      v = {}
+      for i = 1, #c.verts, 2 do
+        v[i], v[i + 1] = c.verts[i] + ox, c.verts[i + 1] + oy
+      end
+    end
+    if c.oneway then
+      for i = 1, #v - 3, 2 do
+        slabs[#slabs + 1] = { v[i], v[i + 1], v[i + 2], v[i + 3] }
+      end
+    elseif (c.kind == "quad" or c.closed) and #v >= 6 then
+      loops[#loops + 1] = v
+    else
+      for i = 1, #v - 3, 2 do
+        lines[#lines + 1] = { v[i], v[i + 1], v[i + 2], v[i + 3] }
+      end
+    end
+  end
+  for _, c in ipairs(inst.doc.colliders) do take(c, 0, 0) end
+  for _, p in ipairs(inst.doc.places) do
+    for _, c in ipairs(p.cols or {}) do take(c, p.x, p.y) end
+  end
+  inst._fill = { loops = loops, slabs = slabs, lines = lines }
+  return inst._fill
+end
+
+-- column signature: even-odd intervals of all loops at cx, unioned
+local function column_ivs(loops, cx, out)
+  local n = 0
+  for li = 1, #loops do
+    local v = loops[li]
+    local ys, m2 = {}, 0
+    local nv = #v // 2
+    local jx, jy = v[nv * 2 - 1], v[nv * 2]
+    for i = 1, nv do
+      local ix, iy = v[i * 2 - 1], v[i * 2]
+      if (ix > cx) ~= (jx > cx) then
+        m2 = m2 + 1
+        ys[m2] = iy + (jy - iy) * ((cx - ix) / (jx - ix))
+      end
+      jx, jy = ix, iy
+    end
+    if m2 > 1 then
+      table.sort(ys)
+      for i = 1, m2 - 1, 2 do
+        n = n + 1
+        out[n * 2 - 1], out[n * 2] = ys[i], ys[i + 1]
+      end
+    end
+  end
+  -- union (few intervals: insertion-merge)
+  local ivs = {}
+  for i = 1, n do
+    local a, b = out[i * 2 - 1], out[i * 2]
+    local merged = false
+    for j = 1, #ivs, 2 do
+      if a <= ivs[j + 1] and b >= ivs[j] then
+        if a < ivs[j] then ivs[j] = a end
+        if b > ivs[j + 1] then ivs[j + 1] = b end
+        merged = true
+        break
+      end
+    end
+    if not merged then
+      ivs[#ivs + 1], ivs[#ivs + 2] = a, b
+    end
+  end
+  return ivs
+end
+
+-- draw the fill for the visible range (call with gfx.layer(1) active).
+-- Everything culls to the camera window like TM:draw did — quads never
+-- leave the viewport (the capture path drops negative-origin quads).
+function M.draw_fill(inst, camx, camy)
+  local geom = fill_geom(inst)
+  local vw, vh = pal.gfx_size()
+  local X0 = floor(camx)
+  local X1 = math.ceil(camx + vw)
+  if X0 < 0 then X0 = 0 end
+  if X1 > inst.doc.w then X1 = inst.doc.w end
+  local Y0 = floor(camy)
+  local Y1 = math.ceil(camy + vh)
+
+  -- solids: column strips, run-merged on the interval signature
+  local scratch = {}
+  local run_x, run_sig, run_ivs
+  local function flush(xe)
+    if not run_ivs then return end
+    for j = 1, #run_ivs, 2 do
+      local a, b = floor(run_ivs[j]), floor(run_ivs[j + 1] + 0.5)
+      local a2 = a > Y0 and a or Y0
+      local b2 = b < Y1 and b or Y1
+      if b2 > a2 then
+        pal.quad(run_x, a2, xe - run_x, b2 - a2, FILL[1], FILL[2], FILL[3], 1)
+        if a2 == a then -- the 1px top lip, only when the top is in view
+          pal.quad(run_x, a, xe - run_x, 1, LIP[1], LIP[2], LIP[3], 1)
+        end
+      end
+    end
+  end
+  for cx = X0, X1 - 1 do
+    local ivs = column_ivs(geom.loops, cx + 0.5, scratch)
+    local sig = table.concat(ivs, ",")
+    if sig ~= run_sig then
+      flush(cx)
+      run_x, run_sig, run_ivs = cx, sig, ivs
+    end
+  end
+  flush(X1)
+
+  -- one-way slabs: 3px under the line, run-merged per segment
+  for _, sgm in ipairs(geom.slabs) do
+    local ax, ay, bx, by = sgm[1], sgm[2], sgm[3], sgm[4]
+    if ax > bx then ax, ay, bx, by = bx, by, ax, ay end
+    local x0 = ax > X0 and ax or X0
+    local x1 = bx < X1 and bx or X1
+    if x0 < x1 then
+      local function slab(sx, sy2, sw)
+        if sy2 + 3 > Y0 and sy2 < Y1 then
+          pal.quad(sx, sy2, sw, 3, ONEWAY[1], ONEWAY[2], ONEWAY[3], 1)
+        end
+      end
+      if ay == by then
+        slab(x0, ay, x1 - x0)
+      else
+        local rx, ry
+        for cx = x0, x1 - 1 do
+          local yy = floor(ay + (by - ay) * ((cx + 0.5 - ax) / (bx - ax)))
+          if yy ~= ry then
+            if rx then slab(rx, ry, cx - rx) end
+            rx, ry = cx, yy
+          end
+        end
+        if rx then slab(rx, ry, x1 - rx) end
+      end
+    end
+  end
+
+  -- open solid lines: 2px strokes along the dominant axis
+  for _, sgm in ipairs(geom.lines) do
+    local ax, ay, bx, by = sgm[1], sgm[2], sgm[3], sgm[4]
+    local adx = bx > ax and bx - ax or ax - bx
+    local ady = by > ay and by - ay or ay - by
+    if adx >= ady then
+      if ax > bx then ax, ay, bx, by = bx, by, ax, ay end
+      local x0 = ax > X0 and ax or X0
+      local x1 = bx < X1 and bx or X1
+      for cx = x0, x1 - 1 do
+        local yy = floor(ay + (by - ay) * ((cx + 0.5 - ax) / (bx - ax)))
+        if yy + 2 > Y0 and yy < Y1 then
+          pal.quad(cx, yy, 1, 2, FILL[1], FILL[2], FILL[3], 1)
+        end
+      end
+    else
+      if ay > by then ax, ay, bx, by = bx, by, ax, ay end
+      local y0 = ay > Y0 and ay or Y0
+      local y1 = by < Y1 and by or Y1
+      for cy = y0, y1 - 1 do
+        local xx = floor(ax + (bx - ax) * ((cy + 0.5 - ay) / (by - ay)))
+        if xx + 2 > X0 and xx < X1 then
+          pal.quad(xx, cy, 2, 1, FILL[1], FILL[2], FILL[3], 1)
+        end
+      end
+    end
+  end
 end
 
 return M

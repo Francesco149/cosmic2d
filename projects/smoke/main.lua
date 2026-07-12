@@ -95,8 +95,8 @@ function game.init()
   cam = pal.buf("smoke.cam", 32)
   if cam:f32(0) == 0 and cam:f32(4) == 0 then -- virgin: snap to the player
     local px, py = player.center()
-    cam:f32(0, m.clamp(px - W / 2, 0, level.tm.pw - W))
-    cam:f32(4, m.clamp(py - H / 2, 0, level.tm.ph - H))
+    cam:f32(0, m.clamp(px - W / 2, 0, level.pw - W))
+    cam:f32(4, m.clamp(py - H / 2, 0, level.ph - H))
   end
 
   input.map({
@@ -107,19 +107,9 @@ function game.init()
     { "attack", input.key.d },
   })
 
-  cm.editor.attach(function()
-    return {
-      tm = level.tm, atlas = level.tex,
-      camx = cam:f32(0), camy = cam:f32(4),
-      colliders = function()
-        local px, py = player.pos()
-        return { { x = px, y = py, w = player.W, h = player.H,
-                   kind = "player" } }
-      end,
-      save = function() return game.save_knobs() end,
-      reset_eval = "game.level.reset()",
-    }
-  end)
+  -- R8a: no cm.editor.attach — the F1 tile editor has nothing to edit in
+  -- a .map world (colliders edit in the R8c map window; cm.editor dies at
+  -- R8e, MAPS.md §10).
 end
 
 -- game.demo(1) in the console (or --eval, when recording the golden) hands
@@ -185,8 +175,8 @@ local function cam_step()
   local err = py - (cy + H / 2)
   if err > kc.dead then cy = cy + (err - kc.dead) * kc.lerp_y
   elseif err < -kc.dead then cy = cy + (err + kc.dead) * kc.lerp_y end
-  cam:f32(0, m.clamp(cx, 0, level.tm.pw - W))
-  cam:f32(4, m.clamp(cy, 0, level.tm.ph - H))
+  cam:f32(0, m.clamp(cx, 0, level.pw - W))
+  cam:f32(4, m.clamp(cy, 0, level.ph - H))
   cam:f32(8, look)
 end
 
@@ -216,7 +206,7 @@ function game.draw()
   level.draw_bg()
 
   gfx.layer(1)
-  level.tm:draw(level.tex, camx, camy)
+  level.draw(camx, camy)
   player.draw()
   fx.draw()
 
