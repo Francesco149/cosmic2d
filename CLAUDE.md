@@ -19,10 +19,33 @@ The art targets a Wadanohara-like pixel style. See `docs/GAME.md`.
    if down: `cd /opt/src/llm-feed && nix run nixpkgs#python3 -- /opt/src/llm-feed/feed.py serve` (background, leave running).
 4. Open PLAN/ARCHITECTURE/DECISIONS/PROCESS in `docs/` only as needed.
 
+## Diagrams (teidraw)
+
+When the human says "look at the/my diagram", it's a **teidraw board** in the
+default windows-side save dir. Resolve it like this:
+
+1. Boards home = `boardsDir` in
+   `/mnt/c/Users/headpats/AppData/Roaming/teidraw/settings.json`
+   (currently `F:\Documents\teidraw` → **`/mnt/f/Documents/teidraw/`**);
+   each board is a folder (`board.json` + `assets/`). The board for this
+   project is `cosmic2d` unless told otherwise; `recent` in that settings
+   file shows what the human last worked on.
+2. Export with the Linux CLI at `/opt/src/teidraw/build/teidraw`:
+   ```sh
+   teidraw <boardDir> --export-txt out.txt   # reading-order text — the bulk of the information
+   teidraw <boardDir> --export out.png       # rendered board — for the drawn/spatial parts
+   ```
+   Read the text export first (positions + full text + arrows), then look at
+   the PNG for anything drawn. Exports go in the scratchpad, not the repo.
+
 ## The docs (all in `docs/`)
 
 - **STATUS.md** — living handoff; update at session/milestone end.
 - **PLAN.md** — vision, pillars, milestone roadmap with exit criteria.
+- **REVAMP.md** — **the active roadmap (D045)**: the teidraw-style
+  infinite-canvas editor UX reboot, repo split, script-engine gate, rewind.
+  Distilled from the human's `cosmic2d` teidraw board (the source of truth —
+  re-export it when direction is unclear).
 - **GAME.md** — the cosmic game design bible: identity, gameplay loop,
   movement spec, combat/spectacle, sandbox, art direction, story.
 - **STORY.md** — the narrative bible: premise, cast (Vesper / Gemma / Lumi),
