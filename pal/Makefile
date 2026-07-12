@@ -16,7 +16,7 @@ LDLIBS := $(shell $(PKG_CONFIG) --libs sdl3) -lm
 # pal/src/*.cpp. C ABI at every boundary; the PAL core stays C11.
 IMGUI_DEFS := -DIMGUI_DISABLE_OBSOLETE_FUNCTIONS -DIMGUI_DISABLE_DEMO_WINDOWS
 CXXFLAGS := -O2 -g -std=c++17 -Wall -Wextra -Wno-unused-parameter \
-            -Ivendor -Ivendor/imgui -Ivendor/imgui/backends \
+            -Ivendor -Ivendor/lua/src -Ivendor/imgui -Ivendor/imgui/backends \
             -Ivendor/imgui/misc/cpp $(IMGUI_DEFS) \
             $(shell $(PKG_CONFIG) --cflags sdl3)
 
