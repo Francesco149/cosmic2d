@@ -57,6 +57,7 @@ function M.kind_for(path)
   local class, ext = M.class_of(path)
   if ext == "spr" then return "sprite" end
   if ext == "png" then return "image" end
+  if ext == "map" then return "map" end -- .tm gets its window at R8d
   if class == "code" then return "text" end
   return nil -- sound and unknowns have no window yet (M9 never landed)
 end
@@ -167,6 +168,7 @@ function M.add_dropped(ed, ospath)
     pal.log(("[ed] added %s (%d bytes)"):format(rel, #bytes))
     M.invalidate(ed)
     ed.g.aflash = { path = rel, t = pal.time_ns() }
+    return rel -- the map window places OS drops at the drop point (R8b)
   else
     pal.log("[ed] drop write FAILED: " .. rel)
   end

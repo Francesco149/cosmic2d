@@ -1299,7 +1299,35 @@ local function t_map()
   local awn = map.get("awn")
   check(awn and awn.x == 200 and map.get("nope") == nil,
         "map: get(name) placement handle")
+
+  -- reload in place (R8b, MAPS.md §9): the held world wrapper + instance
+  -- adopt the saved file's new geometry without re-plumbing
+  local held_world = inst.world
+  local d3 = map.decode(raw)
+  d3.colliders[1].verts = { 0, 100, 320, 100 } -- ground rises to y=100
+  d3.places[2].name = "awn2"
+  check(pal.write_file(tmp, map.encode(d3)) == true, "map: reload tmp write")
+  check(map.reload("/nope/other.map") == false, "map: reload wrong path no-ops")
+  check(map.reload(tmp) == true, "map: reload accepts the live path")
+  check(inst.world == held_world, "map: reload keeps the wrapper identity")
+  local rx, ry, rhit = held_world:move(60, 20, 10, 14, 0, 200)
+  check(ry == 100 - 14 and rhit.down, "map: reload rebuilt the segments ("
+        .. ry .. ")")
+  check(map.get("awn2") ~= nil and map.get("awn") == nil,
+        "map: reload rebuilt the name lookup")
   pal.buf_free("selftest.mapw")
+
+  -- fill geometry (pure): loops/slabs/lines classified, attached offset
+  local geom = map.geom(d)
+  check(#geom.loops == 1 and #geom.lines == 1 and #geom.slabs == 1,
+        "map: geom classifies loops/lines/slabs")
+  check(geom.slabs[1][1] == 200 and geom.slabs[1][3] == 248,
+        "map: geom offsets attached colliders")
+  local ivs = map.column_ivs(geom.loops, 120.5, {})
+  check(#ivs == 2 and ivs[1] == 140 and ivs[2] == 180,
+        "map: column_ivs crosses the quad loop")
+  check(#map.column_ivs(geom.loops, 60.5, {}) == 0,
+        "map: column_ivs empty off the loop")
 
   -- ---- cm.tmap ----
   local td = tmap.blank(4, 3, 16, "art/tiles.spr")
@@ -3265,7 +3293,97 @@ local function t_ed_assets()
   check(A.kind_for("art/girl.spr") == "sprite"
         and A.kind_for("art/x.png") == "image"
         and A.kind_for("main.lua") == "text"
+        and A.kind_for("maps/rim.map") == "map"
         and A.kind_for("s.ogg") == nil, "ed.assets: kind_for")
+end
+
+local function t_ed_map()
+  -- cm.ed.win.map — the pure select-tool core + the §7 snap (R8b).
+  -- dims stub: every placement is 20x10.
+  local W = cm.require("cm.ed.win.map")
+  local dims = function() return 20, 10 end
+  local doc = {
+    name = "t", w = 320, h = 200, grid = 8,
+    colliders = {
+      { kind = "chain", verts = { 0, 180, 320, 180 } },          -- ground
+      { kind = "quad", x = 100, y = 140, w = 40, h = 40 },       -- block
+    },
+    places = {
+      { path = "a.png", x = 30, y = 170, layer = 0 },
+      { path = "b.png", x = 40, y = 175, layer = 0 },            -- topmost
+      { path = "c.png", x = 200, y = 100, layer = 0 },
+    },
+    markers = {
+      { x = 60, y = 160, w = 16, h = 16, kind = "spawn", label = "",
+        note = "" },
+    },
+  }
+
+  -- pick: topmost placement wins; markers overlay when shown
+  local it = W.pick(doc, 45, 176, dims, false) -- inside a AND b -> b (z)
+  check(it and it.t == "place" and it.i == 2, "ed.map: pick topmost place")
+  it = W.pick(doc, 32, 171, dims, false) -- inside a only
+  check(it and it.i == 1, "ed.map: pick the only hit")
+  it = W.pick(doc, 65, 165, dims, true)
+  check(it and it.t == "marker", "ed.map: markers pick when shown")
+  check(W.pick(doc, 65, 165, dims, false) == nil,
+        "ed.map: markers skip when hidden")
+  check(W.pick(doc, 300, 20, dims, true) == nil, "ed.map: empty pick")
+
+  -- marquee
+  local got = W.pick_rect(doc, 25, 165, 65, 190, dims, true)
+  check(#got == 3, "ed.map: marquee places + marker")
+  got = W.pick_rect(doc, 25, 165, 65, 190, dims, false)
+  check(#got == 2, "ed.map: marquee respects marker toggle")
+
+  -- nudge + z + del
+  local sel = { { t = "place", i = 3 } }
+  W.nudge(doc, sel, 5, -3)
+  check(doc.places[3].x == 205 and doc.places[3].y == 97, "ed.map: nudge")
+  sel = { { t = "place", i = 1 } }
+  check(W.zmove(doc, sel, 1) == 2 and doc.places[2].path == "a.png",
+        "ed.map: ] moves forward in file order")
+  check(W.zmove(doc, sel, -1) == 1 and doc.places[1].path == "a.png",
+        "ed.map: [ moves back")
+  check(W.zmove(doc, sel, -1) == 1, "ed.map: z clamps at the ends")
+  W.del(doc, { { t = "place", i = 2 }, { t = "marker", i = 1 } })
+  check(#doc.places == 2 and #doc.markers == 0
+        and doc.places[2].path == "c.png", "ed.map: del removes high-to-low")
+
+  -- snap (§7): vertex > edge/center > grid
+  -- vertex: the quad's corner (100,140) catches a dragged corner
+  local dx, dy, guides = W.snap_rect(doc, { x = 97, y = 138, w = 20, h = 10 },
+                                     { dims = dims, thr = 6, grid = 8 })
+  check(dx == 3 and dy == 2 and guides[1].t == "dot"
+        and guides[1].x == 100 and guides[1].y == 140,
+        "ed.map: vertex snap wins (" .. dx .. "," .. dy .. ")")
+  -- edge: the ground line y=180 catches the rect bottom (no vertex near);
+  -- x falls to the grid
+  dx, dy, guides = W.snap_rect(doc, { x = 115, y = 173, w = 20, h = 10 },
+                               { dims = dims, thr = 4, grid = 8 })
+  check(dy == -3, "ed.map: edge snap y to the ground (" .. dy .. ")")
+  check(115 + dx == 112, "ed.map: free axis falls to grid (" .. dx .. ")")
+  local has_h = false
+  for _, gl in ipairs(guides) do has_h = has_h or gl.t == "h" end
+  check(has_h, "ed.map: edge snap draws its guide")
+  -- placement corner as vertex target: c.png at (205,97) after the nudge
+  dx, dy = W.snap_rect(doc, { x = 222, y = 99, w = 20, h = 10 },
+                       { dims = dims, thr = 6, grid = 8 })
+  check(dx == 3 and dy == -2, "ed.map: neighbor corner snap (butting)")
+  -- the dragged placement itself is excluded via skip
+  dx, dy = W.snap_rect(doc, { x = 222, y = 99, w = 20, h = 10 },
+                       { dims = dims, thr = 6, grid = 8,
+                         skip = function(n) return n == 2 end })
+  check(not (dx == 3 and dy == -2), "ed.map: skip excludes the dragged")
+  -- grid only (far from everything): origin rounds to the step
+  dx, dy = W.snap_rect(doc, { x = 261, y = 61, w = 20, h = 10 },
+                       { dims = dims, thr = 6, grid = 8,
+                         skip = function() return true end })
+  check(261 + dx == 264 and 61 + dy == 64, "ed.map: grid fallback")
+
+  -- accepts/placeable split: .map rebinds, images place
+  check(W.accepts(nil, "maps/x.map") ~= nil and not W.accepts(nil, "a.png"),
+        "ed.map: accepts only .map")
 end
 
 local function t_ed_filter()
@@ -3324,6 +3442,18 @@ local function t_ed_filter()
   })
   check(#ev == 1 and ev[1].type == "button",
         "ed.filter: ALT suspends downs, releases pass")
+  ed.g.alt = false
+
+  -- the R8b wants_keys/game_input split: a focused MAP window claims the
+  -- shell's plain keys for its tool but must never feed the sim
+  local mw = wm.spawn(ed.doc, "map", 600, 0, 400, 300)
+  ed.doc.focus = mw.id
+  ev = ed.filter_events({
+    { type = "key", scancode = 79, down = true }, -- an arrow nudge
+    { type = "key", scancode = 79, down = false },
+  })
+  check(#ev == 1 and ev[1].down == false,
+        "ed.filter: focused map window never feeds the game")
 
   ed.on, ed.doc, ed.root, ed.g = was_on, was_doc, was_root, was_g
 end
@@ -3524,6 +3654,7 @@ function game.init()
   t_ed_journal()
   t_ed_lex()
   t_ed_assets()
+  t_ed_map()
   t_ed_filter()
   t_ed_park()
   t_ed_domain()

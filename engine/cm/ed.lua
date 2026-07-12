@@ -38,6 +38,7 @@ M.kinds = {
   assets = cm.require("cm.ed.win.assets"),
   image = cm.require("cm.ed.win.image"),
   sprite = cm.require("cm.ed.win.sprite"),
+  map = cm.require("cm.ed.win.map"),
 }
 
 -- new code windows open at the size you've made your current one
@@ -182,8 +183,9 @@ function M.bring_back()
   local path = win.path
   local parked_a = M.doc.assets and M.doc.assets[path]
   if not parked_a then return nil end
-  local payload = parked_a.text or parked_a.spr
-  local field = parked_a.text ~= nil and "text" or "spr"
+  local payload = parked_a.text or parked_a.spr or parked_a.map
+  local field = parked_a.text ~= nil and "text"
+                or parked_a.spr ~= nil and "spr" or "map"
   if not payload then return nil end
   local journal = cm.require("cm.ed.journal")
   local stash = M.g.stash.doc
@@ -193,7 +195,8 @@ function M.bring_back()
   pa[field] = payload
   -- the present's journal gets the entry (a deliberate write from the
   -- past — THE door; the parked gates don't apply to it)
-  local cap = field == "spr" and M.kinds.sprite.JCAP or nil
+  local cap = field == "spr" and M.kinds.sprite.JCAP
+              or field == "map" and M.kinds.map.JCAP or nil
   local j = journal.open(M.root, path, pa.jpos > 0 and pa.jpos or nil, cap)
   journal.push(j, payload, 0, pal.time_ns() // 1000000)
   pa.jpos = j.pos
@@ -219,13 +222,22 @@ function M.unpark(adopt)
   M.touch() -- re-arm the session debounce on the (possibly new) present
 end
 
--- the focused window is a playable game window (EDITOR.md §12.3)
+-- the focused window's kind claims the plain keys (game = playing §12.3,
+-- map = the select tool's del/arrows §6-R8b): shell plain-key hotkeys
+-- suspend either way
 local function playing()
   if not M.doc then return nil end
   local win = wm.get(M.doc, M.doc.focus)
   if win and M.kinds[win.kind] and M.kinds[win.kind].wants_keys then
     return win
   end
+end
+
+-- ...but only a kind flagged game_input (the game window) feeds the SIM
+-- through filter_events; a focused map window never leaks keys to play
+local function playing_game()
+  local win = playing()
+  if win and M.kinds[win.kind].game_input then return win end
 end
 
 -- What the game sees in editor mode (cm.main calls this in place of the
@@ -237,7 +249,7 @@ end
 -- Everything rides cm.input.feed — recorded, replayable input.
 function M.filter_events(events)
   if not M.on then return events end
-  local win = playing()
+  local win = playing_game()
   local g = M.g
   local live = win and not g.alt and not g.ig_kb
   local rect = win and g.grect and g.grect[win.id]
@@ -274,14 +286,21 @@ function M.filter_events(events)
       end
     elseif e.type == "drop" and M.doc then
       -- an OS file dropped on the window: over an assets window = add to
-      -- project (EDITOR.md §12.5); anywhere else is ignored (logged)
+      -- project (EDITOR.md §12.5); over a map window = add + PLACE at the
+      -- drop point (MAPS.md §6); anywhere else is ignored (logged)
       local wwx, wwy = cam.s2w(M.doc.cam, e.wx, e.wy)
       local id = wm.hit(M.doc, wwx, wwy, 0)
       local win = id and wm.get(M.doc, id)
       if win and win.kind == "assets" then
         M.kinds.assets.add_dropped(M, e.path)
+      elseif win and M.kinds[win.kind].drop then
+        local rel = M.kinds.assets.add_dropped(M, e.path)
+        if rel and not M.kinds[win.kind].drop(win, M, rel, e.wx, e.wy) then
+          pal.log("[ed] added but not placeable here: " .. rel)
+        end
       else
-        pal.log("[ed] drop ignored (aim at an assets window): " .. e.path)
+        pal.log("[ed] drop ignored (aim at an assets or map window): "
+                .. e.path)
       end
     end
     -- text events never reach the game (it has no text input path)
@@ -533,7 +552,13 @@ local function interact(ig)
         local id = wm.hit(doc, wwx, wwy, 0)
         local win = id and wm.get(doc, id)
         local kind = win and M.kinds[win.kind]
-        if win and win.id ~= d.from and kind and kind.accepts
+        -- kind.drop outranks rebind (MAPS.md §6: place ≠ rebind) — the
+        -- map window claims .spr/.png/.tm as placements at the drop point
+        if win and kind and kind.drop
+           and kind.drop(win, M, d.path, i.wx, i.wy) then
+          doc.focus = win.id
+          M.touch()
+        elseif win and win.id ~= d.from and kind and kind.accepts
            and kind.accepts(win, d.path) then
           kind.rebind(win, M, d.path)
           doc.focus = win.id
@@ -781,8 +806,8 @@ local function draw_win(ig, win, zi)
 end
 
 local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
-                     { "assets", "assets" }, { "game", "game window" },
-                     { "console", "console" } }
+                     { "assets", "assets" }, { "map", "map" },
+                     { "game", "game window" }, { "console", "console" } }
 
 local function draw_menu(ig, i)
   local g = M.g
