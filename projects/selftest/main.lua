@@ -972,6 +972,249 @@ local function t_tilemap_tools()
   end
 end
 
+-- ---- cm.collide (R8a): TM-parity on flat chain worlds, slopes, queries --
+
+local function t_collide()
+  local collide = cm.require("cm.collide")
+  local tilemap = cm.require("cm.tilemap")
+
+  -- A) the t_tilemap room re-authored as chains; the SAME assertions.
+  local wd = collide.build{ name = "selftest.col", w = 192, h = 128,
+    colliders = {
+      { kind = "chain", verts = { 0, 112, 192, 112 } },  -- floor line
+      { kind = "chain", closed = true,                   -- wall column
+        verts = { 96, 64, 112, 64, 112, 112, 96, 112 } },
+      { kind = "chain", oneway = true, verts = { 32, 80, 80, 80 } },
+      { kind = "chain", closed = true,                   -- ceiling block
+        verts = { 144, 32, 160, 32, 160, 48, 144, 48 } },
+    } }
+  local body_w, body_h = 10, 14
+  local stand = 112 - body_h
+
+  local nx, ny, hit = wd:move(60, stand, body_w, body_h, 40, 0)
+  check(nx == 96 - body_w and ny == stand and hit.right and not hit.left,
+        "collide: clamp right at wall (" .. nx .. ")")
+  nx, ny, hit = wd:move(130, stand, body_w, body_h, -40, 0)
+  check(nx == 112 and hit.left, "collide: clamp left at wall")
+  nx, ny, hit = wd:move(60, 30, body_w, body_h, 40, 0)
+  check(nx == 100 and not hit.right, "collide: free run above wall")
+  nx, ny, hit = wd:move(60, 58, body_w, body_h, 40, 0)
+  check(nx == 96 - body_w and hit.right, "collide: partial band blocks")
+  nx, ny, hit = wd:move(0, stand, body_w, body_h, 1000, 0)
+  check(nx == 96 - body_w and hit.right, "collide: no x tunneling")
+
+  nx, ny, hit = wd:move(20, 60, body_w, body_h, 0, 200)
+  check(ny == stand and hit.down and not hit.oneway,
+        "collide: land on floor, no y tunneling")
+  nx, ny, hit = wd:move(20, stand, body_w, body_h, 0, 0.25)
+  check(ny == stand and hit.down, "collide: standing is stable")
+  nx, ny, hit = wd:move(146, 60, body_w, body_h, 0, -30)
+  check(ny == 48 and hit.up, "collide: head bonk clamps (" .. ny .. ")")
+
+  nx, ny, hit = wd:move(40, 50, body_w, body_h, 0, 60)
+  check(ny == 80 - body_h and hit.down and hit.oneway,
+        "collide: land on one-way")
+  nx, ny, hit = wd:move(40, 90, body_w, body_h, 0, -40)
+  check(ny == 50 and not hit.up, "collide: rise through one-way")
+  nx, ny, hit = wd:move(20, 80 - body_h, body_w, body_h, 30, 0)
+  check(nx == 50 and not hit.right, "collide: one-way never blocks x")
+  nx, ny, hit = wd:move(40, 80 - body_h, body_w, body_h, 0, 10,
+                        { drop = true })
+  check(ny == 80 - body_h + 10 and not hit.down, "collide: drop-through")
+  nx, ny, hit = wd:move(40, 82, body_w, body_h, 0, 10)
+  check(ny == 92 and not hit.down, "collide: below plank top, no snag")
+
+  nx, ny, hit = wd:move(8, 80 - body_h, body_w, body_h, 0, 0.25)
+  check(not hit.down and ny > 80 - body_h, "collide: ledge gives no support")
+  check(wd:grounded(40, 80 - body_h, body_w, body_h),
+        "collide: grounded probe on plank")
+  check(not wd:grounded(40, 60, body_w, body_h), "collide: airborne probe")
+
+  nx, ny, hit = wd:move(4, 20, body_w, body_h, -30, 0)
+  check(nx == 0 and hit.left, "collide: left border wall")
+  nx, ny, hit = wd:move(170, 20, body_w, body_h, 30, 0)
+  check(nx == 192 - body_w and hit.right, "collide: right border wall")
+  nx, ny, hit = wd:move(20, 4, body_w, body_h, 0, -40)
+  check(ny == -36 and not hit.up, "collide: open sky above")
+
+  nx, ny, hit = wd:move(60, 90, body_w, body_h, 60, 30)
+  check(nx == 96 - body_w and ny == 112 - body_h and hit.right and hit.down,
+        "collide: axis-separated diagonal")
+
+  -- solid_at: closed-chain interiors + the OOB rules
+  check(wd:solid_at(100, 100) and not wd:solid_at(90, 100),
+        "collide: solid_at closed interior")
+  check(wd:solid_at(-1, 0) and wd:solid_at(193, 0) and wd:solid_at(0, 129)
+        and not wd:solid_at(0, -50), "collide: oob walls + open sky")
+
+  -- deterministic encode: same colliders -> identical bytes
+  local wd2 = collide.build{ name = "selftest.col.b", w = 192, h = 128,
+    colliders = {
+      { kind = "chain", verts = { 0, 112, 192, 112 } },
+      { kind = "chain", closed = true,
+        verts = { 96, 64, 112, 64, 112, 112, 96, 112 } },
+      { kind = "chain", oneway = true, verts = { 32, 80, 80, 80 } },
+      { kind = "chain", closed = true,
+        verts = { 144, 32, 160, 32, 160, 48, 144, 48 } },
+    } }
+  check(wd.buf:str(0, wd.buf:size()) == wd2.buf:str(0, wd2.buf:size()),
+        "collide: canonical bytes")
+  check(collide.open("selftest.col").segs and #collide.open("selftest.col").segs
+        == #wd.segs, "collide: open adopts by header")
+
+  -- B) random flat-world parity sweep vs TM:move (exact, incl. flags)
+  local seed = 0x9e3779b97f4a7c15
+  local function rnd() -- splitmix-ish local LCG; NOT cm.rand (no sim touch)
+    seed = (seed * 6364136223846793005 + 1442695040888963407)
+           & 0x7fffffffffffffff
+    return (seed >> 22) / 2199023255552.0 -- [0,1)
+  end
+  local T = { [1] = { solid = true }, [2] = { oneway = true } }
+  for world = 1, 3 do
+    local tw, th, t = 14, 9, 16
+    local tm = tilemap.new{ name = "selftest.par", w = tw, h = th, tile = t,
+                            tiles = T }
+    tm:clear()
+    local cols = {}
+    for ty = 0, th - 1 do
+      for tx = 0, tw - 1 do
+        local r = rnd()
+        if r < 0.14 then
+          tm:set(tx, ty, 1)
+          cols[#cols + 1] = { kind = "chain", closed = true,
+            verts = { tx * t, ty * t, (tx + 1) * t, ty * t,
+                      (tx + 1) * t, (ty + 1) * t, tx * t, (ty + 1) * t } }
+        elseif r < 0.22 then
+          tm:set(tx, ty, 2)
+          cols[#cols + 1] = { kind = "chain", oneway = true,
+            verts = { tx * t, ty * t, (tx + 1) * t, ty * t } }
+        end
+      end
+    end
+    local wp = collide.build{ name = "selftest.par.col", w = tw * t,
+                              h = th * t, colliders = cols }
+    local function inside_solid(x, y, w, h) -- TM class rules incl. OOB
+      local tx0, tx1 = math.floor(x / t), math.ceil((x + w) / t) - 1
+      local ty0, ty1 = math.floor(y / t), math.ceil((y + h) / t) - 1
+      for cy = ty0, ty1 do
+        for cx = tx0, tx1 do
+          if cy >= 0 and (cx < 0 or cx >= tw or cy >= th
+                          or tm:get(cx, cy) == 1) then
+            return true
+          end
+        end
+      end
+      return false
+    end
+    local tried, ran = 0, 0
+    while ran < 260 and tried < 4000 do
+      tried = tried + 1
+      local w = 6 + rnd() * 20
+      local h = 6 + rnd() * 20
+      local x = rnd() * (tw * t - w)
+      local y = rnd() * (th * t - h) - 10
+      if not inside_solid(x, y, w, h) then
+        ran = ran + 1
+        local dx = (rnd() - 0.5) * 90
+        local dy = (rnd() - 0.5) * 90
+        local opts = rnd() < 0.2 and { drop = true } or nil
+        local ax, ay, ah = tm:move(x, y, w, h, dx, dy, opts)
+        local bx, by, bh = wp:move(x, y, w, h, dx, dy, opts)
+        local same = ax == bx and ay == by
+          and (ah.left or false) == (bh.left or false)
+          and (ah.right or false) == (bh.right or false)
+          and (ah.up or false) == (bh.up or false)
+          and (ah.down or false) == (bh.down or false)
+          and (ah.oneway or false) == (bh.oneway or false)
+        if not same then -- dump the sample for diagnosis
+          local rows = {}
+          for cy = 0, th - 1 do
+            local row = ""
+            for cx = 0, tw - 1 do row = row .. tm:get(cx, cy) end
+            rows[#rows + 1] = row
+          end
+          pal.log("PARITY body " .. w .. "x" .. h .. " drop="
+                  .. tostring(opts and opts.drop) .. " tmhit L"
+                  .. tostring(ah.left) .. " R" .. tostring(ah.right) .. " U"
+                  .. tostring(ah.up) .. " D" .. tostring(ah.down) .. " col L"
+                  .. tostring(bh.left) .. " R" .. tostring(bh.right) .. " U"
+                  .. tostring(bh.up) .. " D" .. tostring(bh.down) .. "\n"
+                  .. table.concat(rows, "\n"))
+        end
+        check(same, "collide: TM parity w" .. world .. " #" .. ran
+              .. " at (" .. x .. "," .. y .. ") d(" .. dx .. "," .. dy
+              .. ") tm(" .. ax .. "," .. ay .. ") col(" .. bx .. "," .. by
+              .. ")")
+      end
+    end
+    check(ran == 260, "collide: parity sweep found enough starts")
+  end
+  pal.buf_free("selftest.par")
+  pal.buf_free("selftest.par.col")
+
+  -- C) slopes: walk up 45°, plateau, stick down, one-way slope, steep wall
+  local ws = collide.build{ name = "selftest.col.s", w = 400, h = 200,
+    colliders = {
+      { kind = "chain", verts = { 0, 160, 400, 160 } },      -- ground
+      { kind = "chain", verts = { 100, 160, 180, 80 } },     -- 45° up-right
+      { kind = "chain", verts = { 180, 80, 340, 80 } },      -- plateau
+      { kind = "chain", oneway = true, verts = { 20, 140, 60, 120 } },
+      { kind = "chain", verts = { 350, 160, 360, 60 } },     -- steep = wall
+      { kind = "chain", oneway = true, verts = { 240, 60, 250, 20 } },
+      { kind = "circle", cx = 300, cy = 150, r = 12 },
+    } }
+  local bw, bh = 10, 14
+  -- walk up the ramp from flat ground; grounded every step by snap-up
+  local px, py = 80, 160 - bh
+  for _ = 1, 30 do
+    local hitw
+    px, py, hitw = ws:move(px, py, bw, bh, 4, 1, { ground = true })
+    check(hitw.down, "collide: slope walk-up stays grounded (x=" .. px .. ")")
+  end
+  check(px == 200 and py == 80 - bh,
+        "collide: ramp led onto the plateau (" .. px .. "," .. py .. ")")
+  -- walk back down: the stick keeps contact through the descent
+  for _ = 1, 30 do
+    local hitw
+    px, py, hitw = ws:move(px, py, bw, bh, -4, 1, { ground = true })
+    check(hitw.down, "collide: slope walk-down sticks (x=" .. px .. ")")
+  end
+  check(px == 80 and py == 160 - bh, "collide: back on the flat ground")
+  -- without ground, a downhill step micro-falls (documents the stick)
+  local _, my, mh = ws:move(150, 160 - (150 + bw - 100) - bh, bw, bh, -4, 1)
+  check(not mh.down, "collide: no stick without opts.ground")
+  -- one-way slope: land from above / rise through / drop through
+  nx, ny, hit = ws:move(40, 80, bw, bh, 0, 60)
+  check(ny == 125 - bh and hit.down and hit.oneway,
+        "collide: land on one-way slope (" .. ny .. ")")
+  nx, ny, hit = ws:move(40, 130, bw, bh, 0, -40)
+  check(ny == 90 and not hit.up, "collide: rise through one-way slope")
+  nx, ny, hit = ws:move(40, 125 - bh, bw, bh, 0, 6, { drop = true })
+  check(not hit.down, "collide: drop through one-way slope")
+  -- steep solid is a wall; steep one-way was dropped at build
+  nx, ny, hit = ws:move(320, 160 - bh, bw, bh, 40, 0)
+  check(nx == 350 - bw and hit.right,
+        "collide: steep segment blocks as wall (" .. nx .. ")")
+  local steep_ow = 0
+  for _, s in ipairs(ws.segs) do
+    if s.oneway and s.x0 == 240 then steep_ow = steep_ow + 1 end
+  end
+  check(steep_ow == 0, "collide: steep one-way ignored at build")
+  -- stand_ray: sorted standables down the column
+  local ray = ws:stand_ray(125, 0, 200)
+  check(#ray == 2 and ray[1].y == 135 and ray[2].y == 160,
+        "collide: stand_ray ramp+ground sorted")
+  ray = ws:stand_ray(40, 0, 200)
+  check(#ray == 2 and ray[1].oneway and ray[1].y == 130
+        and ray[2].y == 160, "collide: stand_ray sees the one-way")
+  -- circles: clamp-distance overlap, stored order
+  check(#ws:circles(285, 140, 10, 10) == 1 and #ws:circles(10, 10, 5, 5) == 0,
+        "collide: circle overlap query")
+  pal.buf_free("selftest.col")
+  pal.buf_free("selftest.col.b")
+  pal.buf_free("selftest.col.s")
+end
+
 -- ---- cm.state.buf_poke/buf_peek (the inspector's buffer eval unit) ----
 
 local function t_buf_poke()
@@ -3150,6 +3393,7 @@ function game.init()
   t_console()
   t_tilemap()
   t_tilemap_tools()
+  t_collide()
   t_inspect()
   t_bundle()
   t_ring()
