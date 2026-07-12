@@ -107,10 +107,56 @@ function M.launch(root)
 end
 
 function M.touch() -- a captured-doc mutation: arm the session debounce
-  M.g.save_due = pal.time_ns() + session.DEBOUNCE_NS
+  -- parked in the past (R6c): the debounce must never fire — session.dat
+  -- holds the PRESENT. Interactions still redraw (doc_rev moves).
+  if not M.parked then
+    M.g.save_due = pal.time_ns() + session.DEBOUNCE_NS
+  end
   -- the R6 capture gate (REWIND.md §2): the ring re-encodes the ed doc
   -- only when this rev moved — an idle editor costs the history nothing
   M.doc_rev = (M.doc_rev or 0) + 1
+end
+
+-- ---- parking (R6c, REWIND.md §4 — interactive but ephemeral) ----
+
+-- adopt a rewound frame's editor doc; the present is stashed once per
+-- park episode. The parked copy is fully interactive — every mutation
+-- lands in it and evaporates on the next park()/unpark(false). The
+-- per-asset ephemeral plumbing drops wholesale (journals, disk caches,
+-- decoded sprites — they key by path and would disagree with the past;
+-- they rebuild lazily from whatever doc is current).
+function M.park(edoc_bytes)
+  if not M.on then return end
+  if not M.parked then
+    M.g.stash = { doc = M.doc, rev = M.doc_rev }
+    M.parked = true
+    M.g.save_due = nil -- an armed debounce must not fire on the past
+  end
+  if edoc_bytes then
+    local ok, t = pcall(cm.require("cm.state").parse, edoc_bytes)
+    if ok and type(t) == "table" then
+      M.doc = wm.init(t)
+    else
+      pal.log("[ed] parked frame's editor doc unreadable; keeping shown")
+    end
+  end
+  M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
+  M.doc_rev = (M.doc_rev or 0) + 1
+end
+
+-- leave the past. adopt=true (resume-from-frame): the SHOWN doc — pokes
+-- included — becomes the present (REWIND.md §4). adopt=false (scrub
+-- closed): the stashed present comes back untouched.
+function M.unpark(adopt)
+  if not M.parked then return end
+  if not adopt then
+    M.doc = M.g.stash.doc
+    M.doc_rev = M.g.stash.rev
+  end
+  M.g.stash = nil
+  M.parked = false
+  M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
+  M.touch() -- re-arm the session debounce on the (possibly new) present
 end
 
 -- the focused window is a playable game window (EDITOR.md §12.3)
@@ -681,6 +727,7 @@ end
 -- this is the backstop that makes "unsaved persists" a guarantee.
 function M.quit_flush()
   if not M.on then return end
+  if M.parked then M.unpark(false) end -- quit while parked: save the PRESENT
   M.kinds.text.flush(M) -- pending edit gestures reach their journals
   save_now()
 end

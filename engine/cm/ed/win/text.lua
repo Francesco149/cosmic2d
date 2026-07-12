@@ -83,15 +83,17 @@ local function open_asset(ed, path)
     ed.doc.assets[path] = a
   end
   p.j = journal.open(ed.root, path, a.jpos > 0 and a.jpos or nil)
-  if #p.j.entries == 0 then
-    -- baseline entry: the disk state undo can always come back to
-    journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
-  end
-  local tip = journal.at(p.j)
-  if tip and a.text ~= tip.bytes and p.j.pos == #p.j.entries then
-    -- session-restored unsaved work the journal hasn't seen (e.g. the
-    -- 600 ms push never fired before quit): journal it now so Ctrl+Z works
-    journal.push(p.j, a.text, 0, pal.time_ns() // 1000000)
+  if not ed.parked then -- parked reopens must never write journals (R6c)
+    if #p.j.entries == 0 then
+      -- baseline entry: the disk state undo can always come back to
+      journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
+    end
+    local tip = journal.at(p.j)
+    if tip and a.text ~= tip.bytes and p.j.pos == #p.j.entries then
+      -- session-restored unsaved work the journal hasn't seen (e.g. the
+      -- 600 ms push never fired before quit): journal it now so Ctrl+Z works
+      journal.push(p.j, a.text, 0, pal.time_ns() // 1000000)
+    end
   end
   a.jpos = p.j.pos
   ed.touch()
@@ -103,6 +105,7 @@ local function push_now(ed, path, flags)
   local p = plumb(ed, path)
   if not (a and p.j) then return end
   p.due = nil
+  if ed.parked then return end -- parked edits are ephemeral (REWIND.md §4)
   if journal.push(p.j, a.text, flags or 0, pal.time_ns() // 1000000) then
     a.jpos = p.j.pos
     ed.touch()
@@ -194,6 +197,10 @@ end
 
 function M.save(win, ed)
   if win.path == "" then return end
+  if ed.parked then
+    pal.log("[ed] parked in the past — writes are walled (bring-back is the door)")
+    return
+  end
   local a, p = open_asset(ed, win.path)
   if pal.write_file(ed.root .. "/" .. win.path, a.text) then
     p.disk = a.text

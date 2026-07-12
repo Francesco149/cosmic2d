@@ -717,6 +717,8 @@ function M.rewind(f)
     R.prev[name] = { mirror = m, size = #b }
   end
   R.prev_doc = st.doct
+  R.prev_edoc = st.edoc or "" -- rebase the editor stream at f (R6c);
+  R.prev_edrev = nil -- force a re-check on the next recorded frame
   R.last_frame = f
   if seg.frames >= ring_kf() then open_segment(R, f + 1) end
   pal.log(("[trace] rewound to frame %d"):format(f))

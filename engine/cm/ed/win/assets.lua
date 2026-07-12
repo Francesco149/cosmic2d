@@ -134,6 +134,10 @@ end
 -- ---- the OS drop add (called from cm.ed.filter_events) ----
 
 function M.add_dropped(ed, ospath)
+  if ed.parked then
+    pal.log("[ed] parked in the past — writes are walled")
+    return
+  end
   local base = ospath:match("([^/\\]+)$")
   if not base then return end
   local bytes = pal.read_file(ospath)

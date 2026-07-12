@@ -2734,6 +2734,74 @@ local function t_ed_filter()
   ed.on, ed.doc, ed.root, ed.g = was_on, was_doc, was_root, was_g
 end
 
+local function t_ed_park()
+  -- R6c (REWIND.md §4): parking is interactive-but-ephemeral; close
+  -- restores the stashed present; resume adopts the shown doc
+  local trace = cm.require("cm.trace")
+  local scrub = cm.require("cm.scrub")
+  local ed = cm.require("cm.ed")
+  local wm = cm.require("cm.ed.wm")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local was_on, was_doc, was_rev, was_g = ed.on, ed.doc, ed.doc_rev, ed.g
+  local main = cm.main
+  local saved_ar = main and main.after_restore
+  if main then main.after_restore = nil end -- game.init here = the suite!
+  trace.ring.kf = 4
+  trace.ring.seconds = 10
+  ed.on = true
+  ed.g = {}
+  ed.doc = wm.init({ v = 1, mark = "A" })
+  ed.doc_rev = 1
+  trace.ring_start({ project = "selftest" })
+  local irec = ("\0"):rep(10)
+  for i = 1, 6 do
+    if i == 4 then
+      ed.doc.mark = "B"
+      ed.touch()
+    end
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+  end
+  local present = ed.doc
+
+  scrub.open()
+  check(scrub.paused(), "ed park: scrub open")
+  scrub.at = f0 + 2
+  scrub.frame()
+  check(ed.parked and ed.doc ~= present and ed.doc.mark == "A",
+        "ed park: the past is shown")
+  ed.doc.poke = 1 -- interactive: poke the parked doc
+  ed.touch()
+  check(ed.g.save_due == nil, "ed park: autosave suspended")
+  scrub.at = f0 + 5
+  scrub.frame()
+  check(ed.doc.poke == nil and ed.doc.mark == "B",
+        "ed park: pokes evaporate on seek")
+  scrub.close()
+  check(not ed.parked and ed.doc == present,
+        "ed park: close restores the present")
+  check(ed.g.save_due ~= nil, "ed park: autosave re-armed")
+
+  scrub.open()
+  scrub.at = f0 + 2
+  scrub.frame()
+  ed.doc.poke = 42
+  scrub.rewind_here()
+  check(not ed.parked and ed.doc.poke == 42 and ed.doc.mark == "A",
+        "ed park: resume adopts the shown doc, pokes included")
+  local _, hi = trace.ring_range()
+  check(hi == f0 + 2 and sim:i64(0) == f0 + 2,
+        "ed park: resume truncated + rewound the sim")
+
+  ed.on, ed.doc, ed.doc_rev, ed.g = was_on, was_doc, was_rev, was_g
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  if main then main.after_restore = saved_ar end
+  scrub.shown = nil
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -2816,6 +2884,7 @@ function game.init()
   t_ed_lex()
   t_ed_assets()
   t_ed_filter()
+  t_ed_park()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end

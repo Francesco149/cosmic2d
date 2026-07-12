@@ -101,12 +101,14 @@ local function open_asset(ed, path)
     ed.doc.assets[path] = a
   end
   p.j = journal.open(ed.root, path, a.jpos > 0 and a.jpos or nil, M.JCAP)
-  if #p.j.entries == 0 and #p.disk > 0 then
-    journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
-  end
-  local tip = journal.at(p.j)
-  if tip and a.spr ~= tip.bytes and p.j.pos == #p.j.entries then
-    journal.push(p.j, a.spr, 0, pal.time_ns() // 1000000)
+  if not ed.parked then -- parked reopens must never write journals (R6c)
+    if #p.j.entries == 0 and #p.disk > 0 then
+      journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
+    end
+    local tip = journal.at(p.j)
+    if tip and a.spr ~= tip.bytes and p.j.pos == #p.j.entries then
+      journal.push(p.j, a.spr, 0, pal.time_ns() // 1000000)
+    end
   end
   a.jpos = p.j.pos
   decode_into(p, a.spr)
@@ -124,6 +126,10 @@ local function commit(ed, path, flags)
   local a, p = open_asset(ed, path)
   if not p.doc then return end
   a.spr = sprite.encode(p.doc)
+  if ed.parked then -- parked edits are ephemeral (REWIND.md §4): the
+    ed.touch()      -- parked doc updates, the journal file never moves
+    return
+  end
   if journal.push(p.j, a.spr, flags or 0, pal.time_ns() // 1000000) then
     a.jpos = p.j.pos
   end
@@ -141,6 +147,10 @@ end
 
 function M.save(win, ed)
   if win.path == "" then return end
+  if ed.parked then
+    pal.log("[ed] parked in the past — writes are walled (bring-back is the door)")
+    return
+  end
   local a, p = open_asset(ed, win.path)
   if not p.doc then return end
   a.spr = sprite.encode(p.doc)

@@ -35,11 +35,16 @@ function M.paused()
   return M.on == true
 end
 
--- write frame f's state into the live buffers/doc (idempotent per frame)
+-- write frame f's state into the live buffers/doc (idempotent per frame).
+-- R6c: the editor parks alongside — the frame's EDOC becomes the shown
+-- (fully interactive, fully ephemeral) editor doc; the present is
+-- stashed by cm.ed until close/rewind decides its fate (REWIND.md §4)
 local function apply(f)
   if f == M.shown then return end
   local st = trace.ring_state_at(f)
   state.restore_tables(st.bufs, st.doct)
+  local ed = cm.require("cm.ed")
+  if ed.on then ed.park(st.edoc) end
   M.shown = f
   M.irec = st.input
 end
@@ -64,6 +69,7 @@ function M.close()
     return M.rewind_here()
   end
   apply(M.hi)
+  cm.require("cm.ed").unpark(false) -- the stashed present comes back
   M.on, M.play = false, false
 end
 
@@ -72,6 +78,9 @@ end
 function M.rewind_here()
   if not M.on then return end
   trace.rewind(M.at)
+  -- resume-from-frame adopts the SHOWN editor doc, pokes included
+  -- (REWIND.md §4 — it's what you're looking at)
+  cm.require("cm.ed").unpark(true)
   M.shown = M.at
   M.on, M.play, M.replay = false, false, false
   if cm.main and cm.main.after_restore then cm.main.after_restore() end
