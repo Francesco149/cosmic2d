@@ -246,6 +246,7 @@ function M.reload(path)
   end
   cur._fill = nil
   cur._ptex = nil
+  cur._ptm = nil
   pal.log("[map] reloaded " .. path)
   return true
 end
@@ -450,10 +451,10 @@ end
 -- ---- placements (render-only; MAPS.md §5) ----
 
 -- the render size + image of a placement (nil image = nothing to draw).
--- .png draws directly; .spr draws its baked .png sibling; .tm is R8d
--- (placed/moved fine, renders nothing in-game until the tilemap window
--- lands). Textures memoize in cm.gfx keyed by full path; a missing or
--- unreadable file logs once per instance and skips.
+-- .png draws directly; .spr draws its baked .png sibling; .tm draws its
+-- cell grid from the tileset strip (R8d, below). Textures memoize in
+-- cm.gfx keyed by full path; a missing or unreadable file logs once per
+-- instance and skips.
 local function place_tex(inst, p)
   inst._ptex = inst._ptex or {}
   local hit = inst._ptex[p.path]
@@ -474,20 +475,62 @@ local function place_tex(inst, p)
   return t or nil
 end
 
+-- a .tm placement's decoded doc + tileset strip texture (render plumbing,
+-- keyed by path; cm.asset_epoch invalidates — a tilemap-window save shows
+-- live, the sprite-save convention). false caches a failure (log once).
+local function place_tm(inst, p)
+  inst._ptm = inst._ptm or {}
+  local ep = cm.asset_epoch or 0
+  local rec = inst._ptm[p.path]
+  if rec ~= nil and (rec == false or rec.ep == ep) then
+    return rec or nil
+  end
+  local root = (cm.main and cm.main.args and cm.main.args.project) or "."
+  local bytes = pal.read_file(root .. "/" .. p.path)
+  local ok, doc = false, nil
+  if bytes then
+    ok, doc = pcall(cm.require("cm.tmap").decode, bytes)
+  end
+  local tex
+  if ok and doc.tileset ~= "" then
+    local png = doc.tileset:gsub("%.spr$", ".png")
+    local okt, t = pcall(cm.require("cm.gfx").texture, root .. "/" .. png,
+                         rec and true or nil)
+    if okt then tex = t end
+  end
+  if not (ok and tex) then
+    pal.log("[map] .tm placement unrenderable: " .. p.path)
+    inst._ptm[p.path] = false
+    return nil
+  end
+  rec = { ep = ep, doc = doc, tex = tex }
+  inst._ptm[p.path] = rec
+  return rec
+end
+
 -- draw the placements in file order (= z order) with gfx.layer(1) active,
 -- camera-culled; flip_x mirrors via swapped u. Art stacks on top of the
 -- collider fill until a per-map flag turns the fill off (§5).
 function M.draw_places(inst, camx, camy)
   local vw, vh = pal.gfx_size()
+  local tmap
   for _, p in ipairs(inst.doc.places) do
     if not p.hidden then
-      local t = place_tex(inst, p)
-      if t then
-        if p.x < camx + vw and p.x + t.w > camx
-           and p.y < camy + vh and p.y + t.h > camy then
-          local u0, u1 = 0, 1
-          if p.flip then u0, u1 = 1, 0 end
-          pal.quad(p.x, p.y, t.w, t.h, 1, 1, 1, 1, t.id, u0, 0, u1, 1)
+      if p.path:lower():find("%.tm$") then
+        local rec = place_tm(inst, p)
+        if rec then -- tmap.draw culls per cell; flip is a no-op for grids
+          tmap = tmap or cm.require("cm.tmap")
+          tmap.draw(rec.doc, rec.tex, p.x, p.y, camx, camy)
+        end
+      else
+        local t = place_tex(inst, p)
+        if t then
+          if p.x < camx + vw and p.x + t.w > camx
+             and p.y < camy + vh and p.y + t.h > camy then
+            local u0, u1 = 0, 1
+            if p.flip then u0, u1 = 1, 0 end
+            pal.quad(p.x, p.y, t.w, t.h, 1, 1, 1, 1, t.id, u0, 0, u1, 1)
+          end
         end
       end
     end

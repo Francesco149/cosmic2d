@@ -1349,6 +1349,54 @@ local function t_map()
   bad.chunk("GRID", 1, "\0\0") -- wrong size for 4x3
   bad.chunk("TAIL", 1, "")
   check(not pcall(tmap.decode, bad.result()), "tmap: grid mismatch refused")
+
+  -- ---- the R8d grid ops: resize (grow/crop) + fill_rect ----
+  local rd = tmap.blank(3, 2, 16, "")
+  tmap.set(rd, 2, 1, 5)
+  tmap.set(rd, 0, 0, 3)
+  tmap.resize(rd, 5, 4) -- grow: overlap survives, growth empty
+  check(rd.w == 5 and rd.h == 4 and #rd.cells == 5 * 4 * 2
+        and tmap.get(rd, 2, 1) == 5 and tmap.get(rd, 0, 0) == 3
+        and tmap.get(rd, 4, 3) == 0, "tmap: resize grow keeps overlap")
+  tmap.resize(rd, 2, 2) -- crop: (2,1) falls off, (0,0) survives
+  check(rd.w == 2 and rd.h == 2 and #rd.cells == 2 * 2 * 2
+        and tmap.get(rd, 0, 0) == 3 and tmap.get(rd, 1, 1) == 0,
+        "tmap: resize crop drops the cut cells")
+  local fd = tmap.blank(4, 4, 16, "")
+  tmap.fill_rect(fd, 3, 2, 1, 1, 9) -- either corner order + fill
+  check(tmap.get(fd, 1, 1) == 9 and tmap.get(fd, 3, 2) == 9
+        and tmap.get(fd, 2, 2) == 9 and tmap.get(fd, 0, 1) == 0
+        and tmap.get(fd, 1, 3) == 0, "tmap: fill_rect corner-order + bounds")
+  tmap.fill_rect(fd, -2, 3, 9, 3, 4) -- clamps to the grid
+  check(tmap.get(fd, 0, 3) == 4 and tmap.get(fd, 3, 3) == 4,
+        "tmap: fill_rect clamps oob")
+
+  -- ---- the §7 edge-run walk (R8d) ----
+  -- 8x3 @16px: the bottom row solid across, a lone block at (3,1),
+  -- and an overhang at (6,0) (its underside is a ceiling face)
+  local ed_ = tmap.blank(8, 3, 16, "")
+  tmap.fill_rect(ed_, 0, 2, 7, 2, 1)
+  tmap.set(ed_, 3, 1, 1)
+  tmap.set(ed_, 6, 0, 1)
+  local x0, y0, x1, y1 = tmap.edge_run(ed_, 20, 33, 4) -- floor at col 1
+  check(x0 == 0 and y0 == 32 and x1 == 48 and y1 == 32,
+        "tmap: edge_run floor stops at the block column")
+  x0, y0, x1, y1 = tmap.edge_run(ed_, 70, 30, 4) -- right of the block
+  check(x0 == 64 and y0 == 32 and x1 == 128 and y1 == 32,
+        "tmap: edge_run floor resumes past the block")
+  x0, y0, x1, y1 = tmap.edge_run(ed_, 56, 17, 4) -- the block's own top
+  check(x0 == 48 and y0 == 16 and x1 == 64 and y1 == 16,
+        "tmap: edge_run block top is a one-cell run")
+  x0, y0, x1, y1 = tmap.edge_run(ed_, 47, 24, 4) -- the block's left face
+  check(x0 == 48 and y0 == 16 and x1 == 48 and y1 == 32,
+        "tmap: edge_run vertical left face")
+  x0, y0, x1, y1 = tmap.edge_run(ed_, 100, 15, 4) -- the overhang underside
+  check(x0 == 96 and y0 == 16 and x1 == 112 and y1 == 16,
+        "tmap: edge_run ceiling face qualifies")
+  check(tmap.edge_run(ed_, 40, 8, 3) == nil,
+        "tmap: edge_run open air proposes nothing")
+  check(tmap.edge_run(ed_, 20, 42, 3) == nil,
+        "tmap: edge_run interior (no exposed face) proposes nothing")
 end
 
 -- ---- cm.state.buf_poke/buf_peek (the inspector's buffer eval unit) ----
