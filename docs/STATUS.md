@@ -5,31 +5,40 @@
 
 **Date**: 2026-07-12 (later session)
 **Phase**: **REVAMP R1 — script-engine gate: DONE. Decision: STAY ON LUA 5.4
-(ADR D047).** The QuickJS-vs-Lua spike ran end to end: a dual-host C binary
-(`tools/r1_scriptbench/`, committed + re-runnable) embedding the vendored
-Lua 5.4.7 AND bellard's QuickJS 2025-09-13 behind one native surface shaped
-like our hot paths, workloads as literal Lua↔JS translations.
+(ADR D047 + D048).** The QuickJS-vs-Lua spike ran end to end: a dual-host C
+binary (`tools/r1_scriptbench/`, committed + re-runnable) embedding the
+vendored Lua 5.4.7 AND bellard's QuickJS behind one native surface shaped
+like our hot paths, workloads as literal Lua↔JS translations. First pass
+(D047) tested the nixpkgs pin 2025-09-13; **the human caught that upstream
+had shipped 2026-06-04 ("42% faster")** — retested, D048 revises the table
+(decision unchanged).
 
-- **Performance — Lua won everything**: sim tick 287 vs 623 µs (2.2×), quad
-  prep per-call 618 vs 1563 µs (2.5×), bulk buf-writes 1946 vs 4705 µs
-  (2.4×), UI churn 313 vs ~550 µs (1.6–1.9×), xoshiro256++ 105 ns vs 852
-  (BigInt) / 1400 (u32-pair) ns per draw (8–13×). Even QuickJS's typed-array
-  direct-write path (2928 µs — its best bulk option, one Lua lacks) loses to
-  Lua crossing the C boundary per float. Embed: 276 KB vs 883 KB stripped
-  (3.2×); 360 KB source compiles ~10 vs ~24 ms (hot-reload parity, both fine).
-- **Determinism — provable in JS, strictly riskier**: IEEE f64 is
-  bit-identical across both VMs (sim checksums + arithmetic bit patterns
-  match exactly); both JS xoshiro ports (BigInt, u32-pair) reproduce
-  cm.rand's exact bit stream — so bit-exact record→verify IS achievable.
-  But: 53-bit integer ceiling, 32-bit bitwise ops, trunc-vs-floor div/mod
-  sign flips (-7 % 3 = -1 vs 2), and no int/float subtype — which breaks
-  `cm.state.canon`'s \3-int/\4-float doc-tree tags. JS iteration order is
-  spec'd (genuinely better than Lua), NaN payloads survive typed arrays,
-  GC unobservable in both.
-- **ADR D047** appended (full numbers table + scope limits + revisit
-  triggers); REVAMP §3.2 + §6 R1 + §8 QuickJS risk marked resolved. **No
-  engine/sim/binary change** — the spike ran in the scratchpad; only docs +
-  the harness enter the repo. Goldens/selftest untouched (nothing to re-run).
+- **Performance (D048, QJS 2026-06-04)** — general workloads near parity:
+  sim tick 287 vs 385 µs (1.34×), quad per-call 580 vs 583 µs (parity),
+  bulk buf-writes 1911 vs 2322 µs (1.2×), UI churn ~315 vs ~337 µs (~1.05×).
+  QuickJS's typed-array path now **beats** Lua's best bulk path (1406 vs
+  1911 µs). But **xoshiro256++ stays 6.5–8×** (103 ns vs 675 BigInt / 839
+  u32-pair) — that's under cm.rand on every sim draw. Embed 276 KB vs
+  981 KB stripped (3.5×); 360 KB source compiles ~10 vs ~25 ms.
+- **Determinism — provable in JS, strictly riskier (unchanged by the
+  uplift; re-verified on 2026-06-04)**: IEEE f64 is bit-identical across
+  both VMs (sim checksums + arithmetic bit patterns match exactly); both JS
+  xoshiro ports reproduce cm.rand's exact bit stream — bit-exact
+  record→verify IS achievable. But: 53-bit integer ceiling, 32-bit bitwise
+  ops, trunc-vs-floor div/mod sign flips (-7 % 3 = -1 vs 2), and no
+  int/float subtype — which breaks `cm.state.canon`'s \3-int/\4-float
+  doc-tree tags. JS iteration order is spec'd (genuinely better than Lua),
+  NaN payloads survive typed arrays, GC unobservable in both.
+- **Why still Lua**: the blockers were never general perf — they're the
+  integer story (6.5–8× + rewrite risk at every 64-bit site), the canon
+  int/float redesign, 3.5× embed, and a whole-engine rewrite for no net
+  gain. D048 records honestly that the upside case is now *real* (parity +
+  typed arrays + JS familiarity) — just insufficient; revisit triggers
+  updated (QuickJS moved 2.4× on our workloads in nine months).
+- **ADRs D047 + D048** appended (numbers, scope limits, revisit triggers);
+  REVAMP §3.2 + §6 R1 + §8 QuickJS risk marked resolved. **No engine/sim/
+  binary change** — the spike ran in the scratchpad; only docs + the
+  harness enter the repo. Goldens/selftest untouched (nothing to re-run).
 
 **Next step (resume here): R2 — platform layer revamp** (REVAMP.md §6):
 imgui hosted in the binary + the script-side surface for the hard widgets

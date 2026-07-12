@@ -1309,6 +1309,10 @@ in-place reconciliation).
 
 ## D047 — R1 script-engine gate: stay on Lua 5.4 (2026-07-12)
 
+*(Performance table superseded by **D048** — retested on QuickJS
+2026-06-04, which nixpkgs hadn't picked up; decision unchanged, the
+determinism audit stands.)*
+
 **Context**: REVAMP R1 (D045) required deciding QuickJS vs Lua 5.4 *before*
 the editor rewrite, on measured performance + a determinism audit — numbers,
 not vibes. Spike harness: `tools/r1_scriptbench/` (a dual-host C binary
@@ -1384,3 +1388,59 @@ migrate for.
 closes the integer-op gap to ~2× on `w_prng` AND user-facing mod scripting
 "for the masses" becomes a product goal — rerun `tools/r1_scriptbench/`
 against it; the harness is the contract.
+
+## D048 — R1 retest on QuickJS 2026-06-04: numbers revised, decision stands (2026-07-12)
+
+**Context**: the human caught that D047 tested an old release — nixpkgs
+pinned bellard's 2025-09-13, but upstream shipped **2026-06-04**, "42%
+faster on bench-v8" (custom small-block malloc + micro-optimizations).
+Retested with the same harness (`tools/r1_scriptbench/`), same flags
+(the 2026 release needs `-std=gnu11` — Atomics.pause inline asm), same
+machine. D047's performance table is **superseded by this one**; its
+determinism findings reproduced identically and stand as written.
+
+**The revised numbers** (Lua 5.4.7 unchanged; stable over reruns):
+
+| workload | Lua 5.4.7 | QJS 2025-09-13 | **QJS 2026-06-04** | new ratio |
+|---|---|---|---|---|
+| sim tick, 200 entities | 287 µs | 623 µs | **385 µs** | 1.34× |
+| quad prep, per-call | 580 µs | 1563 µs | **583 µs** | **1.0× — parity** |
+| quad prep, bulk `buf:f32` | 1911 µs | 4705 µs | **2322 µs** | 1.2× |
+| quad prep, `Float32Array` (JS-only) | — | 2928 µs | **1406 µs** | **0.74× — beats Lua's best bulk path** |
+| UI churn, 300 widgets | 314–322 µs | 507–586 µs | **335–339 µs** | ~1.05× |
+| xoshiro256++ u64 draw | 103 ns | 852 / 1400 ns | **675 (BigInt) / 839 (u32-pair) ns** | **6.5× / 8.1×** |
+| 360 KB source compile+run | ~10 ms | ~24 ms | **~25 ms** | 2.5× |
+| minimal embed, stripped | 276 KB | 883 KB | **981 KB** | 3.5× |
+
+The uplift is real: general scripting is now **near parity**, and typed
+arrays give JS a genuinely better bulk-buffer story than Lua's per-float C
+calls. The determinism audit re-ran bit-for-bit identical (f64 parity,
+xoshiro streams exact, NaN payloads preserved, integer semantics hazards
+all unchanged — they are language spec, not engine speed).
+
+**Decision: still stay on Lua 5.4.** What decided D047 was never the
+general-perf gap, and everything that actually decided it survives the
+uplift:
+
+1. **64-bit integer work is still 6.5–8× slower** — that's under cm.rand
+   on every sim draw, and every 64-bit site becomes a BigInt/u32-pair
+   rewrite with its own correctness risk.
+2. **The semantic hazards are spec, not perf**: 53-bit ceiling, 32-bit
+   bitwise, trunc-vs-floor div/mod signs, and no int/float subtype —
+   `cm.state.canon`'s doc-tree tags (snapshot identity itself) would need
+   a redesign, not a port.
+3. **3.5× embed, 2.5× compile**, and a full engine+cartridge+goldens
+   rewrite — to arrive at roughly where we already are.
+
+The honest change from D047: the *upside* case is no longer laughable —
+near-parity general perf + a better typed-array bulk surface + JS
+familiarity is a real (if insufficient) package. If mod-scripting for a
+mass audience ever becomes a product goal, this is a judgment call, not a
+formality.
+
+**Revisit if**: user-facing mod scripting becomes a product goal (rerun the
+harness against current upstream — QuickJS is visibly improving fast:
+2.4× on our workloads in nine months); or a release lands a 64-bit-integer
+fast path that brings `w_prng` under ~2× (then the last *technical* blocker
+is the canon int/float redesign, and the question becomes purely one of
+migration cost vs audience).

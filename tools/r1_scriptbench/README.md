@@ -1,8 +1,11 @@
-# r1_scriptbench — the R1 script-engine spike harness (D047)
+# r1_scriptbench — the R1 script-engine spike harness (D047/D048)
 
-The evidence behind ADR **D047** (QuickJS vs Lua 5.4 — stay on Lua). Kept
-re-runnable so the decision's revisit triggers can be re-tested against a
-future QuickJS.
+The evidence behind ADRs **D047 + D048** (QuickJS vs Lua 5.4 — stay on
+Lua). Kept re-runnable so the decision's revisit triggers can be re-tested
+against a future QuickJS. D047 tested the nixpkgs pin (2025-09-13); D048
+re-ran against upstream 2026-06-04 (fetch the tarball from
+bellard.org/quickjs directly if nixpkgs lags again) — D048 has the current
+numbers table.
 
 ## What it is
 
@@ -32,8 +35,9 @@ literal translations of each other:
 nix build nixpkgs#quickjs.src -o qjs-src && mkdir qjs && tar xf qjs-src -C qjs
 cd qjs/quickjs-* && nix develop /opt/src/cosmic2d -c bash -c '
   V=$(cat VERSION)
+  # -std=gnu11: releases >= 2026-06-04 use inline asm (Atomics.pause)
   for f in quickjs cutils libregexp libunicode dtoa; do
-    cc -O2 -g -std=c11 -D_GNU_SOURCE -DCONFIG_VERSION=\"$V\" -fwrapv \
+    cc -O2 -g -std=gnu11 -D_GNU_SOURCE -DCONFIG_VERSION=\"$V\" -fwrapv \
        -msse2 -mfpmath=sse -c -o $f.o $f.c
   done
   ar rcs libquickjs.a quickjs.o cutils.o libregexp.o libunicode.o dtoa.o
@@ -48,6 +52,6 @@ for w in sim quad ui prng; do ./host lua w_$w.lua; ./host qjs w_$w.js; done
 <engine>/pal/vendor/lua/... # det.lua runs under any Lua 5.4; det.js under qjs --std
 ```
 
-The D047 numbers were taken on a Ryzen 9 5900X under WSL2, QuickJS
-2025-09-13, both VMs at `-O2`, Lua with the pinned string-hash seed
-(the shipping configuration).
+The D047/D048 numbers were taken on a Ryzen 9 5900X under WSL2 (QuickJS
+2025-09-13 and 2026-06-04 respectively), both VMs at `-O2`, Lua with the
+pinned string-hash seed (the shipping configuration).
