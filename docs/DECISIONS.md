@@ -1306,3 +1306,81 @@ strictly simpler than any merge/reconcile story, and matches user intent
 **Revisit if**: ephemeral browsing feels like data loss in practice (then:
 an explicit "copy out of the past" affordance beyond assets — never
 in-place reconciliation).
+
+## D047 — R1 script-engine gate: stay on Lua 5.4 (2026-07-12)
+
+**Context**: REVAMP R1 (D045) required deciding QuickJS vs Lua 5.4 *before*
+the editor rewrite, on measured performance + a determinism audit — numbers,
+not vibes. Spike harness: `tools/r1_scriptbench/` (a dual-host C binary
+embedding both VMs behind an identical native surface shaped like our hot
+paths; workloads are literal Lua↔JS translations). QuickJS = bellard
+upstream **2025-09-13** (the post-perf-uplift line the board pointed at),
+built `-O2` like the vendored Lua 5.4.7. Ryzen 9 5900X, WSL2.
+
+**Decision**: **stay on Lua 5.4.** The editor rewrite (R3+) and everything
+after is written in Lua. QuickJS is not adopted, not vendored, no fork.
+
+**The performance numbers** (avg/frame unless noted; stable over reruns):
+
+| workload | Lua 5.4.7 | QuickJS 2025-09-13 | QJS/Lua |
+|---|---|---|---|
+| sim tick, 200 entities (distilled player.step) | 287 µs | 623 µs | 2.2× |
+| quad prep, 5k quads, per-call `quad(...)` | 618 µs | 1563 µs | 2.5× |
+| quad prep, 5k quads, bulk `buf:f32` writes | 1946 µs | 4705 µs | 2.4× |
+| quad prep, 5k quads, `Float32Array` direct (JS-only path) | — | 2928 µs | 1.5× |
+| UI churn, 300 widgets (ids/state/rects/format) | 313 µs | 507–586 µs | 1.6–1.9× |
+| xoshiro256++ u64 draw (cm.rand verbatim) | 105 ns | 852 ns (BigInt) / 1400 ns (u32-pair) | 8.1× / 13.3× |
+| 360 KB source compile+run | ~10 ms | ~24 ms | 2.4× |
+| minimal embed, stripped | 276 KB | 883 KB | 3.2× |
+
+Lua wins **every** workload. Even QuickJS's best-case bulk path (typed-array
+direct writes, which Lua doesn't have) loses to Lua crossing the C boundary
+per float. GC behavior is comparable (p99/max frame times in the same band;
+no pathological spikes either side).
+
+**The determinism audit** (`det.lua`/`det.js` + in-bench cross-checks):
+
+- **IEEE f64 arithmetic is bit-identical across both VMs** — arithmetic
+  chains, sqrt, and the sim workload's position checksum match to the bit.
+  Doubles are not the hazard.
+- **Integers are.** JS numbers collapse above 2^53 (Lua is exact 64-bit,
+  wrapping); JS bitwise ops truncate to 32 bits; `-7 % 3` = `-1` in JS vs
+  `2` in Lua (trunc- vs floor-signed) and likewise `/`+`Math.trunc` vs `//`
+  — every negative-coordinate tile index and every modular pattern would
+  need a port-time audit. JS has **no int/float subtype distinction**, so
+  `cm.state.canon`'s `\3` int8 vs `\4` f64 tags (the doc-tree canonical
+  bytes, snapshot identity) are unrepresentable without heuristics that
+  change semantics.
+- **The PRNG is portable but pays 8–13×**: both a BigInt and a u32-pair
+  xoshiro256++ reproduce cm.rand's exact bit stream (proven: identical ref
+  draws + 2M-draw accumulators). Bit-exact record→verify in QuickJS is
+  therefore *achievable* — it is just slow and rewrites every 64-bit site.
+- **Iteration order**: genuinely better in JS (spec'd: int-like keys
+  ascending then insertion order; Map = pure insertion) vs Lua's hash
+  order. Our iron rule (never depend on it in sim) already neutralizes
+  this; it would remove a footgun class, not fix a bug we have.
+- **NaN**: payloads survive QuickJS typed-array round-trips (no
+  canonicalization hazard); moot anyway — the doc tree bans NaN.
+- **GC**: unobservable in pure computation in both (Lua incremental,
+  QuickJS refcount+cycle); neither leaks timing into results.
+
+**Why stay**: the only QuickJS pros are JS familiarity, spec'd iteration
+order, and typed arrays as an in-language bulk surface — and the measured
+typed-array path still loses to Lua. Against that: 1.6–2.5× slower on every
+representative frame workload, 8–13× on the PRNG under the sim, a 3.2×
+bigger embed, a full engine+cartridge rewrite, and a determinism story that
+is provable but strictly riskier (53-bit ceiling, div/mod sign audits,
+canon int/float loss). The gate exists so the editor is written once in the
+winner; the winner is what we already have.
+
+**Scope limits recorded**: quickjs-ng 0.14 untested (same engine class —
+would not flip a uniform 2×/8× gap); no JIT-class engine considered (V8/JSC
+are out on embed size, determinism surface, and platform reach). Hot-reload
+is parity either way: QuickJS's ES-module cache is not evictable, so a port
+would keep our own registry/eval loader exactly like boot.lua's — no win to
+migrate for.
+
+**Revisit if**: a future upstream QuickJS (or comparable embeddable engine)
+closes the integer-op gap to ~2× on `w_prng` AND user-facing mod scripting
+"for the masses" becomes a product goal — rerun `tools/r1_scriptbench/`
+against it; the harness is the contract.

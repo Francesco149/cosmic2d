@@ -121,6 +121,13 @@ What is replaced or rebooted:
    iteration order, NaN handling) before anything is migrated. The editor
    rewrite is written in whatever wins — this gate goes FIRST so we never
    write the editor twice.
+   **RESOLVED (2026-07-12, ADR D047): stay on Lua 5.4.** Lua won every
+   benched workload (sim tick 2.2×, quad prep 2.4–2.5×, UI churn 1.6–1.9×,
+   xoshiro256++ 8–13×) and the determinism audit found JS integer semantics
+   strictly riskier (53-bit ceiling, 32-bit bitwise, trunc-signed div/mod,
+   no int/float subtype for cm.state.canon). Bit-exactness in QuickJS was
+   *proven achievable* — just slower and riskier for zero measured upside.
+   Harness kept re-runnable: `tools/r1_scriptbench/`.
 3. **Rewind / state history** (R6, but the state-model constraints bind from
    R2 on): extends the M5 trace machinery from "last N seconds in RAM" to a
    **disk-streamed ~1 GB delta history**. Browsing a frame = read-only
@@ -179,7 +186,8 @@ flex except: **R0 first** (everything else lands in the right repo) and
   the backup branch. *Exit*: engine repo builds + selftest + goldens green on
   the smoke project; game repo boots the cosmic greybox against the sibling
   engine; demos repo boots procart; old tree reachable via the backup branch.
-- **R1 — script-engine spike (decision gate)**: QuickJS vs Lua 5.4 bench on
+- **R1 — script-engine spike (decision gate)** ✅ **DONE (D047: stay on
+  Lua 5.4)**: QuickJS vs Lua 5.4 bench on
   representative workloads (sim tick, quad-batch prep, UI immediate-mode
   churn) + determinism audit (record→verify bit-exactness, integer semantics,
   iteration order, GC timing independence) + embedding-size/hot-reload story.
@@ -256,9 +264,9 @@ phrasing: the *history* is immutable, the *viewing* is interactive.
 - **imgui as a second UI philosophy** — contain it to complex widgets inside
   windows; the canvas grammar stays ours. Review the R2 surface against
   "could teidraw's feel be built on this?".
-- **QuickJS determinism** — JS numbers are doubles (no integer subtype like
-  Lua 5.4); bit-exact sim + record→verify must be *proven* in R1, not
-  assumed. A failed spike is a cheap, good outcome: stay on Lua.
+- ~~**QuickJS determinism**~~ — RESOLVED at R1 (D047): determinism was
+  proven achievable but performance lost across the board; staying on Lua.
+  The risk is closed.
 - **Editor state entering the determinism domain** (rewind) — the exact
   opposite of D040's "no determinism tax" studio. The R3 state model must be
   designed with R6's capture in mind or R6 becomes a rewrite.

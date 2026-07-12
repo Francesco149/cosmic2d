@@ -3,6 +3,46 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (later session)
+**Phase**: **REVAMP R1 — script-engine gate: DONE. Decision: STAY ON LUA 5.4
+(ADR D047).** The QuickJS-vs-Lua spike ran end to end: a dual-host C binary
+(`tools/r1_scriptbench/`, committed + re-runnable) embedding the vendored
+Lua 5.4.7 AND bellard's QuickJS 2025-09-13 behind one native surface shaped
+like our hot paths, workloads as literal Lua↔JS translations.
+
+- **Performance — Lua won everything**: sim tick 287 vs 623 µs (2.2×), quad
+  prep per-call 618 vs 1563 µs (2.5×), bulk buf-writes 1946 vs 4705 µs
+  (2.4×), UI churn 313 vs ~550 µs (1.6–1.9×), xoshiro256++ 105 ns vs 852
+  (BigInt) / 1400 (u32-pair) ns per draw (8–13×). Even QuickJS's typed-array
+  direct-write path (2928 µs — its best bulk option, one Lua lacks) loses to
+  Lua crossing the C boundary per float. Embed: 276 KB vs 883 KB stripped
+  (3.2×); 360 KB source compiles ~10 vs ~24 ms (hot-reload parity, both fine).
+- **Determinism — provable in JS, strictly riskier**: IEEE f64 is
+  bit-identical across both VMs (sim checksums + arithmetic bit patterns
+  match exactly); both JS xoshiro ports (BigInt, u32-pair) reproduce
+  cm.rand's exact bit stream — so bit-exact record→verify IS achievable.
+  But: 53-bit integer ceiling, 32-bit bitwise ops, trunc-vs-floor div/mod
+  sign flips (-7 % 3 = -1 vs 2), and no int/float subtype — which breaks
+  `cm.state.canon`'s \3-int/\4-float doc-tree tags. JS iteration order is
+  spec'd (genuinely better than Lua), NaN payloads survive typed arrays,
+  GC unobservable in both.
+- **ADR D047** appended (full numbers table + scope limits + revisit
+  triggers); REVAMP §3.2 + §6 R1 + §8 QuickJS risk marked resolved. **No
+  engine/sim/binary change** — the spike ran in the scratchpad; only docs +
+  the harness enter the repo. Goldens/selftest untouched (nothing to re-run).
+
+**Next step (resume here): R2 — platform layer revamp** (REVAMP.md §6):
+imgui hosted in the binary + the script-side surface for the hard widgets
+(crib from `../teidraw` — imgui ≥1.92 dynamic-font-atlas prior art); the new
+window model (maximized editor / 960×540 game window / fullscreen upscale);
+C/C++ helper layer formalized; PAL API break blessed (version bump, contract
+table rewritten). Design doc/ADR before build per REVAMP §3.1 — decide the
+imgui/script split carefully so imgui never becomes a second UI philosophy.
+The editor rewrite (R3+) is unblocked and will be written in **Lua**. Good
+`/clear` point — R1 is committed, docs current.
+
+---
+
 **Date**: 2026-07-12 (same session, cont.)
 **Phase**: **REVAMP R0 — the split: DONE.** The human resolved REVAMP §7
 (engine-first; smoke = cut-down cosmic; goldens re-cut at R0; the old studio
