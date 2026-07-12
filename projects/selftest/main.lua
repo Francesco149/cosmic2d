@@ -3686,12 +3686,14 @@ local function t_ed_park()
   end
   local present = ed.doc
 
+  ed.g.mw = { stale = true } -- the map window's decoded-doc plumbing
   scrub.open()
   check(scrub.paused(), "ed park: scrub open")
   scrub.at = f0 + 2
   scrub.frame()
   check(ed.parked and ed.doc ~= present and ed.doc.mark == "A",
         "ed park: the past is shown")
+  check(ed.g.mw == nil, "ed park: map plumbing drops (rebuilds from the past)")
   ed.doc.poke = 1 -- interactive: poke the parked doc
   ed.touch()
   check(ed.g.save_due == nil, "ed park: autosave suspended")
@@ -3699,9 +3701,11 @@ local function t_ed_park()
   scrub.frame()
   check(ed.doc.poke == nil and ed.doc.mark == "B",
         "ed park: pokes evaporate on seek")
+  ed.g.mw = { stale = true }
   scrub.close()
   check(not ed.parked and ed.doc == present,
         "ed park: close restores the present")
+  check(ed.g.mw == nil, "ed park: map plumbing drops on unpark too")
   check(ed.g.save_due ~= nil, "ed park: autosave re-armed")
 
   scrub.open()

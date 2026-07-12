@@ -168,7 +168,7 @@ function M.park(edoc_bytes)
     end
   end
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
-  M.g.hdrx, M.g.wpx = nil, nil
+  M.g.hdrx, M.g.wpx, M.g.mw = nil, nil, nil
   M.doc_rev = (M.doc_rev or 0) + 1
 end
 
@@ -218,7 +218,7 @@ function M.unpark(adopt)
   M.g.stash = nil
   M.parked = false
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
-  M.g.hdrx, M.g.wpx = nil, nil
+  M.g.hdrx, M.g.wpx, M.g.mw = nil, nil, nil
   M.touch() -- re-arm the session debounce on the (possibly new) present
 end
 

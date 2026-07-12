@@ -1445,7 +1445,11 @@ function M.draw(win, ctx)
         end
       end
     elseif topmost and i.clicked[1] and not p.pan then
-      local hit = M.col_pick(doc.colliders, mx, my, thr)
+      -- a CTRL press ALWAYS draws (snap pulls the vertex onto existing
+      -- geometry — drawing a slope FROM the ground line is the canonical
+      -- case, and the pick radius would otherwise eat the snap zone);
+      -- a plain press picks. CTRL mid-drag still snaps drags (§7).
+      local hit = not g.ctrl and M.col_pick(doc.colliders, mx, my, thr)
       if hit then
         local c = doc.colliders[hit.c]
         local gd = { mode = "cpress", sx = i.wx, sy = i.wy, hit = hit }
@@ -1973,7 +1977,7 @@ function M.draw(win, ctx)
       end
       local hint = p.g and p.g.mode == "chain"
         and "click adds · enter/dblclick ends · c closes · esc cancels"
-        or "press empty draws · ctrl snaps (45 on lines)"
+        or "press empty draws (ctrl: from anywhere, snapped) · plain press picks"
       pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
                     hint, 0)
     end
