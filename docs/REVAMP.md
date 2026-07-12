@@ -113,6 +113,10 @@ What is replaced or rebooted:
    UI philosophy leaking everywhere. Note teidraw itself is imgui ≥1.92 with
    the dynamic font atlas (crisp text at any zoom) — that's the prior art,
    and `../teidraw` is reference source we can crib from.
+   **DESIGNED (2026-07-12, ADR D049 + docs/IMGUI.md)**: vendored 1.92.4,
+   one C++ host TU behind extern "C", Lua gets a native-res drawlist +
+   hard widgets at explicit rects + capture flags — never imgui
+   windows/layout/styling. PAL API v7.
 2. **Script engine** (R1, decision gate): Lua 5.4 (current) vs **QuickJS**
    (appealing: friendlier to the masses, still small; bellard's upstream
    recently landed a major perf uplift, so a fork is probably unnecessary).

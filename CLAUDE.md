@@ -47,6 +47,8 @@ default windows-side save dir. Resolve it like this:
   re-export it when direction is unclear).
 - **ARCHITECTURE.md** — two-layer design, state model, determinism iron
   rules, PAL API contract.
+- **IMGUI.md** — the R2 design (D049): imgui hosted in the PAL, the
+  drawlist+widgets script surface, window model, C/C++ layer rules.
 - *(moved at R0)* GAME.md / STORY.md / maps → `../cosmic2d-game/docs/`;
   PROCART.md → `../cosmic2d-demos/docs/`.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.
