@@ -59,9 +59,10 @@ A map is a **file asset** like a sprite — `maps/rim_hub.map` — a
   i32; circle: cx/cy/r i32.
 - **PLCE** (one per placement, file order = z order): layer id (u8),
   flags (u32: flip_x), x/y i32 px, path (project-relative; `.spr`,
-  `.png`, or `.tm`), then **0..n attached colliders** (same encoding
-  as COLL, coords **relative to the placement origin** — they ride
-  the placement when it moves).
+  `.png`, or `.tm`), an **optional name** (string, empty = anonymous —
+  names exist to address placements from code, §4), then **0..n
+  attached colliders** (same encoding as COLL, coords **relative to
+  the placement origin** — they ride the placement when it moves).
 - **LAYR** (optional, future): named layers with parallax factors.
   V1 renders one implicit layer; the format carries the slot so
   GRAYBOX's deferred parallax/decor lands here without a version bump.
@@ -171,6 +172,16 @@ snapshots (like all art). Colliders are sim truth — *inside*, as the
 buffer. Markers: read at map-use time by game code into its own sim
 state (props spawned, portal rects), same as today's tables.
 
+**Named placements** (human, 2026-07-12): `cm.map.get(name)` → a
+handle over a named placement — read its rect, set position /
+visibility (render-only mutations, like the camera: doors slide,
+signs blink, elevator *visuals* track). If a named placement carries
+attached colliders and the game wants to *drive* it, the handle is
+the natural source for a dynamic body (§3's `body_*` slot adopts its
+colliders); its static instances are skipped at load then. V1 builds
+the lookup + render setters; the body promotion lands with dynamic
+bodies at R7b.
+
 ## 5. Rendering + the graybox language
 
 Draw order per frame: bg tint/parallax (future LAYR) → placements in
@@ -181,12 +192,14 @@ bake is a later optimization if profiles ask) → game entities
 (interleave point: a placement layer flagged `fg`, future) → fx.
 
 **The graybox needs zero visual assets**: the collider layer renders
-directly — closed solid chains **filled** in the checkerboard grays
-(the fill is the graybox, not a debug overlay), one-ways as the slim
-accent slabs, exactly GRAYBOX.md §3's language. Art later = placements
-stacked on top, then the collider fill switches off (per-map flag).
-This keeps R7b unblocked the moment colliders edit (§11) — tilemaps
-(.tm) aren't on the graybox critical path at all.
+directly — closed solids as **flat untextured polygon fills** (the
+human, 2026-07-12: the fill visual doesn't matter much — a plain poly
+with the gizmo is enough; the GRAYBOX.md checker parity is optional
+polish, not a requirement), one-ways as the slim accent slabs. Art
+later = placements stacked on top, then the collider fill switches
+off (per-map flag). This keeps R7b unblocked the moment colliders
+edit (§11) — tilemaps (.tm) aren't on the graybox critical path at
+all.
 
 ## 6. The map window (kind `map`)
 
@@ -240,8 +253,9 @@ drag-out; keyed by path; multiple maps open fine.
   quad: the bounds; circle: inscribed — then handles/points edit as
   usual. Del with a handle selected removes the collider.
 - **Inspector strip** (window bottom, one row): selection's x/y
-  (editable x_ig_edit fields), layer chip, flip_x toggle, **+col** —
-  markers swap in kind/label/extras fields.
+  (editable x_ig_edit fields), an optional **name** field (§4 code
+  addressing), layer chip, flip_x toggle, **+col** — markers swap in
+  kind/label/extras fields.
 
 **Collider tool** (free colliders — the terrain layer; attached ones
 edit through their object, above):
@@ -375,12 +389,16 @@ is insertion-ordered), collider buffer canonical.
 1. **Snap polarity** — ✅ **RESOLVED (human, 2026-07-12): CTRL =
    snap, no snap by default.** (Same round: colliders refined into
    typed free/attached primitives — folded into §§2/3/6/7.)
-2. **Graybox = collider fill** (§5): checkerboard fill of closed
-   solids as *the* graybox visual — sign off? (It keeps R7b off the
-   tilemap critical path entirely.)
+2. **Graybox = collider fill** — ✅ **RESOLVED (human, 2026-07-12)**:
+   fine, and the visual barely matters — flat untextured polygons
+   with the gizmo (§5). R7b stays off the tilemap critical path.
 3. **Grid default 8 px** with ctrl+wheel dial (§7) — or default to
    the tile-ish 32?
 4. **One-way slopes** (§3): allowed (proposed) — any feel veto?
-5. **Live-apply**: is save-to-apply (Ctrl+S) enough for map editing,
-   or is "sim adopts on gesture end" wanted sooner than "later
-   toggle"?
+5. **Live-apply** — ✅ **RESOLVED (human, 2026-07-12)**: Ctrl+S
+   save→hot-reload is enough, with the code-ed contract intact:
+   unsaved map edits persist across sessions and roll back through
+   the journal (§6 — already the design; now confirmed).
+6. *(new, resolved at asking)* **Per-placement colliders** confirmed
+   the right call; placements gained **optional names** for code
+   addressing (§4).

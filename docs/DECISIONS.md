@@ -1961,3 +1961,29 @@ collision that belongs to them.
 instances of the same asset (→ default colliders in the .spr/.meta,
 placement stores overrides only); circles need real sweeping (→ the
 mover grows arc support then, not before).
+
+## D057b — design round 2: named placements; fills + live-apply resolved (human, 2026-07-12)
+
+**Context**: the human's second read of MAPS.md, same day.
+
+**Decision** (folded into MAPS.md §§2/4/5/6/12):
+
+1. **Per-placement colliders confirmed**; placements gain an
+   **optional name** for code addressing — `cm.map.get(name)` → a
+   handle (read rect, set position/visibility — render-only, like the
+   camera). A driven named placement with attached colliders is the
+   natural dynamic-body source later (R7b); its static colliders skip
+   instancing then.
+2. **Graybox fill resolved**: flat untextured polygon fills with the
+   gizmo are enough — the checker parity is optional polish.
+3. **Live-apply resolved**: Ctrl+S save→hot-reload suffices, with the
+   code-ed contract intact (unsaved persists across sessions, journal
+   rollback) — which the design already carried; now confirmed.
+
+Remaining §12 opens are defaults, not gates: grid step 8 px (dialable
+per window anyway), one-way slopes allowed. R8a is unblocked.
+
+**Revisit if**: name collisions within a map bite (→ editor warns on
+duplicate; get() returns first, file order); code wants to *create*
+placements at runtime (→ that's an entity/render API question, not a
+map-format one — placements stay authored content).

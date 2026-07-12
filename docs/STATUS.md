@@ -12,10 +12,15 @@ circle) that are freehand on the collider layer OR attached to a
 placed object (relative coords, auto-fit from asset bounds — the
 one-way-across-a-platform-sprite case; editable only while the object
 is selected; gizmos always visible by default), plus tile-edge +
-edge-run snapping against placed tilemaps. Remaining §12 opens:
-graybox-as-collider-fill, grid default, one-way slopes, live-apply.
-Then R8a builds.** Docs only engine-side; two feel fixes shipped in
-../cosmic2d-game first.
+edge-run snapping against placed tilemaps. Round 2 (ADR D057b):
+per-placement colliders confirmed + placements get **optional names**
+for code addressing (`cm.map.get(name)` render-only handle; dynamic-
+body source later), graybox fill = flat untextured polys (visual
+barely matters), live-apply = Ctrl+S hot-reload with the code-ed
+unsaved-persists/rollback contract (confirmed as designed). Remaining
+§12 opens are non-gating defaults (grid 8 px, one-way slopes yes) —
+**R8a is unblocked**.** Docs only engine-side; two feel fixes shipped
+in ../cosmic2d-game first.
 
 - **The ask (verbatim intent)**: non-pure-tilemap maps — a **collider
   layer** (lines with slopes), visuals = **freehand sprite placement**,
