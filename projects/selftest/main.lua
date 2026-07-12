@@ -3451,6 +3451,67 @@ local function t_ed_map()
   check(sx == 64 and sy == 24 and how == "grid", "ed.map: snap_pt grid")
 end
 
+local function t_ed_maptool()
+  -- the R8c pure collider-op core (cm.ed.win.map): pick / insert / drag /
+  -- offset / nudge / del semantics
+  local W = cm.require("cm.ed.win.map")
+  local cols = {
+    { kind = "chain", verts = { 0, 100, 50, 100, 120, 60 } },
+    { kind = "quad", x = 200, y = 50, w = 40, h = 30 },
+    { kind = "circle", cx = 300, cy = 150, r = 20 },
+  }
+  local hit = W.col_pick(cols, 51, 102, 4)
+  check(hit and hit.c == 1 and hit.v == 2 and hit.x == 50 and hit.y == 100,
+        "ed.maptool: vertex pick outranks its edge")
+  hit = W.col_pick(cols, 25, 103, 4)
+  check(hit and hit.c == 1 and hit.e == 1 and hit.x == 25 and hit.y == 100,
+        "ed.maptool: edge pick carries the projection point")
+  hit = W.col_pick(cols, 239, 79, 4)
+  check(hit and hit.c == 2 and hit.v == 3, "ed.maptool: quad corner (br)")
+  hit = W.col_pick(cols, 220, 51, 4)
+  check(hit and hit.c == 2 and hit.e == 1, "ed.maptool: quad top edge")
+  hit = W.col_pick(cols, 321, 150, 4)
+  check(hit and hit.c == 3 and hit.v == 1, "ed.maptool: circle ring handle")
+  hit = W.col_pick(cols, 305, 150, 4)
+  check(hit and hit.c == 3 and hit.e == 1, "ed.maptool: circle interior")
+  check(W.col_pick(cols, 400, 400, 4) == nil, "ed.maptool: empty pick")
+
+  local nv = W.col_insert(cols[1], 2, 80, 80)
+  check(nv == 3 and #cols[1].verts == 8 and cols[1].verts[5] == 80
+        and cols[1].verts[6] == 80, "ed.maptool: edge insert")
+
+  local q = { kind = "quad", x = 200, y = 50, w = 40, h = 30 }
+  W.quad_drag(q, { x = 200, y = 50, w = 40, h = 30 }, 1, 190, 40)
+  check(q.x == 190 and q.y == 40 and q.w == 50 and q.h == 40,
+        "ed.maptool: quad corner drag anchors opposite")
+  W.quad_drag(q, { x = 190, y = 40, w = 50, h = 40 }, 1, 250, 90)
+  check(q.x == 240 and q.y == 80 and q.w == 10 and q.h == 10,
+        "ed.maptool: quad drag normalizes on cross-over")
+
+  W.col_offset(cols[1], { verts = { 0, 100, 50, 100, 80, 80, 120, 60 } },
+               5, -10)
+  check(cols[1].verts[1] == 5 and cols[1].verts[2] == 90
+        and cols[1].verts[7] == 125 and cols[1].verts[8] == 50,
+        "ed.maptool: whole-chain offset")
+  W.col_offset(cols[3], { cx = 300, cy = 150 }, -10, 10)
+  check(cols[3].cx == 290 and cols[3].cy == 160, "ed.maptool: circle offset")
+
+  W.col_nudge(cols, { c = 1, v = 2 }, 1, 2)
+  check(cols[1].verts[3] == 56 and cols[1].verts[4] == 92,
+        "ed.maptool: vertex nudge")
+  W.col_nudge(cols, { c = 2 }, -5, 5)
+  check(cols[2].x == 195 and cols[2].y == 55, "ed.maptool: whole quad nudge")
+
+  check(W.col_del(cols, { c = 1, v = 3 }) == "vert" and #cols[1].verts == 6,
+        "ed.maptool: del removes the vertex")
+  check(W.col_del(cols, { c = 1, v = 2 }) == "vert" and #cols[1].verts == 4,
+        "ed.maptool: del to the 2-vert floor")
+  check(W.col_del(cols, { c = 1, v = 1 }) == "col" and #cols == 2,
+        "ed.maptool: del below the floor removes the chain")
+  check(W.col_del(cols, { c = 2 }) == "col" and #cols == 1
+        and cols[1].kind == "quad", "ed.maptool: del whole collider")
+end
+
 local function t_ed_filter()
   -- cm.ed.filter_events — the playable-game-window input gate (R4b,
   -- EDITOR.md §12.3). Synthetic events against a faked shell state.
@@ -3757,6 +3818,7 @@ function game.init()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()
+  t_ed_maptool()
   t_ed_filter()
   t_ed_viewlock()
   t_ed_park()

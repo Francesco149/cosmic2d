@@ -49,13 +49,15 @@ local COL = {
 }
 
 local KEY = { right = 79, left = 80, down = 81, up = 82, del = 76,
-              backspace = 42, rbracket = 48, lbracket = 47, n1 = 30 }
+              backspace = 42, rbracket = 48, lbracket = 47, n1 = 30,
+              enter = 40, c = 6 }
 
 local GRID_STEPS = { 1, 2, 4, 8, 16, 32, 64 }
 local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
 
 function M.defaults()
-  return { path = "", tool = "select", giz = true, mk = true, fill = true }
+  return { path = "", tool = "select", giz = true, mk = true, fill = true,
+           ctype = "line" }
 end
 
 function M.title(win)
@@ -232,18 +234,22 @@ function M.revert(win, ed)
   commit(ed, win.path)
 end
 
--- Esc: cancel the live gesture, else clear the selection (kind_escape)
+-- Esc: cancel the live gesture, else clear the active tool's selection
+-- (kind_escape); the shell's cascade unfocuses after that (the view lock)
 function M.escape(win, ed)
   local p = ed.g.mw and ed.g.mw[win.path]
   if not p then return false end
   if p.g then
-    if p.g.mode == "move" then -- put the moved items back
-      for _, it in ipairs(p.g.items) do
-        it.ref.x, it.ref.y = it.x0, it.y0
-      end
-      decode_into(p, working(ed, win.path).map) -- re-adopt committed bytes
+    if p.g.mutates then -- a doc-mutating drag: re-adopt committed bytes
+      decode_into(p, working(ed, win.path).map)
     end
     p.g = nil
+    p.guides = nil
+    ed.touch()
+    return true
+  end
+  if p.csel then
+    p.csel = nil
     ed.touch()
     return true
   end
@@ -558,6 +564,148 @@ function M.snap_targets(doc, opts)
   return { verts = verts, segs = segs }
 end
 
+-- ---- the pure collider-op core (R8c; selftest drives these) ----
+
+local function seg_d2(px, py, ax, ay, bx, by)
+  local dx, dy = bx - ax, by - ay
+  local len2 = dx * dx + dy * dy
+  local t = 0
+  if len2 > 0 then
+    t = ((px - ax) * dx + (py - ay) * dy) / len2
+    if t < 0 then t = 0 elseif t > 1 then t = 1 end
+  end
+  local qx, qy = ax + dx * t, ay + dy * t
+  local ddx, ddy = px - qx, py - qy
+  return ddx * ddx + ddy * ddy, qx, qy
+end
+
+-- a quad's corners as a flat vert list (tl,tr,br,bl — snap_targets' order)
+function M.quad_verts(c)
+  return { c.x, c.y, c.x + c.w, c.y, c.x + c.w, c.y + c.h, c.x, c.y + c.h }
+end
+
+-- the nearest collider feature under a map point: vertices/handles outrank
+-- edges (both within thr; nearest of each class wins). Returns
+--   { c=, v=, x=, y= }  a vertex/handle (circle: v=1 = the radius ring)
+--   { c=, e=, x=, y= }  an edge (x,y = the projection point; circle: e=1 =
+--                       the interior, whole-move)
+-- cols = the collider array (doc.colliders, or a placement's cols with
+-- map coords pre-offset by the caller via ox/oy).
+function M.col_pick(cols, mx, my, thr, ox, oy)
+  ox, oy = ox or 0, oy or 0
+  local t2 = thr * thr
+  local bv, bvd, be, bed
+  for ci, c in ipairs(cols) do
+    if c.kind == "circle" then
+      local dx, dy = mx - (c.cx + ox), my - (c.cy + oy)
+      local d = (dx * dx + dy * dy) ^ 0.5
+      local rd = d - c.r
+      if rd < 0 then rd = -rd end
+      if rd <= thr and (not bvd or rd * rd < bvd) then
+        bv, bvd = { c = ci, v = 1, x = c.cx + ox, y = c.cy + oy }, rd * rd
+      elseif d < c.r and (not bed or rd * rd < bed) then
+        be, bed = { c = ci, e = 1, x = c.cx + ox, y = c.cy + oy }, rd * rd
+      end
+    else
+      local v = c.kind == "quad" and M.quad_verts(c) or c.verts
+      local n = #v // 2
+      for i = 1, n do
+        local dx, dy = mx - (v[i * 2 - 1] + ox), my - (v[i * 2] + oy)
+        local d2 = dx * dx + dy * dy
+        if d2 <= t2 and (not bvd or d2 < bvd) then
+          bv, bvd = { c = ci, v = i, x = v[i * 2 - 1] + ox,
+                      y = v[i * 2] + oy }, d2
+        end
+      end
+      local last = (c.kind == "quad" or c.closed) and n or n - 1
+      for i = 1, last do
+        local j = i % n + 1
+        local d2, qx, qy = seg_d2(mx, my, v[i * 2 - 1] + ox, v[i * 2] + oy,
+                                  v[j * 2 - 1] + ox, v[j * 2] + oy)
+        if d2 <= t2 and (not bed or d2 < bed) then
+          be, bed = { c = ci, e = i, x = math.floor(qx + 0.5),
+                      y = math.floor(qy + 0.5) }, d2
+        end
+      end
+    end
+  end
+  return bv or be
+end
+
+-- insert a vertex on chain edge e (between verts e and e+1) at (x,y);
+-- returns the new vertex index
+function M.col_insert(c, e, x, y)
+  table.insert(c.verts, e * 2 + 1, x)
+  table.insert(c.verts, e * 2 + 2, y)
+  return e + 1
+end
+
+-- del on the collider selection: a chain vertex when one is selected
+-- (the whole collider when that would leave too few verts — open needs
+-- 2, closed 3), else the whole collider. Returns "vert" | "col".
+function M.col_del(cols, csel)
+  local c = cols[csel.c]
+  if not c then return nil end
+  if csel.v and c.kind == "chain" then
+    local n = #c.verts // 2
+    if n - 1 >= (c.closed and 3 or 2) then
+      table.remove(c.verts, csel.v * 2 - 1)
+      table.remove(c.verts, csel.v * 2 - 1)
+      return "vert"
+    end
+  end
+  table.remove(cols, csel.c)
+  return "col"
+end
+
+-- drag quad corner i (1..4 tl,tr,br,bl) to (nx,ny), anchored on the
+-- opposite corner of the gesture-start rect r0 (normalizes on cross-over)
+function M.quad_drag(c, r0, i, nx, ny)
+  local ax = (i == 1 or i == 4) and r0.x + r0.w or r0.x
+  local ay = (i == 1 or i == 2) and r0.y + r0.h or r0.y
+  local x0, x1 = nx < ax and nx or ax, nx < ax and ax or nx
+  local y0, y1 = ny < ay and ny or ay, ny < ay and ay or ny
+  c.x, c.y, c.w, c.h = x0, y0, math.max(1, x1 - x0), math.max(1, y1 - y0)
+end
+
+-- offset a whole collider from its gesture-start shape orig
+function M.col_offset(c, orig, dx, dy)
+  if c.kind == "circle" then
+    c.cx, c.cy = orig.cx + dx, orig.cy + dy
+  elseif c.kind == "quad" then
+    c.x, c.y = orig.x + dx, orig.y + dy
+  else
+    for i = 1, #orig.verts, 2 do
+      c.verts[i] = orig.verts[i] + dx
+      c.verts[i + 1] = orig.verts[i + 1] + dy
+    end
+  end
+end
+
+-- arrow-nudge the collider selection (vertex when one is selected)
+function M.col_nudge(cols, csel, dx, dy)
+  local c = cols[csel.c]
+  if not c then return false end
+  if c.kind == "chain" and csel.v then
+    c.verts[csel.v * 2 - 1] = c.verts[csel.v * 2 - 1] + dx
+    c.verts[csel.v * 2] = c.verts[csel.v * 2] + dy
+  elseif c.kind == "quad" and csel.v then
+    local v = M.quad_verts(c)
+    M.quad_drag(c, { x = c.x, y = c.y, w = c.w, h = c.h }, csel.v,
+                v[csel.v * 2 - 1] + dx, v[csel.v * 2] + dy)
+  elseif c.kind == "circle" then
+    c.cx, c.cy = c.cx + dx, c.cy + dy
+  elseif c.kind == "quad" then
+    c.x, c.y = c.x + dx, c.y + dy
+  else
+    for i = 1, #c.verts, 2 do
+      c.verts[i] = c.verts[i] + dx
+      c.verts[i + 1] = c.verts[i + 1] + dy
+    end
+  end
+  return true
+end
+
 local TAN22 = 0.41421356 -- tan(22.5 deg): the 8-sector boundary
 
 -- snap_pt(targets, x, y, opts) -> sx, sy (integers), guides, how
@@ -626,9 +774,11 @@ function M.snap_pt(tg, x, y, opts)
          math.floor(y / step + 0.5) * step, {}, "grid"
 end
 
--- ---- header: giz / mk / fill chips ----
+-- ---- header: tool radio (sel/col/mkr) + giz / mk / fill chips ----
 
 local CHIPS = { { "giz", "giz" }, { "mk", "mk" }, { "fill", "fill" } }
+local TOOLS = { { "marker", "mkr" }, { "collider", "col" },
+                { "select", "sel" } } -- right-to-left draw order
 
 function M.header(win, ctx)
   local z = ctx.z
@@ -636,21 +786,40 @@ function M.header(win, ctx)
   local i = cm.require("cm.ui").inp
   local x = ctx.hx
   local used = 0
-  for n = #CHIPS, 1, -1 do
-    local key, label = CHIPS[n][1], CHIPS[n][2]
+  local function chip(label, on)
     local w = pal.x_ig_text_size(label, px, 0) + 12 * z
     x = x - w - 3 * z
     used = used + w + 3 * z
-    local on = win[key]
     local hov = not ctx.alt and i.wx >= x and i.wx < x + w
                 and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
     pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
                        on and COL.btn_on or COL.btn, 4 * z)
     pal.x_ig_text(x + 6 * z, ctx.hy + (ctx.hh - px) * 0.45, px,
                   (hov or on) and COL.hot or COL.dim, label, 0)
-    if hov and i.clicked[1] then
+    return hov and i.clicked[1]
+  end
+  for n = 1, #CHIPS do
+    local key = CHIPS[#CHIPS + 1 - n][1]
+    if chip(CHIPS[#CHIPS + 1 - n][2], win[key]) then
       win[key] = not win[key]
       ctx.ed.touch()
+    end
+  end
+  if win.path ~= "" then
+    x = x - 5 * z -- a breath between the toggle group and the tools
+    used = used + 5 * z
+    for _, t in ipairs(TOOLS) do
+      if chip(t[2], (win.tool or "select") == t[1]) then
+        win.tool = t[1]
+        local p = ctx.ed.g.mw and ctx.ed.g.mw[win.path]
+        if p then -- a tool switch drops the live gesture + selections
+          if p.g and p.g.mutates then
+            decode_into(p, working(ctx.ed, win.path).map)
+          end
+          p.g, p.guides, p.csel = nil, nil, nil
+        end
+        ctx.ed.touch()
+      end
     end
   end
   return used
@@ -784,7 +953,7 @@ local function draw_fill(p, view, X0, X1, Y0s, Y1s)
   flush(X1)
 end
 
-local function draw_gizmos(p, view, sel)
+local function draw_gizmos(p, view, sel, tool, csel)
   local geom = p.geom
   local zoom, ox, oy = view.zoom, view.ox, view.oy
   local t = math.max(1, math.min(2.5, zoom))
@@ -808,15 +977,40 @@ local function draw_gizmos(p, view, sel)
         if c.oneway then dashed(ax, ay, bx, by, col_ow, t)
         else pal.x_ig_line(ax, ay, bx, by, col_solid, t) end
       end
-      for i = 1, n do -- vertex dots (the future R8c handles)
+      for i = 1, n do -- vertex dots
         pal.x_ig_circle_fill(sx(v[i * 2 - 1] + px0), sy(v[i * 2] + py0),
                              math.max(1.5, t + 0.5),
                              c.oneway and col_ow or col_solid)
       end
     end
   end
-  for _, c in ipairs(doc.colliders) do
-    one(c, 0, 0, COL.solid, COL.oneway)
+  -- editing handles (the collider tool / a selected placement's attached):
+  -- square knobs on every vertex, the selected one filled + grown; circles
+  -- get a center knob + a radius knob on the ring's east point
+  local function handles(c, px0, py0, selv)
+    local r = math.max(2.5, t + 1.5)
+    local function knob(kx, ky, on)
+      if on then
+        pal.x_ig_rect_fill(sx(kx) - r - 1, sy(ky) - r - 1,
+                           2 * r + 2, 2 * r + 2, COL.hot)
+      else
+        pal.x_ig_rect_fill(sx(kx) - r, sy(ky) - r, 2 * r, 2 * r, COL.sel)
+      end
+    end
+    if c.kind == "circle" then
+      knob(c.cx + px0, c.cy + py0, false)
+      knob(c.cx + c.r + px0, c.cy + py0, selv == 1)
+    else
+      local v = c.kind == "quad" and M.quad_verts(c) or c.verts
+      for i = 1, #v // 2 do
+        knob(v[i * 2 - 1] + px0, v[i * 2] + py0, selv == i)
+      end
+    end
+  end
+  for ci, c in ipairs(doc.colliders) do
+    local on = csel and csel.c == ci
+    one(c, 0, 0, on and COL.sel or COL.solid, on and COL.sel or COL.oneway)
+    if tool == "collider" then handles(c, 0, 0, on and csel.v or nil) end
   end
   for i, pl in ipairs(doc.places) do -- attached: dim until selected (§6)
     if pl.cols then
@@ -968,8 +1162,12 @@ function M.draw(win, ctx)
     end
   end
 
-  -- collider gizmos — always on by default (the human's call, §6)
-  if win.giz then draw_gizmos(p, view, p.sel) end
+  -- collider gizmos — always on by default (the human's call, §6);
+  -- the collider tool adds editing handles + the selection accent
+  local tool = win.tool or "select"
+  if win.giz or tool == "collider" then
+    draw_gizmos(p, view, p.sel, tool, p.csel)
+  end
 
   -- selection outlines
   for _, it in ipairs(p.sel) do
@@ -1032,12 +1230,232 @@ function M.draw(win, ctx)
     p.drop_at = nil
   end
 
-  -- select-tool gestures
-  if p.g then
+  -- ---- the collider tool (R8c, §6) ----
+  if tool == "collider" then
+    local thr = 7 / zoom -- handle pick radius, map px
+    local step = win.grid or doc.grid or 8
+    local function ptsnap(gx, gy, tg2, ax, ay)
+      if not g.ctrl then
+        p.guides = nil
+        return math.floor(gx + 0.5), math.floor(gy + 0.5)
+      end
+      local sx2, sy2, gg = M.snap_pt(tg2, gx, gy,
+        { thr = SNAP_PX / zoom, grid = step, ax = ax, ay = ay })
+      p.guides = gg
+      return sx2, sy2
+    end
+    local function finish_chain(closed)
+      local gd = p.g
+      p.g, p.guides = nil, nil
+      if gd and #gd.verts // 2 >= (closed and 3 or 2) then
+        doc.colliders[#doc.colliders + 1] = {
+          kind = "chain", oneway = win.coneway or false,
+          closed = closed or false, verts = gd.verts }
+        p.csel = { c = #doc.colliders }
+        commit(ed, win.path)
+      end
+      ctx.touch()
+    end
+    p.finish_chain = finish_chain -- the keys block reaches it
+
+    if p.g and p.g.mode == "chain" then
+      -- the modal chain draw: clicks append, enter/dbl ends open, C
+      -- closes, esc cancels (kind_escape); CTRL snaps the live point
+      local gd = p.g
+      local ax, ay = gd.verts[#gd.verts - 1], gd.verts[#gd.verts]
+      gd.cx, gd.cy = ptsnap(mx, my, gd.tg, ax, ay)
+      local v = gd.verts
+      local lt = math.max(1, math.min(2.5, zoom))
+      for k = 1, #v - 3, 2 do
+        pal.x_ig_line(ox + v[k] * zoom, oy + v[k + 1] * zoom,
+                      ox + v[k + 2] * zoom, oy + v[k + 3] * zoom,
+                      COL.sel, lt)
+      end
+      pal.x_ig_line(ox + ax * zoom, oy + ay * zoom, ox + gd.cx * zoom,
+                    oy + gd.cy * zoom, COL.guide, lt)
+      for k = 1, #v - 1, 2 do
+        pal.x_ig_circle_fill(ox + v[k] * zoom, oy + v[k + 1] * zoom,
+                             math.max(2, lt + 1), COL.sel)
+      end
+      if topmost and i.clicked[1] and not p.pan then
+        local now = pal.time_ns()
+        if gd.lt and now - gd.lt < 320 * 1e6
+           and math.abs(i.wx - gd.lsx) <= 6
+           and math.abs(i.wy - gd.lsy) <= 6 then
+          finish_chain(false) -- double-click ends the open chain
+        else
+          if gd.cx ~= ax or gd.cy ~= ay then
+            v[#v + 1], v[#v + 2] = gd.cx, gd.cy
+          end
+          gd.lt, gd.lsx, gd.lsy = now, i.wx, i.wy
+          ctx.touch()
+        end
+      end
+    elseif p.g then
+      local gd = p.g
+      if gd.mode == "cpress" then
+        if math.abs(i.wx - gd.sx) > 4 or math.abs(i.wy - gd.sy) > 4 then
+          gd.mode = gd.drag
+          gd.mutates = gd.drag == "cvert" or gd.drag == "cwhole"
+        elseif not i.buttons[1] then
+          -- still-click: select; the SELECTED chain's edge inserts a
+          -- vertex at the projection point (§6)
+          local hit = gd.hit
+          local c = doc.colliders[hit.c]
+          if hit.e and c.kind == "chain" and p.csel
+             and p.csel.c == hit.c then
+            local nv = M.col_insert(c, hit.e, hit.x, hit.y)
+            p.csel = { c = hit.c, v = nv }
+            commit(ed, win.path)
+          else
+            p.csel = { c = hit.c, v = hit.v }
+          end
+          p.g = nil
+          ctx.touch()
+        end
+      end
+      if gd.mode == "cvert" then
+        if i.buttons[1] then
+          local c = doc.colliders[gd.hit.c]
+          local nx, ny = ptsnap(mx, my, gd.tg, gd.ax, gd.ay)
+          if c.kind == "chain" then
+            c.verts[gd.hit.v * 2 - 1], c.verts[gd.hit.v * 2] = nx, ny
+          elseif c.kind == "quad" then
+            M.quad_drag(c, gd.r0, gd.hit.v, nx, ny)
+          else -- the circle's radius ring
+            local dx, dy = nx - c.cx, ny - c.cy
+            c.r = math.max(1, math.floor((dx * dx + dy * dy) ^ 0.5 + 0.5))
+          end
+          gd.moved = true
+          ctx.touch()
+        else
+          if gd.moved then commit(ed, win.path) end
+          p.g, p.guides = nil, nil
+        end
+      elseif gd.mode == "cwhole" then
+        if i.buttons[1] then
+          local c = doc.colliders[gd.hit.c]
+          local nx, ny = ptsnap(gd.gx0 + (i.wx - gd.sx) / zoom,
+                                gd.gy0 + (i.wy - gd.sy) / zoom, gd.tg)
+          M.col_offset(c, gd.orig, nx - gd.gx0, ny - gd.gy0)
+          gd.moved = true
+          ctx.touch()
+        else
+          if gd.moved then commit(ed, win.path) end
+          p.g, p.guides = nil, nil
+        end
+      elseif gd.mode == "dpress" then
+        if math.abs(i.wx - gd.sx) > 4 or math.abs(i.wy - gd.sy) > 4 then
+          gd.mode = gd.drag
+        elseif not i.buttons[1] then
+          p.csel = nil -- a still-click on empty deselects
+          p.g = nil
+          ctx.touch()
+        end
+      end
+      if gd.mode == "quadd" or gd.mode == "circd" then
+        local nx, ny = ptsnap(mx, my, gd.tg)
+        gd.cx, gd.cy = nx, ny
+        local lt = math.max(1, math.min(2.5, zoom))
+        if gd.mode == "quadd" then
+          local x0, x1 = math.min(gd.x0, nx), math.max(gd.x0, nx)
+          local y0, y1 = math.min(gd.y0, ny), math.max(gd.y0, ny)
+          pal.x_ig_rect(ox + x0 * zoom, oy + y0 * zoom, (x1 - x0) * zoom,
+                        (y1 - y0) * zoom, COL.sel, lt)
+          if not i.buttons[1] then
+            p.g, p.guides = nil, nil
+            if x1 - x0 >= 1 and y1 - y0 >= 1 then
+              doc.colliders[#doc.colliders + 1] = {
+                kind = "quad", x = x0, y = y0, w = x1 - x0, h = y1 - y0 }
+              p.csel = { c = #doc.colliders }
+              commit(ed, win.path)
+            end
+            ctx.touch()
+          end
+        else
+          local dx, dy = nx - gd.x0, ny - gd.y0
+          local r = math.floor((dx * dx + dy * dy) ^ 0.5 + 0.5)
+          pal.x_ig_circle(ox + gd.x0 * zoom, oy + gd.y0 * zoom, r * zoom,
+                          COL.sel, lt)
+          if not i.buttons[1] then
+            p.g, p.guides = nil, nil
+            if r >= 1 then
+              doc.colliders[#doc.colliders + 1] = {
+                kind = "circle", cx = gd.x0, cy = gd.y0, r = r }
+              p.csel = { c = #doc.colliders }
+              commit(ed, win.path)
+            end
+            ctx.touch()
+          end
+        end
+      end
+    elseif topmost and i.clicked[1] and not p.pan then
+      local hit = M.col_pick(doc.colliders, mx, my, thr)
+      if hit then
+        local c = doc.colliders[hit.c]
+        local gd = { mode = "cpress", sx = i.wx, sy = i.wy, hit = hit }
+        if hit.v then
+          gd.drag = "cvert"
+          if c.kind == "chain" then
+            gd.tg = M.snap_targets(doc, { dims = dims,
+                      skipv = { o = 0, c = hit.c, v = hit.v } })
+            local n = #c.verts // 2
+            local pv = hit.v > 1 and hit.v - 1
+                       or (c.closed and n or hit.v + 1)
+            if pv >= 1 and pv <= n and pv ~= hit.v then
+              gd.ax, gd.ay = c.verts[pv * 2 - 1], c.verts[pv * 2]
+            end
+          elseif c.kind == "quad" then
+            gd.tg = M.snap_targets(doc, { dims = dims,
+                      skipv = { o = 0, c = hit.c } })
+            gd.r0 = { x = c.x, y = c.y, w = c.w, h = c.h }
+          else
+            gd.tg = { verts = {}, segs = {} } -- radius = distance only
+          end
+        else
+          gd.drag = "cwhole"
+          gd.gx0, gd.gy0 = hit.x, hit.y -- grab the projection point
+          gd.tg = M.snap_targets(doc, { dims = dims,
+                    skipv = { o = 0, c = hit.c } })
+          if c.kind == "circle" then
+            gd.orig = { cx = c.cx, cy = c.cy }
+          elseif c.kind == "quad" then
+            gd.orig = { x = c.x, y = c.y }
+          else
+            local vv = {}
+            for k, val in ipairs(c.verts) do vv[k] = val end
+            gd.orig = { verts = vv }
+          end
+        end
+        p.g = gd
+        ctx.touch()
+      else
+        -- empty press: draw the strip's type (line = the modal chain;
+        -- quad/circle = drag out); deselects as it starts
+        p.csel = nil
+        local tg = M.snap_targets(doc, { dims = dims })
+        local x0, y0 = ptsnap(mx, my, tg)
+        local ct = win.ctype or "line"
+        if ct == "line" then
+          p.g = { mode = "chain", verts = { x0, y0 }, tg = tg,
+                  cx = x0, cy = y0, lt = pal.time_ns(),
+                  lsx = i.wx, lsy = i.wy }
+        else
+          p.g = { mode = "dpress", drag = ct == "quad" and "quadd"
+                  or "circd", sx = i.wx, sy = i.wy, tg = tg,
+                  x0 = x0, y0 = y0 }
+        end
+        ctx.touch()
+      end
+    end
+
+  -- ---- the select tool ----
+  elseif tool == "select" and p.g then
     local gd = p.g
     if gd.mode == "press" then
       if math.abs(i.wx - gd.sx) > 4 or math.abs(i.wy - gd.sy) > 4 then
         gd.mode = "move"
+        gd.mutates = true -- Esc restores from the committed bytes
       elseif not i.buttons[1] then
         -- still-click: select just the item; double-click opens the editor
         local now = pal.time_ns()
@@ -1100,7 +1518,7 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     end
-  elseif topmost and i.clicked[1] and not p.pan then
+  elseif tool == "select" and topmost and i.clicked[1] and not p.pan then
     local hit = M.pick(doc, mx, my, dims, win.mk)
     if hit then
       if g.shift then
@@ -1152,7 +1570,29 @@ function M.draw(win, ctx)
     for _, e in ipairs(i.keys) do
       if e.down and not e.rep then
         local sc = e.scancode
-        if sc >= KEY.right and sc <= KEY.up and #p.sel > 0 then
+        if sc == KEY.n1 and g.shift then
+          win.zoom, win.px, win.py = nil, nil, nil
+          ctx.touch()
+        elseif tool == "collider" then
+          if p.g and p.g.mode == "chain" then
+            if sc == KEY.enter then p.finish_chain(false)
+            elseif sc == KEY.c then p.finish_chain(true) end
+          elseif p.csel and not p.g then
+            if sc >= KEY.right and sc <= KEY.up then
+              local d = g.shift and 8 or 1
+              local dx = (sc == KEY.right and d) or (sc == KEY.left and -d) or 0
+              local dy = (sc == KEY.down and d) or (sc == KEY.up and -d) or 0
+              if M.col_nudge(doc.colliders, p.csel, dx, dy) then
+                commit(ed, win.path)
+              end
+            elseif sc == KEY.del or sc == KEY.backspace then
+              if M.col_del(doc.colliders, p.csel) then
+                p.csel = nil
+                commit(ed, win.path)
+              end
+            end
+          end
+        elseif sc >= KEY.right and sc <= KEY.up and #p.sel > 0 then
           local d = g.shift and 8 or 1
           local dx = (sc == KEY.right and d) or (sc == KEY.left and -d) or 0
           local dy = (sc == KEY.down and d) or (sc == KEY.up and -d) or 0
@@ -1167,9 +1607,6 @@ function M.draw(win, ctx)
           if M.zmove(doc, p.sel, 1) then commit(ed, win.path) end
         elseif sc == KEY.lbracket and #p.sel > 0 then
           if M.zmove(doc, p.sel, -1) then commit(ed, win.path) end
-        elseif sc == KEY.n1 and g.shift then
-          win.zoom, win.px, win.py = nil, nil, nil
-          ctx.touch()
         end
       end
     end
@@ -1215,7 +1652,57 @@ function M.draw(win, ctx)
     }
     return (st and st.submit) and text or nil, lx + w + 6 * z
   end
-  if #p.sel == 1 then
+  if tool == "collider" then
+    -- type chips + flags: the draw type for new colliders; a selected
+    -- chain's one-way/closed flags edit in place (journaled)
+    local x = ctx.cx + 2 * z
+    local function schip(label, on)
+      local w = pal.x_ig_text_size(label, px * 0.9, 0) + 10 * z
+      local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+                  and i.wy >= iy and i.wy < iy + INSP
+      pal.x_ig_rect_fill(x, iy + 1, w, INSP - 2,
+                         on and COL.btn_on or COL.btn, 3 * z)
+      pal.x_ig_text(x + 5 * z, iy + (INSP - px) * 0.45, px * 0.9,
+                    (hov or on) and COL.hot or COL.dim, label, 0)
+      x = x + w + 4 * z
+      return hov and i.clicked[1]
+    end
+    for _, td in ipairs({ { "line", "line" }, { "quad", "quad" },
+                          { "circle", "circle" } }) do
+      if schip(td[2], (win.ctype or "line") == td[1]) then
+        win.ctype = td[1]
+        ctx.touch()
+      end
+    end
+    x = x + 4 * z
+    local selc = p.csel and doc.colliders[p.csel.c]
+    if selc and not p.g then
+      if selc.kind == "chain" then
+        if schip("one-way", selc.oneway or false) then
+          selc.oneway = not selc.oneway
+          commit(ed, win.path)
+        end
+        if schip("closed", selc.closed or false) then
+          selc.closed = not selc.closed
+          commit(ed, win.path)
+        end
+      end
+      pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
+                    p.csel.v and "drag moves the vertex · del removes it"
+                    or "click an edge of the selected chain to insert · del deletes",
+                    0)
+    else
+      if schip("one-way", win.coneway or false) then
+        win.coneway = not win.coneway
+        ctx.touch()
+      end
+      local hint = p.g and p.g.mode == "chain"
+        and "click adds · enter/dblclick ends · c closes · esc cancels"
+        or "press empty draws · ctrl snaps (45 on lines)"
+      pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
+                    hint, 0)
+    end
+  elseif #p.sel == 1 then
     local it = p.sel[1]
     local o = it.t == "place" and doc.places[it.i] or doc.markers[it.i]
     if not o then
