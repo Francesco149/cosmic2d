@@ -178,10 +178,11 @@ crossing 4 px; double-click = **320 ms / 6 px**, teidraw's thresholds):
   rule) — layout nudges live in the session doc, not a journal, so
   coalescing only matters for feel here; the rule matters at R4.
 
-**What the game sees in editor mode: nothing.** The sim keeps running
-(the live-game window is the point — igcanvas proved it), but the shell
-swallows all input before `cm.input.feed`. Synthesizing sim input for a
-*focused, playable* game window is R4 design, not R3.
+**What the game sees in editor mode: nothing — unless a game window is
+focused.** The sim keeps running (the live-game window is the point);
+the shell swallows input before `cm.input.feed`, except the §12.3
+playable path: focused game window = keys pass + mouse remaps through
+the image rect (R4, `cm.ed.filter_events`).
 
 ## 6. Unsaved-persists + undo-forever (the journal)
 
@@ -263,12 +264,11 @@ picker replaces it) · game window. New windows spawn at the click point.
   `game.draw` (before the legacy ui-canvas panels). While the editor is
   on: `cm.view.mode = "canvas"` (no game blit, D049), events are
   consumed by the shell, the sim keeps stepping.
-- **The legacy chrome quirk** (IMGUI.md §11): console/perf/scrub render
-  UNDER the opaque ig canvas. R3 interim: **while the console overlay is
-  open, the shell skips its ig frame entirely** (one gate) — canvas
-  hidden, legacy chrome fully visible + interactive, come back with the
-  same session. Honest and cheap; the console re-hosts as a canvas
-  window at R4.
+- **The legacy chrome quirk** (IMGUI.md §11): perf/scrub still render
+  UNDER the opaque ig canvas (their re-host is future work). The R3
+  console gate is GONE (R4c): the console is a canvas window; grave
+  spawns/focuses it, and a legacy overlay opened under the canvas (the
+  error notify) is adopted into a window.
 - **Hot reload**: cm.ed modules keep state on `M` (prev-table
   convention) like everything else; `cm.ed.doc` lives in the doc tree so
   a reload never loses layout. The editor is its own best test subject —
@@ -338,10 +338,11 @@ all back.
   the format has room (`ENTR` v2).
 - **Widget z vs canvas z** — imgui widgets (`x_ig_edit`) always render
   above the background drawlist, whatever our window order says. The R3
-  rule (found + fixed in build): a window overlapped by a higher window
-  draws its text **inert** (drawlist text — correct-looking, it's behind
-  anyway) instead of submitting a live widget. The fully interleaved
-  story (per-window imgui hosts, ordered by our z) is R4 code-ed design.
+  rule: an occluded window draws inert instead of submitting a live
+  widget. **R4 dissolved most of it** (§12.1): ghost widgets draw no
+  glyphs, so an occluded window skips an *invisible* widget and renders
+  pixel-identical — the rule survives only as "don't submit occluded
+  widgets" (their selection highlight would bleed through).
 - **Two edit widgets, one frame** — `x_ig_edit` ids are per-window;
   the SDL3-backend text-input conflict (IMGUI.md §11) stays a
   keep-out-of-the-same-frame rule with `pal.text_input` (console), which

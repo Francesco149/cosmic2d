@@ -49,9 +49,10 @@ default windows-side save dir. Resolve it like this:
   rules, PAL API contract.
 - **IMGUI.md** — the R2 design (D049): imgui hosted in the PAL, the
   drawlist+widgets script surface, window model, C/C++ layer rules.
-- **EDITOR.md** — the R3 design (D050): the infinite-canvas editor shell —
-  ALT grammar, the captured editor state domain (R6-ready), unsaved-persists
-  + undo-forever journals. The STUDIO.md successor.
+- **EDITOR.md** — the R3+R4 design (D050/D051): the infinite-canvas editor
+  shell — ALT grammar, the captured editor state domain (R6-ready),
+  unsaved-persists + undo-forever journals, and §12 the windows (code ed /
+  playable game / console / assets / sprite ed). The STUDIO.md successor.
 - *(moved at R0)* GAME.md / STORY.md / maps → `../cosmic2d-game/docs/`;
   PROCART.md → `../cosmic2d-demos/docs/`.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.

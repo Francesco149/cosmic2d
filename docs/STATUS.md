@@ -3,6 +3,86 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (overnight session — R4 built end to end)
+**Phase**: **REVAMP R4 — the windows: BUILT (ADR D051 + EDITOR.md §12);
+awaiting the human's exit session (the one true gate).** The human
+confirmed R3's resize feel at session start; design-doc-first per REVAMP
+§3.1, then all five citizens, each a commit with scripted proofs:
+
+- **D051 + EDITOR.md §12** — the R4 design. The structural idea: the
+  **ghost-widget split** — `x_ig_edit` grew additive opts (`ghost/enter/
+  focus/set/scroll_x/scroll_y`) + a 4th return `{sx,sy,caret,sa,sb,
+  submit}` (imgui-internals read, pin-checked), and in ghost mode draws
+  NO glyphs. Lua draws every visible glyph on the drawlist (which obeys
+  canvas z) — so the R3 widget-z trap dissolved, and syntax color became
+  possible at all. Also new: `PAL_EV_DROP` (SDL drop-file → `{type=
+  "drop", path, wx, wy}`).
+- **R4a code ed** (`37ad47a`): `cm.ed.lex` (pure lua/md line tokenizers +
+  `link_at`, KAT'd), gutter + faces + own caret + current-line tint on
+  the ghost widget; .md keeps the mono grid with heading/link/code faces
+  (docs are a *code format*, the board's spec); **Ctrl+click a link →
+  new code window** (module dots resolve into `../../engine/`, docs into
+  `../../docs/`); per-window **back/fwd history** (◀ ▶ + mouse 4/5).
+  Scroll is captured per window; restart survival re-proven. Found+fixed:
+  capped/headless quits lost the sub-400 ms session tail →
+  `cm.ed.quit_flush` backstop in cm.main.
+- **R4b playable game** (focused = playing): `cm.ed.filter_events`
+  replaces the blanket swallow — keys pass (Esc+grave stay the shell's;
+  releases always pass so nothing sticks), mouse remaps through the
+  letterboxed image rect to FOV px, wheel over it feeds the sim — all on
+  the normal recorded input path (replayable by construction, KAT'd).
+  Plain-key shell hotkeys suspend while playing; Esc unfocuses. PLAYING
+  chip on the window.
+- **R4c console window**: same pal.log ring, colored faces, header
+  filter, Enter → the recorded EVAL path, up/down repl history; grave
+  summons it on the canvas; the D050 §8 skip-ig-frame gate DELETED
+  (error-notify adopts into a window). Content-wheel routing landed
+  (§12.7): ALT+wheel always zooms; kind.wheel hooks take content scroll.
+- **R4d asset picker + image window**: flat list (one recursive
+  `pal.list_dir` — the old nested walks double-counted, fixed in the
+  text picker too), type chips + pure fuzzy scorer (KAT'd), size slider,
+  PNG previews (.spr shows its baked sibling), double-click opens the
+  right kind, **drag-out rebinds** a window (`kind.accepts/rebind`) or
+  spawns on empty canvas, **OS drop over an assets window copies into
+  the project** (image→art/, sound→sound/, code→root; collisions
+  suffix _2; tile flashes).
+- **R4e sprite ed; the F2 studio DIED** (D046 Q4): read-only fit view +
+  header **edit** toggle; pencil/eraser/bucket/eyedropper, doc palette +
+  hex add, layers (select/eye/add/del), frame chips, wheel zoom at
+  cursor + middle-drag pan (the shell yields the middle button via
+  `kind.takes_middle`). **Working state = the CSPR bytes** in
+  doc.assets → the whole D050 model free (journal cap 512 via the new
+  per-open cap; one gesture = one entry; save = `sprite.save` bake +
+  hot-reload epoch). Proven live: paint → save → unsaved edit → restart
+  (the mouth line survived, dirty dots) → undo (gone in both windows).
+  Colors stay in cm.paint packing (drawlist converts — a real channel-
+  swap bug caught by looking at the shot). `cm.studio` (2171 lines) +
+  `--studio` + F2 deleted; cm.paint/sprite/anim untouched.
+- **Proof**: selftest 22644→**22676** (+32: lex, fuzzy/class, filter
+  gate, journal per-open cap); `nix run .#test` ALL GREEN throughout
+  (goldens never moved); **windows native**: selftest 22676 PASS,
+  smoke_kitcheck verifies byte-exact, `--edit` capture renders the R4
+  windows identically (staged at `C:\Users\headpats\cosmic2d-win`).
+  5 shots on llm-feed (the R4 exit composition on the real cosmic
+  project · code ed faces · sprite restart survival · picker drop-in ·
+  native windows).
+
+**Next step (resume here):** the human's **R4 exit session** (REVAMP §6):
+`bin/cosmic ../cosmic2d-game/cosmic --edit` (or smoke) — play the game in
+its window (click in = play, Esc = out), edit a script with Ctrl+S and
+watch hot reload, toggle girl.spr's sprite ed and tweak pixels, drag a
+ref image from Explorer onto an assets window. Known R4 scope notes:
+sprite ed v1 is deliberately lean (no gradients/transforms/clips UI —
+the .spr carries them; the anim window is future), sound files have no
+window (M9 never landed), perf/scrub still hide under the canvas, the
+image window is PNG-only. Then **R5 — project picker + launcher**
+(REVAMP §6): teidraw-style picker front door, the thin same-name
+launcher exe (editor/console disabled), shipped zip openable in the
+editor. Good `/clear` point after the human's pass — R4 is committed,
+docs current.
+
+---
+
 **Date**: 2026-07-12 (R3 session, cont. — feedback rounds 1+2 + the windows PAL)
 **Phase**: **R3 feedback rounds 1+2 applied ("feels good", "windows build
 is smooth" + asks); the windows build now actually TESTED natively —

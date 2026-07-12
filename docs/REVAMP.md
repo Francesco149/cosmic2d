@@ -224,16 +224,19 @@ flex except: **R0 first** (everything else lands in the right repo) and
   (EDITOR.md — the D036/STUDIO.md successor). *Exit*: canvas with dummy
   windows feels teidraw-smooth (human taste pass); undo/unsaved survives a
   restart.
-- **R4 — the windows**: **code ed** (imgui text stack: micro-style controls,
-  highlighting, line numbers, unsaved signal; the docs format + link
-  navigation) · **asset pick** (previews, size slider, drag-in/drag-out
-  semantics, fuzzy search) · **sprite ed** (re-host cm.paint/cm.sprite/
-  cm.anim tools in a floating window; read-only default + edit toggle;
-  animation possibly its own window) · **live playable game** window. The
-  old studio's full-window mode (F2) **dies here** — no coexistence (§7 Q4).
-  *Exit*: a real session — open the game, edit a script in code ed, tweak a
-  sprite, drag an asset in from the OS — without leaving the canvas; the F2
-  studio is gone.
+- **R4 — the windows** ✅ **BUILT (2026-07-12, D051 + EDITOR.md §12;
+  awaiting the human's exit session)**: **code ed** (ghost x_ig_edit +
+  drawlist glyphs: highlighting, gutter, unsaved signal; the docs face +
+  Ctrl+click links + per-window history) · **asset pick** (previews, size
+  slider, OS drag-in via the new drop event, drag-out rebind, fuzzy
+  search) · **sprite ed** (CSPR-bytes working state on the D050 journal
+  model; read-only default + edit toggle; animation window deferred) ·
+  **live playable game** window (focused = playing; input synthesized
+  through the recorded path) · console re-hosted. The F2 studio **died**
+  (§7 Q4). *Exit*: a real session — open the game, edit a script in code
+  ed, tweak a sprite, drag an asset in from the OS — without leaving the
+  canvas; the F2 studio is gone. *(Built + proven scripted; the human's
+  live session is the remaining gate.)*
 - **R5 — project picker + launcher**: teidraw-style picker as the front
   door; the thin same-name launcher exe (editor/console disabled); shipped
   game openable through the editor. *Exit*: zip a game, double-click the exe
