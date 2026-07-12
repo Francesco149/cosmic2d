@@ -323,6 +323,8 @@ local function hotkeys(ig, i)
       elseif sc == K.grave then summon_console()
       elseif sc == K.escape then
         if g.menu then g.menu = nil
+        elseif cm.require("cm.scrub").paused() then
+          cm.require("cm.scrub").close() -- parked: Esc = back to the present
         elseif play then doc.focus = 0 -- the universal "get out" of play
         elseif doc.drill ~= 0 then doc.drill = 0
         else doc.sel = {} end
@@ -406,6 +408,12 @@ local function interact(ig)
 
   -- the spawn menu owns clicks while open (draw() hit-tests it)
   if g.menu then return end
+
+  -- the rewind bar owns its rect while shown (draw_rewind hit-tests it)
+  if g.rw_bar and i.wx >= g.rw_bar.x and i.wx < g.rw_bar.x + g.rw_bar.w
+     and i.wy >= g.rw_bar.y and i.wy < g.rw_bar.y + g.rw_bar.h then
+    return
+  end
 
   -- an asset-tile drag in flight (the picker armed it; the shell carries
   -- it, EDITOR.md §12.5): release over an accepting window = rebind, over
@@ -650,6 +658,126 @@ local function draw_menu(ig, i)
   if i.clicked[1] and not clicked_inside then g.menu = nil end
 end
 
+-- the rewind pill + bar (R6d, REWIND.md §6): the reserved top-right
+-- corner. The pill shows the retained span; hovering it (or being
+-- parked) expands the full-width bar — timeline, step/play, resume
+-- here, close. All of it is a FRONT-END over cm.scrub's machinery (its
+-- legacy panel keeps running invisibly under the canvas): the bar
+-- reads/writes scrub.at/play and calls open/close/rewind_here. Chrome,
+-- not editor state — a rewound frame does not show a rewound pill.
+local function rw_button(i, x, y, w, h, label, accent)
+  local hov = i.wx >= x and i.wx < x + w and i.wy >= y and i.wy < y + h
+  pal.x_ig_rect_fill(x, y, w, h, hov and C.menu_hot or 0x262238ff, 5)
+  local tw = pal.x_ig_text_size(label, 12, 0)
+  pal.x_ig_text(x + (w - tw) * 0.5, y + (h - 12) * 0.45, 12,
+                accent and C.sel or (hov and C.hud or C.title_dim), label, 0)
+  return hov and i.clicked[1]
+end
+
+local function draw_rewind(ig, i)
+  local scrub = cm.require("cm.scrub")
+  local trace = cm.require("cm.trace")
+  local g = M.g
+  local lo, hi = trace.ring_range()
+  local parked = scrub.paused()
+  pal.x_ig_overlay(true)
+
+  -- the pill
+  local label
+  if parked then
+    label = "parked"
+  elseif lo then
+    local span = (hi - lo) // 60
+    label = span >= 60 and ("%dm%02ds"):format(span // 60, span % 60)
+            or ("%ds"):format(span)
+  else
+    label = "·"
+  end
+  local px = 13
+  local lw = pal.x_ig_text_size(label, px, 0)
+  local pw = lw + 24
+  local x0, y0, h0 = ig.w - pw - 8, 8, 26
+  pal.x_ig_rect_fill(x0, y0, pw, h0, parked and 0x3a3560f2 or C.pill, 8)
+  pal.x_ig_text(x0 + 12, y0 + 6, px, parked and C.sel or C.hud_dim, label, 0)
+  local now = pal.time_ns()
+  if i.wx >= x0 and i.wx < x0 + pw and i.wy >= y0 and i.wy < y0 + h0 then
+    g.rw_until = now + 2500 * 1e6 -- teidraw's video-pill timeout shape
+  end
+
+  local open = lo and (parked or (g.rw_until and now < g.rw_until))
+  if not open then
+    g.rw_bar = nil
+    pal.x_ig_overlay(false)
+    return
+  end
+
+  -- the bar
+  local bx, by, bw, bh = 8, 42, ig.w - 16, 58
+  g.rw_bar = { x = bx - 4, y = y0, w = bw + 8, h = by + bh - y0 + 4 }
+  if (i.wx >= bx and i.wx < bx + bw and i.wy >= by and i.wy < by + bh) then
+    g.rw_until = now + 2500 * 1e6
+  end
+  pal.x_ig_rect_fill(bx, by, bw, bh, 0x1e1b2ef6, 10)
+  pal.x_ig_rect(bx, by, bw, bh, C.win_edge, 1, 10)
+
+  -- the timeline
+  local tx, tw2, ty = bx + 14, bw - 28, by + 12
+  pal.x_ig_line(tx, ty + 4, tx + tw2, ty + 4, 0x3a3560ff, 3)
+  local at = parked and scrub.at or hi
+  local t = (at - lo) / math.max(1, hi - lo)
+  pal.x_ig_circle_fill(tx + t * tw2, ty + 4, 6,
+                       parked and C.sel or 0xb0a8dcff)
+  if not g.alt and i.buttons[1] and i.wx >= tx - 8 and i.wx < tx + tw2 + 8
+     and i.wy >= ty - 8 and i.wy < ty + 16 then
+    if not parked then
+      scrub.open()
+      parked = scrub.paused()
+    end
+    if parked then
+      local nt = math.max(0, math.min(1, (i.wx - tx) / tw2))
+      scrub.at = math.floor(lo + nt * (hi - lo) + 0.5)
+      scrub.play = false
+    end
+  end
+
+  -- transport + doors
+  local byy = ty + 22
+  local info = parked
+    and ("frame %d / %d   t%+.2fs"):format(scrub.at, hi, (scrub.at - hi) / 60)
+    or ("frame %d — drag the timeline to browse the past"):format(hi)
+  pal.x_ig_text(tx, byy + 4, 12, parked and C.hud or C.hud_dim, info, 0)
+  local bxx = bx + bw - 14
+  local function place(w)
+    bxx = bxx - w - 6
+    return bxx
+  end
+  if parked then
+    if rw_button(i, place(52), byy, 52, 22, "close") then scrub.close() end
+    if rw_button(i, place(94), byy, 94, 22, "resume here", true) then
+      scrub.rewind_here()
+    end
+    if rw_button(i, place(40), byy, 40, 22, scrub.play and "stop" or "play") then
+      if scrub.play then
+        scrub.play = false
+      else
+        if scrub.at >= hi then scrub.at = lo end
+        scrub.play = scrub.at < hi
+      end
+    end
+    if rw_button(i, place(28), byy, 28, 22, ">") then
+      scrub.play = false
+      scrub.at = math.min(hi, scrub.at + 1)
+    end
+    if rw_button(i, place(28), byy, 28, 22, "<") then
+      scrub.play = false
+      scrub.at = math.max(lo, scrub.at - 1)
+    end
+  else
+    if rw_button(i, place(52), byy, 52, 22, "park") then scrub.open() end
+  end
+  pal.x_ig_overlay(false)
+end
+
 local function draw_hud(ig)
   local doc = M.doc
   pal.x_ig_overlay(true)
@@ -699,6 +827,7 @@ local function draw(ig)
   end
   draw_menu(ig, i)
   draw_hud(ig)
+  draw_rewind(ig, i)
 end
 
 -- ---- the frame (called from cm.main after game.draw) ----
