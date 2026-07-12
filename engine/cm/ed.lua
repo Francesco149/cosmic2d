@@ -35,7 +35,29 @@ M.kinds = {
   game = cm.require("cm.ed.win.game"),
   text = cm.require("cm.ed.win.text"),
   console = cm.require("cm.ed.win.console"),
+  assets = cm.require("cm.ed.win.assets"),
+  image = cm.require("cm.ed.win.image"),
 }
+
+-- open the right window kind for a file at a world position (double-click
+-- and drag-to-canvas in the asset picker, EDITOR.md §12.5)
+function M.open_asset_window(path, wx, wy)
+  local kname = M.kinds.assets.kind_for(path)
+  if not kname or not M.kinds[kname] then
+    pal.log("[ed] no window kind for " .. path)
+    return
+  end
+  local kind = M.kinds[kname]
+  local win = wm.spawn(M.doc, kname, wx, wy, kind.DEF_W or 300,
+                       kind.DEF_H or 240, kind.defaults())
+  if kname == "text" then
+    M.kinds.text.navigate(win, M, path)
+  else
+    win.path = path
+  end
+  M.touch()
+  return win
+end
 
 -- the palette (igcanvas's, promoted)
 local C = {
@@ -139,6 +161,17 @@ function M.filter_events(events)
          and i.wy >= rect.y and i.wy < rect.y + rect.h then
         out[#out + 1] = e
         g.wheel_taken = true -- the canvas must not also zoom on it
+      end
+    elseif e.type == "drop" and M.doc then
+      -- an OS file dropped on the window: over an assets window = add to
+      -- project (EDITOR.md §12.5); anywhere else is ignored (logged)
+      local wwx, wwy = cam.s2w(M.doc.cam, e.wx, e.wy)
+      local id = wm.hit(M.doc, wwx, wwy, 0)
+      local win = id and wm.get(M.doc, id)
+      if win and win.kind == "assets" then
+        M.kinds.assets.add_dropped(M, e.path)
+      else
+        pal.log("[ed] drop ignored (aim at an assets window): " .. e.path)
       end
     end
     -- text events never reach the game (it has no text input path)
@@ -324,6 +357,35 @@ local function interact(ig)
   -- the spawn menu owns clicks while open (draw() hit-tests it)
   if g.menu then return end
 
+  -- an asset-tile drag in flight (the picker armed it; the shell carries
+  -- it, EDITOR.md §12.5): release over an accepting window = rebind, over
+  -- empty canvas = open the right kind there
+  if g.adrag then
+    local d = g.adrag
+    if i.buttons[1] then
+      if math.abs(i.wx - d.sx) > wm.DRAG_PX
+         or math.abs(i.wy - d.sy) > wm.DRAG_PX then
+        d.moved = true
+      end
+    else
+      if d.moved then
+        local id = wm.hit(doc, wwx, wwy, 0)
+        local win = id and wm.get(doc, id)
+        local kind = win and M.kinds[win.kind]
+        if win and win.id ~= d.from and kind and kind.accepts
+           and kind.accepts(win, d.path) then
+          kind.rebind(win, M, d.path)
+          doc.focus = win.id
+          M.touch()
+        elseif not win then
+          M.open_asset_window(d.path, wwx, wwy)
+        end
+      end
+      g.adrag = nil
+    end
+    return
+  end
+
   -- pan gestures continue regardless of what's under the cursor
   if g.pan then
     if i.buttons[g.pan.b] then
@@ -494,7 +556,8 @@ local function draw_win(ig, win, zi)
 end
 
 local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
-                     { "game", "game window" }, { "console", "console" } }
+                     { "assets", "assets" }, { "game", "game window" },
+                     { "console", "console" } }
 
 local function draw_menu(ig, i)
   local g = M.g
@@ -564,6 +627,16 @@ local function draw(ig)
     if y1 < y0 then y0, y1 = y1, y0 end
     pal.x_ig_rect_fill(x0, y0, x1 - x0, y1 - y0, 0x7fd8a818)
     pal.x_ig_rect(x0, y0, x1 - x0, y1 - y0, C.marquee, 1)
+  end
+  -- the asset-drag ghost rides the overlay above everything
+  if g.adrag and g.adrag.moved then
+    pal.x_ig_overlay(true)
+    local label = g.adrag.path:match("([^/]+)$") or g.adrag.path
+    local lw = pal.x_ig_text_size(label, 12, 0)
+    pal.x_ig_rect_fill(i.wx + 12, i.wy + 8, lw + 16, 22, 0x262238ee, 6)
+    pal.x_ig_rect(i.wx + 12, i.wy + 8, lw + 16, 22, C.sel, 1, 6)
+    pal.x_ig_text(i.wx + 20, i.wy + 12, 12, C.hud, label, 0)
+    pal.x_ig_overlay(false)
   end
   draw_menu(ig, i)
   draw_hud(ig)

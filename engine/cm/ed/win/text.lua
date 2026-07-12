@@ -302,29 +302,22 @@ end
 
 -- ---- the picker (path == "") ----
 
-local function walk(root, dir, out, depth)
-  if depth > 4 or #out > 400 then return end
-  local names = pal.list_dir(root .. (dir == "" and "" or "/" .. dir))
-  if not names then return end
-  table.sort(names)
-  for _, n in ipairs(names) do
-    local rel = dir == "" and n or dir .. "/" .. n
-    if n ~= ".ed" and n ~= ".git" then
-      local ext = n:match("%.([%w]+)$")
-      if ext and EXT[ext:lower()] then
-        out[#out + 1] = rel
-      elseif not ext or not n:find("%.") then
-        walk(root, rel, out, depth + 1) -- probe: list_dir(nil) on files
-      end
-    end
-  end
-end
-
+-- pal.list_dir (SDL_GlobDirectory) enumerates recursively — one call
+-- returns the whole tree; keep the text-editable extensions
 local function project_files(ed)
   local g = ed.g
   if not g.files then
     g.files = {}
-    walk(ed.root, "", g.files, 1)
+    local names = pal.list_dir(ed.root) or {}
+    table.sort(names)
+    for _, n in ipairs(names) do
+      if #g.files >= 400 then break end
+      local ext = n:match("%.([%w]+)$")
+      if ext and EXT[ext:lower()] and not n:find("^%.ed")
+         and not n:find("^%.git") then
+        g.files[#g.files + 1] = n
+      end
+    end
   end
   return g.files
 end

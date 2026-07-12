@@ -2518,6 +2518,29 @@ local function t_ed_lex()
   check(lex.link_at("plain words only", 4) == nil, "ed.lex: no false link")
 end
 
+local function t_ed_assets()
+  -- cm.ed.win.assets — the pure bits: fuzzy scorer + type classes (R4d)
+  local A = cm.require("cm.ed.win.assets")
+  check(A.fuzzy("", "anything") == 0, "ed.assets: empty needle matches all")
+  check(A.fuzzy("xyz", "player.lua") == nil, "ed.assets: no match = nil")
+  check(A.fuzzy("plr", "player.lua") ~= nil, "ed.assets: subsequence hits")
+  local exact = A.fuzzy("player", "player.lua")
+  local spread = A.fuzzy("player", "p_l_a_y_e_r_x.lua")
+  check(exact and spread and exact > spread,
+        "ed.assets: consecutive beats spread")
+  local short = A.fuzzy("main", "main.lua")
+  local long = A.fuzzy("main", "domain_chain_main.lua")
+  check(short and long and short > long, "ed.assets: shorter path wins")
+
+  check(A.class_of("a/b.PNG") == "image" and A.class_of("x.lua") == "code"
+        and A.class_of("s.ogg") == "sound" and A.class_of("d.dat") == "other",
+        "ed.assets: class_of")
+  check(A.kind_for("art/girl.spr") == "sprite"
+        and A.kind_for("art/x.png") == "image"
+        and A.kind_for("main.lua") == "text"
+        and A.kind_for("s.ogg") == nil, "ed.assets: kind_for")
+end
+
 local function t_ed_filter()
   -- cm.ed.filter_events — the playable-game-window input gate (R4b,
   -- EDITOR.md §12.3). Synthetic events against a faked shell state.
@@ -2656,6 +2679,7 @@ function game.init()
   t_ed_session()
   t_ed_journal()
   t_ed_lex()
+  t_ed_assets()
   t_ed_filter()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
