@@ -74,7 +74,7 @@ local C = {
 local HDR = 24 -- header strip height, world units
 local K = { escape = 41, lbracket = 47, rbracket = 48, space = 44,
             n1 = 30, n2 = 31, n0 = 39, right = 79, left = 80,
-            down = 81, up = 82, s = 22, v = 25, z = 29, y = 28,
+            down = 81, up = 82, f = 9, s = 22, v = 25, z = 29, y = 28,
             f1 = 58, f2 = 59, f3 = 60, f4 = 61, grave = 53 }
 
 -- ---- boot ----
@@ -351,16 +351,31 @@ local function kind_call(fn)
   if kind and kind[fn] then kind[fn](win, M) end
 end
 
+-- Esc offer to the focused kind (find-bar close etc.); true = consumed
+local function kind_escape()
+  local win = wm.get(M.doc, M.doc.focus)
+  local kind = win and M.kinds[win.kind]
+  return (kind and kind.escape and kind.escape(win, M)) or false
+end
+
 local function hotkeys(ig, i)
   local doc, g = M.doc, M.g
+  -- ctrl combos that must fire even while an edit widget owns the
+  -- keyboard (UX round 5 — imgui assigns no meaning to these; save and
+  -- find are exactly what you reach for mid-typing)
+  for _, e in ipairs(i.keys) do
+    if e.down and not e.rep and g.ctrl then
+      if e.scancode == K.s then kind_call("save")
+      elseif e.scancode == K.f then kind_call("find") end
+    end
+  end
   if ig.kb then return end -- an edit widget owns the keyboard
   local play = playing() -- plain-key hotkeys suspend while a game window
                          -- is focused (§12.3); ALT/Esc/Ctrl stay ours
   for _, e in ipairs(i.keys) do
     if e.down and not e.rep then
       local sc = e.scancode
-      if g.ctrl and sc == K.s then kind_call("save")
-      elseif g.ctrl and sc == K.y then kind_call("redo")
+      if g.ctrl and sc == K.y then kind_call("redo")
       elseif g.ctrl and g.shift and sc == K.z then kind_call("redo")
       elseif g.ctrl and sc == K.z then kind_call("undo")
       elseif sc == K.grave then summon_console()
@@ -371,6 +386,7 @@ local function hotkeys(ig, i)
       elseif sc == K.escape then
         if g.menu then g.menu = nil
         elseif g.selmode then g.selmode = nil
+        elseif kind_escape() then -- the focused kind ate it (find bar)
         elseif cm.require("cm.scrub").paused() then
           cm.require("cm.scrub").close() -- parked: Esc = back to the present
         elseif play then doc.focus = 0 -- the universal "get out" of play
@@ -581,11 +597,12 @@ local function interact(ig)
     g.changed = nil
     M.touch()
   end
-  if owned or (ig.mouse and not g.alt) then return end
+  if owned then return end
 
-  -- middle button pans (a kind can claim it over its content — sprite ed
-  -- pans its own view, §12.6); a right press arms the spawn-menu pend.
-  -- LMB never pans (live round 3 — the naked canvas selects instead).
+  -- middle button pans EVERYWHERE — even over an imgui-captured code ed
+  -- (UX round 5); a kind can still claim it over its content (sprite ed
+  -- pans its own view, §12.6). LMB never pans (live round 3 — the naked
+  -- canvas selects instead).
   if i.clicked[2] then
     local over, opart = wm.hit(doc, wwx, wwy, 0)
     local mid_taken = false
@@ -601,7 +618,12 @@ local function interact(ig)
                 cx = doc.cam.x, cy = doc.cam.y }
       g.anim = nil
     end
-  elseif i.clicked[3] then
+    return
+  end
+
+  if ig.mouse and not g.alt then return end -- an edit widget owns the rest
+
+  if i.clicked[3] then
     g.rpend = { sx = i.wx, sy = i.wy, wx = wwx, wy = wwy }
   end
 end

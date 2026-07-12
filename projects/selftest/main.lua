@@ -2642,6 +2642,26 @@ local function t_ed_game()
   check(awin.tile == 100, "ed.assets: ctrl+wheel steps the preview size")
   assets.ctrl_wheel(awin, ed_stub, 40)
   check(awin.tile == 160, "ed.assets: preview size clamps high")
+
+  -- find/replace core (UX round 5): plain literal, per line
+  local fr = { q = "na", r = "" }
+  local lines2 = { "banana", "cab", "nano" }
+  local mm = text.fr_matches(fr, lines2, "banana\ncab\nnano")
+  check(#mm == 3 and mm[1][1] == 1 and mm[1][2] == 3 and mm[2][2] == 5
+        and mm[3][1] == 3 and mm[3][2] == 1,
+        "ed.text: find matches lines/cols")
+  check(fr.at == 1, "ed.text: the first match is current")
+  local fed = { g = {}, touch = function() end, doc = { assets = {} } }
+  local a2, p2 = { text = "banana\ncab\nnano" }, {}
+  fr.r = "XY"
+  text.fr_apply({ id = 1, path = "t.txt" }, fed, a2, p2, fr, lines2, false)
+  check(a2.text == "baXYna\ncab\nnano", "ed.text: replace current")
+  check(p2.force_set == true, "ed.text: replace forces the widget set")
+  local fr2 = { q = "na", r = "_" }
+  local a3 = { text = "banana\ncab\nnano" }
+  text.fr_matches(fr2, lines2, a3.text)
+  text.fr_apply({ id = 1, path = "t.txt" }, fed, a3, {}, fr2, lines2, true)
+  check(a3.text == "ba__\ncab\n_no", "ed.text: replace all")
 end
 
 local function t_ed_session()

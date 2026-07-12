@@ -29,9 +29,9 @@ local lex = cm.require("cm.ed.lex")
 
 M.kind = "text"
 M.DEF_W, M.DEF_H = 460, 340
-M.PX = 13.0 -- default font px (the human tried 26 and came back — UX
-            -- round 4b); per-window override in win.px via the a−/a+
-            -- header buttons or ctrl+wheel over the content
+M.PX = 15.0 -- default font px (one tick up from the original 13 — UX
+            -- round 5; 26 was tried and reverted in round 4); per-window
+            -- override in win.px via a−/a+ or ctrl+wheel over the content
 M.PUSH_MS = 600 -- idle time that ends an edit gesture (teidraw's coalesce)
 
 local EXT = { lua = true, md = true, txt = true, json = true, glsl = true }
@@ -430,6 +430,99 @@ function M.ctrl_wheel(win, ed, notches)
   ed.touch()
 end
 
+-- ---- find/replace (UX round 5, EDITOR.md §12.2) ----
+-- Ctrl+F opens a bar at the top of the window; plain-text literal find,
+-- per line (a query containing \n is out of scope). Bar state is
+-- EPHEMERAL (ed.g.fr keyed by window id — like the widget scroll mirror);
+-- replaces are normal journaled edits, one undo step each.
+
+-- Ctrl+F (a pre-gate shell hotkey — works mid-typing): open + focus
+function M.find(win, ed)
+  if win.path == "" then return end
+  local g = ed.g
+  g.fr = g.fr or {}
+  local fr = g.fr[win.id] or { q = "", r = "" }
+  g.fr[win.id] = fr
+  fr.open = true
+  fr.refocus = true
+end
+
+-- shell Esc offer: close the bar when open (true = consumed)
+function M.escape(win, ed)
+  local fr = ed.g.fr and ed.g.fr[win.id]
+  if fr and fr.open then
+    fr.open = false
+    return true
+  end
+  return false
+end
+
+-- match list {line, col_a, col_b}, recomputed when the query or the text
+-- moved (plain literal find, capped so a 1-char query can't blow up)
+local FR_CAP = 2000
+local function fr_matches(fr, lines, atext)
+  if fr.src == atext and fr.qsrc == fr.q then return fr.m end
+  fr.src, fr.qsrc = atext, fr.q
+  local m = {}
+  if fr.q ~= "" then
+    for li = 1, #lines do
+      local line, init = lines[li], 1
+      while true do
+        local s, e = line:find(fr.q, init, true)
+        if not s or #m >= FR_CAP then break end
+        m[#m + 1] = { li, s, e }
+        init = e + 1
+      end
+      if #m >= FR_CAP then break end
+    end
+  end
+  fr.m = m
+  if not fr.at or fr.at > #m or fr.at < 1 then fr.at = #m > 0 and 1 or 0 end
+  return m
+end
+
+-- scroll the current match into view (the same forced-scroll path as
+-- navigate: win.sy is captured, the widget adopts it next frame)
+local function fr_jump(win, ed, fr, px, th)
+  local mt = fr.m and fr.m[fr.at]
+  if not mt then return end
+  local want = math.max(0, (mt[1] - 1) * px - th * 0.4)
+  win.sy = want
+  ed.g.wsy = ed.g.wsy or {}
+  ed.g.wsy[win.id] = nil
+  ed.touch()
+end
+
+-- replace the current match (or all): one journaled undo step.
+-- (fr_matches/fr_apply are exposed on M for the selftest KATs.)
+local function fr_apply(win, ed, a, p, fr, lines, all)
+  local m = fr.m
+  if not m or #m == 0 or fr.q == "" then return end
+  local starts, off = {}, 1
+  for li = 1, #lines do
+    starts[li] = off
+    off = off + #lines[li] + 1
+  end
+  local t = a.text
+  local function splice(mt)
+    local sb = starts[mt[1]] + mt[2] - 1
+    local eb = starts[mt[1]] + mt[3] - 1
+    t = t:sub(1, sb - 1) .. fr.r .. t:sub(eb + 1)
+  end
+  if all then
+    for k = #m, 1, -1 do splice(m[k]) end
+  else
+    if not m[fr.at] then return end
+    splice(m[fr.at])
+  end
+  a.text = t
+  p.force_set = true
+  push_now(ed, win.path)
+  ed.touch()
+end
+M.fr_matches = fr_matches
+M.fr_apply = fr_apply
+
 function M.draw(win, ctx)
   if win.path == "" then
     draw_picker(win, ctx)
@@ -457,8 +550,21 @@ function M.draw(win, ctx)
   local tw, th = ctx.cw - gw, ctx.ch
   if tw < 20 then return end
 
-  -- the widget (invisible input machine) — skipped when occluded
+  -- the find/replace bar reserves a strip across the top (ctrl+F)
   local g = ed.g
+  g.fr = g.fr or {}
+  local fr = g.fr[win.id]
+  local bpx = math.max(4, 12 * z)
+  local bh = 0
+  if fr and fr.open then
+    bh = bpx * 2.1
+    ty = ty + bh
+    th = th - bh
+    if th < px then return end
+    fr_matches(fr, lines, a.text) -- fresh for this frame's highlights
+  end
+
+  -- the widget (invisible input machine) — skipped when occluded
   g.wsy = g.wsy or {}
   local st, active, changed
   if not ctx.occluded then
@@ -538,10 +644,28 @@ function M.draw(win, ctx)
     pal.x_ig_text(ctx.cx + gw - 6 * z - nw, oy + (li - 1) * px - sy + px * 0.08,
                   gpx, li == cline and FACE.gutter_hot or FACE.gutter, num, 1)
   end
-  pal.x_ig_line(tx - 1, ctx.cy, tx - 1, ctx.cy + th, 0x4a437066, 1)
+  pal.x_ig_line(tx - 1, ty, tx - 1, ty + th, 0x4a437066, 1)
 
   -- text: per-line token spans (gaps = base face)
   pal.x_ig_clip_push(tx, ty, tw, th)
+
+  -- find-match highlights, under the glyphs (the current one accented)
+  if fr and fr.open and fr.m then
+    for mi, mt in ipairs(fr.m) do
+      local li = mt[1]
+      if li >= first and li <= last then
+        local line = lines[li]
+        local hx = ox + glyphs(line, 1, mt[2] - 1) * cw - sx
+        local hw = math.max(cw * 0.4, glyphs(line, mt[2], mt[3]) * cw)
+        local hy = oy + (li - 1) * px - sy
+        pal.x_ig_rect_fill(hx, hy, hw, px, mi == fr.at and 0x7fd8a855
+                                            or 0x7fd8a822)
+        if mi == fr.at then
+          pal.x_ig_rect(hx, hy, hw, px, 0x7fd8a8cc, 1)
+        end
+      end
+    end
+  end
   for li = first, last do
     local line = lines[li]
     if #line > 0 then
@@ -578,7 +702,6 @@ function M.draw(win, ctx)
   pal.x_ig_clip_pop()
 
   -- Ctrl+click a link → a NEW code window at the pointer (EDITOR.md §12.2)
-  local g = ed.g
   if g.ctrl and not g.alt and i.clicked[1] and not ctx.occluded
      and i.wx >= tx and i.wx < tx + tw and i.wy >= ty and i.wy < ty + th then
     local li = math.floor((i.wy - oy + sy) / px) + 1
@@ -605,6 +728,85 @@ function M.draw(win, ctx)
         end
       end
     end
+  end
+
+  -- ---- the find/replace bar (its strip was reserved above) ----
+  if fr and fr.open then
+    local bx, by, bw2 = ctx.cx, ctx.cy, ctx.cw
+    pal.x_ig_rect_fill(bx, by, bw2, bh, 0x1a1728f6)
+    pal.x_ig_line(bx, by + bh, bx + bw2, by + bh, 0x4a437066, 1)
+    local fw2 = math.max(40, math.min(220 * z, bw2 * 0.28))
+    local fh2 = bpx * 1.6
+    local fy = by + (bh - fh2) * 0.5
+    local qsub = false
+    if ctx.occluded then
+      pal.x_ig_text(bx + 8 * z + 4, fy + 2, bpx, 0xd8d2f2ff, fr.q, 1)
+      pal.x_ig_text(bx + 14 * z + fw2 + 4, fy + 2, bpx, 0xd8d2f2ff, fr.r, 1)
+    else
+      local q, qch, _, qst = pal.x_ig_edit {
+        id = "fnd" .. win.id, x = bx + 8 * z, y = fy, w = fw2, h = fh2,
+        text = fr.q, px = bpx, font = 1, enter = true,
+        focus = fr.refocus or nil,
+      }
+      fr.refocus = nil
+      local r, rch = pal.x_ig_edit {
+        id = "rpl" .. win.id, x = bx + 14 * z + fw2, y = fy, w = fw2,
+        h = fh2, text = fr.r, px = bpx, font = 1,
+      }
+      if qch then fr.q = q end
+      if rch then fr.r = r end
+      qsub = (qst and qst.submit) or false
+    end
+    if fr.q == "" then
+      pal.x_ig_text(bx + 8 * z + 4, fy + 2, bpx, 0x8a84b066, "find", 1)
+    end
+    if fr.r == "" then
+      pal.x_ig_text(bx + 14 * z + fw2 + 4, fy + 2, bpx, 0x8a84b066,
+                    "replace", 1)
+    end
+    local m = fr_matches(fr, lines, a.text)
+    if fr.q ~= fr.lastq then
+      -- live find: a fresh query jumps to its first match
+      fr.lastq = fr.q
+      fr.at = #m > 0 and 1 or 0
+      if #m > 0 then fr_jump(win, ed, fr, px, th) end
+    elseif qsub and #m > 0 then
+      -- Enter in the field: next match (and keep the typing flow — the
+      -- EnterReturnsTrue submit deactivates the widget)
+      fr.at = fr.at % #m + 1
+      fr_jump(win, ed, fr, px, th)
+      fr.refocus = true
+    end
+    local bxx = bx + bw2 - 4 * z
+    local function btn(w2, label)
+      bxx = bxx - w2 - 4 * z
+      local hov = not ctx.alt and not ctx.occluded
+                  and i.wx >= bxx and i.wx < bxx + w2
+                  and i.wy >= fy and i.wy < fy + fh2
+      pal.x_ig_rect_fill(bxx, fy, w2, fh2,
+                         hov and 0x3a3560ff or 0x262238ff, 4)
+      local lw2 = pal.x_ig_text_size(label, bpx, 0)
+      pal.x_ig_text(bxx + (w2 - lw2) * 0.5, fy + (fh2 - bpx) * 0.45, bpx,
+                    hov and 0xE8E4FFff or 0xb0a8dcff, label, 0)
+      return hov and i.clicked[1]
+    end
+    if btn(bpx * 1.6, "x") then fr.open = false end
+    if btn(bpx * 2.6, "all") then fr_apply(win, ed, a, p, fr, lines, true) end
+    if btn(bpx * 3.4, "repl") then
+      fr_apply(win, ed, a, p, fr, lines, false)
+    end
+    if btn(bpx * 1.6, ">") and #m > 0 then
+      fr.at = fr.at % #m + 1
+      fr_jump(win, ed, fr, px, th)
+    end
+    if btn(bpx * 1.6, "<") and #m > 0 then
+      fr.at = (fr.at - 2) % #m + 1
+      fr_jump(win, ed, fr, px, th)
+    end
+    local cnt = ("%d/%d"):format(fr.at, #m)
+    local cw2 = pal.x_ig_text_size(cnt, bpx, 0)
+    pal.x_ig_text(bxx - cw2 - 6 * z, fy + (fh2 - bpx) * 0.45, bpx,
+                  0x8a84b0ff, cnt, 0)
   end
 end
 

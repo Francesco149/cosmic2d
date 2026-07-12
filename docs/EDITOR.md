@@ -414,12 +414,22 @@ vendored-pin-internal, revisited on any imgui bump.
 - **Visible layer, all Lua drawlist**: line-number gutter (mono, dim,
   right-aligned; the active line bright), per-line syntax color, our own
   caret (blink on the wall clock, mono column metrics), current-line
-  tint. **Font: 13 px default** (the human tried 26 in UX round 4 and
-  came back), adjusted per window by the `a−`/`a+` header buttons or
-  **ctrl+wheel over the content** (step 2, clamp 8–64); the override
-  lives in `win.px` (captured — rides the session, rewinds honestly).
-  Ctrl+wheel over an assets window dials its preview size the same way
-  (win.tile, the header slider's 48–160 range). Only visible lines draw (scroll + line height = px); tokens memo
+  tint. **Font: 15 px default** (rounds 4–5: 26 tried and reverted,
+  then one tick up from the original 13), adjusted per window by the
+  `a−`/`a+` header buttons or **ctrl+wheel over the content** (step 2,
+  clamp 8–64); the override lives in `win.px` (captured — rides the
+  session, rewinds honestly). Ctrl+wheel over an assets window dials
+  its preview size the same way (win.tile, the header slider's 48–160
+  range).
+- **Find/replace (UX round 5)**: **Ctrl+F** opens a bar at the top of
+  the window (works mid-typing — Ctrl+S/Ctrl+F are pre-gate hotkeys,
+  fired even while the widget owns the keyboard). Plain-text literal
+  find, per line; live first-match jump as you type; Enter/`<`/`>`
+  cycle (wrapping, scroll-to-match), `repl` replaces the current
+  match, `all` replaces every match — each replace is one journaled
+  undo step. Match highlights draw under the glyphs, the current one
+  accented. Esc (or `x`) closes. Bar state is ephemeral (`ed.g.fr`);
+  the cap is 2000 matches. Only visible lines draw (scroll + line height = px); tokens memo
   per line keyed by the line's string (interning makes the lookup cheap;
   the cache is ephemeral).
 - **`cm.ed.lex`** — pure per-line tokenizers, selftestable: `lua`
