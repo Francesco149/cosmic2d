@@ -40,7 +40,7 @@ local M = select(2, ...) or {}
 local SIM_DT = math.tointeger(1e9 // 60)
 
 local function parse_args()
-  local a = { project = "projects/sandbox" }
+  local a = {} -- no default project: bare `cosmic` boots the picker (D052)
   local argv = pal.argv
   local i = 1
   while i <= #argv do
@@ -126,8 +126,69 @@ function M.request_quit()
   end
 end
 
+-- resolve the project when the command line names none (D052):
+--  1. the picker's `boot.next` carrier buffer (survives the x_reboot
+--     cycle by the named-buffer contract) — a true project SWITCH, so
+--     every named buffer is swept first (the old project's sim state
+--     must not leak into the new session's snapshots/traces);
+--  2. launcher exe-name magic: a renamed cosmic.exe boots the project
+--     named like itself, LOCKED (editor/console dead, --edit ignored);
+--  3. the picker cartridge — the engine's front door.
+local function resolve_project(args)
+  if args.project then return end
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == "boot.next" then
+      local payload = pal.buf("boot.next", b.size):str(0, b.size)
+      local path, mode = payload:match("^([^\n]+)\n?(.*)$")
+      for _, ob in ipairs(pal.buf_list()) do pal.buf_free(ob.name) end
+      args.project = path
+      if mode == "edit" then args.edit = true end
+      pal.log("[boot] picker switch -> " .. path
+              .. (args.edit and " (editor)" or ""))
+      return
+    end
+  end
+  local exe = (pal.exe or ""):gsub("\\", "/"):match("([^/]+)$") or "cosmic"
+  exe = exe:gsub("%.exe$", ""):lower()
+  if exe ~= "cosmic" and exe ~= "" then
+    for _, dir in ipairs({ exe, "projects/" .. exe }) do
+      if pal.read_file(dir .. "/project.lua") then
+        args.project = dir
+        args.locked = true -- the shipped-game shape (D052)
+        args.edit = nil
+        pal.log("[boot] launcher: " .. exe .. " -> " .. dir .. " (locked)")
+        return
+      end
+    end
+    pal.log("[boot] launcher: no project for exe '" .. exe .. "'; picker")
+  end
+  args.project = "projects/picker"
+  args.picker = true
+  args.edit = nil -- the picker IS a front door; --edit applies to what it opens
+end
+
+-- remember successfully booted projects (most recent first, deduped,
+-- cap 12) in the engine-root .recent.dat — the picker's memory; how
+-- sibling-repo projects (../cosmic2d-game/cosmic) get tiles
+local function note_recent(path)
+  local lines = {}
+  local seen = { [path] = true }
+  lines[1] = path
+  local old = pal.read_file(".recent.dat")
+  if old then
+    for line in old:gmatch("[^\n]+") do
+      if not seen[line] and #lines < 12 then
+        seen[line] = true
+        lines[#lines + 1] = line
+      end
+    end
+  end
+  pal.write_file(".recent.dat", table.concat(lines, "\n"))
+end
+
 function M.boot()
   local args = parse_args()
+  resolve_project(args)
   M.args = args
   M.contain = not (args.frames or args.verify)
   if args.frames or args.verify then pal.exit_on_error(true) end
@@ -135,8 +196,14 @@ function M.boot()
   if args.win_w then args.headless = true end -- composite capture is headless
 
   local proj = load_project(args.project)
+  if args.locked then proj.editor = false end -- launcher lockdown (D052)
   M.proj = proj
   cm.set_project_root(args.project)
+  -- the picker's memory: live real-project boots only (never headless
+  -- runs, never the picker itself — and never a locked shipped game)
+  if not args.headless and not args.picker and not args.locked then
+    note_recent(args.project)
+  end
 
   pal.gfx_init {
     w = proj.internal_w or 480, h = proj.internal_h or 270,

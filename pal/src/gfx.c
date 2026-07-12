@@ -135,10 +135,25 @@ static int tex_slot_create(const void *pixels, int w, int h) {
 
 bool pal_gfx_init(const PalGfxConfig *cfg) {
   if (G.gfx_up) {
-    /* reboots re-run boot.lua; same-config re-init is a no-op */
-    if (cfg->w == G.iw && cfg->h == G.ih) return true;
-    pal_log("gfx: re-init with different size needs an engine restart");
-    return false;
+    /* reboots re-run boot.lua. Same-config re-init is a no-op; a project
+     * SWITCH (D052 — the picker's x_reboot cycle) retargets in place:
+     * resize the internal target, retitle, honor the maximized ask. The
+     * window itself survives — cm.view adapts to it live anyway. */
+    if (cfg->w != G.iw || cfg->h != G.ih) {
+      if (!pal_gfx_target_resize(cfg->w, cfg->h)) {
+        pal_log("gfx: re-init target resize failed");
+        return false;
+      }
+      G.scale = cfg->scale;
+    }
+    if (G.win) {
+      SDL_SetWindowTitle(G.win, cfg->title ? cfg->title : "cosmic2d");
+      if (cfg->maximized)
+        SDL_MaximizeWindow(G.win);
+      else
+        SDL_RestoreWindow(G.win);
+    }
+    return true;
   }
   G.iw = cfg->w;
   G.ih = cfg->h;

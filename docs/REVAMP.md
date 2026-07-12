@@ -237,10 +237,19 @@ flex except: **R0 first** (everything else lands in the right repo) and
   ed, tweak a sprite, drag an asset in from the OS — without leaving the
   canvas; the F2 studio is gone. *(Built + proven scripted; the human's
   live session is the remaining gate.)*
-- **R5 — project picker + launcher**: teidraw-style picker as the front
-  door; the thin same-name launcher exe (editor/console disabled); shipped
-  game openable through the editor. *Exit*: zip a game, double-click the exe
-  on win11, it plays; open the same zip in the editor and poke around.
+- **R5 — project picker + launcher** ✅ **BUILT (2026-07-12, D052;
+  awaiting the human's win11 double-click)**: teidraw-style picker as the
+  front door (`bin/cosmic` bare boots it; tiles = projects/* + the
+  `.recent.dat` memory; click = editor, play = game); the thin same-name
+  launcher exe (`pal.exe` basename → `<name>/` or `projects/<name>/`,
+  locked: editor/console dead, --edit ignored); shipped game openable
+  through the editor (explicit `cosmic <dir> --edit`). Switch mechanism:
+  the `boot.next` carrier buffer + `pal.x_reboot()` (the parachute cycle
+  on request; gfx retargets in place; old buffers swept). *Exit*: zip a
+  game, double-click the exe on win11, it plays; open the same zip in the
+  editor and poke around. *(Proven native: smoke.exe boots locked,
+  cosmic.exe boots the picker, the picker→editor switch cycles — the
+  human's actual zip + double-click is the remaining gate.)*
 - **R6 — rewind**: the disk-streamed ~1 GB delta history; frame browse of
   everything including the editor (interactive-but-ephemeral, §7b); resume
   from any frame; game/editor mode switch while rewinding; asset bring-back;

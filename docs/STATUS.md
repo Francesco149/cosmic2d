@@ -3,6 +3,45 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (overnight session, cont. — R5 built too)
+**Phase**: **REVAMP R5 — picker + launcher: BUILT (ADR D052); awaiting
+the human's win11 zip double-click (the exit's last inch).** Built on
+top of the same-night R4 (below):
+
+- **`bin/cosmic` bare boots the picker** (`projects/picker`, a cartridge
+  like igcanvas): tiles = `projects/*` with project.lua + the
+  **`.recent.dat`** memory (engine root, gitignored; cm.main appends on
+  every real live boot — how `../cosmic2d-game/cosmic` gets a tile).
+  Click = **editor**, the play zone = game. The old default project
+  (projects/sandbox) was a dead path since R0 anyway.
+- **Project switch = a Lua VM reboot over surviving C state** (the
+  parachute cycle on request): new `pal.x_reboot()`, the **`boot.next`
+  named-buffer carrier** ("<path>\n<mode>"; named buffers survive
+  reboots by contract), `pal_gfx_init` now **retargets on re-init**
+  (resize internal target + retitle + honor maximized) instead of
+  refusing, and cm.main **sweeps all named buffers** on an adopted
+  switch so old-project sim state can't leak into new snapshots/traces.
+- **The thin launcher**: `pal.exe` (argv[0]) exposed; a renamed
+  cosmic.exe with no args boots `<name>/` or `projects/<name>/`
+  **locked** (proj.editor=false forced — the existing lockdown every
+  dev surface respects; `--edit` ignored). The same dir opens fully via
+  explicit `cosmic <dir> --edit`.
+- **Proven, incl. windows native**: linux + win11 — bare exe → picker;
+  `smoke.exe` → locked smoke; picker→editor switch cycles through the
+  VM reboot on both. Suite ALL GREEN (goldens pass explicit projects —
+  untouched by construction). Game-repo nit noticed: its project.lua is
+  still `name = "sandbox"` (shows on the picker tile) — one-line fix in
+  the game repo someday.
+
+**Next step (resume here):** the human's **R4 exit session** + **R5 zip
+test** (zip exe+engine/+project, double-click on win11, then open the
+same dir in the editor). Then **R6 — rewind** (REVAMP §6, the flagship:
+design doc first — extends D014/M5 to the disk-streamed ~1 GB delta
+history capturing `cm.ed.doc` too; the R3/R4 state model was built for
+exactly this). Good `/clear` point — R4+R5 committed, docs current.
+
+---
+
 **Date**: 2026-07-12 (overnight session — R4 built end to end)
 **Phase**: **REVAMP R4 — the windows: BUILT (ADR D051 + EDITOR.md §12);
 awaiting the human's exit session (the one true gate).** The human

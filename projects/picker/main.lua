@@ -1,0 +1,137 @@
+-- projects/picker — the engine's front door (R5, D052): the teidraw-style
+-- project picker. Boots when `cosmic` is run with no project argument.
+-- Scans projects/* for project.lua and merges the engine-root .recent.dat
+-- (cm.main writes it on every real boot — that's how sibling-repo
+-- projects like ../cosmic2d-game/cosmic get tiles). A tile opens the
+-- project IN THE EDITOR (the picker is the editor's front door); the ▶
+-- zone boots plain play mode.
+--
+-- The switch mechanism (D052): write "<path>\n<mode>" into the `boot.next`
+-- named buffer (named buffers survive VM reboots by contract) and call
+-- pal.x_reboot() — the next boot adopts the carrier, sweeps the old
+-- buffers, and boots the chosen project.
+--
+-- Everything here is render/dev over the x_ig drawlist; the sim below is
+-- an empty shell. Headless/verify never see any of it (ig absence).
+
+local M = select(2, ...) or {}
+
+local view
+
+M.scan = M.scan or nil -- ephemeral tile cache (render/dev)
+
+local C = {
+  bg = 0x141220ff, text = 0xE8E4FFff, dim = 0x8a84b0ff,
+  tile = 0x1e1b2eff, tile_edge = 0x4a4370ff, tile_hot = 0x262238ff,
+  accent = 0x7fd8a8ff, play = 0xffb46eff, missing = 0x5a5480ff,
+}
+
+function M.init()
+  view = cm.require("cm.view")
+  view.mode = "canvas" -- no game blit; the picker draws the whole window
+end
+
+function M.step() end
+
+-- ---- the project list ----
+
+local function proj_name(dir)
+  local src = pal.read_file(dir .. "/project.lua")
+  if not src then return nil end
+  return src:match('name%s*=%s*"([^"]*)"') or dir:match("([^/]+)$"), true
+end
+
+local function scan()
+  if M.scan then return M.scan end
+  local tiles, seen = {}, {}
+  local names = pal.list_dir("projects") or {}
+  table.sort(names)
+  for _, n in ipairs(names) do
+    local dir = n:match("^([^/]+)/project%.lua$")
+    if dir and dir ~= "picker" then
+      local path = "projects/" .. dir
+      seen[path] = true
+      tiles[#tiles + 1] = { path = path, name = proj_name(path) or dir,
+                            ok = true }
+    end
+  end
+  local rec = pal.read_file(".recent.dat")
+  if rec then
+    for line in rec:gmatch("[^\n]+") do
+      if not seen[line] then
+        seen[line] = true
+        local name, ok = proj_name(line)
+        table.insert(tiles, 1, { path = line, name = name or line,
+                                 ok = ok or false, recent = true })
+      end
+    end
+  end
+  M.scan = tiles
+  return tiles
+end
+
+local function launch(path, mode)
+  local payload = path .. "\n" .. mode
+  local v = pal.buf("boot.next", #payload)
+  v:setstr(0, payload)
+  pal.log("[picker] " .. mode .. " " .. path)
+  pal.x_reboot()
+end
+M.launch = launch -- scripted driving (proofs, keyboard flows later)
+
+-- ---- draw ----
+
+function M.draw()
+  pal.begin_frame(0.078, 0.07, 0.125, 1) -- the target is never shown
+  local ig = pal.x_ig_frame()
+  if not ig then return end
+  local i = cm.require("cm.ui").inp
+
+  pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
+  pal.x_ig_text(28, 22, 26, C.text, "cosmic2d", 0)
+  pal.x_ig_text(28 + pal.x_ig_text_size("cosmic2d", 26, 0) + 14, 31, 13,
+                C.dim, "pick a project — click opens the editor; play boots the game", 0)
+
+  local tiles = scan()
+  local pad, tw, th = 20, 240, 92
+  local cols = math.max(1, math.floor((ig.w - 2 * pad) / (tw + pad)))
+  local x0, y0 = 28, 64
+  for idx, t in ipairs(tiles) do
+    local col, row = (idx - 1) % cols, (idx - 1) // cols
+    local x = x0 + col * (tw + pad)
+    local y = y0 + row * (th + pad)
+    if y > ig.h then break end
+    local hov = i.wx >= x and i.wx < x + tw and i.wy >= y and i.wy < y + th
+    -- the play zone, bottom-right of the tile
+    local pzx, pzy, pzw, pzh = x + tw - 50, y + th - 34, 44, 26
+    local phov = hov and i.wx >= pzx and i.wx < pzx + pzw
+                 and i.wy >= pzy and i.wy < pzy + pzh
+    pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
+    pal.x_ig_rect(x, y, tw, th, (hov and not phov) and C.accent
+                  or C.tile_edge, hov and 1.5 or 1, 8)
+    pal.x_ig_text(x + 14, y + 12, 17, t.ok and C.text or C.missing,
+                  t.name, 0)
+    pal.x_ig_text(x + 14, y + 38, 11, C.dim, t.path, 1)
+    if t.recent then
+      pal.x_ig_text(x + 14, y + th - 22, 10, C.dim, "recent", 0)
+    end
+    if not t.ok then
+      pal.x_ig_text(x + 14, y + th - 22, 10, C.missing, "missing", 0)
+    end
+    if t.ok then
+      pal.x_ig_rect_fill(pzx, pzy, pzw, pzh,
+                         phov and 0x3a3560ff or 0x26223855, 6)
+      pal.x_ig_text(pzx + 8, pzy + 6, 12, phov and C.play or C.dim,
+                    "play", 0)
+      if hov and i.clicked[1] then
+        launch(t.path, phov and "play" or "edit")
+      end
+    end
+  end
+  if #tiles == 0 then
+    pal.x_ig_text(x0, y0 + 10, 15, C.dim,
+                  "no projects found under projects/", 0)
+  end
+end
+
+return M

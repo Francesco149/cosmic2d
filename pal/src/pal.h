@@ -86,6 +86,9 @@ typedef struct {
 typedef struct {
   /* core */
   bool quit;
+  bool reboot; /* pal.x_reboot: close + re-boot the Lua VM after this tick
+                  (the parachute cycle without an error — project switch,
+                  D052). Named buffers + gfx survive by design. */
   bool error_state;
   bool exit_on_error; /* capped/verify runs: lua error = exit(1), no parachute */
   int exit_code;

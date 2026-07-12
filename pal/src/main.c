@@ -311,6 +311,15 @@ int main(int argc, char **argv) {
       error_frame();
     else
       tick_lua();
+    if (G.reboot && !G.quit) {
+      /* pal.x_reboot (D052): the parachute cycle on request — the VM goes,
+       * named buffers + the window stay; boot.lua adopts what it finds */
+      G.reboot = false;
+      pal_log("lua vm reboot (requested)");
+      lua_close(G.L);
+      G.event_count = 0;
+      if (!boot_lua()) G.error_state = true;
+    }
   }
 
   if (G.L) lua_close(G.L);

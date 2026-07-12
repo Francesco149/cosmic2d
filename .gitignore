@@ -26,3 +26,4 @@
 # the editor shell's per-project session + undo journals (R3, D050):
 # unsaved-persists state is per-machine, never in the repo
 .ed/
+.recent.dat

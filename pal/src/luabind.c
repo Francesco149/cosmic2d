@@ -844,6 +844,14 @@ static int l_poll_events(lua_State *L) {
   return 1;
 }
 
+/* pal.x_reboot(): close + re-boot the Lua VM after this tick (D052 — the
+ * picker's project switch; the parachute cycle without an error). */
+static int l_x_reboot(lua_State *L) {
+  (void)L;
+  G.reboot = true;
+  return 0;
+}
+
 static int l_scancode_name(lua_State *L) {
   lua_pushstring(L,
                  SDL_GetScancodeName((SDL_Scancode)luaL_checkinteger(L, 1)));
@@ -1037,6 +1045,7 @@ static const luaL_Reg pal_funcs[] = {
     {"tex_free", l_tex_free},
     {"blit32", l_blit32},
     {"poll_events", l_poll_events},
+    {"x_reboot", l_x_reboot},
     {"scancode_name", l_scancode_name},
     {"text_input", l_text_input},
     {"frame_stats", l_frame_stats},
@@ -1083,5 +1092,9 @@ void pal_lua_register(lua_State *L) {
     lua_rawseti(L, -2, i);
   }
   lua_setfield(L, -2, "argv");
+  /* argv[0] — the launcher story (D052): a renamed exe boots the project
+   * with its own name; the decision lives in Lua (cm.main) */
+  lua_pushstring(L, G.argc > 0 ? G.argv[0] : "cosmic");
+  lua_setfield(L, -2, "exe");
   lua_setglobal(L, "pal");
 }
