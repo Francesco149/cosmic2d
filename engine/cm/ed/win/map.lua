@@ -38,6 +38,7 @@
 local M = select(2, ...) or {}
 local journal = cm.require("cm.ed.journal")
 local map = cm.require("cm.map")
+local tmap = cm.require("cm.tmap")
 local wm = cm.require("cm.ed.wm")
 local wv = cm.require("cm.ed.winview")
 
@@ -388,6 +389,7 @@ function M.snap_rect(doc, rect, opts)
 
   -- vertex targets: collider verts (free + attached at world coords) +
   -- other placements' corners
+  local tmfn = opts.tm
   local best_d2, bdx, bdy, bgx, bgy
   local function try_vert(tx, ty)
     for k = 1, 5 do
@@ -459,6 +461,12 @@ function M.snap_rect(doc, rect, opts)
       ey[#ey + 1] = y + h
       cx[#cx + 1] = x + w / 2
       cy[#cy + 1] = y + h / 2
+      -- a placed .tm contributes its tile-edge lines (§7-R8d)
+      local td = tmfn and tmfn(pl.path)
+      if td then
+        for j = 1, td.w - 1 do ex[#ex + 1] = x + j * td.tile end
+        for k = 1, td.h - 1 do ey[#ey + 1] = y + k * td.tile end
+      end
     end
   end
   local guides = {}
@@ -519,11 +527,15 @@ end
 --   the dragged vertex + its adjacent segments (v = nil drops the whole
 --   collider — edge-drags move all of it). Owner o: 0 = free collider,
 --   else the placement index; c = collider index within the owner.
+--   opts.tm = fn(path) -> tmap doc|nil: placed .tm grids contribute
+--   their tile-edge lines as segments (§7-R8d — line colliders click
+--   onto tile boundaries).
 function M.snap_targets(doc, opts)
   opts = opts or {}
   local dims = opts.dims or dim16
   local skip = opts.skip
   local sv = opts.skipv
+  local tmfn = opts.tm
   local verts, segs = {}, {}
   local function excl(o, c, v)
     return sv and sv.o == o and sv.c == c and (sv.v == nil or sv.v == v)
@@ -569,6 +581,17 @@ function M.snap_targets(doc, opts)
       segs[#segs + 1] = { x + w, y, x + w, y + h }
       segs[#segs + 1] = { x + w, y + h, x, y + h }
       segs[#segs + 1] = { x, y + h, x, y }
+      -- a placed .tm contributes its interior tile-edge lines (§7-R8d;
+      -- the bounds are already the placement's own edges above)
+      local td = tmfn and tmfn(pl.path)
+      if td then
+        for j = 1, td.w - 1 do
+          segs[#segs + 1] = { x + j * td.tile, y, x + j * td.tile, y + h }
+        end
+        for k = 1, td.h - 1 do
+          segs[#segs + 1] = { x, y + k * td.tile, x + w, y + k * td.tile }
+        end
+      end
     end
   end
   return { verts = verts, segs = segs }
@@ -922,9 +945,38 @@ local function win_tex(ed, path)
   if ok then return t end
 end
 
+-- a placed .tm's decoded DISK doc (render plumbing keyed by path;
+-- cm.asset_epoch invalidates, so a tilemap-window save shows on the
+-- next frame). nil for unreadable/non-.tm paths.
+local function tm_doc(ed, p, path)
+  p.tm = p.tm or {}
+  local ep = cm.asset_epoch or 0
+  if p.tm_ep ~= ep then
+    p.tm, p.tm_ep = {}, ep
+  end
+  local rec = p.tm[path]
+  if rec == nil then
+    rec = false
+    if path:lower():find("%.tm$") then
+      local bytes = pal.read_file(ed.root .. "/" .. path)
+      if bytes then
+        local ok, td = pcall(tmap.decode, bytes)
+        if ok then rec = td end
+      end
+    end
+    p.tm[path] = rec
+  end
+  return rec or nil
+end
+
 -- placement dims in map px (the window's `dims` for the pure core):
--- textures win; .tm decodes its head; unknowns get 16x16
+-- textures win; .tm reads its decoded doc; unknowns get 16x16. The
+-- cache follows cm.asset_epoch (a save that resizes an asset moves it).
 local function tex_dims(ed, p, path)
+  local ep = cm.asset_epoch or 0
+  if p.dims_ep ~= ep then
+    p.dims, p.dims_ep = {}, ep
+  end
   p.dims = p.dims or {}
   local hit = p.dims[path]
   if hit then return hit[1], hit[2] end
@@ -932,12 +984,9 @@ local function tex_dims(ed, p, path)
   local t = win_tex(ed, path)
   if t then
     w, h = t.w, t.h
-  elseif path:lower():find("%.tm$") then
-    local bytes = pal.read_file(ed.root .. "/" .. path)
-    if bytes then
-      local ok, td = pcall(cm.require("cm.tmap").decode, bytes)
-      if ok then w, h = td.w * td.tile, td.h * td.tile end
-    end
+  else
+    local td = tm_doc(ed, p, path)
+    if td then w, h = td.w * td.tile, td.h * td.tile end
   end
   p.dims[path] = { w, h }
   return w, h
@@ -1113,6 +1162,7 @@ function M.draw(win, ctx)
   p.geom = p.geom or map.geom(doc)
   p.sel = p.sel or {}
   local dims = function(path) return tex_dims(ed, p, path) end
+  local tmfn = function(path) return tm_doc(ed, p, path) end
 
   -- layout: canvas + the inspector strip
   local INSP = math.max(10, 20 * z)
@@ -1164,11 +1214,17 @@ function M.draw(win, ctx)
     if sx0 < cvx + cvw and sx0 + w * zoom > cvx
        and sy0 < cvy + cvh and sy0 + h * zoom > cvy and not pl.hidden then
       local t = win_tex(ed, pl.path)
+      local td = not t and tm_doc(ed, p, pl.path)
+      local ttex = td and cm.require("cm.ed.win.tmap")
+                            .tileset_tex(ed, p, td.tileset)
       if t then
         local u0, u1 = 0, 1
         if pl.flip then u0, u1 = 1, 0 end
         pal.x_ig_image(t.id, sx0, sy0, w * zoom, h * zoom, u0, 0, u1, 1)
-      else -- placeholder (.tm until R8d, or missing image)
+      elseif td and ttex then -- a .tm placement: its cell grid (R8d)
+        cm.require("cm.ed.win.tmap").draw_cells(td, ttex,
+          { zoom = zoom, ox = sx0, oy = sy0 }, cvx, cvy, cvw, cvh)
+      else -- placeholder (missing image / unreadable .tm / no tileset)
         pal.x_ig_rect(sx0, sy0, w * zoom, h * zoom, COL.dim, 1)
         pal.x_ig_text(sx0 + 3, sy0 + 2, math.max(4, 9 * z), COL.dim,
                       pl.path:match("([^/]+)$") or pl.path, 0)
@@ -1229,7 +1285,7 @@ function M.draw(win, ctx)
   local topmost = tophit == win.id
   local mx, my = s2mx(i.wx), s2my(i.wy)
   local snap_opts = function(skipset)
-    return { dims = dims, thr = SNAP_PX / zoom,
+    return { dims = dims, tm = tmfn, thr = SNAP_PX / zoom,
              grid = win.grid or doc.grid or 8,
              skip = skipset and function(n) return skipset[n] end or nil }
   end
@@ -1298,6 +1354,38 @@ function M.draw(win, ctx)
       ctx.touch()
     end
     p.finish_chain = finish_chain -- the keys block reaches it
+
+    -- the §7 edge-run (R8d): line tool + CTRL, idle — hovering a placed
+    -- .tm's exposed tile edge proposes the WHOLE contiguous run; one
+    -- click lays the full segment. A collider vertex within the snap
+    -- zone outranks it (§7 order); topmost .tm placement wins.
+    p.run = nil
+    if not p.g and g.ctrl and over and topmost
+       and (win.ctype or "line") == "line" then
+      local vhit = M.col_pick(doc.colliders, mx, my, SNAP_PX / zoom)
+      if not (vhit and vhit.v) then
+        for n = #doc.places, 1, -1 do
+          local pl = doc.places[n]
+          local td = not pl.hidden and tmfn(pl.path)
+          if td then
+            local rx0, ry0, rx1, ry1 =
+              tmap.edge_run(td, mx - pl.x, my - pl.y, SNAP_PX / zoom)
+            if rx0 then
+              p.run = { rx0 + pl.x, ry0 + pl.y, rx1 + pl.x, ry1 + pl.y }
+              break
+            end
+          end
+        end
+      end
+    end
+    if p.run then -- the preview: the full run + endpoint dots
+      local r = p.run
+      local lt = math.max(1.5, math.min(2.5, zoom))
+      pal.x_ig_line(ox + r[1] * zoom, oy + r[2] * zoom,
+                    ox + r[3] * zoom, oy + r[4] * zoom, COL.guide, lt)
+      pal.x_ig_circle_fill(ox + r[1] * zoom, oy + r[2] * zoom, 3.5, COL.guide)
+      pal.x_ig_circle_fill(ox + r[3] * zoom, oy + r[4] * zoom, 3.5, COL.guide)
+    end
 
     if p.g and p.g.mode == "chain" then
       -- the modal chain draw: clicks append, enter/dbl ends open, C
@@ -1430,6 +1518,15 @@ function M.draw(win, ctx)
           end
         end
       end
+    elseif topmost and i.clicked[1] and not p.pan and p.run then
+      -- the edge-run click: one click lays the whole segment (§7-R8d)
+      doc.colliders[#doc.colliders + 1] = {
+        kind = "chain", oneway = win.coneway or false, closed = false,
+        verts = { p.run[1], p.run[2], p.run[3], p.run[4] } }
+      p.csel = { c = #doc.colliders }
+      p.run = nil
+      commit(ed, win.path)
+      ctx.touch()
     elseif topmost and i.clicked[1] and not p.pan then
       -- a CTRL press ALWAYS draws (snap pulls the vertex onto existing
       -- geometry — drawing a slope FROM the ground line is the canonical
@@ -1442,7 +1539,7 @@ function M.draw(win, ctx)
         if hit.v then
           gd.drag = "cvert"
           if c.kind == "chain" then
-            gd.tg = M.snap_targets(doc, { dims = dims,
+            gd.tg = M.snap_targets(doc, { dims = dims, tm = tmfn,
                       skipv = { o = 0, c = hit.c, v = hit.v } })
             local n = #c.verts // 2
             local pv = hit.v > 1 and hit.v - 1
@@ -1451,7 +1548,7 @@ function M.draw(win, ctx)
               gd.ax, gd.ay = c.verts[pv * 2 - 1], c.verts[pv * 2]
             end
           elseif c.kind == "quad" then
-            gd.tg = M.snap_targets(doc, { dims = dims,
+            gd.tg = M.snap_targets(doc, { dims = dims, tm = tmfn,
                       skipv = { o = 0, c = hit.c } })
             gd.r0 = { x = c.x, y = c.y, w = c.w, h = c.h }
           else
@@ -1460,7 +1557,7 @@ function M.draw(win, ctx)
         else
           gd.drag = "cwhole"
           gd.gx0, gd.gy0 = hit.x, hit.y -- grab the projection point
-          gd.tg = M.snap_targets(doc, { dims = dims,
+          gd.tg = M.snap_targets(doc, { dims = dims, tm = tmfn,
                     skipv = { o = 0, c = hit.c } })
           if c.kind == "circle" then
             gd.orig = { cx = c.cx, cy = c.cy }
@@ -1478,7 +1575,7 @@ function M.draw(win, ctx)
         -- empty press: draw the strip's type (line = the modal chain;
         -- quad/circle = drag out); deselects as it starts
         p.csel = nil
-        local tg = M.snap_targets(doc, { dims = dims })
+        local tg = M.snap_targets(doc, { dims = dims, tm = tmfn })
         local x0, y0 = ptsnap(mx, my, tg)
         local ct = win.ctype or "line"
         if ct == "line" then
@@ -1575,7 +1672,7 @@ function M.draw(win, ctx)
       if corner then
         p.g = { mode = "mpress", drag = "mresz", corner = corner,
                 sx = i.wx, sy = i.wy,
-                tg = M.snap_targets(doc, { dims = dims }),
+                tg = M.snap_targets(doc, { dims = dims, tm = tmfn }),
                 r0 = { x = smk.x, y = smk.y, w = smk.w, h = smk.h } }
       else
         local hit = M.pick(doc, mx, my, dims, true)
@@ -1587,7 +1684,7 @@ function M.draw(win, ctx)
                   orig = { x = mk2.x, y = mk2.y, w = mk2.w, h = mk2.h } }
           ctx.touch()
         elseif not hit then
-          local tg = M.snap_targets(doc, { dims = dims })
+          local tg = M.snap_targets(doc, { dims = dims, tm = tmfn })
           local x0, y0 = ptsnap(mx, my, tg)
           p.g = { mode = "mpress", drag = "mnew", sx = i.wx, sy = i.wy,
                   x0 = x0, y0 = y0, tg = tg }
@@ -1736,7 +1833,7 @@ function M.draw(win, ctx)
       if ahit.v then
         gd.drag = "avert"
         if c.kind == "chain" then
-          gd.tg = M.snap_targets(doc, { dims = dims,
+          gd.tg = M.snap_targets(doc, { dims = dims, tm = tmfn,
                     skipv = { o = pi, c = ahit.c, v = ahit.v } })
           local n = #c.verts // 2
           local pv = ahit.v > 1 and ahit.v - 1
@@ -1746,7 +1843,7 @@ function M.draw(win, ctx)
             gd.ay = c.verts[pv * 2] + apl.y
           end
         elseif c.kind == "quad" then
-          gd.tg = M.snap_targets(doc, { dims = dims,
+          gd.tg = M.snap_targets(doc, { dims = dims, tm = tmfn,
                     skipv = { o = pi, c = ahit.c } })
           gd.r0 = { x = c.x, y = c.y, w = c.w, h = c.h }
         else
@@ -1755,7 +1852,7 @@ function M.draw(win, ctx)
       else
         gd.drag = "awhole"
         gd.gx0, gd.gy0 = ahit.x, ahit.y
-        gd.tg = M.snap_targets(doc, { dims = dims,
+        gd.tg = M.snap_targets(doc, { dims = dims, tm = tmfn,
                   skipv = { o = pi, c = ahit.c } })
         if c.kind == "circle" then
           gd.orig = { cx = c.cx, cy = c.cy }
@@ -2087,6 +2184,7 @@ function M.drop(win, ed, path, wx, wy)
   end
   local doc = p.doc
   local dims = function(pp) return tex_dims(ed, p, pp) end
+  local tmfn = function(pp) return tm_doc(ed, p, pp) end
   local x, y
   if p.drop_at then -- the previewed (possibly snapped) ghost spot
     x, y = p.drop_at.x, p.drop_at.y
@@ -2096,7 +2194,7 @@ function M.drop(win, ed, path, wx, wy)
     y = math.floor((wy - view.oy) / view.zoom - h / 2 + 0.5)
     if ed.g.ctrl then
       local dx, dy = M.snap_rect(doc, { x = x, y = y, w = w, h = h },
-        { dims = dims, thr = SNAP_PX / view.zoom,
+        { dims = dims, tm = tmfn, thr = SNAP_PX / view.zoom,
           grid = win.grid or doc.grid or 8 })
       x, y = x + math.floor(dx + 0.5), y + math.floor(dy + 0.5)
     end

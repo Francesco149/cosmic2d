@@ -3499,6 +3499,34 @@ local function t_ed_map()
   check(sx == 64 and sy == 24 and how == "grid", "ed.map: snap_pt grid")
 end
 
+local function t_ed_map_tmsnap()
+  local W = cm.require("cm.ed.win.map")
+  -- ---- placed .tm tile edges join the targets (§7-R8d) ----
+  local tmap = cm.require("cm.tmap")
+  local tmd = tmap.blank(4, 2, 16, "") -- 64x32 px grid
+  local tmdoc = {
+    w = 480, h = 270, grid = 8,
+    colliders = {},
+    places = { { path = "deco/a.tm", x = 100, y = 200, layer = 0 } },
+    markers = {},
+  }
+  local tdims = function() return 64, 32 end
+  local tmfn = function(path)
+    return path == "deco/a.tm" and tmd or nil
+  end
+  local tg = W.snap_targets(tmdoc, { dims = tdims, tm = tmfn })
+  -- place bounds 4 segs + interior tile lines: 3 vertical + 1 horizontal
+  check(#tg.segs == 8, "ed.map: tm tile-edge segs (" .. #tg.segs .. ")")
+  -- a point near the interior line x = 100+32 snaps onto it
+  local sx, sy, guides, how = W.snap_pt(tg, 130, 210, { thr = 6 })
+  check(sx == 132 and sy == 210 and how == "edge",
+        "ed.map: snap_pt clicks onto a tile boundary ("
+        .. sx .. "," .. sy .. "," .. tostring(how) .. ")")
+  -- without opts.tm the grid contributes nothing (R8b callers unchanged)
+  tg = W.snap_targets(tmdoc, { dims = tdims })
+  check(#tg.segs == 4, "ed.map: no tm fn, no tile segs")
+end
+
 local function t_ed_maptool()
   -- the R8c pure collider-op core (cm.ed.win.map): pick / insert / drag /
   -- offset / nudge / del semantics
@@ -3966,6 +3994,7 @@ function game.init()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()
+  t_ed_map_tmsnap()
   t_ed_maptool()
   t_ed_filter()
   t_ed_viewlock()
