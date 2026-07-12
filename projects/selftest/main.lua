@@ -3510,6 +3510,28 @@ local function t_ed_maptool()
         "ed.maptool: del below the floor removes the chain")
   check(W.col_del(cols, { c = 2 }) == "col" and #cols == 1
         and cols[1].kind == "quad", "ed.maptool: del whole collider")
+
+  -- +col auto-fit (relative coords; §6/D057a)
+  local af = W.col_autofit("owline", 48, 16)
+  check(af.kind == "chain" and af.oneway and af.verts[1] == 0
+        and af.verts[2] == 0 and af.verts[3] == 48 and af.verts[4] == 0,
+        "ed.maptool: owline auto-fit spans the sprite top")
+  af = W.col_autofit("line", 48, 16)
+  check(af.kind == "chain" and not af.oneway, "ed.maptool: solid line fit")
+  af = W.col_autofit("quad", 48, 16)
+  check(af.kind == "quad" and af.x == 0 and af.y == 0 and af.w == 48
+        and af.h == 16, "ed.maptool: quad fits the bounds")
+  af = W.col_autofit("circle", 48, 16)
+  check(af.kind == "circle" and af.cx == 24 and af.cy == 8 and af.r == 8,
+        "ed.maptool: circle inscribes")
+
+  -- attached picks ride the placement offset (world coords in, rel out)
+  local acols = { { kind = "chain", oneway = true, verts = { 0, 0, 20, 0 } } }
+  hit = W.col_pick(acols, 41, 102, 4, 30, 100)
+  check(hit and hit.e == 1 and hit.x == 41 and hit.y == 100,
+        "ed.maptool: attached edge pick at world coords")
+  hit = W.col_pick(acols, 31, 99, 4, 30, 100)
+  check(hit and hit.v == 1, "ed.maptool: attached vertex pick")
 end
 
 local function t_ed_filter()

@@ -248,8 +248,8 @@ function M.escape(win, ed)
     ed.touch()
     return true
   end
-  if p.csel then
-    p.csel = nil
+  if p.csel or p.asel then
+    p.csel, p.asel = nil, nil
     ed.touch()
     return true
   end
@@ -682,6 +682,21 @@ function M.col_offset(c, orig, dx, dy)
   end
 end
 
+-- the +col auto-fit (§6, D057a): a new attached collider in RELATIVE
+-- coords, fitted to the asset's w x h bounds. kind: "owline" = one-way
+-- across the sprite's top at full width (THE platform case), "line" =
+-- the same but solid, "quad" = the bounds, "circle" = inscribed.
+function M.col_autofit(kind, w, h)
+  if kind == "owline" or kind == "line" then
+    return { kind = "chain", oneway = kind == "owline", closed = false,
+             verts = { 0, 0, w, 0 } }
+  elseif kind == "quad" then
+    return { kind = "quad", x = 0, y = 0, w = w, h = h }
+  end
+  local r = math.max(1, math.min(w, h) // 2)
+  return { kind = "circle", cx = w // 2, cy = h // 2, r = r }
+end
+
 -- arrow-nudge the collider selection (vertex when one is selected)
 function M.col_nudge(cols, csel, dx, dy)
   local c = cols[csel.c]
@@ -953,7 +968,7 @@ local function draw_fill(p, view, X0, X1, Y0s, Y1s)
   flush(X1)
 end
 
-local function draw_gizmos(p, view, sel, tool, csel)
+local function draw_gizmos(p, view, sel, tool, csel, asel)
   local geom = p.geom
   local zoom, ox, oy = view.zoom, view.ox, view.oy
   local t = math.max(1, math.min(2.5, zoom))
@@ -1016,8 +1031,13 @@ local function draw_gizmos(p, view, sel, tool, csel)
     if pl.cols then
       local on = sel and M.sel_has(sel, { t = "place", i = i })
       local a = on and 0xff or 0x66
-      for _, c in ipairs(pl.cols) do
-        one(c, pl.x, pl.y, (COL.solid & ~0xff) | a, (COL.oneway & ~0xff) | a)
+      for aci, c in ipairs(pl.cols) do
+        local hot = on and asel and asel.c == aci
+        one(c, pl.x, pl.y, hot and COL.sel or (COL.solid & ~0xff) | a,
+            hot and COL.sel or (COL.oneway & ~0xff) | a)
+        if on and tool == "select" then -- editable only while selected
+          handles(c, pl.x, pl.y, hot and asel.v or nil)
+        end
       end
     end
   end
@@ -1165,8 +1185,16 @@ function M.draw(win, ctx)
   -- collider gizmos — always on by default (the human's call, §6);
   -- the collider tool adds editing handles + the selection accent
   local tool = win.tool or "select"
+  -- the attached selection is only alive while its single placement is
+  -- (§6: editable only while the object is selected)
+  local apl = #p.sel == 1 and p.sel[1].t == "place"
+              and doc.places[p.sel[1].i] or nil
+  if p.asel and not (tool == "select" and apl and apl.cols
+                     and apl.cols[p.asel.c]) then
+    p.asel = nil
+  end
   if win.giz or tool == "collider" then
-    draw_gizmos(p, view, p.sel, tool, p.csel)
+    draw_gizmos(p, view, p.sel, tool, p.csel, p.asel)
   end
 
   -- selection outlines
@@ -1475,6 +1503,63 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     end
+    -- attached-collider gestures (§6: only while the placement selects)
+    if gd.mode == "apress" then
+      if math.abs(i.wx - gd.sx) > 4 or math.abs(i.wy - gd.sy) > 4 then
+        gd.mode = gd.drag
+        gd.mutates = true
+      elseif not i.buttons[1] then
+        local hit = gd.hit
+        local c = apl and apl.cols[hit.c]
+        if c and hit.e and c.kind == "chain" and p.asel
+           and p.asel.c == hit.c then
+          local nv = M.col_insert(c, hit.e, hit.x - apl.x, hit.y - apl.y)
+          p.asel = { c = hit.c, v = nv }
+          commit(ed, win.path)
+        elseif c then
+          p.asel = { c = hit.c, v = hit.v }
+        end
+        p.g = nil
+        ctx.touch()
+      end
+    end
+    if gd.mode == "avert" or gd.mode == "awhole" then
+      if i.buttons[1] and apl then
+        local c = apl.cols[gd.hit.c]
+        local gx, gy = mx, my
+        if gd.mode == "awhole" then
+          gx = gd.gx0 + (i.wx - gd.sx) / zoom
+          gy = gd.gy0 + (i.wy - gd.sy) / zoom
+        end
+        local nx, ny
+        if g.ctrl then
+          local gg
+          nx, ny, gg = M.snap_pt(gd.tg, gx, gy,
+            { thr = SNAP_PX / zoom, grid = win.grid or doc.grid or 8,
+              ax = gd.ax, ay = gd.ay })
+          p.guides = gg
+        else
+          p.guides = nil
+          nx, ny = math.floor(gx + 0.5), math.floor(gy + 0.5)
+        end
+        if gd.mode == "awhole" then
+          M.col_offset(c, gd.orig, nx - gd.gx0, ny - gd.gy0)
+        elseif c.kind == "chain" then
+          c.verts[gd.hit.v * 2 - 1] = nx - apl.x
+          c.verts[gd.hit.v * 2] = ny - apl.y
+        elseif c.kind == "quad" then
+          M.quad_drag(c, gd.r0, gd.hit.v, nx - apl.x, ny - apl.y)
+        else
+          local dx, dy = nx - apl.x - c.cx, ny - apl.y - c.cy
+          c.r = math.max(1, math.floor((dx * dx + dy * dy) ^ 0.5 + 0.5))
+        end
+        gd.moved = true
+        ctx.touch()
+      else
+        if gd.moved then commit(ed, win.path) end
+        p.g, p.guides = nil, nil
+      end
+    end
     if gd.mode == "move" then
       if i.buttons[1] then
         local rdx = (i.wx - gd.sx) / zoom
@@ -1519,7 +1604,52 @@ function M.draw(win, ctx)
       end
     end
   elseif tool == "select" and topmost and i.clicked[1] and not p.pan then
-    local hit = M.pick(doc, mx, my, dims, win.mk)
+    -- the selected placement's attached handles outrank the item pick
+    -- (they sit on top of the sprite; §6 — selected-only editing)
+    local ahit = apl and apl.cols
+                 and M.col_pick(apl.cols, mx, my, 7 / zoom, apl.x, apl.y)
+    if ahit then
+      local pi = p.sel[1].i
+      local c = apl.cols[ahit.c]
+      local gd = { mode = "apress", sx = i.wx, sy = i.wy, hit = ahit }
+      if ahit.v then
+        gd.drag = "avert"
+        if c.kind == "chain" then
+          gd.tg = M.snap_targets(doc, { dims = dims,
+                    skipv = { o = pi, c = ahit.c, v = ahit.v } })
+          local n = #c.verts // 2
+          local pv = ahit.v > 1 and ahit.v - 1
+                     or (c.closed and n or ahit.v + 1)
+          if pv >= 1 and pv <= n and pv ~= ahit.v then
+            gd.ax = c.verts[pv * 2 - 1] + apl.x
+            gd.ay = c.verts[pv * 2] + apl.y
+          end
+        elseif c.kind == "quad" then
+          gd.tg = M.snap_targets(doc, { dims = dims,
+                    skipv = { o = pi, c = ahit.c } })
+          gd.r0 = { x = c.x, y = c.y, w = c.w, h = c.h }
+        else
+          gd.tg = { verts = {}, segs = {} }
+        end
+      else
+        gd.drag = "awhole"
+        gd.gx0, gd.gy0 = ahit.x, ahit.y
+        gd.tg = M.snap_targets(doc, { dims = dims,
+                  skipv = { o = pi, c = ahit.c } })
+        if c.kind == "circle" then
+          gd.orig = { cx = c.cx, cy = c.cy }
+        elseif c.kind == "quad" then
+          gd.orig = { x = c.x, y = c.y }
+        else
+          local vv = {}
+          for k, val in ipairs(c.verts) do vv[k] = val end
+          gd.orig = { verts = vv }
+        end
+      end
+      p.g = gd
+      ctx.touch()
+    end
+    local hit = not ahit and M.pick(doc, mx, my, dims, win.mk)
     if hit then
       if g.shift then
         local at = M.sel_has(p.sel, hit)
@@ -1541,7 +1671,7 @@ function M.draw(win, ctx)
                 ax0 = ax, ay0 = ay, aw = aw, ah = ah }
         ctx.touch()
       end
-    else
+    elseif not ahit then
       p.g = { mode = "marquee", sx = i.wx, sy = i.wy,
               mx0 = mx, my0 = my, mx1 = mx, my1 = my }
     end
@@ -1592,6 +1722,20 @@ function M.draw(win, ctx)
               end
             end
           end
+        elseif p.asel and apl and sc >= KEY.right and sc <= KEY.up then
+          local d = g.shift and 8 or 1
+          local dx = (sc == KEY.right and d) or (sc == KEY.left and -d) or 0
+          local dy = (sc == KEY.down and d) or (sc == KEY.up and -d) or 0
+          if M.col_nudge(apl.cols, p.asel, dx, dy) then
+            commit(ed, win.path)
+          end
+        elseif p.asel and apl and (sc == KEY.del or sc == KEY.backspace)
+               and not p.g then
+          -- del with an attached handle selected removes the collider (§6)
+          table.remove(apl.cols, p.asel.c)
+          if #apl.cols == 0 then apl.cols = nil end
+          p.asel = nil
+          commit(ed, win.path)
         elseif sc >= KEY.right and sc <= KEY.up and #p.sel > 0 then
           local d = g.shift and 8 or 1
           local dx = (sc == KEY.right and d) or (sc == KEY.left and -d) or 0
@@ -1740,10 +1884,40 @@ function M.draw(win, ctx)
         commit(ed, win.path)
       end
       x = x + fw + 6 * z
-      pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z), INSP)
-      pal.x_ig_text(x, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
-                    ("L%d · %s"):format(o.layer or 0, o.path), 0)
-      pal.x_ig_clip_pop()
+      -- +col: attach an auto-fit collider (§6) — the type picker inline
+      local function pchip(label, on)
+        local w2 = pal.x_ig_text_size(label, px * 0.9, 0) + 10 * z
+        local hv = not ctx.alt and i.wx >= x and i.wx < x + w2
+                   and i.wy >= iy and i.wy < iy + INSP
+        pal.x_ig_rect_fill(x, iy + 1, w2, INSP - 2,
+                           on and COL.btn_on or COL.btn, 3 * z)
+        pal.x_ig_text(x + 5 * z, iy + (INSP - px) * 0.45, px * 0.9,
+                      (hv or on) and COL.hot or COL.dim, label, 0)
+        x = x + w2 + 4 * z
+        return hv and i.clicked[1]
+      end
+      if pchip("+col", p.colmenu or false) then
+        p.colmenu = not p.colmenu or nil
+        ctx.touch()
+      end
+      if p.colmenu then
+        for _, cd in ipairs({ { "owline", "one-way" }, { "line", "line" },
+                              { "quad", "quad" }, { "circle", "circle" } }) do
+          if pchip(cd[2], false) then
+            o.cols = o.cols or {}
+            o.cols[#o.cols + 1] = M.col_autofit(cd[1], dims(o.path))
+            p.asel = { c = #o.cols }
+            p.colmenu = nil
+            commit(ed, win.path)
+          end
+        end
+      else
+        pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z),
+                           INSP)
+        pal.x_ig_text(x, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
+                      ("L%d · %s"):format(o.layer or 0, o.path), 0)
+        pal.x_ig_clip_pop()
+      end
     else
       pal.x_ig_text(x, iy + (INSP - px) * 0.45, px * 0.9, COL.marker,
                     mkline(o), 0)
