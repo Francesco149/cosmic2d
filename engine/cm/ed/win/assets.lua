@@ -57,7 +57,8 @@ function M.kind_for(path)
   local class, ext = M.class_of(path)
   if ext == "spr" then return "sprite" end
   if ext == "png" then return "image" end
-  if ext == "map" then return "map" end -- .tm gets its window at R8d
+  if ext == "map" then return "map" end
+  if ext == "tm" then return "tmap" end -- R8d
   if class == "code" then return "text" end
   return nil -- sound and unknowns have no window yet (M9 never landed)
 end

@@ -39,6 +39,7 @@ M.kinds = {
   image = cm.require("cm.ed.win.image"),
   sprite = cm.require("cm.ed.win.sprite"),
   map = cm.require("cm.ed.win.map"),
+  tmap = cm.require("cm.ed.win.tmap"),
 }
 
 -- new code windows open at the size you've made your current one
@@ -168,7 +169,7 @@ function M.park(edoc_bytes)
     end
   end
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
-  M.g.hdrx, M.g.wpx, M.g.mw = nil, nil, nil
+  M.g.hdrx, M.g.wpx, M.g.mw, M.g.tmw = nil, nil, nil, nil
   M.doc_rev = (M.doc_rev or 0) + 1
 end
 
@@ -184,8 +185,10 @@ function M.bring_back()
   local parked_a = M.doc.assets and M.doc.assets[path]
   if not parked_a then return nil end
   local payload = parked_a.text or parked_a.spr or parked_a.map
+                  or parked_a.tm
   local field = parked_a.text ~= nil and "text"
-                or parked_a.spr ~= nil and "spr" or "map"
+                or parked_a.spr ~= nil and "spr"
+                or parked_a.map ~= nil and "map" or "tm"
   if not payload then return nil end
   local journal = cm.require("cm.ed.journal")
   local stash = M.g.stash.doc
@@ -196,7 +199,8 @@ function M.bring_back()
   -- the present's journal gets the entry (a deliberate write from the
   -- past — THE door; the parked gates don't apply to it)
   local cap = field == "spr" and M.kinds.sprite.JCAP
-              or field == "map" and M.kinds.map.JCAP or nil
+              or field == "map" and M.kinds.map.JCAP
+              or field == "tm" and M.kinds.tmap.JCAP or nil
   local j = journal.open(M.root, path, pa.jpos > 0 and pa.jpos or nil, cap)
   journal.push(j, payload, 0, pal.time_ns() // 1000000)
   pa.jpos = j.pos
@@ -218,7 +222,7 @@ function M.unpark(adopt)
   M.g.stash = nil
   M.parked = false
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
-  M.g.hdrx, M.g.wpx, M.g.mw = nil, nil, nil
+  M.g.hdrx, M.g.wpx, M.g.mw, M.g.tmw = nil, nil, nil, nil
   M.touch() -- re-arm the session debounce on the (possibly new) present
 end
 
@@ -868,6 +872,7 @@ end
 
 local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
                      { "assets", "assets" }, { "map", "map" },
+                     { "tmap", "tilemap" },
                      { "game", "game window" }, { "console", "console" } }
 
 local function draw_menu(ig, i)
