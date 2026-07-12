@@ -271,12 +271,16 @@ edit through their object, above):
   solid/one-way flag (one-way applies to lines).
 - click = select the nearest collider (edge); vertices/handles show.
   Drag a handle = move vertex (quad corners / circle radius likewise);
-  drag an edge = move the whole collider; **click an edge inserts a
-  vertex** (chains); del = selected vertex (whole collider if none).
+  drag an edge = move the whole collider; **click an edge of the
+  SELECTED chain inserts a vertex**; del = selected vertex (whole
+  collider if none).
 - **draw**: line — press on empty starts a chain, each click appends
   a vertex, **Enter/double-click ends open, C closes** (closed+solid =
   fillable ground); Esc cancels. Quad/circle — drag out. CTRL snaps
-  every placed vertex/edge (§7).
+  every placed vertex/edge (§7). **A CTRL press always draws** (built
+  at R8c): the pick radius would otherwise eat the snap zone, and
+  drawing a slope FROM the ground line is the canonical case — plain
+  press picks, CTRL press starts a snapped draw from anywhere.
 - The whole gesture set journals per gesture (vertex drag end = one
   entry).
 
@@ -387,12 +391,23 @@ is insertion-ordered), collider buffer canonical.
   chunk-stream proven byte-identical; 2 llm-feed shots. Bonus beyond
   the letter: an unbound map window creates a fresh .map from a typed
   path — the R8e authoring door.)*
-- **R8c — collider editing**: the collider tool (line/quad/circle,
-  draw/insert/drag/flags), **attached colliders** (+col auto-fit,
-  selected-only editing, gizmo tinting), 45° lock + vertex/edge snap,
-  marker tool + inspector. *Exit*: author a new slope in a live
-  session, walk it in the game window; attach a one-way to a platform
-  sprite and move them as one; the whole edit rewinds and comes back.
+- **R8c — collider editing** ✅ **BUILT (2026-07-12)**: the collider
+  tool (line/quad/circle, draw/insert/drag/flags), **attached
+  colliders** (+col auto-fit, selected-only editing, gizmo tinting),
+  45° lock + vertex/edge snap, marker tool + inspector. *Exit*: author
+  a new slope in a live session, walk it in the game window; attach a
+  one-way to a platform sprite and move them as one; the whole edit
+  rewinds and comes back. *(Hit, driven through the REAL event path —
+  a scripted tape into pal.poll_events: CTRL edge-snap landed v1
+  exactly on the ground top, the 45 lock trued the segment, ctrl+s
+  hot-reloaded and the player walked the slope grounded; +col's
+  one-way rode a real drag to (520,239) and stand_ray answered there
+  after reload; parked at frame 3 the map window showed the pre-edit
+  doc and scrub-close brought it all back. Bonus: the focus view lock
+  (the human's ask — own pan/zoom priority, EDITOR.md §12.7). Two
+  proof catches fixed: CTRL-press-draws, parked g.mw plumbing.
+  selftest 23684→23732; suite ALL GREEN, goldens untouched; 4 llm-feed
+  shots.)*
 - **R8d — the tilemap window** (§8) + the **edge-run snap** (§7).
   *Exit*: build a small .tm from a tileset .spr, place it, edit it
   through double-click, journaled; trace a collider run along its top

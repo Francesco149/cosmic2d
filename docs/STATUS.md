@@ -3,6 +3,73 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (day session, cont. — R8c built: collider editing)
+**Phase**: **R8c — collider editing: BUILT (MAPS.md §11 ✅) + the
+human's view-lock ask; awaiting the feel pass alongside the queued
+R7a/R8a/R8b looks.**
+
+- **The view lock (the human's ask, first)**: the map window owns its
+  pan/zoom while focused — new `kind.own_view` hook (EDITOR.md §12.7):
+  wheel/ctrl+wheel/middle-drag act on the focused window's camera from
+  ANYWHERE on the canvas (imgui-captured wheels still win; ALT stays
+  the canvas layer); any canvas action (marquee, space-pan, spawn
+  menu, focusing elsewhere) or Esc releases it; accent border +
+  EDITING chip make the lock unmissable; off-view wheels anchor at
+  the view center.
+- **The collider tool** (header tool chips sel/col/mkr): line chains
+  drawn click by click (enter/dblclick ends open, C closes, esc
+  cancels), quads/circles dragged out; pick = vertices/handles outrank
+  edges (circle ring = radius, interior = whole-move); drag a knob =
+  vertex (quad corners anchor opposite + normalize), drag an edge =
+  whole collider, still-click the SELECTED chain's edge inserts at the
+  projection; del = vertex (whole below the 2/3-vert floor); arrows
+  nudge; one-way/closed chips edit the selection. **A CTRL press
+  always draws** — the pick radius (7px) ate the snap zone (6px), and
+  drawing a slope FROM the ground line is the canonical case (a real
+  proof catch; plain press picks).
+- **The §7 point snap**: `snap_targets` (one walk per gesture: collider
+  verts/segments incl. attached at world coords + placement corners/
+  edges, with dragged-vertex/whole-collider exclusions) + `snap_pt` —
+  vertices > nearest-point-on-segment edges (slopes snap true) > the
+  45° lock vs the gesture anchor > grid; seg/ray guides render.
+- **Attached colliders** (select tool, §6/D057a): the selected
+  placement's cols grow handles (dim + inert otherwise), attached pick
+  outranks the item pick, edits in relative coords through the same
+  snap engine, insert-on-edge, del-with-handle removes the collider;
+  the inspector's **+col** type picker auto-fits from asset bounds
+  (one-way across the sprite top at full width / solid line / bounds
+  quad / inscribed circle — pure `col_autofit`).
+- **The marker tool**: drag on empty = new rect (snapped, min 2×2),
+  corner knobs resize, moves snap like placements; the inspector grew
+  editable kind/label/note + extras as one k=v line (pure parse/fmt).
+- **Proof (the §11 exit, driven through the REAL event path — a
+  scripted tape injected into `pal.poll_events` feeds the actual
+  grammar)**: (A) collider tool + CTRL: edge-snap landed v1 EXACTLY on
+  the ground top (203,320), the 45 lock trued v2 to (319,204), Enter
+  ended the chain, Ctrl+S hot-reloaded — the player then walked the
+  slope in the game window, grounded every frame (feet y=240 = the
+  line at his x, logged PASS). (B) plank placed via kind.drop, +col
+  clicked FOR REAL (the driver derives the chip positions with the
+  inspector's own layout math), a real drag moved plank+one-way as one
+  to (520,239), Ctrl+S → `stand_ray` answers at the moved spot; parked
+  at frame 3 the map window showed the PRE-EDIT doc (0 placements) and
+  scrub-close brought the whole edit back — ALL PASS, shots on
+  llm-feed (4 total). **Second proof catch: cm.ed.park/unpark never
+  dropped the R8b `g.mw` plumbing** — a parked map window rendered its
+  stale decoded doc while the captured bytes had correctly rewound;
+  fixed both ways + KAT'd. selftest 23684→**23732**; `nix run .#test`
+  ALL GREEN (goldens untouched — ed-only changes).
+
+**Next step (resume here):** the human's passes (R7a feel, the
+R8a/R8b/R8c shots + the view-lock feel) — then **R8d — the tilemap
+window** (MAPS.md §8/§11): the .tm editor (tile palette from a tileset
+.spr, paint/erase/rect-fill, grid resize, pick), .tm placements render
+in map + game, and the **edge-run snap** (§7: one click lays a line
+along a whole contiguous solid tile run). Good `/clear` point —
+everything committed, docs current.
+
+---
+
 **Date**: 2026-07-12 (day session, cont. — R8b built: the map window)
 **Phase**: **R8b — the map window, select/place: BUILT (MAPS.md §11 ✅);
 awaiting the human's feel pass alongside the queued R7a/R8a looks.**
