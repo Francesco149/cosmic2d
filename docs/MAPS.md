@@ -413,10 +413,22 @@ is insertion-ordered), collider buffer canonical.
   proof catches fixed: CTRL-press-draws, parked g.mw plumbing.
   selftest 23684→23732; suite ALL GREEN, goldens untouched; 4 llm-feed
   shots.)*
-- **R8d — the tilemap window** (§8) + the **edge-run snap** (§7).
-  *Exit*: build a small .tm from a tileset .spr, place it, edit it
-  through double-click, journaled; trace a collider run along its top
-  in one click.
+- **R8d — the tilemap window** (§8) + the **edge-run snap** (§7)
+  ✅ **BUILT (2026-07-12)**. *Exit*: build a small .tm from a tileset
+  .spr, place it, edit it through double-click, journaled; trace a
+  collider run along its top in one click. *(Hit, the R8c tape idiom —
+  real events into pal.poll_events, 15/15 PASS: real strokes painted
+  deco.tm (pen + palette click, one gesture = one journal entry,
+  ctrl+z/y walked it, ctrl+s wrote disk == working bytes); kind.drop
+  placed it at exactly (200,224) on room.map; a real double-click on
+  the placement opened its editor; collider tool + CTRL hover proposed
+  the whole exposed run and ONE click laid exactly that chain
+  (264,272)-(296,272); map ctrl+s → the recorded reload → stand_ray
+  answers on the laid run and the game window draws the tiles. Save =
+  cm.asset_epoch bump (pure visual — no recorded EVAL needed); tile
+  edges joined snap_targets/snap_rect via the opts.tm hook; smoke grew
+  art/tiles.spr. selftest 23745→23761; suite ALL GREEN, goldens
+  untouched; shot on llm-feed.)*
 - **R8e — the game migration** (§10, in ../cosmic2d-game): both maps
   re-authored in the editor, movement/feel re-checked (the human),
   legacy map code deleted both repos. *Exit*: the human walks both

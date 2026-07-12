@@ -3,6 +3,74 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (day session, cont. — R8d built: the tilemap window)
+**Phase**: **R8d — the tilemap window + the edge-run snap: BUILT
+(MAPS.md §11 ✅); awaiting the human's feel passes (the queued
+R7a/R8a–R8d looks + the view lock).**
+
+- **cm.ed.win.tmap** — the .tm asset as a canvas citizen on the
+  sprite-ed model verbatim: CTLM working bytes in `doc.assets[path].tm`
+  (journal cap 512, dirty/save/undo/redo/revert, restart survival +
+  rewind free), read-only fit view + header edit toggle, winview
+  wheel-zoom/MMB-pan (world units — glued at any canvas zoom). Edit
+  roster (§8 v1): tile palette strip from the bound tileset (a .spr
+  whose FRAMES are the tiles; the baked strip .png draws), pen/eraser/
+  rect-fill/pick (one gesture = one journal entry), w/h grow-crop
+  resize + tile px + tileset retarget fields, tile grid overlay, an
+  unbound path field creating a fresh 16x16@16. **Save = write the .tm
+  + bump cm.asset_epoch** (the sprite-save convention — .tm is pure
+  visual, no recorded EVAL): map windows and the running game re-read
+  their caches the next frame.
+- **.tm renders everywhere** (the R8b placeholder dies): `cm.tmap.draw`
+  is the culled batched-quads path (tile id N = strip frame N; one
+  scratch buf, one draw_quads), drawn by cm.map.draw_places through an
+  epoch-keyed per-instance cache; the map window draws cells through
+  the same epoch-keyed decode, and placement dims follow the epoch too
+  (a saved resize moves pick bounds + drop ghost).
+- **The §7 snap grows tiles**: placed .tm tile edges join snap_targets
+  (segments) and snap_rect (per-axis lines) via the new `opts.tm` hook
+  (pure cores stay stub-testable); and the **edge-run** — line tool +
+  CTRL, idle-hovering an exposed tile edge proposes the WHOLE
+  contiguous run (preview line + endpoint dots), one click lays the
+  full 2-vert chain (one-way flag honored, committed + selected).
+  Vertices outrank the run; `cm.tmap.edge_run` is the pure walk
+  (floors/ceilings/left/right faces; horizontal wins distance ties).
+  cm.tmap also grew `resize` (grow/crop, top-left anchored) and
+  `fill_rect` (corner-order + clamp) — all KAT'd, expectations
+  hand-verified.
+- **Registration**: kinds.tmap, kind_for(.tm) (assets double-click AND
+  the map window's placement double-click route through it), spawn-menu
+  "tilemap", park/unpark reset `g.tmw` (pinned in t_ed_park — the R8c
+  catch's lesson applied preemptively), bring_back learned the tm
+  payload. smoke grew **art/tiles.spr** (engine-painted 16px 4-tile
+  set: grass-top dirt / dirt / stone brick / metal plate).
+- **Proof (the §11 exit, the R8c tape idiom — real events injected
+  into pal.poll_events): 15/15 PASS.** Real strokes painted deco.tm's
+  bottom row, a real palette click picked the brick tile, ctrl+z/y
+  walked the journal, ctrl+s wrote disk == working bytes; kind.drop
+  placed it at exactly (200,224) on room.map; a REAL double-click on
+  the placement opened its editor window; collider tool + CTRL hover
+  proposed the run (264,272)-(296,272) over the painted row's exposed
+  top edge and ONE click laid exactly that chain; map ctrl+s → the
+  recorded reload → the game's live instance carries the placement,
+  `stand_ray` answers y=272 on the laid run, and the game window draws
+  the tiles (shot on llm-feed). room.map restored + proof artifacts
+  wiped after — goldens never see any of it.
+- selftest 23745→**23761**; `nix run .#test` ALL GREEN (goldens
+  untouched — the draw_places restructure is behavior-identical for
+  .png/.spr and room.map carries no .tm).
+
+**Next step (resume here):** the human's passes (R7a feel, the
+R8a–R8d shots + the view-lock feel) — then **R8e — the game migration**
+(MAPS.md §10/§11, in ../cosmic2d-game): rim_hub + south_trail
+re-authored as .map in the editor itself (the dogfood pass — this is
+the UX exit), markers carrying spawn/portals/prop_spots, player.lua
+mover swap like smoke's, legacy map code deleted in both repos, then
+R7b resumes on top. Good `/clear` point — everything committed, docs
+current.
+
+---
+
 **Date**: 2026-07-12 (day session, cont. — R8c built: collider editing)
 **Phase**: **R8c — collider editing: BUILT (MAPS.md §11 ✅) + the
 human's view-lock ask; awaiting the feel pass alongside the queued
