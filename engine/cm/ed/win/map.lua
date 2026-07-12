@@ -1116,6 +1116,20 @@ function M.extras_parse(str)
   return #out > 0 and out or nil
 end
 
+-- the bg tint <-> "r g b" one-line form (map fields, R8e; pure). Tints
+-- may exceed 1 (warm/HDR-ish multipliers); negatives make no sense.
+function M.bg_fmt(bg)
+  bg = bg or { 1, 1, 1 }
+  return ("%.4g %.4g %.4g"):format(bg[1], bg[2], bg[3])
+end
+
+function M.bg_parse(str)
+  local r, g, b = str:match("^%s*([%d.]+)%s+([%d.]+)%s+([%d.]+)%s*$")
+  r, g, b = tonumber(r), tonumber(g), tonumber(b)
+  if not (r and g and b) then return nil end
+  return { r, g, b }
+end
+
 -- ---- content ----
 
 function M.draw(win, ctx)
@@ -2160,14 +2174,44 @@ function M.draw(win, ctx)
         commit(ed, win.path)
       end
     end
-  else
+  elseif #p.sel > 1 or tool == "marker" then
     local hint = #p.sel > 1 and (#p.sel .. " selected")
-      or tool == "marker"
-        and "drag on empty = new marker · corners resize · del removes"
-      or ("%dx%d · drag assets in to place · ctrl snaps · %d placement%s")
-         :format(doc.w, doc.h, #doc.places, #doc.places == 1 and "" or "s")
+      or "drag on empty = new marker · corners resize · del removes"
     pal.x_ig_text(ctx.cx + 4 * z, iy + (INSP - px) * 0.45, px * 0.9,
                   COL.dim, hint, 0)
+  else
+    -- nothing selected: the MAP's own fields (R8e — a fresh map must be
+    -- sizeable/tintable in the editor; the tmap window's w/h precedent)
+    local x = ctx.cx + 2 * z
+    local got
+    got, x = field("mapw", "w", tostring(doc.w), x, 40 * z)
+    if got and tonumber(got) then
+      doc.w = math.max(16, math.floor(tonumber(got)))
+      commit(ed, win.path)
+    end
+    got, x = field("maph", "h", tostring(doc.h), x, 40 * z)
+    if got and tonumber(got) then
+      doc.h = math.max(16, math.floor(tonumber(got)))
+      commit(ed, win.path)
+    end
+    got, x = field("mapg", "grid", tostring(doc.grid or 8), x, 30 * z)
+    if got and tonumber(got) then
+      doc.grid = math.min(256, math.max(1, math.floor(tonumber(got))))
+      commit(ed, win.path)
+    end
+    got, x = field("mapb", "bg", M.bg_fmt(doc.bg), x, 64 * z)
+    if got then
+      local bg2 = M.bg_parse(got)
+      if bg2 then
+        doc.bg = bg2
+        commit(ed, win.path)
+      end
+    end
+    pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z), INSP)
+    pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
+                  ("drag assets in to place · ctrl snaps · %d placement%s")
+                  :format(#doc.places, #doc.places == 1 and "" or "s"), 0)
+    pal.x_ig_clip_pop()
   end
 end
 

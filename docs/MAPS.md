@@ -268,7 +268,11 @@ res, grid 8) whose first Ctrl+S writes the file (built at R8b).
 - **Inspector strip** (window bottom, one row): selection's x/y
   (editable x_ig_edit fields), an optional **name** field (§4 code
   addressing), layer chip, flip_x toggle, **+col** — markers swap in
-  kind/label/extras fields.
+  kind/label/extras fields. With **nothing selected** (select tool)
+  the strip shows the MAP's own fields — **w / h / grid / bg** ("r g b"
+  tint floats) — so a fresh spawn-menu map can be sized and tinted
+  without leaving the editor (an R8e catch: fresh maps were stuck at
+  the project res).
 
 **Collider tool** (free colliders — the terrain layer; attached ones
 edit through their object, above):

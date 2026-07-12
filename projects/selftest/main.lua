@@ -3628,6 +3628,16 @@ local function t_ed_maptool()
         "ed.maptool: extras_fmt round-trips")
   check(W.extras_parse("") == nil and W.extras_fmt(nil) == "",
         "ed.maptool: empty extras stay nil")
+
+  -- the map bg tint <-> "r g b" one-line form (the map fields, R8e)
+  local bg = W.bg_parse(" 1.04 0.92 0.78 ")
+  check(bg and bg[1] == 1.04 and bg[2] == 0.92 and bg[3] == 0.78,
+        "ed.maptool: bg_parse reads three floats")
+  check(W.bg_fmt(bg) == "1.04 0.92 0.78",
+        "ed.maptool: bg_fmt round-trips")
+  check(W.bg_parse("1 1") == nil and W.bg_parse("a b c") == nil,
+        "ed.maptool: bg_parse rejects junk")
+  check(W.bg_fmt(nil) == "1 1 1", "ed.maptool: bg_fmt defaults white")
 end
 
 local function t_ed_filter()
