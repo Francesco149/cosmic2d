@@ -328,6 +328,12 @@ all back.
   file journal tops out ~400 MB worst-case. Fine for R3 texts; R4
   sprite docs may want per-kind caps or delta entries — decide there,
   the format has room (`ENTR` v2).
+- **Widget z vs canvas z** — imgui widgets (`x_ig_edit`) always render
+  above the background drawlist, whatever our window order says. The R3
+  rule (found + fixed in build): a window overlapped by a higher window
+  draws its text **inert** (drawlist text — correct-looking, it's behind
+  anyway) instead of submitting a live widget. The fully interleaved
+  story (per-window imgui hosts, ordered by our z) is R4 code-ed design.
 - **Two edit widgets, one frame** — `x_ig_edit` ids are per-window;
   the SDL3-backend text-input conflict (IMGUI.md §11) stays a
   keep-out-of-the-same-frame rule with `pal.text_input` (console), which

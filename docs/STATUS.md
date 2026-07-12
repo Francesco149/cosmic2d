@@ -3,6 +3,68 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (R3 session)
+**Phase**: **REVAMP R3 — editor shell: BUILT (ADR D050 + docs/EDITOR.md);
+awaiting the human taste pass (the exit's feel half).** Design-doc-first
+per REVAMP §3.1, then the whole shell end to end:
+
+- **docs/EDITOR.md (D050)** — the STUDIO.md successor: the ALT grammar is
+  *the board's* spec (teidraw has no ALT layer — its canvas IS the main
+  action; ours is window content), with teidraw's tuning lifted from its
+  source (1.16×/notch zoom-at-cursor clamped 0.02–64, 4 px click-vs-drag,
+  320 ms/6 px double-click, 280 ms quart eases, adaptive 32-wu dot grid,
+  400 ms autosave debounce, 4096-entry journals).
+- **The R6-critical state model, implemented**: everything a rewound frame
+  must show lives in **cm.ed.doc** (plain data, cm.state.canon-clean);
+  gestures/hover/eases are ephemeral module-locals. The **`ed.` buffer
+  prefix is reserved** for the editor domain — cm.state snapshots +
+  cm.trace recordings exclude it (KAT-pinned; no existing name collides,
+  every golden byte-identical).
+- **cm.ed + cm.ed.{cam,wm,session,journal} + win.{note,text,game}**: pan/
+  zoom canvas, chrome (headers are labels, never drag handles), the full
+  grammar — A-click select/drill, A-drag move (selected-first priority),
+  A-rightclick close (fearless: state is keyed by asset, not window),
+  marquee, plain-drag edge resize (6 px band), `]`/`[` (+shift) explicit z
+  (no auto-raise), Esc, shift+1/2/0 fit anims, arrow nudges. Boot:
+  **`bin/cosmic <project> --edit`** (forces maximized; sim keeps running,
+  game input swallowed — game-window input synthesis is R4).
+- **Unsaved-persists + undo-forever, PROVEN across restart** (the exit's
+  mechanical half, scripted --eval proof): working copies in
+  doc.assets[path] (session.dat = CEDS canon dump, 400 ms debounce, in
+  gitignored `<project>/.ed/`), dirty = working-vs-disk (computed, never
+  tracked), **CJRN journals** (append-only chunk stream via the new
+  `pal.x_file_append`; full-snapshot entries, dedupe vs tip, save
+  re-flags, branch = truncate+rewrite, cap 4096, corrupt degrades fresh).
+  Ctrl+S/Z/Y on the focused window; header **reset** button = an
+  *undoable* revert. The text window = the R4 code-ed precursor, with a
+  fuzzy file picker on the right-click spawn menu.
+- **Widget-z rule** (found + fixed): imgui edit widgets always render
+  above the background drawlist, so an overlapped window draws its text
+  inert (correct-looking — it's behind). EDITOR.md §11; the interleaved
+  story is R4 design.
+- **ALL GREEN**: selftest 22545→**22641** (+96: cam math, wm hit/grammar
+  KATs driven by synthetic input frames, session round-trip, journal
+  codec/branch/cap, ed-domain exclusion); `nix run .#test` end-to-end
+  (3 traces + 3 pixels byte-identical — the ed.* filter changed
+  cm.state/cm.trace and nothing moved); windows cross build clean; live
+  windowed verified on WSLg (imgui windowed backend, maximized). 3 shots
+  on llm-feed (restart survival · 62% zoom · spawn menu + picker).
+
+**Next step (resume here):** the human's **taste pass on the live shell**
+(`bin/cosmic projects/smoke --edit` on WSLg) — the R3 exit's feel half:
+does the canvas feel teidraw-smooth (zoom-at-cursor, pan, the ALT
+grammar, edge resize)? Then **R4 — the windows** (REVAMP §6): code ed
+(highlighting, line numbers, links/doc format), asset pick (previews,
+drag-in/out), sprite ed (re-host cm.paint/sprite/anim; the F2 studio
+dies here, D046), the playable game window (input synthesis), console
+re-hosted as a canvas window. Known R3 scope notes: wheel always zooms
+(content scroll routing is R4), game window is watch-only, drill/groups
+are plumbed but inert (windows are all leaves), legacy chrome hides
+behind an open console (the §8 interim gate). Good `/clear` point — R3
+is committed, docs current.
+
+---
+
 **Date**: 2026-07-12 (R2 session)
 **Phase**: **REVAMP R2 — platform layer revamp: DONE (ADR D049 +
 docs/IMGUI.md).** Design-doc-first per REVAMP §3.1, then built end to end:

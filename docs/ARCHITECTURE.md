@@ -662,6 +662,14 @@ deterministic machine. Coordinates are window px; colors `0xRRGGBBAA`.
 | `pal.gfx_init{…, maximized}` | — | open the window maximized (the editor-session shape; policy in Lua/project.lua) |
 | event `wx,wy` (motion/button) | input | raw window px alongside game `x,y` + ui `ui_x,ui_y`; cm.ui keeps them on `inp.wx/wy` |
 | `pal.x_compose{scale=0,…}` | render/dev | scale 0 = don't blit the game layer (the ig canvas draws the target itself via `x_ig_image(-1)`) |
+| `pal.x_file_append(path,bytes)` → bool | file I/O | append (create if missing) — the R3 undo journals' primitive (D050); portable SDL_IOStream |
+
+R3 (D050, docs/EDITOR.md) rides v7 additively with `x_file_append` and
+reserves the **`ed.` named-buffer prefix** as the editor state domain:
+cm.state snapshots/restores and cm.trace recordings **exclude** `ed.*`
+buffers (selftest-pinned) — the editor's captured state (cm.ed.doc +
+future `ed.*` buffers) is delta-able by R6 rewind without ever entering
+the sim's determinism domain.
 
 cm.view grows **`mode = "canvas"`** (the ig-canvas session): full-window ui
 canvas for the legacy dev chrome (which renders UNDER the ig layer until

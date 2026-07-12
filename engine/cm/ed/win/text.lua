@@ -183,14 +183,19 @@ local function draw_picker(win, ctx)
   local ed = ctx.ed
   local z, pad = ctx.z, 8 * ctx.z
   local px = math.max(4, M.PX * z)
-  local filter, changed = pal.x_ig_edit {
-    id = "pick" .. win.id, x = ctx.cx + pad, y = ctx.cy + pad * 0.6,
-    w = ctx.cw - 2 * pad, h = px * 1.6, text = win.filter or "",
-    px = px, font = 1,
-  }
-  if changed then
-    win.filter = filter
-    ctx.touch()
+  if ctx.alt or ctx.occluded then
+    pal.x_ig_text(ctx.cx + pad, ctx.cy + pad * 0.6, px, 0xd8d2f2ff,
+                  win.filter or "", 1)
+  else
+    local filter, changed = pal.x_ig_edit {
+      id = "pick" .. win.id, x = ctx.cx + pad, y = ctx.cy + pad * 0.6,
+      w = ctx.cw - 2 * pad, h = px * 1.6, text = win.filter or "",
+      px = px, font = 1,
+    }
+    if changed then
+      win.filter = filter
+      ctx.touch()
+    end
   end
   local files = project_files(ed)
   local y = ctx.cy + pad * 0.6 + px * 2.0
@@ -236,22 +241,26 @@ function M.draw(win, ctx)
   local z, pad = ctx.z, 6 * ctx.z
   local px = math.max(4, M.PX * z)
 
-  if ctx.alt then -- inert under the ALT layer (EDITOR.md §5 rule 1)
+  -- inert under the ALT layer (§5 rule 1: imgui never sees an A-click) and
+  -- when a higher window overlaps (the widget would render above it)
+  local active = false
+  if ctx.alt or ctx.occluded then
     pal.x_ig_text(ctx.cx + pad, ctx.cy + pad * 0.7, px, 0xd8d2f2ff, a.text, 1)
-    return
+  else
+    local text, changed
+    text, changed, active = pal.x_ig_edit {
+      id = "txt" .. win.id, x = ctx.cx + pad, y = ctx.cy + pad * 0.5,
+      w = ctx.cw - 2 * pad, h = ctx.ch - pad,
+      text = a.text, px = px, font = 1, multiline = true,
+    }
+    if changed then
+      a.text = text
+      p.due = pal.time_ns() + M.PUSH_MS * 1000000
+      ed.touch()
+    end
   end
-
-  local text, changed, active = pal.x_ig_edit {
-    id = "txt" .. win.id, x = ctx.cx + pad, y = ctx.cy + pad * 0.5,
-    w = ctx.cw - 2 * pad, h = ctx.ch - pad,
-    text = a.text, px = px, font = 1, multiline = true,
-  }
-  if changed then
-    a.text = text
-    p.due = pal.time_ns() + M.PUSH_MS * 1000000
-    ed.touch()
-  end
-  -- gesture end: the widget deactivates, or the idle debounce runs out
+  -- gesture end: the widget deactivates (incl. going inert), or the idle
+  -- debounce runs out — checked even while inert so no push is stranded
   if p.was_active and not active then
     push_now(ed, win.path)
   elseif p.due and pal.time_ns() >= p.due then

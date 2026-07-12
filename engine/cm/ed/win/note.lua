@@ -24,7 +24,7 @@ end
 function M.draw(win, ctx)
   local px = math.max(4, M.PX * ctx.z)
   local pad = 6 * ctx.z
-  if ctx.alt then
+  if ctx.alt or ctx.occluded then -- inert: ALT layer / overlapped (ed.lua)
     pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, ctx.ch)
     pal.x_ig_text(ctx.cx + pad, ctx.cy + pad * 0.7, px, 0xd8d2f2ff,
                   win.text or "", 0)

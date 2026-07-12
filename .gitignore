@@ -22,3 +22,7 @@
 # per-machine video options (the options menu's saved resolution / ui scale /
 # fullscreen — cm.view.save_video); machine-local, like knobs.dat / map.dat
 /projects/*/video.dat
+
+# the editor shell's per-project session + undo journals (R3, D050):
+# unsaved-persists state is per-machine, never in the repo
+.ed/

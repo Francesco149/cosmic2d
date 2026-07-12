@@ -39,7 +39,7 @@ M.kinds = {
 -- the palette (igcanvas's, promoted)
 local C = {
   bg = 0x141220ff, grid = 0x3a3560, -- grid alpha applied per zoom
-  win = 0x1e1b2ee6, win_edge = 0x4a4370ff, win_edge_hot = 0x6a60a0ff,
+  win = 0x1e1b2eff, win_edge = 0x4a4370ff, win_edge_hot = 0x6a60a0ff,
   hdr = 0x262238ff, title = 0xcfc8ffff, title_dim = 0x8a84b0ff,
   sel = 0x7fd8a8ff, marquee = 0x7fd8a8aa, focus_edge = 0x8878d0ff,
   hud = 0xE8E4FFff, hud_dim = 0x8a84b0ff, pill = 0x262238ee,
@@ -274,7 +274,25 @@ local function grid(ig)
   end
 end
 
-local function draw_win(ig, win)
+-- imgui widgets (x_ig_edit) always render ABOVE the background drawlist,
+-- whatever our canvas z says — so a window overlapped by a higher one must
+-- not submit a live widget or its text bleeds through the window on top.
+-- Occluded windows draw their text inert instead (they're behind anyway,
+-- so inert is also the correct look). The full interleaved-z story is the
+-- R4 code-ed design; this rule keeps R3 overlap honest.
+local function occluded(doc, i)
+  local w = doc.wins[i]
+  for j = i + 1, #doc.wins do
+    local o = doc.wins[j]
+    if o.x < w.x + w.w and o.x + o.w > w.x
+       and o.y < w.y + w.h and o.y + o.h > w.y then
+      return true
+    end
+  end
+  return false
+end
+
+local function draw_win(ig, win, zi)
   local doc, g = M.doc, M.g
   local z = doc.cam.zoom
   local x, y = cam.w2s(doc.cam, win.x, win.y)
@@ -325,7 +343,7 @@ local function draw_win(ig, win)
   if kind and h > hdr + 2 then
     local ctx = {
       ig = ig, z = z, alt = g.alt or false, doc = doc, ed = M,
-      focused = focused, touch = M.touch,
+      focused = focused, touch = M.touch, occluded = occluded(doc, zi),
       cx = x + z, cy = y + hdr, cw = w - 2 * z, ch = h - hdr - z,
     }
     pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, ctx.ch)
@@ -397,7 +415,7 @@ local function draw(ig)
   local i = cm.require("cm.ui").inp
   pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
   grid(ig)
-  for _, win in ipairs(doc.wins) do draw_win(ig, win) end
+  for zi, win in ipairs(doc.wins) do draw_win(ig, win, zi) end
   if g.state == "marquee" then
     local x0, y0 = cam.w2s(doc.cam, g.mx0, g.my0)
     local x1, y1 = cam.w2s(doc.cam, g.mx1, g.my1)
