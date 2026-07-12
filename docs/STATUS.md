@@ -3,6 +3,66 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-12 (day session, cont. — R8b built: the map window)
+**Phase**: **R8b — the map window, select/place: BUILT (MAPS.md §11 ✅);
+awaiting the human's feel pass alongside the queued R7a/R8a looks.**
+
+- **cm.ed.win.map** — the .map asset as a canvas citizen on the sprite-ed
+  model verbatim: CMAP working bytes in `doc.assets[path].map` (journal
+  cap 512, dirty/save/undo/redo/revert, restart survival + rewind free),
+  own camera (wheel zoom at cursor, MMB pan, shift+1 fit, zoom+grid
+  chip), draw = bg tint + graybox strip fill (the same cm.map.geom/
+  column_ivs the game renders from, factored pure) + placements +
+  marker rects + collider gizmos (always on; dashed one-ways, attached
+  ones dim until their object selects; giz/mk/fill header chips), the
+  **select tool** end to end (click / shift-click / marquee / drag-move
+  / arrow nudge ×8 / del / `[` `]` z), the **§7 CTRL snap** for
+  placements (vertices > edges/centers > grid, guides drawn, ctrl+wheel
+  dials the step into win.grid), double-click a placement → its editor,
+  the inspector strip (x/y/name/flip + path), and an **unbound-window
+  path field that creates a fresh .map** (the R8e authoring door).
+- **kind.drop** (shell): the asset-carry release prefers `drop` when the
+  kind claims the path (place ≠ rebind), with a live ghost + snap
+  preview during the carry; OS drops over a map window copy into the
+  project then place at the drop point. **wants_keys split from
+  game_input**: a focused map window claims the shell's plain keys for
+  its tool but never feeds the sim (KAT'd); only the game window keeps
+  filter_events. bring_back learned the map payload; spawn menu grew
+  "map"; kind_for(.map).
+- **Save→hot-reload (MAPS.md §9)**: Ctrl+S writes the .map and submits
+  the **recorded `cm.map.reload` EVAL** — `cm.collide.rebuild`
+  re-encodes the named buffer and re-decodes into the SAME wrapper
+  table, so held references (level, probes) adopt the new geometry;
+  traces replay it, rewind scrubs across it. **cm.map.draw_places**
+  landed too (file order, flip via swapped u, .tm placeholder until
+  R8d, camera-culled) — smoke's level draws placements over the fill,
+  and smoke grew `art/plank.png` (engine-painted) as the placeable prop.
+- **Proof (the §11 exit, scripted --edit captures)**: plank dragged
+  onto room.map with CTRL — the vertex snap landed it EXACTLY on the
+  platform end (256,228); Ctrl+S → the recorded reload ran → the game
+  window renders it in-game (shot). Second run: the unsaved placement
+  **survived a restart** (dirty dot + reset), undo walked to disk
+  state, redo brought it back (logged PASS end to end; shot shows the
+  authoring-vs-truth split — map window has the plank, game window
+  doesn't). 2 shots on llm-feed. selftest 23653→**23684** (reload in
+  place, geom/column_ivs, pick/marquee/nudge/z/del, snap priorities +
+  skip + grid fallback, the filter-split KAT); `nix run .#test` ALL
+  GREEN. **Kitcheck golden re-cut once, knowingly** — the level.lua
+  draw_places line drifted disk from the recorded bundle (the known
+  local-M gotcha, previous block): chunk-stream diff proves FRAM/KEYF/
+  EVAL/HEAD/TAIL byte-identical to the old golden, only SNAP (the code
+  bundle) moved.
+
+**Next step (resume here):** the human's passes (R7a feel, the R8a/R8b
+shots) — then **R8c — collider editing** (MAPS.md §11): the collider
+tool (line/quad/circle draw/insert/drag/flags), attached colliders
+(+col auto-fit, selected-only editing), 45° lock + vertex/edge snap
+while drawing, the marker tool + kind/label/extras inspector. The map
+window's gizmo draw + snap engine + inspector strip are the base to
+grow. Good `/clear` point — everything committed, docs current.
+
+---
+
 **Date**: 2026-07-12 (day session — R8 designed: the map system, D057+a)
 **Phase**: **The human paused R7b for a map rework — DESIGNED
 (docs/MAPS.md + ADR D057) and the human's first design round is IN

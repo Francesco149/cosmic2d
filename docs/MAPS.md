@@ -205,7 +205,10 @@ all.
 
 A canvas window like sprite ed (EDITOR.md §12.6 idioms throughout):
 opens via asset-picker double-click on a `.map`, the spawn menu, or
-drag-out; keyed by path; multiple maps open fine.
+drag-out; keyed by path; multiple maps open fine. A spawn-menu window
+starts unbound: drag a `.map` in to bind it, or type a path into its
+field — a path with no file **creates a fresh map** (project design
+res, grid 8) whose first Ctrl+S writes the file (built at R8b).
 
 - **View**: own camera — wheel = zoom at cursor, middle-drag = pan
   (`kind.takes_middle`), shift+1 fit. Zoom % chip. The map draws
@@ -365,13 +368,20 @@ is insertion-ordered), collider buffer canonical.
   headless capture. *(Hit: the 830-frame kitcheck track BIT-IDENTICAL
   old mover vs new; the slopes.map walk grounded every frame; selftest
   22753→23653; three llm-feed shots.)*
-- **R8b — the map window, select/place**: view + working-state/journal
-  plumbing, select tool end-to-end (move/nudge/z/del/marquee),
-  `kind.drop` drag-in, double-click-to-editor, inspector, CTRL snap
-  for placements, save→hot-reload. *Exit*: scripted --edit capture:
-  drag a sprite from the picker onto the map, snap-align it to a
-  ledge, Ctrl+S, the game window shows it; undo/restart survival
-  proven.
+- **R8b — the map window, select/place** ✅ **BUILT (2026-07-12)**:
+  view + working-state/journal plumbing, select tool end-to-end
+  (move/nudge/z/del/marquee), `kind.drop` drag-in, double-click-to-
+  editor, inspector, CTRL snap for placements, save→hot-reload.
+  *Exit*: scripted --edit capture: drag a sprite from the picker onto
+  the map, snap-align it to a ledge, Ctrl+S, the game window shows it;
+  undo/restart survival proven. *(Hit: the CTRL vertex snap landed the
+  drop exactly on the platform end; the recorded cm.map.reload EVAL
+  hot-reloaded the running game in the capture; unsaved placement
+  survived a restart and walked back through undo/redo; selftest
+  23653→23684; kitcheck re-cut = code-bundle refresh only, FRAM
+  chunk-stream proven byte-identical; 2 llm-feed shots. Bonus beyond
+  the letter: an unbound map window creates a fresh .map from a typed
+  path — the R8e authoring door.)*
 - **R8c — collider editing**: the collider tool (line/quad/circle,
   draw/insert/drag/flags), **attached colliders** (+col auto-fit,
   selected-only editing, gizmo tinting), 45° lock + vertex/edge snap,
