@@ -506,13 +506,21 @@ local function interact(ig)
 
   -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. CTRL → the
   -- hovered kind's size dial (code-ed font, assets preview) when it has
-  -- one. A focused view-owning window (own_view — the map window) outranks
-  -- hover for both: its camera takes the wheel from anywhere. Else content
-  -- that takes it (an edit widget via imgui capture, a playing game window
-  -- via filter_events, a kind.wheel hook) — else canvas zoom.
+  -- one. A focused view-owning window (own_view — the map window) takes
+  -- the wheel over its WHOLE window rect (header/strip included, not
+  -- just the view); a wheel OUTSIDE it is a canvas action — the lock
+  -- releases right there and routing proceeds normally (the human's
+  -- round four, matching the drag rule). Else content that takes it (an
+  -- edit widget via imgui capture, a playing game window via
+  -- filter_events, a kind.wheel hook) — else canvas zoom.
   if i.wheel ~= 0 and not g.wheel_taken then
     local routed = false
     local fwin, fkind = M.view_locked()
+    if fwin and not g.alt and wm.hit(doc, wwx, wwy, 0) ~= fwin.id then
+      doc.focus = 0
+      M.touch()
+      fwin, fkind = nil, nil
+    end
     if g.ctrl and not g.alt then
       local win, kind = fwin, fkind
       if not win then

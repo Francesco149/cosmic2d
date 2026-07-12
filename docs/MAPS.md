@@ -218,9 +218,10 @@ res, grid 8) whose first Ctrl+S writes the file (built at R8b).
   canvas action or Esc unfocuses; an accent border + EDITING chip
   make the lock unmissable. **Focus is the one gate**: an unfocused
   map window's view is inert (no hover wheel/MMB — Esc actually lets
-  go), and **a drag starting outside the window releases the lock at
-  press time** (own resize band excepted). View state rides
-  `cm.ed.winview` (world units, EDITOR.md §12.9). The map draws
+  go), and **any press or wheel outside the window releases the lock
+  the moment it happens** (own resize band excepted; ALT stays the
+  canvas layer). View state rides `cm.ed.winview` (world units,
+  EDITOR.md §12.9). The map draws
   exactly as the game renders it, plus **collider gizmos — always on
   by default** (the human's call): solid lines in the accent, one-ways
   dashed, quads/circles outlined; attached ones tinted dimmer until

@@ -580,29 +580,37 @@ sprite → sprite zoom; text/console/assets → their scroll, via imgui
 capture or `kind.wheel`) → the content takes it. Else → canvas zoom.
 (Pans/edge bands are unaffected.)
 
-**The focus view lock (`kind.own_view`, R8c — the human's ask)**: a
-focused window whose kind answers `own_view(win)` (the map window,
-when bound) owns wheel + ctrl+wheel + middle-drag from ANYWHERE on
-the canvas — priority over hover routing and canvas zoom/pan (an
-imgui-captured wheel, e.g. code-ed scroll under the cursor, still
-wins; ALT stays the canvas layer). Focus arrives by clicking the
-window's contents, as ever; ANY canvas action releases it —
-empty-canvas click/marquee, space-pan, the spawn menu, focusing
-another window — and Esc unfocuses through the usual cascade
-(gesture cancel → selection clear → unfocus). The locked window
-draws an unmissable cue (the map window: accent border + EDITING
-chip, the PLAYING-chip idiom). A wheel arriving from outside the
-view rect zooms about the view center. **Focus is the ONE gate**
-(the human's second round): an unfocused own_view window's view is
-INERT — no hover wheel/MMB fallback — so unfocusing visibly AND
-actually lets go (the hooks decline: `wheel`/`ctrl_wheel` return
-false, `takes_middle(win, ed)` answers false). **A drag STARTING
-outside the locked window releases the lock at press time** (round
-three): LMB and MMB presses outside it are canvas actions — MMB pans
-the canvas, LMB marquees — with one exception: the window's own
-resize band (the banded hit) keeps the lock, so resizing the focused
-window doesn't drop it. Only the middle-drag *inside* the window
-pans its view.
+**The focus view lock (`kind.own_view`, R8c — the human's ask,
+settled over four rounds)**: a focused window whose kind answers
+`own_view(win)` (the map window, when bound) treats its WHOLE window
+rect — header, view, inspector strip — as the view's input surface:
+wheel and ctrl+wheel zoom/dial the map wherever they land on the
+window (a wheel over non-view chrome anchors at the view center),
+middle-drag inside pans the view, and the tool claims the plain keys
+(`wants_keys`). The locked window draws an unmissable cue (accent
+border + EDITING chip, the PLAYING-chip idiom).
+
+The lock's whole contract is **focus is the ONE gate, and anything
+outside the window releases it at the moment it happens**:
+
+- an unfocused own_view window's view is INERT — no hover wheel/MMB
+  fallback (`wheel`/`ctrl_wheel` decline with false,
+  `takes_middle(win, ed)` answers false) — so unfocusing visibly AND
+  actually lets go;
+- a LMB/MMB press outside the window releases the lock at PRESS time
+  (MMB pans the canvas, LMB marquees/moves/focuses as ever); the one
+  exception is the window's own resize band (banded hit) — resizing
+  the focused window keeps the lock;
+- a WHEEL outside the window releases the lock right there and routes
+  normally (canvas zoom / the hovered content);
+- Esc unfocuses through the usual cascade (gesture cancel → selection
+  clear → unfocus), and every other canvas action (space-pan, the
+  spawn menu, focusing another window) releases it too.
+
+ALT stays the canvas layer throughout: ALT+wheel zooms the canvas and
+ALT gestures move/select without releasing the lock (deliberate
+overrides, not canvas "actions"). An imgui-captured wheel (code-ed
+scroll under the cursor) still wins over everything.
 
 ### 12.9 cm.ed.winview — captured view state is WORLD units
 

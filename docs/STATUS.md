@@ -94,6 +94,15 @@ the map window unfocused but it "still captures inputs" — and asked to
   release). Exception: the window's own resize band keeps the lock.
   Proven by a synthetic-tape repro (mmb-out / lmb-out / own-edge all
   PASS); suite still ALL GREEN.
+- **Round four (human): the same for the wheel** — a wheel outside
+  the locked window releases the lock right there and routes normally
+  (canvas zoom); over the window (view OR chrome — the strip wheel
+  anchors at the view center) it zooms the map. ALT+wheel stays the
+  canvas layer WITHOUT releasing (deliberate override). The settled
+  model, now written up as one contract in EDITOR.md §12.7: the
+  locked window's whole rect is the view's input surface; anything
+  outside releases the lock the moment it happens. Tape repro:
+  strip / outside / alt-out all PASS.
 
 **Next step (resume here):** the human's passes (R7a feel, the
 R8a/R8b/R8c shots + the view-lock feel) — then **R8d — the tilemap
