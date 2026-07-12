@@ -91,22 +91,44 @@ end
 
 -- ---- the file list (ephemeral, shared on ed.g) ----
 
+-- a .spr's baked build products (.png strip, .anim, .meta — what
+-- sprite.save writes) shadow under their source in the browser: the
+-- human edits the .spr, the bakes are noise. Pure — selftested. A
+-- .png with no .spr sibling (plank.png) stays.
+function M.prune_baked(names)
+  local spr = {}
+  for _, n in ipairs(names) do
+    local base = n:lower():match("^(.*)%.spr$")
+    if base then spr[base] = true end
+  end
+  local out = {}
+  for _, n in ipairs(names) do
+    local base, ext = n:lower():match("^(.*)%.(%w+)$")
+    local baked = base and spr[base]
+                  and (ext == "png" or ext == "anim" or ext == "meta")
+    if not baked then out[#out + 1] = n end
+  end
+  return out
+end
+
 -- pal.list_dir (SDL_GlobDirectory) enumerates RECURSIVELY — one call
 -- returns the whole tree as relative paths. Keep entries whose basename
--- has an extension (files, by the project convention), prune .ed/.git.
+-- has an extension (files, by the project convention), prune .ed/.git
+-- and the baked siblings of .spr sources.
 local function all_files(ed)
   local g = ed.g
   if not g.afiles then
-    g.afiles = {}
+    local keep = {}
     local names = pal.list_dir(ed.root) or {}
     table.sort(names)
     for _, n in ipairs(names) do
-      if #g.afiles >= 1000 then break end
+      if #keep >= 1000 then break end
       if not n:find("^%.ed") and not n:find("^%.git")
          and n:match("([^/]*)$"):find("%.") then
-        g.afiles[#g.afiles + 1] = n
+        keep[#keep + 1] = n
       end
     end
+    g.afiles = M.prune_baked(keep)
   end
   return g.afiles
 end

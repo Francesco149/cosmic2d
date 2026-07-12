@@ -3342,7 +3342,17 @@ local function t_ed_assets()
         and A.kind_for("art/x.png") == "image"
         and A.kind_for("main.lua") == "text"
         and A.kind_for("maps/rim.map") == "map"
+        and A.kind_for("deco/d.tm") == "tmap"
         and A.kind_for("s.ogg") == nil, "ed.assets: kind_for")
+
+  -- a .spr's baked build products hide under their source (R8d round 2)
+  local pruned = A.prune_baked({
+    "art/girl.spr", "art/girl.png", "art/girl.anim", "art/girl.meta",
+    "art/plank.png", "art/girl.lua", "sound/girl.ogg" })
+  check(#pruned == 4 and pruned[1] == "art/girl.spr"
+        and pruned[2] == "art/plank.png" and pruned[3] == "art/girl.lua"
+        and pruned[4] == "sound/girl.ogg",
+        "ed.assets: prune_baked hides the .spr bakes, keeps the rest")
 end
 
 local function t_ed_map()
