@@ -19,8 +19,51 @@ body source later), graybox fill = flat untextured polys (visual
 barely matters), live-apply = Ctrl+S hot-reload with the code-ed
 unsaved-persists/rollback contract (confirmed as designed). Remaining
 §12 opens are non-gating defaults (grid 8 px, one-way slopes yes) —
-**R8a is unblocked**.** Docs only engine-side; two feel fixes shipped
+and **R8a BUILT the same session** (below).** Two feel fixes shipped
 in ../cosmic2d-game first.
+
+**R8a — format + collision core: BUILT (same session):**
+
+- **cm.collide** — the segment world (chains solid/one-way + circles)
+  in a self-describing named buffer; the mover keeps TM:move's exact
+  contract and is pinned to it: the t_tilemap room re-authored as
+  chains passes the same assertions, and a 3-world × 260-sample random
+  sweep matches cm.tilemap EXACTLY (positions + all hit flags). Slopes:
+  |dy/dx| ≤ 1 = floor; the snap-up is gated on the approach-edge
+  surface being at-or-above the feet (a real bug the parity sweep
+  caught — block undersides used to qualify); descent stick + one-way
+  snap arm via opts.ground; solid outranks one-way at a landing tie
+  (another sweep catch). stand_ray/stand_span/solid_at/circles.
+- **cm.map/cm.tmap** — the CMAP/CTLM codecs (pure, canonical,
+  skip-tolerant, KAT'd), map.use instancing (free + placement-attached
+  colliders, quads → closed chains), map.get named handles, and
+  **draw_fill** — the graybox render: per-column even-odd strips
+  run-merged into quads (flat terrain = a handful of quads), slim
+  accent one-ways, camera-culled.
+- **smoke migrated**: room.map committed (genmap.lua = the dev
+  regenerator until R8c), level.lua = map.use + the fill, player.lua
+  probes rewritten onto stand_span/solid_at, the mover call passes
+  ground=was_grounded, the F1 attach removed. **Proof: the 830-frame
+  KITCHECK player track is BIT-IDENTICAL old mover vs new** (DEMO_DBG
+  diff, every frame). Goldens re-cut once, deliberately (kitcheck
+  trace + smoke_idle/smoke_kit pixels on lavapipe).
+- **The slope proof**: slopes.map (22.5° up, plateau, 45° down, a
+  one-way slope overhead) + game.demo(2) walks it — **grounded on
+  every walking frame** both directions. selftest 22753→**23653**;
+  `nix run .#test` ALL GREEN throughout; 3 shots on llm-feed.
+- Gotcha logged for the suite: --verify runs the trace's code BUNDLE;
+  when disk drifts from it, project modules using the `local M = {}`
+  pattern (not the engine's `select(2, ...)` in-place reload) orphan
+  their state on the bundle reload. Goldens always record with
+  committed code, so CI never sees it — but it bit a local
+  disk-vs-bundle drift this session. Worth folding into PROCESS.md if
+  it bites again.
+
+**Next step (resume here):** the human's R7a feel pass (both fixes in)
++ a look at the R8a shots; then **R8b — the map window, select/place**
+(MAPS.md §11): view + working-state/journal plumbing, the select tool,
+`kind.drop` drag-in, double-click-to-editor, CTRL snap for placements,
+save→hot-reload.
 
 - **The ask (verbatim intent)**: non-pure-tilemap maps — a **collider
   layer** (lines with slopes), visuals = **freehand sprite placement**,
@@ -49,13 +92,6 @@ in ../cosmic2d-game first.
   staggered planks in the wall/gate-post shaft, 4+3 tiles apart vs the
   ~4.7-tile jump+upjump rise; verified headless by warping in — shot
   on llm-feed).
-
-**Next step (resume here):** the human reads **MAPS.md §12** (snap
-polarity, graybox-as-collider-fill sign-off, grid default 8 px,
-one-way slopes, live-apply timing) + the outstanding R7a feel check
-with the two fixes in. Then **R8a — format + collision core**
-(MAPS.md §11): cm.map/cm.tmap codecs + cm.collide + smoke migration +
-the deliberate golden re-cut.
 
 ---
 

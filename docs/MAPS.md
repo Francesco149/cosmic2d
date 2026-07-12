@@ -357,11 +357,14 @@ is insertion-ordered), collider buffer canonical.
 
 ## 11. Build order (R8a–R8e) + exits
 
-- **R8a — format + collision core**: cm.map/cm.tmap codecs (KAT'd),
-  cm.collide (mover parity + slopes + queries, KAT'd), the collider
-  buffer + `cm.map.use`, collider-fill render; smoke migrates, goldens
-  re-cut. *Exit*: suite ALL GREEN on the .map smoke; a slope test room
-  walks/slides correctly in a headless capture.
+- **R8a — format + collision core** ✅ **BUILT (2026-07-12)**:
+  cm.map/cm.tmap codecs (KAT'd), cm.collide (mover parity + slopes +
+  queries, KAT'd), the collider buffer + `cm.map.use`, collider-fill
+  render; smoke migrates, goldens re-cut. *Exit*: suite ALL GREEN on
+  the .map smoke; a slope test room walks/slides correctly in a
+  headless capture. *(Hit: the 830-frame kitcheck track BIT-IDENTICAL
+  old mover vs new; the slopes.map walk grounded every frame; selftest
+  22753→23653; three llm-feed shots.)*
 - **R8b — the map window, select/place**: view + working-state/journal
   plumbing, select tool end-to-end (move/nudge/z/del/marquee),
   `kind.drop` drag-in, double-click-to-editor, inspector, CTRL snap
