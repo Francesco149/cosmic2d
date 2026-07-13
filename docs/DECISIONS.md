@@ -2054,7 +2054,21 @@ presets → R9d music window + cm.snd → R9e game sfx/music hookup
 FIFO to 2 frames / smaller device blocks; the editor bank already
 proves the low-latency path); the fixed-point FM can't hit a wanted
 timbre (→ widen LUTs/rates before reaching for floats); sample-heavy
-games bloat ring keyframes (→ static-buffer content-hash flag); the
-roll's CTRL inversion feels backwards live (→ flip it, one boolean);
+games bloat ring keyframes (→ static-buffer content-hash flag);
 a first real track feels flat dry (→ Freeverb + delay, the proven
 3-knob floor, still fixed-point).
+
+**Live-round refinements (the human, 2026-07-13; folded into
+AUDIO.md §10, no re-ADR — within-design):** the music window shaped
+over four feedback rounds. Round 2: the grid became placement-snap
+only (length is last-used; resize to change it), the roll grew the
+§12.7 view lock (MMB-pan + wheel-zoom), velocity double-click resets
+to 100. Round 3: note selection (shift+marquee / shift+click), and
+**pattern length auto-fits its content** (smallest whole bars, min 1;
+a fresh pattern is one bar — no stamp padding). Round 4: a **scrub
+ruler** (click sets the play-start cursor + paste anchor), **Ctrl+C/
+X/V** clipboard, and **Ctrl+drag = duplicate**. That last one
+**retires the "CTRL = fine ticks" roll inversion** above — CTRL in
+the roll is now duplicate (the universal DAW convention); placement is
+grid-only (finer grids + zoom give precision). If a fine-placement
+path is wanted back, re-home it on a free chord, not CTRL.

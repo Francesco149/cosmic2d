@@ -388,15 +388,22 @@ As-built (the human's live rounds shaped rounds 2/3 below D058):
   **The grid is placement snap only** (round 2 — the human): the
   1/1..1/32 subdivision chips + `1`–`6` set where notes *land*, never
   the length — resize a note to change its length, and the next note
-  repeats it. **CTRL while dragging = fine (tick) placement** — the
-  D058 inversion (grids are the roll's ground state; CTRL is "the
-  precise variant" in both grammars).
+  repeats it.
   **Selection** (round 3, the map-editor grammar): **shift+drag =
   marquee** (every note the rect touches), **shift+click toggles** a
   note; dragging any *selected* note moves the whole set (spacing
   kept, delta-clamped in range); **del** removes the selection, **Esc**
   clears it; a plain press/add drops it. Held as note table refs,
   cleared on undo/adopt so it never dangles.
+  **Clipboard + duplicate** (round 4): **Ctrl+C/X** copy/cut the
+  selection (relative to its earliest tick), **Ctrl+V** pastes anchored
+  at the scrub cursor (below; the pasted notes become the selection);
+  the clipboard crosses patterns + windows. **Ctrl+drag a note =
+  duplicate** — the selection if the note is in it, else just that note
+  — you drag the copies, the originals stay (the universal DAW
+  convention). *This supersedes the D058 "CTRL = fine ticks" inversion
+  in the roll* (round 4): placement is grid-only; a finer grid + zoom
+  give precision.
   **The view is a lock** (round 2, the §12.7 contract): a bound,
   FOCUSED window owns **MMB-pan** (both axes) + **wheel-zoom** (tpp,
   tick under the cursor pinned); unfocused = inert, the canvas takes
@@ -406,13 +413,18 @@ As-built (the human's live rounds shaped rounds 2/3 below D058):
   **double-click = reset to 100** (the natural add strength; the
   double-click clock arms on a motionless release so drags don't
   chain).
+- **The scrub ruler** (round 4, above the roll, roll-aligned): click/
+  drag sets **`win.cursor`** (grid-snapped) — a persistent start marker
+  (an accent tab + a line through the roll). Space plays FROM the
+  cursor (then wraps to 0 at the song end — the cursor is the entry
+  point, the whole song loops); it is also the Ctrl+V paste anchor.
 - **The arrangement strip** (top): the bar timeline; patterns stamp as
   clips (press empty = stamp the current pattern, drag = move by bars,
   edge-drag = resize; content loops to fill [W]); del removes the
   selected clip. Fixed-scale overview (the roll zoom doesn't move it).
 - **Transport** (header): play/stop, BPM (click cycles), grid chip,
-  pattern select + `+p`. Hotkeys: space = play/stop, del, `1`–`6`
-  grid; Esc stops the preview (after clearing a selection).
+  pattern select + `+p`. Hotkeys: space = play/stop, del, Ctrl+C/X/V,
+  `1`–`6` grid; Esc stops the preview (after clearing a selection).
 
 **Pattern length auto-fits its content** (round 3): every note-changing
 commit rounds the max note-end up to whole bars (min one bar), so the

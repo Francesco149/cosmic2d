@@ -54,6 +54,16 @@ applied:**
   padding (the reported bug). AUDIO.md §10/§4.2 rewritten to the
   as-built truth (the doc had drifted from the live rounds). Music
   tape 21/21.
+- **Round 4 (`91d2fce`): scrub bar + clipboard + ctrl-duplicate.**
+  A **scrub ruler** above the roll — click/drag sets `win.cursor` (the
+  persistent play-start marker: an accent tab + line; **space plays
+  from it**, wrapping to 0 at song end) which is also the paste anchor.
+  **Ctrl+C/X/V** clipboard (copy relative to earliest tick, paste at
+  the cursor; crosses patterns/windows via ed.g.musicclip).
+  **Ctrl+drag a note = duplicate** the selection (or that note) and
+  drag the copies — the universal DAW convention, which **retires the
+  D058 "CTRL = fine ticks" roll inversion** (placement is grid-only
+  now; DECISIONS D058 revisit note added). Music tape 13/13.
 
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
