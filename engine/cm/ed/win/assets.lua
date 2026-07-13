@@ -1,13 +1,15 @@
 -- cm.ed.win.assets — the asset picker (R4, EDITOR.md §12.5): a file
 -- manager with previews. No folders — one flat list of project files,
--- type chips + fuzzy subsequence search, a tile-size slider, previews for
--- PNGs (a .spr previews its baked .png sibling). Double-click opens the
--- right window kind; press-drag a tile and the SHELL carries the drag
--- (g.adrag): released over a window whose kind accepts(path) → that
--- window re-targets; over empty canvas → spawns the right kind there.
--- OS drag-in lands in cm.ed.filter_events (a "drop" event over an assets
--- window copies the file into the project — image→art/, sound→sound/,
--- code→root — and the new tile flashes).
+-- type chips + fuzzy subsequence search, a tile-size slider, previews
+-- for images (a .spr previews its baked .png sibling). Double-click
+-- opens the right window kind; press-drag a tile and the SHELL carries
+-- the drag (g.adrag): released over a window whose kind accepts(path) →
+-- that window re-targets; over empty canvas → spawns the right kind
+-- there. OS drag-in lands in cm.ed.filter_events (a "drop" event copies
+-- the file into the project — image→art/, sound→sound/, code→root — and
+-- the new tile flashes; non-png images convert to .png on the way in,
+-- and a drop outside asset/map windows opens the right window at the
+-- drop point).
 --
 -- Captured (win fields): filter, chip (type filter), tile (size), sel.
 -- Ephemeral: the file list + preview texture cache + double-click clock
@@ -19,7 +21,11 @@ M.kind = "assets"
 M.DEF_W, M.DEF_H = 520, 380
 
 local CODE = { lua = true, md = true, txt = true, json = true, glsl = true }
-local IMAGE = { png = true, jpg = true, jpeg = true, gif = true, spr = true }
+-- every format stb_image decodes (plus .spr, ours): a drop of any of
+-- these converts to .png on the way in (add_dropped below)
+local IMAGE = { png = true, jpg = true, jpeg = true, gif = true, spr = true,
+                bmp = true, tga = true, hdr = true, psd = true, pic = true,
+                ppm = true, pgm = true, pnm = true }
 local SOUND = { wav = true, ogg = true, mp3 = true }
 
 local COL = {
@@ -56,9 +62,9 @@ end
 function M.kind_for(path)
   local class, ext = M.class_of(path)
   if ext == "spr" then return "sprite" end
-  if ext == "png" then return "image" end
   if ext == "map" then return "map" end
   if ext == "tm" then return "tmap" end -- R8d
+  if class == "image" then return "image" end -- any stb-decodable format
   if class == "code" then return "text" end
   return nil -- sound and unknowns have no window yet (M9 never landed)
 end
@@ -146,12 +152,13 @@ local function preview(ed, path)
   local hit = g.athumb[path]
   if hit ~= nil then return hit or nil end
   local target
-  if path:lower():find("%.png$") then
-    target = path
-  elseif path:lower():find("%.spr$") then
-    local png = path:gsub("%.spr$", ".png")
+  local cls, ext = M.class_of(path)
+  if ext == "spr" then
+    local png = path:gsub("%.[sS][pP][rR]$", ".png")
     local mt = pal.mtime(ed.root .. "/" .. png)
     if mt and mt > 0 then target = png end
+  elseif cls == "image" then -- cm.gfx.texture decodes any stb format
+    target = path
   end
   local t = false
   if target then
@@ -181,14 +188,37 @@ function M.add_dropped(ed, ospath)
   if dir ~= "" then pal.mkdir(ed.root .. "/" .. dir:sub(1, -2)) end
   local stem, ext = base:match("^(.*)%.([%w_]+)$")
   if not stem then stem, ext = base, "" end
-  local rel = dir .. base
+  -- on-the-fly image conversion (the human's ask): anything stb decodes
+  -- (jpg/bmp/gif/tga/hdr/psd/pnm…) lands as .png — the project's one
+  -- canonical image format (previews, map placeables, the sprite
+  -- pipeline all speak it). Undecodable "images" store raw, logged.
+  local pix, pw, ph
+  if class == "image" and ext:lower() ~= "png" and ext:lower() ~= "spr" then
+    pix, pw, ph = pal.png_read(bytes)
+    if pix then
+      ext = "png"
+    else
+      pal.log(("[ed] drop: can't decode %s (%s) — storing raw")
+              :format(base, tostring(pw)))
+    end
+  end
+  local rel = dir .. stem .. (ext ~= "" and "." .. ext or "")
   local n = 2
   while (pal.mtime(ed.root .. "/" .. rel) or 0) > 0 do
     rel = dir .. stem .. "_" .. n .. (ext ~= "" and "." .. ext or "")
     n = n + 1
   end
-  if pal.write_file(ed.root .. "/" .. rel, bytes) then
-    pal.log(("[ed] added %s (%d bytes)"):format(rel, #bytes))
+  local ok
+  if pix then
+    ok = pcall(pal.png_write, ed.root .. "/" .. rel, pix, pw, ph)
+    if ok then
+      pal.log(("[ed] added %s (converted %s, %dx%d)"):format(rel, base, pw, ph))
+    end
+  else
+    ok = pal.write_file(ed.root .. "/" .. rel, bytes)
+    if ok then pal.log(("[ed] added %s (%d bytes)"):format(rel, #bytes)) end
+  end
+  if ok then
     M.invalidate(ed)
     ed.g.aflash = { path = rel, t = pal.time_ns() }
     return rel -- the map window places OS drops at the drop point (R8b)

@@ -303,7 +303,8 @@ function M.filter_events(events)
     elseif e.type == "drop" and M.doc then
       -- an OS file dropped on the window: over an assets window = add to
       -- project (EDITOR.md §12.5); over a map window = add + PLACE at the
-      -- drop point (MAPS.md §6); anywhere else is ignored (logged)
+      -- drop point (MAPS.md §6); anywhere else = add + OPEN the right
+      -- window at the drop point (the human's ask — a drop always lands)
       local wwx, wwy = cam.s2w(M.doc.cam, e.wx, e.wy)
       local id = wm.hit(M.doc, wwx, wwy, 0)
       local win = id and wm.get(M.doc, id)
@@ -315,8 +316,14 @@ function M.filter_events(events)
           pal.log("[ed] added but not placeable here: " .. rel)
         end
       else
-        pal.log("[ed] drop ignored (aim at an assets or map window): "
-                .. e.path)
+        local rel = M.kinds.assets.add_dropped(M, e.path)
+        if rel then
+          if M.kinds.assets.kind_for(rel) then
+            M.open_asset_window(rel, wwx, wwy)
+          else
+            pal.log("[ed] added (no window kind): " .. rel)
+          end
+        end
       end
     end
     -- text events never reach the game (it has no text input path)

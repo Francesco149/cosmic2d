@@ -3067,12 +3067,43 @@ local function t_ed_assets()
   check(A.class_of("a/b.PNG") == "image" and A.class_of("x.lua") == "code"
         and A.class_of("s.ogg") == "sound" and A.class_of("d.dat") == "other",
         "ed.assets: class_of")
+  check(A.class_of("r.bmp") == "image" and A.class_of("r.tga") == "image"
+        and A.class_of("r.psd") == "image" and A.class_of("r.ppm") == "image",
+        "ed.assets: every stb format classes as image")
   check(A.kind_for("art/girl.spr") == "sprite"
         and A.kind_for("art/x.png") == "image"
+        and A.kind_for("art/ref.jpg") == "image"
         and A.kind_for("main.lua") == "text"
         and A.kind_for("maps/rim.map") == "map"
         and A.kind_for("deco/d.tm") == "tmap"
         and A.kind_for("s.ogg") == nil, "ed.assets: kind_for")
+
+  -- the drop conversion (the human's ask): a non-png image converts to
+  -- .png on the way in — stb decodes it, the project stores canon png
+  local function bmp2x1() -- 24-bit BMP, red then green
+    local row = string.char(0, 0, 255, 0, 255, 0, 0, 0) -- BGR BGR pad
+    local dib = string.pack("<I4i4i4I2I2I4I4i4i4I4I4",
+                            40, 2, 1, 1, 24, 0, #row, 2835, 2835, 0, 0)
+    return "BM" .. string.pack("<I4I2I2I4", 54 + #row, 0, 0, 54) .. dib .. row
+  end
+  local root = tmproot() .. "/cosmic_selftest_drop"
+  pal.mkdir(root)
+  local src = root .. "_src.bmp"
+  pal.write_file(src, bmp2x1())
+  local ed = { root = root, g = {} }
+  local rel = A.add_dropped(ed, src)
+  check(rel == "art/cosmic_selftest_drop_src.png",
+        "ed.assets: dropped bmp lands as art/*.png")
+  local pix, w, h = pal.png_read(pal.read_file(root .. "/" .. rel) or "")
+  check(w == 2 and h == 1 and pix and pix:byte(1) == 255 and pix:byte(2) == 0
+        and pix:byte(4) == 255 and pix:byte(5) == 0 and pix:byte(6) == 255,
+        "ed.assets: converted png round-trips the pixels")
+  local rel2 = A.add_dropped(ed, src)
+  check(rel2 == "art/cosmic_selftest_drop_src_2.png",
+        "ed.assets: the collision suffix speaks the converted name")
+  pal.x_remove(root .. "/" .. rel)
+  pal.x_remove(root .. "/" .. rel2)
+  pal.x_remove(src)
 
   -- a .spr's baked build products hide under their source (R8d round 2)
   local pruned = A.prune_baked({
