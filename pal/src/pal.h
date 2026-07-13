@@ -235,6 +235,10 @@ void pal_lua_register(lua_State *L);
  * pal.x_snd_* into the pal table at the stack top. */
 void pal_snd_lua_register(lua_State *L);
 
+/* snd_dec.c — audio file decoders (wav/mp3/ogg -> i16 @ 48 kHz;
+ * editor/dev class). Registers pal.x_snd_decode. */
+void pal_snd_dec_lua_register(lua_State *L);
+
 /* ig.cpp — the Dear ImGui host (D049, docs/IMGUI.md). The PAL's one C++ TU;
  * this C ABI is the whole boundary — imgui types never cross it. Render/dev
  * class throughout: live windowed sessions + the --win capture path only. */

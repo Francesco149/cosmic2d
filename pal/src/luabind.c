@@ -1083,6 +1083,7 @@ void pal_lua_register(lua_State *L) {
   luaL_newlib(L, pal_funcs);
   pal_ig_lua_register(L);  /* the pal.x_ig_* surface (ig.cpp, D049) */
   pal_snd_lua_register(L); /* the pal snd_* + x_snd_* surface (snd.c, R9b) */
+  pal_snd_dec_lua_register(L); /* pal.x_snd_decode (snd_dec.c, R9b) */
   lua_createtable(L, 0, 2);
   lua_pushinteger(L, PAL_VERSION_MAJOR);
   lua_setfield(L, -2, "major");
