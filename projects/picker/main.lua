@@ -41,6 +41,10 @@ local function proj_name(dir)
   return src:match('name%s*=%s*"([^"]*)"') or dir:match("([^/]+)$"), true
 end
 
+local function norm(p) -- .recent.dat lines arrive as typed on the cli
+  return (p:gsub("^%./", ""):gsub("/+$", ""))
+end
+
 local function scan()
   if M.scan then return M.scan end
   local tiles, seen = {}, {}
@@ -58,10 +62,11 @@ local function scan()
   local rec = pal.read_file(".recent.dat")
   if rec then
     for line in rec:gmatch("[^\n]+") do
-      if not seen[line] then
-        seen[line] = true
-        local name, ok = proj_name(line)
-        table.insert(tiles, 1, { path = line, name = name or line,
+      local path = norm(line)
+      if not seen[path] then
+        seen[path] = true
+        local name, ok = proj_name(path)
+        table.insert(tiles, 1, { path = path, name = name or path,
                                  ok = ok or false, recent = true })
       end
     end
@@ -109,14 +114,34 @@ function M.draw()
     pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
     pal.x_ig_rect(x, y, tw, th, (hov and not phov) and C.accent
                   or C.tile_edge, hov and 1.5 or 1, 8)
+    pal.x_ig_clip_push(x, y, tw - (t.ok and 8 or 30), th)
     pal.x_ig_text(x + 14, y + 12, 17, t.ok and C.text or C.missing,
                   t.name, 0)
     pal.x_ig_text(x + 14, y + 38, 11, C.dim, t.path, 1)
-    if t.recent then
-      pal.x_ig_text(x + 14, y + th - 22, 10, C.dim, "recent", 0)
+    pal.x_ig_clip_pop()
+    local tag = (t.recent and not t.ok) and "recent · missing"
+                or (not t.ok and "missing") or (t.recent and "recent")
+    if tag then
+      pal.x_ig_text(x + 14, y + th - 22, 10, t.ok and C.dim or C.missing,
+                    tag, 0)
     end
     if not t.ok then
-      pal.x_ig_text(x + 14, y + th - 22, 10, C.missing, "missing", 0)
+      -- ✕ prunes the dead entry from .recent.dat (stale-tile cleanup)
+      local rx, ry, rs = x + tw - 26, y + 8, 16
+      local rhov = i.wx >= rx and i.wx < rx + rs
+                   and i.wy >= ry and i.wy < ry + rs
+      pal.x_ig_text(rx + 5, ry + 1, 12, rhov and C.text or C.dim, "x", 0)
+      if rhov and i.clicked[1] then
+        local rec = pal.read_file(".recent.dat") or ""
+        local out = {}
+        for line in rec:gmatch("[^\n]+") do
+          if norm(line) ~= t.path then out[#out + 1] = norm(line) end
+        end
+        pal.write_file(".recent.dat",
+                       table.concat(out, "\n") .. (#out > 0 and "\n" or ""))
+        M.scan = nil
+        pal.log("[picker] pruned " .. t.path)
+      end
     end
     if t.ok then
       pal.x_ig_rect_fill(pzx, pzy, pzw, pzh,

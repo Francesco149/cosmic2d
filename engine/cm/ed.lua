@@ -40,6 +40,7 @@ M.kinds = {
   sprite = cm.require("cm.ed.win.sprite"),
   map = cm.require("cm.ed.win.map"),
   tmap = cm.require("cm.ed.win.tmap"),
+  perf = cm.require("cm.ed.win.perf"),
 }
 
 -- new code windows open at the size you've made your current one
@@ -961,7 +962,8 @@ end
 local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
                      { "assets", "assets" }, { "map", "map" },
                      { "tmap", "tilemap" },
-                     { "game", "game window" }, { "console", "console" } }
+                     { "game", "game window" }, { "console", "console" },
+                     { "perf", "perf" } }
 
 local function draw_menu(ig, i)
   local g = M.g
