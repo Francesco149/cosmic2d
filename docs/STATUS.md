@@ -32,6 +32,18 @@ applied:**
   **cosmic2d-win re-staged** (native 23044 PASS; windows-side .ed
   sessions wiped again).
 
+- **Follow-up (`e85dcc5`): a saved NEW asset never appeared in the
+  asset browser** (the human's ins/tape.ins) — the file list only
+  invalidated on OS drops; the kit's save path invalidates it now
+  (every asset-creating kind heals at once). Tape repro + fix.
+
+**⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
+deleted the human's windows-side tape.ins along with the .ed
+sessions. Anything CREATED inside `cosmic2d-win` dies on every
+re-stage — author real content in a project OUTSIDE the staging
+(e.g. `bin\cosmic.exe C:\path\to\proj --edit`), or we change the
+recipe to preserve user files (worth an ask).
+
 **Next step:** the human's pass continues (presets re-listen — gb
 drums hotter now; the new-file prompts; asset delete), then R9e.
 
