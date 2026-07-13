@@ -3,6 +3,35 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (day session, cont. — round three: the sprite
+focus lock + the animation window)
+**Phase**: **Two asks in (`ac86f6a`):**
+
+- **The sprite ed (and tilemap window) adopt the map's view lock**:
+  own_view = edit mode + bound; wheel/MMB act on the view only WHILE
+  FOCUSED — an unfocused edit window no longer steals the canvas pan
+  drag. Accent ring + EDITING chip on the focused view; Esc releases
+  any view lock via the shell ladder. Tape-proven (unfocused MMB pans
+  the canvas / focused pans the view, 8/8 with the anim checks).
+- **The animation window (kind `anim`)** — the board's "split
+  animation stuff": bind by dragging a .spr in, the spawn menu, or
+  the sprite ed's new header **anim** button (opens/focuses beside).
+  Edits the .spr's clip table over the SAME working bytes + journal
+  as the sprite ed (open_path/commit_path doors) — one undo history,
+  live sync between windows. Clip rail (+/− /loop-mode cycle), entry
+  chips (frame:dur), +f/−f, frame/dur fields, playing preview via
+  cm.anim (one editor frame = one tick; clipless = strip preview).
+  Real-event proof: the button opened it, + added a clip (dirty),
+  ctrl+z removed it through the shared journal.
+
+selftest 22970→**22979**; suite ALL GREEN; windows re-staged + zip
+refreshed. Shot on llm-feed.
+
+**Next step:** the human's live passes (rounds one-three + the R5 zip
+double-click), then R7c.
+
+---
+
 **Date**: 2026-07-13 (day session, cont. — round two: the col-chip bug
 + the §5 graybox end state)
 **Phase**: **Two asks in (engine `a120618`, game `ceac601`):**
