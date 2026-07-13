@@ -251,6 +251,11 @@ function M.boot()
   -- that window size so a --shot shows the editor-around-game layout (dev/debug)
   if args.win_w then pal.x_capture(args.win_w, args.win_h) end
 
+  -- the audio device (R9b, AUDIO.md §2): live windowed sessions only —
+  -- headless/verify/capture runs never open one (goldens can't hear by
+  -- construction; the PAL refuses under G.headless anyway)
+  if not args.headless then pal.x_snd_start() end
+
   M.state = cm.require("cm.state")
   M.input = cm.require("cm.input")
   M.ui = cm.require("cm.ui")
@@ -412,6 +417,10 @@ local function sim_step()
   local rec = M.input.sample()
   M.input.apply(rec)
   M.game.step()
+  pal.snd_render() -- one frame of PCM from snd.bank (R9b, AUDIO.md §2:
+                   -- a true no-op until the first cm.snd call creates
+                   -- the bank — pre-R9 traces/goldens byte-identical);
+                   -- inside the step so the recorder sees bank deltas
   M.state.advance_frame()
   if M.trace then M.trace.record_frame(rec, evals) end
   return rec

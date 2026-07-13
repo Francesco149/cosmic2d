@@ -942,6 +942,8 @@ function M.verify(path, game)
       local irec, pos = unpack("<s4", p)
       input.apply(irec)
       game.step()
+      pal.snd_render() -- the sim-step shape (R9b): snd.bank advances
+                       -- inside the step on record AND verify
       state.advance_frame()
 
       -- decode recorded per-buffer records, update expected mirrors

@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 7
+#define PAL_VERSION_API 8 /* v8: the audio core (pal.snd_* + x_snd_*, R9b) */
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -228,6 +228,12 @@ uint64_t pal_buf_hash(const uint8_t *p, size_t len);
 
 /* luabind.c */
 void pal_lua_register(lua_State *L);
+
+/* snd.c — the audio core (R9b, docs/AUDIO.md §2). Sim bank state lives
+ * in the named buffer "snd.bank" (snapshot/trace/rewind for free); the
+ * editor bank + device are render/dev class. Registers pal.snd_* and
+ * pal.x_snd_* into the pal table at the stack top. */
+void pal_snd_lua_register(lua_State *L);
 
 /* ig.cpp — the Dear ImGui host (D049, docs/IMGUI.md). The PAL's one C++ TU;
  * this C ABI is the whole boundary — imgui types never cross it. Render/dev

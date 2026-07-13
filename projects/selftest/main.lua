@@ -3020,6 +3020,104 @@ local function t_ed_journal()
   check(#jb.entries == 0, "ed.journal: corrupt = fresh")
 end
 
+local function t_snd()
+  -- R9b (AUDIO.md §2/§5): the audio core — the pure packer, the kernel's
+  -- determinism contract (PCM = fn(bank bytes)), deterministic stealing,
+  -- the sampler voice, and the committed PCM golden hash.
+  local snd = cm.require("cm.snd")
+
+  -- pack/unpack round-trip (pure)
+  local t = { type = "fm", alg = 4, fb = 3, pan = -20, gain = 200,
+              ops = { { wave = "square", coarse = 2, fine = -10,
+                        level = 180, a = 12, d = 340, r = 90, s = 100,
+                        detune = 5 },
+                      { wave = "noise2", coarse = 0, level = 90,
+                        fixed = 440 } } }
+  local bytes = snd.pack(t)
+  check(#bytes == 80, "snd: packed patch is 80 bytes")
+  local u = snd.unpack(bytes)
+  check(u.alg == 4 and u.fb == 3 and u.pan == -20 and u.gain == 200,
+        "snd: header round-trips")
+  check(u.ops[1].wave == "square" and u.ops[1].fine == -10
+        and u.ops[1].d == 340 and u.ops[1].detune == 5,
+        "snd: op fields round-trip")
+  check(u.ops[2].wave == "noise2" and u.ops[2].fixed == 440
+        and u.ops[4].level == 0, "snd: fixed flag + defaults round-trip")
+  local st = { type = "sample", pcm = "snd.pcm/kat", root = 62,
+               loop = true, loop0 = 100, loop1 = 400, a = 1, r = 20 }
+  local su = snd.unpack(snd.pack(st))
+  check(su.type == "sample" and su.pcm == "snd.pcm/kat" and su.root == 62
+        and su.loop and su.loop0 == 100 and su.loop1 == 400,
+        "snd: sample patch round-trips")
+
+  -- the kernel: PCM is a pure function of the bank bytes (the rewind
+  -- contract) — snapshot the bank mid-note, render on, restore, render
+  -- again: byte-identical PCM
+  snd.patch(0, { type = "fm", alg = 7, fb = 2,
+                 ops = { { wave = "sine", level = 255, a = 4, d = 200,
+                           s = 180, r = 60 } } })
+  local v = snd.on(0, 69, 110)
+  check(v >= 0 and v < 32, "snd: note-on returns a voice id")
+  for _ = 1, 5 do pal.snd_render() end
+  local bank = pal.buf("snd.bank", 8208)
+  local saved = bank:str(0, 8208)
+  pal.snd_render()
+  local tap_a = pal.x_snd_tap()
+  bank:setstr(0, saved)
+  pal.snd_render()
+  check(pal.x_snd_tap() == tap_a,
+        "snd: restore + render = byte-identical PCM (pure kernel)")
+  check(tap_a:find("[^%z]") ~= nil, "snd: the note is audible in the tap")
+
+  -- deterministic stealing: fill the bank, the 33rd on steals the
+  -- oldest held voice (index 0 — all equal ages tie to lowest index)
+  for i = 1, 32 - 1 do snd.on(0, 40 + i, 80) end -- v already holds one
+  local steal = snd.on(0, 100, 80)
+  check(steal == 0, "snd: full bank steals deterministically (oldest)")
+  for i = 0, 31 do snd.off(i) end
+  for _ = 1, 20 do pal.snd_render() end -- release tails out
+
+  -- the sampler voice: a ramp PCM buffer, root-note playback
+  local pcm = pal.buf("snd.pcm/kat", 2048 * 2)
+  for i = 0, 2047 do pcm:i16(i * 2, (i * 13) % 8000) end
+  snd.patch(1, st)
+  local sv = snd.on(1, 62, 127) -- at root: 1:1 stepping
+  pal.snd_render()
+  check(pal.x_snd_tap():find("[^%z]") ~= nil, "snd: sampler is audible")
+  snd.off(sv)
+  for _ = 1, 10 do pal.snd_render() end
+
+  -- the PCM golden: a fixed command ladder must hash to the committed
+  -- value on EVERY platform (the §5 audio golden; kernel or table
+  -- changes re-cut it deliberately, like pixel goldens)
+  local h0, n0 = pal.snd_hash()
+  snd.patch(2, { type = "fm", alg = 0, fb = 4,
+                 ops = { { wave = "sine", coarse = 2, level = 140,
+                           a = 2, d = 80, s = 120, r = 40 },
+                         { wave = "sine", coarse = 1, level = 255,
+                           a = 6, d = 300, s = 160, r = 120 } } })
+  snd.patch(3, { type = "fm", alg = 7,
+                 ops = { { wave = "noise", level = 200, a = 1, d = 60,
+                           s = 0, r = 30 } } })
+  local va = snd.on(2, 57, 120)
+  pal.snd_render()
+  local vb = snd.on(3, 60, 90)
+  for _ = 1, 8 do pal.snd_render() end
+  snd.off(va)
+  local vc = snd.on(2, 64, 70)
+  for _ = 1, 8 do pal.snd_render() end
+  snd.off(vb)
+  snd.off(vc)
+  for _ = 1, 13 do pal.snd_render() end
+  local h1, n1 = pal.snd_hash()
+  check(n1 - n0 == 30 and n1 == 68, "snd golden: 68 frames accumulated")
+  -- every render in this test is deterministic and t_snd is the only
+  -- renderer before this line, so the accumulator itself is the golden
+  pal.log(("snd golden: %016x"):format(h1))
+  check(h1 == 0xc8826fe3771e33d9, -- pinned 2026-07-13 (R9b)
+        "snd golden: the committed PCM hash")
+end
+
 local function t_ed_kit()
   -- cm.ed.kit (R9a, AUDIO.md §7): the generalized §6 asset citizen —
   -- the factory's semantics pinned on a dummy codec, independent of the
@@ -4141,6 +4239,7 @@ function game.init()
   t_ed_session()
   t_ed_journal()
   t_ed_kit()
+  t_snd()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()
