@@ -199,7 +199,10 @@ polish, not a requirement), one-ways as the slim accent slabs. Art
 later = placements stacked on top, then the collider fill switches
 off (per-map flag). This keeps R7b unblocked the moment colliders
 edit (§11) — tilemaps (.tm) aren't on the graybox critical path at
-all.
+all. **End state re-confirmed (human, 2026-07-13, on the walked R8e
+maps): colliders render NO visuals in the game — sprites and placed
+tilemaps make all the visuals; colliders exist only as editor gizmos.
+The in-game fill is temporary MVP scaffolding.**
 
 ## 6. The map window (kind `map`)
 

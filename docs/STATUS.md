@@ -3,6 +3,30 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (day session, cont. — the R8e exit passed; R7b built)
+**Phase**: **R8 is DONE (the human walked both .map maps and passed
+them — the R8e exit ✅). One clarification recorded in MAPS.md §5: in
+the END state colliders render NOTHING in the game — sprites + placed
+tilemaps make all the visuals, colliders are editor gizmos only; the
+in-game graybox fill is temporary MVP scaffolding (already the §5
+plan — the per-map flag switches it off when art lands). R7b — the
+core loop graybox — was then BUILT in ../cosmic2d-game (its GRAYBOX.md
+§5 spec + STATUS.md): roster mobs (mote/slime/drone/cactus behavior
+silhouettes), stardust drops + placed caches, slice combat with
+hitstop/shake, breakable crates, hp/death/respawn, and mode-B
+thin-wall teleport (the Sun-Cache secret works as designed). Mob +
+stardust markers authored into both .map assets through the cm.map
+codec. 23/23 headless proof through the real game.step path; the
+suite here ALL GREEN (no engine code touched); 3 shots on llm-feed.**
+
+**Next step (resume here):** the human's R7b play pass (the game repo's
+STATUS has the walk list) + the still-queued R7a feel / R8a–R8d looks
+as they come; then **R7c — personality rounds** (game-side). No engine
+work pending — MAPS.md §12 opens 3/4 stay non-gating defaults. Good
+`/clear` point — everything committed both repos, docs current.
+
+---
+
 **Date**: 2026-07-13 (day session — R8e built: the game migration)
 **Phase**: **R8e — the game migration: BUILT (MAPS.md §10/§11 ✅ — the
 R8 map rework is code-complete); awaiting the human's walk of both .map
