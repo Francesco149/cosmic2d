@@ -57,10 +57,15 @@ handle). Tapes used two new draw-time layout anchors (`p.arr`,
   ignored `tr.gain` — only the sim baked it. `preview_slots` now bakes
   gain/pan like the sim + re-bakes live on a slider drag. Confirmed the
   mechanism headless (gain 32 vs 128 → peak 1242 vs 4967, ratio 0.25).
-- **gb leads get a high-freq noise attack transient (`7c96dd8`)**: the
-  pulse 50/25/12 + arp had zero noise (a sterile onset click); op2 now
-  layers a short noise2 chiff (level 60, d 35) under alg 7. Levels are a
-  first pass — tune by ear. wave-bass + drums left alone.
+- **gb noise → the DRUMS, snare sizzle (`7c96dd8` then `f2c498a`)**:
+  first pass put a noise transient on the LEADS; the human corrected —
+  "I wanted it on the drum samples, the leads were fine." Reverted the
+  leads; the SNARE (a near-tonal long-LFSR buzz) gets a bright
+  short-LFSR `noise2` sizzle (op2, level 180, d 130 > body 100) — less
+  click, more "shhh" (peak 4889→8634, roughness 3→6, tail 48→941).
+  Hat (already high-freq noise) + kick (low) left alone. Presets
+  hot-copied into the staged windows tree (no rebuild/session wipe —
+  data-only change; verified on the staged exe).
 - **Windows RE-STAGED** (authorized): `nix build .#cosmic-windows` →
   `/mnt/c/Users/headpats/cosmic2d-win`; the staged exe **verify-PASSES
   kitcheck (830 frames) + selftest 23063 natively on windows** (freeze
