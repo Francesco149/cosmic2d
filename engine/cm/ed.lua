@@ -36,7 +36,7 @@ M.g = M.g or {}
 -- double-clicks/drops to it (assets.kind_for reads it).
 local ROSTER = { "note", "text", "assets", "map", "tmap", "game",
                  "console", "anim", "perf", "image", "sprite", "sound",
-                 "synth" }
+                 "synth", "music" }
 M.kinds = {}
 local MENU_ITEMS = {}
 for _, name in ipairs(ROSTER) do
@@ -179,9 +179,12 @@ function M.park(edoc_bytes)
   for _, p in pairs(M.g.iw or {}) do
     for _, v in pairs(p.held or {}) do pal.x_snd_ed_off(v) end
   end
+  for _, p in pairs(M.g.muw or {}) do
+    for _, v in pairs(p.pheld or {}) do pal.x_snd_ed_off(v) end
+  end
   M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
   M.g.hdrx, M.g.wpx, M.g.mw, M.g.tmw, M.g.sndw = nil, nil, nil, nil, nil
-  M.g.iw = nil
+  M.g.iw, M.g.muw = nil, nil
   M.doc_rev = (M.doc_rev or 0) + 1
 end
 
