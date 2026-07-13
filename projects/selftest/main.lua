@@ -3137,6 +3137,40 @@ local function t_ed_kit()
         "ed.kit raw: pre_undo closes the gesture, undo re-adopts")
   R.redo(winr, edr)
   check(ar.r == "hello", "ed.kit raw: redo returns the pushed gesture")
+
+  -- per-window hotkeys (§13): spec parse, exact-mod dispatch, when
+  -- gating, hints
+  local ks = kit.keyspec("ctrl+shift+p")
+  check(ks.sc == 19 and ks.ctrl and ks.shift and not ks.alt,
+        "ed.kit: keyspec parses mods + name")
+  check(kit.keyspec("bogus") == nil, "ed.kit: unknown key -> nil")
+  local fired = {}
+  local kind = { hotkeys = {
+    { key = "p", hint = "pen", fn = function() fired.p = true end },
+    { key = "shift+1", fn = function() fired.fit = true end },
+    { key = "g", hint = "grid", when = function(w) return w.armed end,
+      fn = function() fired.g = true end },
+  } }
+  local kwin = { armed = false }
+  local none = {}
+  local function ev(sc) return { down = true, rep = false, scancode = sc } end
+  check(kit.hotkey(kind, kwin, ed, ev(19), none) == true and fired.p,
+        "ed.kit: plain key dispatches")
+  check(kit.hotkey(kind, kwin, ed, ev(19), { ctrl = true }) == false,
+        "ed.kit: extra mod never matches (exact mods)")
+  check(kit.hotkey(kind, kwin, ed, ev(30), { shift = true }) == true
+        and fired.fit, "ed.kit: shift+1 dispatches")
+  check(kit.hotkey(kind, kwin, ed, ev(10), none) == false and not fired.g,
+        "ed.kit: failing when() falls through")
+  kwin.armed = true
+  check(kit.hotkey(kind, kwin, ed, ev(10), none) == true and fired.g,
+        "ed.kit: passing when() dispatches")
+  check(kit.hotkey(kind, kwin, ed,
+                   { down = true, rep = true, scancode = 19 }, none)
+        == false, "ed.kit: key repeats never dispatch")
+  local hints = kit.hints(kind, kwin, ed)
+  check(#hints == 2 and hints[1].hint == "pen" and hints[2].key == "g",
+        "ed.kit: hints = when-passing entries with hint text")
 end
 
 local function t_ed_lex()

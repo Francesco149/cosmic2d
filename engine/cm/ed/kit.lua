@@ -45,6 +45,100 @@ local function now_ms()
   return pal.time_ns() // 1000000
 end
 
+-- ---- per-window hotkeys (AUDIO.md §7.2 / EDITOR.md §13) ----
+--
+-- A kind declares a DECLARATIVE table; the shell dispatches the focused
+-- window's table after its own reserved keys (Ctrl+S/F/Z/Y, Esc, grave,
+-- Alt+V) and before the shell plain keys, so a kind can never shadow
+-- the ladder. Declarative means the hint strip renders itself.
+--
+--   M.hotkeys = {
+--     { key = "p", hint = "pen", when = function(win, ed) ... end,
+--       fn = function(win, ed) ... end },
+--     { key = "ctrl+shift+d", ... },
+--   }
+--
+-- `when` (optional) gates both dispatch and the hint; a match consumes
+-- the key event.
+
+-- SDL scancodes by name (the shell's K table, grown)
+local SC = {
+  a = 4, b = 5, c = 6, d = 7, e = 8, f = 9, g = 10, h = 11, i = 12,
+  j = 13, k = 14, l = 15, m = 16, n = 17, o = 18, p = 19, q = 20,
+  r = 21, s = 22, t = 23, u = 24, v = 25, w = 26, x = 27, y = 28,
+  z = 29,
+  ["1"] = 30, ["2"] = 31, ["3"] = 32, ["4"] = 33, ["5"] = 34,
+  ["6"] = 35, ["7"] = 36, ["8"] = 37, ["9"] = 38, ["0"] = 39,
+  enter = 40, tab = 43, space = 44, minus = 45, equals = 46,
+  ["["] = 47, ["]"] = 48, backslash = 49, [";"] = 51, ["'"] = 52,
+  [","] = 54, ["."] = 55, ["/"] = 56, del = 76, home = 74,
+  ["end"] = 77, pgup = 75, pgdn = 78,
+  right = 79, left = 80, down = 81, up = 82,
+}
+M.SC = SC
+
+-- "ctrl+shift+p" -> { sc, ctrl, shift, alt } (nil on an unknown name)
+function M.keyspec(s)
+  local spec = { ctrl = false, shift = false, alt = false }
+  for part in s:gmatch("[^+]+") do
+    if part == "ctrl" or part == "shift" or part == "alt" then
+      spec[part] = true
+    else
+      spec.sc = SC[part]
+    end
+  end
+  return spec.sc and spec or nil
+end
+
+local function compiled(kind)
+  local hk = rawget(kind, "_hk")
+  if hk then return hk end
+  hk = {}
+  for _, entry in ipairs(kind.hotkeys or {}) do
+    local spec = M.keyspec(entry.key)
+    if spec then
+      spec.entry = entry
+      hk[#hk + 1] = spec
+    else
+      pal.log("[ed] bad hotkey spec: " .. tostring(entry.key))
+    end
+  end
+  kind._hk = hk
+  return hk
+end
+
+-- one key event against the focused window's table; true = consumed.
+-- mods = the shell's tracked { ctrl, shift, alt } (M.g).
+function M.hotkey(kind, win, ed, e, mods)
+  if not (kind and kind.hotkeys and e.down and not e.rep) then
+    return false
+  end
+  for _, spec in ipairs(compiled(kind)) do
+    if spec.sc == e.scancode
+       and spec.ctrl == (mods.ctrl or false)
+       and spec.shift == (mods.shift or false)
+       and spec.alt == (mods.alt or false) then
+      local entry = spec.entry
+      if not entry.when or entry.when(win, ed) then
+        entry.fn(win, ed)
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- the hint strip data: "key  hint" for every when-passing entry
+function M.hints(kind, win, ed)
+  local out = {}
+  for _, entry in ipairs(kind and kind.hotkeys or {}) do
+    if entry.hint and (not entry.when or entry.when(win, ed)) then
+      out[#out + 1] = { key = entry.key, hint = entry.hint }
+    end
+  end
+  return out
+end
+
 function M.asset(spec)
   local A = {}
   local gkey, field = spec.gkey, spec.field

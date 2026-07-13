@@ -44,6 +44,28 @@ function M.defaults()
   return { path = "", edit = false, tool = "pen", tid = 1 }
 end
 
+-- per-window hotkeys (EDITOR.md §13): tool keys mirror the rail chips
+-- (edit mode only), shift+1 refits the view
+local function editing(win) return win.edit == true and win.path ~= "" end
+local function set_tool(t)
+  return function(win, ed)
+    win.tool = t
+    ed.touch()
+  end
+end
+M.hotkeys = {
+  { key = "p", hint = "pen", when = editing, fn = set_tool("pen") },
+  { key = "e", hint = "eraser", when = editing, fn = set_tool("eraser") },
+  { key = "f", hint = "fill", when = editing, fn = set_tool("fill") },
+  { key = "k", hint = "pick", when = editing, fn = set_tool("pick") },
+  { key = "shift+1", hint = "fit",
+    when = function(win) return win.path ~= "" end,
+    fn = function(win, ed)
+      win.zoom, win.px, win.py = nil, nil, nil
+      ed.touch()
+    end },
+}
+
 function M.title(win)
   local base = win.path:match("([^/]+)$") or "tilemap"
   return base .. (win.edit and "" or "  · view")

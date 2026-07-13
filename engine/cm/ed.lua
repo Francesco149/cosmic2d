@@ -419,6 +419,16 @@ local function kind_escape()
   return (kind and kind.escape and kind.escape(win, M)) or false
 end
 
+-- the focused kind's declarative hotkey table (EDITOR.md §13): fires
+-- after the shell's reserved keys, before the shell plain keys; true =
+-- the kind consumed the event
+local function kind_hotkey(e)
+  local win = wm.get(M.doc, M.doc.focus)
+  local kind = win and M.kinds[win.kind]
+  return kind and cm.require("cm.ed.kit").hotkey(kind, win, M, e, M.g)
+         or false
+end
+
 local function hotkeys(ig, i)
   local doc, g = M.doc, M.g
   -- ctrl combos that must fire even while an edit widget owns the
@@ -455,6 +465,7 @@ local function hotkeys(ig, i)
         elseif doc.drill ~= 0 then doc.drill = 0
         else doc.sel = {} end
         M.touch()
+      elseif kind_hotkey(e) then -- the focused kind's table (§13)
       elseif play then -- everything below collides with gameplay keys
       elseif sc == K.rbracket then
         for _, id in ipairs(doc.sel) do
@@ -958,6 +969,22 @@ local function draw_win(ig, win, zi)
     pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, ctx.ch)
     kind.draw(win, ctx)
     pal.x_ig_clip_pop()
+  end
+
+  -- the self-rendering hint strip (EDITOR.md §13): a focused kind with
+  -- a hotkey table shows its when-passing bindings under the window
+  if focused and kind and kind.hotkeys then
+    local hints = cm.require("cm.ed.kit").hints(kind, win, M)
+    if #hints > 0 then
+      local hpx = math.max(4, 10 * z)
+      local hx2, hy2 = x + 2 * z, y + h + 5 * z
+      for _, hint in ipairs(hints) do
+        pal.x_ig_text(hx2, hy2, hpx, C.hud, hint.key, 0)
+        hx2 = hx2 + pal.x_ig_text_size(hint.key, hpx, 0) + 4 * z
+        pal.x_ig_text(hx2, hy2, hpx, C.hud_dim, hint.hint, 0)
+        hx2 = hx2 + pal.x_ig_text_size(hint.hint, hpx, 0) + 14 * z
+      end
+    end
   end
 end
 
