@@ -197,10 +197,14 @@ single time truth].
   grid default.
 - `TRKS` v1 — tracks: name, instrument path (.ins), gain, pan, mute.
 - `PATN` v1 (×N) — patterns: id, length (ticks), notes
-  {track-local lane?, tick_on, tick_len, pitch 0..127, vel 0..127}.
-  Notes live in patterns; **a placed clip owns a private copy** when
-  edited (unique-on-write), so editing one placement never silently
-  changes another [W: clip independence].
+  {tick_on, tick_len, pitch 0..127, vel 0..127}. Notes live in
+  patterns. **As-built the roll edits the pattern in place** (the
+  tracker model — an edit updates every placement); the pattern's
+  length **auto-fits its content** (smallest whole bars, min one; the
+  window maintains it, §10). Per-clip copy-on-write [W: clip
+  independence] is the growth path when a placement needs to diverge —
+  the format already keys clips by pattern id, so a copy-on-write forks
+  a new pattern.
 - `ARRG` v1 — the arrangement: clips {track, tick_start, len, pattern};
   a clip longer than its pattern **loops the content to fill** [W].
 
@@ -370,36 +374,55 @@ Binds `.song`. The wstudio-informed minimum that still finishes a loop:
 patterns + arrangement + velocity + swing later (§13). Playback while
 editing runs on the **editor bank** (render-only — composing never
 touches the sim); the game plays the same file through `cm.snd.music`.
-
-Three zones:
+As-built (the human's live rounds shaped rounds 2/3 below D058):
 
 - **The track rail** (left): tracks with name, the bound instrument
-  (drag an .ins from the assets window onto a track to bind; double-
-  click opens the synth window — shared bytes via the §7.1 doors),
-  mute/solo dots, gain/pan fields. + adds a track.
+  (drag an .ins from the assets window onto a track to bind; the
+  §7.1 doors open the synth on shared bytes), mute dots, + adds a
+  track.
 - **The piano roll** (center) — the [W] mouse grammar, four rules:
-  press empty = **add a note** (length = last-used, snapped to grid);
-  motionless release on a note = **delete it**; press-drag = **move**
-  (pitch + time); **right-edge drag = resize**. One undo entry per
-  gesture. Wheel = pitch scroll, shift+wheel = time, ctrl+wheel = zoom
-  (winview). A **velocity lane** under the roll (drag bars). Adding or
-  dragging a note auditions it on the track's instrument.
-  **Snap note**: the roll is a grid editor — notes always snap to the
-  grid step (1/1..1/32 + triplet toggle, header chips); **CTRL while
-  dragging = fine (tick) placement**. This is a conscious inversion of
-  the map's CTRL=snap: recorded in D058 (grids are the roll's ground
-  state; CTRL always means "the precise variant" in both grammars).
+  press empty = **add a note** (length = last-used, snapped to the
+  grid); motionless release on a note = **delete**; press-drag =
+  **move** (pitch + time); **right-edge drag = resize**. One undo
+  entry per gesture; adds/moves audition on the track's instrument.
+  **The grid is placement snap only** (round 2 — the human): the
+  1/1..1/32 subdivision chips + `1`–`6` set where notes *land*, never
+  the length — resize a note to change its length, and the next note
+  repeats it. **CTRL while dragging = fine (tick) placement** — the
+  D058 inversion (grids are the roll's ground state; CTRL is "the
+  precise variant" in both grammars).
+  **Selection** (round 3, the map-editor grammar): **shift+drag =
+  marquee** (every note the rect touches), **shift+click toggles** a
+  note; dragging any *selected* note moves the whole set (spacing
+  kept, delta-clamped in range); **del** removes the selection, **Esc**
+  clears it; a plain press/add drops it. Held as note table refs,
+  cleared on undo/adopt so it never dangles.
+  **The view is a lock** (round 2, the §12.7 contract): a bound,
+  FOCUSED window owns **MMB-pan** (both axes) + **wheel-zoom** (tpp,
+  tick under the cursor pinned); unfocused = inert, the canvas takes
+  everything. `win.tick0/lownote/tpp` are captured (survive restart +
+  rewind).
+  A **velocity lane** under the roll: drag a bar to set velocity,
+  **double-click = reset to 100** (the natural add strength; the
+  double-click clock arms on a motionless release so drags don't
+  chain).
 - **The arrangement strip** (top): the bar timeline; patterns stamp as
   clips (press empty = stamp the current pattern, drag = move by bars,
-  edge-drag = resize, content loops to fill [W]); editing a clip's
-  notes copies-on-write (§4.2). Loop-region drag on the ruler.
-- **Transport** (header): play/stop, loop toggle, BPM field, grid chip,
-  pattern selector. Hotkeys: space = play/stop from loop start,
-  1–6 = grid step, T = triplet.
+  edge-drag = resize; content loops to fill [W]); del removes the
+  selected clip. Fixed-scale overview (the roll zoom doesn't move it).
+- **Transport** (header): play/stop, BPM (click cycles), grid chip,
+  pattern select + `+p`. Hotkeys: space = play/stop, del, `1`–`6`
+  grid; Esc stops the preview (after clearing a selection).
 
-Playback state (playhead, solo) is ephemeral plumbing; the bytes are
-the asset. Ctrl+S writes the .song; the running game hot-adopts via
-the asset epoch (the .tm convention) at the next music loop boundary.
+**Pattern length auto-fits its content** (round 3): every note-changing
+commit rounds the max note-end up to whole bars (min one bar), so the
+end line follows what you compose and placing past the end grows the
+pattern. A fresh/`+p` pattern is **one bar** — so stamping a 1-bar riff
+places exactly one bar, no trailing padding. Note: **the roll edits
+PATTERNS** (the tracker model — an edit updates every placement of that
+pattern); per-clip copy-on-write (§4.2) is a later growth. Playback
+state (playhead) is ephemeral; the bytes are the asset. Ctrl+S writes
+the .song (and refreshes the asset browser via the kit save door).
 
 ## 11. Stock presets (ship with the engine)
 

@@ -44,6 +44,16 @@ applied:**
   contract like the map editor), and **double-click a velocity bar
   resets it to 100** (the click clock arms on motionless release, so
   drags never chain). Music tape 15/15.
+- **Round 3 (`5ce737b`): note selection + pattern auto-fit.**
+  **shift+drag = marquee**, shift+click toggles, dragging a selected
+  note moves the whole set (spacing kept, clamped), del removes the
+  selection, Esc clears it — held as note table refs, cleared on
+  undo/adopt. **Pattern length auto-fits its content** (smallest whole
+  bars, min 1) on every note edit, and a fresh/`+p` pattern is now
+  ONE bar — so stamping a 1-bar riff places exactly one bar, no
+  padding (the reported bug). AUDIO.md §10/§4.2 rewritten to the
+  as-built truth (the doc had drifted from the live rounds). Music
+  tape 21/21.
 
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
