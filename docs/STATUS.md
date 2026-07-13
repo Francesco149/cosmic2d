@@ -3,6 +3,40 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (morning round on the live R9 — four asks in,
+`fcd39ec`)
+**Phase**: **The human's first pass on the audio stack; feedback
+applied:**
+
+- **kit `A.pathfield`** — the unbound-window "new file" prompt,
+  factored from the map window's working field: single-line by
+  contract (music/synth omitted `multiline=false` — Enter typed a
+  NEWLINE, the reported bug), the extension FORCED, an existing path
+  prompts **open / overwrite / cancel** instead of silently adopting
+  (overwrite clears file + working state + plumbing; the journal
+  keeps the old bytes reachable). Adopted in music/synth/map/tmap —
+  four hand-rolled fields die (the windowkit paying off as designed).
+- **Asset-browser delete**: del on the selected tile arms a red
+  confirm bar, del again executes, esc cancels (§13 hotkeys + hint
+  strip); a .spr takes its baked .png/.anim/.meta along; parked =
+  walled.
+- **Synth preset one-click lag FIXED** (the sound trailed the UI by a
+  click): the live-audition block uploaded a stale doc local captured
+  before the preset click replaced p.doc.
+- **gb drum presets louder** (the human: "a little quiet") — gain
+  128→170/180 + hotter levels on hat/snare/kick.
+- Proof: a **9/9 real-event tape** (typing driven through
+  pal.x_ig_event — the R8e door; Enter binds + forces .song, the
+  overwrite prompt + a real [overwrite] click, delete
+  arm/cancel/confirm). Suite ALL GREEN; selftest 23044;
+  **cosmic2d-win re-staged** (native 23044 PASS; windows-side .ed
+  sessions wiped again).
+
+**Next step:** the human's pass continues (presets re-listen — gb
+drums hotter now; the new-file prompts; asset delete), then R9e.
+
+---
+
 **Date**: 2026-07-13 (overnight session — R9 designed: audio + the
 windowkit, D058)
 **Phase**: **R9 — audio: DESIGNED (docs/AUDIO.md + ADR D058; REVAMP §6
