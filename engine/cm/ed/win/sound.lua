@@ -155,11 +155,45 @@ M.hotkeys = {
 
 -- ---- header: transport chips ----
 
+-- the found-sound -> instrument door (AUDIO.md §8): mono-mix the
+-- decoded PCM into a sampler .ins (embedded, root C4) and open the
+-- synth window on it beside this one
+local function to_ins(win, ed)
+  local p = plumb(ed, win)
+  if not p.pcm or ed.parked then return end
+  local mono = {}
+  for i = 1, #p.pcm, 4 do
+    local l = string.unpack("<i2", p.pcm, i)
+    local r = string.unpack("<i2", p.pcm, i + 2)
+    mono[#mono + 1] = string.pack("<i2", (l + r) // 2)
+  end
+  local base = (win.path:match("([^/]+)%.%w+$") or "sound"):lower()
+  local doc = { name = base, pcm = table.concat(mono),
+                patch = { type = "sample", root = 60, loop = false,
+                          a = 2, d = 0, s = 255, r = 30, gain = 128 } }
+  local path = "ins/" .. base .. ".ins"
+  pal.mkdir(ed.root .. "/ins")
+  if pal.write_file(ed.root .. "/" .. path,
+                    cm.require("cm.ins").encode(doc)) then
+    cm.require("cm.ed.win.assets").invalidate(ed)
+    local wm = cm.require("cm.ed.wm")
+    local K = ed.kinds.synth
+    local sw = wm.spawn(ed.doc, "synth", win.x + win.w + 20, win.y,
+                        K.DEF_W, K.DEF_H, K.defaults())
+    sw.path = path
+    K.open_win(sw, ed)
+    ed.doc.focus = sw.id
+    pal.log("[ed] imported " .. win.path .. " -> " .. path)
+    ed.touch()
+  end
+end
+
 function M.header(win, ctx)
   if win.path == "" then return 0 end
   local ed = ctx.ed
   local p = plumb(ed, win)
   local s = cm.require("cm.ed.chips").strip(ctx)
+  if s:chip("→ins", false) then to_ins(win, ed) end
   if s:chip("loop", win.loop) then
     win.loop = not win.loop
     local pp = open_sound(ed, win)
