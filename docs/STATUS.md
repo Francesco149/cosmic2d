@@ -66,10 +66,10 @@ handle). Tapes used two new draw-time layout anchors (`p.arr`,
   kitcheck (830 frames) + selftest 23063 natively on windows** (freeze
   fix confirmed on the real FS). The human's uncommitted experiments
   (`sound/test.song`, `ins/gb-wave-bass.ins`) were cleared as asked.
-- **⏳ OPEN — the human's sound-design ask was cut off** mid-sentence:
-  *"what if I want to make an envelope that…"* — waiting on what they
-  want (curved segments? more stages? exact entry?) before touching the
-  synth envelope further.
+- **Synth envelope — LEFT AS-IS** (the human clarified: "ADSR is
+  sufficient for now, just leave it; we'll come back to it if needed").
+  Curved segments / more stages / looping are the parked options if it
+  resurfaces.
 
 **Next step (resume here):** the human's live FEEL pass with ears +
 hands — (1) the synth envelope drag (short-attack resolution + the ms
