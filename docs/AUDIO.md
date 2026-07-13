@@ -355,7 +355,15 @@ Layout (mouse-first, one screen, no tabs):
 - **4 operator panels**: waveform chip row, ratio coarse/fine fields,
   level slider, and a **draggable ADSR envelope widget** (four
   breakpoints on a small graph — grab and drag, the teidraw feel; one
-  gesture = one journal entry, per the R8 gesture rule).
+  gesture = one journal entry, per the R8 gesture rule). The A/D/R times
+  live on a **logarithmic axis** (round 8 — the human: a linear/squared
+  axis crammed the musically-useful short times into a few pixels, so a
+  pluck vs a soft attack were 1–2 px apart; log spreads them by ratio,
+  fine at the short end and still reaching seconds). Three fixed thirds
+  (A | D·S | R) with boundary guides; the DRAW and the DRAG share the
+  mapping (a prior bug drew handles linearly but dragged them squared —
+  the handle jumped on grab); the hovered/dragged handle glows and a
+  live ms/level readout shows the exact value.
 - **Sample type** swaps the op panels for: waveform view, root-note
   field, draggable loop points, amp ADSR.
 - **The piano**: two on-screen octaves along the bottom; press =
@@ -387,12 +395,22 @@ The human's live rounds shaped the rest:
   `ins/`** so the .song stays self-contained, round 5), mute dots, a
   **del** per row (drops the track + its clips; only when >1),
   + adds a track. Clicking a track drills into its first clip.
+  **Selecting a track expands a VOLUME panel** under its row (round 8 —
+  the human): a drag slider AND a type-in field for the track gain
+  (0..255, 128 = unity), one journal entry per drag / per submit.
 - **The arrangement strip** (top): clips on tracks × time.
   **Click a clip → drill into its pattern** (the roll follows) +
   select it; press empty → **stamp a NEW clip** with its own fresh
-  pattern (round 7 — clip independence, no accidental sharing); drag
-  moves a clip, right-edge resizes, and a clip **loops its pattern to
-  fill** when longer (the "auto loop").
+  pattern (round 7 — nothing shares by accident); drag moves a clip,
+  right-edge resizes (a **hover-lit handle** marks the zone, round 8),
+  and a clip **loops its pattern to fill** when longer (the "auto
+  loop"). **CTRL = REUSE** (round 8 — the human: place the same pattern
+  multiple times): **ctrl+drag a clip** = a LINKED duplicate (the copy
+  shares the pattern — edit either, both follow); **ctrl+press empty** =
+  stamp the ACTIVE pattern LINKED (fill length rounds to its whole
+  bars). Clips sharing the selected clip's pattern glow together;
+  sharing survives save/load (`normalize` no longer splits — it only
+  heals a clip pointing at a missing pattern).
 - **The piano roll** (center) — the [W] mouse grammar, four rules:
   press empty = **add a note** (length = last-used, snapped to the
   grid); motionless release on a note = **delete**; press-drag =
@@ -425,7 +443,14 @@ The human's live rounds shaped the rest:
   A **velocity lane** under the roll: drag a bar to set velocity,
   **double-click = reset to 100** (the natural add strength; the
   double-click clock arms on a motionless release so drags don't
-  chain).
+  chain). **Group edit** (round 8 — the human): with a selection,
+  dragging a SELECTED bar adjusts the WHOLE set — the grabbed bar tracks
+  the cursor, the rest OFFSET by the same delta (relative dynamics
+  kept); **CTRL** snaps them all to the SAME value. The same for
+  **length**: dragging a selected note's right edge OFFSETs every
+  selected note's length (CTRL = all the same). The offset/snap math is
+  one KAT'd core (`M.group_val`). Note right-edges show a **hover-lit
+  resize handle** too.
 - **The scrub ruler** (round 4, above the roll, roll-aligned): click/
   drag sets **`win.cursor`** (grid-snapped) — a persistent start marker
   (an accent tab + a line through the roll). Space plays FROM the
@@ -438,9 +463,11 @@ The human's live rounds shaped the rest:
 **Pattern length grows to fit but never auto-shrinks** (round 6 — the
 human): a note-changing commit rounds the max note-end up to whole bars
 (min one) and grows the pattern; deleting leaves it (a clip loops a
-short pattern to fill, so shrinking fought resizing). **Each clip owns
-its own pattern** (round 7) — no accidental sharing across tracks;
-`normalize` splits collisions. Playback state (playhead) is ephemeral;
+short pattern to fill, so shrinking fought resizing). **Stamping makes
+a fresh pattern** (round 7 — nothing shares by accident), but clips MAY
+**deliberately share** one (round 8 — ctrl+drag / ctrl+press); editing
+it updates every placement and the link survives save/load.
+Playback state (playhead) is ephemeral;
 the bytes are the asset. Ctrl+S writes the .song (and refreshes the
 asset browser via the kit save door).
 

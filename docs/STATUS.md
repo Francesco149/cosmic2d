@@ -3,6 +3,74 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (round 8 on the live R9 — a six-ask batch on the
+music/synth editors, all built + committed; `0d8c400`)
+**Phase**: **The human's music-editor feedback, six items, each a
+logical commit (AUDIO.md §9/§10 + DECISIONS D058 round-8 note updated):**
+
+- **The first-preset-drop FREEZE — fixed (`f9181c1`).** Root cause:
+  `pal.list_dir` (SDL_GlobDirectory) recursively stat'd the WHOLE
+  project tree incl. `.ed/history` (4122 undo-journal files in smoke)
+  on every asset invalidate; the first preset drop copies the stock
+  .ins + invalidates → the next assets draw re-globs the tree (later
+  drops reuse the copy → no freeze, hence "first time"). On a native
+  Windows FS that walk is the freeze. **PAL fix**: `l_list_dir` is now
+  a manual `SDL_EnumerateDirectory` walk that never descends into
+  dot-dirs (every caller already discarded `^%.ed`/`^%.git`); explicit
+  dot-roots still list (selftest's journal). smoke root: 4156/11.7 ms →
+  24/0.1 ms. +KAT.
+- **Synth ADSR feel (`805a3bd`).** The A/D/R times were on a squared
+  axis that crammed the useful short range into ~10% of the width AND
+  the graph DREW handles linearly but DRAGGED them squared (handle
+  jumped on grab). Now a **logarithmic time axis** (equal px = equal
+  ratios) with **draw==drag**, three guided thirds, a glowing handle +
+  live ms readout. +5 KATs (`M.env_fx_to_ms`/`env_ms_to_fx`).
+- **Hover-lit resize handles + shared-clip glow (`63a8a3a`).** Clip
+  right-edges (faint tick → bright on hover) + note right-edges; clips
+  sharing the selected clip's pattern glow together.
+- **Group velocity + length (`acb4711`).** With a selection, dragging
+  a selected velocity bar / a selected note's right edge adjusts the
+  WHOLE set — OFFSET by the grabbed note's delta (relative kept), CTRL
+  = snap all to one value. Pure `M.group_val`, +4 KATs.
+- **Per-track VOLUME panel (`dac1918`).** Selecting a track expands a
+  panel under its row: a drag slider + a type-in field for the gain
+  (0..255), pushing lower tracks down.
+- **Pattern REUSE (`35839a8`).** The headline: place the same pattern
+  multiple times. `cm.song.normalize` no longer splits shared patterns
+  (round 7's copy-on-collision retired) — sharing is legal + survives
+  save/load; stamping still makes a fresh pattern by default. The
+  arrangement gains **ctrl+drag a clip = linked duplicate** and
+  **ctrl+press empty = stamp the active pattern linked**. t_song
+  updated (+ heal/orphan/round-trip checks).
+
+**Proof:** selftest **23063** (was 23050); `nix run .#test` **ALL
+GREEN** (goldens untouched — editor/PAL-dot-dir changes don't touch
+sim/pixel). **Real-event tapes** through the actual shell event path:
+ctrl-stamp reuse (clip 4 shares pattern 1 at the snapped tick, PASS)
+and group-velocity (offset 110→127/90→107 spread-kept + CTRL-snap both
+64, PASS). 3 shots on llm-feed (synth envelope / reuse+volume / hover
+handle). Tapes used two new draw-time layout anchors (`p.arr`,
+`p.vlane`; committed, cheap, comment-tagged for tapes).
+
+**⚠ Windows NOT re-staged this round** — the `cosmic2d-win` exe still
+predates these commits; the human's live runs won't show the fixes
+until a re-stage (esp. the FREEZE fix, which only manifests on the
+native Windows FS). Re-stage per PROCESS.md before the human's next
+live pass.
+
+**Next step (resume here):** the human's live FEEL pass with ears +
+hands — (1) the synth envelope drag (short-attack resolution + the ms
+readout), (2) pattern reuse (ctrl+drag / ctrl+press to place a pattern
+repeatedly; edit once → all follow), (3) group velocity/length drags
+(offset vs CTRL-snap), (4) the volume panel, (5) confirm the freeze is
+gone (needs the re-stage). Group-LENGTH resize + the volume SLIDER drag
+are KAT/mirror-proven but not yet tape-driven — watch those live. Then
+**R9e — the game hookup** (../cosmic2d-game): sfx at jump/land/slice/
+teleport + a first rim_hub track. Good `/clear` point — everything
+committed, docs current.
+
+---
+
 **Date**: 2026-07-13 (morning round on the live R9 — four asks in,
 `fcd39ec`)
 **Phase**: **The human's first pass on the audio stack; feedback

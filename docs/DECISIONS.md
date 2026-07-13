@@ -2102,3 +2102,25 @@ The crash fix stays. Round-6 per-track docs migrate to clips; TRKS is
 back to v1. Pattern chips removed (drill-down replaces them). Song mode
 proper (multiple non-independent placements / a top-level timeline) can
 still grow later.
+
+**Round 8 — a batch on the live audio stack (the human), folded into
+AUDIO.md §9/§10:** (1) **The first-preset-drop freeze** was
+`pal.list_dir` (SDL_GlobDirectory) recursively stat'ing the whole
+project tree — including `.ed/history` (thousands of undo-journal files)
+— on every assets invalidate; list_dir now prunes dot-directories at the
+source (PAL fix, benefits the whole editor). (2) **Pattern REUSE** — the
+human wants to place the same pattern multiple times, so round-7's
+copy-on-collision retires: `normalize` allows deliberate sharing (heals
+only missing patterns), stamping still makes a fresh pattern by default,
+and the arrangement gains **ctrl+drag = linked duplicate / ctrl+press =
+stamp the active pattern linked** (mirrors the roll's ctrl=duplicate).
+(3) **Group velocity + length** — with a selection, dragging offsets the
+whole set (CTRL = snap all to one value; one KAT'd core). (4) **Synth
+envelope** — the A/D/R times move to a **log axis** (short-end feels
+were 1–2 px apart) and the draw/drag mapping is unified (handles jumped
+on grab). (5) **Hover-lit resize handles** (clips + notes) and a
+**per-track volume panel** (slider + type-in). Proof: KATs
+(group_val, env round-trip, sharing round-trips, list_dir prune) +
+real-event tapes (ctrl-stamp reuse, group-velocity offset/snap) +
+shots. selftest 23063; suite ALL GREEN. Live-feel exit is the human's
+ears/hands on the synth drag + the reuse/group drags.
