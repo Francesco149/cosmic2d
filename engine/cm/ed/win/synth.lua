@@ -292,8 +292,14 @@ local function preset_list(ed, p)
     table.sort(names)
     for _, n in ipairs(names) do
       if n:lower():find("%.ins$") then
-        out[#out + 1] = { label = n:gsub("%.ins$", ""),
-                          file = d[2] .. "/" .. n, from = d[1] }
+        out[#out + 1] = {
+          label = n:gsub("%.ins$", ""), file = d[2] .. "/" .. n,
+          from = d[1],
+          -- the path a drag carries: project presets are already
+          -- project-relative; stock stays engine-relative (the drop
+          -- target copies it in — music.drop)
+          drag = d[1] == "project" and ("ins/" .. n) or (d[2] .. "/" .. n),
+        }
       end
     end
   end
@@ -367,8 +373,28 @@ function M.draw(win, ctx)
       pal.x_ig_text(x0 + 6 * z, ry, px * 0.92,
                     hov and COL.hot or COL.text, item.label, 0)
       pal.x_ig_text(x0 + rw - 40 * z, ry, px * 0.75, COL.dim, item.from, 0)
+      -- press ARMS a click-or-drag on this row (resolved below): a
+      -- click loads the preset; a drag carries it to a sequencer track
       if hov and i.clicked[1] then
-        local bytes = pal.read_file(item.file)
+        p.pdrag = { item = item, sx = i.wx, sy = i.wy }
+      end
+      ry = ry + px * 1.45
+    end
+    -- resolve the armed preset gesture (round 5, the human): moved past
+    -- the threshold = a drag-out (the shell's g.adrag carries it — a
+    -- music track's kind.drop binds it); released in place = a load
+    if p.pdrag then
+      local wmm = cm.require("cm.ed.wm")
+      if i.buttons[1] then
+        if math.abs(i.wx - p.pdrag.sx) > wmm.DRAG_PX
+           or math.abs(i.wy - p.pdrag.sy) > wmm.DRAG_PX then
+          ed.g.adrag = { path = p.pdrag.item.drag, sx = p.pdrag.sx,
+                         sy = p.pdrag.sy, from = win.id }
+          p.pdrag = nil
+        end
+      else
+        local bytes = pal.read_file(p.pdrag.item.file)
+        p.pdrag = nil
         if bytes then
           local ok, d2 = pcall(ins.decode, bytes)
           if ok then
@@ -379,7 +405,6 @@ function M.draw(win, ctx)
           end
         end
       end
-      ry = ry + px * 1.45
     end
     x0 = x0 + rw
     cw = cw - rw

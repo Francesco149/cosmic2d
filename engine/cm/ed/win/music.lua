@@ -1026,22 +1026,42 @@ function M.takes_middle(win, ed)
 end
 
 -- drag an .ins from the assets window onto a track row = bind it
+-- resolve any .ins path to a PROJECT-RELATIVE binding. A path already
+-- under the project binds as-is; an external one (a stock preset the
+-- synth carried, or an absolute path) is copied into the project's
+-- ins/ so the .song stays self-contained (AUDIO.md §4.1). Returns the
+-- project-relative path, or nil if unreadable.
+local function resolve_ins(ed, path)
+  if pal.read_file(ed.root .. "/" .. path) then return path end
+  local bytes = pal.read_file(path) -- cwd-relative (stock) or absolute
+  if not bytes then return nil end
+  local rel = "ins/" .. (path:match("([^/]+)$") or "instrument.ins")
+  if not pal.read_file(ed.root .. "/" .. rel) then -- reuse an existing copy
+    pal.mkdir(ed.root .. "/ins")
+    if not pal.write_file(ed.root .. "/" .. rel, bytes) then return nil end
+    cm.require("cm.ed.win.assets").invalidate(ed)
+    pal.log("[ed] imported preset -> " .. rel)
+  end
+  return rel
+end
+
 function M.drop(win, ed, path, wx, wy)
   if not path:lower():find("%.ins$") or win.path == "" then return false end
   local _, p = open_asset(ed, win.path)
   local doc = p.doc
   if not doc then return false end
+  local rel = resolve_ins(ed, path)
+  if not rel then return false end
   -- row math mirrors the rail draw (world coords -> track index)
-  local z = 1 -- world units: win.y + HDR + pad
   local py = wy - (win.y + 24 + 4) - 4
   local px10 = 10 -- px at z1
   local ti = math.tointeger(py // (px10 * 2.8)) + 1
   if ti < 1 or ti > #doc.tracks then ti = win.trk or 1 end
-  doc.tracks[ti].ins = path
+  doc.tracks[ti].ins = rel
   p.pins_sent = nil
   p.flat = nil
   commit(ed, win.path)
-  pal.log("[ed] bound " .. path .. " -> " .. doc.tracks[ti].name)
+  pal.log("[ed] bound " .. rel .. " -> " .. doc.tracks[ti].name)
   return true
 end
 
