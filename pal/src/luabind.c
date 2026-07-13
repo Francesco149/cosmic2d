@@ -954,20 +954,58 @@ static int l_x_file_append(lua_State *L) {
   return 1;
 }
 
+/* recursive directory walk that PRUNES dot-directories (.ed, .git, …).
+ * SDL_GlobDirectory would descend into them — and the .ed undo journal is
+ * thousands of history files, so globbing the project root stat'd the whole
+ * tree just to throw it away (every caller already filters ^%.ed/^%.git).
+ * On a native Windows FS that froze the editor on the first preset drop
+ * (the drop's assets invalidate → a full re-glob). Emitting relative paths
+ * matches the old SDL_GlobDirectory shape; callers table.sort afterward. */
+typedef struct {
+  lua_State *L;
+  int tbl;      /* absolute stack index of the result table */
+  int *n;       /* running entry count (shared across recursion) */
+  const char *rel; /* this dir's path relative to the requested root ("" = root) */
+} ListCtx;
+
+static SDL_EnumerationResult SDLCALL list_cb(void *ud, const char *dirname,
+                                             const char *fname) {
+  ListCtx *c = (ListCtx *)ud;
+  char abspath[2048], relpath[2048];
+  size_t dl = SDL_strlen(dirname);
+  int sep = dl && (dirname[dl - 1] == '/' || dirname[dl - 1] == '\\');
+  SDL_snprintf(abspath, sizeof abspath, "%s%s%s", dirname, sep ? "" : "/", fname);
+  if (c->rel[0])
+    SDL_snprintf(relpath, sizeof relpath, "%s/%s", c->rel, fname);
+  else
+    SDL_snprintf(relpath, sizeof relpath, "%s", fname);
+
+  SDL_PathInfo info;
+  bool isdir = SDL_GetPathInfo(abspath, &info)
+               && info.type == SDL_PATHTYPE_DIRECTORY;
+  if (isdir && fname[0] == '.') return SDL_ENUM_CONTINUE; /* prune .ed/.git */
+
+  lua_pushstring(c->L, relpath);
+  lua_rawseti(c->L, c->tbl, ++(*c->n));
+
+  if (isdir) {
+    ListCtx child = {c->L, c->tbl, c->n, relpath};
+    SDL_EnumerateDirectory(abspath, list_cb, &child);
+  }
+  return SDL_ENUM_CONTINUE;
+}
+
 static int l_list_dir(lua_State *L) {
-  int count = 0;
-  char **names = SDL_GlobDirectory(luaL_checkstring(L, 1), NULL, 0, &count);
-  if (!names) {
+  const char *root = luaL_checkstring(L, 1);
+  lua_newtable(L);
+  int n = 0;
+  ListCtx c = {L, lua_gettop(L), &n, ""};
+  if (!SDL_EnumerateDirectory(root, list_cb, &c)) {
+    lua_pop(L, 1);
     lua_pushnil(L);
     lua_pushstring(L, SDL_GetError());
     return 2;
   }
-  lua_createtable(L, count, 0);
-  for (int i = 0; i < count; i++) {
-    lua_pushstring(L, names[i]);
-    lua_rawseti(L, -2, i + 1);
-  }
-  SDL_free(names);
   return 1;
 }
 

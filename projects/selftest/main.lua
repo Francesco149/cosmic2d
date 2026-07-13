@@ -2429,6 +2429,22 @@ local function t_ring_spill()
   local files = pal.list_dir(root .. "/.ed/history")
   check(files and #files >= 4,
         "ring spill: files exist (" .. tostring(files and #files) .. ")")
+  -- pal.list_dir PRUNES dot-directories at the source: the .ed undo
+  -- journal is thousands of history files, and walking it on every
+  -- project-root glob froze the editor on a native FS (the first preset
+  -- drop's asset invalidate re-globbed the tree). The subtree stays
+  -- reachable when .ed/history is the explicit root (checked above); a
+  -- listing of the project root skips it but keeps real files.
+  pal.write_file(root .. "/list_probe.txt", "x")
+  local rootls = pal.list_dir(root) or {}
+  local saw_ed, saw_asset = false, false
+  for _, n in ipairs(rootls) do
+    if n:find("^%.ed") then saw_ed = true end
+    if n == "list_probe.txt" then saw_asset = true end
+  end
+  check(saw_asset and not saw_ed,
+        "list_dir: prunes .ed subtree, keeps real files")
+  pal.x_remove(root .. "/list_probe.txt")
   local st = trace.ring_stats()
   check(st.spilled >= 4 and st.disk_bytes > 0, "ring spill: stats see disk")
   local lo, hi = trace.ring_range()
