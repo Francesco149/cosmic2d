@@ -95,10 +95,49 @@ Build order R9a→R9e in AUDIO.md §12 with exits.
   byte-exact — the windows-side .ed sessions got wiped again, the
   recipe's rm -rf).
 
-**Next step:** R9c — the sound windows (AUDIO.md §8/§9/§12): cm.ins
-codec + the synth window (audition piano, live patch send, preset
-strip) + stock presets (gb + fm families), the sound player window +
-kind_for's sound class routes, the →ins import door.
+**R9c — the sound windows: BUILT (same night, 4 commits):**
+
+- **The kernel grew the stream voice** (type 2: stereo 1:1 named-buffer
+  PCM — the player's voice; note-on start offsets = seek; x_snd_ed_pos
+  = the playhead) + **cm.ins** (CINS: HEAD/PTCH/SPCM; sample
+  instruments EMBED their PCM; canonical encode; upload() doors to
+  both banks). +KATs.
+- **The sound player** (kind `sound`): drop any wav/mp3/ogg → waveform
+  peaks, click = seek (tape-proven sample-exact), play/pause/stop/loop
+  chips, space/home/L hotkeys + the hint strip; editor-bank stream
+  playback; park silences live voices; **kind_for's sound class
+  finally routes** (M9's "no window yet" nil died). smoke grew
+  committed `sound/chime.wav`. 6/6 tape; live WSLg chime audible.
+- **The synth window** (kind `synth`, .ins): the sound design tool —
+  full windowkit citizen; alg/fb chips, gain/pan sliders, 4 op panels
+  (wave chips, sliders, draggable ADSR graphs), audition piano (mouse
+  + tracker keys via §13 hotkey tables), live patch send while a note
+  rings, preset strip, unbound-path creation, Esc silences. 10/10
+  tape. **Kit fix the tape caught: fresh assets journal their init
+  bytes as the undo floor** (fixes new sprite/map/tmap too; selftest
+  23028→**23030**).
+- **20 stock presets** (`engine/stock/ins/*` — parameter tables, no
+  audio bytes): the gameboy family (pulse 50/25/12, wave-bass, arp,
+  LFSR hat/snare/kick) + the fm family (epiano, bell, bass, pluck,
+  brass, organ, pad, lead, drum kit). Stock resolves at the ENGINE
+  root (cwd), never ed.root — a scratch-project tape caught the
+  assumption.
+- **The →ins door**: player header chip mono-mixes the decode into an
+  embedded sampler .ins + opens the synth on it (real-click tape).
+- Suite ALL GREEN throughout; **cosmic2d-win re-staged** (native
+  selftest 23030 PASS — windows-side .ed sessions wiped again, the
+  recipe's rm -rf). 2 shots on llm-feed. **The preset TASTE pass is
+  the human's ears** — live session, synth window, click the rail.
+
+**Next step (resume here):** the human's morning passes — drop a real
+mp3 on the canvas (player), open `sound/chime.wav`, click through the
+preset rail with ears on (synth), walk the R9a hint strips. Then
+**R9d — the music window** (AUDIO.md §10/§12): cm.song codec +
+flatten + cm.snd.seq, the piano roll on the wstudio four-rule grammar
++ velocity lane + arrangement strip, editor-bank preview, cm.snd game
+API + music-as-sim-state (trace → same PCM hash; rewind scrubs across
+a track). Then R9e — the game sfx hookup (../cosmic2d-game). Good
+`/clear` point — everything committed, docs current.
 
 ---
 
