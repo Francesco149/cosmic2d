@@ -101,6 +101,15 @@ M.open_win = A.open_win
 M.dirty, M.save, M.undo, M.redo, M.revert =
   A.dirty, A.save, A.undo, A.redo, A.revert
 
+-- group edit math (velocity + note length; human, round 8): CTRL snaps
+-- every selected value to `target`; otherwise OFFSET each `base` by the
+-- grabbed note's delta (target - gbase), keeping their relative spread,
+-- clamped to [lo, hi]. Pure — KAT'd (t_song).
+function M.group_val(base, gbase, target, ctrl, lo, hi)
+  if ctrl then return target end
+  return math.max(lo, math.min(hi, base + (target - gbase)))
+end
+
 -- ---- the editor-bank preview (render-only, wall clock) ----
 
 local function preview_stop(p)
@@ -853,15 +862,24 @@ function M.draw(win, ctx)
       else
         p.g = { t = "marquee", x0 = i.wx, y0 = i.wy }
       end
-    elseif hit and p.nsels[pat.notes[hit]] then -- move the selection
+    elseif hit and p.nsels[pat.notes[hit]] then -- the selection
       local n = pat.notes[hit]
-      local base = {}
-      for sel in pairs(p.nsels) do
-        base[#base + 1] = { n = sel, tick = sel.tick, pitch = sel.pitch }
+      if edge then -- GROUP RESIZE: drag the edge, the whole set follows
+        local base = {}
+        for sel in pairs(p.nsels) do
+          base[#base + 1] = { n = sel, dur = sel.dur }
+        end
+        p.g = { t = "selsize", grab = n, gd = n.dur, lnd = n.dur,
+                base = base, moved = false }
+      else -- GROUP MOVE
+        local base = {}
+        for sel in pairs(p.nsels) do
+          base[#base + 1] = { n = sel, tick = sel.tick, pitch = sel.pitch }
+        end
+        p.g = { t = "selmove", grab = n, gt = n.tick, gp = n.pitch,
+                dt = tick - n.tick, dp = pitch - n.pitch, base = base,
+                moved = false }
       end
-      p.g = { t = "selmove", grab = n, gt = n.tick, gp = n.pitch,
-              dt = tick - n.tick, dp = pitch - n.pitch, base = base,
-              moved = false }
     elseif hit then
       p.nsels = {} -- plain press elsewhere drops the selection
       p.nsel = hit
@@ -936,6 +954,30 @@ function M.draw(win, ctx)
       ctx.touch()
     end
   end
+  -- GROUP RESIZE (human, round 8): drag a selected note's right edge and
+  -- the whole selection resizes — OFFSET each by the grabbed note's delta
+  -- (relative lengths kept), or CTRL = snap them all to the SAME length.
+  if p.g and p.g.t == "selsize" then
+    local n = p.g.grab
+    if i.buttons[1] and n then
+      local nd = math.max(grid, math.tointeger(
+        ((x2t(i.wx) - n.tick + grid / 2) // grid) * grid))
+      if nd ~= p.g.lnd then
+        for _, b in ipairs(p.g.base) do
+          b.n.dur = M.group_val(b.dur, p.g.gd, nd, ed.g.ctrl, 1, 1 << 30)
+        end
+        p.g.lnd, p.g.moved = nd, true
+        ctx.touch()
+      end
+    elseif not i.buttons[1] then
+      if p.g.moved then
+        if n then p.lastdur = n.dur end
+        note_commit()
+      end
+      p.g = nil
+      ctx.touch()
+    end
+  end
   if p.g and (p.g.t == "nmove" or p.g.t == "nsize") then
     local n = pat.notes[p.g.ni]
     if i.buttons[1] and n then
@@ -981,7 +1023,7 @@ function M.draw(win, ctx)
     local nx = t2x(n.tick)
     local vh = (n.vel / 127) * (VEL_H - 4 * z)
     pal.x_ig_rect_fill(nx, vel_y + VEL_H - 2 * z - vh, math.max(2, 3 * z),
-                       vh, p.nsel == ni and COL.hot or COL.vel)
+                       vh, (p.nsel == ni or p.nsels[n]) and COL.hot or COL.vel)
   end
   local over_vel = i.wx >= rx and i.wx < rx + rw and i.wy >= vel_y
                    and i.wy < vel_y + VEL_H
@@ -993,6 +1035,10 @@ function M.draw(win, ctx)
       if d * tpp < 8 * z and (not bd or d < bd) then best, bd = ni, d end
     end
     return best
+  end
+  local function vel_at(y)
+    return math.max(1, math.min(127, math.floor(
+      (1 - (y - vel_y - 2 * z) / (VEL_H - 4 * z)) * 127 + 0.5)))
   end
   if ctx.hot and i.clicked[1] and over_vel and not p.g then
     -- double-click a bar = reset to the natural strength (100 — the
@@ -1010,24 +1056,45 @@ function M.draw(win, ctx)
       end
       p.vclick = nil
     else
-      p.g = { t = "vel", moved = false, my0 = i.wy, pressni = best }
+      -- GROUP mode (human, round 8): pressing a SELECTED bar with a live
+      -- selection drags the WHOLE set — the grabbed bar tracks the cursor,
+      -- the rest OFFSET by the same delta (relative dynamics kept), or
+      -- CTRL snaps them all to the SAME value. Else the single-bar drag.
+      local grp
+      if best and p.nsels[pat.notes[best]] and next(p.nsels) then
+        grp = {}
+        for _, n in ipairs(pat.notes) do
+          if p.nsels[n] then grp[#grp + 1] = { n = n, base = n.vel } end
+        end
+      end
+      p.g = { t = "vel", moved = false, my0 = i.wy, pressni = best,
+              group = grp, gbase = best and pat.notes[best].vel }
     end
     ctx.touch()
   end
   if p.g and p.g.t == "vel" then
     if i.buttons[1] then
-      local best = vel_near(i.wx)
-      if best then
-        local nv = math.max(1, math.min(127, math.floor(
-          (1 - (i.wy - vel_y - 2 * z) / (VEL_H - 4 * z)) * 127 + 0.5)))
-        if pat.notes[best].vel ~= nv then
-          pat.notes[best].vel = nv
-          p.nsel = best
-          if math.abs(i.wy - (p.g.my0 or i.wy)) > 3 * z then
-            p.g.moved = true
+      if p.g.group then
+        local vcur, any = vel_at(i.wy), false
+        for _, e in ipairs(p.g.group) do
+          local nv = M.group_val(e.base, p.g.gbase or 0, vcur, ed.g.ctrl, 1, 127)
+          if e.n.vel ~= nv then e.n.vel, any = nv, true end
+        end
+        if any then p.g.changed = true; ctx.touch() end
+        if math.abs(i.wy - p.g.my0) > 3 * z then p.g.moved = true end
+      else
+        local best = vel_near(i.wx)
+        if best then
+          local nv = vel_at(i.wy)
+          if pat.notes[best].vel ~= nv then
+            pat.notes[best].vel = nv
+            p.nsel = best
+            if math.abs(i.wy - (p.g.my0 or i.wy)) > 3 * z then
+              p.g.moved = true
+            end
+            p.g.changed = true
+            ctx.touch()
           end
-          p.g.changed = true
-          ctx.touch()
         end
       end
     else

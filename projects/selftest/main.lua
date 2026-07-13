@@ -3280,6 +3280,18 @@ local function t_song()
   snd.music_stop()
   check(st.doc.snd == nil, "song: music_stop clears the transport")
   for _ = 1, 10 do pal.snd_render() end
+
+  -- group velocity/length math (human round 8): CTRL snaps all to the
+  -- target; else OFFSET each base by the grabbed note's delta, clamped.
+  local mus = cm.require("cm.ed.win.music")
+  check(mus.group_val(50, 80, 110, false, 1, 127) == 80,
+        "music.group_val: offset (+30) keeps relative spread")
+  check(mus.group_val(120, 80, 110, false, 1, 127) == 127,
+        "music.group_val: offset clamps to hi")
+  check(mus.group_val(50, 80, 110, true, 1, 127) == 110,
+        "music.group_val: CTRL snaps to the same target")
+  check(mus.group_val(10, 5, 3, false, 1, 1 << 30) == 8,
+        "music.group_val: length offset (-2) clamps to >=1")
 end
 
 local function t_ed_kit()
