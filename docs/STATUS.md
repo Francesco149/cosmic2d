@@ -52,19 +52,33 @@ and group-velocity (offset 110→127/90→107 spread-kept + CTRL-snap both
 handle). Tapes used two new draw-time layout anchors (`p.arr`,
 `p.vlane`; committed, cheap, comment-tagged for tapes).
 
-**⚠ Windows NOT re-staged this round** — the `cosmic2d-win` exe still
-predates these commits; the human's live runs won't show the fixes
-until a re-stage (esp. the FREEZE fix, which only manifests on the
-native Windows FS). Re-stage per PROCESS.md before the human's next
-live pass.
+**Follow-up round (same day — the human's feedback on the live batch):**
+- **Track volume now WORKS (`2d74203`)**: the preview (editor bank)
+  ignored `tr.gain` — only the sim baked it. `preview_slots` now bakes
+  gain/pan like the sim + re-bakes live on a slider drag. Confirmed the
+  mechanism headless (gain 32 vs 128 → peak 1242 vs 4967, ratio 0.25).
+- **gb leads get a high-freq noise attack transient (`7c96dd8`)**: the
+  pulse 50/25/12 + arp had zero noise (a sterile onset click); op2 now
+  layers a short noise2 chiff (level 60, d 35) under alg 7. Levels are a
+  first pass — tune by ear. wave-bass + drums left alone.
+- **Windows RE-STAGED** (authorized): `nix build .#cosmic-windows` →
+  `/mnt/c/Users/headpats/cosmic2d-win`; the staged exe **verify-PASSES
+  kitcheck (830 frames) + selftest 23063 natively on windows** (freeze
+  fix confirmed on the real FS). The human's uncommitted experiments
+  (`sound/test.song`, `ins/gb-wave-bass.ins`) were cleared as asked.
+- **⏳ OPEN — the human's sound-design ask was cut off** mid-sentence:
+  *"what if I want to make an envelope that…"* — waiting on what they
+  want (curved segments? more stages? exact entry?) before touching the
+  synth envelope further.
 
 **Next step (resume here):** the human's live FEEL pass with ears +
 hands — (1) the synth envelope drag (short-attack resolution + the ms
 readout), (2) pattern reuse (ctrl+drag / ctrl+press to place a pattern
 repeatedly; edit once → all follow), (3) group velocity/length drags
-(offset vs CTRL-snap), (4) the volume panel, (5) confirm the freeze is
-gone (needs the re-stage). Group-LENGTH resize + the volume SLIDER drag
-are KAT/mirror-proven but not yet tape-driven — watch those live. Then
+(offset vs CTRL-snap), (4) the volume panel (now audible),
+(5) the freeze is gone (re-staged — confirmed native), (6) the gb lead
+noise transient. Group-LENGTH resize + the volume SLIDER drag are
+KAT/mirror-proven but not yet tape-driven — watch those live. Then
 **R9e — the game hookup** (../cosmic2d-game): sfx at jump/land/slice/
 teleport + a first rim_hub track. Good `/clear` point — everything
 committed, docs current.
