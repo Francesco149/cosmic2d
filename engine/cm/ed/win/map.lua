@@ -41,6 +41,8 @@ local tmap = cm.require("cm.tmap")
 local wv = cm.require("cm.ed.winview")
 
 M.kind = "map"
+M.menu = "map"
+M.exts = { "map" }
 M.DEF_W, M.DEF_H = 560, 420
 M.JCAP = 512
 M.wants_keys = true -- del/arrows/brackets belong to the tool (§6); the
@@ -895,36 +897,14 @@ end
 
 -- ---- view plumbing ----
 
--- focused = the view lock (the human's ask, §6): wheel + middle-drag act
--- on THIS window's camera from anywhere on the canvas; any canvas action
--- or Esc unfocuses. An unbound window has no view to own. FOCUS IS THE
--- ONE GATE (second round of the ask): an unfocused map window's view is
--- INERT — no hover fallback — so Esc visibly AND actually lets go.
-function M.own_view(win)
-  return win.path ~= ""
-end
-
--- content wheel: zoom the map view at the cursor (focused only). Under
--- the focus lock the wheel arrives from anywhere — a cursor outside the
--- view anchors at the center (zoom-at-cursor math would fling the pan).
-function M.wheel(win, ed, dy)
-  if ed.doc.focus ~= win.id then return false end
-  local p = ed.g.mw and ed.g.mw[win.path]
-  local r = p and p.view
-  if not (r and p.doc) then return false end
-  local i = cm.require("cm.ui").inp
-  local ax, ay = i.wx, i.wy
-  if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
-    ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
-  end
-  wv.wheel_zoom(win, r, ax, ay, dy, 0.05, 32)
-  ed.touch()
-  return true
-end
-
-function M.takes_middle(win, ed)
-  return win.path ~= "" and ed ~= nil and ed.doc.focus == win.id
-end
+-- focused = the view lock (the human's ask, §6, generalized —
+-- kit.viewlock installs own_view/wheel/takes_middle): wheel +
+-- middle-drag act on THIS window's camera from anywhere on the canvas;
+-- any canvas action or Esc unfocuses. An unbound window has no view to
+-- own. FOCUS IS THE ONE GATE (second round of the ask): an unfocused
+-- map window's view is INERT — no hover fallback — so Esc visibly AND
+-- actually lets go.
+cm.require("cm.ed.kit").viewlock(M, { gkey = "mw", rect = "view" })
 
 -- ctrl+wheel: the grid-step dial (§7; focused only, like the rest)
 function M.ctrl_wheel(win, ed, notches)

@@ -13,6 +13,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "console"
+M.menu = "console"
 M.DEF_W, M.DEF_H = 560, 320
 M.PX = 12.0
 

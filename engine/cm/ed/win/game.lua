@@ -22,6 +22,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "game"
+M.menu = "game window"
 M.wants_keys = true -- plain-key shell hotkeys suspend while focused (§12.3)
 M.game_input = true -- and filter_events feeds the SIM (R8b split: other
                     -- wants_keys kinds claim keys for their tool, not play)

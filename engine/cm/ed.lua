@@ -30,19 +30,19 @@ M.root = M.root or nil
 M.doc = M.doc or nil
 M.g = M.g or {}
 
-M.kinds = {
-  note = cm.require("cm.ed.win.note"),
-  game = cm.require("cm.ed.win.game"),
-  text = cm.require("cm.ed.win.text"),
-  console = cm.require("cm.ed.win.console"),
-  assets = cm.require("cm.ed.win.assets"),
-  image = cm.require("cm.ed.win.image"),
-  sprite = cm.require("cm.ed.win.sprite"),
-  map = cm.require("cm.ed.win.map"),
-  tmap = cm.require("cm.ed.win.tmap"),
-  perf = cm.require("cm.ed.win.perf"),
-  anim = cm.require("cm.ed.win.anim"),
-}
+-- the kind roster (EDITOR.md §13): the ONE list a new window kind adds
+-- itself to. A kind module self-describes the rest — `M.menu` puts it
+-- on the spawn menu (roster order = menu order), `M.exts` routes asset
+-- double-clicks/drops to it (assets.kind_for reads it).
+local ROSTER = { "note", "text", "assets", "map", "tmap", "game",
+                 "console", "anim", "perf", "image", "sprite" }
+M.kinds = {}
+local MENU_ITEMS = {}
+for _, name in ipairs(ROSTER) do
+  local kind = cm.require("cm.ed.win." .. name)
+  M.kinds[name] = kind
+  if kind.menu then MENU_ITEMS[#MENU_ITEMS + 1] = { name, kind.menu } end
+end
 
 -- new code windows open at the size you've made your current one
 -- (human, UX round 6): the focused text window's size, else the topmost
@@ -988,11 +988,7 @@ local function draw_win(ig, win, zi)
   end
 end
 
-local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
-                     { "assets", "assets" }, { "map", "map" },
-                     { "tmap", "tilemap" },
-                     { "game", "game window" }, { "console", "console" },
-                     { "anim", "animation" }, { "perf", "perf" } }
+-- MENU_ITEMS derives from the roster (kind.menu labels, §13)
 
 local function draw_menu(ig, i)
   local g = M.g

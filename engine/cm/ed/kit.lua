@@ -139,6 +139,51 @@ function M.hints(kind, win, ed)
   return out
 end
 
+-- ---- the view lock (EDITOR.md §12.7, generalized §13) ----
+--
+-- kit.viewlock(K, opts) installs the focused-view trio — own_view /
+-- wheel / takes_middle — on a kind: the window owns wheel + middle-drag
+-- only WHILE FOCUSED (focus is the ONE gate); unfocused = inert view;
+-- under the lock an off-view wheel anchors at the view center (zoom-at-
+-- cursor math would fling the pan). The math lives in cm.ed.winview.
+--
+--   opts = { gkey = "sw",            -- the plumbing key (kit.asset's)
+--            rect = "canvas_rect",   -- p.<rect> = this frame's view px
+--            lock = fn(win) -> bool, -- when the view can lock (default:
+--                                    --  bound; sprite/tmap add edit)
+--            zmin = 0.05, zmax = 32 }
+
+function M.viewlock(K, opts)
+  local gkey = opts.gkey
+  local rect = opts.rect or "canvas_rect"
+  local lock = opts.lock
+               or function(win) return (win.path or "") ~= "" end
+  local zmin, zmax = opts.zmin or 0.05, opts.zmax or 32
+
+  function K.own_view(win)
+    return lock(win)
+  end
+
+  function K.wheel(win, ed, dy)
+    if not lock(win) or ed.doc.focus ~= win.id then return false end
+    local p = ed.g[gkey] and ed.g[gkey][win.path]
+    local r = p and p[rect]
+    if not (r and p.doc) then return false end
+    local i = cm.require("cm.ui").inp
+    local ax, ay = i.wx, i.wy
+    if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
+      ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
+    end
+    cm.require("cm.ed.winview").wheel_zoom(win, r, ax, ay, dy, zmin, zmax)
+    ed.touch()
+    return true
+  end
+
+  function K.takes_middle(win, ed)
+    return lock(win) and ed ~= nil and ed.doc.focus == win.id
+  end
+end
+
 function M.asset(spec)
   local A = {}
   local gkey, field = spec.gkey, spec.field

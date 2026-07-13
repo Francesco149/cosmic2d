@@ -7,6 +7,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "perf"
+M.menu = "perf"
 M.DEF_W, M.DEF_H = 240, 170
 
 local COL = {

@@ -661,3 +661,61 @@ by another name. New kinds use winview instead of rolling their own.
 open the game and *play it in its window*, edit a script in code ed
 (highlighted, Ctrl+S hot-reloads the running game), tweak a sprite in
 sprite ed, drag an asset in from the OS — and the F2 studio is gone.
+
+## 13. The windowkit — the generalized citizen (R9a, D058)
+
+The R4–R8 window kinds each hand-rolled the same machinery; R9a factors
+it so a UX change to a shared pattern lands ONCE and reflects
+everywhere (the human's ask, 2026-07-13). New kinds (the R9 audio
+windows) are built on the kit; adding one touches ONE file plus a
+roster line. AUDIO.md §7 is the design; this section is the contract.
+
+### 13.1 `cm.ed.kit.asset(spec)` — the §6 contract, generated
+
+The working-bytes + journal citizen (open/adopt-on-restart, commit or
+push, dirty/save/undo/redo/revert, the open_path/commit_path doors,
+R6c parked walls) as a factory. spec = the per-kind deltas: `gkey`
+(the ed.g plumbing key), `field` (doc.assets[path].<field>), `jcap`,
+`fresh(ed, path)` (new-asset bytes; omitted = adopt disk, the text
+model), `adopt(p, bytes)` (decode + cache resets, or force_set for a
+live widget), `encode(doc)` (codec kinds — gives A.commit; omitted =
+raw kind, A.push with the p.due debounce), `pre_undo`, `write`,
+`after_save` (side effects + the log line), `baseline_always`,
+`post_encode`. sprite/map/tmap/text ride it; anim reaches sprite's
+doors as before. Factory semantics are KAT'd on a dummy codec
+(t_ed_kit) so the contract is pinned independently of its consumers.
+
+### 13.2 Per-window hotkeys — declarative tables
+
+`M.hotkeys = { { key = "p", hint = "pen", when = fn, fn = fn }, … }`.
+The shell dispatches the FOCUSED window's table after its reserved
+keys (Ctrl+S/F/Z/Y, the Esc ladder, grave, Alt+V — a kind can never
+shadow the shell) and before the shell plain keys; exact-mod matching,
+no key repeats; `when` gates dispatch AND the hint. The **hint strip
+renders itself** under the focused window from the same table (keys
+bright, hints dim). Key names: letters/digits + enter/tab/space/del/
+arrows/brackets/punctuation (kit.SC); combos "ctrl+shift+x".
+sprite/tmap speak it (tool keys p/e/f/k in edit mode, shift+1 refits
+the view — the own_view grammar the map window already had); the map
+window's modal tool keys stay in its draw (gesture-state-dependent
+dispatch is not a table's job).
+
+### 13.3 One-file kind registration
+
+ed.lua holds ONE roster list (order = spawn-menu order). A kind module
+self-describes: `M.menu = "tilemap"` puts it on the spawn menu,
+`M.exts = { "tm" }` routes asset double-clicks/drops (assets.kind_for
+reads the roster; class fallbacks image→image, code→text stay). Adding
+a kind = write the module, add its name to the roster.
+
+### 13.4 `kit.viewlock(K, opts)` + `cm.ed.chips`
+
+viewlock installs the §12.7 focused-view trio (own_view / wheel /
+takes_middle) over cm.ed.winview: `gkey`, `rect` (the plumbing's
+current view px), `lock(win)` (bound; sprite/tmap add edit mode),
+zoom bounds. One deliberate tightening: takes_middle now requires the
+lock predicate whole (an unbound edit-mode window no longer claims
+middle-drag — its view was inert anyway). cm.ed.chips is the
+right-aligned header chip strip (hover on ctx.hot, on/off fill,
+width accounting) — sprite/tmap headers use it; map's tool-chip
+layout migrates when next touched.

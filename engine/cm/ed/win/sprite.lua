@@ -22,6 +22,7 @@ local sprite = cm.require("cm.sprite")
 local paint = cm.require("cm.paint")
 
 M.kind = "sprite"
+M.exts = { "spr" }
 M.DEF_W, M.DEF_H = 460, 380
 M.JCAP = 512
 
@@ -126,30 +127,14 @@ M.dirty, M.save, M.undo, M.redo, M.revert =
 -- ---- header: the edit toggle (the board's "obvious toggle") ----
 
 function M.header(win, ctx)
-  local z = ctx.z
-  local px = math.max(4, 10.5 * z)
-  local i = cm.require("cm.ui").inp
-  local x, used = ctx.hx, 0
-  local function chip(label, on)
-    local w = pal.x_ig_text_size(label, px, 0) + 14 * z
-    x = x - w
-    used = used + w + 4 * z
-    local hov = ctx.hot and i.wx >= x and i.wx < x + w
-                and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
-    pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
-                       on and COL.btn_on or COL.btn, 4 * z)
-    pal.x_ig_text(x + 7 * z, ctx.hy + (ctx.hh - px) * 0.45, px,
-                  (hov or on) and COL.hot or COL.dim, label, 0)
-    x = x - 4 * z
-    return hov and i.clicked[1]
-  end
-  if chip(win.edit and "done" or "edit", win.edit) then
+  local s = cm.require("cm.ed.chips").strip(ctx)
+  if s:chip(win.edit and "done" or "edit", win.edit) then
     win.edit = not win.edit
     ctx.ed.touch()
   end
   -- the animation window door (the board's "split animation stuff"):
   -- open (or focus) an anim window bound to this sprite
-  if win.path ~= "" and chip("anim", false) then
+  if win.path ~= "" and s:chip("anim", false) then
     local ed = ctx.ed
     local wm = cm.require("cm.ed.wm")
     local found
@@ -167,7 +152,7 @@ function M.header(win, ctx)
     end
     ed.touch()
   end
-  return used
+  return s.used
 end
 
 -- ---- view helpers ----
@@ -209,38 +194,14 @@ local function refresh_tex(p)
   p.comp_dirty = nil
 end
 
--- focused = the view lock (the map window's model — the human's ask,
--- 2026-07-13): an edit-mode sprite ed owns wheel + middle-drag only
--- WHILE FOCUSED; unfocused = inert view (the canvas pans/zooms over
--- it). View mode never locks.
-function M.own_view(win)
-  return win.edit == true and (win.path or "") ~= ""
-end
-
--- content wheel: zoom the sprite view at the cursor (focused edit mode
--- only — FOCUS IS THE ONE GATE, the map window's contract). Under the
--- lock the wheel arrives from anywhere — a cursor outside the canvas
--- anchors at the view center. The math lives in cm.ed.winview.
-function M.wheel(win, ed, dy)
-  if not win.edit or ed.doc.focus ~= win.id then return false end
-  local p = ed.g.sw and ed.g.sw[win.path]
-  local r = p and p.canvas_rect
-  if not (r and p.doc) then return false end
-  local i = cm.require("cm.ui").inp
-  local ax, ay = i.wx, i.wy
-  if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
-    ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
-  end
-  cm.require("cm.ed.winview").wheel_zoom(win, r, ax, ay, dy, 0.25, 64)
-  ed.touch()
-  return true
-end
-
--- middle-drag pans the sprite view — focused edit mode only (§12.6 +
--- the view-lock contract); unfocused, the canvas pans
-function M.takes_middle(win, ed)
-  return win.edit == true and ed ~= nil and ed.doc.focus == win.id
-end
+-- focused = the view lock (the map window's model, generalized —
+-- kit.viewlock installs own_view/wheel/takes_middle): an edit-mode
+-- sprite ed owns wheel + middle-drag only WHILE FOCUSED; unfocused =
+-- inert view (the canvas pans/zooms over it). View mode never locks.
+cm.require("cm.ed.kit").viewlock(M, {
+  gkey = "sw", rect = "canvas_rect", zmin = 0.25, zmax = 64,
+  lock = function(win) return win.edit == true and (win.path or "") ~= "" end,
+})
 
 -- Esc while the global eyedropper is armed drops back to the pen — the
 -- visible exit from pick-anywhere (the shell's Esc ladder calls this)

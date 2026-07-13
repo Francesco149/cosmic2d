@@ -25,6 +25,8 @@ local tmap = cm.require("cm.tmap")
 local wv = cm.require("cm.ed.winview")
 
 M.kind = "tmap"
+M.menu = "tilemap"
+M.exts = { "tm" }
 M.DEF_W, M.DEF_H = 460, 380
 M.JCAP = 512
 
@@ -135,54 +137,24 @@ end
 -- ---- header: the edit toggle (the sprite ed's, verbatim) ----
 
 function M.header(win, ctx)
-  local z = ctx.z
-  local px = math.max(4, 10.5 * z)
-  local label = win.edit and "done" or "edit"
-  local w = pal.x_ig_text_size(label, px, 0) + 14 * z
-  local x = ctx.hx - w
-  local i = cm.require("cm.ui").inp
-  local hov = ctx.hot and i.wx >= x and i.wx < x + w
-              and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
-  pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
-                     win.edit and COL.btn_on or COL.btn, 4 * z)
-  pal.x_ig_text(x + 7 * z, ctx.hy + (ctx.hh - px) * 0.45, px,
-                (hov or win.edit) and COL.hot or COL.dim, label, 0)
-  if hov and i.clicked[1] then
+  local s = cm.require("cm.ed.chips").strip(ctx)
+  if s:chip(win.edit and "done" or "edit", win.edit) then
     win.edit = not win.edit
     ctx.ed.touch()
   end
-  return w + 4 * z
+  return s.used
 end
 
 -- ---- view helpers ----
 
--- focused = the view lock (the map/sprite model, the human's ask,
--- 2026-07-13): an edit-mode tilemap window owns wheel + middle-drag
--- only WHILE FOCUSED; unfocused = inert view. View mode never locks.
-function M.own_view(win)
-  return win.edit == true and (win.path or "") ~= ""
-end
-
--- content wheel: zoom at the cursor (focused edit mode only); under
--- the lock an off-view wheel anchors at the view center
-function M.wheel(win, ed, dy)
-  if not win.edit or ed.doc.focus ~= win.id then return false end
-  local p = ed.g.tmw and ed.g.tmw[win.path]
-  local r = p and p.canvas_rect
-  if not (r and p.doc) then return false end
-  local i = cm.require("cm.ui").inp
-  local ax, ay = i.wx, i.wy
-  if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
-    ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
-  end
-  cm.require("cm.ed.winview").wheel_zoom(win, r, ax, ay, dy, 0.05, 32)
-  ed.touch()
-  return true
-end
-
-function M.takes_middle(win, ed)
-  return win.edit == true and ed ~= nil and ed.doc.focus == win.id
-end
+-- focused = the view lock (the map/sprite model, generalized —
+-- kit.viewlock installs own_view/wheel/takes_middle): an edit-mode
+-- tilemap window owns wheel + middle-drag only WHILE FOCUSED;
+-- unfocused = inert view. View mode never locks.
+cm.require("cm.ed.kit").viewlock(M, {
+  gkey = "tmw", rect = "canvas_rect",
+  lock = function(win) return win.edit == true and (win.path or "") ~= "" end,
+})
 
 -- the tileset strip texture (ed-root baked .png sibling; a raw .png
 -- tileset draws directly). Epoch-aware: a sprite-ed save of the tileset

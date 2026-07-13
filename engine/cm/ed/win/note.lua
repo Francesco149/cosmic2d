@@ -10,6 +10,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "note"
+M.menu = "note"
 M.DEF_W, M.DEF_H = 260, 180
 M.PX = 13.5 -- world-px text size
 

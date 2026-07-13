@@ -27,6 +27,7 @@ local M = select(2, ...) or {}
 local lex = cm.require("cm.ed.lex")
 
 M.kind = "text"
+M.menu = "open file…"
 -- defaults lifted from the human's live session (UX round 6b: "what i
 -- sized it to right now" — player.lua at 669x757, font ticked to 16):
 -- the fresh-editor fallback; open windows still inherit the current

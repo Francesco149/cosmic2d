@@ -18,6 +18,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "assets"
+M.menu = "assets"
 M.DEF_W, M.DEF_H = 520, 380
 
 local CODE = { lua = true, md = true, txt = true, json = true, glsl = true }
@@ -58,12 +59,16 @@ function M.class_of(path)
   return "other", ext
 end
 
--- the window kind a double-click / canvas-drop opens for a file
+-- the window kind a double-click / canvas-drop opens for a file: the
+-- kind roster self-describes routing (kind.exts, EDITOR.md §13) — one
+-- canonical opener per extension — with class fallbacks after
 function M.kind_for(path)
   local class, ext = M.class_of(path)
-  if ext == "spr" then return "sprite" end
-  if ext == "map" then return "map" end
-  if ext == "tm" then return "tmap" end -- R8d
+  for name, kind in pairs(cm.require("cm.ed").kinds) do
+    for _, e in ipairs(kind.exts or {}) do
+      if e == ext then return name end
+    end
+  end
   if class == "image" then return "image" end -- any stb-decodable format
   if class == "code" then return "text" end
   return nil -- sound and unknowns have no window yet (M9 never landed)
