@@ -66,9 +66,39 @@ Build order R9a→R9e in AUDIO.md §12 with exits.
   **one-file kind registration** (ed.lua roster + M.menu/M.exts;
   MENU_ITEMS + kind_for derive). Suite ALL GREEN throughout.
 
-**Next step:** R9b — the PAL audio core (AUDIO.md §2/§12): SDL3 device
-+ FIFO, the fixed-point 4-op FM + sampler sim bank in `snd.bank`,
-frame-locked commands, the editor bank, decoders, PCM-hash goldens.
+**R9b — the PAL audio core: BUILT (same night, 2 commits; PAL api
+7→8):**
+
+- **pal/src/snd.c + snd_tab.h**: the fixed-point kernel — 4-op FM
+  (8 OPN algs, op-0 feedback) with selectable op waveforms (sine/
+  square/pulses/saw/tri + **LFSR noise incl. gameboy short mode**) +
+  sampler voices (named-buffer PCM, root note, loops, 32.32 step);
+  committed LUTs, **no libm anywhere**; 32 voices, deterministic
+  stealing. ALL sim-bank state in `snd.bank` (8208 B, versioned) —
+  `pal.snd_render()` inside sim_step advances exactly **800 samples
+  per frame** (and the verify replay mirrors it — a real divergence
+  caught that); no bank = true no-op, pre-R9 goldens byte-identical.
+  Device (live windowed only): SDL3 callback drains the sim FIFO +
+  renders the **editor bank** live (x_snd_ed_* over a lock-free ring).
+  cm.snd packs friendly patch tables ↔ the 80-byte struct (pure).
+- **Proof**: selftest 23020 — pack round-trips, the pure-kernel
+  restore KAT (snapshot bank mid-note → byte-identical PCM), steal,
+  sampler, and the **committed PCM golden `c8826fe3771e33d9`** — which
+  **passes NATIVELY on windows** (mingw == gcc byte-exact, the §12
+  exit). A beeping scratch project records + **verify-PASSES 90
+  frames**; live WSLg session: device up, both banks audible through
+  the real callback. Suite ALL GREEN throughout.
+- **Decoders**: pal.x_snd_decode (dr_wav/dr_mp3/stb_vorbis vendored)
+  → i16 @ 48 kHz, linear resample, stereo downmix; proven on a
+  generated 22 kHz wav (exact 48 k frames, peak preserved).
+- **cosmic2d-win re-staged** (native selftest 23020 PASS + kitcheck
+  byte-exact — the windows-side .ed sessions got wiped again, the
+  recipe's rm -rf).
+
+**Next step:** R9c — the sound windows (AUDIO.md §8/§9/§12): cm.ins
+codec + the synth window (audition piano, live patch send, preset
+strip) + stock presets (gb + fm families), the sound player window +
+kind_for's sound class routes, the →ins import door.
 
 ---
 

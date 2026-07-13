@@ -401,12 +401,18 @@ from files, then falls back to the procedural build / code defaults
 knobs defaults merge fills keys the file predates). File reads are
 boot-time-only by rule: file bytes are not sim input.
 
-## Audio (M6 sketch, kept in mind from day one)
+## Audio (R9b, D058 — the M6/M9 sketch, landed)
 
-PAL owns the audio device and the FM voice inner loop (C, deterministic);
-Lua owns patches, sequencing, and mixing decisions. Voice state lives in a
-named buffer. The sim emits timestamped commands; the audio thread renders
-ahead by a small fixed latency. Replays regenerate identical PCM.
+PAL owns the audio device and the voice inner loop (C, fixed-point,
+deterministic — pal/src/snd.c); Lua owns patches, sequencing, and mixing
+decisions (cm.snd). Voice state lives in the named buffer `snd.bank`;
+commands are frame-locked (the sim mutates the bank inside the step) and
+`pal.snd_render()` advances exactly 800 samples per sim frame into an
+SPSC FIFO the audio callback drains — PCM is a pure function of the bank
+bytes, so replays regenerate identical PCM (the selftest pins a
+committed PCM hash, byte-exact linux + windows). The render-only
+**editor bank** (x_snd_ed_*) is the audition path, rendered in the
+callback itself. Full design: **docs/AUDIO.md**.
 
 ## Directory layout
 
