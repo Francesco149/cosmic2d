@@ -37,6 +37,11 @@ applied:**
   invalidated on OS drops; the kit's save path invalidates it now
   (every asset-creating kind heals at once). Tape repro + fix.
 
+- **Follow-up (`83eb9cb`): picking a subdivision now sets the next
+  note's length** — the roll's last-used-length rule pinned new notes
+  to 1/8 forever once one existed; a grid change (chip or 1-6) resets
+  it. Music tape 11/11.
+
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
 sessions. Anything CREATED inside `cosmic2d-win` dies on every
