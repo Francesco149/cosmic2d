@@ -3118,6 +3118,47 @@ local function t_snd()
         "snd golden: the committed PCM hash")
 end
 
+local function t_ins()
+  -- R9c (AUDIO.md §4.1): the CINS instrument codec — round-trip,
+  -- canonical bytes, embedded PCM, the upload door. Runs AFTER t_snd:
+  -- it renders frames, and the PCM golden counts only t_snd's.
+  local ins = cm.require("cm.ins")
+  local doc = ins.fresh("bell")
+  doc.patch.alg = 4
+  doc.patch.ops[2].level = 200
+  doc.patch.ops[2].coarse = 7
+  local bytes = ins.encode(doc)
+  check(bytes:sub(1, 4) == "CINS", "ins: container magic")
+  local d2 = ins.decode(bytes)
+  check(d2.name == "bell" and d2.patch.alg == 4
+        and d2.patch.ops[2].coarse == 7 and d2.pcm == nil,
+        "ins: fm doc round-trips")
+  check(ins.encode(d2) == bytes, "ins: canonical encode")
+
+  local sdoc = { name = "crunch", pcm = string.pack("<i2i2i2", 5, -9, 7),
+                 patch = { type = "sample", root = 60, loop = false,
+                           a = 1, r = 10, s = 255 } }
+  local sb = ins.encode(sdoc)
+  local s2 = ins.decode(sb)
+  check(s2.patch.type == "sample" and s2.pcm == sdoc.pcm
+        and s2.patch.root == 60, "ins: sample doc embeds PCM")
+  check(s2.patch.pcm == "", "ins: files never carry buffer names")
+
+  -- upload: sample PCM lands in a named buffer, the patch points at it
+  ins.upload(s2, 9, "sim", "kat")
+  check(s2.patch.pcm == "snd.pcm/kat", "ins: upload names the PCM buffer")
+  local found
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == s2.patch.pcm then found = b end
+  end
+  check(found ~= nil, "ins: the PCM buffer exists")
+  local v = cm.require("cm.snd").on(9, 60, 127)
+  pal.snd_render()
+  check(pal.x_snd_tap():find("[^%z]") ~= nil, "ins: uploaded voice sounds")
+  cm.require("cm.snd").off(v)
+  for _ = 1, 6 do pal.snd_render() end
+end
+
 local function t_ed_kit()
   -- cm.ed.kit (R9a, AUDIO.md §7): the generalized §6 asset citizen —
   -- the factory's semantics pinned on a dummy codec, independent of the
@@ -4240,6 +4281,7 @@ function game.init()
   t_ed_journal()
   t_ed_kit()
   t_snd()
+  t_ins()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()

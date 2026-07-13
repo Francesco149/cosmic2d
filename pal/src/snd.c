@@ -67,7 +67,8 @@ typedef struct { /* 16 bytes per operator */
 } SndOp;
 
 typedef struct { /* 80 bytes; the flat .ins param struct (AUDIO.md §4.1) */
-  uint8_t type;   /* 0 = fm, 1 = sample */
+  uint8_t type;   /* 0 = fm, 1 = sample, 2 = stream (stereo 1:1 pcm —
+                     the sound player's voice; note is ignored) */
   uint8_t alg;    /* 0..7 */
   uint8_t fb;     /* 0..7, op 0 */
   uint8_t flags;
@@ -157,6 +158,7 @@ static struct {
   struct {
     uint8_t kind; /* 1 on, 2 off, 3 patch */
     uint8_t voice, slot, note, vel;
+    uint32_t pos; /* on: start offset, sample frames (player seek) */
     SndPatch patch;
   } edq[64];
   SDL_AtomicInt edq_r, edq_w;
@@ -233,7 +235,7 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
     SndOp tmp;
     if (p->type == 0) {
       op = &p->u.op[o];
-    } else { /* the sampler reuses op slot 0's envelope machinery */
+    } else { /* sampler/stream reuse op slot 0's envelope machinery */
       memset(&tmp, 0, sizeof tmp);
       tmp.a_ms = p->u.smp.a_ms;
       tmp.d_ms = p->u.smp.d_ms;
@@ -248,24 +250,30 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
     incs[o] = p->type == 0 ? op_inc(op, v->note) : 0;
   }
 
-  /* sampler PCM (type 1): a mono i16 named buffer, looked up per render */
+  /* sampler/stream PCM (types 1/2): an i16 named buffer (mono for the
+   * sampler, interleaved stereo for the stream), looked up per render */
   const int16_t *pcm = NULL;
-  uint32_t pcm_n = 0;
+  uint32_t pcm_n = 0; /* FRAMES (mono samples, or stereo pairs) */
   uint64_t sstep = 0, loop0 = 0, loop1 = 0;
-  if (p->type == 1) {
+  int pcm_ch = p->type == 2 ? 2 : 1;
+  if (p->type == 1 || p->type == 2) {
     char name[25];
     memcpy(name, p->u.smp.pcm, 24);
     name[24] = 0;
     for (PalBuf *b = G.bufs; b; b = b->next)
       if (b->alive && b->name && strcmp(b->name, name) == 0) {
         pcm = (const int16_t *)b->data;
-        pcm_n = (uint32_t)(b->size / 2);
+        pcm_n = (uint32_t)(b->size / (2 * pcm_ch));
         break;
       }
-    int off = (int)v->note - (int)p->u.smp.root + 64;
-    if (off < 0) off = 0;
-    if (off > 128) off = 128;
-    sstep = (uint64_t)SND_RATIO_Q16[off] << 16; /* Q16 -> 32.32 */
+    if (p->type == 1) {
+      int off = (int)v->note - (int)p->u.smp.root + 64;
+      if (off < 0) off = 0;
+      if (off > 128) off = 128;
+      sstep = (uint64_t)SND_RATIO_Q16[off] << 16; /* Q16 -> 32.32 */
+    } else {
+      sstep = (uint64_t)1 << 32; /* stream: 1:1, note ignored */
+    }
     loop0 = (uint64_t)p->u.smp.loop0 << 32;
     loop1 = (uint64_t)p->u.smp.loop1 << 32;
     if (!pcm || pcm_n == 0) { /* unbound PCM: the voice just dies */
@@ -309,7 +317,7 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
       os->env = env;
       if (os->stage != 4) all_off = false;
 
-      if (p->type == 1) { /* sampler sample */
+      if (p->type == 1 || p->type == 2) { /* sampler / stream */
         uint64_t pos = v->spos;
         uint32_t idx = (uint32_t)(pos >> 32);
         if (idx + 1 >= pcm_n) {
@@ -323,15 +331,29 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
             break;
           }
         }
-        int32_t s0 = pcm[idx], s1 = pcm[idx + 1 < pcm_n ? idx + 1 : idx];
         int32_t fr = (int32_t)((pos >> 16) & 0xffff);
-        int32_t sm = s0 + ((s1 - s0) * fr >> 16);
-        out[0] = sm * (int32_t)(env >> 12) >> 12;
+        uint32_t i1 = idx + 1 < pcm_n ? idx + 1 : idx;
+        if (p->type == 2) { /* stereo pairs, 1:1 — straight to acc with
+                               env + gain (pan is a balance elsewhere) */
+          int32_t l0 = pcm[idx * 2], l1 = pcm[i1 * 2];
+          int32_t r0 = pcm[idx * 2 + 1], r1 = pcm[i1 * 2 + 1];
+          int32_t sl = l0 + ((l1 - l0) * fr >> 16);
+          int32_t sr = r0 + ((r1 - r0) * fr >> 16);
+          sl = sl * (int32_t)(env >> 12) >> 12;
+          sr = sr * (int32_t)(env >> 12) >> 12;
+          acc[i * 2] += sl * gain >> 7;
+          acc[i * 2 + 1] += sr * gain >> 7;
+          mix = 0; /* already accumulated */
+        } else {
+          int32_t s0 = pcm[idx], s1 = pcm[i1];
+          int32_t sm = s0 + ((s1 - s0) * fr >> 16);
+          out[0] = sm * (int32_t)(env >> 12) >> 12;
+          mix = out[0];
+        }
         pos += sstep;
         if ((p->u.smp.sflags & 1) && loop1 > loop0 && pos >= loop1)
           pos = loop0 + (pos - loop1) % (loop1 - loop0);
         v->spos = pos;
-        mix = out[0];
       } else { /* fm op */
         const SndOp *op = &p->u.op[o];
         int32_t mod = 0;
@@ -371,7 +393,8 @@ static void bank_render(SndBank *b, int32_t *acc, int n) {
   b->hdr->frame++;
 }
 
-static int bank_note_on(SndBank *b, int slot, int note, int vel) {
+static int bank_note_on(SndBank *b, int slot, int note, int vel,
+                        uint32_t pos_frames) {
   int pick = -1;
   for (int i = 0; i < SND_VOICES; i++)
     if (!b->voice[i].active) { pick = i; break; }
@@ -391,6 +414,7 @@ static int bank_note_on(SndBank *b, int slot, int note, int vel) {
   v->note = (uint8_t)note;
   v->vel = (uint8_t)vel;
   v->age = b->hdr->frame;
+  v->spos = (uint64_t)pos_frames << 32; /* sampler/stream start offset */
   for (int o = 0; o < 4; o++) v->op[o].lfsr = 0x7fff;
   return pick;
 }
@@ -463,6 +487,7 @@ static void ed_drain_commands(void) {
         v->note = S.edq[i].note;
         v->vel = S.edq[i].vel;
         v->age = ed_hdr.frame;
+        v->spos = (uint64_t)S.edq[i].pos << 32;
         for (int o = 0; o < 4; o++) v->op[o].lfsr = 0x7fff;
       }
       break;
@@ -546,10 +571,11 @@ static int l_snd_on(lua_State *L) {
   int slot = (int)luaL_checkinteger(L, 1);
   int note = (int)luaL_checkinteger(L, 2);
   int vel = (int)luaL_optinteger(L, 3, 100);
+  uint32_t pos = (uint32_t)luaL_optinteger(L, 4, 0);
   luaL_argcheck(L, slot >= 0 && slot < SND_PATCHES, 1, "slot 0..63");
   SndBank b;
   if (!sim_bank(&b, true)) return luaL_error(L, "snd.bank unavailable");
-  lua_pushinteger(L, bank_note_on(&b, slot, note & 127, vel & 127));
+  lua_pushinteger(L, bank_note_on(&b, slot, note & 127, vel & 127, pos));
   return 1;
 }
 
@@ -631,7 +657,7 @@ static int l_x_snd_start(lua_State *L) {
 }
 
 static bool edq_push(uint8_t kind, uint8_t voice, uint8_t slot, uint8_t note,
-                     uint8_t vel, const void *patch) {
+                     uint8_t vel, uint32_t pos, const void *patch) {
   int r = SDL_GetAtomicInt(&S.edq_r), w = SDL_GetAtomicInt(&S.edq_w);
   if (w - r >= 64) return false;
   int i = w % 64;
@@ -640,6 +666,7 @@ static bool edq_push(uint8_t kind, uint8_t voice, uint8_t slot, uint8_t note,
   S.edq[i].slot = slot;
   S.edq[i].note = note;
   S.edq[i].vel = vel;
+  S.edq[i].pos = pos;
   if (patch) memcpy(&S.edq[i].patch, patch, sizeof(SndPatch));
   SDL_SetAtomicInt(&S.edq_w, w + 1);
   return true;
@@ -655,7 +682,7 @@ static int l_x_snd_ed_patch(lua_State *L) {
     memcpy(&S.ed_patch[slot], bytes, sizeof(SndPatch));
     return 0;
   }
-  edq_push(3, 0, (uint8_t)slot, 0, 0, bytes);
+  edq_push(3, 0, (uint8_t)slot, 0, 0, 0, bytes);
   return 0;
 }
 
@@ -667,15 +694,25 @@ static int l_x_snd_ed_on(lua_State *L) {
   luaL_argcheck(L, voice >= 0 && voice < SND_VOICES, 1, "voice 0..31");
   luaL_argcheck(L, slot >= 0 && slot < SND_PATCHES, 2, "slot 0..63");
   edq_push(1, (uint8_t)voice, (uint8_t)slot, (uint8_t)(note & 127),
-           (uint8_t)(vel & 127), NULL);
+           (uint8_t)(vel & 127), (uint32_t)luaL_optinteger(L, 5, 0), NULL);
   return 0;
 }
 
 static int l_x_snd_ed_off(lua_State *L) {
   int voice = (int)luaL_checkinteger(L, 1);
   luaL_argcheck(L, voice >= 0 && voice < SND_VOICES, 1, "voice 0..31");
-  edq_push(2, (uint8_t)voice, 0, 0, 0, NULL);
+  edq_push(2, (uint8_t)voice, 0, 0, 0, 0, NULL);
   return 0;
+}
+
+/* pal.x_snd_ed_pos(voice) -> sample frames, active — the player's
+ * playhead (UI display; a racy-but-aligned read of callback state) */
+static int l_x_snd_ed_pos(lua_State *L) {
+  int voice = (int)luaL_checkinteger(L, 1);
+  luaL_argcheck(L, voice >= 0 && voice < SND_VOICES, 1, "voice 0..31");
+  lua_pushinteger(L, (lua_Integer)(S.ed_voice[voice].spos >> 32));
+  lua_pushboolean(L, S.ed_voice[voice].active != 0);
+  return 2;
 }
 
 /* ---- registration ---- */
@@ -691,6 +728,7 @@ static const luaL_Reg snd_funcs[] = {
     {"x_snd_ed_patch", l_x_snd_ed_patch},
     {"x_snd_ed_on", l_x_snd_ed_on},
     {"x_snd_ed_off", l_x_snd_ed_off},
+    {"x_snd_ed_pos", l_x_snd_ed_pos},
     {NULL, NULL}};
 
 void pal_snd_lua_register(lua_State *L) {
