@@ -37,10 +37,13 @@ applied:**
   invalidated on OS drops; the kit's save path invalidates it now
   (every asset-creating kind heals at once). Tape repro + fix.
 
-- **Follow-up (`83eb9cb`): picking a subdivision now sets the next
-  note's length** — the roll's last-used-length rule pinned new notes
-  to 1/8 forever once one existed; a grid change (chip or 1-6) resets
-  it. Music tape 11/11.
+- **Round 2 rolled that back**: the subdivision is the PLACEMENT grid
+  only — length stays last-used, RESIZE a note to change it (the
+  human's call). Plus: the roll is a real view now (win.tick0/lownote/
+  tpp — **MMB pans, wheel zooms**, focused only, the §12.7 view-lock
+  contract like the map editor), and **double-click a velocity bar
+  resets it to 100** (the click clock arms on motionless release, so
+  drags never chain). Music tape 15/15.
 
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
