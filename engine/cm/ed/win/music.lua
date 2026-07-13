@@ -43,7 +43,8 @@ local GRIDS = { PPQ * 4, PPQ * 2, PPQ, PPQ // 2, PPQ // 4, PPQ // 8 }
 local GRID_LABEL = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" }
 
 function M.defaults()
-  return { path = "", pat = 1, trk = 1, grid = 4, tpp = 0.5, lownote = 45 }
+  return { path = "", pat = 1, trk = 1, grid = 4,
+           tpp = 0.5, lownote = 45, tick0 = 0 } -- the roll's view
 end
 
 function M.title(win)
@@ -218,11 +219,9 @@ for i2 = 1, 6 do
   M.hotkeys[#M.hotkeys + 1] = {
     key = tostring(i2), when = bound,
     fn = function(win, ed)
+      -- the subdivision is the PLACEMENT grid only (human, round 2):
+      -- note length stays last-used — resize a note to change it
       win.grid = i2
-      -- a new subdivision resets the remembered note length (human:
-      -- picking 1/2 still placed the last-used 1/8)
-      local _, p = open_asset(ed, win.path)
-      p.lastdur = nil
       ed.touch()
     end }
 end
@@ -363,8 +362,7 @@ function M.draw(win, ctx)
     commit(ed, win.path)
   end
   if tchip(GRID_LABEL[win.grid or 4], false) then
-    win.grid = (win.grid or 4) % 6 + 1
-    p.lastdur = nil -- the new subdivision IS the next note's length
+    win.grid = (win.grid or 4) % 6 + 1 -- placement grid only (round 2)
     ctx.touch()
   end
   -- pattern chips
@@ -484,42 +482,79 @@ function M.draw(win, ctx)
     end
   end
 
-  -- ---- the piano roll ----
+  -- ---- the piano roll (a scrolled/zoomed view: win.tick0 = the left
+  -- edge in ticks, win.lownote = the bottom pitch (fractional rows),
+  -- win.tpp = px per tick — MMB pans, the wheel zooms, focused only,
+  -- the map window's view-lock model) ----
   pal.x_ig_rect_fill(rx, roll_y, rw, roll_h, COL.well, 3 * z)
   pal.x_ig_clip_push(rx, roll_y, rw, roll_h)
-  local low = win.lownote or 45
+  local lowf = win.lownote or 45
+  local low = math.floor(lowf)
+  local suby = (lowf - low) * row_h
+  local tick0 = win.tick0 or 0
   local nrows = math.tointeger(roll_h // row_h) or 0
+  local function t2x(t) return rx + (t - tick0) * tpp end
+  local function x2t(x) return tick0 + (x - rx) / tpp end
+  local function y2pitch(y)
+    return low + nrows
+           - (math.tointeger((y - roll_y + suby) // row_h) or 0)
+  end
+  p.view = { rx = rx, ry = roll_y, rw = rw, rh = roll_h,
+             row_h = row_h } -- the wheel hook reads this
   if not pat then
     pal.x_ig_text(rx + 8 * z, roll_y + 8 * z, px, COL.dim,
                   "no pattern selected", 0)
     pal.x_ig_clip_pop()
     return
   end
+
+  -- MMB pans the roll — focused only (focus is the one gate); the
+  -- content follows the mouse on both axes
+  if ctx.focused and i.clicked[2] then
+    p.pan = { mx = i.wx, my = i.wy, t0 = tick0, lf = lowf }
+  end
+  if p.pan then
+    if i.buttons[2] then
+      win.tick0 = math.max(0, p.pan.t0 - (i.wx - p.pan.mx) / tpp)
+      win.lownote = math.max(0, math.min(127 - nrows,
+        p.pan.lf + (i.wy - p.pan.my) / row_h))
+      ctx.touch()
+      lowf = win.lownote
+      low = math.floor(lowf)
+      suby = (lowf - low) * row_h
+      tick0 = win.tick0
+    else
+      p.pan = nil
+    end
+  end
+
   -- rows (black-key tint) + grid lines
-  for r = 0, nrows do
+  for r = -1, nrows do
+    local ry2 = roll_y + r * row_h - suby
     local pitch = low + nrows - r
     if is_black(pitch) then
-      pal.x_ig_rect_fill(rx, roll_y + r * row_h, rw, row_h, COL.black_row)
+      pal.x_ig_rect_fill(rx, ry2, rw, row_h, COL.black_row)
     end
     if pitch % 12 == 0 then
-      pal.x_ig_line(rx, roll_y + r * row_h, rx + rw, roll_y + r * row_h,
-                    COL.beatln, 1)
-      pal.x_ig_text(rx + 2 * z, roll_y + r * row_h - px * 0.55, px * 0.7,
+      pal.x_ig_line(rx, ry2, rx + rw, ry2, COL.beatln, 1)
+      pal.x_ig_text(rx + 2 * z, ry2 - px * 0.55, px * 0.7,
                     COL.dim, "C" .. (pitch // 12 - 1), 0)
     end
   end
-  for t = 0, pat.len, grid do
-    local lx = rx + t * tpp
+  for t = (math.tointeger(tick0 // grid) or 0) * grid, pat.len, grid do
+    local lx = t2x(t)
     if lx > rx + rw then break end
-    pal.x_ig_line(lx, roll_y, lx, roll_y + roll_h,
-                  t % PPQ == 0 and COL.beatln or COL.gridln, 1)
+    if lx >= rx then
+      pal.x_ig_line(lx, roll_y, lx, roll_y + roll_h,
+                    t % PPQ == 0 and COL.beatln or COL.gridln, 1)
+    end
   end
-  pal.x_ig_line(rx + pat.len * tpp, roll_y, rx + pat.len * tpp,
+  pal.x_ig_line(t2x(pat.len), roll_y, t2x(pat.len),
                 roll_y + roll_h, COL.accent, 1.2 * z)
   -- notes
   local function note_rect(n)
-    local nx = rx + n.tick * tpp
-    local ny = roll_y + (low + nrows - n.pitch) * row_h
+    local nx = t2x(n.tick)
+    local ny = roll_y + (low + nrows - n.pitch) * row_h - suby
     return nx, ny, math.max(2, n.dur * tpp), row_h
   end
   for ni, n in ipairs(pat.notes) do
@@ -535,8 +570,8 @@ function M.draw(win, ctx)
     return math.tointeger(math.max(0, math.min(pat.len - 1, (t // g2) * g2)))
   end
   if ctx.hot and i.clicked[1] and over_roll and not p.g then
-    local tick = (i.wx - rx) / tpp
-    local pitch = low + nrows - math.tointeger((i.wy - roll_y) // row_h)
+    local tick = x2t(i.wx)
+    local pitch = y2pitch(i.wy)
     local hit, edge
     for ni, n in ipairs(pat.notes) do
       if pitch == n.pitch and tick >= n.tick and tick < n.tick + n.dur then
@@ -563,8 +598,8 @@ function M.draw(win, ctx)
   if p.g and (p.g.t == "nmove" or p.g.t == "nsize") then
     local n = pat.notes[p.g.ni]
     if i.buttons[1] and n then
-      local tick = (i.wx - rx) / tpp
-      local pitch = low + nrows - math.tointeger((i.wy - roll_y) // row_h)
+      local tick = x2t(i.wx)
+      local pitch = y2pitch(i.wy)
       if p.g.t == "nmove" then
         local nt = snap(tick - p.g.dt)
         local np = math.max(0, math.min(127, pitch - p.g.dp))
@@ -605,43 +640,105 @@ function M.draw(win, ctx)
   pal.x_ig_rect_fill(rx, vel_y, rw, VEL_H, COL.well, 3 * z)
   pal.x_ig_clip_push(rx, vel_y, rw, VEL_H)
   for ni, n in ipairs(pat.notes) do
-    local nx = rx + n.tick * tpp
+    local nx = t2x(n.tick)
     local vh = (n.vel / 127) * (VEL_H - 4 * z)
     pal.x_ig_rect_fill(nx, vel_y + VEL_H - 2 * z - vh, math.max(2, 3 * z),
                        vh, p.nsel == ni and COL.hot or COL.vel)
   end
   local over_vel = i.wx >= rx and i.wx < rx + rw and i.wy >= vel_y
                    and i.wy < vel_y + VEL_H
-  if ctx.hot and (i.clicked[1] or (p.g and p.g.t == "vel")) and over_vel then
-    if not p.g and i.clicked[1] then p.g = { t = "vel", moved = false } end
+  local function vel_near(x)
+    local tick = x2t(x)
+    local best, bd
+    for ni, n in ipairs(pat.notes) do
+      local d = math.abs(n.tick - tick)
+      if d * tpp < 8 * z and (not bd or d < bd) then best, bd = ni, d end
+    end
+    return best
+  end
+  if ctx.hot and i.clicked[1] and over_vel and not p.g then
+    -- double-click a bar = reset to the natural strength (100 — the
+    -- add default; human, round 2). The clock arms on a MOTIONLESS
+    -- release only, so a drag never counts as the first click.
+    local best = vel_near(i.wx)
+    local now = pal.time_ns()
+    if best and p.vclick and p.vclick.ni == best
+       and now - p.vclick.t < 350e6 then
+      if pat.notes[best].vel ~= 100 then
+        pat.notes[best].vel = 100
+        p.nsel = best
+        p.flat = nil
+        commit(ed, win.path)
+      end
+      p.vclick = nil
+    else
+      p.g = { t = "vel", moved = false, my0 = i.wy, pressni = best }
+    end
+    ctx.touch()
   end
   if p.g and p.g.t == "vel" then
     if i.buttons[1] then
-      local tick = (i.wx - rx) / tpp
-      local best, bd
-      for ni, n in ipairs(pat.notes) do
-        local d = math.abs(n.tick - tick)
-        if d * tpp < 8 * z and (not bd or d < bd) then best, bd = ni, d end
-      end
+      local best = vel_near(i.wx)
       if best then
         local nv = math.max(1, math.min(127, math.floor(
           (1 - (i.wy - vel_y - 2 * z) / (VEL_H - 4 * z)) * 127 + 0.5)))
         if pat.notes[best].vel ~= nv then
           pat.notes[best].vel = nv
           p.nsel = best
-          p.g.moved = true
+          if math.abs(i.wy - (p.g.my0 or i.wy)) > 3 * z then
+            p.g.moved = true
+          end
+          p.g.changed = true
           ctx.touch()
         end
       end
     else
-      if p.g.moved then
+      if p.g.changed then
         p.flat = nil
         commit(ed, win.path)
       end
+      p.vclick = not p.g.moved and p.g.pressni
+                 and { ni = p.g.pressni, t = pal.time_ns() } or nil
       p.g = nil
     end
   end
   pal.x_ig_clip_pop()
+end
+
+-- ---- the view lock (§12.7 — the map window's contract): a bound,
+-- FOCUSED music window owns the wheel (roll zoom at the cursor) and
+-- middle-drag (the pan in draw); unfocused = inert, the canvas takes
+-- everything. The roll's axes are ticks x pitch rows, so the zoom is
+-- horizontal (tpp) with the tick under the cursor pinned. ----
+
+function M.own_view(win)
+  return (win.path or "") ~= ""
+end
+
+function M.wheel(win, ed, dy)
+  if win.path == "" or ed.doc.focus ~= win.id then return false end
+  local p = ed.g.muw and ed.g.muw[win.path]
+  local r = p and p.view
+  if not (r and p.doc) then return false end
+  local i = cm.require("cm.ui").inp
+  local ax = i.wx
+  if ax < r.rx or ax >= r.rx + r.rw then ax = r.rx + r.rw * 0.5 end
+  local old = win.tpp or 0.5
+  local new = math.max(0.05, math.min(8, old * (dy > 0 and 1.2 or 1 / 1.2)))
+  if new ~= old then
+    -- pin the tick under the cursor (screen-space tpp carries the
+    -- canvas zoom; win.tpp is the captured world value)
+    local z = ed.doc.cam.zoom
+    local at = (win.tick0 or 0) + (ax - r.rx) / (old * z)
+    win.tick0 = math.max(0, at - (ax - r.rx) / (new * z))
+    win.tpp = new
+    ed.touch()
+  end
+  return true
+end
+
+function M.takes_middle(win, ed)
+  return (win.path or "") ~= "" and ed ~= nil and ed.doc.focus == win.id
 end
 
 -- drag an .ins from the assets window onto a track row = bind it
