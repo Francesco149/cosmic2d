@@ -283,9 +283,12 @@ picker replaces it) · game window. New windows spawn at the click point.
   `game.draw` (before the legacy ui-canvas panels). While the editor is
   on: `cm.view.mode = "canvas"` (no game blit, D049), events are
   consumed by the shell, the sim keeps stepping.
-- **The legacy chrome quirk** (IMGUI.md §11): perf/scrub still render
-  UNDER the opaque ig canvas (their re-host is future work). The R3
-  console gate is GONE (R4c): the console is a canvas window; grave
+- **The legacy chrome quirk** (IMGUI.md §11): the legacy ui-canvas
+  panels render UNDER the opaque ig canvas. Both dev surfaces now have
+  canvas citizens instead: scrub = the R6d rewind pill/bar, perf = the
+  **perf window kind** (rclick menu; cm.ed.win.perf over cm.perf's warm
+  rings — the F3 panel keeps serving play sessions). The R3 console
+  gate is GONE (R4c): the console is a canvas window; grave
   spawns/focuses it, and a legacy overlay opened under the canvas (the
   error notify) is adopted into a window.
 - **Hot reload**: cm.ed modules keep state on `M` (prev-table

@@ -3,6 +3,54 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (day session, cont. — the editor-polish round: the
+human's five asks, all BUILT)
+**Phase**: **Editor polish toward "the human tweaks solo" — five asks
+in, each tape-proven through the real event path + committed:**
+
+- **ctx.hot — overlap input hygiene** (`f6e0633`): at most ONE window
+  per frame may react to the pointer (topmost banded content hit; any
+  shell layer/gesture blanks it). Every kind's hover/click affordance
+  gates on it — a title-bar drag over an overlapped window can never
+  press the chips/tools underneath (the reported bug; the pre-fix
+  control run reproduces it). Gesture continuations stay ungated.
+- **Drop anywhere = import + open** (`f774a7a`): an OS drop outside
+  asset/map windows adds the file AND opens the right window at the
+  drop point; any stb-decodable image (jpg/bmp/gif/tga/hdr/psd/pnm)
+  **converts to .png on the way in** — one canonical image format.
+- **The global eyedropper** (`62ea3c4`): sprite ed + pick tool armed =
+  click ANYWHERE (other windows, chrome, the live game) samples the
+  composited color. PAL: a live-session capture target now MIRRORS the
+  presented composite (composites twice; the mirror rides the swapchain
+  format, readback swizzles to RGBA8). PICKING chip; Esc → pen.
+- **Map editor gap-fill** (`5f2e880`): ctrl+C/X/V/D clipboard (paste
+  centers at the cursor; pasted placements drop names), ctrl+A, multi-
+  selection [ ] z-move as a block, shift+2 fit-selection, inspector
+  grew placement layer + hide (**PLCE flags bit1 — hidden persists
+  now**), the map's name field, circle x/y/r fields, key hints.
+- **Editor leftovers** (`8747271`): **cm.ed.win.perf** — the F3
+  overlay as a canvas window (the EDITOR.md §8 re-host); picker
+  cleanup (recent paths normalize — dup tiles die; ✕ prunes missing
+  entries from .recent.dat; long names clip).
+
+selftest 22926→**22965**; `nix run .#test` ALL GREEN (one scare: a
+mid-session uigallery "failure" was the new PROCESS.md gotcha — nix
+builds can't see UNTRACKED files); windows **re-staged** (native
+selftest 22965 PASS, kitcheck byte-exact, `bin/smoke.exe` launcher
+boots locked) and **`C:\Users\headpats\cosmic2d-smoke.zip`** sits
+ready for the R5 double-click exit. 6 shots on llm-feed. Known
+deferrals unchanged: anim window (board: "maybe"), sound window (no
+audio engine yet — M9 never landed).
+
+**Next step (resume here):** the human's passes — walk the five polish
+items live (`bin/cosmic projects/smoke --edit` or the game), the R5
+zip double-click (`cosmic2d-smoke.zip` → extract → `bin\smoke.exe`),
+plus the still-queued R7b play pass / R7a feel / R8a–R8e looks. Then
+**R7c — personality rounds** (game-side). Good `/clear` point —
+everything committed, docs current.
+
+---
+
 **Date**: 2026-07-13 (day session, cont. — the R8e exit passed; R7b built)
 **Phase**: **R8 is DONE (the human walked both .map maps and passed
 them — the R8e exit ✅). One clarification recorded in MAPS.md §5: in

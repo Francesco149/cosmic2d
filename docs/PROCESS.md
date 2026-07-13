@@ -85,6 +85,14 @@ means a stale `cosmic2d-win`). The recipe's `rm -rf` also wipes the
 staging's `projects/*/.ed` sessions — the human's windows-side layouts
 reset; warn when re-staging under them.
 
+**Nix builds source the GIT tree** (bit twice, 2026-07-13): `nix run
+.#test`, `nix build .#cosmic-windows` and flake checks copy the git
+tree — dirty TRACKED files are included, **untracked files are
+invisible**. A new module that only exists untracked makes the suite
+"PIXEL MISMATCH (or run failed)" and the cross-build boot-error while
+the working tree runs fine. `git add` (or commit) new files before
+judging any nix-built result.
+
 - Goldens: `VK_DRIVER_FILES` is forced to the flake's lavapipe ICD by the
   test runner — never record goldens on hardware drivers (D007). State
   traces are driver-independent (sim is pure CPU); pixel goldens (M5) are
