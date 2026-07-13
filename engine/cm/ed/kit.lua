@@ -234,8 +234,16 @@ function M.asset(spec)
     p.j = journal.open(ed.root, path, a.jpos > 0 and a.jpos or nil,
                        spec.jcap)
     if not ed.parked then -- parked reopens must never write journals (R6c)
-      if #p.j.entries == 0 and (#p.disk > 0 or spec.baseline_always) then
-        journal.push(p.j, p.disk, journal.SAVED, now_ms())
+      if #p.j.entries == 0 then
+        if #p.disk > 0 or spec.baseline_always then
+          journal.push(p.j, p.disk, journal.SAVED, now_ms())
+        elseif #a[field] > 0 then
+          -- a FRESH asset (spec.fresh made the bytes): journal them as
+          -- the undo floor — the first edit must be undoable back to
+          -- the init state (a gap the synth tape caught; fixes new
+          -- sprite/map/tmap assets too)
+          journal.push(p.j, a[field], 0, now_ms())
+        end
       end
       local tip = journal.at(p.j)
       if tip and a[field] ~= tip.bytes and p.j.pos == #p.j.entries then

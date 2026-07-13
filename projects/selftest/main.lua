@@ -3194,16 +3194,22 @@ local function t_ed_kit()
   local a, p = A.open_asset(ed, "a.k")
   check(a.k == "K:fresh" and p.doc.v == "fresh",
         "ed.kit: fresh open adopts fresh bytes")
-  check(#p.j.entries == 0, "ed.kit: empty disk -> no baseline")
+  check(#p.j.entries == 1 and p.j.entries[1].bytes == "K:fresh",
+        "ed.kit: fresh bytes journal as the undo floor")
   check(A.dirty(win, ed) == true, "ed.kit: fresh bytes ≠ empty disk = dirty")
 
   -- commit: encode + journal + jpos; dedupe leaves the journal alone
   p.doc.v = "one"
   A.commit(ed, "a.k")
-  check(a.k == "K:one" and #p.j.entries == 1 and a.jpos == 1,
+  check(a.k == "K:one" and #p.j.entries == 2 and a.jpos == 2,
         "ed.kit: commit encodes + journals")
   A.commit(ed, "a.k")
-  check(#p.j.entries == 1, "ed.kit: identical commit dedupes")
+  check(#p.j.entries == 2, "ed.kit: identical commit dedupes")
+  -- the first edit walks back to the fresh floor
+  A.undo(win, ed)
+  check(a.k == "K:fresh", "ed.kit: undo reaches the fresh floor")
+  A.redo(win, ed)
+  check(a.k == "K:one", "ed.kit: redo returns")
 
   -- save: disk write + SAVED flag + after_save; then clean
   A.save(win, ed)
