@@ -1987,3 +1987,74 @@ per window anyway), one-way slopes allowed. R8a is unblocked.
 duplicate; get() returns first, file order); code wants to *create*
 placements at runtime (→ that's an entity/render API question, not a
 map-format one — placements stay authored content).
+
+## D058 — R9: audio — the engine core, the sound/music windows, the windowkit (2026-07-13)
+
+**Context**: the human, opening the audio front (the M9 debt): a basic
+sound design tool; drag-and-drop mp3/wav/other audio opens a generic
+sound player (FM-synth'd ones open in the synth); a music editor
+composing designed instruments + samples with stock presets including
+gameboy-voice mimics; mouse-driven like everything else; plus
+**per-window hotkeys** and the common window patterns **generalized**
+so UX changes can't fork per window. Reference surveyed: zexk/wstudio
+(a minimal no-plugins DAW guided by a producer). Full design:
+**docs/AUDIO.md**.
+
+**Decision** (the load-bearing points; AUDIO.md carries the rest):
+
+1. **The frame lock**: 48000 Hz stereo i16 — exactly **800 samples per
+   sim frame**. The sim bank renders per sim step ON the sim thread
+   (pure C, fixed-point) into an SPSC FIFO (default 3 frames); the
+   audio callback only memcpys. PCM is a pure function of
+   (state, commands); state is one versioned named buffer
+   (`snd.bank`) → snapshots/traces/rewind for free; **PCM-hash
+   goldens**; headless silent by construction.
+2. **Two banks** (the D036 split for sound): the recorded **sim bank**
+   vs the render-only **editor bank** (PAL-internal state, immediate
+   `x_snd_ed_*` API, rendered in the callback for zero-latency
+   audition). Goldens can't hear either by construction.
+3. **The voice**: 4-op FM (8 OPN-style algorithms, feedback) whose
+   operators have **selectable waveforms** (sine/square/pulses/saw/
+   tri/**noise-LFSR**) — a single unmodulated op IS a gameboy channel,
+   so the chip presets cost nothing. Plus a **sampler voice** (mono
+   i16, root note, loop, 16.16 step). 32 voices/bank, deterministic
+   stealing. **Kernel discipline: integer/fixed-point only, LUT
+   sine/exp, no libm, no float state** — bit-exact across platforms.
+4. **Assets**: `.ins` (CINS — one flat defaulted param struct; sample
+   type embeds its PCM) and `.song` (CSNG — integer ticks at PPQ 96,
+   patterns + bar-clip arrangement, clips copy-on-write and loop to
+   fill; playback flattens). Both cm.chunk codecs, pure + KAT'd.
+   Presets = stock .ins files (`engine/stock/ins/`), no shipped audio.
+5. **The windowkit lands FIRST (R9a)**: `cm.ed.kit.asset` factory
+   (the §6 working-bytes/journal contract, hand-copied ×4 today,
+   factored once — sprite/map/tmap/text migrate behavior-identical),
+   **declarative per-window hotkey tables** (shell-dispatched to the
+   focused window, self-rendering hint bar), self-describing kind
+   registration (one file per kind), shared header chips +
+   viewlock mixin. EDITOR.md §13 records the contract. The audio
+   windows are built on the kit, not migrated later.
+6. **The windows**: player (kind `sound` — waveform, seek, loop, the
+   →ins import door; read-only), synth (kind `synth` — algorithm
+   thumbnails, draggable ADSR graphs, audition piano + tracker keys,
+   preset strip; full asset citizen), music (kind `music` — piano roll
+   on the wstudio four-rule mouse grammar, velocity lane, arrangement
+   strip, editor-bank preview). **One grammar exception, deliberate**:
+   the roll always snaps to its grid; **CTRL = fine/tick placement**
+   (CTRL still reads "the precise variant" in both grammars).
+7. **Music is sim state**: cm.snd.seq emits frame-locked commands;
+   songs record/replay/rewind like everything else (scrub across a
+   track, resume mid-note). v1 ships dry (no effects/automation/swing
+   — §13 revisit triggers).
+
+**Build order**: R9a windowkit → R9b PAL core → R9c sound windows +
+presets → R9d music window + cm.snd → R9e game sfx/music hookup
+(../cosmic2d-game); REVAMP §6 gains R9.
+
+**Revisit if**: 50 ms sim-bank latency reads as lag on sfx (→ shrink
+FIFO to 2 frames / smaller device blocks; the editor bank already
+proves the low-latency path); the fixed-point FM can't hit a wanted
+timbre (→ widen LUTs/rates before reaching for floats); sample-heavy
+games bloat ring keyframes (→ static-buffer content-hash flag); the
+roll's CTRL inversion feels backwards live (→ flip it, one boolean);
+a first real track feels flat dry (→ Freeverb + delay, the proven
+3-knob floor, still fixed-point).

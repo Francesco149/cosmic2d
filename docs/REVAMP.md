@@ -283,6 +283,22 @@ flex except: **R0 first** (everything else lands in the right repo) and
   deliberately); the game maps re-author in the editor at R8e; the F1
   `cm.editor` + the tilemap mover die. *Exit*: both game maps rebuilt as
   `.map` in the map window, the human walks them, R7b resumes on top.
+- **R9 — audio** (D058 + **docs/AUDIO.md**; the M9 debt): the PAL audio
+  core (48 kHz frame-locked to the sim — 800 samples/frame; 4-op FM
+  voices with selectable waveforms incl. LFSR noise + sampler voices;
+  fixed-point kernel, `snd.bank` named buffer, PCM-hash goldens; the
+  recorded **sim bank** vs the render-only **editor bank** for
+  audition) + the windows: a generic **sound player** (drop any
+  wav/mp3/ogg), the **instrument/synth editor** (`.ins`, stock presets
+  incl. the gameboy family), the **music editor** (`.song`, piano roll
+  + arrangement on the wstudio mouse grammar) + `cm.snd` (music is sim
+  state — records/replays/rewinds). **R9a first: the windowkit** —
+  per-window hotkey tables + the §6 asset contract factored into
+  `cm.ed.kit` (sprite/map/tmap/text migrate behavior-identical; new
+  kinds register from one file). *Exit*: compose an 8-bar loop from
+  stock presets in the editor, the game plays it deterministically
+  (trace → same PCM hash), rewind scrubs across it; sfx wired in the
+  game (R9e); the human plays with sound on.
 
 ## 7. Open questions — RESOLVED (human, 2026-07-12; ADR D046)
 

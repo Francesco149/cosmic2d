@@ -53,6 +53,11 @@ default windows-side save dir. Resolve it like this:
   shell — ALT grammar, the captured editor state domain (R6-ready),
   unsaved-persists + undo-forever journals, and §12 the windows (code ed /
   playable game / console / assets / sprite ed). The STUDIO.md successor.
+- **AUDIO.md** — the R9 design (D058): the audio engine (frame-locked
+  FM/sampler synth in the PAL, sim vs editor banks, PCM-hash goldens),
+  the sound player / synth / music windows, `.ins`/`.song` assets,
+  stock presets incl. the gameboy family, and the **windowkit** (R9a:
+  per-window hotkeys + the generalized asset-window contract).
 - **MAPS.md** — the R8 design (D057): the map system rework — collider
   chains (slopes) + freehand placements + markers as `.map` assets,
   tilemaps demoted to placeable `.tm` objects, the map/tilemap windows,

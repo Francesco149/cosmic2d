@@ -164,7 +164,9 @@ needs. Numbers shifted (old M6 audio → M9, old M7 windows → M6, etc.).
   correctly; deep hot-reload across many project files.
 - **M9 — audio** (was M6): FM synth core in PAL (voices × 4-op, envelopes,
   feedback, a few algorithms), patches/sequencing in Lua, sfx for jump/land/
-  flash-jump/slice/teleport, music, PCM-hash audio goldens.
+  flash-jump/slice/teleport, music, PCM-hash audio goldens. **→ realized as
+  R9 (docs/AUDIO.md, D058, 2026-07-13)** — grown with the sound player /
+  synth / music windows + the windowkit generalization.
 - **M10 — sprite & procedural art tools** (folds old M8 procgen + M9 LUT + the
   sprite editor; **pulled ahead of M9** 2026-06-28 — the editor unblocks all
   content authoring, so it comes before audio. Design bible: **STUDIO.md**; the

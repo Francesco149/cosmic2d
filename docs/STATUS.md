@@ -3,6 +3,53 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (overnight session — R9 designed: audio + the
+windowkit, D058)
+**Phase**: **R9 — audio: DESIGNED (docs/AUDIO.md + ADR D058; REVAMP §6
+gains R9; PLAN M9 points at it). The human's ask: a sound design tool,
+drag-and-drop audio → a generic player (FM ones → the synth), a music
+editor over designed instruments + samples with stock presets incl.
+gameboy voices, per-window hotkeys, and the common window patterns
+generalized so UX changes can't fork per window. Reference surveyed:
+zexk/wstudio (lessons cited [W] in the doc).**
+
+The load-bearing pins (AUDIO.md carries the rest):
+
+- **48 kHz i16 = exactly 800 samples per 60 Hz sim frame**; the sim
+  bank renders per sim step on the sim thread (fixed-point C kernel,
+  LUT sine/exp, no libm, no float state) into an SPSC FIFO the
+  callback memcpys; PCM = pure fn(state, commands); `snd.bank` named
+  buffer → snapshots/traces/**rewind scrubs the mix**; PCM-hash
+  goldens; headless silent by construction.
+- **Two banks**: recorded sim bank vs render-only **editor bank**
+  (callback-rendered, zero-latency audition — the D036 split for
+  sound).
+- **Voice = 4-op FM with selectable op waveforms** (incl. pulses +
+  noise-LFSR: one unmodulated op IS a gameboy channel) + a sampler
+  voice; 8 algorithms, feedback; 32 voices/bank, deterministic steal.
+- **Assets**: `.ins` (CINS, flat defaulted param struct; sample type
+  embeds PCM) + `.song` (CSNG, integer ticks PPQ 96, patterns + clip
+  arrangement, copy-on-write clips, playback flattens); stock presets
+  = `engine/stock/ins/*` (gb + fm families, ~20).
+- **R9a FIRST — the windowkit**: `cm.ed.kit.asset` factory (the §6
+  contract, today hand-copied ×4 — sprite/map/tmap/text migrate
+  behavior-identical), **declarative per-window hotkey tables** +
+  self-rendering hint bar, one-file kind registration, shared chips,
+  viewlock mixin; EDITOR.md grows §13 at build time.
+- **Windows**: player (kind `sound`, read-only, →ins import door),
+  synth (kind `synth`, algorithm thumbnails + draggable ADSR +
+  audition piano/tracker keys + preset strip), music (kind `music`,
+  wstudio four-rule roll grammar + velocity lane + arrangement strip;
+  **the roll always snaps — CTRL = fine ticks**, the one deliberate
+  grammar inversion, D058).
+
+Build order R9a→R9e in AUDIO.md §12 with exits.
+
+**Next step:** R9a — the windowkit (build + migrate + tape-prove zero
+behavior change), then R9b the PAL core.
+
+---
+
 **Date**: 2026-07-13 (day session, cont. — round three: the sprite
 focus lock + the animation window)
 **Phase**: **Two asks in (`ac86f6a`):**
