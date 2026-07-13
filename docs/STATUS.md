@@ -45,8 +45,30 @@ The load-bearing pins (AUDIO.md carries the rest):
 
 Build order R9a→R9e in AUDIO.md §12 with exits.
 
-**Next step:** R9a — the windowkit (build + migrate + tape-prove zero
-behavior change), then R9b the PAL core.
+**R9a — the windowkit: BUILT (same night, 4 commits + EDITOR.md §13):**
+
+- **cm.ed.kit.asset** (`56d4bf7`): the §6 working-bytes/journal
+  contract factored ONCE; sprite/map/tmap/text migrated
+  **behavior-identical** (selftest count unchanged pre-KATs), +18
+  factory KATs on a dummy codec (t_ed_kit — fresh open, baselines,
+  commit dedupe, parked walls, raw-kind push + pre_undo). One nix
+  catch: the KAT wasn't idempotent across runs (`4e4ed1b`).
+- **Per-window hotkeys** (`f6ea38d`): declarative kind.hotkeys tables
+  (exact-mod, when()-gated, reserved shell keys unshadowable) + the
+  self-rendering **hint strip** under the focused window; sprite/tmap
+  speak it (p/e/f/k tools in edit mode, shift+1 refits — the own_view
+  grammar extended); +9 KATs (**23006**) and a **4/4 real-event tape**
+  (focused fires / view-mode when() declines / unfocused inert). Shot
+  on llm-feed.
+- **The round-out** (`1141959`): kit.viewlock mixin (the §12.7 trio,
+  three hand copies die; takes_middle tightened to the whole lock
+  predicate), cm.ed.chips (header chip strip; sprite/tmap adopt),
+  **one-file kind registration** (ed.lua roster + M.menu/M.exts;
+  MENU_ITEMS + kind_for derive). Suite ALL GREEN throughout.
+
+**Next step:** R9b — the PAL audio core (AUDIO.md §2/§12): SDL3 device
++ FIFO, the fixed-point 4-op FM + sampler sim bank in `snd.bank`,
+frame-locked commands, the editor bank, decoders, PCM-hash goldens.
 
 ---
 
