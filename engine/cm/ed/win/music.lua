@@ -533,17 +533,26 @@ function M.draw(win, ctx)
     pal.x_ig_line(lx, ay, lx, ay + AR_H, COL.gridln, 1)
   end
   local lane_h = AR_H / math.max(1, #doc.tracks)
+  -- clips sharing the SELECTED clip's pattern glow together (deliberate
+  -- reuse is visible — round 8; a linked ctrl+drag copy reads at a glance)
+  local sel_pat = p.csel and doc.clips[p.csel] and doc.clips[p.csel].pattern
   for ci, c in ipairs(doc.clips) do
     local cx0 = rx + c.tick * atpp
     local cw0 = c.len * atpp
     local cy0 = ay + (c.track) * lane_h
     if cx0 < rx + rw then
+      local vis_r = math.min(cx0 + cw0, rx + rw) -- clipped right edge
       local hov = ctx.hot and i.wx >= cx0 and i.wx < cx0 + cw0
                   and i.wy >= cy0 and i.wy < cy0 + lane_h
-      pal.x_ig_rect_fill(cx0, cy0 + 1, math.min(cw0, rx + rw - cx0),
-                         lane_h - 2,
-                         (p.csel == ci or hov) and COL.clip_hot or COL.clip,
-                         2 * z)
+      local kin = sel_pat and c.pattern == sel_pat and p.csel ~= ci
+      pal.x_ig_rect_fill(cx0, cy0 + 1, vis_r - cx0, lane_h - 2,
+                         (p.csel == ci or hov) and COL.clip_hot
+                         or kin and COL.note_dim or COL.clip, 2 * z)
+      -- the resize handle: a faint tick always, a bright bar on hover
+      local edge_hot = hov and (cx0 + cw0 - i.wx) < 6 * z
+      pal.x_ig_rect_fill(vis_r - (edge_hot and 3 or 1.5) * z, cy0 + 1,
+                         (edge_hot and 3 or 1.5) * z, lane_h - 2,
+                         edge_hot and COL.hot or 0xffffff30, edge_hot and 1 * z or 0)
       pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.7, COL.dim,
                     "p" .. c.pattern, 0)
     end
@@ -772,11 +781,19 @@ function M.draw(win, ctx)
     local ny = roll_y + (low + nrows - n.pitch) * row_h - suby
     return nx, ny, math.max(2, n.dur * tpp), row_h
   end
+  local roll_hot = ctx.hot and i.wx >= rx and i.wx < rx + rw
+                   and i.wy >= roll_y and i.wy < roll_y + roll_h
   for ni, n in ipairs(pat.notes) do
     local nx, ny, nw, nh = note_rect(n)
     pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2,
                        (p.nsel == ni or p.nsels[n]) and COL.hot or COL.note,
                        2)
+    -- resize handle: a bright bar when hovering the note's right edge, so
+    -- the resize zone is discoverable (the human — hoverable handles)
+    if roll_hot and i.wx >= nx and i.wx < nx + nw and i.wy >= ny
+       and i.wy < ny + nh and (nx + nw - i.wx) < 4 * z then
+      pal.x_ig_rect_fill(nx + nw - 2 * z, ny + 1, 2.5 * z, nh - 2, COL.head, 1 * z)
+    end
   end
   -- the roll grammar (+ selection, round 3: shift+drag = marquee,
   -- shift+click toggles, dragging a selected note moves the whole set)
