@@ -72,6 +72,20 @@ local function decode_into(p, bytes)
     p.err = tostring(doc)
   end
   p.flat = nil -- preview cache
+  p.nsels = nil -- the note selection holds TABLE REFS into the old doc
+end
+
+-- a pattern's length auto-fits its content: the smallest whole-bar
+-- span that holds every note (min one bar). Called before any
+-- note-changing commit — the end line follows what you compose, and a
+-- stamped clip is exactly the riff (human, round 3).
+local function fit_pattern(doc, pt)
+  local bar = PPQ * (doc.beats_per_bar or 4)
+  local ext = 0
+  for _, n in ipairs(pt.notes) do
+    if n.tick + n.dur > ext then ext = n.tick + n.dur end
+  end
+  pt.len = math.max(bar, ((ext + bar - 1) // bar) * bar)
 end
 
 local A = cm.require("cm.ed.kit").asset {
@@ -204,10 +218,25 @@ M.hotkeys = {
       if p.playing then preview_stop(p) else preview_start(ed, win, p) end
       ed.touch()
     end },
-  { key = "del", hint = "del clip", when = bound,
+  { key = "del", hint = "delete", when = bound,
     fn = function(win, ed)
       local _, p = open_asset(ed, win.path)
-      if p.csel and p.doc and p.doc.clips[p.csel] then
+      if not p.doc then return end
+      if p.nsels and next(p.nsels) then -- the note selection first
+        local pt = p.doc.patterns[win.pat or 1]
+        if pt then
+          local keep = {}
+          for _, n in ipairs(pt.notes) do
+            if not p.nsels[n] then keep[#keep + 1] = n end
+          end
+          pt.notes = keep
+          p.nsels = {}
+          p.nsel = nil
+          fit_pattern(p.doc, pt)
+          p.flat = nil
+          commit(ed, win.path)
+        end
+      elseif p.csel and p.doc.clips[p.csel] then
         table.remove(p.doc.clips, p.csel)
         p.csel = nil
         p.flat = nil
@@ -228,6 +257,11 @@ end
 
 function M.escape(win, ed)
   local p = ed.g.muw and ed.g.muw[win.path]
+  if p and p.nsels and next(p.nsels) then -- selection clears first
+    p.nsels = {}
+    ed.touch()
+    return true
+  end
   if p and p.playing then
     preview_stop(p)
     return true
@@ -377,7 +411,8 @@ function M.draw(win, ctx)
   end
   if tchip("+p", false) then
     local nid = (ids[#ids] or 0) + 1
-    doc.patterns[nid] = { id = nid, len = 4 * PPQ * 4, notes = {} }
+    doc.patterns[nid] = { id = nid, notes = {},
+                          len = PPQ * (doc.beats_per_bar or 4) }
     win.pat = nid
     commit(ed, win.path)
   end
@@ -551,7 +586,9 @@ function M.draw(win, ctx)
   end
   pal.x_ig_line(t2x(pat.len), roll_y, t2x(pat.len),
                 roll_y + roll_h, COL.accent, 1.2 * z)
-  -- notes
+  -- notes (selection = a set of note TABLE REFS — stable across
+  -- commits, cleared by decode_into on undo/adopt)
+  p.nsels = p.nsels or {}
   local function note_rect(n)
     local nx = t2x(n.tick)
     local ny = roll_y + (low + nrows - n.pitch) * row_h - suby
@@ -560,14 +597,21 @@ function M.draw(win, ctx)
   for ni, n in ipairs(pat.notes) do
     local nx, ny, nw, nh = note_rect(n)
     pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2,
-                       p.nsel == ni and COL.hot or COL.note, 2)
+                       (p.nsel == ni or p.nsels[n]) and COL.hot or COL.note,
+                       2)
   end
-  -- the roll grammar
+  -- the roll grammar (+ selection, round 3: shift+drag = marquee,
+  -- shift+click toggles, dragging a selected note moves the whole set)
   local over_roll = i.wx >= rx and i.wx < rx + rw and i.wy >= roll_y
                     and i.wy < roll_y + roll_h
   local function snap(t)
     local g2 = ed.g.ctrl and 1 or grid -- CTRL = fine ticks (D058)
-    return math.tointeger(math.max(0, math.min(pat.len - 1, (t // g2) * g2)))
+    return math.tointeger(math.max(0, (t // g2) * g2))
+  end
+  local function note_commit()
+    fit_pattern(doc, pat) -- the end line follows the content
+    p.flat = nil
+    commit(ed, win.path)
   end
   if ctx.hot and i.clicked[1] and over_roll and not p.g then
     local tick = x2t(i.wx)
@@ -579,12 +623,30 @@ function M.draw(win, ctx)
         edge = (n.tick + n.dur - tick) * tpp < 4 * z
       end
     end
-    if hit then
+    if ed.g.shift then -- selection: toggle a note / start a marquee
+      if hit then
+        local n = pat.notes[hit]
+        p.nsels[n] = not p.nsels[n] or nil
+      else
+        p.g = { t = "marquee", x0 = i.wx, y0 = i.wy }
+      end
+    elseif hit and p.nsels[pat.notes[hit]] then -- move the selection
+      local n = pat.notes[hit]
+      local base = {}
+      for sel in pairs(p.nsels) do
+        base[#base + 1] = { n = sel, tick = sel.tick, pitch = sel.pitch }
+      end
+      p.g = { t = "selmove", grab = n, gt = n.tick, gp = n.pitch,
+              dt = tick - n.tick, dp = pitch - n.pitch, base = base,
+              moved = false }
+    elseif hit then
+      p.nsels = {} -- plain press elsewhere drops the selection
       p.nsel = hit
       local n = pat.notes[hit]
       p.g = { t = edge and "nsize" or "nmove", ni = hit, moved = false,
               dt = tick - n.tick, dp = pitch - n.pitch }
     else -- ADD at the last-used length, snapped
+      p.nsels = {}
       local n = { tick = snap(tick), dur = p.lastdur or grid,
                   pitch = math.max(0, math.min(127, pitch)), vel = 100 }
       pat.notes[#pat.notes + 1] = n
@@ -594,6 +656,60 @@ function M.draw(win, ctx)
       blip(ed, win, p, n.pitch, n.vel)
     end
     ctx.touch()
+  end
+  if p.g and p.g.t == "marquee" then
+    if i.buttons[1] then
+      local x0, x1 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
+      local y0, y1 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+      pal.x_ig_rect(x0, y0, x1 - x0, y1 - y0, COL.accent,
+                    math.max(1, 1 * z), 2 * z)
+      ctx.touch()
+    else -- select everything the rect touches
+      local t0, t1 = x2t(math.min(p.g.x0, i.wx)), x2t(math.max(p.g.x0, i.wx))
+      local phi = y2pitch(math.min(p.g.y0, i.wy))
+      local plo = y2pitch(math.max(p.g.y0, i.wy))
+      for _, n in ipairs(pat.notes) do
+        if n.tick < t1 and n.tick + n.dur > t0
+           and n.pitch >= plo and n.pitch <= phi then
+          p.nsels[n] = true
+        end
+      end
+      p.nsel = nil
+      p.g = nil
+      ctx.touch()
+    end
+  end
+  if p.g and p.g.t == "selmove" then
+    if i.buttons[1] then
+      local tick = x2t(i.wx)
+      local pitch = y2pitch(i.wy)
+      local ndt = snap(tick - p.g.dt) - p.g.gt
+      local ndp = math.max(-127, math.min(127, (pitch - p.g.dp) - p.g.gp))
+      if ndt ~= (p.g.ldt or 0) or ndp ~= (p.g.ldp or 0) then
+        -- clamp the delta so the whole set stays in range
+        for _, b in ipairs(p.g.base) do
+          if b.tick + ndt < 0 then ndt = -b.tick end
+        end
+        for _, b in ipairs(p.g.base) do
+          if b.pitch + ndp > 127 then ndp = 127 - b.pitch end
+          if b.pitch + ndp < 0 then ndp = -b.pitch end
+        end
+        for _, b in ipairs(p.g.base) do
+          b.n.tick, b.n.pitch = b.tick + ndt, b.pitch + ndp
+        end
+        if ndp ~= (p.g.ldp or 0) then
+          blip(ed, win, p, p.g.gp + ndp, 100)
+        end
+        p.g.ldt, p.g.ldp = ndt, ndp
+        p.g.moved = true
+        ctx.touch()
+      end
+    else
+      if p.g.moved then note_commit() end
+      -- a motionless release on the selection just keeps it
+      p.g = nil
+      ctx.touch()
+    end
   end
   if p.g and (p.g.t == "nmove" or p.g.t == "nsize") then
     local n = pat.notes[p.g.ni]
@@ -623,12 +739,10 @@ function M.draw(win, ctx)
       if not p.g.moved and not p.g.added then -- motionless release = DELETE
         table.remove(pat.notes, p.g.ni)
         p.nsel = nil
-        p.flat = nil
-        commit(ed, win.path)
+        note_commit()
       elseif p.g.moved or p.g.added then
         if n then p.lastdur = n.dur end
-        p.flat = nil
-        commit(ed, win.path)
+        note_commit()
       end
       p.g = nil
       ctx.touch()

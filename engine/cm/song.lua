@@ -36,7 +36,10 @@ function M.fresh()
     loop1 = 16 * M.PPQ * 4, -- 16 bars of 4/4
     tracks = { { name = "track 1", ins = "", gain = 128, pan = 0,
                  mute = false } },
-    patterns = { [1] = { id = 1, len = 4 * M.PPQ * 4, notes = {} } },
+    -- a fresh pattern is one bar (the fit invariant's floor — the
+    -- music window grows it to fit as you place notes past the end;
+    -- no baked-in padding, D058 round 3)
+    patterns = { [1] = { id = 1, len = M.PPQ * 4, notes = {} } },
     clips = {},
   }
 end
