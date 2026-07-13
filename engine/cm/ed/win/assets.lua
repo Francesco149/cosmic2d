@@ -71,7 +71,7 @@ function M.kind_for(path)
   end
   if class == "image" then return "image" end -- any stb-decodable format
   if class == "code" then return "text" end
-  return nil -- sound and unknowns have no window yet (M9 never landed)
+  return nil -- unknowns have no window (sound routes via exts, R9c)
 end
 
 -- fuzzy subsequence score: nil = no match; higher = better (consecutive

@@ -693,14 +693,31 @@ static int l_x_snd_ed_on(lua_State *L) {
   int vel = (int)luaL_optinteger(L, 4, 100);
   luaL_argcheck(L, voice >= 0 && voice < SND_VOICES, 1, "voice 0..31");
   luaL_argcheck(L, slot >= 0 && slot < SND_PATCHES, 2, "slot 0..63");
+  uint32_t pos = (uint32_t)luaL_optinteger(L, 5, 0);
+  if (!S.dev_up) { /* no device: apply directly (nothing renders; the
+                      transport state stays honest for headless tapes) */
+    SndVoice *v = &S.ed_voice[voice];
+    memset(v, 0, sizeof *v);
+    v->active = 1;
+    v->slot = (uint8_t)slot;
+    v->note = (uint8_t)(note & 127);
+    v->vel = (uint8_t)(vel & 127);
+    v->spos = (uint64_t)pos << 32;
+    for (int o = 0; o < 4; o++) v->op[o].lfsr = 0x7fff;
+    return 0;
+  }
   edq_push(1, (uint8_t)voice, (uint8_t)slot, (uint8_t)(note & 127),
-           (uint8_t)(vel & 127), (uint32_t)luaL_optinteger(L, 5, 0), NULL);
+           (uint8_t)(vel & 127), pos, NULL);
   return 0;
 }
 
 static int l_x_snd_ed_off(lua_State *L) {
   int voice = (int)luaL_checkinteger(L, 1);
   luaL_argcheck(L, voice >= 0 && voice < SND_VOICES, 1, "voice 0..31");
+  if (!S.dev_up) {
+    S.ed_voice[voice].active = 0;
+    return 0;
+  }
   edq_push(2, (uint8_t)voice, 0, 0, 0, 0, NULL);
   return 0;
 }

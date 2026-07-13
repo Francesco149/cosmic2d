@@ -42,10 +42,10 @@ end
 -- the pure packer: patch table -> the kernel's 80 bytes
 function M.pack(t)
   t = t or {}
-  local typ = t.type == "sample" and 1 or 0
+  local typ = t.type == "sample" and 1 or t.type == "stream" and 2 or 0
   local head = pack(HDR_FMT, typ, t.alg or 0, t.fb or 0, 0,
                     t.pan or 0, t.gain or 128, 0)
-  if typ == 1 then
+  if typ ~= 0 then
     local name = tostring(t.pcm or "")
     assert(#name <= 24, "pcm buffer name over 24 bytes")
     local body = name .. string.rep("\0", 24 - #name)
@@ -65,8 +65,8 @@ function M.unpack(bytes)
   assert(#bytes == 80, "patch must be 80 bytes")
   local typ, alg, fb, _, pan, gain = unpack(HDR_FMT, bytes)
   local t = { alg = alg, fb = fb, pan = pan, gain = gain }
-  if typ == 1 then
-    t.type = "sample"
+  if typ ~= 0 then
+    t.type = typ == 2 and "stream" or "sample"
     t.pcm = bytes:sub(9, 32):gsub("%z+$", "")
     local root, sflags, a, d, r, s, _, l0, l1 =
       unpack("<I1I1I2I2I2I1I1I4I4", bytes, 33)

@@ -3401,7 +3401,8 @@ local function t_ed_assets()
         and A.kind_for("main.lua") == "text"
         and A.kind_for("maps/rim.map") == "map"
         and A.kind_for("deco/d.tm") == "tmap"
-        and A.kind_for("s.ogg") == nil, "ed.assets: kind_for")
+        and A.kind_for("s.ogg") == "sound" -- the player (R9c — M9 paid)
+        and A.kind_for("s.xyz") == nil, "ed.assets: kind_for")
 
   -- the drop conversion (the human's ask): a non-png image converts to
   -- .png on the way in — stb decodes it, the project stores canon png

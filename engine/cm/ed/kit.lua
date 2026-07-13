@@ -139,6 +139,20 @@ function M.hints(kind, win, ed)
   return out
 end
 
+-- ---- editor-bank audio allocation (R9c) ----
+--
+-- Audio windows (synth audition, the sound player) share the editor
+-- bank's 64 patch slots + 32 voices. One round-robin allocator so kinds
+-- never hand-pick indices and collide.
+
+function M.snd_alloc(ed, nvoices)
+  local g = ed.g
+  g.snd_slot = ((g.snd_slot or -1) + 1) % 64
+  local vbase = g.snd_voice or 0
+  g.snd_voice = (vbase + (nvoices or 1)) % 32
+  return g.snd_slot, vbase
+end
+
 -- ---- the view lock (EDITOR.md §12.7, generalized §13) ----
 --
 -- kit.viewlock(K, opts) installs the focused-view trio — own_view /
