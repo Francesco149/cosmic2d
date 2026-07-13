@@ -1414,11 +1414,13 @@ function M.draw(win, ctx)
   end
 
   -- ---- interaction ----
-  -- ctx.hot is the shell's one pointer gate (topmost banded hit, no shell
-  -- gesture in flight) — it subsumes the old per-window topmost check
+  -- ctx.hot is the shell's one pointer gate (topmost banded hit, no
+  -- shell gesture in flight); `over` adds "inside the VIEW rect" — the
+  -- one gate every tool press-start uses, so header/inspector chips
+  -- (which live outside the view) can never leak a press into a tool
+  -- gesture (the col-chip bug, 2026-07-13)
   local over = ctx.hot and i.wx >= cvx and i.wx < cvx + cvw
                and i.wy >= cvy and i.wy < cvy + cvh
-  local topmost = ctx.hot or false
   local mx, my = s2mx(i.wx), s2my(i.wy)
   local snap_opts = function(skipset)
     return { dims = dims, tm = tmfn, thr = SNAP_PX / zoom,
@@ -1496,7 +1498,7 @@ function M.draw(win, ctx)
     -- click lays the full segment. A collider vertex within the snap
     -- zone outranks it (§7 order); topmost .tm placement wins.
     p.run = nil
-    if not p.g and g.ctrl and over and topmost
+    if not p.g and g.ctrl and over
        and (win.ctype or "line") == "line" then
       local vhit = M.col_pick(doc.colliders, mx, my, SNAP_PX / zoom)
       if not (vhit and vhit.v) then
@@ -1542,7 +1544,7 @@ function M.draw(win, ctx)
         pal.x_ig_circle_fill(ox + v[k] * zoom, oy + v[k + 1] * zoom,
                              math.max(2, lt + 1), COL.sel)
       end
-      if topmost and i.clicked[1] and not p.pan then
+      if over and i.clicked[1] and not p.pan then
         local now = pal.time_ns()
         if gd.lt and now - gd.lt < 320 * 1e6
            and math.abs(i.wx - gd.lsx) <= 6
@@ -1654,7 +1656,7 @@ function M.draw(win, ctx)
           end
         end
       end
-    elseif topmost and i.clicked[1] and not p.pan and p.run then
+    elseif over and i.clicked[1] and not p.pan and p.run then
       -- the edge-run click: one click lays the whole segment (§7-R8d)
       doc.colliders[#doc.colliders + 1] = {
         kind = "chain", oneway = win.coneway or false, closed = false,
@@ -1663,7 +1665,7 @@ function M.draw(win, ctx)
       p.run = nil
       commit(ed, win.path)
       ctx.touch()
-    elseif topmost and i.clicked[1] and not p.pan then
+    elseif over and i.clicked[1] and not p.pan then
       -- a CTRL press ALWAYS draws (snap pulls the vertex onto existing
       -- geometry — drawing a slope FROM the ground line is the canonical
       -- case, and the pick radius would otherwise eat the snap zone);
@@ -1792,7 +1794,7 @@ function M.draw(win, ctx)
           ctx.touch()
         end
       end
-    elseif topmost and i.clicked[1] and not p.pan then
+    elseif over and i.clicked[1] and not p.pan then
       -- the selected marker's corner knobs resize; else pick/move; else new
       local corner, cd2
       if smk then
@@ -1957,7 +1959,7 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     end
-  elseif tool == "select" and topmost and i.clicked[1] and not p.pan then
+  elseif tool == "select" and over and i.clicked[1] and not p.pan then
     -- the selected placement's attached handles outrank the item pick
     -- (they sit on top of the sprite; §6 — selected-only editing)
     local ahit = apl and apl.cols
@@ -2411,12 +2413,69 @@ function M.draw(win, ctx)
       doc.name = got ~= "" and got or nil
       commit(ed, win.path)
     end
+    -- the §5 switches: game fill on/off + the graybox generator
+    local function mchip(label, on)
+      local w2 = pal.x_ig_text_size(label, px * 0.9, 0) + 10 * z
+      local hv = ctx.hot and i.wx >= x and i.wx < x + w2
+                 and i.wy >= iy and i.wy < iy + INSP
+      pal.x_ig_rect_fill(x, iy + 1, w2, INSP - 2,
+                         on and COL.btn_on or COL.btn, 3 * z)
+      pal.x_ig_text(x + 5 * z, iy + (INSP - px) * 0.45, px * 0.9,
+                    (hv or on) and COL.hot or COL.dim, label, 0)
+      x = x + w2 + 4 * z
+      return hv and i.clicked[1]
+    end
+    if mchip("fill", not doc.nofill) then
+      doc.nofill = not doc.nofill or nil
+      commit(ed, win.path)
+    end
+    if mchip("graybox", false) then
+      M.graybox_apply(win, ed)
+    end
     pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z), INSP)
     pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
-                  ("drag in to place · ctrl snaps · ctrl+a/c/v clip · %d placement%s")
+                  ("drag in to place · ctrl snaps · %d placement%s")
                   :format(#doc.places, #doc.places == 1 and "" or "s"), 0)
     pal.x_ig_clip_pop()
   end
+end
+
+-- the graybox button (MAPS.md §5 end state): rasterize the colliders
+-- into <map>_gb.tm over the stock tileset, place it at 0,0 as the
+-- BOTTOM placement, and flip the map's fill off — one click takes a
+-- collider blockout to "visuals are placements, colliders invisible".
+-- Re-clicking regenerates the .tm from the current colliders.
+function M.graybox_apply(win, ed)
+  if ed.parked then
+    pal.log("[ed] parked in the past — writes are walled")
+    return false
+  end
+  local p = ed.g.mw and ed.g.mw[win.path]
+  if not (p and p.doc) then return false end
+  local doc = p.doc
+  local tmap = cm.require("cm.tmap")
+  local td = tmap.graybox(doc)
+  local tmpath = win.path:gsub("%.[mM][aA][pP]$", "") .. "_gb.tm"
+  if not pal.write_file(ed.root .. "/" .. tmpath, tmap.encode(td)) then
+    pal.log("[ed] graybox write FAILED: " .. tmpath)
+    return false
+  end
+  cm.asset_epoch = (cm.asset_epoch or 0) + 1 -- live .tm caches re-read
+  cm.require("cm.ed.win.assets").invalidate(ed)
+  local have
+  for _, pl in ipairs(doc.places) do
+    if pl.path == tmpath then have = true end
+  end
+  if not have then
+    table.insert(doc.places, 1,
+                 { path = tmpath, x = 0, y = 0, layer = 0, name = "graybox" })
+    p.sel = {} -- indices shifted
+  end
+  doc.nofill = true
+  commit(ed, win.path)
+  pal.log(("[ed] grayboxed %s -> %s (%dx%d cells)")
+          :format(win.path, tmpath, td.w, td.h))
+  return true
 end
 
 -- ---- kind.drop: place a carried asset at the drop point (§6) ----

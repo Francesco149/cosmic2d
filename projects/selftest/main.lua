@@ -994,6 +994,37 @@ local function t_map()
         and map.extras(d.markers[2]).to == "b", "map: markers round trip")
   check(map.encode(d) == raw, "map: canonical bytes (encode∘decode = id)")
 
+  -- FLGS (§5 per-map fill switch): written only when set, round-trips
+  local fd = { name = "f", w = 32, h = 32, grid = 8,
+               colliders = {}, places = {}, markers = {} }
+  check(map.decode(map.encode(fd)).nofill == nil, "map: no FLGS = fill on")
+  fd.nofill = true
+  local fraw = map.encode(fd)
+  local fdec = map.decode(fraw)
+  check(fdec.nofill == true, "map: FLGS nofill round trip")
+  check(map.encode(fdec) == fraw, "map: FLGS canonical")
+
+  -- the graybox generator (§5 end state): ground row + block + one-way
+  local gd = { w = 64, h = 48, colliders = {
+    { kind = "quad", x = 0, y = 32, w = 64, h = 16 },
+    { kind = "quad", x = 16, y = 16, w = 16, h = 16 },
+    { kind = "chain", oneway = true, verts = { 32, 16, 64, 16 } },
+  }, places = {} }
+  local td = tmap.graybox(gd)
+  check(td.w == 4 and td.h == 3 and td.tile == 16
+        and td.tileset == "art/tiles.spr", "tmap: graybox doc shape")
+  local got_grid = {}
+  for r = 0, 2 do
+    for c = 0, 3 do got_grid[#got_grid + 1] = tmap.get(td, c, r) end
+  end
+  local want = { 0, 0, 0, 0, -- sky
+                 0, 6, 5, 5, -- block = pillar-on-ground; one-way slabs
+                 1, 2, 1, 1 } -- ground: tops, interior under the block
+  local same = true
+  for i = 1, 12 do same = same and got_grid[i] == want[i] end
+  check(same, "tmap: graybox autotiles (got " ..
+        table.concat(got_grid, ",") .. ")")
+
   -- skip-tolerance: an unknown future chunk decodes right past
   local w2 = chunklib.writer("CMAP")
   for _, c in ipairs(chunklib.read(raw, "CMAP")) do

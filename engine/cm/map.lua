@@ -6,6 +6,8 @@
 -- canonical (encode(decode(b)) == b); cm.chunk gives skip-tolerance.
 --
 --   HEAD v1: <i4 w> <i4 h> <I4 grid px> <f f f bg tint> <s4 name>
+--   FLGS v1 (optional, only when nonzero): <I4 bit0 nofill — the in-game
+--            collider fill is off; art placements own the visuals (§5)>
 --   COLL v1: one free collider (col_pack below)
 --   PLCE v1: <I1 layer> <I4 flags bit0 flip_x, bit1 hidden> <i4 x> <i4 y>
 --            <s4 path> <s4 name> <I2 ncols> ncols * col_pack
@@ -82,6 +84,10 @@ function M.encode(doc)
   local bg = doc.bg or { 1, 1, 1 }
   w.chunk("HEAD", 1, pack("<i4i4I4fffs4", doc.w, doc.h, doc.grid or 8,
                           bg[1], bg[2], bg[3], doc.name or ""))
+  -- FLGS (optional, written only when set — canonical: absent == 0):
+  -- bit0 nofill = the in-game collider fill is OFF for this map (§5's
+  -- per-map switch: art placements have taken over the visuals)
+  if doc.nofill then w.chunk("FLGS", 1, pack("<I4", 1)) end
   for _, c in ipairs(doc.colliders or {}) do
     w.chunk("COLL", 1, col_pack(c))
   end
@@ -116,6 +122,9 @@ function M.decode(bytes)
                                                          c.payload)
       doc.bg = { r, g, b }
       seen_head = true
+    elseif c.tag == "FLGS" and c.version == 1 then
+      local fl = unpack("<I4", c.payload)
+      doc.nofill = fl & 1 ~= 0 or nil
     elseif c.tag == "COLL" and c.version == 1 then
       doc.colliders[#doc.colliders + 1] = col_unpack(c.payload, 1)
     elseif c.tag == "PLCE" and c.version == 1 then
@@ -357,6 +366,9 @@ end
 -- Everything culls to the camera window like TM:draw did — quads never
 -- leave the viewport (the capture path drops negative-origin quads).
 function M.draw_fill(inst, camx, camy)
+  -- the §5 per-map switch: once art placements own the visuals the
+  -- colliders render NOTHING in the game (editor gizmos only)
+  if inst.doc.nofill then return end
   local geom = fill_geom(inst)
   local vw, vh = pal.gfx_size()
   local X0 = floor(camx)

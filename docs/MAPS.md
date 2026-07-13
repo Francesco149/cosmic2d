@@ -205,6 +205,19 @@ maps): colliders render NO visuals in the game — sprites and placed
 tilemaps make all the visuals; colliders exist only as editor gizmos.
 The in-game fill is temporary MVP scaffolding.**
 
+**Built (same day)**: the per-map switch is the optional **FLGS**
+chunk (bit0 `nofill`; `draw_fill` no-ops on it — editor gizmos
+unaffected), toggled by the map inspector's **fill** chip. The
+**graybox** chip next to it takes a collider blockout to the end
+state in one click: `cm.tmap.graybox` rasterizes the FREE colliders
+into `<map>_gb.tm` over the stock tileset (closed solids fill by
+cell-center column intervals and autotile — 1 top / 2 interior /
+3 left / 4 right / 5 slab / 6 pillar; one-way segments lay slab
+cells; attached colliders skip — their placements carry their own
+visuals), places it at 0,0 as the bottom placement (`name=graybox`)
+and flips `nofill` on. Re-clicking regenerates from the current
+colliders. Both game maps run this way.
+
 ## 6. The map window (kind `map`)
 
 A canvas window like sprite ed (EDITOR.md §12.6 idioms throughout):

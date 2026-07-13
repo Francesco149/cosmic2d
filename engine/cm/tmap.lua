@@ -191,6 +191,90 @@ local F32 = 4
 local QUAD = 12 * F32
 local scratch -- render plumbing; rebuilt when a bigger view needs it
 
+-- ---- the graybox generator (MAPS.md §5 end state, 2026-07-13) ----
+-- Rasterize a map doc's FREE collider layer into a graybox tile doc
+-- over the stock tileset (frames: 1 top / 2 interior / 3 left edge /
+-- 4 right edge / 5 solo slab / 6 pillar): closed solids fill by
+-- even-odd column intervals sampled at cell centers (slopes
+-- stair-step), one-way chain segments lay slab cells just under the
+-- line. Attached colliders are skipped — their placements carry their
+-- own visuals (§5). Pure — the map window's graybox button + KATs
+-- share it.
+function M.graybox(mapdoc, opts)
+  opts = opts or {}
+  local t = opts.tile or 16
+  local map = cm.require("cm.map")
+  local w = math.max(1, ceil(mapdoc.w / t))
+  local h = math.max(1, ceil(mapdoc.h / t))
+  local geom = map.geom({ colliders = mapdoc.colliders or {}, places = {} })
+
+  -- solid mask at cell centers (one column_ivs walk per column)
+  local solid = {}
+  local scratch = {}
+  for c = 0, w - 1 do
+    local ivs = map.column_ivs(geom.loops, (c + 0.5) * t, scratch)
+    for j = 1, #ivs, 2 do
+      local r0 = ceil(ivs[j] / t - 0.5)
+      local r1 = ceil(ivs[j + 1] / t - 0.5) - 1
+      if r0 < 0 then r0 = 0 end
+      if r1 > h - 1 then r1 = h - 1 end
+      for r = r0, r1 do solid[r * w + c] = true end
+    end
+  end
+  local function s(c, r)
+    if c < 0 or c >= w or r < 0 or r >= h then return false end
+    return solid[r * w + c] or false
+  end
+
+  local ids = {}
+  for r = 0, h - 1 do
+    for c = 0, w - 1 do
+      local id = 0
+      if s(c, r) then
+        local up, down = s(c, r - 1), s(c, r + 1)
+        local left, right = s(c - 1, r), s(c + 1, r)
+        if not left and not right then
+          id = (up or down) and 6 or 5 -- pillar run / isolated slab
+        elseif not up then
+          id = 1 -- top surface
+        elseif not left then
+          id = 3
+        elseif not right then
+          id = 4
+        else
+          id = 2 -- interior
+        end
+      end
+      ids[r * w + c + 1] = id
+    end
+  end
+
+  -- one-way slab cells: the cell under the line at each column it spans
+  for _, sgm in ipairs(geom.slabs) do
+    local ax, ay, bx, by = sgm[1], sgm[2], sgm[3], sgm[4]
+    if ax > bx then ax, ay, bx, by = bx, by, ax, ay end
+    local c0, c1 = floor(ax / t), ceil(bx / t) - 1
+    if c1 < c0 then c1 = c0 end -- vertical/degenerate: one cell
+    if c0 < 0 then c0 = 0 end
+    if c1 > w - 1 then c1 = w - 1 end
+    for c = c0, c1 do
+      local cxm = (c + 0.5) * t
+      local tt = bx > ax and (cxm - ax) / (bx - ax) or 0.5
+      if tt < 0 then tt = 0 elseif tt > 1 then tt = 1 end
+      local r = floor((ay + (by - ay) * tt) / t)
+      if r >= 0 and r < h and ids[r * w + c + 1] == 0 then
+        ids[r * w + c + 1] = 5
+      end
+    end
+  end
+
+  local parts = {}
+  for i = 1, w * h do parts[i] = pack("<I2", ids[i]) end
+  return { w = w, h = h, tile = t,
+           tileset = opts.tileset or "art/tiles.spr",
+           cells = table.concat(parts) }
+end
+
 function M.draw(doc, tex, ox, oy, camx, camy)
   local t = doc.tile
   local vw, vh = pal.gfx_size()
