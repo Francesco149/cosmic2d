@@ -205,7 +205,7 @@ function M.header(win, ctx)
   local w = pal.x_ig_text_size(label, px, 0) + 14 * z
   local x = ctx.hx - w
   local i = cm.require("cm.ui").inp
-  local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+  local hov = ctx.hot and i.wx >= x and i.wx < x + w
               and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
   pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
                      win.edit and COL.btn_on or COL.btn, 4 * z)
@@ -279,7 +279,7 @@ end
 -- ---- structure rows (layers / frames / palette) ----
 
 local function button(i, ctx, x, y, w, h, label, on, px)
-  local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+  local hov = ctx.hot and i.wx >= x and i.wx < x + w
               and i.wy >= y and i.wy < y + h
   pal.x_ig_rect_fill(x, y, w, h, on and COL.btn_on
                      or (hov and COL.btn_hot or COL.btn), 3 * ctx.z)
@@ -394,7 +394,7 @@ function M.draw(win, ctx)
                 0x4a4370aa, 1)
   pal.x_ig_clip_pop()
 
-  local over_canvas = not ctx.alt and i.wx >= cvx and i.wx < cvx + cvw
+  local over_canvas = ctx.hot and i.wx >= cvx and i.wx < cvx + cvw
                       and i.wy >= cvy and i.wy < cvy + cvh
 
   -- middle-drag pans the view
@@ -472,7 +472,7 @@ function M.draw(win, ctx)
   for li = #doc.layers, 1, -1 do
     local l = doc.layers[li]
     local on = doc.cur_layer == li
-    local hov = not ctx.alt and i.wx >= lx and i.wx < lx + LR - 8 * z
+    local hov = ctx.hot and i.wx >= lx and i.wx < lx + LR - 8 * z
                 and i.wy >= ly and i.wy < ly + rh
     if on or hov then
       pal.x_ig_rect_fill(lx, ly, LR - 9 * z, rh,
@@ -523,7 +523,7 @@ function M.draw(win, ctx)
     if (win.color or 0) == c then
       pal.x_ig_rect(x - 1, py0 - 1, sw + 2, sw + 2, COL.hot, 1, 2 * z)
     end
-    local hov = not ctx.alt and i.wx >= x and i.wx < x + sw
+    local hov = ctx.hot and i.wx >= x and i.wx < x + sw
                 and i.wy >= py0 and i.wy < py0 + sw
     if hov and i.clicked[1] then
       win.color = c

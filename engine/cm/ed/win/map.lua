@@ -39,7 +39,6 @@ local M = select(2, ...) or {}
 local journal = cm.require("cm.ed.journal")
 local map = cm.require("cm.map")
 local tmap = cm.require("cm.tmap")
-local wm = cm.require("cm.ed.wm")
 local wv = cm.require("cm.ed.winview")
 
 M.kind = "map"
@@ -838,7 +837,7 @@ function M.header(win, ctx)
     local w = pal.x_ig_text_size(label, px, 0) + 12 * z
     x = x - w - 3 * z
     used = used + w + 3 * z
-    local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+    local hov = ctx.hot and i.wx >= x and i.wx < x + w
                 and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
     pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
                        on and COL.btn_on or COL.btn, 4 * z)
@@ -1291,12 +1290,11 @@ function M.draw(win, ctx)
   end
 
   -- ---- interaction ----
-  local over = not ctx.alt and i.wx >= cvx and i.wx < cvx + cvw
+  -- ctx.hot is the shell's one pointer gate (topmost banded hit, no shell
+  -- gesture in flight) — it subsumes the old per-window topmost check
+  local over = ctx.hot and i.wx >= cvx and i.wx < cvx + cvw
                and i.wy >= cvy and i.wy < cvy + cvh
-  -- press starts only when this window is the top hit at the cursor
-  local tophit = over and g.cursor
-                 and wm.hit(ctx.doc, g.cursor.wx, g.cursor.wy, 0)
-  local topmost = tophit == win.id
+  local topmost = ctx.hot or false
   local mx, my = s2mx(i.wx), s2my(i.wy)
   local snap_opts = function(skipset)
     return { dims = dims, tm = tmfn, thr = SNAP_PX / zoom,
@@ -2034,7 +2032,7 @@ function M.draw(win, ctx)
     local x = ctx.cx + 2 * z
     local function schip(label, on)
       local w = pal.x_ig_text_size(label, px * 0.9, 0) + 10 * z
-      local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+      local hov = ctx.hot and i.wx >= x and i.wx < x + w
                   and i.wy >= iy and i.wy < iy + INSP
       pal.x_ig_rect_fill(x, iy + 1, w, INSP - 2,
                          on and COL.btn_on or COL.btn, 3 * z)
@@ -2105,7 +2103,7 @@ function M.draw(win, ctx)
       end
       -- flip toggle
       local fw = pal.x_ig_text_size("flip", px * 0.9, 0) + 10 * z
-      local hov = not ctx.alt and i.wx >= x and i.wx < x + fw
+      local hov = ctx.hot and i.wx >= x and i.wx < x + fw
                   and i.wy >= iy and i.wy < iy + INSP
       pal.x_ig_rect_fill(x, iy + 1, fw, INSP - 2,
                          o.flip and COL.btn_on or COL.btn, 3 * z)
@@ -2119,7 +2117,7 @@ function M.draw(win, ctx)
       -- +col: attach an auto-fit collider (§6) — the type picker inline
       local function pchip(label, on)
         local w2 = pal.x_ig_text_size(label, px * 0.9, 0) + 10 * z
-        local hv = not ctx.alt and i.wx >= x and i.wx < x + w2
+        local hv = ctx.hot and i.wx >= x and i.wx < x + w2
                    and i.wy >= iy and i.wy < iy + INSP
         pal.x_ig_rect_fill(x, iy + 1, w2, INSP - 2,
                            on and COL.btn_on or COL.btn, 3 * z)

@@ -754,6 +754,31 @@ local function grid(ig)
   end
 end
 
+-- the ONE pointer gate (overlap hygiene): at most one window per frame may
+-- react to the pointer — the topmost banded hit under the cursor, and only
+-- while no shell layer or gesture owns the mouse (ALT/space/selection mode,
+-- wm gestures, canvas pan, asset carry, spawn menu, a right-press pend, the
+-- rewind bar). Kinds receive it as ctx.hot and gate every hover/click
+-- affordance on it; gesture CONTINUATIONS (button already held) stay
+-- ungated so an in-flight drag never drops. This is the point-level
+-- companion to occluded() below — occluded keeps lower windows' imgui
+-- widgets inert, hot keeps their raw-input affordances quiet.
+function M.hot_id()
+  local doc, g = M.doc, M.g
+  if g.alt or g.space or g.selmode then return nil end
+  if g.state or g.pan or g.adrag or g.menu or g.rpend then return nil end
+  if not g.cursor then return nil end
+  local i = cm.require("cm.ui").inp
+  if g.rw_bar and i.wx >= g.rw_bar.x and i.wx < g.rw_bar.x + g.rw_bar.w
+     and i.wy >= g.rw_bar.y and i.wy < g.rw_bar.y + g.rw_bar.h then
+    return nil
+  end
+  local z = doc.cam.zoom
+  local id, part = wm.hit(doc, g.cursor.wx, g.cursor.wy,
+                          wm.EDGE_OUT / z, wm.EDGE_IN / z)
+  if id and part == "content" then return id end
+end
+
 -- imgui widgets (x_ig_edit) always render ABOVE the background drawlist,
 -- whatever our canvas z says — so a window overlapped by a higher one must
 -- not submit a live widget or its text bleeds through the window on top.
@@ -794,8 +819,8 @@ local function draw_win(ig, win, zi)
   end
 
   -- the title strip is a drag handle now (live round 3): cue it on hover
-  local hdr_hot = g.state == nil and not hot_part and g.cursor
-    and g.cursor.wx >= win.x and g.cursor.wx < win.x + win.w
+  local hot = g.hot == win.id -- the pointer gate (hot_id above)
+  local hdr_hot = hot and not hot_part and g.cursor
     and g.cursor.wy >= win.y and g.cursor.wy < win.y + HDR
     and not (g.hdrx and g.hdrx[win.id]
              and cm.require("cm.ui").inp.wx >= g.hdrx[win.id])
@@ -836,7 +861,7 @@ local function draw_win(ig, win, zi)
       local rw = pal.x_ig_text_size("reset", tpx * 0.85, 0)
       local rx = x + w - 18 * z - rw
       local i = cm.require("cm.ui").inp
-      local hov = not g.alt and i.wx >= rx - 4 * z and i.wx < x + w - 16 * z
+      local hov = hot and i.wx >= rx - 4 * z and i.wx < x + w - 16 * z
                   and i.wy >= y and i.wy < y + hdr
       pal.x_ig_text(rx, y + (hdr - tpx * 0.85) * 0.45, tpx * 0.85,
                     hov and C.hud or C.title_dim, "reset", 0)
@@ -850,7 +875,7 @@ local function draw_win(ig, win, zi)
   local used = 0
   if kind and kind.header then
     used = kind.header(win, { z = z, alt = g.alt or false, ed = M,
-                              hx = hdr_right, hy = y,
+                              hot = hot, hx = hdr_right, hy = y,
                               hh = math.min(hdr, h) }) or 0
   end
   g.hdrx = g.hdrx or {}
@@ -862,6 +887,7 @@ local function draw_win(ig, win, zi)
     local ctx = {
       ig = ig, z = z, alt = g.alt or false, doc = doc, ed = M,
       focused = focused, touch = M.touch, occluded = occluded(doc, zi),
+      hot = hot,
       cx = x + m, cy = y + hdr, cw = w - 2 * m, ch = h - hdr - m,
     }
     pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, ctx.ch)
@@ -1081,6 +1107,7 @@ end
 local function draw(ig)
   local doc, g = M.doc, M.g
   local i = cm.require("cm.ui").inp
+  g.hot = M.hot_id()
   pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
   grid(ig)
   for zi, win in ipairs(doc.wins) do draw_win(ig, win, zi) end

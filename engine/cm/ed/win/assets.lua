@@ -210,7 +210,7 @@ local function chip_row(win, ctx, i)
   for _, c in ipairs(CHIPS) do
     local w = pal.x_ig_text_size(c, px, 0) + 14 * z
     local on = (win.chip or "all") == c
-    local hov = not ctx.alt and i.wx >= x and i.wx < x + w
+    local hov = ctx.hot and i.wx >= x and i.wx < x + w
                 and i.wy >= y and i.wy < y + h
     pal.x_ig_rect_fill(x, y, w, h, on and COL.chip_on or COL.chip, 5 * z)
     pal.x_ig_text(x + 7 * z, y + px * 0.3, px,
@@ -229,7 +229,7 @@ local function chip_row(win, ctx, i)
     pal.x_ig_line(sx, sy, sx + sw, sy, 0x4a4370ff, math.max(1, z))
     local t = ((win.tile or 84) - 48) / (160 - 48)
     local kx = sx + t * sw
-    local hov = not ctx.alt and i.wx >= sx - 6 and i.wx < sx + sw + 6
+    local hov = ctx.hot and i.wx >= sx - 6 and i.wx < sx + sw + 6
                 and i.wy >= y and i.wy < y + h
     pal.x_ig_circle_fill(kx, sy, math.max(3, 4.5 * z),
                          hov and 0xE8E4FFff or 0xb0a8dcff)
@@ -313,7 +313,7 @@ function M.draw(win, ctx)
     local row = (idx - 1) // cols
     local x = ctx.cx + 6 * z + col * cell
     local y = gy0 + row * (cell + name_h) - scroll
-    local hov = not ctx.alt and i.wx >= x and i.wx < x + tile
+    local hov = ctx.hot and i.wx >= x and i.wx < x + tile
                 and i.wy >= y and i.wy < y + tile + name_h
     local selected = win.sel == e.rel
     pal.x_ig_rect_fill(x, y, tile, tile, hov and COL.tile_hot or COL.tile,
@@ -360,7 +360,7 @@ function M.draw(win, ctx)
     pal.x_ig_clip_pop()
 
     -- press: select + arm the drag (the shell carries it); double = open
-    if hov and i.clicked[1] and not ctx.alt then
+    if hov and i.clicked[1] then
       local dbl = win.sel == e.rel and g.aclick
                   and (now - g.aclick) < 320 * 1e6
       win.sel = e.rel

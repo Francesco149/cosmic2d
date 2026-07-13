@@ -3491,6 +3491,47 @@ local function t_ed_viewlock()
   ed.doc, ed.g, ed.doc_rev = was_doc, was_g, was_rev
 end
 
+local function t_ed_hot()
+  -- the ONE pointer gate (overlap hygiene): at most one window per frame
+  -- may react to the pointer — the topmost banded content hit, and only
+  -- while no shell layer/gesture owns the mouse. Kinds gate every hover/
+  -- click affordance on ctx.hot, so a title-bar drag over an overlapped
+  -- window can never also press the lower window's chips/tools.
+  local ed = cm.require("cm.ed")
+  local wm = cm.require("cm.ed.wm")
+  local ui = cm.require("cm.ui")
+  local was_doc, was_g = ed.doc, ed.g
+  local ux, uy = ui.inp.wx, ui.inp.wy
+  ed.g = {}
+  ed.doc = wm.init({ cam = { x = 0, y = 0, zoom = 1 } })
+  local a = wm.spawn(ed.doc, "note", 0, 0, 200, 100)
+  local b = wm.spawn(ed.doc, "note", 150, 50, 200, 100) -- topmost, overlaps
+  local function at(x, y)
+    ui.inp.wx, ui.inp.wy = x, y
+    ed.g.cursor = { wx = x, wy = y } -- zoom 1, cam 0: world == screen
+    return ed.hot_id()
+  end
+  check(at(160, 60) == b.id, "ed.hot: overlap goes to the topmost only")
+  check(at(10, 10) == a.id, "ed.hot: the lower window is hot when alone")
+  check(at(152, 60) == nil, "ed.hot: the resize band is never hot")
+  check(at(900, 900) == nil, "ed.hot: empty canvas is nobody's")
+  -- any shell layer/gesture owning the mouse blanks the gate
+  for _, k in ipairs({ "alt", "space", "selmode", "pan", "adrag",
+                       "menu", "rpend" }) do
+    ed.g[k] = true
+    check(at(160, 60) == nil, "ed.hot: " .. k .. " blanks the gate")
+    ed.g[k] = nil
+  end
+  ed.g.state = "alt_move" -- a wm gesture in flight (the title-bar drag)
+  check(at(160, 60) == nil, "ed.hot: a wm gesture blanks the gate")
+  ed.g.state = nil
+  ed.g.rw_bar = { x = 150, y = 50, w = 100, h = 40 }
+  check(at(160, 60) == nil, "ed.hot: the rewind bar owns its rect")
+  ed.g.rw_bar = nil
+  ed.doc, ed.g = was_doc, was_g
+  ui.inp.wx, ui.inp.wy = ux, uy
+end
+
 local function t_ed_winview()
   -- cm.ed.winview — THE INVARIANT: captured view fields live in WORLD
   -- units, so canvas zoom cancels out (the generalized fix for the
@@ -3749,6 +3790,7 @@ function game.init()
   t_ed_maptool()
   t_ed_filter()
   t_ed_viewlock()
+  t_ed_hot()
   t_ed_winview()
   t_ed_park()
   t_ed_domain()

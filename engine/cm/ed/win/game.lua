@@ -75,7 +75,7 @@ function M.header(win, ctx)
   local bw = pal.x_ig_text_size(label, px, 1) + px * 0.6
   local x = ctx.hx - bw
   local parked = cm.require("cm.scrub").paused()
-  local hov = not parked and not ctx.alt and i.wx >= x and i.wx < x + bw
+  local hov = not parked and ctx.hot and i.wx >= x and i.wx < x + bw
               and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
   pal.x_ig_text(x + px * 0.3, ctx.hy + (ctx.hh - px) * 0.45, px,
                 parked and 0x5a5480ff

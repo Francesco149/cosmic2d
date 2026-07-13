@@ -365,7 +365,7 @@ local function draw_picker(win, ctx)
         break
       end
       local rh = px * 1.5
-      local hov = not ctx.alt and i.wx >= ctx.cx and i.wx < ctx.cx + ctx.cw
+      local hov = ctx.hot and i.wx >= ctx.cx and i.wx < ctx.cx + ctx.cw
                   and i.wy >= y and i.wy < y + rh
       if hov then
         pal.x_ig_rect_fill(ctx.cx + 2, y - 2 * z, ctx.cw - 4, rh, 0x3a3560ff, 4)
@@ -397,7 +397,7 @@ function M.header(win, ctx)
   local function button(glyph, can)
     x = x - bw
     used = used + bw
-    local hov = not ctx.alt and i.wx >= x and i.wx < x + bw
+    local hov = ctx.hot and i.wx >= x and i.wx < x + bw
                 and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
     pal.x_ig_text(x + px * 0.3, ctx.hy + (ctx.hh - px) * 0.45, px,
                   can and (hov and 0xE8E4FFff or 0xb0a8dcff) or 0x5a5480ff,
@@ -724,7 +724,7 @@ function M.draw(win, ctx)
   pal.x_ig_clip_pop()
 
   -- Ctrl+click a link → a NEW code window at the pointer (EDITOR.md §12.2)
-  if g.ctrl and not g.alt and i.clicked[1] and not ctx.occluded
+  if g.ctrl and ctx.hot and i.clicked[1] and not ctx.occluded
      and i.wx >= tx and i.wx < tx + tw and i.wy >= ty and i.wy < ty + th then
     local li = math.floor((i.wy - oy + sy) / px) + 1
     local line = lines[li]
@@ -804,7 +804,7 @@ function M.draw(win, ctx)
     local bxx = bx + bw2 - 4 * z
     local function btn(w2, label)
       bxx = bxx - w2 - 4 * z
-      local hov = not ctx.alt and not ctx.occluded
+      local hov = ctx.hot and not ctx.occluded
                   and i.wx >= bxx and i.wx < bxx + w2
                   and i.wy >= fy and i.wy < fy + fh2
       pal.x_ig_rect_fill(bxx, fy, w2, fh2,
