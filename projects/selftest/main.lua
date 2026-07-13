@@ -959,7 +959,7 @@ local function t_map()
       { kind = "circle", cx = 30, cy = 30, r = 9 },
     },
     places = {
-      { path = "art/sign.png", x = 20, y = 160, layer = 0 },
+      { path = "art/sign.png", x = 20, y = 160, layer = 0, hidden = true },
       { path = "art/awning.spr", x = 200, y = 120, name = "awn",
         flip = true, layer = 1,
         cols = { { kind = "chain", oneway = true,
@@ -987,6 +987,8 @@ local function t_map()
         and d.places[2].flip == true and d.places[2].layer == 1
         and d.places[2].cols[1].oneway
         and d.places[2].cols[1].verts[3] == 48, "map: places round trip")
+  check(d.places[1].hidden == true and d.places[2].hidden == nil,
+        "map: the hidden flag rides PLCE bit1")
   check(#d.markers == 2 and d.markers[1].kind == "spawn"
         and d.markers[2].extras[2].v == "x"
         and map.extras(d.markers[2]).to == "b", "map: markers round trip")
@@ -3168,6 +3170,57 @@ local function t_ed_map()
   check(#doc.places == 2 and #doc.markers == 0
         and doc.places[2].path == "c.png", "ed.map: del removes high-to-low")
 
+  local function gapfill_tests()
+  -- multi z-order (the gap-fill): the block moves one slot, order kept
+  doc.places[3] = { path = "d.png", x = 0, y = 0, layer = 0 }
+  sel = { { t = "place", i = 1 }, { t = "place", i = 2 } }
+  check(W.zmove(doc, sel, 1) == true and doc.places[1].path == "d.png"
+        and doc.places[2].path == "a.png" and doc.places[3].path == "c.png"
+        and sel[1].i == 2 and sel[2].i == 3,
+        "ed.map: multi z moves the block, order kept")
+  check(W.zmove(doc, sel, 1) == nil, "ed.map: multi z clamps as a block")
+
+  -- the clipboard (ctrl+c/v/d): deep copies, offsets, names drop
+  doc.places[3].name = "boss"
+  doc.markers[1] = { x = 10, y = 20, w = 8, h = 6, kind = "spawn",
+                     label = "", note = "",
+                     extras = { { k = "to", v = "rim" } } }
+  local clip = W.copy_sel(doc, { { t = "place", i = 3 },
+                                 { t = "marker", i = 1 } })
+  doc.places[3].x = 999 -- the clip must not alias the doc
+  doc.markers[1].extras[1].v = "mutated"
+  local ns = W.paste(doc, clip, 5, 7)
+  check(#ns == 2 and ns[1].t == "place" and ns[1].i == 4
+        and ns[2].t == "marker" and ns[2].i == 2,
+        "ed.map: paste returns the pasted set on top")
+  check(doc.places[4].x == 205 + 5 and doc.places[4].y == 97 + 7
+        and doc.places[4].name == nil,
+        "ed.map: pasted place offsets, deep-copies, drops the name")
+  check(doc.markers[2].x == 15 and doc.markers[2].extras[1].v == "rim",
+        "ed.map: pasted marker deep-copies its extras")
+  local bx, by, bw, bh = W.clip_bounds(clip, dims)
+  check(bx == 10 and by == 20 and bx + bw == 225 and by + bh == 107,
+        "ed.map: clip bounds span places + markers")
+  check(W.copy_sel(doc, {}) == nil, "ed.map: an empty copy is nil")
+
+  -- select-all + selection bounds (shift+2 fit rides these)
+  local all = W.all_items(doc)
+  check(#all == #doc.places + #doc.markers, "ed.map: all_items covers both")
+  bx, by, bw, bh = W.sel_bounds(doc, all, dims)
+  check(bx == 0 and bw > 0 and bh > 0, "ed.map: sel_bounds resolves")
+  check(W.sel_bounds(doc, {}, dims) == nil, "ed.map: empty bounds are nil")
+
+  -- free-collider bounds (shift+2 with the collider tool)
+  local cbx, cby, cbw, cbh = W.col_bounds({ kind = "circle", cx = 300,
+                                            cy = 50, r = 10 })
+  check(cbx == 290 and cby == 40 and cbw == 20 and cbh == 20,
+        "ed.map: circle bounds")
+  cbx, cby, cbw, cbh = W.col_bounds({ kind = "chain",
+                                      verts = { 0, 180, 100, 180, 200, 130 } })
+  check(cbx == 0 and cby == 130 and cbw == 200 and cbh == 50,
+        "ed.map: chain bounds")
+  end -- gapfill_tests (runs after the snap block — it mutates the doc)
+
   -- snap (§7): vertex > edge/center > grid
   -- vertex: the quad's corner (100,140) catches a dragged corner
   local dx, dy, guides = W.snap_rect(doc, { x = 97, y = 138, w = 20, h = 10 },
@@ -3202,6 +3255,8 @@ local function t_ed_map()
   -- accepts/placeable split: .map rebinds, images place
   check(W.accepts(nil, "maps/x.map") ~= nil and not W.accepts(nil, "a.png"),
         "ed.map: accepts only .map")
+
+  gapfill_tests() -- clipboard/z/bounds (mutates doc; snap is done with it)
 
   -- ---- the §7 point snap (R8c): snap_targets + snap_pt ----
   -- rebuild a clean doc (the ops above mutated it)

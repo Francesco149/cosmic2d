@@ -60,7 +60,7 @@ local COL = {
 
 local KEY = { right = 79, left = 80, down = 81, up = 82, del = 76,
               backspace = 42, rbracket = 48, lbracket = 47, n1 = 30,
-              enter = 40, c = 6 }
+              n2 = 31, enter = 40, a = 4, c = 6, d = 7, v = 25, x = 27 }
 
 local GRID_STEPS = { 1, 2, 4, 8, 16, 32, 64 }
 local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
@@ -358,16 +358,140 @@ function M.del(doc, sel)
 end
 
 -- z within the layer = order in doc.places (§6); dir +1 = forward one.
--- Returns the moved item's new index (single-place selections only).
+-- The whole selected placement set shifts one slot, order preserved
+-- (markers in the selection are untouched — z lives in places). Single
+-- selections return the new index (same index when clamped — the
+-- original contract); multi returns true, or nil when clamped.
 function M.zmove(doc, sel, dir)
-  if #sel ~= 1 or sel[1].t ~= "place" then return nil end
-  local i = sel[1].i
-  local to = i + dir
-  if to < 1 or to > #doc.places then return i end
-  local p = table.remove(doc.places, i)
-  table.insert(doc.places, to, p)
-  sel[1].i = to
-  return to
+  local idx = {}
+  for _, it in ipairs(sel) do
+    if it.t == "place" then idx[#idx + 1] = it.i end
+  end
+  if #idx == 0 then return nil end
+  table.sort(idx)
+  if (dir > 0 and idx[#idx] >= #doc.places)
+     or (dir < 0 and idx[1] <= 1) then
+    return #idx == 1 and idx[1] or nil -- clamped
+  end
+  local remap = {}
+  for k = dir > 0 and #idx or 1, dir > 0 and 1 or #idx, dir > 0 and -1 or 1 do
+    local i = idx[k]
+    local pl = table.remove(doc.places, i)
+    table.insert(doc.places, i + dir, pl)
+    remap[i] = i + dir
+  end
+  for _, it in ipairs(sel) do
+    if it.t == "place" then it.i = remap[it.i] or it.i end
+  end
+  return #idx == 1 and remap[idx[1]] or true
+end
+
+-- ---- clipboard ops (ctrl+c/x/v/d; the clip lives ephemeral on ed.g) ----
+
+local function deep(v)
+  if type(v) ~= "table" then return v end
+  local out = {}
+  for k, x in pairs(v) do out[k] = deep(x) end
+  return out
+end
+
+-- clipboard snapshot of the selection (deep copies, file order kept)
+function M.copy_sel(doc, sel)
+  local clip = { places = {}, markers = {} }
+  local pl = {}
+  for _, it in ipairs(sel) do
+    if it.t == "place" then
+      pl[#pl + 1] = it.i
+    elseif doc.markers[it.i] then
+      clip.markers[#clip.markers + 1] = deep(doc.markers[it.i])
+    end
+  end
+  table.sort(pl)
+  for _, i in ipairs(pl) do
+    if doc.places[i] then
+      clip.places[#clip.places + 1] = deep(doc.places[i])
+    end
+  end
+  if #clip.places + #clip.markers == 0 then return nil end
+  return clip
+end
+
+-- append the clip's items offset by (dx, dy); pasted placements drop
+-- their name (names address uniquely from code). Returns the new
+-- selection (the pasted set, on top in file order).
+function M.paste(doc, clip, dx, dy)
+  local sel = {}
+  for _, pl in ipairs(clip.places or {}) do
+    local c = deep(pl)
+    c.x, c.y, c.name = c.x + dx, c.y + dy, nil
+    doc.places[#doc.places + 1] = c
+    sel[#sel + 1] = { t = "place", i = #doc.places }
+  end
+  for _, mk in ipairs(clip.markers or {}) do
+    local c = deep(mk)
+    c.x, c.y = c.x + dx, c.y + dy
+    doc.markers[#doc.markers + 1] = c
+    sel[#sel + 1] = { t = "marker", i = #doc.markers }
+  end
+  return sel
+end
+
+-- selection bounds in map px (dims resolves placement sizes); nil when
+-- the selection resolves to nothing
+function M.sel_bounds(doc, sel, dims)
+  local x0, y0, x1, y1
+  local function acc(x, y, w, h)
+    x0 = math.min(x0 or x, x)
+    y0 = math.min(y0 or y, y)
+    x1 = math.max(x1 or x + w, x + w)
+    y1 = math.max(y1 or y + h, y + h)
+  end
+  for _, it in ipairs(sel) do
+    if it.t == "place" then
+      local o = doc.places[it.i]
+      if o then
+        local w, h = dims(o.path)
+        acc(o.x, o.y, w or 16, h or 16)
+      end
+    else
+      local o = doc.markers[it.i]
+      if o then acc(o.x, o.y, o.w or 2, o.h or 2) end
+    end
+  end
+  if x0 then return x0, y0, x1 - x0, y1 - y0 end
+end
+
+function M.clip_bounds(clip, dims)
+  local doc2 = { places = clip.places or {}, markers = clip.markers or {} }
+  local sel = {}
+  for i = 1, #doc2.places do sel[#sel + 1] = { t = "place", i = i } end
+  for i = 1, #doc2.markers do sel[#sel + 1] = { t = "marker", i = i } end
+  return M.sel_bounds(doc2, sel, dims)
+end
+
+-- a free collider's bounds (fit-selection with the collider tool)
+function M.col_bounds(c)
+  if c.kind == "circle" then
+    return c.cx - c.r, c.cy - c.r, 2 * c.r, 2 * c.r
+  end
+  if c.kind == "quad" then return c.x, c.y, c.w, c.h end
+  local x0, y0, x1, y1
+  for i = 1, #c.verts - 1, 2 do
+    local x, y = c.verts[i], c.verts[i + 1]
+    x0 = math.min(x0 or x, x)
+    y0 = math.min(y0 or y, y)
+    x1 = math.max(x1 or x, x)
+    y1 = math.max(y1 or y, y)
+  end
+  if x0 then return x0, y0, x1 - x0, y1 - y0 end
+end
+
+-- every selectable item (ctrl+a)
+function M.all_items(doc)
+  local sel = {}
+  for i = 1, #doc.places do sel[#sel + 1] = { t = "place", i = i } end
+  for i = 1, #doc.markers do sel[#sel + 1] = { t = "marker", i = i } end
+  return sel
 end
 
 -- ---- the §7 CTRL snap (placements; R8b subset) ----
@@ -1933,6 +2057,53 @@ function M.draw(win, ctx)
         if sc == KEY.n1 and g.shift then
           wv.reset(win)
           ctx.touch()
+        elseif sc == KEY.n2 and g.shift then
+          -- shift+2: fit the selection (select/marker sel, or the
+          -- selected free collider)
+          local bx, by, bw, bh
+          if #p.sel > 0 then
+            bx, by, bw, bh = M.sel_bounds(doc, p.sel, dims)
+          elseif p.csel and doc.colliders[p.csel.c] then
+            bx, by, bw, bh = M.col_bounds(doc.colliders[p.csel.c])
+          end
+          if bx then
+            bw, bh = math.max(bw, 4), math.max(bh, 4)
+            local s = math.min(cvw / (bw + 16), cvh / (bh + 16))
+            s = math.max(0.05 * z, math.min(32 * z, s))
+            win.zoom = s / z
+            win.px = ((cvw - bw * s) * 0.5 - bx * s) / z
+            win.py = ((cvh - bh * s) * 0.5 - by * s) / z
+            ctx.touch()
+          end
+        elseif g.ctrl and sc == KEY.a and not p.g then
+          p.sel = M.all_items(doc)
+          p.csel, p.asel = nil, nil
+          ctx.touch()
+        elseif g.ctrl and sc == KEY.c and #p.sel > 0 then
+          g.mapclip = M.copy_sel(doc, p.sel)
+        elseif g.ctrl and sc == KEY.x and #p.sel > 0 and not p.g then
+          g.mapclip = M.copy_sel(doc, p.sel)
+          M.del(doc, p.sel)
+          p.sel = {}
+          commit(ed, win.path)
+        elseif g.ctrl and (sc == KEY.v or sc == KEY.d) and not p.g then
+          -- paste lands centered under the cursor when it's over the
+          -- view; dup (and off-view paste) offsets by the grid step
+          local clip = sc == KEY.d and #p.sel > 0 and M.copy_sel(doc, p.sel)
+                       or sc == KEY.v and g.mapclip or nil
+          if clip then
+            local step = win.grid or doc.grid or 8
+            local dx, dy = step, step
+            if sc == KEY.v and over then
+              local bx, by, bw, bh = M.clip_bounds(clip, dims)
+              if bx then
+                dx = math.floor(mx - bx - bw / 2 + 0.5)
+                dy = math.floor(my - by - bh / 2 + 0.5)
+              end
+            end
+            p.sel = M.paste(doc, clip, dx, dy)
+            commit(ed, win.path)
+          end
         elseif tool == "collider" then
           if p.g and p.g.mode == "chain" then
             if sc == KEY.enter then p.finish_chain(false)
@@ -1987,8 +2158,9 @@ function M.draw(win, ctx)
   end
 
   -- zoom + grid chip, canvas corner
-  local chip = ("%d%% · grid %d"):format(math.floor(zoom * 100 + 0.5),
-                                         win.grid or doc.grid or 8)
+  local chip = ("%d%% · grid %d (ctrl+wheel)")
+               :format(math.floor(zoom * 100 + 0.5),
+                       win.grid or doc.grid or 8)
   local cw2 = pal.x_ig_text_size(chip, px * 0.85, 0)
   pal.x_ig_text(cvx + cvw - cw2 - 6 * z, cvy + 4 * z, px * 0.85, COL.dim,
                 chip, 0)
@@ -2061,6 +2233,25 @@ function M.draw(win, ctx)
           commit(ed, win.path)
         end
       end
+      if selc.kind == "circle" then
+        -- exact fields for the circle (drag covers the rest)
+        local got2
+        got2, x = field("mapccx", "x", tostring(selc.cx), x, 34 * z)
+        if got2 and tonumber(got2) then
+          selc.cx = math.floor(tonumber(got2))
+          commit(ed, win.path)
+        end
+        got2, x = field("mapccy", "y", tostring(selc.cy), x, 34 * z)
+        if got2 and tonumber(got2) then
+          selc.cy = math.floor(tonumber(got2))
+          commit(ed, win.path)
+        end
+        got2, x = field("mapccr", "r", tostring(selc.r), x, 30 * z)
+        if got2 and tonumber(got2) then
+          selc.r = math.max(1, math.floor(tonumber(got2)))
+          commit(ed, win.path)
+        end
+      end
       pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
                     p.csel.v and "drag moves the vertex · del removes it"
                     or "click an edge of the selected chain to insert · del deletes",
@@ -2101,6 +2292,11 @@ function M.draw(win, ctx)
         o.name = got ~= "" and got or nil
         commit(ed, win.path)
       end
+      got, x = field("mapily", "L", tostring(o.layer or 0), x, 22 * z)
+      if got and tonumber(got) then
+        o.layer = math.max(0, math.min(255, math.floor(tonumber(got))))
+        commit(ed, win.path)
+      end
       -- flip toggle
       local fw = pal.x_ig_text_size("flip", px * 0.9, 0) + 10 * z
       local hov = ctx.hot and i.wx >= x and i.wx < x + fw
@@ -2125,6 +2321,10 @@ function M.draw(win, ctx)
                       (hv or on) and COL.hot or COL.dim, label, 0)
         x = x + w2 + 4 * z
         return hv and i.clicked[1]
+      end
+      if pchip("hide", o.hidden or false) then
+        o.hidden = not o.hidden or nil
+        commit(ed, win.path)
       end
       if pchip("+col", p.colmenu or false) then
         p.colmenu = not p.colmenu or nil
@@ -2173,7 +2373,8 @@ function M.draw(win, ctx)
       end
     end
   elseif #p.sel > 1 or tool == "marker" then
-    local hint = #p.sel > 1 and (#p.sel .. " selected")
+    local hint = #p.sel > 1
+      and (#p.sel .. " selected · ctrl+c/x/d clip · [ ] z · shift+2 fit")
       or "drag on empty = new marker · corners resize · del removes"
     pal.x_ig_text(ctx.cx + 4 * z, iy + (INSP - px) * 0.45, px * 0.9,
                   COL.dim, hint, 0)
@@ -2205,9 +2406,14 @@ function M.draw(win, ctx)
         commit(ed, win.path)
       end
     end
+    got, x = field("mapnm", "name", doc.name or "", x, 56 * z)
+    if got then
+      doc.name = got ~= "" and got or nil
+      commit(ed, win.path)
+    end
     pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z), INSP)
     pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
-                  ("drag assets in to place · ctrl snaps · %d placement%s")
+                  ("drag in to place · ctrl snaps · ctrl+a/c/v clip · %d placement%s")
                   :format(#doc.places, #doc.places == 1 and "" or "s"), 0)
     pal.x_ig_clip_pop()
   end

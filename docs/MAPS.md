@@ -58,8 +58,9 @@ A map is a **file asset** like a sprite — `maps/rim_hub.map` — a
   non-axis-aligned segments, not fractional coords); quad: x/y/w/h
   i32; circle: cx/cy/r i32.
 - **PLCE** (one per placement, file order = z order): layer id (u8),
-  flags (u32: flip_x), x/y i32 px, path (project-relative; `.spr`,
-  `.png`, or `.tm`), an **optional name** (string, empty = anonymous —
+  flags (u32: bit0 flip_x, bit1 hidden — an authored hide toggle; the
+  fill/places draw skips hidden), x/y i32 px, path (project-relative;
+  `.spr`, `.png`, or `.tm`), an **optional name** (string, empty = anonymous —
   names exist to address placements from code, §4), then **0..n
   attached colliders** (same encoding as COLL, coords **relative to
   the placement origin** — they ride the placement when it moves).
@@ -245,8 +246,18 @@ res, grid 8) whose first Ctrl+S writes the file (built at R8b).
   empty = marquee; still-click empty = clear (the shell's own grammar,
   echoed inside).
 - drag selection = move (CTRL = snap, §7). Arrows nudge 1 px, shift
-  ×8. Del deletes. `]`/`[` = z within the layer (placement order),
-  matching the canvas z keys.
+  ×8. Del deletes. `]`/`[` = z within the layer (placement order,
+  multi-selections move as a block, order kept), matching the canvas
+  z keys.
+- **clipboard + view (the gap-fill round)**: Ctrl+A selects every
+  placement + marker; Ctrl+C/X copy/cut the selection (deep copies on
+  an ephemeral shell clip — pasted placements drop their `name`, names
+  address uniquely from code); Ctrl+V pastes centered under the cursor
+  when it's over the view (grid-step offset otherwise); Ctrl+D
+  duplicates in place (+grid step). Shift+1 = fit map, **Shift+2 =
+  fit the selection** (or the selected free collider). The inspector
+  grew: placement **layer** + **hide** (persisted, PLCE bit1), the
+  map's **name**, and exact **x/y/r fields for circles**.
 - **double-click a placement** → `ed.open_asset_window(path)` — the
   sprite ed / image window / tilemap ed, next to the map window
   (assets.lua's 320 ms convention). Double-click a marker → its

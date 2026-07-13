@@ -7,8 +7,8 @@
 --
 --   HEAD v1: <i4 w> <i4 h> <I4 grid px> <f f f bg tint> <s4 name>
 --   COLL v1: one free collider (col_pack below)
---   PLCE v1: <I1 layer> <I4 flags bit0 flip_x> <i4 x> <i4 y> <s4 path>
---            <s4 name> <I2 ncols> ncols * col_pack
+--   PLCE v1: <I1 layer> <I4 flags bit0 flip_x, bit1 hidden> <i4 x> <i4 y>
+--            <s4 path> <s4 name> <I2 ncols> ncols * col_pack
 --   MRKR v1: <i4 x y w h> <s4 kind> <s4 label> <s4 note> <I2 n> n*(s4 k, s4 v)
 --   TAIL v1: empty
 --
@@ -87,7 +87,8 @@ function M.encode(doc)
   end
   for _, p in ipairs(doc.places or {}) do
     local parts = { pack("<I1I4i4i4s4s4I2", p.layer or 0,
-                         p.flip and 1 or 0, p.x, p.y, p.path,
+                         (p.flip and 1 or 0) | (p.hidden and 2 or 0),
+                         p.x, p.y, p.path,
                          p.name or "", #(p.cols or {})) }
     for _, c in ipairs(p.cols or {}) do parts[#parts + 1] = col_pack(c) end
     w.chunk("PLCE", 1, table.concat(parts))
@@ -123,6 +124,7 @@ function M.decode(bytes)
       layer, flags, p.x, p.y, p.path, p.name, pos =
         unpack("<I1I4i4i4s4s4", c.payload, pos)
       p.layer, p.flip = layer, flags & 1 ~= 0
+      p.hidden = flags & 2 ~= 0 or nil
       if p.name == "" then p.name = nil end
       local n
       n, pos = unpack("<I2", c.payload, pos)
