@@ -1,20 +1,23 @@
 -- cm.ed.win.music — the music editor (R9d, AUDIO.md §10): binds .song
 -- (CSNG), a full windowkit asset citizen.
 --
--- The model (round 6 — the human, matching wstudio): **each track owns
--- one looping pattern**. Two zones: the track rail (left — click a
--- track to EDIT ITS PATTERN in the roll; drag an .ins onto a row to
--- bind its instrument), and the piano roll editing the current
--- track's pattern. All tracks loop together over the song length
--- (doc.loop1), which GROWS to fit content but never auto-shrinks.
+-- The model (round 7 — the human): a two-level ARRANGEMENT + drill-in
+-- editor. The **arrangement strip** shows the whole song — clips
+-- (patterns placed on tracks). **Click a clip to DRILL into its
+-- pattern** in the piano roll below; press empty stamps a NEW clip
+-- (each clip owns its OWN pattern — no accidental sharing); drag moves
+-- a clip, right-edge resizes it, and a clip **LOOPS its pattern to
+-- fill** when resized longer (the "auto loop"). The **track rail**
+-- (left) binds instruments (drag an .ins on), mutes, deletes ("del"),
+-- and adds tracks.
 --
--- Roll grammar (the wstudio four rules + round-3/4 growth): press
--- empty = ADD a note (last-used length, grid-snapped); motionless
--- release on a note = DELETE; press-drag = MOVE; right-edge drag =
--- RESIZE. shift+drag = marquee / shift+click toggles selection;
--- dragging a selected note moves the set; CTRL+drag = duplicate;
--- Ctrl+C/X/V clipboard (paste at the scrub cursor). A velocity lane +
--- a scrub ruler (click sets the play-start cursor + paste anchor).
+-- Roll grammar (wstudio four rules + round-3/4 growth): press empty =
+-- ADD (last-used length, grid-snapped); motionless release = DELETE;
+-- press-drag = MOVE; right-edge = RESIZE. shift = marquee/toggle
+-- select; drag a selected note moves the set; CTRL+drag = duplicate;
+-- Ctrl+C/X/V clipboard. A velocity lane + a scrub ruler under it. A
+-- pattern's length GROWS to fit content but never auto-shrinks
+-- (clips loop it).
 --
 -- Preview playback rides the EDITOR BANK (render-only — composing
 -- never touches the sim): a wall-clock mini-sequencer over the
@@ -77,27 +80,12 @@ local function decode_into(p, bytes)
   p.nsels = nil -- the note selection holds TABLE REFS into the old doc
 end
 
--- the loop length GROWS to fit content, but never shrinks (round 6 —
--- the human: "since patterns auto loop we don't need to auto shrink").
--- Placing a note past the end grows the loop; deleting leaves it. The
--- whole song loops over doc.loop1 (all tracks together).
-local function fit_loop(doc)
-  local bar = PPQ * (doc.beats_per_bar or 4)
-  local ext = doc.loop1 or bar
-  for _, tr in ipairs(doc.tracks or {}) do
-    local pt = doc.patterns[tr.pat]
-    for _, n in ipairs(pt and pt.notes or {}) do
-      if n.tick + n.dur > ext then ext = ((n.tick + n.dur + bar - 1) // bar) * bar end
-    end
-  end
-  doc.loop1 = math.max(bar, ext)
-end
-
--- the pattern the roll edits = the CURRENT track's own pattern (round
--- 6). Clicking a track switches the roll to that track's notes.
-local function cur_pattern(doc, win)
-  local tr = doc.tracks[win.trk or 1] or doc.tracks[1]
-  return tr and doc.patterns[tr.pat]
+-- a pattern's length GROWS to fit its notes but never auto-shrinks
+-- (round 6 — the human: clips loop a short pattern to fill, so a
+-- pattern that's longer than its content is fine; auto-shrinking it
+-- fought resizing). song.fit_pattern is the shared grow-only core.
+local function fit_pattern(doc, pt)
+  song.fit_pattern(doc, pt)
 end
 
 local A = cm.require("cm.ed.kit").asset {
@@ -242,15 +230,23 @@ M.hotkeys = {
     fn = function(win, ed)
       local _, p = open_asset(ed, win.path)
       if not p.doc then return end
-      local pt = cur_pattern(p.doc, win)
-      if pt and p.nsels and next(p.nsels) then
-        local keep = {}
-        for _, n in ipairs(pt.notes) do
-          if not p.nsels[n] then keep[#keep + 1] = n end
+      if p.nsels and next(p.nsels) then -- the note selection first
+        local pt = p.doc.patterns[win.pat or 1]
+        if pt then
+          local keep = {}
+          for _, n in ipairs(pt.notes) do
+            if not p.nsels[n] then keep[#keep + 1] = n end
+          end
+          pt.notes = keep
+          p.nsels = {}
+          p.nsel = nil
+          fit_pattern(p.doc, pt)
+          p.flat = nil
+          commit(ed, win.path)
         end
-        pt.notes = keep
-        p.nsels = {}
-        p.nsel = nil
+      elseif p.csel and p.doc.clips[p.csel] then
+        table.remove(p.doc.clips, p.csel)
+        p.csel = nil
         p.flat = nil
         commit(ed, win.path)
       end
@@ -259,9 +255,9 @@ M.hotkeys = {
 
 -- clipboard (human, round 4): C copies the selection (relative to its
 -- earliest tick), V pastes anchored at the SCRUB CURSOR, X cuts. The
--- clipboard lives on ed.g so it crosses tracks + windows.
+-- clipboard lives on ed.g so it crosses patterns + windows.
 local function selected_notes(p, win)
-  local pt = p.doc and cur_pattern(p.doc, win)
+  local pt = p.doc and p.doc.patterns[win.pat or 1]
   local out = {}
   if pt and p.nsels then
     for _, n in ipairs(pt.notes) do
@@ -304,6 +300,7 @@ M.hotkeys[#M.hotkeys + 1] = {
     end
     pt.notes = keep
     p.nsels, p.nsel = {}, nil
+    fit_pattern(p.doc, pt)
     p.flat = nil
     commit(ed, win.path)
   end }
@@ -313,7 +310,7 @@ M.hotkeys[#M.hotkeys + 1] = {
   fn = function(win, ed)
     local _, p = open_asset(ed, win.path)
     local clip = ed.g.musicclip
-    local pt = p.doc and cur_pattern(p.doc, win)
+    local pt = p.doc and p.doc.patterns[win.pat or 1]
     if not (clip and #clip > 0 and pt) then return end
     p.nsels = {} -- the pasted notes become the new selection
     for _, c in ipairs(clip) do
@@ -323,7 +320,7 @@ M.hotkeys[#M.hotkeys + 1] = {
       p.nsels[n] = true
     end
     p.nsel = nil
-    fit_loop(p.doc)
+    fit_pattern(p.doc, pt)
     p.flat = nil
     commit(ed, win.path)
   end }
@@ -396,22 +393,22 @@ function M.draw(win, ctx)
     ctx.touch()
   end
 
-  -- ---- geometry (round 6: the arrangement strip is gone — each track
-  -- loops its own pattern; the roll shows the CURRENT track's) ----
+  -- ---- geometry ----
   local RAIL = math.min(120 * z, ctx.cw * 0.22)
   local TR_H = px * 1.9   -- transport row
-  local RULER_H = 15 * z  -- the scrub/loop ruler (roll-aligned)
+  local AR_H = 30 * z     -- arrangement strip (song overview)
+  local RULER_H = 15 * z  -- the scrub ruler (pattern space, roll-aligned)
   local VEL_H = 30 * z    -- velocity lane
   local x0, y0 = ctx.cx, ctx.cy
   local rx, rw = x0 + RAIL, ctx.cw - RAIL
-  local ruler_y = y0 + TR_H + 2 * z
+  local ruler_y = y0 + TR_H + AR_H + 2 * z
   local roll_y = ruler_y + RULER_H + 2 * z
-  local roll_h = ctx.ch - TR_H - RULER_H - VEL_H - 10 * z
+  local roll_h = ctx.ch - TR_H - AR_H - RULER_H - VEL_H - 12 * z
   local vel_y = roll_y + roll_h + 2 * z
   local tpp = (win.tpp or 0.5) * z -- px per tick
   local row_h = math.max(4, 7 * z)
   local grid = GRIDS[win.grid or 4]
-  local pat = cur_pattern(doc, win) -- the current track's pattern
+  local pat = doc.patterns[win.pat or 1]
 
   -- ---- the track rail ----
   pal.x_ig_rect_fill(x0, y0, RAIL - 4 * z, ctx.ch - 4 * z, COL.rail, 3 * z)
@@ -430,24 +427,59 @@ function M.draw(win, ctx)
                     or "(drag an .ins here)"
     pal.x_ig_text(x0 + 6 * z, ty + px * 1.1, px * 0.8,
                   tr.ins ~= "" and COL.accent or COL.dim, insname, 0)
-    -- the mute dot
+    -- the mute dot (line 1, right) + the delete × (line 2, right; only
+    -- when there's more than one track — can't delete the last)
     local mx = x0 + RAIL - 18 * z
     pal.x_ig_circle_fill(mx, ty + px * 0.5, 3.5 * z,
                          tr.mute and COL.err or COL.btn)
+    local dx = x0 + RAIL - 20 * z
+    local dhov = #doc.tracks > 1 and ctx.hot and i.wx >= dx - 3 * z
+                 and i.wx < dx + 10 * z and i.wy >= ty + px * 0.9
+                 and i.wy < ty + px * 2.1
+    if #doc.tracks > 1 then
+      pal.x_ig_text(dx, ty + px * 1.15, px * 0.9,
+                    dhov and COL.err or COL.dim, "del", 0)
+    end
     if ctx.hot and i.clicked[1] then
       if i.wx >= mx - 5 * z and i.wx < mx + 5 * z
          and i.wy >= ty and i.wy < ty + px then
         tr.mute = not tr.mute
         p.flat = nil
         commit(ed, win.path)
+      elseif dhov then
+        -- delete this track: drop it + its clips, reindex higher tracks
+        table.remove(doc.tracks, ti)
+        local keep = {}
+        for _, c in ipairs(doc.clips) do
+          if c.track ~= ti - 1 then
+            if c.track > ti - 1 then c.track = c.track - 1 end
+            keep[#keep + 1] = c
+          end
+        end
+        doc.clips = keep
+        win.trk = math.max(1, math.min(win.trk or 1, #doc.tracks))
+        p.csel, p.nsels, p.flat = nil, {}, nil
+        commit(ed, win.path)
+        ctx.touch()
+        return -- the doc changed under the loop; next frame redraws
       elseif hov then
         win.trk = ti
+        -- drill into this track's first clip (the roll follows)
+        for ci, c in ipairs(doc.clips) do
+          if c.track == ti - 1 then
+            p.csel = ci
+            win.pat = c.pattern
+            win.cursor = 0
+            p.nsels = {}
+            break
+          end
+        end
         ctx.touch()
       end
     end
     ty = ty + px * 2.8
   end
-  do -- + track
+  do -- + track (its clips get stamped in the arrangement below)
     local hov = ctx.hot and i.wx >= x0 and i.wx < x0 + 60 * z
                 and i.wy >= ty and i.wy < ty + px * 1.4
     pal.x_ig_text(x0 + 6 * z, ty, px, hov and COL.hot or COL.dim,
@@ -456,8 +488,7 @@ function M.draw(win, ctx)
       doc.tracks[#doc.tracks + 1] = { name = "track " .. (#doc.tracks + 1),
                                       ins = "", gain = 128, pan = 0,
                                       mute = false }
-      song.normalize(doc) -- give the new track its own fresh pattern
-      win.trk = #doc.tracks -- focus it (its empty roll shows)
+      win.trk = #doc.tracks
       commit(ed, win.path)
     end
   end
@@ -486,6 +517,122 @@ function M.draw(win, ctx)
   if tchip(GRID_LABEL[win.grid or 4], false) then
     win.grid = (win.grid or 4) % 6 + 1 -- placement grid only (round 2)
     ctx.touch()
+  end
+  -- (no pattern chips — round 7: each clip owns its pattern; you pick
+  -- what the roll edits by clicking a clip in the arrangement)
+
+  -- ---- the arrangement strip ----
+  local ay = y0 + TR_H
+  pal.x_ig_rect_fill(rx, ay, rw, AR_H, COL.well, 3 * z)
+  local bar = PPQ * (doc.beats_per_bar or 4)
+  local atpp = tpp * 0.25 -- the strip is 4x denser than the roll
+  local L = math.max(song.length(doc), bar * 16)
+  for t = 0, L, bar do
+    local lx = rx + t * atpp
+    if lx > rx + rw then break end
+    pal.x_ig_line(lx, ay, lx, ay + AR_H, COL.gridln, 1)
+  end
+  local lane_h = AR_H / math.max(1, #doc.tracks)
+  for ci, c in ipairs(doc.clips) do
+    local cx0 = rx + c.tick * atpp
+    local cw0 = c.len * atpp
+    local cy0 = ay + (c.track) * lane_h
+    if cx0 < rx + rw then
+      local hov = ctx.hot and i.wx >= cx0 and i.wx < cx0 + cw0
+                  and i.wy >= cy0 and i.wy < cy0 + lane_h
+      pal.x_ig_rect_fill(cx0, cy0 + 1, math.min(cw0, rx + rw - cx0),
+                         lane_h - 2,
+                         (p.csel == ci or hov) and COL.clip_hot or COL.clip,
+                         2 * z)
+      pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.7, COL.dim,
+                    "p" .. c.pattern, 0)
+    end
+  end
+  -- the preview playhead
+  if p.playing then
+    local SL = snd.seq.samples_at(song.length(doc), doc.bpm)
+    if SL > 0 then
+      local ptick = snd.seq.ticks_at(p.ppos % SL, doc.bpm)
+      pal.x_ig_line(rx + ptick * atpp, ay, rx + ptick * atpp, ay + AR_H,
+                    COL.head, math.max(1, 1.2 * z))
+    end
+  end
+  -- arrangement gestures: press empty = stamp; press clip = move;
+  -- right edge = resize
+  local over_arr = i.wx >= rx and i.wx < rx + rw and i.wy >= ay
+                   and i.wy < ay + AR_H
+  if ctx.hot and i.clicked[1] and over_arr and not p.g then
+    local tick = (i.wx - rx) / atpp
+    local lane = math.min(#doc.tracks - 1,
+                          math.max(0, (i.wy - ay) // lane_h))
+    local hit, edge
+    for ci, c in ipairs(doc.clips) do
+      if c.track == lane and tick >= c.tick and tick < c.tick + c.len then
+        hit = ci
+        edge = (c.tick + c.len - tick) * atpp < 6 * z
+      end
+    end
+    if hit then
+      p.csel = hit
+      local c = doc.clips[hit]
+      -- DRILL DOWN (the human, round 7): clicking a clip shows ITS
+      -- pattern in the roll below, and playback starts at the clip
+      win.pat = c.pattern
+      win.trk = c.track + 1
+      win.cursor = 0
+      p.nsels = {} -- the roll's selection was for the old pattern
+      p.g = { t = edge and "clipsize" or "clipmove", ci = hit,
+              dt = tick - c.tick, moved = false }
+    else
+      -- stamp a NEW clip with its OWN fresh pattern (clip independence
+      -- — no accidental sharing across tracks, round 7). Its length is
+      -- one bar; resize it to loop the pattern longer.
+      local nid = 0
+      for id in pairs(doc.patterns) do if id > nid then nid = id end end
+      nid = nid + 1
+      doc.patterns[nid] = { id = nid, len = bar, notes = {} }
+      doc.clips[#doc.clips + 1] = {
+        track = math.tointeger(lane), pattern = nid,
+        tick = math.tointeger((tick // bar) * bar), len = bar,
+      }
+      p.csel = #doc.clips
+      win.pat = nid -- drill into the new empty pattern
+      win.trk = math.tointeger(lane) + 1
+      win.cursor = 0
+      p.nsels = {}
+      p.flat = nil
+      commit(ed, win.path)
+    end
+    ctx.touch()
+  end
+  if p.g and (p.g.t == "clipmove" or p.g.t == "clipsize") then
+    local c = doc.clips[p.g.ci]
+    if i.buttons[1] and c then
+      local tick = (i.wx - rx) / atpp
+      if p.g.t == "clipmove" then
+        local nt = math.max(0, ((tick - p.g.dt + bar / 2) // bar) * bar)
+        nt = math.tointeger(nt)
+        if nt ~= c.tick then
+          c.tick = nt
+          p.g.moved = true
+          ctx.touch()
+        end
+      else
+        local nl = math.max(bar, ((tick - c.tick + bar / 2) // bar) * bar)
+        nl = math.tointeger(nl)
+        if nl ~= c.len then
+          c.len = nl
+          p.g.moved = true
+          ctx.touch()
+        end
+      end
+    elseif not i.buttons[1] then
+      if p.g.moved then
+        p.flat = nil
+        commit(ed, win.path)
+      end
+      p.g = nil
+    end
   end
 
   -- ---- the scrub ruler (human, round 4): a roll-aligned bar ruler
@@ -599,9 +746,7 @@ function M.draw(win, ctx)
                     COL.dim, "C" .. (pitch // 12 - 1), 0)
     end
   end
-  -- the loop end (all tracks loop here — the whole song's length)
-  local loop_end = song.length(doc)
-  for t = (math.tointeger(tick0 // grid) or 0) * grid, loop_end, grid do
+  for t = (math.tointeger(tick0 // grid) or 0) * grid, pat.len, grid do
     local lx = t2x(t)
     if lx > rx + rw then break end
     if lx >= rx then
@@ -609,7 +754,7 @@ function M.draw(win, ctx)
                     t % PPQ == 0 and COL.beatln or COL.gridln, 1)
     end
   end
-  pal.x_ig_line(t2x(loop_end), roll_y, t2x(loop_end),
+  pal.x_ig_line(t2x(pat.len), roll_y, t2x(pat.len),
                 roll_y + roll_h, COL.accent, 1.2 * z)
   -- the scrub cursor, faint, through the roll (the paste anchor)
   do
@@ -644,7 +789,7 @@ function M.draw(win, ctx)
     return math.tointeger(math.max(0, (t // grid) * grid))
   end
   local function note_commit()
-    fit_loop(doc) -- the loop grows to fit content (never shrinks)
+    fit_pattern(doc, pat) -- the end line follows the content
     p.flat = nil
     commit(ed, win.path)
   end

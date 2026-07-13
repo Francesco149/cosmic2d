@@ -3171,62 +3171,66 @@ local function t_song()
         and snd.seq.ticks_at(24000, 120) == 96
         and snd.seq.ticks_at(23999, 120) == 95, "song: tick math exact")
 
-  -- the per-track-pattern model (round 6): each track OWNS a pattern.
-  -- round-trip + canonical + fresh normalization
+  -- the clip-arrangement model (round 7): clips place patterns on
+  -- tracks; each clip owns its own pattern. fresh gives one of each.
   local doc = song.fresh()
-  check(doc.tracks[1].pat == 1 and doc.patterns[1] ~= nil,
-        "song: fresh gives the track its own pattern")
+  check(#doc.tracks == 1 and #doc.clips == 1 and doc.clips[1].pattern == 1
+        and doc.patterns[1] ~= nil, "song: fresh = 1 track/clip/pattern")
   doc.bpm = 140
   doc.tracks[1].ins = "x.ins"
-  doc.tracks[2] = { name = "t2", ins = "y.ins", gain = 128, pan = 0,
-                    mute = true, pat = 2 }
-  doc.patterns[2] = { id = 2, len = 96 * 4, notes = {} }
+  doc.patterns[1].len = 96 * 4
   doc.patterns[1].notes = { { tick = 96, dur = 48, pitch = 64, vel = 90 },
                             { tick = 0, dur = 96, pitch = 60, vel = 100 } }
-  doc.patterns[2].notes = { { tick = 0, dur = 48, pitch = 48, vel = 80 } }
-  doc.loop1 = 96 * 4
+  doc.clips[1].len = 96 * 8 -- the clip is 8 beats over a 4-beat pattern
   local bytes = song.encode(doc)
   check(bytes:sub(1, 4) == "CSNG", "song: container magic")
   local d2 = song.decode(bytes)
-  check(d2.bpm == 140 and #d2.tracks == 2 and d2.tracks[1].ins == "x.ins"
-        and d2.tracks[1].pat == 1 and d2.tracks[2].pat == 2
-        and d2.tracks[2].mute == true, "song: tracks round-trip with pat")
-  check(#d2.patterns[1].notes == 2 and #d2.patterns[2].notes == 1,
-        "song: patterns round-trip")
-  check(d2.patterns[1].notes[1].tick == 0, "song: canonical note order")
+  check(d2.bpm == 140 and #d2.tracks == 1 and d2.tracks[1].ins == "x.ins"
+        and #d2.clips == 1 and d2.clips[1].len == 96 * 8,
+        "song: tracks + clips round-trip")
+  check(#d2.patterns[1].notes == 2 and d2.patterns[1].notes[1].tick == 0,
+        "song: pattern round-trips, canonical note order")
   check(song.encode(d2) == bytes, "song: canonical encode")
 
-  -- the flatten: each track's OWN pattern -> its lane (sorted)
+  -- the flatten: the clip LOOPS its 4-beat pattern to fill 8 beats
   local flat = song.flatten(d2)
-  check(#flat == 2 and #flat[1] == 2 and #flat[2] == 1,
-        "song: flatten = one lane per track's pattern")
+  check(#flat == 1 and #flat[1] == 4, "song: clip loops the pattern")
   check(flat[1][1].tick == 0 and flat[1][2].tick == 96
-        and flat[2][1].pitch == 48, "song: flattened per-track ticks")
+        and flat[1][3].tick == 96 * 4 and flat[1][4].tick == 96 * 5,
+        "song: looped ticks")
 
-  -- length grows to fit content but the stored loop1 is the floor
-  check(song.length(d2) == 96 * 4, "song: length = loop1")
+  -- fit_pattern GROWS to whole bars but never shrinks (round 6)
+  song.fit_pattern(d2, d2.patterns[1])
+  check(d2.patterns[1].len == 96 * 4, "song: fit keeps a fitting length")
   d2.patterns[1].notes[#d2.patterns[1].notes + 1] =
     { tick = 96 * 5, dur = 48, pitch = 72, vel = 100 } -- into bar 2
-  check(song.length(d2) == 96 * 8, "song: length grows to whole bars")
-  -- no auto-shrink (the human, round 6): a grown loop1 is the floor —
-  -- clearing the content leaves the loop length where it grew to
-  d2.loop1 = 96 * 8
+  song.fit_pattern(d2, d2.patterns[1])
+  check(d2.patterns[1].len == 96 * 8, "song: fit grows to whole bars")
   d2.patterns[1].notes = {}
-  check(song.length(d2) == 96 * 8, "song: length never auto-shrinks")
+  song.fit_pattern(d2, d2.patterns[1])
+  check(d2.patterns[1].len == 96 * 8, "song: fit never shrinks")
 
-  -- legacy migration: an old CSNG with a clip (no track.pat) maps the
-  -- track to the clip's pattern (preserves the notes)
-  local legacy = { bpm = 120, beats_per_bar = 4, grid = 8, loop0 = 0,
-                   loop1 = 96 * 4,
-                   tracks = { { name = "old", ins = "z.ins", gain = 128,
-                                pan = 0, mute = false } }, -- NO pat
-                   patterns = { [7] = { id = 7, len = 96 * 4,
-                     notes = { { tick = 0, dur = 96, pitch = 55, vel = 100 } } } },
-                   clips = { { track = 0, tick = 0, len = 96 * 4, pattern = 7 } } }
-  song.normalize(legacy)
-  check(legacy.tracks[1].pat == 7 and legacy.clips == nil,
-        "song: legacy clip migrates to track.pat")
-  check(#song.flatten(legacy)[1] == 1, "song: migrated notes survive")
+  -- clip independence (round 7): two clips on the SAME pattern id are
+  -- split so editing one never bleeds into the other
+  local shared = song.fresh()
+  shared.tracks[2] = { name = "t2", ins = "", gain = 128, pan = 0, mute = false }
+  shared.clips[2] = { track = 1, tick = 0, len = 96 * 4, pattern = 1 } -- shares!
+  song.normalize(shared)
+  check(shared.clips[1].pattern ~= shared.clips[2].pattern,
+        "song: normalize splits shared patterns (clip independence)")
+
+  -- round-6 migration: a doc with track.pat + no clips becomes clips
+  local r6 = { bpm = 120, beats_per_bar = 4, grid = 8, loop0 = 0,
+               loop1 = 96 * 4,
+               tracks = { { name = "a", ins = "", gain = 128, pan = 0,
+                            mute = false, pat = 5 } },
+               patterns = { [5] = { id = 5, len = 96 * 4,
+                 notes = { { tick = 0, dur = 96, pitch = 55, vel = 100 } } } },
+               clips = {} }
+  song.normalize(r6)
+  check(#r6.clips == 1 and r6.clips[1].pattern == 5
+        and r6.tracks[1].pat == nil, "song: round-6 track.pat -> a clip")
+  check(#song.flatten(r6)[1] == 1, "song: migrated notes survive")
 
   -- the sequencer end to end: a real song + ins on disk, doc.snd
   -- transport, frames stepped (start rewound per step — the sim frame
@@ -3236,7 +3240,9 @@ local function t_song()
   pal.write_file(root .. "/cosmic_seq.ins", ins.encode(ins.fresh("seq")))
   local sdoc = song.fresh()
   sdoc.tracks[1].ins = root .. "/cosmic_seq.ins"
+  sdoc.patterns[1].len = 96 * 4
   sdoc.patterns[1].notes = { { tick = 0, dur = 96, pitch = 60, vel = 110 } }
+  sdoc.clips[1].len = 96 * 4
   sdoc.loop1 = 96 * 4
   pal.write_file(root .. "/cosmic_seq.song", song.encode(sdoc))
   snd.music(root .. "/cosmic_seq.song")
