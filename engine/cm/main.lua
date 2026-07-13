@@ -417,6 +417,8 @@ local function sim_step()
   local rec = M.input.sample()
   M.input.apply(rec)
   M.game.step()
+  cm.require("cm.snd").step() -- the music sequencer (R9d): doc.snd-
+                              -- driven, a no-op when no song is set
   pal.snd_render() -- one frame of PCM from snd.bank (R9b, AUDIO.md §2:
                    -- a true no-op until the first cm.snd call creates
                    -- the bank — pre-R9 traces/goldens byte-identical);

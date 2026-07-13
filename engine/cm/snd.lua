@@ -112,4 +112,135 @@ end
 M.ed_on = pal and pal.x_snd_ed_on
 M.ed_off = pal and pal.x_snd_ed_off
 
+-- ---- the sequencer (R9d, AUDIO.md §6/§10) ----
+--
+-- Music is SIM STATE: the transport lives in the doc tree
+-- (state.doc.snd = { song, start frame, loop, held }) so snapshots/
+-- traces/rewind carry it; the flattened note list is a derived cache
+-- (rebuilt on any miss — rewind-safe by construction). Tick math is
+-- pure integer: at PPQ 96 and 48 kHz, ticks(s) = s*bpm*96 // 2880000.
+-- cm.main calls M.step() inside the sim step, right before
+-- pal.snd_render().
+
+M.seq = {}
+local PPQ = 96
+local SR60 = 48000 * 60 -- 2880000
+
+function M.seq.ticks_at(samples, bpm)
+  return samples * bpm * PPQ // SR60
+end
+
+function M.seq.samples_at(ticks, bpm)
+  return ticks * SR60 // (bpm * PPQ)
+end
+
+-- the derived caches (NOT state: rebuilt whenever they don't match)
+local cache = { path = nil, flat = nil, doc = nil, slots = nil }
+
+local function load_song(path)
+  if cache.path == path and cache.flat then return true end
+  local bytes = pal.read_file(path)
+  if not bytes then return false end
+  local song = cm.require("cm.song")
+  local ok, doc = pcall(song.decode, bytes)
+  if not ok then return false end
+  cache.path, cache.doc, cache.flat = path, doc, song.flatten(doc)
+  -- track instruments -> sim-bank slots 32..47 (game sfx keep 0..31 by
+  -- convention); per-track gain/pan bake into the uploaded patch
+  cache.slots = {}
+  for ti, tr in ipairs(doc.tracks) do
+    local slot = 31 + ti
+    if slot > 47 then break end
+    local ibytes = tr.ins ~= "" and pal.read_file(tr.ins)
+    if ibytes then
+      local iok, idoc = pcall(cm.require("cm.ins").decode, ibytes)
+      if iok then
+        idoc.patch.gain = math.min(255, ((idoc.patch.gain or 128)
+                                          * (tr.gain or 128)) // 128)
+        idoc.patch.pan = math.max(-64, math.min(64,
+          (idoc.patch.pan or 0) + (tr.pan or 0)))
+        cm.require("cm.ins").upload(idoc, slot, "sim", "t" .. ti)
+      end
+    end
+    cache.slots[ti] = slot
+  end
+  return true
+end
+
+-- start a song (sim code; the path is engine-cwd-relative or project-
+-- relative — pass what pal.read_file can open). Recorded, replayed,
+-- rewound like everything else.
+function M.music(path, opts)
+  local st = cm.require("cm.state")
+  st.doc.snd = { song = path, start = st.frame(), held = {},
+                 loop = not (opts and opts.loop == false) }
+end
+
+function M.music_stop()
+  local st = cm.require("cm.state")
+  local s = st.doc.snd
+  if s and s.held then
+    for _, h in pairs(s.held) do pal.snd_off(h.v) end
+  end
+  st.doc.snd = nil
+end
+
+-- one sim frame of sequencing: emit the ons/offs whose ticks land in
+-- this frame's 800-sample window. Loop wraps split the window in two.
+function M.step()
+  local st = cm.require("cm.state")
+  local s = st.doc.snd
+  if not s then return end
+  if not load_song(s.song) then return end
+  local doc, flat, slots = cache.doc, cache.flat, cache.slots
+  local bpm = doc.bpm
+  local L = cm.require("cm.song").length(doc)
+  if L <= 0 then return end
+  local SL = M.seq.samples_at(L, bpm) -- song length in samples
+  if SL <= 0 then return end
+  local rel = (st.frame() - s.start) * 800
+  if rel < 0 then return end
+  local windows -- up to two [s0,s1) sample spans in song space
+  if s.loop then
+    local w0 = rel % SL
+    if w0 + 800 <= SL then
+      windows = { { w0, w0 + 800 } }
+    else
+      windows = { { w0, SL }, { 0, w0 + 800 - SL } }
+    end
+  else
+    if rel >= SL then -- past the end: release stragglers, stop
+      M.music_stop()
+      return
+    end
+    windows = { { rel, math.min(SL, rel + 800) } }
+  end
+  for _, w in ipairs(windows) do
+    local t0 = M.seq.ticks_at(w[1], bpm)
+    local t1 = M.seq.ticks_at(w[2], bpm)
+    if w[2] >= SL then t1 = L end -- the last window closes the song
+    -- offs first (a retrigger on the same tick wants its voice back);
+    -- the song-closing window includes off == L (notes held to the end)
+    for key, h in pairs(s.held) do
+      if h.off >= t0 and (h.off < t1 or (h.off == t1 and t1 == L)) then
+        pal.snd_off(h.v)
+        s.held[key] = nil
+      end
+    end
+    for ti, lane in ipairs(flat) do
+      local tr = doc.tracks[ti]
+      if not (tr and tr.mute) and slots[ti] then
+        for _, n in ipairs(lane) do
+          if n.tick >= t1 then break end
+          if n.tick >= t0 then
+            local v = pal.snd_on(slots[ti], n.pitch, n.vel)
+            s.held[ti .. ":" .. n.tick .. ":" .. n.pitch] =
+              { v = v, off = n.tick + n.dur }
+          end
+        end
+      end
+    end
+  end
+end
+
 return M

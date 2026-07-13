@@ -3159,6 +3159,83 @@ local function t_ins()
   for _ = 1, 6 do pal.snd_render() end
 end
 
+local function t_song()
+  -- R9d (AUDIO.md §4.2/§6): the CSNG codec, the flatten, tick math,
+  -- and the sequencer end to end. Runs AFTER t_snd (renders frames).
+  local song = cm.require("cm.song")
+  local snd = cm.require("cm.snd")
+  local st = cm.require("cm.state")
+
+  -- tick math: at 120 bpm, 1 beat = 96 ticks = 24000 samples = 30 frames
+  check(snd.seq.samples_at(96, 120) == 24000
+        and snd.seq.ticks_at(24000, 120) == 96
+        and snd.seq.ticks_at(23999, 120) == 95, "song: tick math exact")
+
+  -- round-trip + canonical
+  local doc = song.fresh()
+  doc.bpm = 140
+  doc.tracks[1].ins = "x.ins"
+  doc.patterns[1].len = 96 * 4
+  doc.patterns[1].notes = { { tick = 96, dur = 48, pitch = 64, vel = 90 },
+                            { tick = 0, dur = 96, pitch = 60, vel = 100 } }
+  doc.patterns[2] = { id = 2, len = 96, notes = {} }
+  doc.clips = { { track = 0, tick = 0, len = 96 * 8, pattern = 1 } }
+  local bytes = song.encode(doc)
+  check(bytes:sub(1, 4) == "CSNG", "song: container magic")
+  local d2 = song.decode(bytes)
+  check(d2.bpm == 140 and #d2.tracks == 1 and d2.tracks[1].ins == "x.ins"
+        and #d2.patterns[1].notes == 2 and d2.patterns[2] ~= nil
+        and #d2.clips == 1, "song: round-trips")
+  check(d2.patterns[1].notes[1].tick == 0, "song: canonical note order")
+  check(song.encode(d2) == bytes, "song: canonical encode")
+
+  -- the flatten: an 8-beat clip over a 4-beat pattern loops it twice;
+  -- notes stay clip-local absolute, sorted
+  local flat = song.flatten(d2)
+  check(#flat == 1 and #flat[1] == 4, "song: flatten loops the pattern")
+  check(flat[1][1].tick == 0 and flat[1][2].tick == 96
+        and flat[1][3].tick == 96 * 4 and flat[1][4].tick == 96 * 5,
+        "song: flattened ticks")
+  -- clip edge: a shorter clip cuts the held note's duration
+  d2.clips[1].len = 96 -- one beat: the tick-96 note falls outside
+  local flat2 = song.flatten(d2)
+  check(#flat2[1] == 1 and flat2[1][1].dur == 96,
+        "song: the clip edge clips content")
+
+  -- the sequencer end to end: a real song + ins on disk, doc.snd
+  -- transport, frames stepped (start rewound per step — the sim frame
+  -- counter itself stays untouched for the tests after us)
+  local root = tmproot()
+  local ins = cm.require("cm.ins")
+  pal.write_file(root .. "/cosmic_seq.ins", ins.encode(ins.fresh("seq")))
+  local sdoc = song.fresh()
+  sdoc.tracks[1].ins = root .. "/cosmic_seq.ins"
+  sdoc.patterns[1].len = 96 * 4
+  sdoc.patterns[1].notes = { { tick = 0, dur = 96, pitch = 60, vel = 110 } }
+  sdoc.clips = { { track = 0, tick = 0, len = 96 * 4, pattern = 1 } }
+  sdoc.loop1 = 96 * 4
+  pal.write_file(root .. "/cosmic_seq.song", song.encode(sdoc))
+  snd.music(root .. "/cosmic_seq.song")
+  check(st.doc.snd and st.doc.snd.song == root .. "/cosmic_seq.song",
+        "song: music() sets the doc-tree transport")
+  local function stepf()
+    snd.step()
+    pal.snd_render()
+    st.doc.snd.start = st.doc.snd.start - 1 -- simulate the next frame
+  end
+  stepf()
+  check(next(st.doc.snd.held) ~= nil, "song: frame 0 rings the note")
+  check(pal.x_snd_tap():find("[^%z]") ~= nil, "song: audible")
+  for _ = 1, 32 do stepf() end -- past 30 frames: the off landed
+  check(next(st.doc.snd.held) == nil, "song: the off releases on time")
+  -- the loop wraps: by frame 480 (4 beats) the note re-rings
+  for _ = 1, 448 do stepf() end
+  check(next(st.doc.snd.held) ~= nil, "song: the loop re-rings")
+  snd.music_stop()
+  check(st.doc.snd == nil, "song: music_stop clears the transport")
+  for _ = 1, 10 do pal.snd_render() end
+end
+
 local function t_ed_kit()
   -- cm.ed.kit (R9a, AUDIO.md §7): the generalized §6 asset citizen —
   -- the factory's semantics pinned on a dummy codec, independent of the
@@ -4289,6 +4366,7 @@ function game.init()
   t_ed_kit()
   t_snd()
   t_ins()
+  t_song()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()

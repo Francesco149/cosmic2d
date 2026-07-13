@@ -24,12 +24,17 @@ local snd = cm.require("cm.snd")
 M.MAGIC = "CINS"
 
 function M.fresh(name)
+  -- the init patch is a sounding 2-op pair: alg 4 = (0→1) + (2→3),
+  -- carriers 1 and 3 — op1 modulates, op2 carries. (An early draft
+  -- leveled op1 under alg 0, whose only carrier is op4: silent by
+  -- construction — the sequencer KAT caught it.)
   return {
     name = name or "instrument",
-    patch = { type = "fm", alg = 0, fb = 0, pan = 0, gain = 128,
-              ops = { { wave = "sine", coarse = 1, level = 255,
+    patch = { type = "fm", alg = 4, fb = 0, pan = 0, gain = 128,
+              ops = { { wave = "sine", coarse = 1, level = 70,
+                        a = 5, d = 200, s = 120, r = 90 },
+                      { wave = "sine", coarse = 1, level = 255,
                         a = 5, d = 120, s = 180, r = 90 },
-                      { wave = "sine", coarse = 2, level = 0 },
                       { wave = "sine", coarse = 1, level = 0 },
                       { wave = "sine", coarse = 1, level = 0 } } },
   }
