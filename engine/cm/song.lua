@@ -1,47 +1,76 @@
 -- cm.song — the song asset codec (R9d, AUDIO.md §4.2): the CSNG chunk
 -- container. Time is integer ticks at PPQ 96 (1 beat = 96 ticks);
--- tempo is BPM; beats/bars are derived views, steps are presentation.
--- Pure encode/decode + canonical bytes + the FLATTEN (arrangement ->
--- one absolute-tick note list per track — playback never walks song
--- structure [wstudio]).
+-- tempo is BPM; beats/bars are derived views.
+--
+-- The model (round 6 — the human, matching wstudio): **each track OWNS
+-- one pattern** (its live loop). All tracks loop together over
+-- `loop1` ticks. The roll edits the current track's pattern; there is
+-- no separate arrangement/clip layer in the loop workflow (song mode
+-- is a later growth — old ARRG chunks still read, and migrate).
 --
 --   HEAD v1: <u16 bpm> <u8 beats_per_bar> <u8 grid> <u32 loop0> <u32 loop1>
---   TRKS v1: <u8 n> n x { <s1 name> <s1 ins path> <u8 gain> <i8 pan>
---                         <u8 mute> }
+--   TRKS v2: <u8 n> n x { <s1 name> <s1 ins> <u8 gain> <i8 pan>
+--                         <u8 mute> <u16 pat> }   (v1 had no pat)
 --   PATN v1 (xN): <u16 id> <u32 len ticks> <u16 nnotes> nnotes x
 --                 { <u32 tick> <u32 dur> <u8 pitch> <u8 vel> }
---   ARRG v1: <u16 nclips> nclips x { <u8 track> <u32 tick> <u32 len>
---                                    <u16 pattern id> }
+--   ARRG v1: legacy clips (read-tolerant; migrated to track.pat)
 --
--- doc = { bpm, beats_per_bar, grid, loop0, loop1,
---         tracks = { {name, ins, gain, pan, mute} },
---         patterns = { [id] = {id, len, notes = {{tick,dur,pitch,vel}}} },
---         clips = { {track, tick, len, pattern} } }
+-- doc = { bpm, beats_per_bar, grid, loop0, loop1 (the loop length),
+--         tracks = { {name, ins, gain, pan, mute, pat} },
+--         patterns = { [id] = {id, len, notes = {{tick,dur,pitch,vel}}} } }
 --
--- A clip longer than its pattern LOOPS the content to fill; editing a
--- placed clip's notes copies-on-write in the editor (the codec itself
--- is dumb bytes).
+-- flatten -> one absolute-tick note list per track (the track's own
+-- pattern; the sequencer loops it over loop1). Playback never walks
+-- the doc [wstudio].
 
 local M = select(2, ...) or {}
 local chunk = cm.require("cm.chunk")
 
 M.MAGIC = "CSNG"
 M.PPQ = 96
+local DEF_LOOP = 4 * 96 * 4 -- 4 bars of 4/4
 
 local pack, unpack = string.pack, string.unpack
 
+-- ensure every track owns a valid pattern (creates or migrates from an
+-- old clip on that track); ensure a sane loop length. Idempotent —
+-- called after decode + by fresh; the editor calls it after adding a
+-- track. Preserves existing notes.
+function M.normalize(doc)
+  doc.patterns = doc.patterns or {}
+  doc.tracks = doc.tracks or {}
+  local maxid = 0
+  for id in pairs(doc.patterns) do if id > maxid then maxid = id end end
+  for ti, tr in ipairs(doc.tracks) do
+    if not tr.pat or not doc.patterns[tr.pat] then
+      local pid
+      for _, c in ipairs(doc.clips or {}) do -- migrate an old clip
+        if c.track == ti - 1 and doc.patterns[c.pattern] then
+          pid = c.pattern
+          break
+        end
+      end
+      if not pid then
+        maxid = maxid + 1
+        pid = maxid
+        doc.patterns[pid] = { id = pid, len = doc.loop1 or DEF_LOOP,
+                              notes = {} }
+      end
+      tr.pat = pid
+    end
+  end
+  if not doc.loop1 or doc.loop1 <= 0 then doc.loop1 = DEF_LOOP end
+  doc.clips = nil -- the loop model has no clips
+  return doc
+end
+
 function M.fresh()
-  return {
-    bpm = 120, beats_per_bar = 4, grid = 8, loop0 = 0,
-    loop1 = 16 * M.PPQ * 4, -- 16 bars of 4/4
+  return M.normalize({
+    bpm = 120, beats_per_bar = 4, grid = 8, loop0 = 0, loop1 = DEF_LOOP,
     tracks = { { name = "track 1", ins = "", gain = 128, pan = 0,
-                 mute = false } },
-    -- a fresh pattern is one bar (the fit invariant's floor — the
-    -- music window grows it to fit as you place notes past the end;
-    -- no baked-in padding, D058 round 3)
-    patterns = { [1] = { id = 1, len = M.PPQ * 4, notes = {} } },
-    clips = {},
-  }
+                 mute = false, pat = 1 } },
+    patterns = { [1] = { id = 1, len = DEF_LOOP, notes = {} } },
+  })
 end
 
 local function sorted_pattern_ids(doc)
@@ -55,17 +84,17 @@ function M.encode(doc)
   local w = chunk.writer(M.MAGIC)
   w.chunk("HEAD", 1, pack("<I2I1I1I4I4", doc.bpm or 120,
                           doc.beats_per_bar or 4, doc.grid or 8,
-                          doc.loop0 or 0, doc.loop1 or 0))
+                          doc.loop0 or 0, doc.loop1 or DEF_LOOP))
   local t = { pack("<I1", #(doc.tracks or {})) }
   for _, tr in ipairs(doc.tracks or {}) do
-    t[#t + 1] = pack("<s1s1I1i1I1", tr.name or "", tr.ins or "",
-                     tr.gain or 128, tr.pan or 0, tr.mute and 1 or 0)
+    t[#t + 1] = pack("<s1s1I1i1I1I2", tr.name or "", tr.ins or "",
+                     tr.gain or 128, tr.pan or 0, tr.mute and 1 or 0,
+                     tr.pat or 1)
   end
-  w.chunk("TRKS", 1, table.concat(t))
+  w.chunk("TRKS", 2, table.concat(t))
   for _, id in ipairs(sorted_pattern_ids(doc)) do
     local pt = doc.patterns[id]
-    -- canonical: notes sorted by (tick, pitch)
-    local notes = {}
+    local notes = {} -- canonical: sorted by (tick, pitch)
     for _, n in ipairs(pt.notes or {}) do notes[#notes + 1] = n end
     table.sort(notes, function(x, y)
       if x.tick ~= y.tick then return x.tick < y.tick end
@@ -77,18 +106,6 @@ function M.encode(doc)
     end
     w.chunk("PATN", 1, table.concat(b))
   end
-  -- canonical: clips sorted by (track, tick)
-  local clips = {}
-  for _, c in ipairs(doc.clips or {}) do clips[#clips + 1] = c end
-  table.sort(clips, function(x, y)
-    if x.track ~= y.track then return x.track < y.track end
-    return x.tick < y.tick
-  end)
-  local b = { pack("<I2", #clips) }
-  for _, c in ipairs(clips) do
-    b[#b + 1] = pack("<I1I4I4I2", c.track, c.tick, c.len, c.pattern)
-  end
-  w.chunk("ARRG", 1, table.concat(b))
   return w.result()
 end
 
@@ -99,14 +116,15 @@ function M.decode(bytes)
     if c.tag == "HEAD" and c.version == 1 then
       doc.bpm, doc.beats_per_bar, doc.grid, doc.loop0, doc.loop1 =
         unpack("<I2I1I1I4I4", c.payload)
-    elseif c.tag == "TRKS" and c.version == 1 then
+    elseif c.tag == "TRKS" and (c.version == 1 or c.version == 2) then
       local n, pos = unpack("<I1", c.payload)
       for _ = 1, n do
-        local name, ins, gain, pan, mute
+        local name, ins, gain, pan, mute, pat
         name, ins, gain, pan, mute, pos = unpack("<s1s1I1i1I1", c.payload, pos)
+        if c.version == 2 then pat, pos = unpack("<I2", c.payload, pos) end
         doc.tracks[#doc.tracks + 1] = { name = name, ins = ins,
                                         gain = gain, pan = pan,
-                                        mute = mute == 1 }
+                                        mute = mute == 1, pat = pat }
       end
     elseif c.tag == "PATN" and c.version == 1 then
       local id, len, nn, pos = unpack("<I2I4I2", c.payload)
@@ -118,7 +136,7 @@ function M.decode(bytes)
                                     pitch = pitch, vel = vel }
       end
       doc.patterns[id] = pt
-    elseif c.tag == "ARRG" and c.version == 1 then
+    elseif c.tag == "ARRG" and c.version == 1 then -- legacy (migrated)
       local n, pos = unpack("<I2", c.payload)
       for _ = 1, n do
         local track, tick, len, pattern
@@ -129,50 +147,44 @@ function M.decode(bytes)
     end
   end
   if not doc.bpm then doc.bpm = 120 end
-  return doc
+  return M.normalize(doc)
 end
 
--- the flatten: arrangement -> per-track absolute-tick note lists,
--- sorted by tick. Clips loop their pattern to fill their length; notes
--- clip at the clip edge (a note starting inside plays, held past the
--- edge releases there). Pure — the sequencer walks this, never the doc.
+-- flatten -> per-track absolute-tick note lists (each track's own
+-- pattern, sorted). The sequencer loops each over M.length(doc).
 function M.flatten(doc)
   local out = {}
-  for ti = 1, #(doc.tracks or {}) do out[ti] = {} end
-  for _, c in ipairs(doc.clips or {}) do
-    local pt = doc.patterns[c.pattern]
-    local lane = out[c.track + 1]
-    if pt and lane and pt.len and pt.len > 0 then
-      local reps = (c.len + pt.len - 1) // pt.len
-      for rep = 0, reps - 1 do
-        local base = c.tick + rep * pt.len
-        for _, n in ipairs(pt.notes) do
-          local at = base + n.tick
-          if n.tick < pt.len and at < c.tick + c.len then
-            local dur = math.min(n.dur, c.tick + c.len - at)
-            lane[#lane + 1] = { tick = at, dur = dur, pitch = n.pitch,
-                                vel = n.vel }
-          end
-        end
+  for ti, tr in ipairs(doc.tracks or {}) do
+    local pt = doc.patterns[tr.pat]
+    local lane = {}
+    if pt then
+      for _, n in ipairs(pt.notes) do
+        lane[#lane + 1] = { tick = n.tick, dur = n.dur, pitch = n.pitch,
+                            vel = n.vel }
       end
+      table.sort(lane, function(x, y)
+        if x.tick ~= y.tick then return x.tick < y.tick end
+        return x.pitch < y.pitch
+      end)
     end
-  end
-  for _, lane in ipairs(out) do
-    table.sort(lane, function(x, y)
-      if x.tick ~= y.tick then return x.tick < y.tick end
-      return x.pitch < y.pitch
-    end)
+    out[ti] = lane
   end
   return out
 end
 
--- total ticks (the arrangement's extent; loop1 when set wins)
+-- the loop length in ticks (doc.loop1 is the high-water mark the editor
+-- grows; floored at one bar, and never below live content).
 function M.length(doc)
-  local n = doc.loop1 or 0
-  for _, c in ipairs(doc.clips or {}) do
-    if c.tick + c.len > n then n = c.tick + c.len end
+  local bar = M.PPQ * (doc.beats_per_bar or 4)
+  local n = doc.loop1 or DEF_LOOP
+  for _, tr in ipairs(doc.tracks or {}) do
+    local pt = doc.patterns[tr.pat]
+    for _, note in ipairs(pt and pt.notes or {}) do
+      local e = note.tick + note.dur
+      if e > n then n = ((e + bar - 1) // bar) * bar end
+    end
   end
-  return n
+  return math.max(bar, n)
 end
 
 return M
