@@ -147,22 +147,35 @@ Build order R9a→R9e in AUDIO.md §12 with exits.
 - selftest **23044**; a 200-frame arpeggio project **verify-PASSES
   byte-exact**; the loop audible live.
 
-**Next step (resume here):** the human's morning passes — drop a real
-mp3 on the canvas (player), open `sound/chime.wav`, click through the
-preset rail with ears on (synth), walk the R9a hint strips. Then the
-remaining R9d half: **the music WINDOW** (kind `music`, AUDIO.md §10)
-— kit.asset over cm.song (gkey "muw", field "song"), the piano roll
-on the wstudio four-rule mouse grammar (press empty = add at last-used
-length grid-snapped / motionless release on a note = delete / drag =
-move / right-edge drag = resize; CTRL = fine ticks — the D058
-inversion), velocity lane, arrangement strip (stamp/move/edge-resize
-clips, copy-on-write on edit), track rail (drag .ins to bind —
-open_path doors to the synth window), transport header (play/stop/
-loop/bpm/grid chips + space) with EDITOR-BANK preview (slots via
-kit.snd_alloc; never the sim bank), §13 hotkeys, tape proofs + shots.
-Then **R9e — the game hookup** (sfx at jump/land/flash-jump/slice/
-teleport + a rim_hub track, ../cosmic2d-game). Good `/clear` point —
-everything committed, docs current.
+**R9d — the music WINDOW: BUILT too (same night — R9d is
+code-complete):** kind `music` on the windowkit — track rail (drag an
+.ins onto a row binds it, kind.drop), arrangement strip (press =
+stamp the current pattern, drag = move by bars, edge = resize, del,
+live playhead), the piano roll on the **wstudio four-rule grammar**
+(press empty = add at last-used length grid-snapped / motionless
+release on a note = delete / drag = move / right-edge = resize;
+**CTRL = fine ticks**, the D058 inversion), velocity lane, transport
+chips + §13 hotkeys (space/del/1–6 grid; Esc stops). Preview = a
+wall-clock mini-sequencer on the EDITOR bank (render-only; park
+silences it); the game plays the same .song via cm.snd.music. One
+design refinement vs AUDIO.md §4.2: **the roll edits PATTERNS** (the
+tracker model — an edit updates every placement); per-clip
+copy-on-write can grow later. **10/10 real-event tape** (all four
+rules land exact ticks/pitches; stamp; transport); selftest 23044;
+suite ALL GREEN; shot on llm-feed; **cosmic2d-win re-staged** (native
+23044 PASS; windows-side .ed sessions wiped again).
+
+**Next step (resume here):** the human's morning passes — with EARS:
+drop a real mp3 (player), `sound/chime.wav`, the synth preset rail,
+compose a bar in a music window (spawn menu → music), the R9a hint
+strips. Fix-by-feedback rounds as they come. Then **R9e — the game
+hookup** (../cosmic2d-game): cm.snd.load/play sfx at jump/land/
+flash-jump/slice/teleport + stardust/hit moments, a first rim_hub
+track authored IN the music window, mix pass — exit = the human plays
+with sound on. (The R9d determinism exit is already half-proven: a
+200-frame music trace verify-PASSES; the PCM-hash golden is pinned
+cross-platform.) Good `/clear` point — everything committed, docs
+current.
 
 ---
 
