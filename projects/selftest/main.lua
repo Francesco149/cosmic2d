@@ -3046,7 +3046,10 @@ local function t_ed_kit()
   end
 
   -- fresh open: no disk file -> fresh bytes, no baseline entry
+  -- (reset both the journal AND the asset across runs — a prior run's
+  -- save leaves a.k on disk, which would take the adopt-disk path)
   pal.write_file(journal.file(root, "a.k"), "")
+  pal.x_remove(root .. "/a.k")
   local ed = mked()
   local win = { path = "a.k" }
   local a, p = A.open_asset(ed, "a.k")
