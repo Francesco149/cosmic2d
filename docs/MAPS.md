@@ -374,7 +374,9 @@ is insertion-ordered), collider buffer canonical.
   + level.lua build code die; player.lua mover swap as smoke. The
   graybox look = §5 collider fill.
 - **`cm.editor` (F1) + `cm.tilemap`'s mover die** once both are over.
-  `cm.tilemap` keeps grid+draw for `.tm`.
+  *(R8e outcome: `cm.tilemap` died WHOLE — R8d's `cm.tmap` had already
+  taken `.tm` grid+draw, so nothing kept it alive. cm.inspect stays,
+  hostless, awaiting a canvas-window host.)*
 
 ## 11. Build order (R8a–R8e) + exits
 
@@ -436,7 +438,22 @@ is insertion-ordered), collider buffer canonical.
 - **R8e — the game migration** (§10, in ../cosmic2d-game): both maps
   re-authored in the editor, movement/feel re-checked (the human),
   legacy map code deleted both repos. *Exit*: the human walks both
-  .map maps and R7b resumes on top.
+  .map maps and R7b resumes on top. ✅ **BUILT (2026-07-13), awaiting
+  the human's walk.** *(Hit: rim_hub + south_trail authored end to end
+  through the REAL editor event path — the R8c/R8d tape idiom grown to
+  full-map scale (spawn menu → path field → the new map w/h/grid/bg
+  inspector fields → CTRL-snapped quads/one-way chains → markers with
+  kind/label/note/extras TYPED via the new `pal.x_ig_event` capture-io
+  mirror → ctrl+s); both saved CMAPs byte-identical to the intended
+  docs (124 + 95 checks, 0 FAIL). Game migrated onto cm.map/cm.collide
+  (spawns/portals/prop_spots from markers); walk proof through real
+  events: rim descends the fold-in planks and stops exactly at the
+  petroglyph wall face, portal lands on south's from_rim shelf, the
+  switchback descent grounds onto the sunshelf. maps/*.lua died; the
+  F1 cm.editor + cm.tilemap died engine-side (selftest 23766→22926).
+  Two dogfood catches fed back into the engine: fresh maps had no
+  w/h/grid/bg editing surface, and capture tapes couldn't reach imgui
+  fields at all. 4 llm-feed shots.)*
 
 ## 12. Open questions (human)
 

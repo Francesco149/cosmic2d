@@ -3,6 +3,66 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (day session — R8e built: the game migration)
+**Phase**: **R8e — the game migration: BUILT (MAPS.md §10/§11 ✅ — the
+R8 map rework is code-complete); awaiting the human's walk of both .map
+maps (the R8e exit) + the queued R7a/R8a–R8d looks. R7b resumes on top.**
+
+- **rim_hub + south_trail re-authored as .map IN the editor** (the §10
+  dogfood pass, in ../cosmic2d-game): the R8c/R8d tape idiom grown to
+  full-map scale — one driver compiles the old blockout data into REAL
+  events (spawn menu → unbound path field → map fields → 17 collider
+  quads + 19 one-way chains with the CTRL snap → 28 markers dragged out
+  and their kind/label/note/extras TYPED into the inspector) and
+  byte-verifies the saved CMAP against the intended doc. **rim 124
+  checks / south 95, 0 FAIL — both files byte-identical to intent.**
+  Markers carry the whole plan: spawns (name=), portals (to=/at=),
+  prop_spots, every annotated POI verbatim.
+- **Two dogfood catches became engine features first**: (1) a fresh
+  spawn-menu map was STUCK at project res — the map inspector grew the
+  MAP's own **w/h/grid/bg fields** (nothing selected, select tool;
+  bg_fmt/bg_parse pure + KAT'd); (2) capture tapes couldn't reach imgui
+  widgets at all (no platform backend feeds the io in --win sessions) —
+  **`pal.x_ig_event`** mirrors pal-shaped event tables into the imgui
+  io (capture-only, x_ig_mouse-gated, IMGUI.md §5), so x_ig_edit fields
+  are tape-drivable forever.
+- **The game walks its .map maps** (../cosmic2d-game): level.lua =
+  cm.map.use registry ("cosmic.mapc" world; graybox fill + placements;
+  parallax kept, tinted from HEAD bg), player.lua mover swap (world:move
+  + stand_span/solid_at scans, smoke's form; 32 px side reach), props
+  on the same mover with flat-quad crates, spawns/arrivals derived from
+  spawn markers (feet on the rect bottom, centered). maps/*.lua DIED.
+  **Walk proof through real events, 0 FAIL**: rim descends the fold-in
+  planks and stops EXACTLY at the petroglyph wall face (x 616 = 640 −
+  body); portal travel via the real marker extras lands on south's
+  from_rim shelf (feet y 448); the switchback descent grounds onto the
+  sunshelf. cm.map.reload on the editor's exact save path answers
+  "reloaded" — the Ctrl+S hot-reload loop is live for the game.
+- **The legacy layer died** (§10): cm.editor (F1) deleted — its D052
+  lockdown check moved to **cm.main.dev_locked()** (perf/console/scrub
+  updated), cm.view lost the editor chrome insets (behavior-neutral —
+  editor_on was always false in play/headless). **cm.tilemap deleted
+  WHOLE** (cm.tmap took .tm at R8d; the mover's contract lives in
+  cm.collide, pinned by the kitcheck golden — the R8a parity sweep
+  retired with its reference). cm.inspect stays, hostless + KAT'd,
+  awaiting a canvas-window host. The demos repo's parked pre-revamp
+  sandbox still references both — it rebuilds when picked up (D045).
+- selftest 23762→23766 (bg fields)→**22926** (tilemap tests + the
+  parity sweep retired); `nix run .#test` **ALL GREEN** (goldens
+  byte-identical). Windows cross-build clean; native selftest 22926
+  PASS + kitcheck verifies byte-exact; **cosmic2d-win re-staged**
+  (the windows-side .ed sessions got wiped again — recipe rm -rf).
+  4 shots on llm-feed (both authoring sessions + both maps in-game).
+
+**Next step (resume here):** the human's passes — **walk both .map maps**
+(`bin/cosmic ../cosmic2d-game/cosmic`, portals via UP; the R8e exit /
+feel re-check) plus the queued R7a feel + R8a–R8d looks. Then **R7b —
+the core loop graybox** resumes (game GRAYBOX.md §4) on the new map
+stack. Good `/clear` point — everything committed both repos, docs
+current.
+
+---
+
 **Date**: 2026-07-12 (day session, cont. — R8d built: the tilemap window)
 **Phase**: **R8d — the tilemap window + the edge-run snap: BUILT
 (MAPS.md §11 ✅); awaiting the human's feel passes (the queued
