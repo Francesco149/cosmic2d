@@ -193,24 +193,27 @@ integer math end to end. Beats/bars are derived views; steps are a
 *presentation* concern (the triplet toggle is free) [W: frames as the
 single time truth].
 
-- `HEAD` v1 — bpm, beats_per_bar (default 4), loop region (ticks),
-  grid default.
-- `TRKS` v1 — tracks: name, instrument path (.ins), gain, pan, mute.
-- `PATN` v1 (×N) — patterns: id, length (ticks), notes
-  {tick_on, tick_len, pitch 0..127, vel 0..127}. Notes live in
-  patterns. **As-built the roll edits the pattern in place** (the
-  tracker model — an edit updates every placement); the pattern's
-  length **auto-fits its content** (smallest whole bars, min one; the
-  window maintains it, §10). Per-clip copy-on-write [W: clip
-  independence] is the growth path when a placement needs to diverge —
-  the format already keys clips by pattern id, so a copy-on-write forks
-  a new pattern.
-- `ARRG` v1 — the arrangement: clips {track, tick_start, len, pattern};
-  a clip longer than its pattern **loops the content to fill** [W].
+Model (round 6 — the human, matching wstudio): **each track owns one
+looping pattern**. All tracks loop together over `loop1`. No separate
+arrangement/clip layer in the loop workflow (song mode is a later
+growth; old `ARRG` chunks still read + migrate).
 
-`cm.song` is the pure codec + the **flatten**: arrangement → one
-absolute-tick note list per track. Playback never walks song structure
-[W]; the sequencer walks the flat list.
+- `HEAD` v1 — bpm, beats_per_bar (default 4), loop region (`loop1` =
+  the loop length), grid default.
+- `TRKS` v2 — tracks: name, instrument path (.ins), gain, pan, mute,
+  **pat** (the track's own pattern id). v1 (no pat) migrates.
+- `PATN` v1 (×N) — patterns: id, length (ticks), notes
+  {tick_on, tick_len, pitch 0..127, vel 0..127}. **Each track edits
+  its own pattern**; the loop length (`loop1`) **grows to fit content
+  but never auto-shrinks** (§10).
+- `ARRG` v1 — *legacy* clips {track, tick, len, pattern}; read-
+  tolerant, migrated to `track.pat` (a track's pattern = its first
+  clip's), never written.
+
+`cm.song` is the pure codec + `normalize` (every track gets a pattern;
+clips migrate) + the **flatten**: each track's own pattern → its
+absolute-tick note list. Playback never walks the doc [W]; the
+sequencer loops each lane over `M.length` (the loop).
 
 ### 4.3 Sound files
 
@@ -372,18 +375,21 @@ tweak while a note rings.
 
 ## 10. The music window (kind `music`)
 
-Binds `.song`. The wstudio-informed minimum that still finishes a loop:
-patterns + arrangement + velocity + swing later (§13). Playback while
-editing runs on the **editor bank** (render-only — composing never
-touches the sim); the game plays the same file through `cm.snd.music`.
-As-built (the human's live rounds shaped rounds 2/3 below D058):
+Binds `.song`. **Each track owns one looping pattern** (round 6, the
+wstudio model — the human): the roll edits the CURRENT track's
+pattern, all tracks loop together, no arrangement/clip layer.
+Playback while editing runs on the **editor bank** (render-only —
+composing never touches the sim); the game plays the same file
+through `cm.snd.music`. The human's live rounds shaped the rest:
 
 - **The track rail** (left): tracks with name, the bound instrument
   (drag an .ins onto a track to bind it — from the assets window OR
   the synth's preset strip, §9; `kind.drop` → `resolve_ins`: a
   project path binds as-is, an external/stock one is **copied into
   `ins/`** so the .song stays self-contained, round 5), mute dots,
-  + adds a track.
+  + adds a track. **Clicking a track edits its own pattern** in the
+  roll (round 6 — the core of the per-track model); + track makes a
+  new track with a fresh pattern and focuses it.
 - **The piano roll** (center) — the [W] mouse grammar, four rules:
   press empty = **add a note** (length = last-used, snapped to the
   grid); motionless release on a note = **delete**; press-drag =
@@ -402,7 +408,7 @@ As-built (the human's live rounds shaped rounds 2/3 below D058):
   **Clipboard + duplicate** (round 4): **Ctrl+C/X** copy/cut the
   selection (relative to its earliest tick), **Ctrl+V** pastes anchored
   at the scrub cursor (below; the pasted notes become the selection);
-  the clipboard crosses patterns + windows. **Ctrl+drag a note =
+  the clipboard crosses tracks + windows. **Ctrl+drag a note =
   duplicate** — the selection if the note is in it, else just that note
   — you drag the copies, the originals stay (the universal DAW
   convention). *This supersedes the D058 "CTRL = fine ticks" inversion
@@ -422,13 +428,12 @@ As-built (the human's live rounds shaped rounds 2/3 below D058):
   (an accent tab + a line through the roll). Space plays FROM the
   cursor (then wraps to 0 at the song end — the cursor is the entry
   point, the whole song loops); it is also the Ctrl+V paste anchor.
-- **The arrangement strip** (top): the bar timeline; patterns stamp as
-  clips (press empty = stamp the current pattern, drag = move by bars,
-  edge-drag = resize; content loops to fill [W]); del removes the
-  selected clip. Fixed-scale overview (the roll zoom doesn't move it).
-- **Transport** (header): play/stop, BPM (click cycles), grid chip,
-  pattern select + `+p`. Hotkeys: space = play/stop, del, Ctrl+C/X/V,
-  `1`–`6` grid; Esc stops the preview (after clearing a selection).
+- **The loop length** (`doc.loop1`): shared by all tracks; **grows to
+  fit content, never auto-shrinks** (round 6 — the human). The
+  accent end-line on the roll marks it.
+- **Transport** (header): play/stop, BPM (click cycles), grid chip.
+  Hotkeys: space = play/stop, del, Ctrl+C/X/V, `1`–`6` grid; Esc stops
+  the preview (after clearing a selection).
 
 **Pattern length auto-fits its content** (round 3): every note-changing
 commit rounds the max note-end up to whole bars (min one bar), so the

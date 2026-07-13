@@ -2072,3 +2072,18 @@ X/V** clipboard, and **Ctrl+drag = duplicate**. That last one
 the roll is now duplicate (the universal DAW convention); placement is
 grid-only (finer grids + zoom give precision). If a fine-placement
 path is wanted back, re-home it on a free chord, not CTRL.
+
+**Round 6 — the model itself (the human: switching tracks/patterns
+didn't change the roll).** The earlier FL-style model (shared patterns
+placed on tracks via clips) was wrong for the loop workflow: clicking a
+track never changed the roll, and playback needed clips the human never
+stamped. Moved to the **wstudio per-track model** (the human's original
+reference): **each track owns one looping pattern**; the roll edits the
+current track's pattern; all tracks loop over `doc.loop1`. The
+arrangement strip + pattern chips + clips are **removed** (song mode is
+a later growth — the CSNG format stays forward-compatible: `ARRG` reads
++ migrates, TRKS gained `pat`). Loop length **grows to fit, never
+auto-shrinks** (the human: "since patterns auto loop we don't need to
+auto shrink"). Also fixed a preview crash (`p.flat` rebuilt if an edit
+invalidated it mid-play). Revisit if song-mode arrangement is wanted
+(→ bring clips back as a second layer over the per-track patterns).

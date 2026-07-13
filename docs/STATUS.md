@@ -70,6 +70,18 @@ applied:**
   reuses the shell's g.adrag carry + music.drop. **Stock presets copy
   into the project's `ins/`** (music.drop's resolve_ins; self-contained
   .song), project presets bind direct. Preset drag 5/5 tape.
+- **Round 6 (`2231db5`): per-track patterns — the MODEL fix.** The
+  human hit a preview CRASH + found clicking a track/pattern didn't
+  change the roll. Root cause: the FL-style shared-pattern+clip model
+  (the roll read win.pat, not the track). Moved to the **wstudio model
+  the human endorsed — each track OWNS one looping pattern**: the roll
+  edits the current track's pattern, clicking a track switches it, all
+  tracks loop over doc.loop1. **Removed** the arrangement strip +
+  pattern chips + clips (song mode later; format forward-compatible —
+  TRKS v2 adds `pat`, old ARRG clips MIGRATE via song.normalize).
+  **No auto-shrink** (grow-only loop, the human's ask). Crash fixed
+  (preview_step rebuilds p.flat). t_song rewritten (23050); 11/11
+  per-track tape. AUDIO.md §4.2/§10 + D058 note rewritten.
 
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
