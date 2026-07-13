@@ -362,8 +362,10 @@ Layout (mouse-first, one screen, no tabs):
   hotkeys give the tracker keyboard (z s x d c v … = C D E F, q 2 w 3 …
   the octave up; `,`/`.` octave shift) — playable while mousing knobs.
 - **Preset strip**: a browser over `engine/stock/ins/*` + the
-  project's own instruments; click = load into the working bytes
-  (journaled, undoable); save-as writes a project .ins.
+  project's own instruments; **click** = load into the working bytes
+  (journaled, undoable); **drag a row onto a music track** = bind it
+  there (round 5 — the shell's g.adrag carry → the music window's
+  `drop`; a stock preset copies into the project's `ins/` first, §10).
 
 Every parameter edit re-sends the patch to the editor bank live —
 tweak while a note rings.
@@ -377,9 +379,11 @@ touches the sim); the game plays the same file through `cm.snd.music`.
 As-built (the human's live rounds shaped rounds 2/3 below D058):
 
 - **The track rail** (left): tracks with name, the bound instrument
-  (drag an .ins from the assets window onto a track to bind; the
-  §7.1 doors open the synth on shared bytes), mute dots, + adds a
-  track.
+  (drag an .ins onto a track to bind it — from the assets window OR
+  the synth's preset strip, §9; `kind.drop` → `resolve_ins`: a
+  project path binds as-is, an external/stock one is **copied into
+  `ins/`** so the .song stays self-contained, round 5), mute dots,
+  + adds a track.
 - **The piano roll** (center) — the [W] mouse grammar, four rules:
   press empty = **add a note** (length = last-used, snapped to the
   grid); motionless release on a note = **delete**; press-drag =

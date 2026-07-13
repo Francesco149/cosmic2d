@@ -64,6 +64,12 @@ applied:**
   drag the copies — the universal DAW convention, which **retires the
   D058 "CTRL = fine ticks" roll inversion** (placement is grid-only
   now; DECISIONS D058 revisit note added). Music tape 13/13.
+- **Round 5 (`777f904`): drag presets from the synth to the sequencer.**
+  The synth's preset strip is a drag SOURCE now — press-drag a preset
+  row onto a music track binds it (a click still loads into the synth);
+  reuses the shell's g.adrag carry + music.drop. **Stock presets copy
+  into the project's `ins/`** (music.drop's resolve_ins; self-contained
+  .song), project presets bind direct. Preset drag 5/5 tape.
 
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
