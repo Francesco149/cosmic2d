@@ -219,6 +219,10 @@ for i2 = 1, 6 do
     key = tostring(i2), when = bound,
     fn = function(win, ed)
       win.grid = i2
+      -- a new subdivision resets the remembered note length (human:
+      -- picking 1/2 still placed the last-used 1/8)
+      local _, p = open_asset(ed, win.path)
+      p.lastdur = nil
       ed.touch()
     end }
 end
@@ -360,6 +364,7 @@ function M.draw(win, ctx)
   end
   if tchip(GRID_LABEL[win.grid or 4], false) then
     win.grid = (win.grid or 4) % 6 + 1
+    p.lastdur = nil -- the new subdivision IS the next note's length
     ctx.touch()
   end
   -- pattern chips
