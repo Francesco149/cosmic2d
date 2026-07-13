@@ -328,6 +328,10 @@ function M.asset(spec)
     if ok then
       p.disk = a[field]
       close(ed, win.path, journal.SAVED)
+      -- a save may have CREATED the file (the pathfield door) or baked
+      -- new siblings: the asset browser's cached list must see it
+      -- (human, morning round — a fresh ins/tape.ins never appeared)
+      cm.require("cm.ed.win.assets").invalidate(ed)
       local msg = spec.after_save and spec.after_save(ed, win.path, a, p)
       pal.log(msg or ("[ed] saved " .. win.path))
     else
