@@ -243,10 +243,13 @@ function M.draw(win, ctx)
       commit()
     end
     x = x + px * 3.4 + 8 * z
-    -- entries: chips of frame:dur; click = pause + show; sel edits
+    -- entries: chips of frame:dur; click = pause + show; sel edits.
+    -- The UI speaks 1-BASED frame numbers (the sprite ed's chips); the
+    -- clip DATA stays 0-based (the .anim codec + runtime contract) —
+    -- the +1/-1 happens only here at the display/input boundary.
     local ey = ty
     for ei, e in ipairs(cur.frames) do
-      local label = ("%d:%d"):format(e.frame, e.dur or 1)
+      local label = ("%d:%d"):format(e.frame + 1, e.dur or 1)
       local w2 = pal.x_ig_text_size(label, px * 0.85, 0) + 8 * z
       if x + w2 > ctx.cx + ctx.cw - 2 * z then break end
       if button(i, ctx, x, ey, w2, th, label, ei == nsel and not pw.playing,
@@ -290,10 +293,10 @@ function M.draw(win, ctx)
         x = lx + w2 + 6 * z
         return st and st.submit and text or nil
       end
-      local got = field("anf", "frame", tostring(sel.frame), 30 * z)
+      local got = field("anf", "frame", tostring(sel.frame + 1), 30 * z)
       if got and tonumber(got) then
         sel.frame = math.max(0, math.min(doc.frames - 1,
-                                         math.floor(tonumber(got))))
+                                         math.floor(tonumber(got)) - 1))
         commit()
       end
       got = field("and", "dur", tostring(sel.dur or 1), 30 * z)

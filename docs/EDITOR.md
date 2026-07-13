@@ -572,6 +572,9 @@ vendored-pin-internal, revisited on any imgui bump.
   (frame:dur; select pauses + shows), +f/−f, frame/dur fields, and a
   playing preview through cm.anim's pure evaluator (dev clock: one
   editor frame = one tick; no clips = the whole strip at 8 ticks).
+  **Frame numbers in the UI are 1-based** (matching the sprite ed's
+  frame chips); the clip DATA stays 0-based (the .anim codec + runtime
+  contract) — the conversion lives only at the display/input boundary.
 - **Journal growth** (§11): sprite journals cap at **512 entries**
   (journal.open gets a per-open cap; text keeps 4096).
 - **`cm.studio` + `--studio` + F2 are deleted** (D046 Q4 — no
