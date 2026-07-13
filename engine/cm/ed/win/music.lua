@@ -632,7 +632,7 @@ function M.draw(win, ctx)
   -- pattern multiple times) — ctrl+drag a clip duplicates it LINKED (a
   -- copy sharing the pattern), ctrl+press empty stamps the ACTIVE pattern
   -- linked; both track their pattern so one edit updates every placement.
-  -- layout anchors (the drop row-math + event tapes read these)
+  -- arrangement layout anchors (event tapes / gesture hit-tests read this)
   p.arr = { x = rx, y = ay, atpp = atpp, lane_h = lane_h, bar = bar }
   local over_arr = i.wx >= rx and i.wx < rx + rw and i.wy >= ay
                    and i.wy < ay + AR_H
