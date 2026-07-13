@@ -628,7 +628,12 @@ function M.draw(win, ctx)
     end
   end
   -- arrangement gestures: press empty = stamp; press clip = move;
-  -- right edge = resize
+  -- right edge = resize. CTRL = REUSE (round 8, the human: place the same
+  -- pattern multiple times) — ctrl+drag a clip duplicates it LINKED (a
+  -- copy sharing the pattern), ctrl+press empty stamps the ACTIVE pattern
+  -- linked; both track their pattern so one edit updates every placement.
+  -- layout anchors (the drop row-math + event tapes read these)
+  p.arr = { x = rx, y = ay, atpp = atpp, lane_h = lane_h, bar = bar }
   local over_arr = i.wx >= rx and i.wx < rx + rw and i.wy >= ay
                    and i.wy < ay + AR_H
   if ctx.hot and i.clicked[1] and over_arr and not p.g then
@@ -642,7 +647,19 @@ function M.draw(win, ctx)
         edge = (c.tick + c.len - tick) * atpp < 6 * z
       end
     end
-    if hit then
+    if ed.g.ctrl and hit then
+      -- LINKED DUPLICATE: a copy that SHARES the clip's pattern; drag it
+      -- into place (the original stays). Editing either updates both.
+      local src = doc.clips[hit]
+      doc.clips[#doc.clips + 1] = { track = src.track, pattern = src.pattern,
+                                    tick = src.tick, len = src.len }
+      p.csel = #doc.clips
+      win.pat, win.trk, win.cursor = src.pattern, src.track + 1, 0
+      p.nsels = {}
+      p.g = { t = "clipmove", ci = #doc.clips, dt = tick - src.tick,
+              moved = false, dup = true }
+      p.flat = nil
+    elseif hit then
       p.csel = hit
       local c = doc.clips[hit]
       -- DRILL DOWN (the human, round 7): clicking a clip shows ITS
@@ -654,19 +671,26 @@ function M.draw(win, ctx)
       p.g = { t = edge and "clipsize" or "clipmove", ci = hit,
               dt = tick - c.tick, moved = false }
     else
-      -- stamp a NEW clip with its OWN fresh pattern (clip independence
-      -- — no accidental sharing across tracks, round 7). Its length is
-      -- one bar; resize it to loop the pattern longer.
-      local nid = 0
-      for id in pairs(doc.patterns) do if id > nid then nid = id end end
-      nid = nid + 1
-      doc.patterns[nid] = { id = nid, len = bar, notes = {} }
+      -- stamp: CTRL reuses the ACTIVE pattern (win.pat) LINKED — the
+      -- fill length rounds up to the pattern's whole bars so it plays in
+      -- full; a plain press makes a FRESH one-bar pattern (round 7).
+      local pid, plen
+      if ed.g.ctrl and win.pat and doc.patterns[win.pat] then
+        pid = win.pat
+        plen = math.max(bar, ((doc.patterns[pid].len + bar - 1) // bar) * bar)
+      else
+        local nid = 0
+        for id in pairs(doc.patterns) do if id > nid then nid = id end end
+        pid, plen = nid + 1, bar
+        doc.patterns[pid] = { id = pid, len = bar, notes = {} }
+      end
       doc.clips[#doc.clips + 1] = {
-        track = math.tointeger(lane), pattern = nid,
-        tick = math.tointeger((tick // bar) * bar), len = bar,
+        track = math.tointeger(lane), pattern = pid,
+        tick = math.tointeger((tick // bar) * bar),
+        len = math.tointeger(plen),
       }
       p.csel = #doc.clips
-      win.pat = nid -- drill into the new empty pattern
+      win.pat = pid -- drill into the stamped pattern
       win.trk = math.tointeger(lane) + 1
       win.cursor = 0
       p.nsels = {}
@@ -697,7 +721,7 @@ function M.draw(win, ctx)
         end
       end
     elseif not i.buttons[1] then
-      if p.g.moved then
+      if p.g.moved or p.g.dup then -- a linked copy commits even if unmoved
         p.flat = nil
         commit(ed, win.path)
       end

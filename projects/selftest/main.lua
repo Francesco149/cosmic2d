@@ -3226,14 +3226,27 @@ local function t_song()
   song.fit_pattern(d2, d2.patterns[1])
   check(d2.patterns[1].len == 96 * 8, "song: fit never shrinks")
 
-  -- clip independence (round 7): two clips on the SAME pattern id are
-  -- split so editing one never bleeds into the other
+  -- deliberate SHARING (round 8, the human): two clips on the SAME
+  -- pattern id stay linked through normalize (edit once, both follow) —
+  -- normalize no longer splits them; it only heals MISSING patterns
   local shared = song.fresh()
   shared.tracks[2] = { name = "t2", ins = "", gain = 128, pan = 0, mute = false }
   shared.clips[2] = { track = 1, tick = 0, len = 96 * 4, pattern = 1 } -- shares!
   song.normalize(shared)
-  check(shared.clips[1].pattern ~= shared.clips[2].pattern,
-        "song: normalize splits shared patterns (clip independence)")
+  check(shared.clips[1].pattern == shared.clips[2].pattern
+        and shared.clips[1].pattern == 1,
+        "song: normalize keeps deliberately shared patterns linked")
+  -- and the link SURVIVES a save/load round-trip (one pattern, two clips)
+  shared.patterns[1].notes = { { tick = 0, dur = 48, pitch = 60, vel = 100 } }
+  local sd = song.decode(song.encode(shared))
+  check(sd.clips[1].pattern == sd.clips[2].pattern, "song: sharing round-trips")
+  check(#song.flatten(sd)[1] == 1 and #song.flatten(sd)[2] == 1,
+        "song: both linked clips play the shared pattern's notes")
+  local orphan = song.fresh()
+  orphan.clips[1].pattern = 999 -- points at a missing pattern
+  song.normalize(orphan)
+  check(orphan.patterns[orphan.clips[1].pattern] ~= nil,
+        "song: normalize heals a clip pointing at a missing pattern")
 
   -- round-6 migration: a doc with track.pat + no clips becomes clips
   local r6 = { bpm = 120, beats_per_bar = 4, grid = 8, loop0 = 0,

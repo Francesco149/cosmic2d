@@ -6,8 +6,10 @@
 -- places a pattern on a track at a bar, with a length; **resizing a
 -- clip longer than its pattern LOOPS the pattern to fill** (the "auto
 -- loop"). Clicking a clip drills into the roll to edit ITS pattern.
--- **Each clip owns its own pattern** (no accidental sharing across
--- tracks — normalize splits any shared ones).
+-- Stamping a NEW clip makes a FRESH pattern (nothing shares by
+-- accident), but clips MAY deliberately SHARE a pattern (round 8 — the
+-- human: place the same pattern multiple times, edit it once, every
+-- placement follows; ctrl+drag / ctrl+press in the arrangement).
 --
 --   HEAD v1: <u16 bpm> <u8 beats_per_bar> <u8 grid> <u32 loop0> <u32 loop1>
 --   TRKS v1: <u8 n> n x { <s1 name> <s1 ins> <u8 gain> <i8 pan> <u8 mute> }
@@ -32,21 +34,12 @@ local DEF_LOOP = 4 * BAR -- 4 bars
 
 local pack, unpack = string.pack, string.unpack
 
--- a deep copy of a pattern under a new id
-local function copy_pat(src, id, deflen)
-  local notes = {}
-  for _, n in ipairs(src and src.notes or {}) do
-    notes[#notes + 1] = { tick = n.tick, dur = n.dur, pitch = n.pitch,
-                          vel = n.vel }
-  end
-  return { id = id, len = (src and src.len) or deflen, notes = notes }
-end
-
 -- produce a canonical clip-arrangement doc from any input: migrate a
 -- round-6 per-track doc (tracks have `pat`, no clips) into clips, give
--- an empty doc a starter clip, and enforce CLIP INDEPENDENCE — each
--- clip owns a unique pattern (copy on collision; fixes the human's
--- two-tracks-share-a-pattern). Idempotent; preserves notes.
+-- an empty doc a starter clip, and heal any clip pointing at a MISSING
+-- pattern. Deliberate SHARING is allowed (round 8) — normalize no longer
+-- splits shared patterns; stamping still makes a fresh pattern so nothing
+-- shares by accident. Idempotent; preserves notes.
 function M.normalize(doc)
   doc.patterns = doc.patterns or {}
   doc.tracks = doc.tracks or {}
@@ -74,19 +67,15 @@ function M.normalize(doc)
     doc.clips[1] = { track = 0, tick = 0, len = DEF_LOOP, pattern = pid }
   end
 
-  -- each clip owns a UNIQUE pattern (copy on collision / create if missing)
-  local claimed = {}
+  -- heal clips that point at a missing pattern (create a fresh one);
+  -- clips that share an EXISTING pattern are left linked (deliberate
+  -- reuse — round 8)
   for _, c in ipairs(doc.clips) do
     if not doc.patterns[c.pattern] then
       local pid = newid()
       doc.patterns[pid] = { id = pid, len = c.len or DEF_LOOP, notes = {} }
       c.pattern = pid
-    elseif claimed[c.pattern] then
-      local pid = newid()
-      doc.patterns[pid] = copy_pat(doc.patterns[c.pattern], pid, DEF_LOOP)
-      c.pattern = pid
     end
-    claimed[c.pattern] = true
   end
   if not doc.loop1 or doc.loop1 <= 0 then doc.loop1 = DEF_LOOP end
   return doc
