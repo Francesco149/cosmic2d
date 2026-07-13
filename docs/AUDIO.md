@@ -193,27 +193,25 @@ integer math end to end. Beats/bars are derived views; steps are a
 *presentation* concern (the triplet toggle is free) [W: frames as the
 single time truth].
 
-Model (round 6 — the human, matching wstudio): **each track owns one
-looping pattern**. All tracks loop together over `loop1`. No separate
-arrangement/clip layer in the loop workflow (song mode is a later
-growth; old `ARRG` chunks still read + migrate).
+Model (round 7 — the human): an **arrangement of clips**. A clip
+places a pattern on a track at a bar with a length; **resizing a clip
+longer than its pattern LOOPS the pattern to fill** (the "auto loop").
+**Each clip owns its own pattern** (no accidental sharing —
+`normalize` splits collisions, copy-on-write).
 
-- `HEAD` v1 — bpm, beats_per_bar (default 4), loop region (`loop1` =
-  the loop length), grid default.
-- `TRKS` v2 — tracks: name, instrument path (.ins), gain, pan, mute,
-  **pat** (the track's own pattern id). v1 (no pat) migrates.
+- `HEAD` v1 — bpm, beats_per_bar (default 4), loop region, grid.
+- `TRKS` v1 — tracks: name, instrument path (.ins), gain, pan, mute.
+  (v2 carried a per-track `pat` — round 6; read + migrated to clips.)
 - `PATN` v1 (×N) — patterns: id, length (ticks), notes
-  {tick_on, tick_len, pitch 0..127, vel 0..127}. **Each track edits
-  its own pattern**; the loop length (`loop1`) **grows to fit content
-  but never auto-shrinks** (§10).
-- `ARRG` v1 — *legacy* clips {track, tick, len, pattern}; read-
-  tolerant, migrated to `track.pat` (a track's pattern = its first
-  clip's), never written.
+  {tick_on, tick_len, pitch 0..127, vel 0..127}. A pattern's length
+  **grows to fit content but never auto-shrinks** (`fit_pattern`;
+  clips loop a short one to fill).
+- `ARRG` v1 — clips {track, tick, len, pattern}.
 
-`cm.song` is the pure codec + `normalize` (every track gets a pattern;
-clips migrate) + the **flatten**: each track's own pattern → its
-absolute-tick note list. Playback never walks the doc [W]; the
-sequencer loops each lane over `M.length` (the loop).
+`cm.song` is the pure codec + `normalize` (each clip gets a unique
+pattern; round-6 per-track docs migrate to clips) + the **flatten**:
+clips loop their patterns → one absolute-tick note list per track.
+Playback never walks the doc [W]; the sequencer walks the flat list.
 
 ### 4.3 Sound files
 
@@ -375,21 +373,26 @@ tweak while a note rings.
 
 ## 10. The music window (kind `music`)
 
-Binds `.song`. **Each track owns one looping pattern** (round 6, the
-wstudio model — the human): the roll edits the CURRENT track's
-pattern, all tracks loop together, no arrangement/clip layer.
-Playback while editing runs on the **editor bank** (render-only —
-composing never touches the sim); the game plays the same file
-through `cm.snd.music`. The human's live rounds shaped the rest:
+Binds `.song`. A **two-level arrangement + drill-in editor** (round 7,
+the human): the arrangement strip is the whole song (clips on tracks);
+**click a clip to DRILL into its pattern** in the roll. Playback while
+editing runs on the **editor bank** (render-only — composing never
+touches the sim); the game plays the same file through `cm.snd.music`.
+The human's live rounds shaped the rest:
 
 - **The track rail** (left): tracks with name, the bound instrument
   (drag an .ins onto a track to bind it — from the assets window OR
   the synth's preset strip, §9; `kind.drop` → `resolve_ins`: a
   project path binds as-is, an external/stock one is **copied into
-  `ins/`** so the .song stays self-contained, round 5), mute dots,
-  + adds a track. **Clicking a track edits its own pattern** in the
-  roll (round 6 — the core of the per-track model); + track makes a
-  new track with a fresh pattern and focuses it.
+  `ins/`** so the .song stays self-contained, round 5), mute dots, a
+  **del** per row (drops the track + its clips; only when >1),
+  + adds a track. Clicking a track drills into its first clip.
+- **The arrangement strip** (top): clips on tracks × time.
+  **Click a clip → drill into its pattern** (the roll follows) +
+  select it; press empty → **stamp a NEW clip** with its own fresh
+  pattern (round 7 — clip independence, no accidental sharing); drag
+  moves a clip, right-edge resizes, and a clip **loops its pattern to
+  fill** when longer (the "auto loop").
 - **The piano roll** (center) — the [W] mouse grammar, four rules:
   press empty = **add a note** (length = last-used, snapped to the
   grid); motionless release on a note = **delete**; press-drag =
@@ -428,22 +431,18 @@ through `cm.snd.music`. The human's live rounds shaped the rest:
   (an accent tab + a line through the roll). Space plays FROM the
   cursor (then wraps to 0 at the song end — the cursor is the entry
   point, the whole song loops); it is also the Ctrl+V paste anchor.
-- **The loop length** (`doc.loop1`): shared by all tracks; **grows to
-  fit content, never auto-shrinks** (round 6 — the human). The
-  accent end-line on the roll marks it.
 - **Transport** (header): play/stop, BPM (click cycles), grid chip.
   Hotkeys: space = play/stop, del, Ctrl+C/X/V, `1`–`6` grid; Esc stops
   the preview (after clearing a selection).
 
-**Pattern length auto-fits its content** (round 3): every note-changing
-commit rounds the max note-end up to whole bars (min one bar), so the
-end line follows what you compose and placing past the end grows the
-pattern. A fresh/`+p` pattern is **one bar** — so stamping a 1-bar riff
-places exactly one bar, no trailing padding. Note: **the roll edits
-PATTERNS** (the tracker model — an edit updates every placement of that
-pattern); per-clip copy-on-write (§4.2) is a later growth. Playback
-state (playhead) is ephemeral; the bytes are the asset. Ctrl+S writes
-the .song (and refreshes the asset browser via the kit save door).
+**Pattern length grows to fit but never auto-shrinks** (round 6 — the
+human): a note-changing commit rounds the max note-end up to whole bars
+(min one) and grows the pattern; deleting leaves it (a clip loops a
+short pattern to fill, so shrinking fought resizing). **Each clip owns
+its own pattern** (round 7) — no accidental sharing across tracks;
+`normalize` splits collisions. Playback state (playhead) is ephemeral;
+the bytes are the asset. Ctrl+S writes the .song (and refreshes the
+asset browser via the kit save door).
 
 ## 11. Stock presets (ship with the engine)
 

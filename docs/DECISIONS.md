@@ -2085,5 +2085,20 @@ a later growth — the CSNG format stays forward-compatible: `ARRG` reads
 + migrates, TRKS gained `pat`). Loop length **grows to fit, never
 auto-shrinks** (the human: "since patterns auto loop we don't need to
 auto shrink"). Also fixed a preview crash (`p.flat` rebuilt if an edit
-invalidated it mid-play). Revisit if song-mode arrangement is wanted
-(→ bring clips back as a second layer over the per-track patterns).
+invalidated it mid-play).
+
+**Round 7 — the model, corrected (the human: keep the arrangement).**
+Round 6 over-corrected: the human still wants to *arrange patterns as
+clips and resize them* — "auto loop" meant a clip loops its pattern
+when extended, not that each track is one loop. **Restored the
+arrangement** as a two-level model: the arrangement strip (clips) +
+**click a clip to DRILL into its pattern** in the roll. Real fixes on
+top: **each clip owns its own pattern** — stamping makes a fresh one,
+and `normalize` splits any shared pattern (copy-on-write), fixing the
+human's "two tracks are the same (edit one, both change)" (a shared-
+pattern migration artifact). **Track delete** ("del" per row). Pattern
+length grows to fit but never auto-shrinks (clips loop a short one).
+The crash fix stays. Round-6 per-track docs migrate to clips; TRKS is
+back to v1. Pattern chips removed (drill-down replaces them). Song mode
+proper (multiple non-independent placements / a top-level timeline) can
+still grow later.

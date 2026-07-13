@@ -82,6 +82,17 @@ applied:**
   **No auto-shrink** (grow-only loop, the human's ask). Crash fixed
   (preview_step rebuilds p.flat). t_song rewritten (23050); 11/11
   per-track tape. AUDIO.md §4.2/§10 + D058 note rewritten.
+- **Round 7 (`0dbdd86`): the model corrected — KEEP the arrangement.**
+  Round 6 over-corrected: the human wants to arrange patterns as
+  **clips** and resize them ("auto loop" = a clip loops its pattern
+  when extended, not one-loop-per-track). **Restored the arrangement**
+  (two-level: arrangement strip + **click a clip to DRILL into its
+  pattern** in the roll). Real fixes: **each clip owns its own
+  pattern** (stamp = fresh; normalize splits shared → fixes "two
+  tracks are the same"), **track delete** ("del" per row), pattern
+  length grow-only (no shrink), crash fix kept. Round-6 docs migrate
+  to clips; TRKS back to v1; pattern chips gone. A clip-looping song
+  verify-PASSES byte-exact. t_song rewritten (23050); 10/10 tape.
 
 **⚠ The staging wipes human work**: the re-stage recipe's `rm -rf`
 deleted the human's windows-side tape.ins along with the .ed
