@@ -1093,6 +1093,8 @@ function M.draw(win, ctx)
   pal.x_ig_clip_pop()
 
   -- ---- the velocity lane ----
+  p.vlane = { x = rx, y = vel_y, w = rw, h = VEL_H, tpp = tpp,
+              tick0 = tick0 } -- event tapes read this
   pal.x_ig_rect_fill(rx, vel_y, rw, VEL_H, COL.well, 3 * z)
   pal.x_ig_clip_push(rx, vel_y, rw, VEL_H)
   for ni, n in ipairs(pat.notes) do
