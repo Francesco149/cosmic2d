@@ -132,6 +132,13 @@ local function preview_slots(ed, win, p)
       if bytes then
         local ok, idoc = pcall(cm.require("cm.ins").decode, bytes)
         if ok then
+          -- bake the TRACK gain/pan into the patch, same as the sim
+          -- sequencer (cm.snd.seq) — else the preview ignores the volume
+          -- panel (the human: "track volume seems to have no effect")
+          idoc.patch.gain = math.min(255, ((idoc.patch.gain or 128)
+                                            * (tr.gain or 128)) // 128)
+          idoc.patch.pan = math.max(-64, math.min(64,
+            (idoc.patch.pan or 0) + (tr.pan or 0)))
           cm.require("cm.ins").upload(idoc, p.pslots[ti], "ed",
                                       "m" .. win.id .. "t" .. ti)
         end
@@ -513,6 +520,8 @@ function M.draw(win, ctx)
             (i.wx - sbx) / sbw)) * 255 + 0.5)
           if ng ~= tr.gain then
             tr.gain, p.g.changed, p.flat = ng, true, nil
+            p.pins_sent = nil -- re-bake the track gain into the preview
+            if p.playing or p.blips then preview_slots(ed, win, p) end
             ctx.touch()
           end
         else
@@ -532,7 +541,7 @@ function M.draw(win, ctx)
         }
         if st and st.submit and tonumber(text) then
           tr.gain = math.max(0, math.min(255, math.floor(tonumber(text))))
-          p.flat = nil
+          p.flat, p.pins_sent = nil, nil -- re-bake into the preview
           commit(ed, win.path)
         end
       end
