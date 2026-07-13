@@ -44,7 +44,8 @@ local GRID_LABEL = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" }
 
 function M.defaults()
   return { path = "", pat = 1, trk = 1, grid = 4,
-           tpp = 0.5, lownote = 45, tick0 = 0 } -- the roll's view
+           tpp = 0.5, lownote = 45, tick0 = 0, -- the roll's view
+           cursor = 0 } -- the scrub-bar position (pattern ticks)
 end
 
 function M.title(win)
@@ -139,7 +140,12 @@ local function preview_start(ed, win, p)
   p.playing = true
   p.pheld = {}
   p.pt0 = pal.time_ns()
-  p.ppos = 0 -- samples consumed (song space)
+  -- start at the scrub cursor (the ruler; pattern ticks == song ticks
+  -- for a clip anchored at 0, the dominant case). After the song end
+  -- it wraps to 0 — the cursor is the entry point, then the whole song
+  -- loops.
+  p.pstart = snd.seq.samples_at(math.max(0, win.cursor or 0), p.doc.bpm)
+  p.ppos = p.pstart -- samples consumed (song space)
   p.pvoice = p.pvoice or 8 -- round-robin base; editor voices 8..31
 end
 
@@ -153,8 +159,8 @@ local function preview_step(ed, win, p)
     preview_stop(p)
     return
   end
-  local now = (pal.time_ns() - p.pt0) * 48000 // 1000000000
-  local s0, s1 = p.ppos, now
+  local elapsed = (pal.time_ns() - p.pt0) * 48000 // 1000000000
+  local s0, s1 = p.ppos, (p.pstart or 0) + elapsed
   if s1 <= s0 then return end
   if s1 - s0 > 48000 then s0 = s1 - 4800 end -- a stall skips, no burst
   p.ppos = s1
@@ -244,6 +250,79 @@ M.hotkeys = {
       end
     end },
 }
+
+-- clipboard (human, round 4): C copies the selection (relative to its
+-- earliest tick), V pastes anchored at the SCRUB CURSOR, X cuts. The
+-- clipboard lives on ed.g so it crosses patterns + windows.
+local function selected_notes(p, win)
+  local pt = p.doc and p.doc.patterns[win.pat or 1]
+  local out = {}
+  if pt and p.nsels then
+    for _, n in ipairs(pt.notes) do
+      if p.nsels[n] then out[#out + 1] = n end
+    end
+  end
+  return out, pt
+end
+
+local function copy_sel(ed, win, p)
+  local sel = selected_notes(p, win)
+  if #sel == 0 then return false end
+  local t0 = math.huge
+  for _, n in ipairs(sel) do t0 = math.min(t0, n.tick) end
+  local clip = {}
+  for _, n in ipairs(sel) do
+    clip[#clip + 1] = { dtick = n.tick - t0, pitch = n.pitch,
+                        dur = n.dur, vel = n.vel }
+  end
+  ed.g.musicclip = clip
+  return true
+end
+
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+c", when = bound,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    copy_sel(ed, win, p)
+  end }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+x", when = bound,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    local sel, pt = selected_notes(p, win)
+    if #sel == 0 or not pt then return end
+    copy_sel(ed, win, p)
+    local keep = {}
+    for _, n in ipairs(pt.notes) do
+      if not p.nsels[n] then keep[#keep + 1] = n end
+    end
+    pt.notes = keep
+    p.nsels, p.nsel = {}, nil
+    fit_pattern(p.doc, pt)
+    p.flat = nil
+    commit(ed, win.path)
+  end }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+v",
+  when = function(win) return win.path ~= "" end,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    local clip = ed.g.musicclip
+    local pt = p.doc and p.doc.patterns[win.pat or 1]
+    if not (clip and #clip > 0 and pt) then return end
+    p.nsels = {} -- the pasted notes become the new selection
+    for _, c in ipairs(clip) do
+      local n = { tick = math.tointeger((win.cursor or 0) + c.dtick),
+                  pitch = c.pitch, dur = c.dur, vel = c.vel }
+      pt.notes[#pt.notes + 1] = n
+      p.nsels[n] = true
+    end
+    p.nsel = nil
+    fit_pattern(p.doc, pt)
+    p.flat = nil
+    commit(ed, win.path)
+  end }
+
 for i2 = 1, 6 do
   M.hotkeys[#M.hotkeys + 1] = {
     key = tostring(i2), when = bound,
@@ -314,13 +393,15 @@ function M.draw(win, ctx)
 
   -- ---- geometry ----
   local RAIL = math.min(120 * z, ctx.cw * 0.22)
-  local TR_H = px * 1.9  -- transport row
-  local AR_H = 30 * z    -- arrangement strip
-  local VEL_H = 30 * z   -- velocity lane
+  local TR_H = px * 1.9   -- transport row
+  local AR_H = 30 * z     -- arrangement strip (song overview)
+  local RULER_H = 15 * z  -- the scrub ruler (pattern space, roll-aligned)
+  local VEL_H = 30 * z    -- velocity lane
   local x0, y0 = ctx.cx, ctx.cy
   local rx, rw = x0 + RAIL, ctx.cw - RAIL
-  local roll_y = y0 + TR_H + AR_H + 4 * z
-  local roll_h = ctx.ch - TR_H - AR_H - VEL_H - 10 * z
+  local ruler_y = y0 + TR_H + AR_H + 2 * z
+  local roll_y = ruler_y + RULER_H + 2 * z
+  local roll_h = ctx.ch - TR_H - AR_H - RULER_H - VEL_H - 12 * z
   local vel_y = roll_y + roll_h + 2 * z
   local tpp = (win.tpp or 0.5) * z -- px per tick
   local row_h = math.max(4, 7 * z)
@@ -517,6 +598,58 @@ function M.draw(win, ctx)
     end
   end
 
+  -- ---- the scrub ruler (human, round 4): a roll-aligned bar ruler
+  -- (pattern ticks, win.tpp/tick0). Click/drag sets win.cursor — the
+  -- SCRUB start (space plays from here) AND the paste anchor (Ctrl+V).
+  -- Snaps to the grid; a live playhead rides it while previewing. ----
+  do
+    local rtick0 = win.tick0 or 0
+    local function r2x(t) return rx + (t - rtick0) * tpp end
+    pal.x_ig_rect_fill(rx, ruler_y, rw, RULER_H, COL.rail, 3 * z)
+    local bar = PPQ * (doc.beats_per_bar or 4)
+    for t = (math.tointeger(rtick0 // bar) or 0) * bar, math.huge, bar do
+      local lx = r2x(t)
+      if lx > rx + rw then break end
+      if lx >= rx then
+        pal.x_ig_line(lx, ruler_y, lx, ruler_y + RULER_H, COL.gridln, 1)
+        pal.x_ig_text(lx + 2 * z, ruler_y + 1 * z, px * 0.7, COL.dim,
+                      tostring(math.tointeger(t // bar) + 1), 0)
+      end
+    end
+    -- the cursor (a downward tab + line)
+    local cx = r2x(win.cursor or 0)
+    if cx >= rx - 4 * z and cx <= rx + rw + 4 * z then
+      pal.x_ig_rect_fill(cx - 3 * z, ruler_y, 6 * z, RULER_H * 0.5,
+                         COL.accent, 1 * z)
+      pal.x_ig_line(cx, ruler_y, cx, roll_y + roll_h, COL.accent,
+                    math.max(1, 1 * z))
+    end
+    -- the live playhead
+    if p.playing then
+      local SL = snd.seq.samples_at(song.length(doc), doc.bpm)
+      if SL > 0 then
+        local phx = r2x(snd.seq.ticks_at((p.ppos or 0) % SL, doc.bpm))
+        pal.x_ig_line(phx, ruler_y, phx, ruler_y + RULER_H, COL.head,
+                      math.max(1, 1.4 * z))
+      end
+    end
+    -- gesture: set the cursor (grid-snapped; drag scrubs)
+    local over = i.wx >= rx and i.wx < rx + rw and i.wy >= ruler_y
+                 and i.wy < ruler_y + RULER_H
+    if ctx.hot and i.clicked[1] and over and not p.g then
+      p.g = { t = "scrub" }
+    end
+    if p.g and p.g.t == "scrub" then
+      if i.buttons[1] then
+        local t = rtick0 + (i.wx - rx) / tpp
+        win.cursor = math.max(0, math.tointeger((t // grid) * grid))
+        ctx.touch()
+      else
+        p.g = nil
+      end
+    end
+  end
+
   -- ---- the piano roll (a scrolled/zoomed view: win.tick0 = the left
   -- edge in ticks, win.lownote = the bottom pitch (fractional rows),
   -- win.tpp = px per tick — MMB pans, the wheel zooms, focused only,
@@ -586,6 +719,14 @@ function M.draw(win, ctx)
   end
   pal.x_ig_line(t2x(pat.len), roll_y, t2x(pat.len),
                 roll_y + roll_h, COL.accent, 1.2 * z)
+  -- the scrub cursor, faint, through the roll (the paste anchor)
+  do
+    local cx = t2x(win.cursor or 0)
+    if cx >= rx and cx <= rx + rw then
+      pal.x_ig_line(cx, roll_y, cx, roll_y + roll_h, 0x7fd8a866,
+                    math.max(1, 1 * z))
+    end
+  end
   -- notes (selection = a set of note TABLE REFS — stable across
   -- commits, cleared by decode_into on undo/adopt)
   p.nsels = p.nsels or {}
@@ -604,9 +745,11 @@ function M.draw(win, ctx)
   -- shift+click toggles, dragging a selected note moves the whole set)
   local over_roll = i.wx >= rx and i.wx < rx + rw and i.wy >= roll_y
                     and i.wy < roll_y + roll_h
+  -- placement snaps to the grid. (CTRL is DUPLICATE in the roll now,
+  -- round 4 — superseding the D058 fine-tick inversion; the finer
+  -- grids + zoom give precision.)
   local function snap(t)
-    local g2 = ed.g.ctrl and 1 or grid -- CTRL = fine ticks (D058)
-    return math.tointeger(math.max(0, (t // g2) * g2))
+    return math.tointeger(math.max(0, (t // grid) * grid))
   end
   local function note_commit()
     fit_pattern(doc, pat) -- the end line follows the content
@@ -623,7 +766,33 @@ function M.draw(win, ctx)
         edge = (n.tick + n.dur - tick) * tpp < 4 * z
       end
     end
-    if ed.g.shift then -- selection: toggle a note / start a marquee
+    if ed.g.ctrl and hit then -- DUPLICATE (round 4): ctrl+drag copies
+      -- the selection (or just this note), you drag the copies where
+      -- you want; the originals stay put
+      local hn = pat.notes[hit]
+      local src = {}
+      if p.nsels[hn] then
+        for _, n in ipairs(pat.notes) do
+          if p.nsels[n] then src[#src + 1] = n end
+        end
+      else
+        src = { hn }
+      end
+      p.nsels = {}
+      local base, grab = {}, nil
+      for _, n in ipairs(src) do
+        local c = { tick = n.tick, dur = n.dur, pitch = n.pitch, vel = n.vel }
+        pat.notes[#pat.notes + 1] = c
+        p.nsels[c] = true
+        base[#base + 1] = { n = c, tick = c.tick, pitch = c.pitch }
+        if n == hn then grab = c end
+      end
+      grab = grab or base[1].n
+      p.nsel = nil
+      p.g = { t = "selmove", grab = grab, gt = grab.tick, gp = grab.pitch,
+              dt = tick - grab.tick, dp = pitch - grab.pitch, base = base,
+              moved = false, dup = true }
+    elseif ed.g.shift then -- selection: toggle a note / start a marquee
       if hit then
         local n = pat.notes[hit]
         p.nsels[n] = not p.nsels[n] or nil
@@ -705,8 +874,10 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     else
-      if p.g.moved then note_commit() end
-      -- a motionless release on the selection just keeps it
+      -- a duplicate always commits (the copies exist even if not
+      -- dragged); a plain selection-move commits only if it moved,
+      -- else it just keeps the selection
+      if p.g.moved or p.g.dup then note_commit() end
       p.g = nil
       ctx.touch()
     end
@@ -726,9 +897,8 @@ function M.draw(win, ctx)
           ctx.touch()
         end
       else
-        local g2 = ed.g.ctrl and 1 or grid
-        local nd = math.max(g2, math.tointeger(
-          ((tick - n.tick + g2 / 2) // g2) * g2))
+        local nd = math.max(grid, math.tointeger(
+          ((tick - n.tick + grid / 2) // grid) * grid))
         if nd ~= n.dur then
           n.dur = nd
           p.g.moved = true
