@@ -129,15 +129,40 @@ Build order R9a→R9e in AUDIO.md §12 with exits.
   recipe's rm -rf). 2 shots on llm-feed. **The preset TASTE pass is
   the human's ears** — live session, synth window, click the rail.
 
+**R9d — the sim side: BUILT (same night, `e4194dd`):**
+
+- **cm.song** (CSNG: HEAD/TRKS/PATN/ARRG; integer ticks PPQ 96;
+  canonical) + the **flatten** (clips loop patterns to fill, content
+  clips at edges) — playback never walks song structure.
+- **The sequencer** (cm.snd.seq/music/music_stop/step): the transport
+  lives in the DOC TREE (`state.doc.snd` = song/start/loop/held) →
+  snapshots/traces/**rewind carry the music**; flat lists + uploaded
+  track instruments are derived caches (rebuilt on miss); pure integer
+  tick math; offs-then-ons per frame window; loop wraps split; track
+  gain/pan bake into uploads (sim slots 32..47, sfx keep 0..31).
+  cm.main + the verify replay both step it inside the sim step.
+- **Caught: cm.ins.fresh was silent by construction** (op1 leveled
+  under alg 0, whose only carrier is op4) — init is now a sounding
+  2-op alg-4 pair.
+- selftest **23044**; a 200-frame arpeggio project **verify-PASSES
+  byte-exact**; the loop audible live.
+
 **Next step (resume here):** the human's morning passes — drop a real
 mp3 on the canvas (player), open `sound/chime.wav`, click through the
-preset rail with ears on (synth), walk the R9a hint strips. Then
-**R9d — the music window** (AUDIO.md §10/§12): cm.song codec +
-flatten + cm.snd.seq, the piano roll on the wstudio four-rule grammar
-+ velocity lane + arrangement strip, editor-bank preview, cm.snd game
-API + music-as-sim-state (trace → same PCM hash; rewind scrubs across
-a track). Then R9e — the game sfx hookup (../cosmic2d-game). Good
-`/clear` point — everything committed, docs current.
+preset rail with ears on (synth), walk the R9a hint strips. Then the
+remaining R9d half: **the music WINDOW** (kind `music`, AUDIO.md §10)
+— kit.asset over cm.song (gkey "muw", field "song"), the piano roll
+on the wstudio four-rule mouse grammar (press empty = add at last-used
+length grid-snapped / motionless release on a note = delete / drag =
+move / right-edge drag = resize; CTRL = fine ticks — the D058
+inversion), velocity lane, arrangement strip (stamp/move/edge-resize
+clips, copy-on-write on edit), track rail (drag .ins to bind —
+open_path doors to the synth window), transport header (play/stop/
+loop/bpm/grid chips + space) with EDITOR-BANK preview (slots via
+kit.snd_alloc; never the sim bank), §13 hotkeys, tape proofs + shots.
+Then **R9e — the game hookup** (sfx at jump/land/flash-jump/slice/
+teleport + a rim_hub track, ../cosmic2d-game). Good `/clear` point —
+everything committed, docs current.
 
 ---
 
