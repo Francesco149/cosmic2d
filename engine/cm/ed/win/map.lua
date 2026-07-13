@@ -36,7 +36,6 @@
 -- sim-facing op is the recorded repl.submit on save.
 
 local M = select(2, ...) or {}
-local journal = cm.require("cm.ed.journal")
 local map = cm.require("cm.map")
 local tmap = cm.require("cm.tmap")
 local wv = cm.require("cm.ed.winview")
@@ -91,23 +90,8 @@ local function placeable(path)
   return l:find("%.spr$") or l:find("%.png$") or l:find("%.tm$")
 end
 
--- ---- plumbing (ephemeral, on ed.g.mw[path]) ----
-
-local function plumb(ed, path)
-  local g = ed.g
-  g.mw = g.mw or {}
-  local p = g.mw[path]
-  if not p then
-    p = {}
-    g.mw[path] = p
-  end
-  return p
-end
-
-local function working(ed, path)
-  ed.doc.assets = ed.doc.assets or {}
-  return ed.doc.assets[path]
-end
+-- ---- the asset citizen (cm.ed.kit, R9a) — plumbing on ed.g.mw[path],
+-- working CMAP bytes in doc.assets[path].map, the §6 contract generated
 
 local function decode_into(p, bytes)
   local ok, doc = pcall(map.decode, bytes)
@@ -133,116 +117,29 @@ local function fresh_bytes(path)
                      colliders = {}, places = {}, markers = {} }
 end
 
-local function open_asset(ed, path)
-  local a = working(ed, path)
-  local p = plumb(ed, path)
-  if p.j then return a, p end
-  local disk = pal.read_file(ed.root .. "/" .. path)
-  p.disk = disk or ""
-  if not a then
-    local bytes = p.disk
-    if #bytes == 0 then bytes = fresh_bytes(path) end -- a new map
-    a = { map = bytes, jpos = 0 }
-    ed.doc.assets[path] = a
-  end
-  p.j = journal.open(ed.root, path, a.jpos > 0 and a.jpos or nil, M.JCAP)
-  if not ed.parked then -- parked reopens must never write journals (R6c)
-    if #p.j.entries == 0 and #p.disk > 0 then
-      journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
-    end
-    local tip = journal.at(p.j)
-    if tip and a.map ~= tip.bytes and p.j.pos == #p.j.entries then
-      journal.push(p.j, a.map, 0, pal.time_ns() // 1000000)
-    end
-  end
-  a.jpos = p.j.pos
-  decode_into(p, a.map)
-  ed.touch()
-  return a, p
-end
-
-function M.open_win(win, ed) -- spawn-time adoption (proof scripting too)
-  if win.path ~= "" then return open_asset(ed, win.path) end
-end
-
--- one finished gesture: re-encode the doc into the working bytes + journal
-local function commit(ed, path, flags)
-  local a, p = open_asset(ed, path)
-  if not p.doc then return end
-  a.map = map.encode(p.doc)
-  p.geom = nil
-  if ed.parked then -- parked edits are ephemeral (REWIND.md §4)
-    ed.touch()
-    return
-  end
-  if journal.push(p.j, a.map, flags or 0, pal.time_ns() // 1000000) then
-    a.jpos = p.j.pos
-  end
-  ed.touch()
-end
-
--- ---- the focused-window commands (§6 contract) ----
-
-function M.dirty(win, ed)
-  if win.path == "" then return false end
-  local a = working(ed, win.path)
-  local p = ed.g.mw and ed.g.mw[win.path]
-  return a and p and p.disk ~= nil and a.map ~= p.disk or false
-end
-
-function M.save(win, ed)
-  if win.path == "" then return end
-  if ed.parked then
-    pal.log("[ed] parked in the past — writes are walled (bring-back is the door)")
-    return
-  end
-  local a, p = open_asset(ed, win.path)
-  if not p.doc then return end
-  a.map = map.encode(p.doc)
-  local dir = win.path:match("^(.*)/[^/]+$")
-  if dir then pal.mkdir(ed.root .. "/" .. dir) end
-  local full = ed.root .. "/" .. win.path
-  if pal.write_file(full, a.map) then
-    p.disk = a.map
-    commit(ed, win.path, journal.SAVED)
+local A = cm.require("cm.ed.kit").asset {
+  gkey = "mw", field = "map", jcap = M.JCAP,
+  fresh = function(ed, path) return fresh_bytes(path) end, -- a new map
+  adopt = decode_into,
+  encode = map.encode,
+  post_encode = function(p) p.geom = nil end,
+  after_save = function(ed, path)
     -- the recorded hot-reload (MAPS.md §9): the running game re-instances
     -- the saved map at the start of the next sim frame; traces replay it
+    local full = ed.root .. "/" .. path
     cm.require("cm.repl").submit(('cm.require("cm.map").reload(%q)'):format(full))
-    pal.log("[ed] saved " .. win.path .. " (reload queued)")
-  else
-    pal.log("[ed] SAVE FAILED " .. win.path)
-  end
-end
+    return "[ed] saved " .. path .. " (reload queued)"
+  end,
+}
 
-function M.undo(win, ed)
-  if win.path == "" then return end
-  local a, p = open_asset(ed, win.path)
-  local e = journal.undo(p.j)
-  if e then
-    a.map, a.jpos = e.bytes, p.j.pos
-    decode_into(p, e.bytes)
-    ed.touch()
-  end
-end
+local plumb, working, open_asset, commit =
+  A.plumb, A.working, A.open_asset, A.commit
 
-function M.redo(win, ed)
-  if win.path == "" then return end
-  local a, p = open_asset(ed, win.path)
-  local e = journal.redo(p.j)
-  if e then
-    a.map, a.jpos = e.bytes, p.j.pos
-    decode_into(p, e.bytes)
-    ed.touch()
-  end
-end
+M.open_win = A.open_win -- spawn-time adoption (proof scripting too)
 
-function M.revert(win, ed)
-  if win.path == "" then return end
-  local a, p = open_asset(ed, win.path)
-  a.map = p.disk or ""
-  decode_into(p, a.map)
-  commit(ed, win.path)
-end
+-- the §6 focused-window commands (shell kind_call dispatch)
+M.dirty, M.save, M.undo, M.redo, M.revert =
+  A.dirty, A.save, A.undo, A.redo, A.revert
 
 -- Esc: cancel the live gesture, else clear the active tool's selection
 -- (kind_escape); the shell's cascade unfocuses after that (the view lock)

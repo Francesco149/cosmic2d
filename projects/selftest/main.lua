@@ -3020,6 +3020,122 @@ local function t_ed_journal()
   check(#jb.entries == 0, "ed.journal: corrupt = fresh")
 end
 
+local function t_ed_kit()
+  -- cm.ed.kit (R9a, AUDIO.md §7): the generalized §6 asset citizen —
+  -- the factory's semantics pinned on a dummy codec, independent of the
+  -- four migrated kinds (whose own tests pin behavior-identity)
+  local kit = cm.require("cm.ed.kit")
+  local journal = cm.require("cm.ed.journal")
+  local root = tmproot() .. "/cosmic_selftest_kit"
+  pal.mkdir(root)
+  local adopts, saves = 0, 0
+  -- dummy codec: doc = { v = <string> }, bytes = "K:" .. v
+  local A = kit.asset {
+    gkey = "kw", field = "k", jcap = 8,
+    fresh = function() return "K:fresh" end,
+    adopt = function(p, bytes)
+      p.doc = { v = bytes:match("^K:(.*)$") }
+      adopts = adopts + 1
+    end,
+    encode = function(doc) return "K:" .. doc.v end,
+    after_save = function() saves = saves + 1 end,
+  }
+  local function mked()
+    return { root = root, g = {}, doc = { assets = {} },
+             touch = function() end, parked = false }
+  end
+
+  -- fresh open: no disk file -> fresh bytes, no baseline entry
+  pal.write_file(journal.file(root, "a.k"), "")
+  local ed = mked()
+  local win = { path = "a.k" }
+  local a, p = A.open_asset(ed, "a.k")
+  check(a.k == "K:fresh" and p.doc.v == "fresh",
+        "ed.kit: fresh open adopts fresh bytes")
+  check(#p.j.entries == 0, "ed.kit: empty disk -> no baseline")
+  check(A.dirty(win, ed) == true, "ed.kit: fresh bytes ≠ empty disk = dirty")
+
+  -- commit: encode + journal + jpos; dedupe leaves the journal alone
+  p.doc.v = "one"
+  A.commit(ed, "a.k")
+  check(a.k == "K:one" and #p.j.entries == 1 and a.jpos == 1,
+        "ed.kit: commit encodes + journals")
+  A.commit(ed, "a.k")
+  check(#p.j.entries == 1, "ed.kit: identical commit dedupes")
+
+  -- save: disk write + SAVED flag + after_save; then clean
+  A.save(win, ed)
+  check(pal.read_file(root .. "/a.k") == "K:one" and saves == 1,
+        "ed.kit: save writes disk + side effects")
+  check(p.j.entries[#p.j.entries].flags == journal.SAVED,
+        "ed.kit: save flags the tip")
+  check(A.dirty(win, ed) == false, "ed.kit: saved = clean")
+
+  -- undo/redo walk + adopt; revert is a journaled (undoable) edit
+  p.doc.v = "two"
+  A.commit(ed, "a.k")
+  local n0 = adopts
+  A.undo(win, ed)
+  check(a.k == "K:one" and p.doc.v == "one" and adopts == n0 + 1,
+        "ed.kit: undo re-adopts")
+  A.redo(win, ed)
+  check(a.k == "K:two", "ed.kit: redo returns to the tip")
+  A.revert(win, ed)
+  check(a.k == "K:one" and A.dirty(win, ed) == false,
+        "ed.kit: revert adopts disk")
+  A.undo(win, ed)
+  check(a.k == "K:two", "ed.kit: revert was one undoable step")
+
+  -- restart adoption: a second ed re-opens; session-restored unsaved
+  -- work the journal hasn't seen lands as an entry (Ctrl+Z works)
+  local ed2 = mked()
+  ed2.doc.assets["a.k"] = { k = "K:poked", jpos = 0 }
+  local a2, p2 = A.open_asset(ed2, "a.k")
+  check(p2.j.entries[#p2.j.entries].bytes == "K:poked",
+        "ed.kit: restart journals restored unsaved work")
+
+  -- parked discipline (R6c): reopen writes nothing, commit is
+  -- ephemeral, save is walled
+  local ed3 = mked()
+  ed3.parked = true
+  local a3, p3 = A.open_asset(ed3, "a.k")
+  local nent = #p3.j.entries
+  a3.k = "K:parked"
+  p3.doc.v = "parked"
+  A.commit(ed3, "a.k")
+  check(#p3.j.entries == nent and a3.k == "K:parked",
+        "ed.kit: parked commit updates bytes, never the journal")
+  A.save(win, ed3)
+  check(pal.read_file(root .. "/a.k") == "K:one",
+        "ed.kit: parked save is walled")
+
+  -- the raw kind (no encode, the text model): baseline_always +
+  -- push semantics + pre_undo closes the open gesture
+  local closed = 0
+  local R
+  R = kit.asset {
+    gkey = "rw", field = "r", baseline_always = true,
+    adopt = function(p) p.readopt = true end,
+    pre_undo = function(ed, path, a, p)
+      if p.due then R.push(ed, path); closed = closed + 1 end
+    end,
+  }
+  pal.write_file(journal.file(root, "b.r"), "")
+  pal.write_file(root .. "/b.r", "")
+  local edr = mked()
+  local winr = { path = "b.r" }
+  local ar, pr = R.open_asset(edr, "b.r")
+  check(ar.r == "" and #pr.j.entries == 1,
+        "ed.kit raw: empty disk still baselines (text model)")
+  ar.r = "hello"
+  pr.due = true
+  R.undo(winr, edr) -- pre_undo pushes the due gesture, then walks back
+  check(closed == 1 and ar.r == "" and pr.readopt,
+        "ed.kit raw: pre_undo closes the gesture, undo re-adopts")
+  R.redo(winr, edr)
+  check(ar.r == "hello", "ed.kit raw: redo returns the pushed gesture")
+end
+
 local function t_ed_lex()
   -- cm.ed.lex — the code-ed tokenizers (R4, EDITOR.md §12.2). Pure KATs.
   local lex = cm.require("cm.ed.lex")
@@ -3987,6 +4103,7 @@ function game.init()
   t_ed_game()
   t_ed_session()
   t_ed_journal()
+  t_ed_kit()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()

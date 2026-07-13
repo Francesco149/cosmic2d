@@ -18,7 +18,6 @@
 -- demands them (.spr carries them; saving preserves what we don't show).
 
 local M = select(2, ...) or {}
-local journal = cm.require("cm.ed.journal")
 local sprite = cm.require("cm.sprite")
 local paint = cm.require("cm.paint")
 
@@ -55,23 +54,8 @@ function M.rebind(win, ed, path)
   ed.touch()
 end
 
--- ---- plumbing (ephemeral, on ed.g.sw[path]) ----
-
-local function plumb(ed, path)
-  local g = ed.g
-  g.sw = g.sw or {}
-  local p = g.sw[path]
-  if not p then
-    p = {}
-    g.sw[path] = p
-  end
-  return p
-end
-
-local function working(ed, path)
-  ed.doc.assets = ed.doc.assets or {}
-  return ed.doc.assets[path]
-end
+-- ---- the asset citizen (cm.ed.kit, R9a) — plumbing on ed.g.sw[path],
+-- working CSPR bytes in doc.assets[path].spr, the §6 contract generated
 
 local function decode_into(p, bytes)
   local ok, doc = pcall(sprite.decode, bytes)
@@ -85,130 +69,36 @@ local function decode_into(p, bytes)
   p.comp_dirty = true
 end
 
-local function open_asset(ed, path)
-  local a = working(ed, path)
-  local p = plumb(ed, path)
-  if p.j then return a, p end
-  local disk = pal.read_file(ed.root .. "/" .. path)
-  p.disk = disk or ""
-  if not a then
-    local bytes = p.disk
-    if #bytes == 0 then -- a new sprite: start a fresh 32x32 doc
-      local name = path:match("([^/]+)%.spr$") or "sprite"
-      bytes = sprite.encode(sprite.new(32, 32, { name = name }))
-    end
-    a = { spr = bytes, jpos = 0 }
-    ed.doc.assets[path] = a
-  end
-  p.j = journal.open(ed.root, path, a.jpos > 0 and a.jpos or nil, M.JCAP)
-  if not ed.parked then -- parked reopens must never write journals (R6c)
-    if #p.j.entries == 0 and #p.disk > 0 then
-      journal.push(p.j, p.disk, journal.SAVED, pal.time_ns() // 1000000)
-    end
-    local tip = journal.at(p.j)
-    if tip and a.spr ~= tip.bytes and p.j.pos == #p.j.entries then
-      journal.push(p.j, a.spr, 0, pal.time_ns() // 1000000)
-    end
-  end
-  a.jpos = p.j.pos
-  decode_into(p, a.spr)
-  ed.touch()
-  return a, p
-end
+local A = cm.require("cm.ed.kit").asset {
+  gkey = "sw", field = "spr", jcap = M.JCAP,
+  fresh = function(ed, path) -- a new sprite: start a fresh 32x32 doc
+    local name = path:match("([^/]+)%.spr$") or "sprite"
+    return sprite.encode(sprite.new(32, 32, { name = name }))
+  end,
+  adopt = decode_into,
+  encode = sprite.encode,
+  write = function(ed, path, a, p) -- sprite.save writes + bakes siblings
+    return sprite.save(p.doc, ed.root .. "/" .. path)
+  end,
+  after_save = function(ed, path) return "[ed] saved + baked " .. path end,
+}
+
+local open_asset, commit = A.open_asset, A.commit
 
 -- public open (spawn-time adoption, console driving, proofs)
-function M.open_win(win, ed)
-  if win.path ~= "" then return open_asset(ed, win.path) end
-end
+M.open_win = A.open_win
 
 -- shared working-state door for other kinds over the SAME .spr bytes
 -- (the anim window edits clips through the same journal — both windows
--- stay in sync through the shared decoded doc)
-function M.open_path(ed, path)
-  return open_asset(ed, path)
-end
+-- stay in sync through the shared decoded doc); commit_path is the
+-- other half: a finished gesture from another kind commits through the
+-- same encode + journal push
+M.open_path = A.open_asset
+M.commit_path = A.commit
 
--- one finished gesture: re-encode the doc into the working bytes + journal
-local function commit(ed, path, flags)
-  local a, p = open_asset(ed, path)
-  if not p.doc then return end
-  a.spr = sprite.encode(p.doc)
-  if ed.parked then -- parked edits are ephemeral (REWIND.md §4): the
-    ed.touch()      -- parked doc updates, the journal file never moves
-    return
-  end
-  if journal.push(p.j, a.spr, flags or 0, pal.time_ns() // 1000000) then
-    a.jpos = p.j.pos
-  end
-  ed.touch()
-end
-
--- the other half of the shared door (open_path above): a finished
--- gesture from another kind (the anim window's clip edits) commits
--- through the same encode + journal push
-function M.commit_path(ed, path, flags)
-  return commit(ed, path, flags)
-end
-
--- ---- the focused-window commands (§6 contract) ----
-
-function M.dirty(win, ed)
-  if win.path == "" then return false end
-  local a = working(ed, win.path)
-  local p = ed.g.sw and ed.g.sw[win.path]
-  return a and p and p.disk ~= nil and a.spr ~= p.disk or false
-end
-
-function M.save(win, ed)
-  if win.path == "" then return end
-  if ed.parked then
-    pal.log("[ed] parked in the past — writes are walled (bring-back is the door)")
-    return
-  end
-  local a, p = open_asset(ed, win.path)
-  if not p.doc then return end
-  a.spr = sprite.encode(p.doc)
-  local dir = win.path:match("^(.*)/[^/]+$")
-  if dir then pal.mkdir(ed.root .. "/" .. dir) end
-  local ok, err = sprite.save(p.doc, ed.root .. "/" .. win.path)
-  if ok then
-    p.disk = a.spr
-    commit(ed, win.path, journal.SAVED)
-    pal.log("[ed] saved + baked " .. win.path)
-  else
-    pal.log("[ed] SAVE FAILED " .. win.path .. ": " .. tostring(err))
-  end
-end
-
-function M.undo(win, ed)
-  if win.path == "" then return end
-  local a, p = open_asset(ed, win.path)
-  local e = journal.undo(p.j)
-  if e then
-    a.spr, a.jpos = e.bytes, p.j.pos
-    decode_into(p, e.bytes)
-    ed.touch()
-  end
-end
-
-function M.redo(win, ed)
-  if win.path == "" then return end
-  local a, p = open_asset(ed, win.path)
-  local e = journal.redo(p.j)
-  if e then
-    a.spr, a.jpos = e.bytes, p.j.pos
-    decode_into(p, e.bytes)
-    ed.touch()
-  end
-end
-
-function M.revert(win, ed)
-  if win.path == "" then return end
-  local a, p = open_asset(ed, win.path)
-  a.spr = p.disk or ""
-  decode_into(p, a.spr)
-  commit(ed, win.path)
-end
+-- the §6 focused-window commands (shell kind_call dispatch)
+M.dirty, M.save, M.undo, M.redo, M.revert =
+  A.dirty, A.save, A.undo, A.redo, A.revert
 
 -- ---- header: the edit toggle (the board's "obvious toggle") ----
 
