@@ -3,6 +3,34 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-13 (day session, cont. — round two: the col-chip bug
++ the §5 graybox end state)
+**Phase**: **Two asks in (engine `a120618`, game `ceac601`):**
+
+- **FIX — the col-chip press leak**: clicking a map-header tool chip
+  started a gesture under the button (press-starts gated on ctx.hot,
+  true over the whole window). Every tool press-start now requires
+  `over` (hot AND inside the VIEW rect) — header/inspector chips can
+  never leak a press into a tool. Tape repro 5/5; pre-fix control 4/5.
+- **The §5 hand-off, built end to end**: optional **FLGS** chunk
+  (bit0 nofill — `draw_fill` no-ops per-map; the inspector grew a fill
+  chip) + **`cm.tmap.graybox`** (colliders → autotiled .tm over the
+  stock tileset: 1 top / 2 interior / 3 left / 4 right / 5 slab /
+  6 pillar; one-ways lay slab cells; attached cols skip) + the map
+  inspector's **graybox** chip (writes `<map>_gb.tm`, bottom placement
+  at 0,0, flips nofill — re-click regenerates). **Both game maps ran
+  it through the real button + ctrl+s** (8/8): their visuals are now
+  placed tilemaps, colliders invisible in-game (`../cosmic2d-game`
+  got art/tiles.* and the regenerated maps; walk verified headless).
+  selftest 22965→**22970**; suite ALL GREEN (smoke carries no FLGS —
+  goldens untouched); windows re-staged (native 22970 PASS) + the R5
+  zip refreshed; 2 shots on llm-feed.
+
+**Next step:** the human's live passes (round one's five items + the
+tile-graybox look in the game + the R5 zip double-click), then R7c.
+
+---
+
 **Date**: 2026-07-13 (day session, cont. — the editor-polish round: the
 human's five asks, all BUILT)
 **Phase**: **Editor polish toward "the human tweaks solo" — five asks
