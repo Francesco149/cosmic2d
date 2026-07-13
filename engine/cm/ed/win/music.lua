@@ -486,6 +486,58 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     end
+    -- the selected track expands a VOLUME panel under its row (human,
+    -- round 8): a mouse slider AND a type-in field for the track gain
+    -- (0..255, 128 = unity). One journal entry per drag / per submit.
+    if sel then
+      local PANEL_H = px * 1.9
+      local py = ty + px * 2.4
+      pal.x_ig_rect_fill(x0 + 2 * z, py, RAIL - 10 * z, PANEL_H, COL.well, 3 * z)
+      pal.x_ig_text(x0 + 6 * z, py + PANEL_H * 0.28, px * 0.78, COL.dim, "vol", 0)
+      local sbx = x0 + 6 * z + pal.x_ig_text_size("vol", px * 0.78, 0) + 5 * z
+      local sbw = math.max(10 * z, (x0 + RAIL - 10 * z) - sbx - 34 * z)
+      local sby = py + PANEL_H * 0.30
+      local sbh = math.max(3, px * 0.5)
+      local gain = tr.gain or 128
+      local f = gain / 255
+      pal.x_ig_rect_fill(sbx, sby, sbw, sbh, COL.btn, 2 * z)
+      pal.x_ig_rect_fill(sbx, sby, sbw * f, sbh, COL.accent, 2 * z)
+      pal.x_ig_rect_fill(sbx + sbw * f - 1.5 * z, sby - 1.5 * z, 3 * z,
+                         sbh + 3 * z, COL.hot, 1 * z)
+      local sover = ctx.hot and i.wx >= sbx - 3 * z and i.wx < sbx + sbw + 3 * z
+                    and i.wy >= sby - 4 * z and i.wy < sby + sbh + 4 * z
+      if sover and i.clicked[1] and not p.g then p.g = { t = "tvol", ti = ti } end
+      if p.g and p.g.t == "tvol" and p.g.ti == ti then
+        if i.buttons[1] then
+          local ng = math.floor(math.max(0, math.min(1,
+            (i.wx - sbx) / sbw)) * 255 + 0.5)
+          if ng ~= tr.gain then
+            tr.gain, p.g.changed, p.flat = ng, true, nil
+            ctx.touch()
+          end
+        else
+          if p.g.changed then commit(ed, win.path) end
+          p.g = nil
+        end
+      end
+      local fx = x0 + RAIL - 10 * z - 32 * z
+      if ctx.occluded then
+        pal.x_ig_text(fx, py + PANEL_H * 0.22, px * 0.78, COL.text,
+                      tostring(gain), 1)
+      else
+        local text, _, _, st = pal.x_ig_edit {
+          id = "tvol" .. win.id .. "_" .. ti, x = fx, y = py + PANEL_H * 0.16,
+          w = 30 * z, h = px * 1.15, text = tostring(gain), px = px * 0.78,
+          font = 1, enter = true, multiline = false,
+        }
+        if st and st.submit and tonumber(text) then
+          tr.gain = math.max(0, math.min(255, math.floor(tonumber(text))))
+          p.flat = nil
+          commit(ed, win.path)
+        end
+      end
+      ty = ty + PANEL_H + 3 * z
+    end
     ty = ty + px * 2.8
   end
   do -- + track (its clips get stamped in the arrangement below)
