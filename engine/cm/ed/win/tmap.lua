@@ -237,21 +237,32 @@ end
 
 -- ---- view helpers ----
 
--- content wheel: zoom at the cursor (edit mode); view mode gives the
--- wheel back to the canvas
+-- focused = the view lock (the map/sprite model, the human's ask,
+-- 2026-07-13): an edit-mode tilemap window owns wheel + middle-drag
+-- only WHILE FOCUSED; unfocused = inert view. View mode never locks.
+function M.own_view(win)
+  return win.edit == true and (win.path or "") ~= ""
+end
+
+-- content wheel: zoom at the cursor (focused edit mode only); under
+-- the lock an off-view wheel anchors at the view center
 function M.wheel(win, ed, dy)
-  if not win.edit then return false end
+  if not win.edit or ed.doc.focus ~= win.id then return false end
   local p = ed.g.tmw and ed.g.tmw[win.path]
   local r = p and p.canvas_rect
   if not (r and p.doc) then return false end
   local i = cm.require("cm.ui").inp
-  cm.require("cm.ed.winview").wheel_zoom(win, r, i.wx, i.wy, dy, 0.05, 32)
+  local ax, ay = i.wx, i.wy
+  if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
+    ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
+  end
+  cm.require("cm.ed.winview").wheel_zoom(win, r, ax, ay, dy, 0.05, 32)
   ed.touch()
   return true
 end
 
-function M.takes_middle(win)
-  return win.edit == true
+function M.takes_middle(win, ed)
+  return win.edit == true and ed ~= nil and ed.doc.focus == win.id
 end
 
 -- the tileset strip texture (ed-root baked .png sibling; a raw .png
@@ -450,8 +461,9 @@ function M.draw(win, ctx)
   local celly = math.floor((i.wy - oy) / (t * zoom))
   local inmap = cellx >= 0 and cellx < doc.w and celly >= 0 and celly < doc.h
 
-  -- middle-drag pans the view
-  if over and i.clicked[2] then
+  -- middle-drag pans the view — focused only (the lock grabs from
+  -- anywhere over the window; an unfocused view is inert)
+  if ctx.focused and i.clicked[2] then
     p.pan = { mx = i.wx, my = i.wy, ox = ox, oy = oy }
   end
   if p.pan then
@@ -525,6 +537,19 @@ function M.draw(win, ctx)
   local cw2 = pal.x_ig_text_size(chip, px * 0.85, 0)
   pal.x_ig_text(cvx + cvw - cw2 - 6 * z, cvy + 4 * z, px * 0.85, COL.dim,
                 chip, 0)
+
+  -- the focus lock, unmissable (the map window's EDITING-chip idiom)
+  if ctx.focused and win.edit then
+    pal.x_ig_rect(cvx + 1, cvy + 1, cvw - 2, cvh - 2, COL.hot,
+                  math.max(1, 1.5 * z), 3 * z)
+    local fl = "EDITING — wheel/mmb here · esc out"
+    local fpx = math.max(4, 10 * z)
+    local fw2 = pal.x_ig_text_size(fl, fpx, 0)
+    pal.x_ig_rect_fill(cvx + 4 * z, cvy + 4 * z, fw2 + 10 * z, fpx * 1.5,
+                       0x7fd8a8cc, 4 * z)
+    pal.x_ig_text(cvx + 9 * z, cvy + 4 * z + fpx * 0.22, fpx, 0x10241aff,
+                  fl, 0)
+  end
   pal.x_ig_clip_pop()
 
   -- ---- the palette strip: the tileset's frames as tiles ----

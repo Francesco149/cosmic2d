@@ -41,6 +41,7 @@ M.kinds = {
   map = cm.require("cm.ed.win.map"),
   tmap = cm.require("cm.ed.win.tmap"),
   perf = cm.require("cm.ed.win.perf"),
+  anim = cm.require("cm.ed.win.anim"),
 }
 
 -- new code windows open at the size you've made your current one
@@ -450,6 +451,7 @@ local function hotkeys(ig, i)
         elseif cm.require("cm.scrub").paused() then
           cm.require("cm.scrub").close() -- parked: Esc = back to the present
         elseif play then doc.focus = 0 -- the universal "get out" of play
+        elseif M.view_locked() then doc.focus = 0 -- release the view lock
         elseif doc.drill ~= 0 then doc.drill = 0
         else doc.sel = {} end
         M.touch()
@@ -963,7 +965,7 @@ local MENU_ITEMS = { { "note", "note" }, { "text", "open file…" },
                      { "assets", "assets" }, { "map", "map" },
                      { "tmap", "tilemap" },
                      { "game", "game window" }, { "console", "console" },
-                     { "perf", "perf" } }
+                     { "anim", "animation" }, { "perf", "perf" } }
 
 local function draw_menu(ig, i)
   local g = M.g

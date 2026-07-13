@@ -121,6 +121,13 @@ function M.open_win(win, ed)
   if win.path ~= "" then return open_asset(ed, win.path) end
 end
 
+-- shared working-state door for other kinds over the SAME .spr bytes
+-- (the anim window edits clips through the same journal — both windows
+-- stay in sync through the shared decoded doc)
+function M.open_path(ed, path)
+  return open_asset(ed, path)
+end
+
 -- one finished gesture: re-encode the doc into the working bytes + journal
 local function commit(ed, path, flags)
   local a, p = open_asset(ed, path)
@@ -134,6 +141,13 @@ local function commit(ed, path, flags)
     a.jpos = p.j.pos
   end
   ed.touch()
+end
+
+-- the other half of the shared door (open_path above): a finished
+-- gesture from another kind (the anim window's clip edits) commits
+-- through the same encode + journal push
+function M.commit_path(ed, path, flags)
+  return commit(ed, path, flags)
 end
 
 -- ---- the focused-window commands (§6 contract) ----
@@ -201,21 +215,46 @@ end
 function M.header(win, ctx)
   local z = ctx.z
   local px = math.max(4, 10.5 * z)
-  local label = win.edit and "done" or "edit"
-  local w = pal.x_ig_text_size(label, px, 0) + 14 * z
-  local x = ctx.hx - w
   local i = cm.require("cm.ui").inp
-  local hov = ctx.hot and i.wx >= x and i.wx < x + w
-              and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
-  pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
-                     win.edit and COL.btn_on or COL.btn, 4 * z)
-  pal.x_ig_text(x + 7 * z, ctx.hy + (ctx.hh - px) * 0.45, px,
-                (hov or win.edit) and COL.hot or COL.dim, label, 0)
-  if hov and i.clicked[1] then
+  local x, used = ctx.hx, 0
+  local function chip(label, on)
+    local w = pal.x_ig_text_size(label, px, 0) + 14 * z
+    x = x - w
+    used = used + w + 4 * z
+    local hov = ctx.hot and i.wx >= x and i.wx < x + w
+                and i.wy >= ctx.hy and i.wy < ctx.hy + ctx.hh
+    pal.x_ig_rect_fill(x, ctx.hy + 3 * z, w, ctx.hh - 6 * z,
+                       on and COL.btn_on or COL.btn, 4 * z)
+    pal.x_ig_text(x + 7 * z, ctx.hy + (ctx.hh - px) * 0.45, px,
+                  (hov or on) and COL.hot or COL.dim, label, 0)
+    x = x - 4 * z
+    return hov and i.clicked[1]
+  end
+  if chip(win.edit and "done" or "edit", win.edit) then
     win.edit = not win.edit
     ctx.ed.touch()
   end
-  return w + 4 * z
+  -- the animation window door (the board's "split animation stuff"):
+  -- open (or focus) an anim window bound to this sprite
+  if win.path ~= "" and chip("anim", false) then
+    local ed = ctx.ed
+    local wm = cm.require("cm.ed.wm")
+    local found
+    for _, w2 in ipairs(ed.doc.wins) do
+      if w2.kind == "anim" and w2.path == win.path then found = w2 end
+    end
+    if found then
+      ed.doc.focus = found.id
+      wm.to_front(ed.doc, found.id)
+    else
+      local K = ed.kinds.anim
+      local aw = wm.spawn(ed.doc, "anim", win.x + win.w + 20, win.y,
+                          K.DEF_W, K.DEF_H, K.defaults())
+      aw.path = win.path
+    end
+    ed.touch()
+  end
+  return used
 end
 
 -- ---- view helpers ----
@@ -257,23 +296,37 @@ local function refresh_tex(p)
   p.comp_dirty = nil
 end
 
--- content wheel: zoom the sprite view at the cursor (edit mode); view
--- mode gives the wheel back to the canvas (return false). The math
--- lives in cm.ed.winview (world-unit fields — canvas zoom cancels out).
+-- focused = the view lock (the map window's model — the human's ask,
+-- 2026-07-13): an edit-mode sprite ed owns wheel + middle-drag only
+-- WHILE FOCUSED; unfocused = inert view (the canvas pans/zooms over
+-- it). View mode never locks.
+function M.own_view(win)
+  return win.edit == true and (win.path or "") ~= ""
+end
+
+-- content wheel: zoom the sprite view at the cursor (focused edit mode
+-- only — FOCUS IS THE ONE GATE, the map window's contract). Under the
+-- lock the wheel arrives from anywhere — a cursor outside the canvas
+-- anchors at the view center. The math lives in cm.ed.winview.
 function M.wheel(win, ed, dy)
-  if not win.edit then return false end
+  if not win.edit or ed.doc.focus ~= win.id then return false end
   local p = ed.g.sw and ed.g.sw[win.path]
   local r = p and p.canvas_rect
   if not (r and p.doc) then return false end
   local i = cm.require("cm.ui").inp
-  cm.require("cm.ed.winview").wheel_zoom(win, r, i.wx, i.wy, dy, 0.25, 64)
+  local ax, ay = i.wx, i.wy
+  if ax < r.cx or ax >= r.cx + r.w or ay < r.cy or ay >= r.cy + r.h then
+    ax, ay = r.cx + r.w * 0.5, r.cy + r.h * 0.5
+  end
+  cm.require("cm.ed.winview").wheel_zoom(win, r, ax, ay, dy, 0.25, 64)
   ed.touch()
   return true
 end
 
--- middle-drag pans the sprite view (edit mode), not the canvas (§12.6)
-function M.takes_middle(win)
-  return win.edit == true
+-- middle-drag pans the sprite view — focused edit mode only (§12.6 +
+-- the view-lock contract); unfocused, the canvas pans
+function M.takes_middle(win, ed)
+  return win.edit == true and ed ~= nil and ed.doc.focus == win.id
 end
 
 -- Esc while the global eyedropper is armed drops back to the pen — the
@@ -404,11 +457,15 @@ function M.draw(win, ctx)
   pal.x_ig_rect(ox - 1, oy - 1, doc.w * zoom + 2, doc.h * zoom + 2,
                 0x4a4370aa, 1)
 
-  -- pick-anywhere, unmissable (the EDITING-chip idiom): while the pick
-  -- tool is armed and this window is focused, the WHOLE screen is a
-  -- color source — say so
-  if ctx.ed.pick_armed and ctx.ed.pick_armed() == win then
-    local fl = "PICKING — click anywhere · esc out"
+  -- the focus lock + pick-anywhere, unmissable (the EDITING-chip
+  -- idiom): focused = this view owns wheel/mmb everywhere; the pick
+  -- tool widens that to "the whole screen is a color source"
+  if ctx.focused then
+    pal.x_ig_rect(cvx + 1, cvy + 1, cvw - 2, cvh - 2, COL.accent,
+                  math.max(1, 1.5 * z), 3 * z)
+    local picking = ctx.ed.pick_armed and ctx.ed.pick_armed() == win
+    local fl = picking and "PICKING — click anywhere · esc out"
+               or "EDITING — wheel/mmb here · esc out"
     local fpx = math.max(4, 10 * z)
     local fw2 = pal.x_ig_text_size(fl, fpx, 0)
     pal.x_ig_rect_fill(cvx + 4 * z, cvy + 4 * z, fw2 + 10 * z, fpx * 1.5,
@@ -421,8 +478,9 @@ function M.draw(win, ctx)
   local over_canvas = ctx.hot and i.wx >= cvx and i.wx < cvx + cvw
                       and i.wy >= cvy and i.wy < cvy + cvh
 
-  -- middle-drag pans the view
-  if over_canvas and i.clicked[2] then
+  -- middle-drag pans the view — focused only (the lock grabs from
+  -- anywhere over the window; an unfocused view is inert)
+  if ctx.focused and i.clicked[2] then
     p.pan = { mx = i.wx, my = i.wy, ox = ox, oy = oy }
   end
   if p.pan then

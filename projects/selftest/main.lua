@@ -3605,6 +3605,39 @@ local function t_ed_viewlock()
   ed.doc.focus = mw.id
   check(W.takes_middle(mw, ed) == true,
         "ed.viewlock: focused MMB stays the map's")
+
+  -- the sprite + tilemap windows adopt the same contract (the human's
+  -- ask, 2026-07-13): edit mode locks only WHILE FOCUSED; view mode
+  -- and unfocused views are inert (the canvas pans/zooms)
+  local SP = cm.require("cm.ed.win.sprite")
+  local sw = wm.spawn(ed.doc, "sprite", 0, 400, 300, 200,
+                      { path = "art/g.spr", edit = true })
+  check(SP.own_view(sw) == true, "ed.viewlock: edit sprite locks")
+  sw.edit = false
+  check(not SP.own_view(sw), "ed.viewlock: view-mode sprite never locks")
+  sw.edit = true
+  check(not SP.own_view({ path = "", edit = true }),
+        "ed.viewlock: unbound sprite never locks")
+  ed.doc.focus = 0
+  check(SP.wheel(sw, ed, 1) == false,
+        "ed.viewlock: unfocused sprite wheel declines")
+  check(not SP.takes_middle(sw, ed),
+        "ed.viewlock: unfocused sprite MMB goes to the canvas")
+  ed.doc.focus = sw.id
+  check(SP.takes_middle(sw, ed) == true,
+        "ed.viewlock: focused sprite MMB stays")
+  local TM = cm.require("cm.ed.win.tmap")
+  local tw = wm.spawn(ed.doc, "tmap", 0, 700, 300, 200,
+                      { path = "deco.tm", edit = true })
+  check(TM.own_view(tw) == true, "ed.viewlock: edit tmap locks")
+  ed.doc.focus = 0
+  check(TM.wheel(tw, ed, 1) == false
+        and not TM.takes_middle(tw, ed),
+        "ed.viewlock: unfocused tmap view is inert")
+  ed.doc.focus = tw.id
+  check(TM.takes_middle(tw, ed) == true,
+        "ed.viewlock: focused tmap MMB stays")
+
   ed.doc, ed.g, ed.doc_rev = was_doc, was_g, was_rev
 end
 

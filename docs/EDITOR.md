@@ -558,10 +558,20 @@ vendored-pin-internal, revisited on any imgui bump.
   on its own, closing the paint→see-it loop inside the canvas).
 - **Not in v1** (the .spr format carries them; the window just doesn't
   expose them yet): gradients editing, marquee/transforms/brushes/curve,
-  clips/onion (animation is its own window later, per the board), HSV
-  picker, image-size modal, pivot/slice editing. The studio's authoring
-  depth returns window-by-window as content work demands it — D051
-  records the accepted gap.
+  onion skin, HSV picker, image-size modal, pivot/slice editing. The
+  studio's authoring depth returns window-by-window as content work
+  demands it — D051 records the accepted gap.
+- **The animation window landed (kind `anim`, 2026-07-13 — the board's
+  "split animation stuff")**: bound to a `.spr` via drag-in, the spawn
+  menu, or the sprite ed's header **anim** button (opens/focuses one on
+  the same path, spawned beside). It edits the doc's CLIP table over
+  the **same working bytes + journal** as the sprite ed (`open_path`/
+  `commit_path` doors — ctrl+Z/Y, the dirty dot, save and revert are
+  one history; a sprite window on the same path updates live). Clip
+  rail (select/+/−, loop-mode cycle loop→once→pingpong), entry chips
+  (frame:dur; select pauses + shows), +f/−f, frame/dur fields, and a
+  playing preview through cm.anim's pure evaluator (dev clock: one
+  editor frame = one tick; no clips = the whole strip at 8 ticks).
 - **Journal growth** (§11): sprite journals cap at **512 entries**
   (journal.open gets a per-open cap; text keeps 4096).
 - **`cm.studio` + `--studio` + F2 are deleted** (D046 Q4 — no
@@ -584,7 +594,10 @@ capture or `kind.wheel`) → the content takes it. Else → canvas zoom.
 (Pans/edge bands are unaffected.)
 
 **The focus view lock (`kind.own_view`, R8c — the human's ask,
-settled over four rounds)**: a focused window whose kind answers
+settled over four rounds; the sprite ed + tilemap window adopted it
+2026-07-13 — edit mode + bound = own_view, so an unfocused edit-mode
+sprite/tmap no longer steals the MMB pan; Esc releases any lock via
+the shell ladder)**: a focused window whose kind answers
 `own_view(win)` (the map window, when bound) treats its WHOLE window
 rect — header, view, inspector strip — as the view's input surface:
 wheel and ctrl+wheel zoom/dial the map wherever they land on the
