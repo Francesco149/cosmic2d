@@ -195,12 +195,13 @@ extern "C" void pal_ig_render_prepare(SDL_GPUCommandBuffer *cmd) {
 
 extern "C" void pal_ig_render_draw(SDL_GPUCommandBuffer *cmd,
                                    SDL_GPURenderPass *pass,
-                                   SDL_GPUTextureFormat fmt) {
+                                   SDL_GPUTextureFormat fmt, bool keep) {
   if (IG.state != 2) return;
-  IG.state = 0;
+  if (!keep) IG.state = 0;
   if (fmt != IG.fmt) {
     /* pipeline was built for the init-time format; a mismatched destination
-     * (live x_capture toggled mid-session) skips ig rather than misbind */
+     * skips ig rather than misbind (the live capture mirror allocates in
+     * the swapchain's format exactly so this never fires for it) */
     if (!IG.fmt_warned) {
       IG.fmt_warned = true;
       pal_log("ig: target format %d != init format %d; skipping ig layer",

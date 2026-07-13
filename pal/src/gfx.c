@@ -451,7 +451,7 @@ static void blit_layer(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pp,
  * -> FOV mouse map). Shared by the live swapchain present and the headless
  * capture, so a screenshot matches the window. */
 static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
-                      int sh, SDL_GPUTextureFormat fmt) {
+                      int sh, SDL_GPUTextureFormat fmt, bool ig_keep) {
   /* game viewport (window px) + integer scale: explicit via pal.x_compose, else
    * a centered integer letterbox (shipped game / default). x_compose{scale=0}
    * = don't blit the game layer at all (the R3 editor draws the game target
@@ -487,7 +487,7 @@ static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
                (float)G.ui_h * G.ui_scale, (float)sw, (float)sh);
   /* the ig layer (imgui draw data) renders last = above everything, at
    * native destination resolution. No-op when no ig frame was prepared. */
-  pal_ig_render_draw(cmd, pp, fmt);
+  pal_ig_render_draw(cmd, pp, fmt, ig_keep);
   SDL_EndGPURenderPass(pp);
 }
 
@@ -542,12 +542,18 @@ bool pal_gfx_present(void) {
   /* present composite: into the live swapchain, or the offscreen capture target
    * (pal.x_capture) so a headless screenshot can show the editor-around-game
    * composite that otherwise only exists in the window. */
-  if (G.cap_on && G.cap_target) {
+  bool live = !G.headless && G.win;
+  if (G.cap_on && G.cap_target && !live) {
     G.win_w = G.cap_w;
     G.win_h = G.cap_h;
-    composite(cmd, G.cap_target, G.cap_w, G.cap_h,
-              SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM);
-  } else if (!G.headless && G.win) {
+    composite(cmd, G.cap_target, G.cap_w, G.cap_h, G.cap_fmt, false);
+  } else if (live) {
+    /* a capture target armed DURING a live session mirrors the composite
+     * (the editor's screen-space eyedropper reads it back); it renders
+     * first — with ig kept — so the swapchain pass still draws the ig
+     * layer and owns the lay_* mouse map. */
+    if (G.cap_on && G.cap_target)
+      composite(cmd, G.cap_target, G.cap_w, G.cap_h, G.cap_fmt, true);
     SDL_GPUTexture *swap = NULL;
     Uint32 sw = 0, sh = 0;
     if (!SDL_WaitAndAcquireGPUSwapchainTexture(cmd, G.win, &swap, &sw, &sh)) {
@@ -559,7 +565,7 @@ bool pal_gfx_present(void) {
       G.win_w = (int)sw; /* cache real swapchain px for pal.x_window_size */
       G.win_h = (int)sh;
       composite(cmd, swap, (int)sw, (int)sh,
-                SDL_GetGPUSwapchainTextureFormat(G.dev, G.win));
+                SDL_GetGPUSwapchainTextureFormat(G.dev, G.win), false);
     }
   }
 
@@ -598,11 +604,23 @@ bool pal_gfx_capture(int w, int h) {
   }
   if (w > 4096) w = 4096;
   if (h > 4096) h = 4096;
-  if (!(G.cap_target && w == G.cap_w && h == G.cap_h)) {
+  /* a LIVE session's capture is a mirror of the presented composite: it
+   * must allocate in the swapchain's format so the ig pipeline (built for
+   * that format at init) draws into it. Headless capture keeps RGBA8.
+   * Readback hands out RGBA8 either way (BGRA swizzles in place). */
+  SDL_GPUTextureFormat fmt = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+  if (!G.headless && G.win)
+    fmt = SDL_GetGPUSwapchainTextureFormat(G.dev, G.win);
+  if (fmt != SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM &&
+      fmt != SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM) {
+    pal_log("gfx: capture: unsupported swapchain format %d", (int)fmt);
+    return false;
+  }
+  if (!(G.cap_target && w == G.cap_w && h == G.cap_h && fmt == G.cap_fmt)) {
     SDL_GPUTexture *nt = SDL_CreateGPUTexture(
         G.dev, &(SDL_GPUTextureCreateInfo){
                    .type = SDL_GPU_TEXTURETYPE_2D,
-                   .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                   .format = fmt,
                    .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
                             SDL_GPU_TEXTUREUSAGE_SAMPLER,
                    .width = (Uint32)w,
@@ -617,10 +635,13 @@ bool pal_gfx_capture(int w, int h) {
     G.cap_target = nt;
     G.cap_w = w;
     G.cap_h = h;
+    G.cap_fmt = fmt;
   }
   G.cap_on = true;
-  G.win_w = w; /* so pal.x_window_size reports the captured window size */
-  G.win_h = h;
+  if (G.headless || !G.win) {
+    G.win_w = w; /* so pal.x_window_size reports the captured window size */
+    G.win_h = h;
+  }
   return true;
 }
 
@@ -650,7 +671,17 @@ const void *pal_gfx_cap_read_begin(size_t *len) {
   SDL_WaitForGPUFences(G.dev, true, &fence, 1);
   SDL_ReleaseGPUFence(G.dev, fence);
   *len = (size_t)G.cap_w * G.cap_h * 4;
-  return SDL_MapGPUTransferBuffer(G.dev, G.cap_readback, false);
+  uint8_t *p = SDL_MapGPUTransferBuffer(G.dev, G.cap_readback, false);
+  if (p && G.cap_fmt == SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM) {
+    /* the contract is RGBA8 whatever the target format was (the live
+     * mirror rides the swapchain's layout) — swizzle in place */
+    for (size_t i = 0; i < *len; i += 4) {
+      uint8_t b = p[i];
+      p[i] = p[i + 2];
+      p[i + 2] = b;
+    }
+  }
+  return p;
 }
 
 void pal_gfx_cap_read_end(void) {

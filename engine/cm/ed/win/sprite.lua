@@ -276,6 +276,17 @@ function M.takes_middle(win)
   return win.edit == true
 end
 
+-- Esc while the global eyedropper is armed drops back to the pen — the
+-- visible exit from pick-anywhere (the shell's Esc ladder calls this)
+function M.escape(win, ed)
+  if win.edit and win.tool == "pick" then
+    win.tool = "pen"
+    ed.touch()
+    return true
+  end
+  return false
+end
+
 -- ---- structure rows (layers / frames / palette) ----
 
 local function button(i, ctx, x, y, w, h, label, on, px)
@@ -392,6 +403,19 @@ function M.draw(win, ctx)
   end
   pal.x_ig_rect(ox - 1, oy - 1, doc.w * zoom + 2, doc.h * zoom + 2,
                 0x4a4370aa, 1)
+
+  -- pick-anywhere, unmissable (the EDITING-chip idiom): while the pick
+  -- tool is armed and this window is focused, the WHOLE screen is a
+  -- color source — say so
+  if ctx.ed.pick_armed and ctx.ed.pick_armed() == win then
+    local fl = "PICKING — click anywhere · esc out"
+    local fpx = math.max(4, 10 * z)
+    local fw2 = pal.x_ig_text_size(fl, fpx, 0)
+    pal.x_ig_rect_fill(cvx + 4 * z, cvy + 4 * z, fw2 + 10 * z, fpx * 1.5,
+                       0x7fd8a8cc, 4 * z)
+    pal.x_ig_text(cvx + 9 * z, cvy + 4 * z + fpx * 0.22, fpx, 0x10241aff,
+                  fl, 0)
+  end
   pal.x_ig_clip_pop()
 
   local over_canvas = ctx.hot and i.wx >= cvx and i.wx < cvx + cvw

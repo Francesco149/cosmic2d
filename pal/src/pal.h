@@ -122,6 +122,10 @@ typedef struct {
   SDL_GPUTexture *cap_target;
   int cap_w, cap_h;
   bool cap_on;
+  SDL_GPUTextureFormat cap_fmt; /* live mirror = the swapchain's format (so
+                                   the ig pipeline matches); headless = RGBA8.
+                                   Readback always hands out RGBA8 (swizzled
+                                   in place when the target is BGRA). */
   SDL_GPUTransferBuffer *cap_readback;
   uint32_t cap_readback_cap;
 
@@ -234,9 +238,11 @@ void pal_ig_sdl_event(const SDL_Event *e); /* feed one SDL event to imgui */
  * the composite render pass begins; no-op when no frame is open) */
 void pal_ig_render_prepare(SDL_GPUCommandBuffer *cmd);
 /* draw the prepared data into the composite pass (last = topmost layer).
- * Skips with a log line if `fmt` differs from the pipeline's init format. */
+ * Skips with a log line if `fmt` differs from the pipeline's init format.
+ * keep=true leaves the prepared data consumable again — the live capture
+ * mirror composites twice per present (cap target, then swapchain). */
 void pal_ig_render_draw(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pass,
-                        SDL_GPUTextureFormat fmt);
+                        SDL_GPUTextureFormat fmt, bool keep);
 /* register the pal.x_ig_* functions into the pal table at the stack top */
 void pal_ig_lua_register(lua_State *L);
 

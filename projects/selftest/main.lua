@@ -3563,6 +3563,60 @@ local function t_ed_hot()
   ui.inp.wx, ui.inp.wy = ux, uy
 end
 
+local function t_ed_pick()
+  -- the global eyedropper: arming gates + the hot filter + a REAL pick
+  -- through the capture target (headless capture = the present path, so
+  -- pick_screen samples exactly what a live mirror would hold)
+  local ed = cm.require("cm.ed")
+  local wm = cm.require("cm.ed.wm")
+  local ui = cm.require("cm.ui")
+  local paint = cm.require("cm.paint")
+  local was_doc, was_g = ed.doc, ed.g
+  local ux, uy = ui.inp.wx, ui.inp.wy
+  ed.g = {}
+  ed.doc = wm.init({ cam = { x = 0, y = 0, zoom = 1 } })
+  local sw = wm.spawn(ed.doc, "sprite", 0, 0, 200, 150,
+                      { path = "art/x.spr", edit = true, tool = "pick" })
+  local nw = wm.spawn(ed.doc, "note", 300, 0, 150, 100)
+  ed.doc.focus = sw.id
+  check(ed.pick_armed() == sw, "ed.pick: focused edit+pick sprite arms")
+  sw.tool = "pen"
+  check(ed.pick_armed() == nil, "ed.pick: the pen disarms")
+  sw.tool = "pick"
+  sw.edit = nil
+  check(ed.pick_armed() == nil, "ed.pick: view mode never arms")
+  sw.edit = true
+  ed.doc.focus = nw.id
+  check(ed.pick_armed() == nil, "ed.pick: focus elsewhere disarms")
+  ed.doc.focus = sw.id
+
+  local function at(x, y)
+    ui.inp.wx, ui.inp.wy = x, y
+    ed.g.cursor = { wx = x, wy = y }
+    return ed.hot_id()
+  end
+  check(at(320, 50) == nil, "ed.pick: other windows go cold while armed")
+  check(at(50, 50) == sw.id, "ed.pick: the armed window stays hot")
+  sw.tool = "pen"
+  check(at(320, 50) == nw.id, "ed.pick: disarming re-heats the others")
+  sw.tool = "pick"
+
+  pal.x_capture(64, 64)
+  pal.x_compose({ x = 0, y = 0, scale = 1 })
+  pal.begin_frame(0, 0, 0, 1)
+  pal.quad(10, 10, 20, 20, 1, 0.5, 0, 1) -- an orange patch at 10..30
+  pal.present()
+  local r, g, b = paint.unpack(ed.pick_screen(15, 15))
+  check(r == 255 and g > 100 and g < 150 and b == 0,
+        "ed.pick: pick_screen samples the presented composite")
+  check(ed.pick_screen(9999, -5) ~= nil, "ed.pick: off-screen clamps")
+  pal.x_capture(0, 0)
+  pal.x_compose()
+
+  ed.doc, ed.g = was_doc, was_g
+  ui.inp.wx, ui.inp.wy = ux, uy
+end
+
 local function t_ed_winview()
   -- cm.ed.winview — THE INVARIANT: captured view fields live in WORLD
   -- units, so canvas zoom cancels out (the generalized fix for the
@@ -3822,6 +3876,7 @@ function game.init()
   t_ed_filter()
   t_ed_viewlock()
   t_ed_hot()
+  t_ed_pick()
   t_ed_winview()
   t_ed_park()
   t_ed_domain()

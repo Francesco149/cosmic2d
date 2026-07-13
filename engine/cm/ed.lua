@@ -656,6 +656,27 @@ local function interact(ig)
     return
   end
 
+  -- the global eyedropper: while armed, a left press anywhere OUTSIDE
+  -- the armed sprite window (banded — its own resize band stays its own)
+  -- picks the composited color under the cursor and consumes the press.
+  -- Presses over the armed window route normally (its canvas picks doc
+  -- pixels exactly; its chips/palette stay live). Space-pan outranks it.
+  if i.clicked[1] and not g.alt then
+    local pkwin = M.pick_armed()
+    if pkwin then
+      local over = wm.hit(doc, wwx, wwy, wm.EDGE_OUT / doc.cam.zoom,
+                          wm.EDGE_IN / doc.cam.zoom)
+      if over ~= pkwin.id then
+        local c = M.pick_screen(i.wx, i.wy)
+        if c then
+          pkwin.color = c
+          M.touch()
+        end
+        return
+      end
+    end
+  end
+
   -- a plain press OUTSIDE the view-locked window releases the lock at
   -- press time (the human's refinement): dragging on the canvas or
   -- another window is a canvas action — don't wait for the release.
@@ -770,6 +791,34 @@ end
 -- ungated so an in-flight drag never drops. This is the point-level
 -- companion to occluded() below — occluded keeps lower windows' imgui
 -- widgets inert, hot keeps their raw-input affordances quiet.
+-- the global eyedropper (the human's ask): a focused sprite window in
+-- edit mode with the pick tool armed picks color from ANYWHERE on the
+-- canvas — other windows, chrome, the live game image — read back from
+-- the capture mirror of the presented composite (pal.x_capture in a
+-- live session mirrors what the swapchain shows). Returns the armed
+-- sprite window or nil.
+function M.pick_armed()
+  local doc = M.doc
+  if not doc or doc.focus == 0 then return nil end
+  local win = wm.get(doc, doc.focus)
+  if win and win.kind == "sprite" and win.edit and win.tool == "pick"
+     and (win.path or "") ~= "" then
+    return win
+  end
+end
+
+-- sample the capture mirror at window px (the previous present's
+-- composite — one frame stale, imperceptible); cm.paint packing out
+function M.pick_screen(x, y)
+  local ok, pix, w, h = pcall(pal.x_capture_read)
+  if not ok or not pix or w < 1 or h < 1 then return nil end
+  local xi = math.min(w - 1, math.max(0, math.floor(x)))
+  local yi = math.min(h - 1, math.max(0, math.floor(y)))
+  local o = (yi * w + xi) * 4
+  local r, g, b = pix:byte(o + 1, o + 3)
+  return cm.require("cm.paint").pack(r, g, b, 255)
+end
+
 function M.hot_id()
   local doc, g = M.doc, M.g
   if g.alt or g.space or g.selmode then return nil end
@@ -783,7 +832,13 @@ function M.hot_id()
   local z = doc.cam.zoom
   local id, part = wm.hit(doc, g.cursor.wx, g.cursor.wy,
                           wm.EDGE_OUT / z, wm.EDGE_IN / z)
-  if id and part == "content" then return id end
+  if id and part == "content" then
+    -- while the global eyedropper is armed, only the armed window's own
+    -- affordances stay live — everything else is a pick target
+    local pk = M.pick_armed()
+    if pk and id ~= pk.id then return nil end
+    return id
+  end
 end
 
 -- imgui widgets (x_ig_edit) always render ABOVE the background drawlist,
@@ -1156,6 +1211,18 @@ function M.frame()
   end
   local ig = pal.x_ig_frame()
   if not ig then return end
+  -- global-eyedropper plumbing: a LIVE session arms the capture mirror
+  -- at window size while picking, frees it after (a --win capture
+  -- session already presents into the capture target — leave it be)
+  if not cm.require("cm.main").args.win_w then
+    if M.pick_armed() then
+      pal.x_capture(ig.w, ig.h)
+      M.g.pickcap = true
+    elseif M.g.pickcap then
+      pal.x_capture(0, 0)
+      M.g.pickcap = nil
+    end
+  end
   interact(ig)
   draw(ig)
   if M.g.save_due and pal.time_ns() >= M.g.save_due then save_now() end
