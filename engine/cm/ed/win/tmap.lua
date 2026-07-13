@@ -231,31 +231,14 @@ function M.draw(win, ctx)
   local px = math.max(4, 11 * z)
   local i = cm.require("cm.ui").inp
 
-  -- unbound: hint + a path field that creates/opens (the map window's door)
+  -- unbound: the kit's new-file prompt (forced .tm, overwrite-aware)
   if win.path == "" then
-    pal.x_ig_text(ctx.cx + 8 * z, ctx.cy + 8 * z, px, COL.dim,
-                  "no tilemap bound — drag a .tm here, or type a path:", 0)
-    local fy = ctx.cy + 8 * z + px * 1.8
-    pal.x_ig_rect(ctx.cx + 8 * z, fy, math.min(240 * z, ctx.cw - 16 * z),
-                  px * 1.7, 0x4a437088, 1, 3 * z)
-    if not ctx.occluded then
-      local p0 = plumb(ed, "@new" .. win.id)
-      local text, _, _, st = pal.x_ig_edit {
-        id = "tmnew" .. win.id, x = ctx.cx + 10 * z, y = fy + 1,
-        w = math.min(236 * z, ctx.cw - 20 * z), h = px * 1.7 - 2,
-        text = p0.newpath or "maps/", px = px, font = 1,
-        enter = true, multiline = false,
-      }
-      p0.newpath = text
-      if st and st.submit and text ~= "" and text ~= "maps/" then
-        local path = text
-        if not path:lower():find("%.tm$") then path = path .. ".tm" end
-        win.path = path
-        win.edit = true
-        p0.newpath = nil
-        ed.touch()
-      end
-    end
+    local was = win.path
+    A.pathfield(win, ed, ctx, {
+      ext = "tm", default = "maps/",
+      label = "no tilemap bound — drag a .tm here, or type a path:",
+    })
+    if win.path ~= was then win.edit = true end -- fresh .tm opens editable
     return
   end
 

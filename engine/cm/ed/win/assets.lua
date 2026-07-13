@@ -283,6 +283,52 @@ local function chip_row(win, ctx, i)
   return h + 8 * z
 end
 
+-- ---- delete (human, morning round): del on the selected tile arms a
+-- confirm, a second del executes. A .spr takes its baked build
+-- products (.png/.anim/.meta) with it. Parked = walled. ----
+
+local function delete_asset(ed, path)
+  if ed.parked then
+    pal.log("[ed] parked in the past — writes are walled")
+    return
+  end
+  pal.x_remove(ed.root .. "/" .. path)
+  local base = path:match("^(.*)%.[sS][pP][rR]$")
+  if base then
+    pal.x_remove(ed.root .. "/" .. base .. ".png")
+    pal.x_remove(ed.root .. "/" .. base .. ".anim")
+    pal.x_remove(ed.root .. "/" .. base .. ".meta")
+  end
+  M.invalidate(ed)
+  if ed.g.athumb then ed.g.athumb[path] = nil end
+  pal.log("[ed] deleted " .. path)
+end
+
+M.hotkeys = {
+  { key = "del", hint = "delete",
+    when = function(win) return (win.sel or "") ~= "" end,
+    fn = function(win, ed)
+      local armed = ed.g.adel
+      if armed and armed.id == win.id and armed.path == win.sel then
+        delete_asset(ed, win.sel)
+        win.sel = nil
+        ed.g.adel = nil
+      else
+        ed.g.adel = { id = win.id, path = win.sel }
+      end
+      ed.touch()
+    end },
+}
+
+function M.escape(win, ed)
+  if ed.g.adel and ed.g.adel.id == win.id then
+    ed.g.adel = nil
+    ed.touch()
+    return true
+  end
+  return false
+end
+
 function M.draw(win, ctx)
   local ed = ctx.ed
   local g = ed.g
@@ -412,6 +458,20 @@ function M.draw(win, ctx)
   if #shown == 0 then
     pal.x_ig_text(ctx.cx + 10 * z, gy0 + 10 * z, px, COL.dim,
                   "no matches", 1)
+  end
+  -- the armed delete confirm (bottom bar, red)
+  local armed = g.adel
+  if armed and armed.id == win.id then
+    if armed.path ~= win.sel then -- selection moved: disarm
+      g.adel = nil
+    else
+      local by = ctx.cy + ctx.ch - px * 1.6
+      pal.x_ig_rect_fill(ctx.cx + 2 * z, by, ctx.cw - 4 * z, px * 1.5,
+                         0xf07a7a33, 3 * z)
+      pal.x_ig_text(ctx.cx + 6 * z, by + px * 0.2, px * 0.9, 0xf07a7aff,
+                    "delete " .. armed.path .. "?  del confirms · esc cancels",
+                    0)
+    end
   end
   -- footer count
   pal.x_ig_text(ctx.cx + ctx.cw - 60 * z, ctx.cy + ctx.ch - px * 1.3,

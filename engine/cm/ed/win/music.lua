@@ -246,22 +246,9 @@ function M.draw(win, ctx)
   local px = math.max(4, 10 * z)
   local ed = ctx.ed
   if win.path == "" then
-    pal.x_ig_text(ctx.cx + 6 * z, ctx.cy + 6 * z, px, COL.dim,
-                  "new song path:", 0)
-    if not ctx.occluded then
-      local text, changed, _, st = pal.x_ig_edit {
-        id = "songpath" .. win.id, x = ctx.cx + 6 * z,
-        y = ctx.cy + 6 * z + px * 1.4, w = math.min(260 * z, ctx.cw - 12 * z),
-        h = px * 1.6, text = win.newpath or "sound/new.song", px = px,
-        enter = true,
-      }
-      if changed then win.newpath = text end
-      if st and st.submit and (win.newpath or "sound/new.song"):find("%.song$") then
-        win.path = win.newpath or "sound/new.song"
-        open_asset(ed, win.path)
-        ed.touch()
-      end
-    end
+    -- the kit's new-file prompt (forced .song, overwrite-aware)
+    A.pathfield(win, ed, ctx, { ext = "song", default = "sound/",
+                                label = "new song path:" })
     return
   end
   local a, p = open_asset(ed, win.path)

@@ -361,6 +361,102 @@ function M.asset(spec)
     close(ed, win.path)
   end
 
+  -- the unbound-window "new file" prompt (the map window's field,
+  -- generalized — human, morning round): label + path field; Enter
+  -- submits (single-line by contract — the multiline default ate the
+  -- Enter as a newline), the extension is FORCED, and an existing
+  -- file (disk or working state) prompts open / overwrite / cancel
+  -- instead of silently adopting. Overwrite clears the old file +
+  -- working state + plumbing so open_asset takes the fresh path (the
+  -- undo-forever journal keeps the old bytes reachable regardless).
+  --
+  --   opts = { ext = "song", default = "sound/",
+  --            label = "new song path:" (optional) }
+  function A.pathfield(win, ed, ctx, opts)
+    local z = ctx.z
+    local px = math.max(4, 10 * z)
+    local p0 = A.plumb(ed, "@new" .. win.id)
+    local dim, hot2 = 0x8a84b0ff, 0xE8E4FFff
+
+    local function bind(path, overwrite)
+      if overwrite then
+        if ed.parked then
+          pal.log("[ed] parked in the past — writes are walled")
+          return
+        end
+        pal.x_remove(ed.root .. "/" .. path)
+        if ed.doc.assets then ed.doc.assets[path] = nil end
+        if ed.g[gkey] then ed.g[gkey][path] = nil end
+        cm.require("cm.ed.win.assets").invalidate(ed)
+      end
+      win.path = path
+      p0.newpath, p0.confirm = nil, nil
+      A.open_asset(ed, path)
+      ed.touch()
+    end
+
+    pal.x_ig_text(ctx.cx + 8 * z, ctx.cy + 8 * z, px, dim,
+                  opts.label or ("new ." .. opts.ext .. " path:"), 0)
+    local fy = ctx.cy + 8 * z + px * 1.8
+    local fw = math.min(240 * z, ctx.cw - 16 * z)
+    pal.x_ig_rect(ctx.cx + 8 * z, fy, fw, px * 1.7, 0x4a437088, 1, 3 * z)
+    if ctx.occluded then return end
+
+    if p0.confirm then -- exists: open / overwrite / cancel
+      pal.x_ig_text(ctx.cx + 8 * z, fy + 2 * z, px, hot2, p0.confirm, 0)
+      local cy2 = fy + px * 2.2
+      pal.x_ig_text(ctx.cx + 8 * z, cy2, px, 0xf07a7aff,
+                    "already exists:", 0)
+      local i = cm.require("cm.ui").inp
+      local bx = ctx.cx + 8 * z + pal.x_ig_text_size("already exists:", px, 0)
+                 + 10 * z
+      for _, item in ipairs({ { "open", false }, { "overwrite", true },
+                              { "cancel" } }) do
+        local w = pal.x_ig_text_size(item[1], px, 0) + 12 * z
+        local hov = ctx.hot and i.wx >= bx and i.wx < bx + w
+                    and i.wy >= cy2 - 2 * z and i.wy < cy2 + px * 1.4
+        pal.x_ig_rect_fill(bx, cy2 - 2 * z, w, px * 1.5,
+                           hov and 0x4a4370ff or 0x262238ff, 3 * z)
+        pal.x_ig_text(bx + 6 * z, cy2, px, hov and hot2 or dim, item[1], 0)
+        if hov and i.clicked[1] then
+          if item[1] == "cancel" then
+            p0.confirm = nil
+            ed.touch()
+          else
+            bind(p0.confirm, item[2])
+          end
+        end
+        bx = bx + w + 6 * z
+      end
+      return
+    end
+
+    local text, _, _, st = pal.x_ig_edit {
+      id = "pathfield" .. win.id, x = ctx.cx + 10 * z, y = fy + 1,
+      w = fw - 4 * z, h = px * 1.7 - 2,
+      text = p0.newpath or opts.default or "", px = px, font = 1,
+      enter = true, multiline = false,
+    }
+    p0.newpath = text
+    if st and st.submit then
+      local path = text:gsub("^%s+", ""):gsub("%s+$", "")
+      if path == "" or path == (opts.default or "") or path:find("/$") then
+        return
+      end
+      if not path:lower():find("%." .. opts.ext .. "$") then
+        path = path .. "." .. opts.ext
+      end
+      local exists = pal.read_file(ed.root .. "/" .. path) ~= nil
+                     or (ed.doc.assets and ed.doc.assets[path] ~= nil)
+      if exists then
+        p0.confirm = path
+        ed.touch()
+      else
+        bind(path, false)
+      end
+    end
+  end
+
   return A
 end
 

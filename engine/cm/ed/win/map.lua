@@ -1139,30 +1139,13 @@ function M.draw(win, ctx)
   local i = cm.require("cm.ui").inp
   local g = ed.g
 
-  -- unbound: hint + a path field that creates/opens (the spawn-menu path)
+  -- unbound: the kit's new-file prompt (the field this generalized —
+  -- forced .map, overwrite-aware; the spawn-menu path)
   if win.path == "" then
-    pal.x_ig_text(ctx.cx + 8 * z, ctx.cy + 8 * z, px, COL.dim,
-                  "no map bound — drag a .map here, or type a path:", 0)
-    local fy = ctx.cy + 8 * z + px * 1.8
-    pal.x_ig_rect(ctx.cx + 8 * z, fy, math.min(240 * z, ctx.cw - 16 * z),
-                  px * 1.7, 0x4a437088, 1, 3 * z)
-    if not ctx.occluded then
-      local p0 = plumb(ed, "@new" .. win.id)
-      local text, _, _, st = pal.x_ig_edit {
-        id = "mapnew" .. win.id, x = ctx.cx + 10 * z, y = fy + 1,
-        w = math.min(236 * z, ctx.cw - 20 * z), h = px * 1.7 - 2,
-        text = p0.newpath or "maps/", px = px, font = 1,
-        enter = true, multiline = false,
-      }
-      p0.newpath = text
-      if st and st.submit and text ~= "" and text ~= "maps/" then
-        local path = text
-        if not path:lower():find("%.map$") then path = path .. ".map" end
-        win.path = path
-        p0.newpath = nil
-        ed.touch()
-      end
-    end
+    A.pathfield(win, ed, ctx, {
+      ext = "map", default = "maps/",
+      label = "no map bound — drag a .map here, or type a path:",
+    })
     return
   end
 

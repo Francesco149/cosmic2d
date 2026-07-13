@@ -320,23 +320,9 @@ function M.draw(win, ctx)
   local px = math.max(4, 10.5 * z)
   local ed = ctx.ed
   if win.path == "" then
-    -- the unbound path field (the map-window idiom): type ins/x.ins
-    pal.x_ig_text(ctx.cx + 6 * z, ctx.cy + 6 * z, px, COL.dim,
-                  "new instrument path:", 0)
-    if not ctx.occluded then
-      local text, changed, _, st = pal.x_ig_edit {
-        id = "inspath" .. win.id, x = ctx.cx + 6 * z,
-        y = ctx.cy + 6 * z + px * 1.4, w = math.min(260 * z, ctx.cw - 12 * z),
-        h = px * 1.6, text = win.newpath or "ins/new.ins", px = px,
-        enter = true,
-      }
-      if changed then win.newpath = text end
-      if st and st.submit and (win.newpath or "ins/new.ins"):find("%.ins$") then
-        win.path = win.newpath or "ins/new.ins"
-        open_asset(ed, win.path)
-        ed.touch()
-      end
-    end
+    -- the kit's new-file prompt (forced .ins, overwrite-aware)
+    A.pathfield(win, ed, ctx, { ext = "ins", default = "ins/",
+                                label = "new instrument path:" })
     return
   end
 
@@ -497,10 +483,13 @@ function M.draw(win, ctx)
     y = y + px * 6.5
   end
 
-  -- live audition of edits + the gesture-end journal entry
+  -- live audition of edits + the gesture-end journal entry. Upload
+  -- p.doc, NOT the local — a preset click replaces p.doc mid-draw and
+  -- the stale local made the sound lag one click behind the UI (human,
+  -- morning round)
   if edited then p.send = true end
   if p.send then
-    ins.upload(doc, p.edslot, "ed", "s" .. win.id)
+    ins.upload(p.doc, p.edslot, "ed", "s" .. win.id)
     p.send = nil
     ctx.touch()
   end
