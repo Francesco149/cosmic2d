@@ -224,8 +224,31 @@ local function slider(p, ctx, id, x, y, w, h, val, lo, hi, label, fmt)
   return nil, false
 end
 
--- the ADSR graph: attack/decay/release drag horizontally in thirds of
--- the box, sustain drags vertically anywhere in the decay third
+-- envelope time axis: LOGARITHMIC, so equal pixels = equal ratios. The
+-- short-end feels (a plucky 2 ms vs a soft 30 ms vs a pad 300 ms attack)
+-- spread across the whole axis instead of crowding the first few pixels
+-- — and a long smooth attack is still reachable at the far right (the
+-- human: tiny nudges made huge differences, distinct feels 1–2 px apart).
+-- fx = 0 pins to 0 (instant). DRAW and DRAG share this mapping: the old
+-- graph drew handles linearly (a/2000) but dragged them squared, so a
+-- handle jumped the instant you grabbed it — the other half of the
+-- awkwardness. Editor-only math; libm off the sim is fine.
+local ENV_TMIN = 1 -- ms at the bottom of the log sweep
+local function env_fx_to_ms(fx, tmax)
+  if fx <= 0.0015 then return 0 end
+  return math.floor(ENV_TMIN * (tmax / ENV_TMIN) ^ fx + 0.5)
+end
+local function env_ms_to_fx(ms, tmax)
+  if ms <= ENV_TMIN then return 0 end
+  return math.max(0, math.min(1,
+    math.log(ms / ENV_TMIN) / math.log(tmax / ENV_TMIN)))
+end
+M.env_fx_to_ms, M.env_ms_to_fx = env_fx_to_ms, env_ms_to_fx -- KAT hooks
+local A_MAX, D_MAX, R_MAX = 2000, 2000, 4000
+
+-- the ADSR graph: three fixed thirds — attack | decay·sustain | release.
+-- A/D/R drag horizontally within their third (log-mapped), sustain drags
+-- vertically in the middle third. A value readout shows while dragging.
 local function adsr(p, ctx, id, x, y, w, h, op)
   local i = cm.require("cm.ui").inp
   local z = ctx.z
@@ -233,46 +256,56 @@ local function adsr(p, ctx, id, x, y, w, h, op)
   local a, d, r = op.a or 5, op.d or 100, op.r or 80
   local s = (op.s or 200) / 255
   local third = w / 3
-  local ax = x + third * math.min(1, a / 2000)
-  local dx = ax + third * math.min(1, d / 2000)
+  local top, base = y + 2 * z, y + h - 2 * z
+  local ax = x + third * env_ms_to_fx(a, A_MAX)
+  local dx = x + third + third * env_ms_to_fx(d, D_MAX)
+  local rex = x + 2 * third + third * env_ms_to_fx(r, R_MAX)
   local sy = y + h - h * s * 0.92 - h * 0.04
-  local rx = dx + third * math.min(1, r / 4000)
-  -- polyline: 0 -> peak -> sustain … -> 0
-  local base = y + h - 2 * z
-  pal.x_ig_line(x, base, ax, y + 2 * z, COL.env, 1.5 * z)
-  pal.x_ig_line(ax, y + 2 * z, dx, sy, COL.env, 1.5 * z)
-  pal.x_ig_line(dx, sy, x + w - third, sy, COL.env, 1.5 * z)
-  pal.x_ig_line(x + w - third, sy, math.min(x + w, x + w - third + (rx - dx)),
-                base, COL.env, 1.5 * z)
-  for _, hx in ipairs({ ax, dx, x + w - third }) do
-    pal.x_ig_circle_fill(hx, hx == dx and sy or (hx == ax and y + 2 * z or sy),
-                         2.5 * z, COL.knob)
-  end
+  -- faint stage-boundary guides so A | D·S | R read as regions
+  pal.x_ig_line(x + third, y, x + third, y + h, 0xffffff10, 1)
+  pal.x_ig_line(x + 2 * third, y, x + 2 * third, y + h, 0xffffff10, 1)
+  -- 0 -> peak -> decay to sustain -> hold -> release to 0
+  pal.x_ig_line(x, base, ax, top, COL.env, 1.5 * z)
+  pal.x_ig_line(ax, top, dx, sy, COL.env, 1.5 * z)
+  pal.x_ig_line(dx, sy, x + 2 * third, sy, COL.env, 1.5 * z)
+  pal.x_ig_line(x + 2 * third, sy, rex, base, COL.env, 1.5 * z)
+  -- hovered/dragged handle glows so the grab point is unmistakable
   local over = i.wx >= x and i.wx < x + w and i.wy >= y and i.wy < y + h
-  if ctx.hot and i.clicked[1] and over and not p.drag then
-    local rel = (i.wx - x) / w
-    p.drag = id .. (rel < 0.33 and "a" or rel < 0.66 and "ds" or "r")
+  local hpart = ctx.hot and over and ((i.wx - x) / w < 1 / 3 and "a"
+                          or (i.wx - x) / w < 2 / 3 and "ds" or "r")
+  local dragging = p.drag and p.drag:sub(1, #id) == id and p.drag:sub(#id + 1)
+  for _, hk in ipairs({ { "a", ax, top }, { "ds", dx, sy }, { "r", rex, base } }) do
+    local lit = dragging == hk[1] or (not p.drag and hpart == hk[1])
+    pal.x_ig_circle_fill(hk[2], hk[3], (lit and 4 or 2.5) * z,
+                         lit and COL.hot or COL.knob)
   end
-  local changed
-  for _, part in ipairs({ "a", "ds", "r" }) do
-    if p.drag == id .. part then
-      if i.buttons[1] then
-        local fx = math.max(0, math.min(1, ((i.wx - x) % third) / third))
-        fx = math.max(0, math.min(1, (i.wx - x - (part == "ds" and third or part == "r" and 2 * third or 0)) / third))
-        if part == "a" then
-          op.a = math.floor(fx * fx * 2000 + 0.5)
-        elseif part == "ds" then
-          op.d = math.floor(fx * fx * 2000 + 0.5)
-          op.s = math.floor(math.max(0, math.min(1, 1 - (i.wy - y - h * 0.04) / (h * 0.92))) * 255 + 0.5)
-        else
-          op.r = math.floor(fx * fx * 4000 + 0.5)
-        end
-        changed = "live"
-      else
-        p.drag = nil
-        changed = "done"
-      end
-    end
+  if ctx.hot and i.clicked[1] and over and not p.drag then
+    p.drag = id .. hpart
+  end
+  local changed, label
+  local function part_fx(base_x)
+    return math.max(0, math.min(1, (i.wx - base_x) / third))
+  end
+  if dragging == "a" then
+    if i.buttons[1] then
+      op.a = env_fx_to_ms(part_fx(x), A_MAX)
+      changed, label = "live", ("A %dms"):format(op.a)
+    else p.drag = nil; changed = "done" end
+  elseif dragging == "ds" then
+    if i.buttons[1] then
+      op.d = env_fx_to_ms(part_fx(x + third), D_MAX)
+      op.s = math.floor(math.max(0, math.min(1,
+        1 - (i.wy - y - h * 0.04) / (h * 0.92))) * 255 + 0.5)
+      changed, label = "live", ("D %dms  S %d"):format(op.d, op.s)
+    else p.drag = nil; changed = "done" end
+  elseif dragging == "r" then
+    if i.buttons[1] then
+      op.r = env_fx_to_ms(part_fx(x + 2 * third), R_MAX)
+      changed, label = "live", ("R %dms"):format(op.r)
+    else p.drag = nil; changed = "done" end
+  end
+  if label then
+    pal.x_ig_text(x + 3 * z, y + 2 * z, math.max(4, 8 * z), COL.hot, label, 0)
   end
   return changed
 end

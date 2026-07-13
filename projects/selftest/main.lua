@@ -3908,6 +3908,32 @@ local function t_ed_maptool()
   check(W.bg_fmt(nil) == "1 1 1", "ed.maptool: bg_fmt defaults white")
 end
 
+local function t_ed_synth()
+  -- the R9c synth ADSR log time axis (human ask): equal pixels = equal
+  -- RATIOS, so short-end feels (pluck/soft/pad) spread across the whole
+  -- axis; fx=0 pins to 0 (instant); and the DRAW (ms->fx) and DRAG
+  -- (fx->ms) are exact inverses so a handle never jumps on grab.
+  local W = cm.require("cm.ed.win.synth")
+  check(W.env_fx_to_ms(0, 2000) == 0, "ed.synth: fx 0 = 0 ms (instant)")
+  check(W.env_fx_to_ms(1, 2000) == 2000, "ed.synth: fx 1 = max ms")
+  -- log front-loading: the axis midpoint is FAR below the linear 1000 ms
+  check(W.env_fx_to_ms(0.5, 2000) < 100,
+        "ed.synth: fx 0.5 -> " .. W.env_fx_to_ms(0.5, 2000) .. " ms (log spread)")
+  local mono, last = true, -1
+  for k = 0, 40 do
+    local v = W.env_fx_to_ms(k / 40, 2000)
+    if v < last then mono = false end
+    last = v
+  end
+  check(mono, "ed.synth: time axis is monotonic")
+  local rt_ok = true
+  for _, ms in ipairs({ 5, 30, 200, 1000 }) do
+    local rt = W.env_fx_to_ms(W.env_ms_to_fx(ms, 2000), 2000)
+    if math.abs(rt - ms) > math.max(1, ms * 0.02) then rt_ok = false end
+  end
+  check(rt_ok, "ed.synth: ms->fx->ms round-trips (draw==drag)")
+end
+
 local function t_ed_filter()
   -- cm.ed.filter_events — the playable-game-window input gate (R4b,
   -- EDITOR.md §12.3). Synthetic events against a faked shell state.
@@ -4418,6 +4444,7 @@ function game.init()
   t_ed_map()
   t_ed_map_tmsnap()
   t_ed_maptool()
+  t_ed_synth()
   t_ed_filter()
   t_ed_viewlock()
   t_ed_hot()
