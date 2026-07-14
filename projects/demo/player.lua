@@ -55,12 +55,8 @@
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local ease = cm.require("cm.ease")
-local pix = cm.require("pix")
 local level = cm.require("level")
 local fx = cm.require("fx")
-local gfx = cm.require("cm.gfx")
-local anim = cm.require("cm.anim")
-local sprite = cm.require("cm.sprite")
 
 local M = {}
 
@@ -518,254 +514,55 @@ function M.step(ctl)
   buf:f32(O.tp_flash, m.max(0, buf:f32(O.tp_flash) - 0.12))
 end
 
--- ---- sprite ----
--- The sprite is a RENDER-ONLY asset (STUDIO.md §1, D040): the game loads the
--- studio-baked strip art/girl.png + clips art/girl.anim at boot — file bytes are
--- NOT sim input (D026), exactly like a texture or map.dat — so authoring it in
--- the F2 studio cannot perturb a trace (the M10 Phase 4 payoff). The strip is
--- 16x24 cells laid L→R: poses 0..10 are the moveset frames, selected from sim
--- state below (the state-driven mode, STUDIO.md §7); frame 11 is the idle-breath
--- the timed "idle" CLIP cycles via cm.anim. NF is derived from the loaded width.
---
--- build_sprite below is the PROCEDURAL FALLBACK, used only if the asset is
--- missing (a fresh tree / a project with no art) — same 0..10 pose set, 11 frames.
--- Regenerate the asset: --eval "cm.require('genart').girl()" (see genart.lua).
 
-local FW, FH = 16, 24
-
-local function build_sprite()
-  -- 11 pose frames (0..10); the caller reports NF=11 for this fallback. (The
-  -- old `NF * FW` here was a latent nil — NF is only assigned AFTER load: the
-  -- fallback had never actually run while girl.png existed.)
-  local img = pix.img(11 * FW, FH)
-  local HAIR = { 0.30, 0.26, 0.42 }
-  local SKIN = { 0.97, 0.86, 0.74 }
-  local SUIT = { 0.93, 0.94, 0.98 }
-  local SHAD = { 0.66, 0.70, 0.84 }
-  local CYAN = { 0.42, 0.86, 0.98 }
-  local DARK = { 0.15, 0.14, 0.20 }
-  local function R(o, x, y, w, h, c) img.rect(o + x, y, w, h, c[1], c[2], c[3]) end
-  local function P(o, x, y, c) img.px(o + x, y, c[1], c[2], c[3]) end
-
-  -- head at cell-local (hx, hy), 6 wide. eye_dx shifts the eye for a look dir.
-  local function head(o, hx, hy, eye_dx)
-    R(o, hx, hy, 6, 3, HAIR)
-    P(o, hx - 1, hy + 1, HAIR); P(o, hx + 6, hy + 1, HAIR)
-    R(o, hx, hy + 3, 6, 4, SKIN)
-    P(o, hx + 2 + (eye_dx or 0), hy + 4, DARK)
-    P(o, hx + 4 + (eye_dx or 0), hy + 4, DARK)
-    R(o, hx, hy + 7, 6, 1, HAIR) -- fringe shadow
-  end
-
-  -- torso top-left (tx, ty), w x h, with a cyan accent seam down the middle
-  local function torso(o, tx, ty, tw, th)
-    R(o, tx, ty, tw, th, SUIT)
-    R(o, tx, ty + th - 1, tw, 1, SHAD)
-    R(o, tx + tw // 2, ty + 1, 1, th - 1, CYAN)
-  end
-
-  -- frame 0: idle
-  do local o = 0 * FW
-    head(o, 5, 2, 0)
-    torso(o, 4, 10, 8, 6)
-    R(o, 3, 10, 1, 4, SUIT); R(o, 12, 10, 1, 4, SUIT) -- arms down
-    R(o, 5, 16, 2, 5, SHAD); R(o, 9, 16, 2, 5, SHAD) -- legs
-    P(o, 5, 21, CYAN); P(o, 10, 21, CYAN) -- boot glow
-  end
-  -- frames 1-2: walk (legs + arm swing alternate)
-  do local o = 1 * FW
-    head(o, 5, 2, 1)
-    torso(o, 4, 10, 8, 6)
-    R(o, 2, 11, 2, 3, SUIT); R(o, 12, 11, 2, 2, SUIT) -- arms swing
-    R(o, 4, 16, 2, 5, SHAD); R(o, 10, 16, 2, 4, SHAD) -- stride
-  end
-  do local o = 2 * FW
-    head(o, 5, 2, 1)
-    torso(o, 4, 10, 8, 6)
-    R(o, 3, 11, 2, 2, SUIT); R(o, 12, 11, 2, 3, SUIT)
-    R(o, 6, 16, 2, 4, SHAD); R(o, 9, 16, 2, 5, SHAD)
-  end
-  -- frame 3: rise (legs tucked, arms up)
-  do local o = 3 * FW
-    head(o, 5, 3, 0)
-    torso(o, 4, 11, 8, 6)
-    R(o, 3, 8, 2, 3, SUIT); R(o, 11, 8, 2, 3, SUIT) -- arms up
-    R(o, 5, 17, 2, 3, SHAD); R(o, 9, 17, 2, 3, SHAD) -- knees up
-  end
-  -- frame 4: fall (arms out)
-  do local o = 4 * FW
-    head(o, 5, 3, 0)
-    torso(o, 4, 11, 8, 6)
-    R(o, 1, 11, 3, 2, SUIT); R(o, 12, 11, 3, 2, SUIT) -- arms wide
-    R(o, 5, 17, 2, 5, SHAD); R(o, 9, 17, 2, 5, SHAD)
-  end
-  -- frame 5: dash / flash jump (leaning forward, trailing limbs; faces right)
-  do local o = 5 * FW
-    head(o, 7, 3, 1)
-    R(o, 3, 11, 9, 5, SUIT) -- torso swept back
-    R(o, 5, 15, 7, 1, SHAD)
-    R(o, 6, 11, 1, 4, CYAN) -- accent streak
-    R(o, 1, 12, 3, 2, SUIT) -- trailing arm
-    R(o, 2, 16, 4, 2, SHAD); R(o, 5, 18, 3, 2, SHAD) -- trailing legs
-  end
-  -- frame 6: up jump (stretched vertical, arms straight up)
-  do local o = 6 * FW
-    head(o, 5, 4, 0)
-    torso(o, 4, 12, 8, 7)
-    R(o, 4, 7, 2, 5, SUIT); R(o, 10, 7, 2, 5, SUIT) -- arms straight up
-    P(o, 4, 7, CYAN); P(o, 11, 7, CYAN)
-    R(o, 6, 19, 2, 4, SHAD); R(o, 8, 19, 2, 4, SHAD) -- legs together
-  end
-  -- frame 7: hop (compact crouch-leap)
-  do local o = 7 * FW
-    head(o, 5, 5, 0)
-    torso(o, 4, 12, 8, 5)
-    R(o, 2, 13, 2, 2, SUIT); R(o, 12, 13, 2, 2, SUIT)
-    R(o, 4, 17, 3, 3, SHAD); R(o, 9, 17, 3, 3, SHAD) -- knees drawn up
-  end
-  -- frame 8: hover / flutter (arms out wide, floaty)
-  do local o = 8 * FW
-    head(o, 5, 3, 0)
-    torso(o, 4, 10, 8, 6)
-    R(o, 0, 10, 4, 2, SUIT); R(o, 12, 10, 4, 2, SUIT) -- wide arms
-    P(o, 0, 10, CYAN); P(o, 15, 10, CYAN)
-    R(o, 5, 16, 2, 4, SHAD); R(o, 9, 16, 2, 4, SHAD)
-    P(o, 5, 20, CYAN); P(o, 10, 20, CYAN)
-  end
-  -- frame 9: grapple (one arm reaching up, body stretched)
-  do local o = 9 * FW
-    head(o, 5, 5, 0)
-    torso(o, 4, 12, 8, 6)
-    R(o, 9, 4, 2, 9, SUIT) -- reaching arm
-    P(o, 9, 4, CYAN); P(o, 10, 4, CYAN)
-    R(o, 4, 13, 2, 3, SUIT) -- other arm
-    R(o, 5, 18, 2, 4, SHAD); R(o, 9, 18, 2, 4, SHAD)
-  end
-  -- frame 10: attack (arm thrust forward; faces right)
-  do local o = 10 * FW
-    head(o, 4, 3, 1)
-    torso(o, 3, 11, 8, 6)
-    R(o, 10, 12, 5, 2, SUIT) -- extended arm
-    P(o, 14, 12, CYAN); P(o, 14, 13, CYAN) -- blade root glow
-    R(o, 4, 17, 2, 5, SHAD); R(o, 8, 17, 2, 5, SHAD)
-  end
-  return img.tex()
-end
-
--- load the baked strip + clips (render-only; pcall so a missing asset cleanly
--- falls back to the procedural build_sprite at 11 frames with no clips). reload
--- forces a fresh re-read of the .png texture (the live asset hot-reload path).
-local function load_sprite(reload)
-  local proj = cm.main and cm.main.args and cm.main.args.project
-  if proj then
-    local ok, tex = pcall(gfx.texture, proj .. "/art/girl.png", reload)
-    if ok and tex then
-      return tex, m.max(1, tex.w // FW), anim.load(proj .. "/art/girl.anim"),
-             sprite.load_meta(proj .. "/art/girl.meta")
-    end
-  end
-  return build_sprite(), 11, nil, nil
-end
-
--- the render-only sprite assets (the strip texture + frame count + clips + the
--- .meta-derived foot anchor), held as upvalues and refreshed live when the studio
--- re-bakes: cm.sprite.save bumps cm.asset_epoch and draw() re-loads when it
--- advances — closing the paint→see-it-on-the-character loop with no restart. Pure
--- render-only (D040): nothing here is read by step(), the reload runs in draw
--- gated on the epoch, and the epoch only moves on a studio save (sim paused, never
--- in --verify/--frames) — so an asset reload cannot perturb a trace.
-local sprite_tex, NF, clips, meta, idle_clip, PIV_X, PIV_Y
-local asset_epoch
-
-local function refresh_sprite()
-  asset_epoch = cm.asset_epoch or 0
-  sprite_tex, NF, clips, meta = load_sprite(true) -- reload: re-read the baked .png
-  idle_clip = clips and anim.find(clips, "idle")
-  -- the in-game anchor: the cell pixel pinned to the foot point. From the studio-
-  -- authored .meta when present (render-only file bytes, D026 — can't perturb a
-  -- trace); else feet-center of the cell (the procedural fallback's old behavior).
-  PIV_X = meta and meta.pivot.x or FW * 0.5
-  PIV_Y = meta and meta.pivot.y or FH
-end
-
-refresh_sprite() -- initial load (also seeds asset_epoch from cm.asset_epoch)
-
+-- The demo's player is a NEUTRAL BOUNCY CUBE (not the sprite fallback
+-- above) — deliberately style-free, so the same moveset can wear any vibe
+-- once the VFX/LUT layer lands. The squash/stretch the mover already
+-- computes IS the bounce; a facing "eye" reads orientation.
 function M.draw()
-  -- live asset hot-reload (render-only): a studio re-bake bumped cm.asset_epoch,
-  -- so pull the fresh strip/clips/meta before drawing. No-op in the common case.
-  if (cm.asset_epoch or 0) ~= asset_epoch then refresh_sprite() end
-  local k = state.doc.knobs.move
   local feel = state.doc.knobs.feel
   local x, y = buf:f32(O.x), buf:f32(O.y)
-  local vx, vy = buf:f32(O.vx), buf:f32(O.vy)
+  local vy = buf:f32(O.vy)
   local facing = buf:f32(O.facing)
   local W, H = M.W, M.H
   local grounded = buf:f32(O.grounded) == 1.0
-  local fluttering = buf:f32(O.fluttering) == 1.0
-  local grappling = buf:f32(O.grappling) > 0.5 -- 1 extending or 2 reeling
-  local upjumped = buf:f32(O.upjumped) == 1.0
-  local attacking = buf:f32(O.attack_t) > 0
+  local grappling = buf:f32(O.grappling) > 0.5
   local mode = buf:f32(O.tp_mode)
 
-  -- grapple beam first (under the body): a cyan line up to the climbing hook
-  -- tip (htipy reaches the anchor gy when it connects, then the reel shrinks it)
+  -- grapple beam (under the body)
   if grappling then
     local cxp = x + W * 0.5
     local tipy = buf:f32(O.htipy)
-    pal.quad(cxp - 0.5, tipy, 1, m.max(0, y - tipy), 0.42, 0.86, 0.98, 0.7)
-    pal.quad(cxp - 2, tipy - 1, 4, 2, 0.7, 0.95, 1.0, 0.9) -- the hook tip
+    pal.quad(cxp - 0.5, tipy, 1, m.max(0, y - tipy), 0.5, 0.85, 0.95, 0.7)
+    pal.quad(cxp - 2, tipy - 1, 4, 2, 0.7, 0.95, 1.0, 0.9)
   end
 
-  local f
-  if grappling then f = 9
-  elseif fluttering then f = 8
-  elseif attacking and grounded and m.abs(vx) < 6 then f = 10
-  elseif not grounded then
-    if m.abs(vx) > k.fj_vx * 0.55 then f = 5
-    elseif vy < -40 then f = upjumped and 6 or 3
-    else f = 4 end
-  elseif m.abs(vx) > 6 then
-    f = m.floor(buf:f32(O.anim)) % 2 == 0 and 1 or 2
-  else -- idle: play the timed BREATH clip if the asset shipped one — a COSMETIC
-    f = idle_clip and anim.frame_at(idle_clip, state.frame()) or 0 -- clip off the
-  end                                  -- integer frame counter (D030: zero stored
-  f = m.min(f, NF - 1)                 -- state, pure, render-only — can't perturb
-                                       -- the trace). Clamp guards a short fallback.
-
-  -- squash & stretch around the feet
-  local sx, sy = 1.0, 1.0
+  -- the bounce: squash on land, stretch in the air (feet stay planted)
   local sq = ease.cubic_in(m.clamp(buf:f32(O.squash_t) / feel.squash_t, 0, 1))
              * feel.squash * m.clamp(buf:f32(O.land) / 360.0, 0.3, 1.0)
   local st = ease.cubic_in(m.clamp(buf:f32(O.stretch_t) / feel.stretch_t, 0, 1))
              * feel.stretch
   if not grounded then st = st + m.clamp(m.abs(vy) / 900.0, 0, 0.22) end
-  sx = 1.0 + sq * 0.9 - st * 0.5
-  sy = 1.0 - sq * 0.6 + st * 0.6
+  local sx = 1.0 + sq * 0.9 - st * 0.5
+  local sy = 1.0 - sq * 0.6 + st * 0.6
 
-  -- phase-shift mode tint: mode A solid/white, mode B cyan + translucent.
-  -- a teleport flash brightens both for a frame or two.
-  local tr, tg, tb, ta = 1, 1, 1, 1
-  if mode == 1 then tr, tg, tb, ta = 0.55, 0.93, 1.0, 0.82 end
+  -- a roughly-SQUARE cube (the collision box is 12x18; the cube is ~15x15,
+  -- centered on the body, feet-anchored) so it reads as a cube, not a domino
+  local base = 15
+  local dw, dh = base * sx, base * sy
+  local dx = x + W * 0.5 - dw * 0.5
+  local dy = y + H - dh
+  -- neutral tint; teleport mode B = cyan/translucent; a flash brightens
+  local r_, g_, b_, a_ = 0.90, 0.91, 0.86, 1
+  if mode == 1 then r_, g_, b_, a_ = 0.55, 0.93, 1.0, 0.82 end
   local flash = buf:f32(O.tp_flash)
   if flash > 0 then
-    tr = tr + (1 - tr) * flash
-    tg = tg + (1 - tg) * flash
-    tb = tb + (1 - tb) * flash
-    ta = ta + (1 - ta) * flash
+    r_ = r_ + (1 - r_) * flash; g_ = g_ + (1 - g_) * flash; b_ = b_ + (1 - b_) * flash
   end
-
-  local dw, dh = W * sx, H * sy
-  -- anchor the authored pivot pixel (cell space FWxFH) to the foot point
-  -- (x+W/2, y+H): map the pivot through the draw quad, mirrored when facing left.
-  -- squash/stretch then scales around that pivot (feet stay planted, as before).
-  local ax, ay = x + W * 0.5, y + H
-  local ox = facing < 0 and (FW - PIV_X) or PIV_X
-  local dx = ax - (ox / FW) * dw
-  local dy = ay - (PIV_Y / FH) * dh
-  local u0 = (f * FW) / sprite_tex.w
-  local u1 = (f * FW + FW) / sprite_tex.w
-  if facing < 0 then u0, u1 = u1, u0 end
-  pal.quad(dx, dy, dw, dh, tr, tg, tb, ta, sprite_tex.id, u0, 0, u1, 1)
+  pal.quad(dx, dy, dw, dh, r_ * 0.5, g_ * 0.5, b_ * 0.55, a_)      -- dark edge
+  pal.quad(dx + 1, dy + 1, dw - 2, dh - 2, r_, g_, b_, a_)          -- body
+  local eye = facing >= 0 and dx + dw - 4 or dx + 2
+  pal.quad(eye, dy + dh * 0.3, 2.5, 2.5, 0.12, 0.12, 0.16, a_)      -- facing eye
 end
 
 return M

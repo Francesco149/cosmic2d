@@ -115,22 +115,39 @@ local SKY = {
   overworld = palette.load("engine/stock/pal/frostbyte-8.pal"),
 }
 
-function M.draw_bg()
-  gfx.layer(0)
-  local pal_doc = SKY[M.current]
-  local cols = pal_doc and pal_doc.colors
-  if not (cols and #cols >= 7) then return end
-  -- a sky gradient from a LIGHT band at the top down to a darker horizon,
-  -- read from the room's stock palette (ember = warm dusk, frostbyte =
-  -- cool day). The caller cleared via pal.begin_frame; these paint over it.
+function M.draw_bg(camx, camy)
   local paint = cm.require("cm.paint")
-  local bands = 8
-  local bh = 270 // bands + 1
-  for i = 0, bands - 1 do
-    local t = i / (bands - 1)
-    local ci = math.floor(7 - t * 4 + 0.5) -- top ~7 (light) -> bottom ~3
-    local r, g, b = paint.unpack(cols[math.max(1, math.min(#cols, ci))])
-    pal.quad(0, i * bh, 480, bh, r / 255, g / 255, b / 255, 1)
+  local cols = SKY[M.current] and SKY[M.current].colors
+  -- 1) a screen-fixed sky gradient (light top -> darker horizon), read from
+  --    the room's stock palette (ember = warm dusk, frostbyte = cool day)
+  gfx.layer(0)
+  if cols and #cols >= 7 then
+    local bands = 8
+    local bh = 270 // bands + 1
+    for i = 0, bands - 1 do
+      local t = i / (bands - 1)
+      local ci = math.floor(7 - t * 4 + 0.5)
+      local r, g, b = paint.unpack(cols[math.max(1, math.min(#cols, ci))])
+      pal.quad(0, i * bh, 480, bh, r / 255, g / 255, b / 255, 1)
+    end
+  end
+  -- 2) a SOFT checkerboard parallax layer (scrolls slower than the world) —
+  --    neutral depth, deliberately style-free; the VFX/LUT layer recolors
+  --    the whole vibe later. mul 0.4 = background at ~40% scroll speed.
+  if cols and #cols >= 5 then
+    gfx.layer(0.4, 0.45)
+    local ts = 40
+    local r, g, b = paint.unpack(cols[3])
+    local x0 = math.floor((camx or 0) * 0.4 / ts) * ts
+    local y0 = math.floor((camy or 0) * 0.45 / ts) * ts
+    for ty = 0, 270 // ts + 2 do
+      for tx = 0, 480 // ts + 2 do
+        local wx, wy = x0 + tx * ts, y0 + ty * ts
+        if ((wx // ts) + (wy // ts)) % 2 == 0 then
+          pal.quad(wx, wy, ts, ts, r / 255, g / 255, b / 255, 0.13)
+        end
+      end
+    end
   end
 end
 

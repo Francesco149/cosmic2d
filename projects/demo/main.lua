@@ -168,8 +168,8 @@ end
 function game.draw()
   pal.begin_frame(0.07, 0.08, 0.12, 1)
   local camx, camy = cam:f32(0), cam:f32(4)
-  level.draw_bg()
-  gfx.camera(camx, camy)
+  gfx.camera(camx, camy)          -- set the camera before the parallax bg
+  level.draw_bg(camx, camy)
 
   gfx.layer(1)
   level.draw(camx, camy)
