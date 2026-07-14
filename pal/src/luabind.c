@@ -587,6 +587,43 @@ static int l_x_compose(lua_State *L) {
   return 0;
 }
 
+/* pal.x_grade{ brightness=, contrast=, saturation=, tint={r,g,b} } : a
+ * render-only color grade over the game-target blit (per-room mood). Reset
+ * every begin_frame, so set it each frame you want it; pal.x_grade() (no arg)
+ * turns it off. Defaults are the identity grade. Render/dev, never sim (D036,
+ * the sim can't read it — it only affects the final composite). */
+static int l_x_grade(lua_State *L) {
+  check_gfx(L);
+  if (lua_isnoneornil(L, 1)) {
+    G.grade_set = false;
+    return 0;
+  }
+  luaL_checktype(L, 1, LUA_TTABLE);
+  lua_getfield(L, 1, "brightness");
+  G.grade[0] = (float)luaL_optnumber(L, -1, 0.0);
+  lua_getfield(L, 1, "contrast");
+  G.grade[1] = (float)luaL_optnumber(L, -1, 1.0);
+  lua_getfield(L, 1, "saturation");
+  G.grade[2] = (float)luaL_optnumber(L, -1, 1.0);
+  G.grade[3] = 0.0f;
+  float tr = 1.0f, tg = 1.0f, tb = 1.0f;
+  lua_getfield(L, 1, "tint");
+  if (lua_istable(L, -1)) {
+    lua_geti(L, -1, 1);
+    tr = (float)luaL_optnumber(L, -1, 1.0);
+    lua_geti(L, -2, 2);
+    tg = (float)luaL_optnumber(L, -1, 1.0);
+    lua_geti(L, -3, 3);
+    tb = (float)luaL_optnumber(L, -1, 1.0);
+  }
+  G.grade[4] = tr;
+  G.grade[5] = tg;
+  G.grade[6] = tb;
+  G.grade[7] = 0.0f;
+  G.grade_set = true;
+  return 0;
+}
+
 static int l_begin_frame(lua_State *L) {
   check_gfx(L);
   pal_gfx_begin((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0),
@@ -1073,6 +1110,7 @@ static const luaL_Reg pal_funcs[] = {
     {"x_ui_target", l_x_ui_target},
     {"x_target", l_x_target},
     {"x_compose", l_x_compose},
+    {"x_grade", l_x_grade},
     {"x_capture", l_x_capture},
     {"x_capture_read", l_x_capture_read},
     {"x_clipboard", l_x_clipboard},

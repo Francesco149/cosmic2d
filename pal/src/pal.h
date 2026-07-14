@@ -110,7 +110,7 @@ typedef struct {
   float ui_scale;    /* integer px scale the ui canvas blits to the window at */
   int cur_target;    /* 0 = game, 1 = ui — where subsequent quads accumulate */
   SDL_GPUSampler *sampler;
-  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit;
+  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit, *pipe_grade;
   SDL_GPUBuffer *vbuf;
   SDL_GPUTransferBuffer *tbuf;
   uint32_t gpubuf_cap; /* bytes in vbuf/tbuf */
@@ -135,6 +135,13 @@ typedef struct {
    * auto-letterboxes the game target centered (shipped game / default). */
   bool compose_set;
   int vp_x, vp_y, vp_scale; /* game viewport origin (window px) + integer scale */
+  /* per-frame render-only color grade on the game-target blit (pal.x_grade);
+   * reset each begin_frame so it is opt-in per frame and can't leak across a
+   * reboot. grade[8] = brightness, contrast, saturation, pad, tint rgb, pad. */
+  bool grade_set;
+  float grade[8];
+  SDL_GPUTexture *grade_tmp; /* ping-pong scratch for the grade post-pass */
+  int grade_tmp_w, grade_tmp_h;
   /* cached swapchain px size (pal.x_window_size), updated each present; the
    * window-resize ladder lives in Lua and reads this. Render-only — the sim
    * never reads window/FOV/viewport (D036 iron rule). */

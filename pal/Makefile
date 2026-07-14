@@ -37,7 +37,8 @@ PAL_OBJ := $(PAL_SRC:src/%.c=$(BUILD)/%.o) $(PAL_CXX:src/%.cpp=$(BUILD)/%_cxx.o)
 LUA_OBJ := $(LUA_SRC:vendor/lua/src/%.c=$(BUILD)/lua_%.o)
 IMGUI_OBJ := $(addprefix $(BUILD)/ig_,$(notdir $(IMGUI_SRC:.cpp=.o)))
 
-SHADERS := shaders/quad.vert.spv shaders/quad.frag.spv shaders/blit.vert.spv
+SHADERS := shaders/quad.vert.spv shaders/quad.frag.spv shaders/blit.vert.spv \
+           shaders/blit.frag.spv
 
 all: $(BIN) $(SHADERS)
 

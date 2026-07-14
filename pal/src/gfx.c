@@ -209,7 +209,12 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
                                        SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 0);
   SDL_GPUShader *blit_vs =
       load_shader("pal/shaders/blit.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
-  if (!quad_vs || !quad_fs || !blit_vs) return false;
+  /* the graded blit: blit.vert + a fragment that samples the game target
+   * through the color grade (1 sampler, 1 uniform block). Only used when a
+   * grade is active; the default blit stays quad_fs (bit-identical). */
+  SDL_GPUShader *grade_fs = load_shader("pal/shaders/blit.frag.spv",
+                                        SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+  if (!quad_vs || !quad_fs || !blit_vs || !grade_fs) return false;
 
   G.pipe_scene = make_pipeline(quad_vs, quad_fs,
                                SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, true, true);
@@ -222,10 +227,17 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
       G.headless ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
                  : SDL_GetGPUSwapchainTextureFormat(G.dev, G.win);
   G.pipe_blit = make_pipeline(blit_vs, quad_fs, blit_fmt, true, false);
+  /* the grade is a post-pass on the game target (UNORM), before readback +
+   * composite — so a headless --shot and the pixel goldens see the graded
+   * frame. Opaque (no blend): it overwrites the whole scratch target. */
+  G.pipe_grade = make_pipeline(blit_vs, grade_fs,
+                               SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, false,
+                               false);
   SDL_ReleaseGPUShader(G.dev, quad_vs);
   SDL_ReleaseGPUShader(G.dev, quad_fs);
   SDL_ReleaseGPUShader(G.dev, blit_vs);
-  if (!G.pipe_scene || !G.pipe_blit) return false;
+  SDL_ReleaseGPUShader(G.dev, grade_fs);
+  if (!G.pipe_scene || !G.pipe_blit || !G.pipe_grade) return false;
 
   G.readback_cap = (uint32_t)(cfg->w * cfg->h * 4);
   G.readback = SDL_CreateGPUTransferBuffer(
@@ -339,6 +351,7 @@ void pal_gfx_begin(float r, float g, float b, float a) {
   G.cam_y = 0;
   G.clip_on = false;
   G.cur_target = 0; /* draws default to the game target each frame */
+  G.grade_set = false; /* the color grade is opt-in per frame (pal.x_grade) */
 }
 
 static void seg_for(int tex) {
@@ -491,6 +504,47 @@ static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
   SDL_EndGPURenderPass(pp);
 }
 
+/* the color grade (pal.x_grade) as a post-pass on the game target: sample
+ * G.target through pipe_grade into a same-size scratch, then swap so G.target
+ * IS the graded frame — the readback (headless --shot + pixel goldens) and the
+ * live composite both see it. Render/dev; the ungraded path never runs this,
+ * so the default frame (and every golden) is byte-identical. */
+static void grade_pass(SDL_GPUCommandBuffer *cmd) {
+  if (!G.grade_tmp || G.grade_tmp_w != G.iw || G.grade_tmp_h != G.ih) {
+    if (G.grade_tmp) SDL_ReleaseGPUTexture(G.dev, G.grade_tmp);
+    G.grade_tmp = SDL_CreateGPUTexture(
+        G.dev, &(SDL_GPUTextureCreateInfo){
+                   .type = SDL_GPU_TEXTURETYPE_2D,
+                   .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                   .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                            SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                   .width = (Uint32)G.iw,
+                   .height = (Uint32)G.ih,
+                   .layer_count_or_depth = 1,
+                   .num_levels = 1});
+    if (!G.grade_tmp) return;
+    G.grade_tmp_w = G.iw;
+    G.grade_tmp_h = G.ih;
+  }
+  SDL_GPUColorTargetInfo ct = {.texture = G.grade_tmp,
+                               .load_op = SDL_GPU_LOADOP_DONT_CARE,
+                               .store_op = SDL_GPU_STOREOP_STORE};
+  SDL_GPURenderPass *pp = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
+  SDL_BindGPUGraphicsPipeline(pp, G.pipe_grade);
+  float rect[4] = {-1, 1, 1, -1}; /* fullscreen; uv (0,0) = top-left */
+  SDL_PushGPUVertexUniformData(cmd, 0, rect, sizeof rect);
+  SDL_PushGPUFragmentUniformData(cmd, 0, G.grade, sizeof G.grade);
+  SDL_BindGPUFragmentSamplers(
+      pp, 0,
+      &(SDL_GPUTextureSamplerBinding){.texture = G.target, .sampler = G.sampler},
+      1);
+  SDL_DrawGPUPrimitives(pp, 6, 1, 0, 0);
+  SDL_EndGPURenderPass(pp);
+  SDL_GPUTexture *t = G.target; /* swap: G.target is now the graded frame */
+  G.target = G.grade_tmp;
+  G.grade_tmp = t;
+}
+
 bool pal_gfx_present(void) {
   SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
   if (!cmd) { pal_log("gfx: acquire cmd: %s", SDL_GetError()); return false; }
@@ -528,6 +582,7 @@ bool pal_gfx_present(void) {
    * The game clears to its bg (opaque); the ui canvas clears to transparent so
    * the game viewport shows through wherever no chrome was drawn. */
   scene_pass(cmd, G.target, G.iw, G.ih, 0, G.clear);
+  if (G.grade_set) grade_pass(cmd); /* bake the grade into the game target */
   if (G.ui_target) {
     static const float transparent[4] = {0, 0, 0, 0};
     scene_pass(cmd, G.ui_target, G.ui_w, G.ui_h, 1, transparent);

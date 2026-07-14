@@ -198,6 +198,14 @@ function M.draw_bg(camx, camy)
   end
 end
 
+-- per-room MOOD grade (M10, cm.grade) — a render-only color-grade pass over
+-- the whole composite: warm/golden town, cool/crisp overworld. Set each
+-- frame (reset by begin_frame); never sim.
+local GRADE = { town = "warm", overworld = "cool" }
+function M.grade()
+  cm.require("cm.grade").preset(GRADE[M.current] or "none")
+end
+
 function M.collected() -- sim-state set of picked-up coin ids
   local d = cm.require("cm.state").doc
   d.coins = d.coins or {}

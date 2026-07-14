@@ -167,6 +167,7 @@ end
 
 function game.draw()
   pal.begin_frame(0.07, 0.08, 0.12, 1)
+  level.grade() -- per-room mood grade over the whole composite (render-only)
   local camx, camy = cam:f32(0), cam:f32(4)
   gfx.camera(camx, camy)          -- set the camera before the parallax bg
   level.draw_bg(camx, camy)
