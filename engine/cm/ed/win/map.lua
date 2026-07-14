@@ -71,7 +71,7 @@ local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
 
 function M.defaults()
   return { path = "", tool = "select", giz = true, mk = true, fill = true,
-           ctype = "line" }
+           ctype = "line", lpanel = true }
 end
 
 function M.title(win)
@@ -104,6 +104,39 @@ end
 -- the asset kind glyph for a named-ref tag ("bgm  .song")
 local function asset_kind(path)
   return (path:match("%.([%w]+)$") or "?"):lower()
+end
+
+-- ---- layer ops (mutate doc.layers + remap placement indices) ----
+
+local function layer_add(doc)
+  doc.layers[#doc.layers + 1] =
+    { name = "layer " .. (#doc.layers + 1), vis = true, on = true }
+  return #doc.layers -- the new active layer
+end
+
+-- remove layer k: its placements fall to the layer below (never deleted —
+-- less surprising than vanishing art); layers above renumber down.
+local function layer_del(doc, k)
+  if #doc.layers <= 1 then return false end
+  table.remove(doc.layers, k)
+  for _, pl in ipairs(doc.places) do
+    if pl.layer == k then pl.layer = math.max(1, k - 1)
+    elseif (pl.layer or 1) > k then pl.layer = pl.layer - 1 end
+  end
+  return true
+end
+
+-- swap layers a,b (reorder = change z); placements on either follow.
+local function layer_swap(doc, a, b)
+  if a < 1 or b < 1 or a > #doc.layers or b > #doc.layers or a == b then
+    return false
+  end
+  doc.layers[a], doc.layers[b] = doc.layers[b], doc.layers[a]
+  for _, pl in ipairs(doc.places) do
+    local L = pl.layer or 1
+    if L == a then pl.layer = b elseif L == b then pl.layer = a end
+  end
+  return true
 end
 
 -- ---- the asset citizen (cm.ed.kit, R9a) — plumbing on ed.g.mw[path],
@@ -202,9 +235,21 @@ local function item_rect(doc, it, dims)
   return mk.x, mk.y, mk.w, mk.h
 end
 
+-- can this placement be picked in the editor? Not on an editor-hidden
+-- layer (vis=false — you can't click what isn't drawn); when `only` is
+-- set (the lock toggle) only that layer's placements answer.
+local function pickable(doc, p, only)
+  local L = p.layer or 1
+  if only and L ~= only then return false end
+  local Lyr = doc.layers and doc.layers[L]
+  return not (Lyr and Lyr.vis == false)
+end
+M.pickable = pickable
+
 -- topmost item under a map point: markers first when shown (they overlay),
--- then placements in reverse file order (last = topmost, §2)
-function M.pick(doc, mx, my, dims, with_markers)
+-- then placements in reverse Z order (top layer / latest = topmost, §2).
+-- `only_layer` (the lock toggle) restricts placements to that layer.
+function M.pick(doc, mx, my, dims, with_markers, only_layer)
   if with_markers then
     for i = #doc.markers, 1, -1 do
       local mk = doc.markers[i]
@@ -213,10 +258,14 @@ function M.pick(doc, mx, my, dims, with_markers)
       end
     end
   end
-  for i = #doc.places, 1, -1 do
-    local x, y, w, h = M.place_rect(doc, i, dims)
-    if mx >= x and mx < x + w and my >= y and my < y + h then
-      return { t = "place", i = i }
+  local zo = map.z_order(doc)
+  for k = #zo, 1, -1 do
+    local i = zo[k]
+    if pickable(doc, doc.places[i], only_layer) then
+      local x, y, w, h = M.place_rect(doc, i, dims)
+      if mx >= x and mx < x + w and my >= y and my < y + h then
+        return { t = "place", i = i }
+      end
     end
   end
 end
@@ -228,14 +277,16 @@ function M.sel_has(sel, it)
 end
 
 -- items intersecting a map rect (marquee)
-function M.pick_rect(doc, x0, y0, x1, y1, dims, with_markers)
+function M.pick_rect(doc, x0, y0, x1, y1, dims, with_markers, only_layer)
   if x1 < x0 then x0, x1 = x1, x0 end
   if y1 < y0 then y0, y1 = y1, y0 end
   local out = {}
   for i = 1, #doc.places do
-    local x, y, w, h = M.place_rect(doc, i, dims)
-    if x < x1 and x + w > x0 and y < y1 and y + h > y0 then
-      out[#out + 1] = { t = "place", i = i }
+    if pickable(doc, doc.places[i], only_layer) then
+      local x, y, w, h = M.place_rect(doc, i, dims)
+      if x < x1 and x + w > x0 and y < y1 and y + h > y0 then
+        out[#out + 1] = { t = "place", i = i }
+      end
     end
   end
   if with_markers then
@@ -860,7 +911,8 @@ end
 
 -- ---- header: tool radio (sel/col/mkr) + giz / mk / fill chips ----
 
-local CHIPS = { { "giz", "giz" }, { "mk", "mk" }, { "fill", "fill" } }
+local CHIPS = { { "lpanel", "lyr" }, { "giz", "giz" }, { "mk", "mk" },
+               { "fill", "fill" } }
 local TOOLS = { { "marker", "mkr" }, { "collider", "col" },
                 { "select", "sel" } } -- right-to-left draw order
 
@@ -1088,6 +1140,110 @@ local function draw_placement(ed, p, pl, sx0, sy0, w, h, zoom, z, disabled,
   end
 end
 
+-- the layer panel (right strip): the teidraw-style stack — front layer at
+-- the TOP, each row a [e]ditor-visible + [g]ame-on toggle pair + name, the
+-- active layer highlit. A footer adds / deletes / reorders / renames the
+-- active layer. Layer edits commit (journaled); activating one only
+-- touches the session. `active` = win.layer.
+local function draw_layer_panel(win, ed, p, doc, x0, y0, pw, ph, z, fpx, ctx)
+  local i = cm.require("cm.ui").inp
+  pal.x_ig_rect_fill(x0, y0, pw, ph, 0x191627ff, 3 * z)
+  local pad = 4 * z
+  local rowh = math.max(12, fpx + 5 * z)
+  local x, y = x0 + pad, y0 + pad
+  local active = math.min(#doc.layers, math.max(1, win.layer or #doc.layers))
+
+  -- header: "LAYERS" + the lock toggle
+  pal.x_ig_text(x, y + 1.5 * z, fpx * 0.8, COL.dim, "LAYERS", 0)
+  local lockw = pal.x_ig_text_size("lock", fpx * 0.8, 0) + 8 * z
+  local lx = x0 + pw - pad - lockw
+  local lockhot = ctx.hot and i.wx >= lx and i.wx < lx + lockw
+                  and i.wy >= y and i.wy < y + rowh
+  pal.x_ig_rect_fill(lx, y, lockw, rowh - z, win.lock and COL.btn_on or COL.btn,
+                     3 * z)
+  pal.x_ig_text(lx + 4 * z, y + 1.5 * z, fpx * 0.8,
+                (lockhot or win.lock) and COL.hot or COL.dim, "lock", 0)
+  if lockhot and i.clicked[1] then win.lock = not win.lock or nil; ctx.touch() end
+  y = y + rowh + 2 * z
+
+  -- a small square toggle button (returns clicked)
+  local function tog(bx, by, bw, on, label, oncol)
+    local hot = ctx.hot and i.wx >= bx and i.wx < bx + bw
+                and i.wy >= by and i.wy < by + rowh - 2 * z
+    pal.x_ig_rect_fill(bx, by, bw, rowh - 2 * z,
+                       on and (oncol or COL.btn_on) or COL.btn, 2 * z)
+    pal.x_ig_text(bx + (bw - pal.x_ig_text_size(label, fpx * 0.8, 0)) * 0.5,
+                  by + 1 * z, fpx * 0.8, on and COL.hot or COL.dim, label, 0)
+    return hot and i.clicked[1]
+  end
+
+  -- rows: front (highest index) at the top
+  local footer_y = y0 + ph - rowh - pad
+  for k = #doc.layers, 1, -1 do
+    if y + rowh > footer_y - 2 * z then
+      pal.x_ig_text(x, y, fpx * 0.75, COL.dim, "…", 0)
+      break
+    end
+    local L = doc.layers[k]
+    if k == active then
+      pal.x_ig_rect_fill(x0 + 2 * z, y - 1, pw - 4 * z, rowh, 0x322c50ff, 2 * z)
+    end
+    local bx, bw = x, 12 * z
+    if tog(bx, y, bw, L.vis ~= false, "e") then
+      L.vis = (L.vis == false) or nil; commit(ed, win.path)
+    end
+    bx = bx + bw + 2 * z
+    if tog(bx, y, bw, L.on ~= false, "g", 0x3a7a52ff) then
+      L.on = (L.on == false) or nil; commit(ed, win.path)
+    end
+    bx = bx + bw + 4 * z
+    local nmw = x0 + pw - pad - bx
+    local namehot = ctx.hot and i.wx >= bx and i.wx < bx + nmw
+                    and i.wy >= y and i.wy < y + rowh
+    pal.x_ig_clip_push(bx, y, nmw, rowh)
+    pal.x_ig_text(bx, y + 1.5 * z, fpx * 0.85,
+                  k == active and COL.hot
+                  or (L.on == false and COL.dim or COL.text),
+                  (L.name ~= "" and L.name) or ("layer " .. k), 0)
+    pal.x_ig_clip_pop()
+    if namehot and i.clicked[1] then win.layer = k; ctx.touch() end
+    y = y + rowh + 1 * z
+  end
+
+  -- footer: + add · x del · ^ v reorder · rename(active)
+  local fx = x0 + pad
+  local function fbtn(label, w)
+    local hot = ctx.hot and i.wx >= fx and i.wx < fx + w
+                and i.wy >= footer_y and i.wy < footer_y + rowh
+    pal.x_ig_rect_fill(fx, footer_y, w, rowh, COL.btn, 2 * z)
+    pal.x_ig_text(fx + (w - pal.x_ig_text_size(label, fpx * 0.85, 0)) * 0.5,
+                  footer_y + 1 * z, fpx * 0.85, hot and COL.hot or COL.dim,
+                  label, 0)
+    fx = fx + w + 2 * z
+    return hot and i.clicked[1]
+  end
+  if fbtn("+", 13 * z) then win.layer = layer_add(doc); commit(ed, win.path) end
+  if fbtn("x", 13 * z) and layer_del(doc, active) then
+    win.layer = math.min(#doc.layers, active); commit(ed, win.path)
+  end
+  if fbtn("^", 12 * z) and layer_swap(doc, active, active + 1) then
+    win.layer = active + 1; commit(ed, win.path)
+  end
+  if fbtn("v", 12 * z) and layer_swap(doc, active, active - 1) then
+    win.layer = active - 1; commit(ed, win.path)
+  end
+  local rw = x0 + pw - pad - fx
+  if rw > 20 * z and not ctx.occluded then
+    local La = doc.layers[math.min(#doc.layers, active)]
+    local txt, _, _, st = pal.x_ig_edit {
+      id = "maplyrname" .. win.id, x = fx, y = footer_y + 1, w = rw,
+      h = rowh - 2, text = La.name or "", px = fpx * 0.8, font = 1,
+      enter = true, multiline = false,
+    }
+    if st and st.submit then La.name = txt; commit(ed, win.path) end
+  end
+end
+
 -- the graybox strip fill inside the window (screen coords; the same
 -- column/interval math as the game render — cm.map.geom + column_ivs)
 local function draw_fill(p, view, X0, X1, Y0s, Y1s)
@@ -1257,10 +1413,13 @@ function M.draw(win, ctx)
   local dims = function(path) return tex_dims(ed, p, path) end
   local tmfn = function(path) return tm_doc(ed, p, path) end
 
-  -- layout: canvas + the inspector strip
+  -- layout: canvas + the layer panel (right strip) + the inspector strip
   local INSP = math.max(10, 20 * z)
+  local LPW = (win.lpanel ~= false) and math.max(78, 104 * z) or 0
   local cvx, cvy = ctx.cx, ctx.cy
-  local cvw, cvh = ctx.cw, ctx.ch - INSP - 2 * z
+  local cvh = ctx.ch - INSP - 2 * z
+  local cvw = ctx.cw - (LPW > 0 and LPW + 4 * z or 0)
+  if cvw < 60 or cvh < 60 then LPW, cvw = 0, ctx.cw end -- too small: no panel
   if cvw < 60 or cvh < 60 then return end
 
   -- view transform via cm.ed.winview — captured fields in WORLD units
@@ -1373,6 +1532,13 @@ function M.draw(win, ctx)
   local over = ctx.hot and i.wx >= cvx and i.wx < cvx + cvw
                and i.wy >= cvy and i.wy < cvy + cvh
   local mx, my = s2mx(i.wx), s2my(i.wy)
+  -- the active layer (new placements land here; teidraw auto-selects it
+  -- from whatever you click) + the lock filter (interactions confined to
+  -- the active layer when win.lock is on)
+  local nlayers = #doc.layers
+  local active = math.min(nlayers, math.max(1, win.layer or nlayers))
+  win.layer = active
+  local lockL = win.lock and active or nil
   local snap_opts = function(skipset)
     return { dims = dims, tm = tmfn, thr = SNAP_PX / zoom,
              grid = win.grid or doc.grid or 8,
@@ -1905,7 +2071,7 @@ function M.draw(win, ctx)
         local still = math.abs(i.wx - gd.sx) <= 4 and math.abs(i.wy - gd.sy) <= 4
         p.sel = still and {}
                 or M.pick_rect(doc, gd.mx0, gd.my0, gd.mx1, gd.my1, dims,
-                               win.mk)
+                               win.mk, lockL)
         p.g = nil
         ctx.touch()
       end
@@ -1956,8 +2122,10 @@ function M.draw(win, ctx)
       p.g = gd
       ctx.touch()
     end
-    local hit = not ahit and M.pick(doc, mx, my, dims, win.mk)
+    local hit = not ahit and M.pick(doc, mx, my, dims, win.mk, lockL)
     if hit then
+      -- teidraw auto-select: clicking a placement makes its layer active
+      if hit.t == "place" then win.layer = doc.places[hit.i].layer or active end
       if g.shift then
         local at = M.sel_has(p.sel, hit)
         if at then table.remove(p.sel, at) else p.sel[#p.sel + 1] = hit end
@@ -2133,6 +2301,12 @@ function M.draw(win, ctx)
   end
 
   pal.x_ig_clip_pop()
+
+  -- ---- the layer panel (right strip) ----
+  if LPW > 0 then
+    draw_layer_panel(win, ed, p, doc, cvx + cvw + 4 * z, cvy, LPW, cvh,
+                     z, px, ctx)
+  end
 
   -- ---- the inspector strip ----
   local iy = cvy + cvh + 2 * z
@@ -2416,7 +2590,7 @@ function M.graybox_apply(win, ed)
   end
   if not have then
     table.insert(doc.places, 1,
-                 { path = tmpath, x = 0, y = 0, layer = 0, name = "graybox" })
+                 { path = tmpath, x = 0, y = 0, layer = 1, name = "graybox" })
     p.sel = {} -- indices shifted
   end
   doc.nofill = true
@@ -2454,11 +2628,13 @@ function M.drop(win, ed, path, wx, wy)
       x, y = x + math.floor(dx + 0.5), y + math.floor(dy + 0.5)
     end
   end
-  doc.places[#doc.places + 1] = { path = path, x = x, y = y, layer = 0 }
+  local layer = math.max(1, math.min(#doc.layers, win.layer or #doc.layers))
+  doc.places[#doc.places + 1] = { path = path, x = x, y = y, layer = layer }
   p.sel = { { t = "place", i = #doc.places } }
   p.drop_at = nil
   commit(ed, win.path)
-  pal.log(("[ed] placed %s at %d,%d in %s"):format(path, x, y, win.path))
+  pal.log(("[ed] placed %s at %d,%d (layer %s) in %s")
+          :format(path, x, y, doc.layers[layer].name, win.path))
   return true
 end
 
