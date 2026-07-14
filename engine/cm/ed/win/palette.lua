@@ -87,12 +87,10 @@ end
 -- per-window UI scratch (drag / selection cache), keyed by win.id INSIDE
 -- the path-keyed plumbing — so two windows on the same .pal don't share
 -- drag or selection state (the human's multi-window bug: shared p.drag
--- made a drag in one window move sliders in the other).
+-- made a drag in one window move sliders in the other). Generalized into
+-- the kit (R9g) so map/synth/music can adopt the same pattern.
 local function winui(p, win)
-  p.ui = p.ui or {}
-  local u = p.ui[win.id]
-  if not u then u = {}; p.ui[win.id] = u end
-  return u
+  return cm.require("cm.ed.kit").winui(p, win)
 end
 
 -- horizontal drag slider; `st` holds the per-window drag state (st.drag).

@@ -153,6 +153,25 @@ function M.snd_alloc(ed, nvoices)
   return g.snd_slot, vbase
 end
 
+-- ---- per-window UI scratch (R9g) ----
+--
+-- kit.asset's path-keyed plumbing (`p`) is SHARED by every window open on
+-- the same asset — right for the doc + journal, WRONG for transient UI state
+-- (a slider drag, a selection, a hover): two windows on one asset would share
+-- it, so a drag in one moved sliders in the other (the palette multi-window
+-- bug the human hit, e1209c1). kit.winui(p, win) hands back a scratch table
+-- nested under the plumbing and keyed by win.id — each window its own — the
+-- canonical home for drag / selection / gesture state.
+function M.winui(p, win)
+  p.ui = p.ui or {}
+  local u = p.ui[win.id]
+  if not u then
+    u = {}
+    p.ui[win.id] = u
+  end
+  return u
+end
+
 -- ---- the view lock (EDITOR.md §12.7, generalized §13) ----
 --
 -- kit.viewlock(K, opts) installs the focused-view trio — own_view /
