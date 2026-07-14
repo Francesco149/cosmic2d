@@ -88,7 +88,14 @@ typedef struct { /* 80 bytes; the flat .ins param struct (AUDIO.md §4.1) */
       uint8_t pad2[22]; /* union arm == op[4]'s 64 bytes exactly */
     } smp;
   } u;
-  uint8_t pad1[8];
+  /* voice-wide effects (R9f): a 1-pole filter + a pitch sweep. Both are
+   * bypass at 0 so every pre-R9f patch renders byte-identical (goldens
+   * safe) — the .ins pad1 was zero, so an old file decodes to bypass. */
+  uint8_t flt_type;  /* 0 off, 1 lowpass, 2 highpass */
+  uint8_t flt_cut;   /* cutoff index 0..255 -> SND_FILT_A */
+  int8_t sweep;      /* pitch sweep, semitones (signed); 0 = none */
+  uint16_t sweep_ms; /* sweep reaches +sweep semis over this many ms */
+  uint8_t pad1[3];
 } SndPatch;
 
 typedef struct { /* 16 bytes per operator */
@@ -107,7 +114,9 @@ typedef struct { /* 96 bytes */
   uint32_t age; /* header frame counter at note-on (stealing) */
   SndOpState op[4];
   uint64_t spos; /* sampler position, 32.32 */
-  uint8_t pad[16];
+  int32_t flp;    /* R9f: 1-pole filter lowpass state (per voice) */
+  uint32_t nsamp; /* R9f: samples since note-on (the sweep clock) */
+  uint8_t pad[8];
 } SndVoice;
 
 typedef struct { /* 16-byte header */
@@ -250,6 +259,23 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
     incs[o] = p->type == 0 ? op_inc(op, v->note) : 0;
   }
 
+  /* pitch sweep (R9f): glide every op's increment from x1 toward
+   * x2^(sweep/12) over sweep_ms, then hold. Per-frame granularity (one
+   * multiplier for this render's n samples) — smooth for SFX. Reuses the
+   * semitone ratio LUT; linear in the multiplier (punchy for kick drops).
+   * FM only — a sampler's pitch is its resample step, left alone. */
+  if (p->type == 0 && p->sweep != 0 && p->sweep_ms != 0) {
+    uint32_t dur = (uint32_t)p->sweep_ms * (SND_RATE / 1000u);
+    int ri = (int)p->sweep + 64;
+    if (ri < 0) ri = 0; else if (ri > 128) ri = 128;
+    uint32_t endr = SND_RATIO_Q16[ri]; /* Q16 target ratio (64 = unity) */
+    uint32_t t = v->nsamp < dur ? v->nsamp : dur;
+    int64_t mult = (int64_t)65536 +
+                   ((int64_t)endr - 65536) * (int64_t)t / (int64_t)dur;
+    for (int o = 0; o < nops; o++)
+      incs[o] = (uint32_t)(((uint64_t)incs[o] * (uint64_t)mult) >> 16);
+  }
+
   /* sampler/stream PCM (types 1/2): an i16 named buffer (mono for the
    * sampler, interleaved stereo for the stream), looked up per render */
   const int16_t *pcm = NULL;
@@ -379,11 +405,21 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
       return;
     }
 
+    /* voice filter (R9f): one-pole. lp tracks mix at coeff a; a highpass
+     * is mix-lp (the bright "sizzle" that lets GB noise cut through).
+     * flt_type 0 bypasses entirely -> bit-identical to pre-R9f. */
+    if (p->flt_type) {
+      int32_t a = (int32_t)SND_FILT_A[p->flt_cut];
+      v->flp += (int32_t)(((int64_t)(mix - v->flp) * a) >> 16);
+      mix = p->flt_type == 2 ? mix - v->flp : v->flp;
+    }
+
     mix = mix * vel >> 7;
     mix = mix * gain >> 7;
     acc[i * 2] += mix * pl >> 14;
     acc[i * 2 + 1] += mix * pr >> 14;
   }
+  v->nsamp += (uint32_t)n; /* advance the sweep clock */
 }
 
 static void bank_render(SndBank *b, int32_t *acc, int n) {

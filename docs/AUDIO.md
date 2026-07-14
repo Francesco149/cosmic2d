@@ -100,6 +100,19 @@ Per voice:
 - **Sampler voice type** (for the music editor's "samples"): mono i16
   PCM + root note + optional loop points, fixed-point (16.16) step
   resampling, amp ADSR. One-shot or looped.
+- **Voice-wide fx (R9f)** — two patch-level controls the GB-noise
+  research (docs) flagged as the gap between a *click* and a *sizzle*:
+  a **1-pole filter** (`filter` off/lp/**hp**, `cutoff` 0..255 index →
+  ~20 Hz..16 kHz via the `SND_FILT_A` Q16 LUT; hp = the bright noise
+  that cuts through — rustle/dash/hat sizzle), and a **pitch sweep**
+  (`sweep` semitones + `sweep_ms`: glide every op's increment from ×1
+  toward ×2^(sweep/12), reusing the semitone-ratio LUT — kick drops,
+  whooshes, lasers, descending metallic snares). Both live in the
+  `SndPatch` pad tail and **bypass at 0**, so every pre-R9f patch and
+  the PCM golden render byte-identical. Filter state (`flp`) + the sweep
+  clock (`nsamp`) are per-voice, reset on note-on — recorded/rewound
+  like all voice state. *(Deferred: per-op filters, retrigger/loop-gate
+  for machine-gun rustle — the research's third lever.)*
 
 Budget: **32 voices per bank**. Allocation is explicit (the caller gets
 a voice id) with deterministic stealing (oldest released-then-quietest;

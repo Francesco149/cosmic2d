@@ -9,6 +9,10 @@
 -- The patch table (every field defaulted — the wstudio lesson):
 --   { type = "fm"|"sample", alg = 0..7, fb = 0..7, pan = -64..64,
 --     gain = 0..255 (128 unity),
+--     -- voice-wide fx (R9f): a 1-pole filter (hp = the GB "sizzle") and
+--     -- a pitch sweep (dash / whoosh / kick-drop). Omit = bypass.
+--     filter = "off"|"lp"|"hp", cutoff = 0..255 (index; ~20Hz..16kHz),
+--     sweep = semitones (signed), sweep_ms = glide time,
 --     ops = { { wave = "sine"|"square"|"pulse25"|"pulse12"|"saw"|
 --                      "tri"|"noise"|"noise2",
 --               coarse = 0..15 (0 = x0.5), fine = -63..63,
@@ -29,6 +33,16 @@ local pack, unpack = string.pack, string.unpack
 
 local OP_FMT = "<I1I1i1I1I2I2I2I1i1I1I1I2"
 local HDR_FMT = "<I1I1I1I1i1I1I2"
+
+-- the voice-wide effects trailer (R9f): the SndPatch pad1[8] tail —
+-- filter + pitch sweep. All-zero = bypass, so a pre-R9f patch packs
+-- byte-identical (goldens safe). See AUDIO.md §6 / pal/src/snd.c.
+M.FILTERS = { off = 0, lp = 1, hp = 2 }
+local FILTER_NAMES = { [0] = "off", "lp", "hp" }
+local function pack_fx(t)
+  return pack("<I1I1i1I2", M.FILTERS[t.filter or "off"] or 0,
+              t.cutoff or 0, t.sweep or 0, t.sweep_ms or 0) .. "\0\0\0"
+end
 
 local function pack_op(op)
   op = op or {}
@@ -53,11 +67,11 @@ function M.pack(t)
               t.a or 2, t.d or 0, t.r or 30, t.s or 255, 0,
               t.loop0 or 0, t.loop1 or 0)
       .. string.rep("\0", 22)
-    return head .. body .. string.rep("\0", 8)
+    return head .. body .. pack_fx(t)
   end
   local ops = t.ops or {}
   return head .. pack_op(ops[1]) .. pack_op(ops[2]) .. pack_op(ops[3])
-         .. pack_op(ops[4]) .. string.rep("\0", 8)
+         .. pack_op(ops[4]) .. pack_fx(t)
 end
 
 -- the inverse (the synth window edits over decoded tables)
@@ -65,6 +79,9 @@ function M.unpack(bytes)
   assert(#bytes == 80, "patch must be 80 bytes")
   local typ, alg, fb, _, pan, gain = unpack(HDR_FMT, bytes)
   local t = { alg = alg, fb = fb, pan = pan, gain = gain }
+  local ft, fc, sw, sms = unpack("<I1I1i1I2", bytes, 73)
+  t.filter, t.cutoff, t.sweep, t.sweep_ms =
+    FILTER_NAMES[ft] or "off", fc, sw, sms
   if typ ~= 0 then
     t.type = typ == 2 and "stream" or "sample"
     t.pcm = bytes:sub(9, 32):gsub("%z+$", "")

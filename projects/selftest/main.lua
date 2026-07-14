@@ -3059,6 +3059,13 @@ local function t_snd()
         "snd: op fields round-trip")
   check(u.ops[2].wave == "noise2" and u.ops[2].fixed == 440
         and u.ops[4].level == 0, "snd: fixed flag + defaults round-trip")
+  -- R9f: the voice-wide fx trailer (filter + pitch sweep)
+  check(u.filter == "off" and u.cutoff == 0 and u.sweep == 0
+        and u.sweep_ms == 0, "snd: fx default to bypass (all-zero tail)")
+  local fx = snd.unpack(snd.pack({ type = "fm", filter = "hp", cutoff = 200,
+    sweep = -12, sweep_ms = 250, ops = { { wave = "noise", level = 100 } } }))
+  check(fx.filter == "hp" and fx.cutoff == 200 and fx.sweep == -12
+        and fx.sweep_ms == 250, "snd: fx fields round-trip")
   local st = { type = "sample", pcm = "snd.pcm/kat", root = 62,
                loop = true, loop0 = 100, loop1 = 400, a = 1, r = 20 }
   local su = snd.unpack(snd.pack(st))
@@ -3132,6 +3139,33 @@ local function t_snd()
   pal.log(("snd golden: %016x"):format(h1))
   check(h1 == 0xc8826fe3771e33d9, -- pinned 2026-07-13 (R9b)
         "snd golden: the committed PCM hash")
+
+  -- R9f: the filter + sweep must CHANGE the PCM (the golden above proves
+  -- bypass is byte-identical; these prove the new paths actually work).
+  -- Same slot/note/seed → the pre-fx noise stream is identical, so any
+  -- difference is the effect itself. Rendered AFTER the golden capture.
+  local function render_note(patch, note, frames)
+    snd.patch(10, patch)
+    local vv = snd.on(10, note, 120)
+    local acc = {}
+    for f = 1, frames do pal.snd_render(); acc[f] = pal.x_snd_tap() end
+    snd.off(vv)
+    for _ = 1, 6 do pal.snd_render() end
+    return table.concat(acc)
+  end
+  local nz = { type = "fm", alg = 7, ops = { { wave = "noise", level = 220,
+              a = 1, d = 400, s = 200, r = 40, fixed = 3000 } } }
+  local plain = render_note(nz, 60, 3)
+  nz.filter, nz.cutoff = "hp", 210
+  local hip = render_note(nz, 60, 3)
+  check(plain ~= hip, "snd filter: a highpass alters the PCM")
+  check(hip:find("[^%z]") ~= nil, "snd filter: the highpass output is audible")
+  local sg = { type = "fm", alg = 7, ops = { { wave = "sine", level = 220,
+              a = 1, d = 400, s = 200, r = 40 } } }
+  local flat = render_note(sg, 69, 6)
+  sg.sweep, sg.sweep_ms = -24, 80 -- drop two octaves over 80 ms
+  local dropd = render_note(sg, 69, 6)
+  check(flat ~= dropd, "snd sweep: a pitch sweep alters the PCM")
 end
 
 local function t_ins()
