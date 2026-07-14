@@ -22,7 +22,7 @@ local snd = cm.require("cm.snd")
 M.kind = "synth"
 M.menu = "synth"
 M.exts = { "ins" }
-M.DEF_W, M.DEF_H = 560, 470
+M.DEF_W, M.DEF_H = 560, 512
 M.JCAP = 512
 
 local COL = {
@@ -473,7 +473,29 @@ function M.draw(win, ctx)
                       patch.pan or 0, -64, 64, "pan")
     if nv then patch.pan = nv; edited = true end
     closed = closed or done
-    y = y + px * 1.8
+    y = y + px * 1.6
+
+    -- voice fx (R9f): a 1-pole filter (hp = the GB noise "sizzle") and a
+    -- pitch sweep (dash / whoosh / kick-drop). off / 0 = bypass.
+    local flt = chiprow(p, ctx, x0, y, cw * 0.30, px * 1.4, {
+      { label = "flt", value = "off" }, { label = "lp", value = "lp" },
+      { label = "hp", value = "hp" },
+    }, patch.filter or "off", "flt")
+    if flt then patch.filter = flt; edited, closed = true, true end
+    nv, done = slider(p, ctx, "cut", x0 + cw * 0.32, y, cw * 0.68, px * 1.4,
+                      patch.cutoff or 0, 0, 255, "cut")
+    if nv then patch.cutoff = nv; edited = true end
+    closed = closed or done
+    y = y + px * 1.5
+    nv, done = slider(p, ctx, "swp", x0, y, cw * 0.5, px * 1.4,
+                      patch.sweep or 0, -48, 48, "swp")
+    if nv then patch.sweep = nv; edited = true end
+    closed = closed or done
+    nv, done = slider(p, ctx, "swms", x0 + cw * 0.5, y, cw * 0.5, px * 1.4,
+                      patch.sweep_ms or 0, 0, 1000, "sw ms")
+    if nv then patch.sweep_ms = nv; edited = true end
+    closed = closed or done
+    y = y + px * 1.7
 
     -- 4 operator panels, 2x2
     local pw, ph = cw / 2 - 3 * z, (ctx.ch - (y - ctx.cy) - 60 * z) / 2 - 4 * z
