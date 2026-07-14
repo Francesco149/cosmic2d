@@ -275,7 +275,11 @@ function M.graybox(mapdoc, opts)
            cells = table.concat(parts) }
 end
 
-function M.draw(doc, tex, ox, oy, camx, camy)
+-- optional r,g,b,a (default opaque white) multiply the tiles — a faded /
+-- tinted tilemap (parallax backdrops, ghosts). Bit-identical to the old
+-- white-only path when omitted, so existing callers + goldens are untouched.
+function M.draw(doc, tex, ox, oy, camx, camy, r, g, b, a)
+  r, g, b, a = r or 1, g or 1, b or 1, a or 1
   local t = doc.tile
   local vw, vh = pal.gfx_size()
   local c0 = floor((camx - ox) / t)
@@ -310,10 +314,10 @@ function M.draw(doc, tex, ox, oy, camx, camy)
         s:f32(o + 20, 0)
         s:f32(o + 24, id * t / tw)
         s:f32(o + 28, t / th)
-        s:f32(o + 32, 1)
-        s:f32(o + 36, 1)
-        s:f32(o + 40, 1)
-        s:f32(o + 44, 1)
+        s:f32(o + 32, r)
+        s:f32(o + 36, g)
+        s:f32(o + 40, b)
+        s:f32(o + 44, a)
         n = n + 1
       end
     end
