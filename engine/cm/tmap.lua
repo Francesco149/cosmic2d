@@ -300,14 +300,14 @@ function M.draw(doc, tex, ox, oy, camx, camy, r, g, b, a)
   local tw, th = tex.w, tex.h
   local cells = doc.cells
   local n = 0
-  for r = r0, r1 do
-    local base = r * doc.w * 2
+  for row = r0, r1 do -- NB: not `r` — that's the tint red param (shadow bug)
+    local base = row * doc.w * 2
     for c = c0, c1 do
       local id = unpack("<I2", cells, base + c * 2 + 1)
       if id ~= 0 and id * t <= tw then
         local o = n * QUAD
         s:f32(o, ox + c * t)
-        s:f32(o + 4, oy + r * t)
+        s:f32(o + 4, oy + row * t)
         s:f32(o + 8, t)
         s:f32(o + 12, t)
         s:f32(o + 16, (id - 1) * t / tw)

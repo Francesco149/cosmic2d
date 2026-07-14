@@ -90,6 +90,10 @@ function M.reset(room)
   local inst = map.use{ path = path, name = "demo.mapc" }
   M.inst, M.world = inst, inst.world
   M.pw, M.ph = inst.doc.w, inst.doc.h
+  -- the level VISUALS are a checkerboard tilemap autotiled from the colliders
+  -- (MAPS.md §5 end state) — colliders themselves render nothing in game.
+  M.fg = tmap.graybox(inst.doc, { tile = 16,
+                                  tileset = "engine/stock/spr/tiles.spr" })
   M.current = room
   M.spawn = { x = 56, y = 316 }
   M.portals, M.coins, M.hazards = {}, {}, {}
@@ -116,86 +120,76 @@ local SKY = {
   overworld = palette.load("engine/stock/pal/frostbyte-8.pal"),
 }
 
--- The parallax backdrop is a real .tm tilemap (demo/bg.tm) laid from the
--- stock checkerboard sprites (engine/stock/spr/tiles) — a repeating lattice
--- of distant framed blocks (top-lit id1, edges id3/4, interior id2) with a
--- lone slab for rhythm. Written on first boot, then a committed editable
--- asset (open it in the tilemap window). draw_bg tiles + dims + per-room
--- tints it under the sky. The pattern's period is 8 tiles so it wraps
--- seamlessly.
-local BG_W, BG_H, BG_T = 16, 16, 16
+-- The background is a parallax LANDSCAPE: two silhouette tilemap layers (far
+-- mountains, near hills) laid from the stock checker tiles, colorized from the
+-- room palette and scrolled at different depths. All the background COLOR
+-- lives in these tinted tiles — there's no separate sky gradient to drift out
+-- of sync; a flat per-room sky sits behind. Built in memory (procedural,
+-- deterministic; math.sin here is render-only, never sim). SIL_W = the page
+-- width in tiles = the horizontal period, so the wrap is seamless.
+local SIL_W = 48
 
-local function bg_id(tx, ty)
-  local u, v = tx % 8, ty % 8
-  if u >= 2 and u <= 5 and v >= 2 and v <= 5 then -- a 4x4 framed block
-    if v == 2 then return 1 end -- top surface (lit lip)
-    if u == 2 then return 3 end -- left edge
-    if u == 5 then return 4 end -- right edge
-    return 2                    -- interior fill
-  end
-  if u == 0 and v == 6 then return 5 end -- a lone slab out in the gap
-  return 0
-end
-
-local function build_bg()
-  local doc = tmap.blank(BG_W, BG_H, BG_T, "engine/stock/spr/tiles.spr")
-  for ty = 0, BG_H - 1 do
-    for tx = 0, BG_W - 1 do
-      local id = bg_id(tx, ty)
-      if id ~= 0 then tmap.set(doc, tx, ty, id) end
+-- a silhouette layer: SIL_W x H tiles, filled below an undulating ridge. rmax
+-- is the ridge height in tiles; phase shifts the contour so layers differ.
+local function build_sil(H, rmax, phase)
+  local doc = tmap.blank(SIL_W, H, 16, "engine/stock/spr/tiles.spr")
+  local w = 2 * math.pi / SIL_W
+  for tx = 0, SIL_W - 1 do
+    local n = math.sin(w * tx + phase) + 0.5 * math.sin(w * tx * 2 + phase * 1.7)
+              + 0.3 * math.sin(w * tx * 3 + phase * 2.3)
+    local r = math.floor((n + 1.8) / 3.6 * rmax + 0.5)
+    if r < 0 then r = 0 elseif r > rmax then r = rmax end
+    for ty = rmax - r, H - 1 do
+      tmap.set(doc, tx, ty, ty == rmax - r and 1 or 2) -- lit ridge / mass
     end
   end
   return doc
 end
 
--- Load (and first-boot-write) the backdrop .tm; re-decodes on asset_epoch
--- bumps so a tilemap-window edit hot-reloads.
-function M.load_bg()
-  local ep = cm.asset_epoch or 0
-  if M.bg and M.bg_ep == ep then return M.bg end
-  local path = cm.main.args.project .. "/bg.tm"
-  if not pal.read_file(path) then -- dev bootstrap; inert once committed
-    pal.write_file(path, tmap.encode(build_bg()))
+local sil_far, sil_near
+local function silhouettes()
+  if not sil_far then
+    sil_far = build_sil(22, 13, 0.0)  -- distant mountains (taller)
+    sil_near = build_sil(22, 8, 2.3)  -- nearer rolling hills
   end
-  M.bg, M.bg_ep = tmap.decode(pal.read_file(path)), ep
-  return M.bg
+  return sil_far, sil_near
+end
+
+-- draw the silhouette OPAQUE, tiled horizontally at a world `top` (row-0 y),
+-- tinted; a small muly gives a gentle vertical drift. Opaque = no muddy
+-- inter-layer blend (the checker tiles are solid).
+local function draw_sil(doc, tex, mulx, muly, top, camx, camy, r, g, b)
+  gfx.layer(mulx, muly)
+  local lx, ly = (camx or 0) * mulx, (camy or 0) * muly
+  local pw, vw = doc.w * doc.tile, pal.gfx_size()
+  for ox = math.floor(lx / pw) * pw, lx + vw, pw do
+    tmap.draw(doc, tex, ox, top, lx, ly, r, g, b, 1)
+  end
 end
 
 function M.draw_bg(camx, camy)
   local paint = cm.require("cm.paint")
   local cols = SKY[M.current] and SKY[M.current].colors
-  -- 1) a screen-fixed sky gradient (light top -> darker horizon), read from
-  --    the room's stock palette (ember = warm dusk, frostbyte = cool day)
+  if not (cols and #cols >= 7) then return end
+  local tex = gfx.texture("engine/stock/spr/tiles.png")
+  local function col(i)
+    local r, g, b = paint.unpack(cols[i])
+    return r / 255, g / 255, b / 255
+  end
+  -- 1) a flat per-room sky (screen-fixed; a flat fill can't reveal a parallax
+  --    mismatch the way the old moving gradient did)
   gfx.layer(0)
-  if cols and #cols >= 7 then
-    local bands = 8
-    local bh = 270 // bands + 1
-    for i = 0, bands - 1 do
-      local t = i / (bands - 1)
-      local ci = math.floor(7 - t * 4 + 0.5)
-      local r, g, b = paint.unpack(cols[math.max(1, math.min(#cols, ci))])
-      pal.quad(0, i * bh, 480, bh, r / 255, g / 255, b / 255, 1)
-    end
-  end
-  -- 2) the checkerboard-tilemap parallax backdrop (demo/bg.tm) — tiled to
-  --    cover the view, dimmed, and tinted from the room palette; scrolls at
-  --    ~40% so it reads as distant structures. The VFX/LUT layer recolors
-  --    the whole vibe later.
-  if cols and #cols >= 5 then
-    local bg = M.load_bg()
-    local tex = gfx.texture("engine/stock/spr/tiles.png")
-    gfx.layer(0.4, 0.45)
-    local lx, ly = (camx or 0) * 0.4, (camy or 0) * 0.45
-    local pw, ph = bg.w * bg.tile, bg.h * bg.tile
-    local vw, vh = pal.gfx_size()
-    local r, g, b = paint.unpack(cols[3])
-    r, g, b = r / 255, g / 255, b / 255
-    for oy = math.floor(ly / ph) * ph, ly + vh, ph do
-      for ox = math.floor(lx / pw) * pw, lx + vw, pw do
-        tmap.draw(bg, tex, ox, oy, lx, ly, r, g, b, 0.28)
-      end
-    end
-  end
+  local sr, sg, sb = col(6)
+  pal.quad(0, 0, 480, 270, sr, sg, sb, 1)
+  -- 2) two opaque silhouette layers from the checker tiles — distant mountains
+  --    (lighter/hazier, slow) behind nearer hills (darker, fast). Opaque, so
+  --    the near layer cleanly occludes the far one (no muddy blend). Tinted
+  --    dark room shades = a colorized landscape that all moves together.
+  local far, near = silhouettes()
+  local fr, fg, fb = col(4)
+  draw_sil(far, tex, 0.18, 0.09, 58, camx, camy, fr, fg, fb)
+  local nr, ng, nb = col(3)
+  draw_sil(near, tex, 0.36, 0.15, 106, camx, camy, nr, ng, nb)
 end
 
 -- per-room MOOD grade (M10, cm.grade) — a render-only color-grade pass over
@@ -213,7 +207,12 @@ function M.collected() -- sim-state set of picked-up coin ids
 end
 
 function M.draw(camx, camy)
-  map.draw_fill(M.inst, camx, camy)
+  -- the level geometry as a checkerboard tilemap (colliders render NOTHING —
+  -- placed tiles + sprites make every visual, MAPS.md §5); gfx.layer(1) is
+  -- already set by main.draw, so world coords draw straight.
+  if M.fg then
+    tmap.draw(M.fg, gfx.texture("engine/stock/spr/tiles.png"), 0, 0, camx, camy)
+  end
   map.draw_places(M.inst, camx, camy)
   -- everything below draws in WORLD coords — gfx.camera (pal.camera) does
   -- the screen offset, so no cam subtraction (that was the parallax bug)
