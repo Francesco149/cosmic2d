@@ -35,10 +35,30 @@ function M.step() end
 
 -- ---- the project list ----
 
-local function proj_name(dir)
+-- Load a project's metadata table (name/author/version/description + the
+-- fields the packager reads) by evaluating project.lua — the same load()
+-- the engine does on boot (author-controlled source). Returns meta, exists;
+-- falls back to a name-only regex if the file won't evaluate.
+local function proj_meta(dir)
   local src = pal.read_file(dir .. "/project.lua")
-  if not src then return nil end
-  return src:match('name%s*=%s*"([^"]*)"') or dir:match("([^/]+)$"), true
+  if not src then return nil, false end
+  local chunk = load(src, "@" .. dir .. "/project.lua")
+  if chunk then
+    local ok, t = pcall(chunk)
+    if ok and type(t) == "table" then return t, true end
+  end
+  return { name = src:match('name%s*=%s*"([^"]*)"') }, true
+end
+
+-- One tile record from a project's metadata (nil-safe: a missing/broken
+-- project.lua still yields a named tile).
+local function tile(path, meta, ok, recent)
+  meta = meta or {}
+  local name = meta.name
+  if not name or name == "" then name = path:match("([^/]+)$") end
+  return { path = path, ok = ok, recent = recent, name = name,
+           author = meta.author, version = meta.version,
+           desc = meta.description }
 end
 
 local function norm(p) -- .recent.dat lines arrive as typed on the cli
@@ -55,8 +75,7 @@ local function scan()
     if dir and dir ~= "picker" then
       local path = "projects/" .. dir
       seen[path] = true
-      tiles[#tiles + 1] = { path = path, name = proj_name(path) or dir,
-                            ok = true }
+      tiles[#tiles + 1] = tile(path, proj_meta(path), true, false)
     end
   end
   local rec = pal.read_file(".recent.dat")
@@ -65,9 +84,8 @@ local function scan()
       local path = norm(line)
       if not seen[path] then
         seen[path] = true
-        local name, ok = proj_name(path)
-        table.insert(tiles, 1, { path = path, name = name or path,
-                                 ok = ok or false, recent = true })
+        local meta, ok = proj_meta(path)
+        table.insert(tiles, 1, tile(path, meta, ok or false, true))
       end
     end
   end
@@ -164,6 +182,14 @@ M.scaffold = scaffold
 
 -- ---- draw ----
 
+-- "by <author>  ·  v<version>" from whatever metadata is present, or nil.
+local function byline(t)
+  local parts = {}
+  if t.author and t.author ~= "" then parts[#parts + 1] = "by " .. t.author end
+  if t.version and t.version ~= "" then parts[#parts + 1] = "v" .. t.version end
+  return #parts > 0 and table.concat(parts, "  ·  ") or nil
+end
+
 function M.draw()
   pal.begin_frame(0.078, 0.07, 0.125, 1) -- the target is never shown
   local ig = pal.x_ig_frame()
@@ -176,7 +202,7 @@ function M.draw()
                 C.dim, "pick a project — click opens the editor; play boots the game", 0)
 
   local tiles = scan()
-  local pad, tw, th = 20, 240, 92
+  local pad, tw, th = 20, 240, 100
   local cols = math.max(1, math.floor((ig.w - 2 * pad) / (tw + pad)))
   local x0, y0 = 28, 64
   for idx, t in ipairs(tiles) do
@@ -192,10 +218,18 @@ function M.draw()
     pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
     pal.x_ig_rect(x, y, tw, th, (hov and not phov) and C.accent
                   or C.tile_edge, hov and 1.5 or 1, 8)
+    -- two subtitle rows under the name: a byline (author · version) then
+    -- the description; the path stands in for whichever the metadata omits
+    -- so metadata-less / sibling-repo projects still show where they live.
+    local bl = byline(t)
+    local desc = (t.desc and t.desc ~= "") and t.desc or nil
+    local sub1 = bl or t.path
+    local sub2 = desc or (bl and t.path) or nil
     pal.x_ig_clip_push(x, y, tw - (t.ok and 8 or 30), th)
-    pal.x_ig_text(x + 14, y + 12, 17, t.ok and C.text or C.missing,
+    pal.x_ig_text(x + 14, y + 11, 16, t.ok and C.text or C.missing,
                   t.name, 0)
-    pal.x_ig_text(x + 14, y + 38, 11, C.dim, t.path, 1)
+    if sub1 then pal.x_ig_text(x + 14, y + 33, 10, C.dim, sub1, 1) end
+    if sub2 then pal.x_ig_text(x + 14, y + 51, 10, C.dim, sub2, 1) end
     pal.x_ig_clip_pop()
     local tag = (t.recent and not t.ok) and "recent · missing"
                 or (not t.ok and "missing") or (t.recent and "recent")
