@@ -3,6 +3,71 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-14 (the alpha-polish batch — six streams, all built +
+committed; research-driven)
+**Phase**: **Final polish toward an alpha release. Two research agents
+(GB noise channel; pixel-art color theory) + a shipping-gaps audit ran
+in parallel and drove the work (D059).**
+
+- **R9f — audio primitives (`0d14bb6`)**: the GB noise "isn't audible"
+  because it was a click, not a sizzle. Research named the gap: a
+  **highpass** (to cut through) + a **pitch sweep** (dash/whoosh/kick-
+  drop). Added both to the kernel as voice-wide patch fx (1-pole
+  filter off/lp/hp with a committed Q16 cutoff LUT; sweep glides every
+  op's increment via the semitone-ratio LUT). **Bypass at 0 → the PCM
+  golden `c8826fe3771e33d9` is byte-identical.** +5 KATs.
+- **gb drums retuned + SFX family (`094b9db`)**: hat/snare/kick now
+  bright + sizzly + a real kick pitch-drop; **8 new SFX presets**
+  (jump/land/coin/hit/dash/explosion/powerup/laser) — 28 stock ins
+  now. Synth window grew a voice-fx row (flt/cut + swp/sw-ms).
+- **Palette window + .pal (`fb9f29f`)**: cm.palette (CPAL codec, hex
+  import/export, `load()`/`color()` for game code, and the **hue-shift
+  ramp generator** — value spread + warm-highlight/cool-shadow shift +
+  sat bell). A windowkit citizen (kind `palette`). Swatches are
+  eyedropper-pickable off the screen = "pick from the canvas picker",
+  zero wiring. 6 stock palettes (dmg-4/db16/db32 + originals
+  ember-8/frostbyte-8/cosmic-16). +8 KATs.
+- **cm.words auto-namer (`4d86176`)**: a 272-word bank + name generator,
+  a first-class engine feature (grayboxing/text too — the human's ask).
+  Every unbound asset pathfield now pre-fills a unique 3-word name
+  (Enter creates) — the type-a-filename wall is gone (audit G6). Dev
+  RNG by default; sim code passes its own rng for determinism. +6 KATs.
+- **projects/demo — the demo game (`a63a37e`)**: the "extract + play"
+  showcase (audit G12). The M7 moveset across TWO rooms + a portal;
+  music **swaps** on room change (cozy town / adventurous overworld,
+  ~30s 16-bar loops); sfx on jump/land/coin/hit; coins + a spikes
+  hazard. Sky gradients read from the stock palettes. `snd` gained
+  project-relative instrument resolution (`5e4cc01`) so a self-
+  contained project's songs play from any cwd.
+- **Ship + start a game**: the picker's **"+ New project"** tile
+  scaffolds an auto-named project from a runnable starter template
+  (`cf862cd`, audit G5); **`nix run .#package -- <proj> [win|linux]`**
+  stages a trimmed, play-locked, self-contained bundle (`a530c36`,
+  G1/G2/G9) — verified: the renamed launcher boots the game locked.
+  README rewritten from "pre-alpha M0" to the as-built alpha (G11).
+
+**Proof:** selftest **23082** (was 23063; +19 KATs across snd fx /
+words / palette); `nix run .#test` **ALL GREEN** throughout (the PCM +
+pixel + trace goldens untouched — every new path bypasses at default).
+Screenshots on llm-feed: synth fx row, palette (DB16/cosmic-16),
+auto-name field, both demo rooms. The linux package bundle extracts +
+the `bin/demo` launcher boots `projects/demo` locked.
+
+**Next step (resume here):** the human's **taste pass with ears + eyes**
+— the gb drums + SFX presets (the sizzle/sweep; live synth window, drop
+them on a track), the demo game (`bin/cosmic projects/demo`, walk into
+the town door → music swaps; coins/hazard/sfx), the palette window
+(ramp generator + the 6 stock palettes; are the originals good?), and
+the new-project + package flows. Windows re-stage still pending (the
+staged exe predates R9f — the human runs cosmic2d-win). Open follow-ups
+the audit flagged but this batch didn't take: in-editor help (G7),
+promoting a starter sprite/tileset to engine/stock (G13), game
+metadata surfaced on the picker tile (G3 — the fields exist on
+demo/project.lua, not yet drawn). Good `/clear` point — everything
+committed, docs current.
+
+---
+
 **Date**: 2026-07-13 (round 8 on the live R9 — a six-ask batch on the
 music/synth editors, all built + committed; `0d8c400`)
 **Phase**: **The human's music-editor feedback, six items, each a

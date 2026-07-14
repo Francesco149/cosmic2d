@@ -2124,3 +2124,82 @@ on grab). (5) **Hover-lit resize handles** (clips + notes) and a
 real-event tapes (ctrl-stamp reuse, group-velocity offset/snap) +
 shots. selftest 23063; suite ALL GREEN. Live-feel exit is the human's
 ears/hands on the synth drag + the reuse/group drags.
+
+## D059 — the alpha-polish batch: audio primitives, palettes, auto-naming, the demo game, packaging (research-driven, 2026-07-14)
+
+**Context.** Final polish toward an alpha. The human's brief spanned six
+streams; three ran as parallel background research/audit agents whose
+findings drove the build: (a) a **GB noise channel** DSP study, (b) a
+**pixel-art color theory** study, (c) a **shipping-gaps audit** for
+"extract the engine and ship a full game." The audit's top-5 blockers
+(no packaging path, no demo game, no new-project flow, the type-a-
+filename wall, thin stock content) map onto the brief — recorded so the
+next session sees the whole picture.
+
+**Decisions.**
+
+1. **Audio: filter + pitch sweep are the missing primitives (R9f).** The
+   research settled that the GB noise reads as a *click* not a *sizzle*
+   for two reasons — no way to brighten/cut-through (a highpass) and no
+   pitch motion over a note (a sweep). Both are added as **voice-wide
+   patch fx** (not per-op — simpler, covers the drum/SFX cases): a
+   **1-pole filter** (off/lp/hp, cutoff a committed Q16 LUT `SND_FILT_A`,
+   ~20Hz–16kHz) and a **pitch sweep** (semitones + ms, gliding every
+   op's increment via the existing semitone-ratio LUT). Iron rule kept:
+   **both bypass at 0**, stored in the `SndPatch` pad tail + per-voice
+   state in the `SndVoice` pad, so every pre-R9f patch and the pinned
+   PCM golden render byte-identical. Deferred (the research's 3rd lever):
+   per-op filters + a retrigger/loop-gate for machine-gun rustle.
+
+2. **Palettes are HSV-with-hue-shift, not OKLCH (for now).** The color
+   research's headline was "interpolate ramps in OKLCH." We shipped the
+   ramp generator in **HSV** (value spread + SLYNYRD's warm-highlight/
+   cool-shadow hue shift + a saturation bell) because it reuses cm.paint,
+   is dev-class-simple, and embodies the load-bearing principles (value
+   first, hue shift). OKLCH is the parked upgrade. The **.pal** format is
+   a flat ordered color list (CPAL: HEAD+COLS); ramps are a *generator*,
+   not first-class named objects yet. Integration by **reuse**: swatches
+   live on the canvas, so the existing eyedropper samples them — no new
+   picker wiring. 6 stock palettes ship (dmg-4/db16/db32 + originals).
+
+3. **The dictionary is an engine feature, not just an editor helper**
+   (the human's steer). `cm.words` (272-word bank + name generator) is a
+   `cm.*` module usable from game code for grayboxing/testing text.
+   Default RNG is **dev-class** (time-seeded, different every run);
+   sim/graybox code that needs determinism **passes its own rng** (e.g.
+   cm.rand's stream) and the result is pure over it. The editor's
+   `A.pathfield` pre-fills unbound windows with a collision-checked
+   3-word name — the naming wall (audit G6) is gone through the one
+   chokepoint, covering every asset kind at once.
+
+4. **The demo game lives in the engine repo as `projects/demo`.** The
+   flagship game stays in ../cosmic2d-game (D045); the *demo* is
+   engine-owned batteries — the packager's default target, the picker's
+   showcase, and the new-project template's spiritual source. It reuses
+   the real M7 mover (player.lua verbatim, procedural fallback art) so
+   it demonstrates *our* movement, across two `.map`-asset rooms (so
+   they're editable in the map window) joined by a portal, with per-room
+   BGM that swaps and sfx hooked to the moveset. Songs store project-
+   relative ins paths; **cm.snd.load_song now resolves them relative to
+   the song's project dir** so a self-contained project plays from any
+   cwd (and survives packaging's relocation).
+
+5. **Shipping: a flake app packages one project; the picker scaffolds
+   new ones.** `nix run .#package -- <proj> [win|linux]` stages a
+   trimmed tree (engine runtime + that one project, no tests/no siblings)
+   with the launcher renamed to trigger the **R5 play-lock** (D052) and
+   README/LICENSE/PLAY.txt included — the audit's #1 blocker (G1/G2/G9).
+   engine/ ships whole (the editor code is inert under the play-lock;
+   trimming it risks the game's requires). The picker's **"+ New
+   project"** tile scaffolds an auto-named project from a runnable
+   starter template and opens it in the editor (G5). README rewritten to
+   the as-built alpha (G11).
+
+**Consequences.** selftest 23063 → **23082** (+19 KATs); the suite stays
+ALL GREEN by construction (defaults bypass; the demo/palette/words are
+not golden-bearing). **Revisit triggers:** per-op audio filters +
+retrigger if rustle/ambience needs it; OKLCH + first-class named ramps
+if the palette editor grows up; a starter-sprite/tileset stock set +
+in-editor help + picker metadata (audit G13/G7/G3) when the "batteries"
+push resumes. The live-feel exit is the human's ears + eyes on the
+drums/SFX, the demo, and the palettes.
