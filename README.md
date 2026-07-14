@@ -1,38 +1,82 @@
 # cosmic2d
 
 A tiny 2D pixel-art engine / fantasy console. One self-contained folder holds
-the engine, its editor and tools, and your game projects — share a game by
-zipping the folder; the recipient can play it, edit it live, and build their
-own game with the same binary.
+the engine, its editor and tools, and your game projects — make a game with
+the built-in editor, share it by zipping a folder, and the recipient can play
+it, edit it live, or build their own with the same binary.
 
-**Status: pre-alpha, milestone M0 (boot).** Nothing to see yet unless you
-enjoy watching quads.
+**Status: alpha.** The engine, the infinite-canvas editor, the audio stack,
+and an out-of-the-box demo game are all here. Rough edges remain, but you can
+make and ship a small platformer today.
+
+## Try it
+
+Linux/WSL2 with [Nix](https://nixos.org):
+
+```sh
+nix develop -c make -C pal     # build bin/cosmic
+bin/cosmic                     # the project picker — the front door
+```
+
+The picker lists your projects. Open the bundled **demo** (a two-room
+platformer with music that swaps between rooms), or press **+ New project**
+to scaffold your own. A tile opens a project in the editor; the ▶ zone plays
+it.
+
+```sh
+bin/cosmic projects/demo            # play the demo directly
+bin/cosmic projects/demo --edit     # open it in the editor
+```
+
+## Make a game
+
+Everything is authored in the editor (`--edit`, or via the picker): an
+infinite canvas of floating windows. Spawn windows from the right-click
+menu — a **code editor**, a **sprite editor** (+ animation), a **map editor**
+(collider chains, one-ways, markers) and **tilemaps**, a **sound player**, a
+**synth** (FM + Game Boy voices with filter/pitch-sweep), a **music** tracker,
+and a **palette** designer. New assets and projects auto-name themselves with
+three random words, so nothing blocks on a filename.
+
+The game itself is hot-reloadable Lua: edit `main.lua` while it runs. See
+`projects/demo/` for a complete, commented example — the moveset, two rooms,
+sound effects, and two 30-second BGMs.
+
+## Ship a game
+
+Package a project into a standalone, play-only artifact for someone who just
+wants to play:
+
+```sh
+nix run .#package -- demo          # -> demo-windows.zip (self-contained)
+nix run .#package -- demo linux    # -> demo-linux.tar.gz
+```
+
+The bundle contains only the engine runtime + that one project + this README
+and LICENSE; the launcher is renamed so running it boots the game locked to
+play mode (no editor, no other projects).
 
 ## Shape of the thing
 
-- **Two layers**: a deliberately small per-platform C binary (SDL3 + Vulkan
-  via SDL_GPU, embedded Lua 5.4, typed memory buffers, audio) under a fully
-  hot-reloadable Lua engine — game code, physics, editor and all tools are
-  Lua you can edit while the game runs, no recompiling.
+- **Two layers**: a small per-platform C binary ("PAL": SDL3 + Vulkan via
+  SDL_GPU, embedded Lua 5.4, typed memory buffers, a frame-locked FM/sampler
+  audio synth) under a fully hot-reloadable Lua engine — game code, physics,
+  the editor, and all tools are Lua you can edit while the game runs.
 - **Deterministic to the bit**: fixed 60 Hz sim, snapshot/rewind any frame
-  (emulator-style), input-trace regression tests against state goldens.
-- **Batteries included** (roadmap): live-editable platformer sandbox with
-  rigid-body props, sprite/animation editor, procedural sprite generator,
-  FM synth for sfx + music, LUT color grading, timeline scrubber/debugger.
+  (emulator-style), input-trace regression tests against state + pixel + PCM
+  goldens on a pinned software Vulkan driver.
+- **Batteries included**: a platformer moveset, sprite/animation + map +
+  tilemap editors, an FM/Game-Boy synth and a music tracker with stock
+  instruments and sound effects, a palette designer with stock palettes, and
+  a demo game to start from.
 
-See `docs/PLAN.md` for the full vision and roadmap, `docs/ARCHITECTURE.md`
-for the design.
+Deep dives live in `docs/` — `PLAN.md` (vision), `ARCHITECTURE.md` (the
+two-layer design + determinism rules), `EDITOR.md`, `AUDIO.md`, `MAPS.md`.
 
-## Build (dev)
+## Platforms
 
-Linux/WSL2 with Nix:
-
-```sh
-nix develop -c make -C pal
-bin/cosmic projects/smoke
-```
-
-Windows native builds land at milestone M7.
+Linux and Windows desktop (the Windows build is a self-contained cross-build,
+produced by the packager above). macOS is not yet supported.
 
 ## License
 

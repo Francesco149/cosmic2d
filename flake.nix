@@ -42,6 +42,7 @@
           installPhase = ''
             mkdir -p $out/pal/vendor
             cp -r bin engine projects tests $out/
+            cp README.md LICENSE $out/
             cp -r pal/shaders $out/pal/
             cp -r pal/vendor/fonts $out/pal/vendor/
           '';
@@ -67,6 +68,7 @@
           installPhase = ''
             mkdir -p $out/pal/vendor
             cp -r bin engine projects tests $out/
+            cp README.md LICENSE $out/
             cp -r pal/shaders $out/pal/
             cp -r pal/vendor/fonts $out/pal/vendor/
             cp ${cross.sdl3.out}/bin/SDL3.dll $out/bin/
@@ -123,10 +125,61 @@
             runtimeInputs = [ pkgs.diffutils ];
             text = suite;
           };
+
+          # `nix run .#package -- <project> [win|linux]` — stage ONE project
+          # into a standalone, play-locked, self-contained bundle for a
+          # player: the engine runtime + that project only (no tests, no
+          # sibling projects), with the launcher renamed so it boots locked
+          # to play mode (the R5 convention, D052). Windows is a
+          # self-contained zip (SDL3.dll bundled); linux is a tar.gz that
+          # needs SDL3 on the box (or run via nix). Output lands in $PWD.
+          packager = pkgs.writeShellApplication {
+            name = "cosmic-package";
+            runtimeInputs = with pkgs; [ coreutils findutils zip gnutar gzip ];
+            text = ''
+              name="''${1:-demo}"
+              target="''${2:-win}"
+              win="${self.packages.${pkgs.system}.cosmic-windows}"
+              lin="${self.packages.${pkgs.system}.cosmic}"
+              src="${self}"
+              case "$target" in
+                win|windows) base="$win"; exe="cosmic.exe"; newexe="$name.exe"; suffix="windows";;
+                linux)       base="$lin"; exe="cosmic";     newexe="$name";     suffix="linux";;
+                *) echo "usage: package <project> [win|linux]"; exit 1;;
+              esac
+              if [ ! -f "$base/projects/$name/project.lua" ]; then
+                echo "no project 'projects/$name' in the build tree"; exit 1
+              fi
+              work="$(mktemp -d)"; root="$work/$name"
+              mkdir -p "$root"
+              cp -r --no-preserve=mode,ownership "$base"/. "$root"/
+              chmod -R u+w "$root"
+              # keep only this project; drop the golden suite
+              find "$root/projects" -mindepth 1 -maxdepth 1 ! -name "$name" -exec rm -rf {} +
+              rm -rf "$root/tests"
+              # rename the launcher -> boots projects/<name> locked to play mode
+              mv "$root/bin/$exe" "$root/bin/$newexe"
+              chmod +x "$root/bin/$newexe" # --no-preserve dropped the +x bit
+              cp "$src/README.md" "$root/README.md" 2>/dev/null || true
+              cp "$src/LICENSE" "$root/LICENSE" 2>/dev/null || true
+              printf 'cosmic2d — %s\n\nRun  bin/%s  to play.\n' "$name" "$newexe" > "$root/PLAY.txt"
+              out="$PWD/$name-$suffix"
+              if [ "$suffix" = windows ]; then
+                ( cd "$work" && zip -r -q "$out.zip" "$name" ); echo "packaged -> $out.zip"
+              else
+                tar czf "$out.tar.gz" -C "$work" "$name"; echo "packaged -> $out.tar.gz"
+              fi
+              rm -rf "$work"
+            '';
+          };
         in {
           test = {
             type = "app";
             program = "${runner}/bin/cosmic-test";
+          };
+          package = {
+            type = "app";
+            program = "${packager}/bin/cosmic-package";
           };
         });
 
