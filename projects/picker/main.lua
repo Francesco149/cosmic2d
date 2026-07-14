@@ -84,6 +84,84 @@ local function launch(path, mode)
 end
 M.launch = launch -- scripted driving (proofs, keyboard flows later)
 
+-- ---- new project (G5): scaffold + open in the editor ----
+
+local PROJECT_TMPL = [==[
+-- a fresh cosmic2d project. Tweak these; the picker + packager read them.
+return {
+  name = "__NAME__",
+  internal_w = 480,
+  internal_h = 270,
+  window_scale = 2,
+  entry = "main.lua",
+  author = "",
+  version = "0.1",
+  description = "",
+}
+]==]
+
+local MAIN_TMPL = [==[
+-- __NAME__ — a fresh project. Edit me while the game runs (hot reload)!
+-- The engine calls init() once, then step() + draw() every frame (60Hz).
+-- Spawn editor windows with right-click on the canvas (--edit).
+
+local state = cm.require("cm.state")
+local input = cm.require("cm.input")
+local text = cm.require("cm.text")
+local m = cm.require("cm.math")
+
+local W, H = pal.gfx_size()
+local game = {}
+
+function game.init()
+  input.map({
+    { "left", input.key.left }, { "right", input.key.right },
+    { "jump", input.key.space },
+  })
+  local d = state.doc
+  d.x = d.x or W / 2
+  d.y = d.y or H - 24
+  d.vy = d.vy or 0
+end
+
+function game.step()
+  local d = state.doc
+  if input.down("left") then d.x = d.x - 2 end
+  if input.down("right") then d.x = d.x + 2 end
+  if input.pressed("jump") and d.y >= H - 24 then d.vy = -5.2 end
+  d.vy = d.vy + 0.3
+  d.y = m.min(H - 24, d.y + d.vy)
+  if d.y >= H - 24 then d.vy = 0 end
+  d.x = m.clamp(d.x, 0, W - 16)
+end
+
+function game.draw()
+  pal.begin_frame(0.13, 0.15, 0.22, 1)
+  pal.quad(0, H - 8, W, 8, 0.30, 0.40, 0.36, 1)          -- the floor
+  local d = state.doc
+  pal.quad(d.x, d.y - 16, 16, 16, 0.95, 0.75, 0.42, 1)   -- you
+  text.draw(6, 6, "hello from __NAME__ — arrows + space. edit main.lua!",
+            { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
+end
+
+return game
+]==]
+
+local function scaffold()
+  local words = cm.require("cm.words")
+  local name = words.unique(function(nm)
+    return pal.read_file("projects/" .. nm .. "/project.lua") ~= nil
+  end)
+  local dir = "projects/" .. name
+  pal.mkdir(dir)
+  pal.write_file(dir .. "/project.lua", (PROJECT_TMPL:gsub("__NAME__", name)))
+  pal.write_file(dir .. "/main.lua", (MAIN_TMPL:gsub("__NAME__", name)))
+  M.scan = nil
+  pal.log("[picker] new project " .. dir)
+  launch(dir, "edit")
+end
+M.scaffold = scaffold
+
 -- ---- draw ----
 
 function M.draw()
@@ -153,9 +231,30 @@ function M.draw()
       end
     end
   end
+
+  -- the "+ New project" tile, at the end of the grid (G5): scaffolds a
+  -- 3-random-words project from the template and opens it in the editor
+  do
+    local idx = #tiles + 1
+    local col, row = (idx - 1) % cols, (idx - 1) // cols
+    local x = x0 + col * (tw + pad)
+    local y = y0 + row * (th + pad)
+    if y <= ig.h then
+      local hov = i.wx >= x and i.wx < x + tw and i.wy >= y and i.wy < y + th
+      pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
+      pal.x_ig_rect(x, y, tw, th, hov and C.accent or C.tile_edge,
+                    hov and 1.5 or 1, 8)
+      pal.x_ig_text(x + 14, y + 14, 18, hov and C.text or C.accent,
+                    "+ New project", 0)
+      pal.x_ig_text(x + 14, y + 42, 11, C.dim,
+                    "3 random words · opens in the editor", 1)
+      if hov and i.clicked[1] then scaffold() end
+    end
+  end
+
   if #tiles == 0 then
-    pal.x_ig_text(x0, y0 + 10, 15, C.dim,
-                  "no projects found under projects/", 0)
+    pal.x_ig_text(x0, y0 + 96, 15, C.dim,
+                  "no projects yet — click + New project", 0)
   end
 end
 
