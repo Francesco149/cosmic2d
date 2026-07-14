@@ -204,6 +204,12 @@ end
 -- rewound like everything else.
 function M.music(path, opts)
   local st = cm.require("cm.state")
+  -- release the previous song's ringing voices — else a note held at the
+  -- swap (room change) rings forever over the new song (the human's bug)
+  local prev = st.doc.snd
+  if prev and prev.held then
+    for _, h in pairs(prev.held) do pal.snd_off(h.v) end
+  end
   st.doc.snd = { song = path, start = st.frame(), held = {},
                  loop = not (opts and opts.loop == false) }
 end
