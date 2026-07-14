@@ -36,7 +36,7 @@ M.g = M.g or {}
 -- double-clicks/drops to it (assets.kind_for reads it).
 local ROSTER = { "note", "text", "assets", "map", "tmap", "game",
                  "console", "anim", "perf", "image", "sprite", "sound",
-                 "synth", "music", "palette" }
+                 "synth", "music", "palette", "help" }
 M.kinds = {}
 local MENU_ITEMS = {}
 for _, name in ipairs(ROSTER) do
