@@ -58,13 +58,29 @@ the `bin/demo` launcher boots `projects/demo` locked.
 them on a track), the demo game (`bin/cosmic projects/demo`, walk into
 the town door → music swaps; coins/hazard/sfx), the palette window
 (ramp generator + the 6 stock palettes; are the originals good?), and
-the new-project + package flows. Windows re-stage still pending (the
-staged exe predates R9f — the human runs cosmic2d-win). Open follow-ups
-the audit flagged but this batch didn't take: in-editor help (G7),
-promoting a starter sprite/tileset to engine/stock (G13), game
-metadata surfaced on the picker tile (G3 — the fields exist on
-demo/project.lua, not yet drawn). Good `/clear` point — everything
-committed, docs current.
+the new-project + package flows. **cosmic2d-win RE-STAGED** (native
+selftest **23082 PASS** == linux + kitcheck 830-frame verify byte-exact
+— the R9f kernel + new LUT are bit-exact on windows; the re-stage wiped
+the windows-side .ed sessions as ever). The human runs
+`bin\cosmic.exe projects\demo` (or `--edit`) from cosmic2d-win.
+
+**NEXT SESSION (queued by the human):**
+- **In-editor doc system** (audit G7): a help/doc window that opens
+  shipped `.md` in the code-ed (the `.md` link/nav machinery already
+  exists, EDITOR.md §12.2) + a spawn-menu "help" entry; ship a trimmed
+  `docs/` (getting-started) in the artifact.
+- **A starter sprite/tileset in engine/stock** (audit G13): **reuse the
+  checkerboard graybox tiles we already have** (smoke's `art/tiles.spr`
+  — 6 platform-shaped tiles) as the stock set, and potentially **extend
+  them** (more tiles / a character sprite) so a new project isn't empty.
+- **Per-room "vibe" knobs — a post-processing layer**: a simple **LUT**
+  color-grade pass (PLAN M10's parked pillar) + a few other knobs, so
+  each room gets a distinct mood (the demo's two rooms are the test
+  case). Design the LUT as a render-only pass (dev-class, never sim).
+
+Other audit follow-ups not yet taken: picker tile metadata (G3 — the
+author/version/description fields exist on demo/project.lua, not yet
+drawn). Good `/clear` point — everything committed, docs current.
 
 ---
 
