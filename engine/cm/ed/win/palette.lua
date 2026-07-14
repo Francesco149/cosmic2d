@@ -18,7 +18,7 @@ local paint = cm.require("cm.paint")
 M.kind = "palette"
 M.menu = "palette"
 M.exts = { "pal" }
-M.DEF_W, M.DEF_H = 380, 440
+M.DEF_W, M.DEF_H = 380, 476
 M.JCAP = 256
 
 local COL = {
@@ -84,8 +84,20 @@ local function button(ctx, x, y, w, h, label, on)
   return hov and i.clicked[1]
 end
 
--- horizontal drag slider; returns new value while dragging, done on release
-local function slider(p, ctx, id, x, y, w, h, val, lo, hi, label)
+-- per-window UI scratch (drag / selection cache), keyed by win.id INSIDE
+-- the path-keyed plumbing — so two windows on the same .pal don't share
+-- drag or selection state (the human's multi-window bug: shared p.drag
+-- made a drag in one window move sliders in the other).
+local function winui(p, win)
+  p.ui = p.ui or {}
+  local u = p.ui[win.id]
+  if not u then u = {}; p.ui[win.id] = u end
+  return u
+end
+
+-- horizontal drag slider; `st` holds the per-window drag state (st.drag).
+-- Returns new value while dragging, done on release.
+local function slider(st, ctx, id, x, y, w, h, val, lo, hi, label)
   local i = cm.require("cm.ui").inp
   local z, px = ctx.z, math.max(4, 8.5 * ctx.z)
   pal.x_ig_text(x, y + (h - px) * 0.5, px, COL.dim, label, 0)
@@ -98,11 +110,11 @@ local function slider(p, ctx, id, x, y, w, h, val, lo, hi, label)
   pal.x_ig_rect_fill(bx + bw * f - 2 * z, y + 1 * z, 4 * z, h - 2 * z, COL.hot, 1 * z)
   local over = ctx.hot and i.wx >= bx - 4 * z and i.wx < bx + bw + 4 * z
                and i.wy >= y and i.wy < y + h
-  if over and i.clicked[1] and not p.drag then p.drag = id end
-  if p.drag == id then
+  if over and i.clicked[1] and not st.drag then st.drag = id end
+  if st.drag == id then
     local nf = math.max(0, math.min(1, (i.wx - bx) / bw))
     local nv = math.floor(lo + nf * (hi - lo) + 0.5)
-    if not i.buttons[1] then p.drag = nil; return nv, true end
+    if not i.buttons[1] then st.drag = nil; return nv, true end
     return nv, false
   end
   return nil, false
@@ -146,8 +158,9 @@ function M.draw(win, ctx)
   end
   local doc = p.doc
   if not doc then return end
+  local u = winui(p, win) -- per-window UI state (multi-window safe)
   local cols = doc.colors
-  if #cols == 0 then cols[1] = 0xffffffffff & 0xffffffff end
+  if #cols == 0 then cols[1] = 0xffffffff end
   local i = cm.require("cm.ui").inp
   win.sel = math.max(1, math.min(win.sel or 1, #cols))
   local edited, closed = false, false
@@ -155,122 +168,134 @@ function M.draw(win, ctx)
   local x0, y0 = ctx.cx + 6 * z, ctx.cy + 6 * z
   local cw = ctx.cw - 12 * z
 
-  -- swatch grid
+  -- swatch grid (keeps the top ~44%)
   local sw = math.max(14, 26 * z)
   local per = math.max(1, math.floor(cw / (sw + 3 * z)))
-  local gy = y0
+  local grid_h = ctx.ch * 0.44
   for idx, c in ipairs(cols) do
-    local col = (idx - 1) % per
-    local row = (idx - 1) // per
-    local sx = x0 + col * (sw + 3 * z)
-    local sy = gy + row * (sw + 3 * z)
-    if sy + sw > ctx.cy + ctx.ch * 0.5 then break end -- grid keeps top half
+    local sx = x0 + ((idx - 1) % per) * (sw + 3 * z)
+    local sy = y0 + ((idx - 1) // per) * (sw + 3 * z)
+    if sy + sw > y0 + grid_h then break end
     pal.x_ig_rect_fill(sx, sy, sw, sw, disp(c), 2 * z)
     if idx == win.sel then
       pal.x_ig_rect(sx - 1, sy - 1, sw + 2, sw + 2, COL.sel, 2, 2 * z)
     end
     if ctx.hot and i.clicked[1] and i.wx >= sx and i.wx < sx + sw
        and i.wy >= sy and i.wy < sy + sw then
-      win.sel = idx
-      p.selc = nil -- re-derive the hsv editor
-      ctx.touch()
+      win.sel = idx; u.selc = nil; ctx.touch()
     end
   end
   local rows = math.ceil(#cols / per)
-  local ey = y0 + math.min(rows, math.floor((ctx.ch * 0.5) / (sw + 3 * z)))
-             * (sw + 3 * z) + 6 * z
+  local ey = y0 + math.min(rows, math.max(1, math.floor(grid_h / (sw + 3 * z))))
+             * (sw + 3 * z) + 8 * z
 
-  -- selected-color editor: keep an HSV working copy (deriving from the
-  -- packed color each frame loses hue on grays / while dragging)
-  if p.selc ~= win.sel then
-    p.selc = win.sel
-    p.eh, p.es, p.ev = paint.to_hsv(cols[win.sel])
+  -- selected-color editor: an HSV working copy (deriving from the packed
+  -- color each frame loses hue on grays / mid-drag). Per-window (u).
+  if u.selc ~= win.sel then
+    u.selc = win.sel
+    u.eh, u.es, u.ev = paint.to_hsv(cols[win.sel])
   end
   local function apply()
-    cols[win.sel] = paint.hsv(p.eh, p.es, p.ev, 255)
-    edited = true
+    cols[win.sel] = paint.hsv(u.eh, u.es, u.ev, 255); edited = true
   end
-  -- big preview + hex
+  -- preview swatch (left) + hex field + info to its RIGHT (no overlap now)
   pal.x_ig_rect_fill(x0, ey, 34 * z, 34 * z, disp(cols[win.sel]), 3 * z)
+  pal.x_ig_rect(x0, ey, 34 * z, 34 * z, 0x6a5a8cff, 1, 3 * z)
   local r, g, b = paint.unpack(cols[win.sel])
-  local hexid = "palhex" .. win.id
   if not ctx.occluded then
-    local hx = x0 + 40 * z
-    pal.x_ig_rect(hx, ey, cw - 40 * z, 15 * z, 0x4a437088, 1, 2 * z)
+    local hx = x0 + 42 * z
+    pal.x_ig_rect(hx, ey, cw - 42 * z, 16 * z, 0x4a437088, 1, 2 * z)
     local text = pal.x_ig_edit {
-      id = hexid, x = hx + 3 * z, y = ey + 1 * z, w = cw - 46 * z, h = 13 * z,
-      text = p.hexbuf ~= nil and p.hexbuf or string.format("%02x%02x%02x", r, g, b),
+      id = "palhex" .. win.id, x = hx + 4 * z, y = ey + 1 * z,
+      w = cw - 50 * z, h = 14 * z,
+      text = u.hexbuf ~= nil and u.hexbuf or string.format("%02x%02x%02x", r, g, b),
       px = px * 0.9, font = 1, enter = true, multiline = false,
     }
-    p.hexbuf = text
-    -- live-apply a complete 6-hex string as you type; commit on Enter
+    u.hexbuf = text
     local parsed = text and #text >= 6 and palette.parse_hex(text)
     if parsed and parsed[1] then
       cols[win.sel] = parsed[1]
-      p.eh, p.es, p.ev = paint.to_hsv(cols[win.sel])
-      edited = true
+      u.eh, u.es, u.ev = paint.to_hsv(cols[win.sel]); edited = true
     end
-    pal.x_ig_text(x0, ey + 17 * z, px * 0.8, COL.dim,
-                  ("#%d / %d"):format(win.sel, #cols), 0)
+    pal.x_ig_text(hx, ey + 20 * z, px * 0.8, COL.dim,
+                  ("swatch %d of %d"):format(win.sel, #cols), 0)
   end
-  -- HSV sliders
-  local sy = ey + 28 * z
+  -- HSV sliders (BELOW the 34px swatch — the overlap bug)
+  local sy = ey + 40 * z
   local sh = px * 1.5
-  local nv, done = slider(p, ctx, "eh", x0, sy, cw, sh, math.floor(p.eh * 360), 0, 359, "H")
-  if nv then p.eh = nv / 360; apply(); p.hexbuf = nil end
+  local nv, done = slider(u, ctx, "eh", x0, sy, cw, sh, math.floor(u.eh * 360), 0, 359, "H")
+  if nv then u.eh = nv / 360; apply(); u.hexbuf = nil end
   closed = closed or done
-  nv, done = slider(p, ctx, "es", x0, sy + sh, cw, sh, math.floor(p.es * 100), 0, 100, "S")
-  if nv then p.es = nv / 100; apply(); p.hexbuf = nil end
+  nv, done = slider(u, ctx, "es", x0, sy + sh, cw, sh, math.floor(u.es * 100), 0, 100, "S")
+  if nv then u.es = nv / 100; apply(); u.hexbuf = nil end
   closed = closed or done
-  nv, done = slider(p, ctx, "ev", x0, sy + sh * 2, cw, sh, math.floor(p.ev * 100), 0, 100, "V")
-  if nv then p.ev = nv / 100; apply(); p.hexbuf = nil end
+  nv, done = slider(u, ctx, "ev", x0, sy + sh * 2, cw, sh, math.floor(u.ev * 100), 0, 100, "V")
+  if nv then u.ev = nv / 100; apply(); u.hexbuf = nil end
   closed = closed or done
 
   -- swatch ops
-  local oy = sy + sh * 3 + 4 * z
+  local oy = sy + sh * 3 + 5 * z
   local bw = (cw - 4 * 3 * z) / 5
   local function ins_after(idx, c)
-    table.insert(cols, idx + 1, c); win.sel = idx + 1; p.selc = nil; closed = true
+    table.insert(cols, idx + 1, c); win.sel = idx + 1; u.selc = nil; closed = true
   end
   if button(ctx, x0, oy, bw, px * 1.6, "+add") then
-    ins_after(win.sel, 0xffffffffff & 0xffffffff)
+    ins_after(win.sel, 0xffffffff)
   end
   if button(ctx, x0 + (bw + 3 * z), oy, bw, px * 1.6, "dup") then
     ins_after(win.sel, cols[win.sel])
   end
   if button(ctx, x0 + 2 * (bw + 3 * z), oy, bw, px * 1.6, "del") and #cols > 1 then
-    table.remove(cols, win.sel); win.sel = math.max(1, win.sel - 1); p.selc = nil; closed = true
+    table.remove(cols, win.sel); win.sel = math.max(1, win.sel - 1); u.selc = nil; closed = true
   end
   if button(ctx, x0 + 3 * (bw + 3 * z), oy, bw, px * 1.6, "◄") and win.sel > 1 then
     cols[win.sel], cols[win.sel - 1] = cols[win.sel - 1], cols[win.sel]
-    win.sel = win.sel - 1; p.selc = nil; closed = true
+    win.sel = win.sel - 1; u.selc = nil; closed = true
   end
   if button(ctx, x0 + 4 * (bw + 3 * z), oy, bw, px * 1.6, "►") and win.sel < #cols then
     cols[win.sel], cols[win.sel + 1] = cols[win.sel + 1], cols[win.sel]
-    win.sel = win.sel + 1; p.selc = nil; closed = true
+    win.sel = win.sel + 1; u.selc = nil; closed = true
   end
 
-  -- the ramp generator
-  local ry = oy + px * 2.2
-  pal.x_ig_text(x0, ry, px * 0.85, COL.accent, "ramp from selected:", 0)
-  ry = ry + px * 1.4
-  nv, done = slider(p, ctx, "rn", x0, ry, cw * 0.5 - 3 * z, px * 1.4,
-                    win.rampn or 5, 2, 12, "n")
-  if nv then win.rampn = nv; ctx.touch() end
-  nv, done = slider(p, ctx, "rh", x0 + cw * 0.5, ry, cw * 0.5, px * 1.4,
+  -- the ramp generator: an n slider AND a typed count (shows the exact
+  -- number of shades), + a hue-shift, then append / replace
+  win.rampn = win.rampn or 5
+  local ry = oy + px * 2.0
+  pal.x_ig_text(x0, ry + 2 * z, px * 0.85, COL.accent,
+                ("ramp from #%d"):format(win.sel), 0)
+  if not ctx.occluded then
+    local fx = x0 + cw - 50 * z
+    pal.x_ig_text(fx - 44 * z, ry + 2 * z, px * 0.82, COL.dim, "shades", 0)
+    pal.x_ig_rect(fx, ry, 46 * z, 15 * z, 0x4a437088, 1, 2 * z)
+    local t = pal.x_ig_edit {
+      id = "rampn" .. win.id, x = fx + 4 * z, y = ry + 1 * z,
+      w = 38 * z, h = 13 * z,
+      text = u.rampbuf ~= nil and u.rampbuf or tostring(win.rampn),
+      px = px * 0.85, font = 1, enter = true, multiline = false,
+    }
+    u.rampbuf = t
+    local rn = tonumber(t)
+    if rn then win.rampn = math.max(2, math.min(32, math.floor(rn))) end
+  end
+  ry = ry + px * 1.6
+  nv, done = slider(u, ctx, "rn", x0, ry, cw * 0.5 - 3 * z, px * 1.4,
+                    win.rampn, 2, 16, "n")
+  if nv then win.rampn = nv; u.rampbuf = nil; ctx.touch() end
+  nv, done = slider(u, ctx, "rh", x0 + cw * 0.5, ry, cw * 0.5, px * 1.4,
                     win.ramph or 14, -30, 30, "hue")
   if nv then win.ramph = nv; ctx.touch() end
   ry = ry + px * 1.7
   if button(ctx, x0, ry, cw * 0.5 - 3 * z, px * 1.7, "append ramp") then
-    local ramp = palette.ramp(cols[win.sel], win.rampn or 5,
-                              { hue_shift = win.ramph or 14 })
-    for _, c in ipairs(ramp) do cols[#cols + 1] = c end
+    for _, c in ipairs(palette.ramp(cols[win.sel], win.rampn,
+                                    { hue_shift = win.ramph or 14 })) do
+      cols[#cols + 1] = c
+    end
     closed = true
   end
   if button(ctx, x0 + cw * 0.5, ry, cw * 0.5, px * 1.7, "replace all") then
-    doc.colors = palette.ramp(cols[win.sel], win.rampn or 5,
+    doc.colors = palette.ramp(cols[win.sel], win.rampn,
                               { hue_shift = win.ramph or 14 })
-    win.sel = 1; p.selc = nil; closed = true
+    win.sel = 1; u.selc = nil; closed = true
   end
 
   if edited and not closed then ed.touch() end
