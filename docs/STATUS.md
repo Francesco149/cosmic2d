@@ -3,6 +3,58 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-14 (cont. — the human's demo look + music pass; 5 asks,
+all built + committed, incl. a real tmap bug caught)
+
+The human's feedback on the polish batch below. Suite ALL GREEN throughout.
+
+- **tmap.draw tint SHADOW BUG (`301b112`)** — caught chasing the look: the
+  optional tint (fce83a3, earlier today) added an `r` param, but the cell
+  loop `for r = r0, r1` already bound `r` to the ROW index, so
+  `s:f32(o+32, r)` wrote the row number as red (clamps to full red for row
+  ≥ 1) — every tilemap rendered red, tint ignored, the default white path
+  too. **The pixel goldens never render a placed .tm, so they stayed green
+  and hid it**; it surfaced the instant the demo drew an opaque tinted
+  backdrop (overworld hills came out red not blue). Renamed the loop var to
+  `row`. (Diagnosed the hard way — palette dumps, per-pixel probes, a
+  hardcoded pure-blue tint that rendered magenta — after wrongly suspecting
+  a BGRA swap; the packing was fine.)
+- **Demo look rework (`301b112`)**: colliders now render NOTHING in game
+  (MAPS.md §5) — the level geometry is a checkerboard tilemap autotiled from
+  the colliders (`cm.tmap.graybox`) drawn instead of `map.draw_fill`. The
+  parallax is a LANDSCAPE silhouette — two OPAQUE checker-tile layers
+  (distant mountains behind nearer hills) from a periodic sum-of-sines ridge,
+  tinted dark room shades, parallaxed at different depths (opaque so the near
+  layer occludes the far cleanly — an earlier alpha-blend attempt went
+  muddy). Dropped the screen-fixed sky gradient (it drifted out of sync with
+  the backdrop — the human's complaint) for a flat per-room sky; all
+  background color now lives in the tinted silhouette tiles, moving together.
+  bg.tm (the old block lattice) retired.
+- **Town song (`f5fa629`)**: the human heard dissonance — a flatten-and-scan
+  found 16 semitone clashes, the bell melody a semitone ABOVE the pad's chord
+  tone (F/E, C/B, Bb/A at bars 6/7/8 + the octave repeat). Nudged those 6
+  bell notes down to the chord tone (clashes → 0) and softened all velocities
+  18% (more ambient). Melody contour kept.
+- **Overworld song (`c6d82f1`)**: was a plain 16-bar loop. Now 36 bars that
+  loop — a 4-bar buildup intro (bass+kick+hat groove in), A (the full 6-track
+  loop), then B = A with lead/bass/stab transposed UP A FOURTH (drums reused):
+  a lift that resolves back into A. No melody rewritten.
+
+**Both songs are STRUCTURAL only — need the human's EARS** (the clash scan is
+objective, but "softer/cozy/catchy" and "does the +4th B-section land" are
+the taste check). **cosmic2d-win RE-STAGING** (Lua-only this round — the PAL
+C is unchanged; the tmap fix + demo + songs ride the engine bundle).
+
+**Next step:** the human's live look + listen on the re-staged exe — the demo
+rooms (`bin\cosmic.exe projects\demo`): landscape parallax, tilemap geometry,
+per-room grade; walk into the town door → the softened town theme + the
+overworld's buildup/B-section. Tune songs in the music window if needed.
+Still open: the deferred winui pass (map/synth/music via kit.winui — gesture-
+tape each; field inventory two entries down). Good `/clear` point once the
+human has run it.
+
+---
+
 **Date**: 2026-07-14 (the final-polish batch — the next-session queue +
 two live human asks, seven streams, all built + committed)
 
