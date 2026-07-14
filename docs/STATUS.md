@@ -3,6 +3,43 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-14 (feedback round on the alpha-polish batch — the
+human's live bug reports, all fixed)
+
+- **Palette same-asset multi-window bug (`e1209c1`)**: two windows on
+  one .pal made clicks misbehave — the path-keyed plumbing shared
+  per-window UI state (drag/selection). Fixed via a per-window
+  `p.ui[win.id]` scratch (verified: two windows, independent
+  selections). Also: the selected-color swatch no longer overlaps the H
+  slider, and the ramp gained a typed "shades" count. **Finding: the
+  same pattern (shared p.drag / p.sel) is latent in the map + synth
+  windows** — flagged for a general winui/kit fix (not yet taken).
+- **sfx-dash + sfx-laser were silent clicks (`834ad63`)**: a down-sweep
+  dropped the noise into the highpass's stopband (dash) / a −40st sweep
+  collapsed laser to near-DC. Retuned to LOUD bright noise with a long
+  fade, no hp (dash 5.4k / laser 4.8k peak, sustained). Also fixed
+  coin/powerup ringing forever (s>0 on a never-off'd one-shot → s=0) and
+  **cm.snd.music now releases the previous song's held voices** (a note
+  held at a room swap rang forever over the next song).
+- **Demo coins parallaxed (`775f309`)**: drawn at `c.x-camx` while
+  gfx.camera already offsets → double subtract. Draw world coords.
+- **Demo neutralized (`<this commit>`)**: per the human, don't lock a
+  style. Player → a neutral bouncy CUBE (squash/stretch bounce + facing
+  eye; mecha-girl sprite + its machinery removed); a SOFT checkerboard
+  PARALLAX layer (gfx.layer 0.4) tinted per room; the checkerboard
+  graybox tileset promoted to `engine/stock/spr` (G13 pulled forward).
+  Sets up next session's VFX/LUT vibe demo on a neutral base.
+
+**Proof:** suite ALL GREEN throughout; selftest 23082 (KATs unchanged —
+these were behavior/data fixes). 3 shots on llm-feed (both neutralized
+rooms + the two-window palette). **cosmic2d-win RE-STAGED** for the live
+verify. Next-session queue unchanged (in-editor docs, extend the stock
+checkerboard tiles, the LUT/VFX vibe layer) — the demo is now the
+neutral base for it; the map/synth multi-window generalization joins
+the queue.
+
+---
+
 **Date**: 2026-07-14 (the alpha-polish batch — six streams, all built +
 committed; research-driven)
 **Phase**: **Final polish toward an alpha release. Two research agents
