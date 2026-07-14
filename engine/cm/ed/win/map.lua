@@ -57,6 +57,9 @@ local COL = {
   solid = 0x8ad0ffff, oneway = 0x7fd8a8ff,  -- collider gizmos
   marker = 0xf0d070ff, sel = 0x7fd8a8ff,
   guide = 0xE8E4FFcc, ghost = 0x7fd8a866,
+  ref_bg = 0x2a2540e0, ref_ic = 0x8fb8ffff, -- named-ref tag
+  null1 = 0xE838E8ff, null2 = 0x241830ff,    -- null-ref checkerboard
+  dis = 0x0a0812aa,                          -- disabled-layer dim overlay
 }
 
 local KEY = { right = 79, left = 80, down = 81, up = 82, del = 76,
@@ -85,11 +88,22 @@ function M.rebind(win, ed, path)
   ed.touch()
 end
 
--- what kind.drop claims: placeable visuals (MAPS.md §6). .tm places and
--- moves fine today; it renders as a placeholder until R8d.
-local function placeable(path)
+-- a visual asset draws its image; everything else places as a NAMED REF
+-- (a labelled tag, addressable from code via cm.map.ref).
+local function visual(path)
   local l = path:lower()
   return l:find("%.spr$") or l:find("%.png$") or l:find("%.tm$")
+end
+
+-- what kind.drop claims: ANY asset (MAPS.md §6). Visuals render; other
+-- kinds attach as named refs. Reject only paths with no extension (dirs).
+local function placeable(path)
+  return path ~= "" and path:find("%.[%w]+$") ~= nil
+end
+
+-- the asset kind glyph for a named-ref tag ("bgm  .song")
+local function asset_kind(path)
+  return (path:match("%.([%w]+)$") or "?"):lower()
 end
 
 -- ---- the asset citizen (cm.ed.kit, R9a) — plumbing on ed.g.mw[path],
@@ -992,6 +1006,88 @@ local function tex_dims(ed, p, path)
   return w, h
 end
 
+-- the null-ref checkerboard (a dangling visual path): the classic missing-
+-- texture magenta/black, cell-capped so a big placement stays cheap.
+local function draw_checker(sx0, sy0, w, h, zoom)
+  local sw, sh = w * zoom, h * zoom
+  local cell = math.max(3, math.min(sw, sh) / 4)
+  local nc = math.min(24, math.ceil(sw / cell))
+  local nr = math.min(24, math.ceil(sh / cell))
+  local cw, ch = sw / nc, sh / nr
+  for r = 0, nr - 1 do
+    for c = 0, nc - 1 do
+      pal.x_ig_rect_fill(sx0 + c * cw, sy0 + r * ch, cw + 0.5, ch + 0.5,
+                         (c + r) % 2 == 0 and COL.null1 or COL.null2)
+    end
+  end
+end
+
+-- a named-ref tag: a non-visual asset (or a novis visual) drawn as a
+-- labelled chip at its position — "<name>  .kind". `missing` reddens it.
+local function draw_reftag(sx0, sy0, z, pl, missing)
+  local fpx = math.max(7, 9 * z)
+  local nm = pl.name or (pl.path:match("([^/]+)%.[%w]+$")) or pl.path
+  local kind = "." .. asset_kind(pl.path)
+  local tw = pal.x_ig_text_size(nm, fpx, 0)
+  local kw = pal.x_ig_text_size(kind, fpx * 0.85, 0)
+  local pad = 4 * z
+  local w = tw + kw + pad * 3
+  local h = fpx + 3 * z
+  pal.x_ig_rect_fill(sx0, sy0, w, h, missing and 0x5a2030e0 or COL.ref_bg,
+                     3 * z)
+  pal.x_ig_rect(sx0, sy0, w, h, missing and COL.danger or COL.ref_ic, 1,
+                3 * z)
+  pal.x_ig_text(sx0 + pad, sy0 + 1.5 * z, fpx,
+                missing and COL.danger or COL.text, nm, 0)
+  pal.x_ig_text(sx0 + pad * 2 + tw, sy0 + 1.5 * z, fpx * 0.85, COL.dim,
+                kind, 0)
+  return w, h
+end
+
+-- draw one placement into the window: a live visual image, a .tm cell
+-- grid, a null-ref checkerboard, or a named-ref tag (non-visual / novis).
+-- `disabled` dims it (its layer is off — invisible in-game). Warns once
+-- per dangling path so a deleted asset is loud but not spammy.
+local function draw_placement(ed, p, pl, sx0, sy0, w, h, zoom, z, disabled,
+                              clip)
+  local sw, sh = w * zoom, h * zoom
+  local shown_image = false
+  if pl.vis ~= false and visual(pl.path) then
+    local t = win_tex(ed, pl.path)
+    local td = not t and tm_doc(ed, p, pl.path)
+    local ttex = td and cm.require("cm.ed.win.tmap")
+                          .tileset_tex(ed, p, td.tileset)
+    if t then
+      local u0, u1 = 0, 1
+      if pl.flip then u0, u1 = 1, 0 end
+      pal.x_ig_image(t.id, sx0, sy0, sw, sh, u0, 0, u1, 1)
+      shown_image = true
+    elseif td and ttex then
+      cm.require("cm.ed.win.tmap").draw_cells(td, ttex,
+        { zoom = zoom, ox = sx0, oy = sy0 }, clip[1], clip[2], clip[3], clip[4])
+      shown_image = true
+    else -- a visual whose file won't resolve: the null-ref placeholder
+      p.warned = p.warned or {}
+      if not p.warned[pl.path] then
+        p.warned[pl.path] = true
+        pal.log(("[map] null asset ref: %s%s — checkerboard placeholder")
+                :format(pl.path, pl.name and (' (\"' .. pl.name .. '\")') or ""))
+      end
+      draw_checker(sx0, sy0, w, h, zoom)
+      pal.x_ig_text(sx0 + 2 * z, sy0 + 1.5 * z, math.max(7, 9 * z),
+                    0xffffffff, pl.name or pl.path:match("([^/]+)$"), 0)
+      shown_image = true
+    end
+  end
+  if not shown_image then -- non-visual asset OR a novis visual: a ref tag
+    draw_reftag(sx0, sy0, z, pl, false)
+  end
+  if disabled then -- layer off: dim to signal "won't exist in-game"
+    pal.x_ig_rect_fill(sx0, sy0, math.max(sw, 12 * z), math.max(sh, 10 * z),
+                       COL.dis)
+  end
+end
+
 -- the graybox strip fill inside the window (screen coords; the same
 -- column/interval math as the game render — cm.map.geom + column_ivs)
 local function draw_fill(p, view, X0, X1, Y0s, Y1s)
@@ -1204,27 +1300,22 @@ function M.draw(win, ctx)
     end
   end
 
-  -- placements (file order = z)
-  for n, pl in ipairs(doc.places) do
-    local x, y, w, h = M.place_rect(doc, n, dims)
-    local sx0, sy0 = ox + x * zoom, oy + y * zoom
-    if sx0 < cvx + cvw and sx0 + w * zoom > cvx
-       and sy0 < cvy + cvh and sy0 + h * zoom > cvy and not pl.hidden then
-      local t = win_tex(ed, pl.path)
-      local td = not t and tm_doc(ed, p, pl.path)
-      local ttex = td and cm.require("cm.ed.win.tmap")
-                            .tileset_tex(ed, p, td.tileset)
-      if t then
-        local u0, u1 = 0, 1
-        if pl.flip then u0, u1 = 1, 0 end
-        pal.x_ig_image(t.id, sx0, sy0, w * zoom, h * zoom, u0, 0, u1, 1)
-      elseif td and ttex then -- a .tm placement: its cell grid (R8d)
-        cm.require("cm.ed.win.tmap").draw_cells(td, ttex,
-          { zoom = zoom, ox = sx0, oy = sy0 }, cvx, cvy, cvw, cvh)
-      else -- placeholder (missing image / unreadable .tm / no tileset)
-        pal.x_ig_rect(sx0, sy0, w * zoom, h * zoom, COL.dim, 1)
-        pal.x_ig_text(sx0 + 3, sy0 + 2, math.max(4, 9 * z), COL.dim,
-                      pl.path:match("([^/]+)$") or pl.path, 0)
+  -- placements — layer z-order (bg behind foreground). A layer with
+  -- vis=false is hidden in the EDITOR only (skip); a layer with on=false
+  -- still shows here but dimmed (it won't exist in-game). Visual assets
+  -- render their image, a dangling path a checkerboard, and every other
+  -- kind (or a novis visual) a named-ref tag.
+  local clip = { cvx, cvy, cvw, cvh }
+  for _, n in ipairs(map.z_order(doc)) do
+    local pl = doc.places[n]
+    local Lyr = doc.layers[pl.layer or 1]
+    if not (Lyr and Lyr.vis == false) then
+      local x, y, w, h = M.place_rect(doc, n, dims)
+      local sx0, sy0 = ox + x * zoom, oy + y * zoom
+      if sx0 < cvx + cvw + 120 and sx0 + w * zoom > cvx - 120
+         and sy0 < cvy + cvh + 40 and sy0 + h * zoom > cvy - 40 then
+        draw_placement(ed, p, pl, sx0, sy0, w, h, zoom, z,
+                       Lyr and Lyr.on == false, clip)
       end
     end
   end
@@ -1364,7 +1455,7 @@ function M.draw(win, ctx)
       if not (vhit and vhit.v) then
         for n = #doc.places, 1, -1 do
           local pl = doc.places[n]
-          local td = not pl.hidden and tmfn(pl.path)
+          local td = pl.vis ~= false and tmfn(pl.path)
           if td then
             local rx0, ry0, rx1, ry1 =
               tmap.edge_run(td, mx - pl.x, my - pl.y, SNAP_PX / zoom)
@@ -2154,25 +2245,13 @@ function M.draw(win, ctx)
         o.name = got ~= "" and got or nil
         commit(ed, win.path)
       end
-      got, x = field("mapily", "L", tostring(o.layer or 0), x, 22 * z)
+      local nlayers = #(doc.layers or { 1 })
+      got, x = field("mapily", "L", tostring(o.layer or 1), x, 22 * z)
       if got and tonumber(got) then
-        o.layer = math.max(0, math.min(255, math.floor(tonumber(got))))
+        o.layer = math.max(1, math.min(nlayers, math.floor(tonumber(got))))
         commit(ed, win.path)
       end
-      -- flip toggle
-      local fw = pal.x_ig_text_size("flip", px * 0.9, 0) + 10 * z
-      local hov = ctx.hot and i.wx >= x and i.wx < x + fw
-                  and i.wy >= iy and i.wy < iy + INSP
-      pal.x_ig_rect_fill(x, iy + 1, fw, INSP - 2,
-                         o.flip and COL.btn_on or COL.btn, 3 * z)
-      pal.x_ig_text(x + 5 * z, iy + (INSP - px) * 0.45, px * 0.9,
-                    (hov or o.flip) and COL.hot or COL.dim, "flip", 0)
-      if hov and i.clicked[1] then
-        o.flip = not o.flip
-        commit(ed, win.path)
-      end
-      x = x + fw + 6 * z
-      -- +col: attach an auto-fit collider (§6) — the type picker inline
+      -- +col / vis / flip chips
       local function pchip(label, on)
         local w2 = pal.x_ig_text_size(label, px * 0.9, 0) + 10 * z
         local hv = ctx.hot and i.wx >= x and i.wx < x + w2
@@ -2184,9 +2263,17 @@ function M.draw(win, ctx)
         x = x + w2 + 4 * z
         return hv and i.clicked[1]
       end
-      if pchip("hide", o.hidden or false) then
-        o.hidden = not o.hidden or nil
-        commit(ed, win.path)
+      -- vis: a visual asset can be set to a named ref (label-only). Flip
+      -- only makes sense for a shown visual. Default visible = vis absent.
+      if visual(o.path) then
+        if pchip("vis", o.vis ~= false) then
+          if o.vis == false then o.vis = nil else o.vis = false end
+          commit(ed, win.path)
+        end
+        if o.vis ~= false and pchip("flip", o.flip or false) then
+          o.flip = not o.flip or nil
+          commit(ed, win.path)
+        end
       end
       if pchip("+col", p.colmenu or false) then
         p.colmenu = not p.colmenu or nil
@@ -2206,8 +2293,9 @@ function M.draw(win, ctx)
       else
         pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z),
                            INSP)
+        local Lyr = doc.layers[o.layer or 1]
         pal.x_ig_text(x, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
-                      ("L%d · %s"):format(o.layer or 0, o.path), 0)
+                      ("%s · %s"):format(Lyr and Lyr.name or "?", o.path), 0)
         pal.x_ig_clip_pop()
       end
     else
