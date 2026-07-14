@@ -3234,6 +3234,38 @@ local function t_words()
   check(pick == w.list[1], "words: a caller rng selects the word (sim-safe)")
 end
 
+local function t_palette()
+  -- cm.palette: the .pal codec, hex import/export, the ramp generator,
+  -- and the code-facing load door.
+  local pl = cm.require("cm.palette")
+  local paint = cm.require("cm.paint")
+  local doc = { name = "test", colors = { 0x33221100, 0xaabbccff, 0x00ff00ff } }
+  local bytes = pl.encode(doc)
+  check(bytes:sub(1, 4) == "CPAL", "palette: container magic")
+  local d2 = pl.decode(bytes)
+  check(d2.name == "test" and #d2.colors == 3 and d2.colors[2] == 0xaabbccff,
+        "palette: doc round-trips")
+  check(pl.encode(d2) == bytes, "palette: canonical encode")
+  -- hex import/export (Lospec .hex; R low byte, alpha forced opaque)
+  local cols = pl.parse_hex("#ff0000\n00ff00\n0000ff")
+  local r, g, b = paint.unpack(cols[1])
+  check(#cols == 3 and r == 255 and g == 0 and b == 0,
+        "palette: parse_hex reads RGB with R in the low byte")
+  check(pl.to_hex({ cols[3] }) == "0000ff", "palette: to_hex")
+  -- the ramp generator: n colors, monotone dark->light value
+  local ramp = pl.ramp(0x804020ff, 5, { hue_shift = 12 })
+  local _, _, v1 = paint.to_hsv(ramp[1])
+  local _, _, v5 = paint.to_hsv(ramp[5])
+  check(#ramp == 5 and v5 > v1, "palette: ramp is n colors, dark -> light")
+  -- the load() door (file-backed, cached)
+  pal.write_file("/tmp/cosmic_selftest.pal", bytes)
+  local ld = pl.load("/tmp/cosmic_selftest.pal")
+  check(ld and #ld.colors == 3, "palette: load() reads a .pal")
+  check(pl.color("/tmp/cosmic_selftest.pal", 2) == 0xaabbccff,
+        "palette: color() indexes a loaded palette")
+  pal.x_remove("/tmp/cosmic_selftest.pal")
+end
+
 local function t_song()
   -- R9d (AUDIO.md §4.2/§6): the CSNG codec, the flatten, tick math,
   -- and the sequencer end to end. Runs AFTER t_snd (renders frames).
@@ -4523,6 +4555,7 @@ function game.init()
   t_snd()
   t_ins()
   t_words()
+  t_palette()
   t_song()
   t_ed_lex()
   t_ed_assets()
