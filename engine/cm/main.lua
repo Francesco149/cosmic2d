@@ -255,6 +255,10 @@ function M.boot()
   -- headless/verify/capture runs never open one (goldens can't hear by
   -- construction; the PAL refuses under G.headless anyway)
   if not args.headless then pal.x_snd_start() end
+  -- clear any editor monitor mute carried over the reboot (PAL device state
+  -- outlives the VM); the game window re-applies it per frame in the editor,
+  -- so a shipped/play boot always starts audible.
+  if pal.x_snd_mute then pal.x_snd_mute(false, false) end
 
   M.state = cm.require("cm.state")
   M.input = cm.require("cm.input")

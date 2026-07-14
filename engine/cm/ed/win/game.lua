@@ -84,7 +84,21 @@ function M.header(win, ctx)
   if hov and i.clicked[1] then
     cm.require("cm.repl").submit("cm.main.reset_game()")
   end
-  return bw
+  -- audio monitor mutes (editor dev tool): chips left of restart, lit when
+  -- that category is silenced. Device-output only — pal.x_snd_mute never
+  -- touches the sim bank or the PCM hash, so it is dev/render, never sim.
+  local s = cm.require("cm.ed.chips").strip(ctx)
+  s.x = x - 4 * z -- lay the chips left of the restart button
+  if s:chip("mute sfx", win.mute_sfx) then
+    win.mute_sfx = not win.mute_sfx
+    ctx.ed.touch()
+  end
+  if s:chip("mute music", win.mute_music) then
+    win.mute_music = not win.mute_music
+    ctx.ed.touch()
+  end
+  if pal.x_snd_mute then pal.x_snd_mute(win.mute_music, win.mute_sfx) end
+  return bw + s.used
 end
 
 -- push the window's FOV width to the live target: cm.view applies it in

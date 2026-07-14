@@ -152,6 +152,11 @@ static struct {
   SDL_AudioStream *stream;
   int16_t fifo[SND_FRAME * 2 * 8]; /* 8 frames ≈ 133 ms cap */
   SDL_AtomicInt fifo_r, fifo_w;    /* in frames */
+  /* dev-only device-output mute of the sim bank by voice-slot category
+   * (music = slots 32..47, sfx = 0..31). Live editor monitoring; the sim
+   * bank + the PCM hash (goldens) are never touched — the full mix is still
+   * what gets hashed, only the device push is filtered. */
+  bool mute_music, mute_sfx;
 
   /* pcm-hash accumulator (test harness, not state) */
   uint64_t hash;
@@ -429,6 +434,28 @@ static void bank_render(SndBank *b, int32_t *acc, int n) {
   b->hdr->frame++;
 }
 
+/* like bank_render, but renders each voice ONCE (voice state advances once)
+ * into `full` (always — this is what gets hashed) and into `dev` (only when
+ * that voice's slot category isn't muted). Used for the live device push when
+ * a mute is on; `full` stays the true mix so the PCM golden is unchanged. */
+static void bank_render_dev(SndBank *b, int32_t *full, int32_t *dev, int n,
+                            bool mute_music, bool mute_sfx) {
+  static int32_t scr[SND_FRAME * 2];
+  for (int i = 0; i < SND_VOICES; i++) {
+    if (!b->voice[i].active) continue;
+    int slot = b->voice[i].slot & 63;
+    memset(scr, 0, sizeof(int32_t) * (size_t)n * 2);
+    voice_render(&b->patch[slot], &b->voice[i], scr, n);
+    bool muted = (slot >= 32 && slot <= 47) ? mute_music
+                 : (slot < 32 ? mute_sfx : false);
+    for (int j = 0; j < n * 2; j++) {
+      full[j] += scr[j];
+      if (!muted) dev[j] += scr[j];
+    }
+  }
+  b->hdr->frame++;
+}
+
 static int bank_note_on(SndBank *b, int slot, int note, int vel,
                         uint32_t pos_frames) {
   int pick = -1;
@@ -630,7 +657,16 @@ static int l_snd_render(lua_State *L) {
   if (!sim_bank(&b, false)) return 0;
   static int32_t acc[SND_FRAME * 2];
   memset(acc, 0, sizeof acc);
-  bank_render(&b, acc, SND_FRAME);
+  /* a live device mute renders a category-filtered copy for the device only;
+   * `acc` (hashed below) stays the full mix, so goldens are byte-identical. */
+  bool split = S.dev_up && (S.mute_music || S.mute_sfx);
+  static int32_t devacc[SND_FRAME * 2];
+  if (split) {
+    memset(devacc, 0, sizeof devacc);
+    bank_render_dev(&b, acc, devacc, SND_FRAME, S.mute_music, S.mute_sfx);
+  } else {
+    bank_render(&b, acc, SND_FRAME);
+  }
   for (int i = 0; i < SND_FRAME * 2; i++) {
     int32_t v = acc[i] >> SND_MIX_SHIFT;
     S.tap[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
@@ -644,7 +680,27 @@ static int l_snd_render(lua_State *L) {
   }
   S.hash = h;
   S.hashed_frames++;
-  if (S.dev_up) fifo_push(S.tap);
+  if (S.dev_up) {
+    if (split) {
+      static int16_t dtap[SND_FRAME * 2];
+      for (int i = 0; i < SND_FRAME * 2; i++) {
+        int32_t v = devacc[i] >> SND_MIX_SHIFT;
+        dtap[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+      }
+      fifo_push(dtap);
+    } else {
+      fifo_push(S.tap);
+    }
+  }
+  return 0;
+}
+
+/* pal.x_snd_mute(music, sfx): dev-only device-output mute of the sim bank by
+ * category (the editor's monitoring toggles). Booleans; never touches the sim
+ * bank or the PCM hash, so it is render/dev, never sim. */
+static int l_x_snd_mute(lua_State *L) {
+  S.mute_music = lua_toboolean(L, 1);
+  S.mute_sfx = lua_toboolean(L, 2);
   return 0;
 }
 
@@ -776,6 +832,7 @@ static const luaL_Reg snd_funcs[] = {
     {"snd_off", l_snd_off},
     {"snd_render", l_snd_render},
     {"snd_hash", l_snd_hash},
+    {"x_snd_mute", l_x_snd_mute},
     {"x_snd_tap", l_x_snd_tap},
     {"x_snd_start", l_x_snd_start},
     {"x_snd_ed_patch", l_x_snd_ed_patch},
