@@ -953,17 +953,23 @@ local function t_map()
 
   local doc = {
     name = "t", w = 320, h = 200, grid = 8, bg = { 0.5, 0.25, 1 },
+    layers = {
+      { name = "bg", vis = true, on = true },
+      { name = "props", vis = false, on = true },
+      { name = "overlay", vis = true, on = false },
+    },
     colliders = {
       { kind = "chain", verts = { 0, 180, 320, 180 } },
       { kind = "quad", x = 100, y = 140, w = 40, h = 40 },
       { kind = "circle", cx = 30, cy = 30, r = 9 },
     },
     places = {
-      { path = "art/sign.png", x = 20, y = 160, layer = 0, hidden = true },
+      { path = "art/sign.png", x = 20, y = 160, layer = 1, vis = false },
       { path = "art/awning.spr", x = 200, y = 120, name = "awn",
-        flip = true, layer = 1,
+        flip = true, layer = 2, anim = "wave",
         cols = { { kind = "chain", oneway = true,
                    verts = { 0, 0, 48, 0 } } } },
+      { path = "sound/bgm.song", x = 8, y = 8, name = "bgm", layer = 3 },
     },
     markers = {
       { x = 10, y = 150, w = 30, h = 30, kind = "spawn", label = "start",
@@ -978,21 +984,45 @@ local function t_map()
         "map: HEAD round trip")
   check(d.bg[1] == 0.5 and d.bg[2] == 0.25 and d.bg[3] == 1,
         "map: bg tint round trip")
+  check(#d.layers == 3 and d.layers[1].name == "bg" and d.layers[2].name
+        == "props" and d.layers[2].vis == false and d.layers[3].on == false
+        and d.layers[1].vis == true and d.layers[1].on == true,
+        "map: LAYR round trip (names + vis/on flags)")
   check(#d.colliders == 3 and d.colliders[1].kind == "chain"
         and d.colliders[1].verts[4] == 180 and d.colliders[2].kind == "quad"
         and d.colliders[2].w == 40 and d.colliders[3].kind == "circle"
         and d.colliders[3].r == 9, "map: colliders round trip")
-  check(#d.places == 2 and d.places[1].name == nil
+  check(#d.places == 3 and d.places[1].name == nil
         and d.places[1].path == "art/sign.png" and d.places[2].name == "awn"
-        and d.places[2].flip == true and d.places[2].layer == 1
-        and d.places[2].cols[1].oneway
+        and d.places[2].flip == true and d.places[2].layer == 2
+        and d.places[2].anim == "wave" and d.places[2].cols[1].oneway
         and d.places[2].cols[1].verts[3] == 48, "map: places round trip")
-  check(d.places[1].hidden == true and d.places[2].hidden == nil,
-        "map: the hidden flag rides PLCE bit1")
+  check(d.places[1].vis == false and d.places[2].vis == true
+        and d.places[3].name == "bgm" and d.places[3].anim == nil,
+        "map: the vis flag rides PLCE bit1; anim + non-visual ref carry")
   check(#d.markers == 2 and d.markers[1].kind == "spawn"
         and d.markers[2].extras[2].v == "x"
         and map.extras(d.markers[2]).to == "b", "map: markers round trip")
   check(map.encode(d) == raw, "map: canonical bytes (encode∘decode = id)")
+  -- layer gating: place_on reflects layer.on; z_order sorts by layer
+  check(map.place_on(d, d.places[1]) and not map.place_on(d, d.places[3]),
+        "map: place_on gates on layer.on (overlay off = doesn't exist)")
+  local zo = map.z_order(d)
+  check(#zo == 3 and zo[1] == 1 and zo[3] == 3,
+        "map: z_order sorts placements by layer (bg < props < overlay)")
+
+  -- backward compat: real legacy bytes — a PLCE v1 (no anim field, bit1 =
+  -- hidden) with NO LAYR chunk decode through the migration path
+  local w1 = chunklib.writer("CMAP")
+  w1.chunk("HEAD", 1, string.pack("<i4i4I4fffs4", 32, 32, 8, 1, 1, 1, "v1"))
+  w1.chunk("PLCE", 1, -- layer 0, flags bit1 hidden, at 5,6, no cols
+           string.pack("<I1I4i4i4s4s4I2", 0, 2, 5, 6, "old.png", "", 0))
+  w1.chunk("TAIL", 1, "")
+  local v1d = map.decode(w1.result())
+  check(#v1d.layers == 1 and v1d.layers[1].name == "main"
+        and v1d.places[1].layer == 1 and v1d.places[1].vis == false
+        and v1d.places[1].x == 5 and v1d.places[1].anim == nil,
+        "map: legacy PLCE v1 + no LAYR migrates (hidden->vis=false, layer 1)")
 
   -- FLGS (§5 per-map fill switch): written only when set, round-trips
   local fd = { name = "f", w = 32, h = 32, grid = 8,
@@ -1032,7 +1062,7 @@ local function t_map()
     w2.chunk(c.tag, c.version, c.payload)
   end
   local d2 = map.decode(w2.result())
-  check(d2.w == 320 and #d2.places == 2, "map: unknown chunk skipped")
+  check(d2.w == 320 and #d2.places == 3, "map: unknown chunk skipped")
 
   -- refusals
   check(not pcall(map.decode, raw:sub(1, #raw - 12)), "map: no TAIL refused")

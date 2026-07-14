@@ -1,16 +1,27 @@
 -- cm.map — the .map asset (MAPS.md §2, D057/a/b): a CMAP chunk container
--- holding the three map layers — free colliders (sim truth), freehand
--- placements (render-only; file order = z; optional name for code
--- addressing; 0..n attached colliders riding the placement), and markers
--- (rects + kind/label/extras — spawn/portals/props). Codec is pure and
--- canonical (encode(decode(b)) == b); cm.chunk gives skip-tolerance.
+-- holding the map's parts — free colliders (sim truth), freehand
+-- placements (render-only; grouped onto named LAYERS; optional name for
+-- code addressing; 0..n attached colliders riding the placement), and
+-- markers (rects + kind/label/extras — spawn/portals/props). Codec is
+-- pure and canonical (encode(decode(b)) == b); cm.chunk gives
+-- skip-tolerance.
 --
 --   HEAD v1: <i4 w> <i4 h> <I4 grid px> <f f f bg tint> <s4 name>
 --   FLGS v1 (optional, only when nonzero): <I4 bit0 nofill — the in-game
 --            collider fill is off; art placements own the visuals (§5)>
---   COLL v1: one free collider (col_pack below)
---   PLCE v1: <I1 layer> <I4 flags bit0 flip_x, bit1 hidden> <i4 x> <i4 y>
---            <s4 path> <s4 name> <I2 ncols> ncols * col_pack
+--   LAYR v1: <I2 n> n * ( <I1 flags bit0 vis(editor), bit1 on(game)>
+--            <s4 name> ) — the named layers, in z order (back → front).
+--            Absent = one default layer {name="main", vis=on=true} that
+--            all placements fall onto (old maps upgrade transparently).
+--   COLL v1: one free collider (col_pack below) — layer-independent
+--            (level geometry; attached colliders on placements follow
+--            their placement's layer instead)
+--   PLCE v2: <I1 layer 0-based idx into LAYR> <I4 flags bit0 flip_x,
+--            bit1 novis (image suppressed → a named ref)> <i4 x> <i4 y>
+--            <s4 path> <s4 name> <s4 anim (clip to auto-play, "" = none)>
+--            <I2 ncols> ncols * col_pack
+--   PLCE v1 (legacy read): ... same but no <s4 anim>, bit1 = hidden
+--            (mapped to novis); layer treated as the single default.
 --   MRKR v1: <i4 x y w h> <s4 kind> <s4 label> <s4 note> <I2 n> n*(s4 k, s4 v)
 --   TAIL v1: empty
 --
@@ -19,13 +30,24 @@
 --   quad <i4 x y w h> | circle <i4 cx cy r>. Quads become closed 4-vert
 --   chains at world build; circles stay overlap colliders (cm.collide).
 --
+-- Any asset kind can be placed. Visual kinds (.spr/.png/.tm) render their
+-- image; every other kind (.ins/.song/.pal/...) — or a visual one with
+-- novis set — is a NAMED REFERENCE: no image, a code-addressable handle
+-- at a position (M.ref). A dangling path gracefully falls back to a
+-- built-in placeholder (M.ref / the editor's checkerboard) with a warning.
+--
+-- Layers gate BOTH sides: layer.on=false makes the layer's placements act
+-- as if they don't exist in-game (no draw, no attached colliders, no ref)
+-- — prototype overlays toggle here; layer.vis is an editor-only render
+-- toggle (declutter without changing the game).
+--
 -- M.use{ path=, name= } instances a decoded map into the live sim: the
--- collider buffer (free colliders + every placement's attached colliders
--- offset by its position) via cm.collide.build, plus plain render/logic
--- tables. Placements are render-only state — M.get(name) hands game code
--- the placement table itself (move a door, blink a sign: camera-class
--- mutations); driving a collider-carrying placement is the R7b dynamic-
--- body slot, not this.
+-- collider buffer (free colliders + every ENABLED placement's attached
+-- colliders offset by its position) via cm.collide.build, plus plain
+-- render/logic tables. Placements are render-only state — M.get(name)
+-- hands game code the placement table itself (move a door, blink a sign:
+-- camera-class mutations); driving a collider-carrying placement is the
+-- R7b dynamic-body slot, not this.
 
 local M = select(2, ...) or {}
 
@@ -73,10 +95,62 @@ local function col_unpack(b, pos)
   return c, pos
 end
 
+-- ---- layers ----
+
+-- the default single layer an old / layerless map falls onto. Kept
+-- canonical: a doc whose layers are exactly this one still writes a LAYR
+-- chunk (the feature is first-class), but a decoded layerless map
+-- synthesizes it so `doc.layers` is ALWAYS present + 1-based.
+function M.default_layers()
+  return { { name = "main", vis = true, on = true } }
+end
+
+-- clamp a placement's layer index into range (1-based); layerless / bad
+-- indices collapse onto layer 1. Called after decode once layers settle.
+local function clamp_layers(doc)
+  if not doc.layers or #doc.layers == 0 then
+    doc.layers = M.default_layers()
+  end
+  local n = #doc.layers
+  for _, p in ipairs(doc.places or {}) do
+    local L = p.layer or 1
+    if L < 1 then L = 1 elseif L > n then L = n end
+    p.layer = L
+  end
+end
+M.clamp_layers = clamp_layers
+
+-- is a placement's layer live in-game? (on=false = "doesn't exist"). A
+-- missing layers table / index is treated as enabled (fail-open).
+local function place_on(doc, p)
+  local L = doc.layers and doc.layers[p.layer or 1]
+  return not L or L.on ~= false
+end
+M.place_on = place_on
+
+-- placement draw order: layers back-to-front, insertion order within a
+-- layer. Returns original indices (the editor selection keys on them), so
+-- both banks draw the same z without renumbering places. Deterministic: a
+-- total order (index tiebreak), no hash dependence.
+function M.z_order(doc)
+  local idx = {}
+  local places = doc.places or {}
+  for i = 1, #places do idx[i] = i end
+  table.sort(idx, function(a, b)
+    local la, lb = places[a].layer or 1, places[b].layer or 1
+    if la ~= lb then return la < lb end
+    return a < b
+  end)
+  return idx
+end
+
 -- ---- codec ----
 
--- doc = { name=, w=, h=, grid=, bg = {r,g,b}, colliders = {c...},
---         places = { {path=, x=, y=, layer=, flip=, name=, cols={c...}} },
+-- doc = { name=, w=, h=, grid=, bg = {r,g,b}, nofill=,
+--         layers = { {name=, vis=bool, on=bool}, ... },  -- 1-based, z order
+--         colliders = {c...},
+--         places = { {path=, x=, y=, layer=idx, flip=, vis=bool,
+--                     name=, anim=, cols={c...}} },
 --         markers = { {x=,y=,w=,h=, kind=, label=, note=,
 --                      extras = { {k=,v=}, ... }} } }
 function M.encode(doc)
@@ -88,16 +162,27 @@ function M.encode(doc)
   -- bit0 nofill = the in-game collider fill is OFF for this map (§5's
   -- per-map switch: art placements have taken over the visuals)
   if doc.nofill then w.chunk("FLGS", 1, pack("<I4", 1)) end
+  local layers = doc.layers or M.default_layers()
+  local lp = { pack("<I2", #layers) }
+  for _, L in ipairs(layers) do
+    lp[#lp + 1] = pack("<I1s4",
+      ((L.vis ~= false) and 1 or 0) | ((L.on ~= false) and 2 or 0),
+      L.name or "")
+  end
+  w.chunk("LAYR", 1, table.concat(lp))
   for _, c in ipairs(doc.colliders or {}) do
     w.chunk("COLL", 1, col_pack(c))
   end
   for _, p in ipairs(doc.places or {}) do
-    local parts = { pack("<I1I4i4i4s4s4I2", p.layer or 0,
-                         (p.flip and 1 or 0) | (p.hidden and 2 or 0),
+    -- 1-based index -> disk 0-based, clamped into the layer range (a bad
+    -- / legacy index can never overflow the u8 or dangle)
+    local li = math.max(1, math.min(#layers, p.layer or 1)) - 1
+    local parts = { pack("<I1I4i4i4s4s4s4I2", li,
+                         (p.flip and 1 or 0) | ((p.vis == false) and 2 or 0),
                          p.x, p.y, p.path,
-                         p.name or "", #(p.cols or {})) }
+                         p.name or "", p.anim or "", #(p.cols or {})) }
     for _, c in ipairs(p.cols or {}) do parts[#parts + 1] = col_pack(c) end
-    w.chunk("PLCE", 1, table.concat(parts))
+    w.chunk("PLCE", 2, table.concat(parts))
   end
   for _, mk in ipairs(doc.markers or {}) do
     local parts = { pack("<i4i4i4i4s4s4s4I2", mk.x, mk.y, mk.w, mk.h,
@@ -125,16 +210,28 @@ function M.decode(bytes)
     elseif c.tag == "FLGS" and c.version == 1 then
       local fl = unpack("<I4", c.payload)
       doc.nofill = fl & 1 ~= 0 or nil
+    elseif c.tag == "LAYR" and c.version == 1 then
+      local n, pos = unpack("<I2", c.payload, 1)
+      doc.layers = {}
+      for _ = 1, n do
+        local flags, name
+        flags, name, pos = unpack("<I1s4", c.payload, pos)
+        doc.layers[#doc.layers + 1] =
+          { name = name, vis = flags & 1 ~= 0, on = flags & 2 ~= 0 }
+      end
     elseif c.tag == "COLL" and c.version == 1 then
       doc.colliders[#doc.colliders + 1] = col_unpack(c.payload, 1)
-    elseif c.tag == "PLCE" and c.version == 1 then
+    elseif c.tag == "PLCE" and (c.version == 1 or c.version == 2) then
       local p, pos = {}, 1
       local layer, flags
       layer, flags, p.x, p.y, p.path, p.name, pos =
         unpack("<I1I4i4i4s4s4", c.payload, pos)
-      p.layer, p.flip = layer, flags & 1 ~= 0
-      p.hidden = flags & 2 ~= 0 or nil
+      if c.version == 2 then p.anim, pos = unpack("<s4", c.payload, pos) end
+      p.layer = layer + 1 -- disk 0-based -> Lua 1-based (clamped below)
+      p.flip = flags & 1 ~= 0
+      p.vis = flags & 2 == 0 -- bit1 = novis (v1: hidden) -> vis=false
       if p.name == "" then p.name = nil end
+      if p.anim == "" then p.anim = nil end
       local n
       n, pos = unpack("<I2", c.payload, pos)
       p.cols = {}
@@ -160,6 +257,7 @@ function M.decode(bytes)
   end
   if not seen_head then error("map: no HEAD chunk", 0) end
   if not seen_tail then error("map: no TAIL chunk (truncated?)", 0) end
+  clamp_layers(doc) -- synthesize the default layer + clamp indices
   return doc
 end
 
@@ -202,13 +300,17 @@ function M.use(o)
   local cols = {}
   for _, c in ipairs(doc.colliders) do to_world(c, 0, 0, cols) end
   for _, p in ipairs(doc.places) do
-    for _, c in ipairs(p.cols or {}) do to_world(c, p.x, p.y, cols) end
+    if place_on(doc, p) then
+      for _, c in ipairs(p.cols or {}) do to_world(c, p.x, p.y, cols) end
+    end
   end
   local world = collide.build{ name = o.name or error("map.use: name", 2),
                                w = doc.w, h = doc.h, colliders = cols }
   local by_name = {}
   for _, p in ipairs(doc.places) do
-    if p.name and not by_name[p.name] then by_name[p.name] = p end
+    if p.name and place_on(doc, p) and not by_name[p.name] then
+      by_name[p.name] = p
+    end
   end
   M.cur = { doc = doc, world = world, by_name = by_name, path = o.path,
             name = o.name }
@@ -246,14 +348,18 @@ function M.reload(path)
   local cols = {}
   for _, c in ipairs(doc.colliders) do to_world(c, 0, 0, cols) end
   for _, p in ipairs(doc.places) do
-    for _, c in ipairs(p.cols or {}) do to_world(c, p.x, p.y, cols) end
+    if place_on(doc, p) then
+      for _, c in ipairs(p.cols or {}) do to_world(c, p.x, p.y, cols) end
+    end
   end
   collide.rebuild(cur.world, { name = cur.name, w = doc.w, h = doc.h,
                                colliders = cols })
   cur.doc = doc
   cur.by_name = {}
   for _, p in ipairs(doc.places) do
-    if p.name and not cur.by_name[p.name] then cur.by_name[p.name] = p end
+    if p.name and place_on(doc, p) and not cur.by_name[p.name] then
+      cur.by_name[p.name] = p
+    end
   end
   cur._fill = nil
   cur._ptex = nil
@@ -307,7 +413,9 @@ function M.geom(doc)
   end
   for _, c in ipairs(doc.colliders) do take(c, 0, 0) end
   for _, p in ipairs(doc.places) do
-    for _, c in ipairs(p.cols or {}) do take(c, p.x, p.y) end
+    if place_on(doc, p) then -- a disabled layer's colliders don't exist
+      for _, c in ipairs(p.cols or {}) do take(c, p.x, p.y) end
+    end
   end
   return { loops = loops, slabs = slabs, lines = lines }
 end
@@ -527,9 +635,13 @@ end
 -- collider fill until a per-map flag turns the fill off (§5).
 function M.draw_places(inst, camx, camy)
   local vw, vh = pal.gfx_size()
+  local doc = inst.doc
   local tmap
-  for _, p in ipairs(inst.doc.places) do
-    if not p.hidden then
+  for _, pi in ipairs(M.z_order(doc)) do
+    local p = doc.places[pi]
+    -- draw the image only for a live layer + a visible visual placement;
+    -- off-layer / novis / non-visual placements are refs (no image)
+    if place_on(doc, p) and p.vis ~= false then
       if p.path:lower():find("%.tm$") then
         local rec = place_tm(inst, p)
         if rec then -- tmap.draw culls per cell; flip is a no-op for grids
