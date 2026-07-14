@@ -143,22 +143,22 @@ end
 function M.draw(camx, camy)
   map.draw_fill(M.inst, camx, camy)
   map.draw_places(M.inst, camx, camy)
+  -- everything below draws in WORLD coords — gfx.camera (pal.camera) does
+  -- the screen offset, so no cam subtraction (that was the parallax bug)
   local frame = cm.require("cm.state").frame()
   local got = M.collected()
-  -- coins: a little bobbing gold pickup
   for _, c in ipairs(M.coins) do
     if not got[c.id] then
       local bob = math.floor(2.5 * cm.require("cm.math").sin(frame * 0.12 + c.x))
-      pal.quad(c.x - camx, c.y - camy + bob, c.w, c.h, 0.98, 0.82, 0.28, 1)
-      pal.quad(c.x - camx + 2, c.y - camy + bob + 2, c.w - 4, c.h - 4, 1.0, 0.95, 0.6, 1)
+      pal.quad(c.x, c.y + bob, c.w, c.h, 0.98, 0.82, 0.28, 1)
+      pal.quad(c.x + 2, c.y + bob + 2, c.w - 4, c.h - 4, 1.0, 0.95, 0.6, 1)
     end
   end
-  -- hazards: red spikes
   for _, h in ipairs(M.hazards) do
-    pal.quad(h.x - camx, h.y - camy, h.w, h.h, 0.72, 0.16, 0.20, 1)
+    pal.quad(h.x, h.y, h.w, h.h, 0.72, 0.16, 0.20, 1)
     local n = math.max(1, h.w // 10)
     for i = 0, n - 1 do
-      pal.quad(h.x - camx + i * 10 + 2, h.y - camy - 4, 6, 5, 0.86, 0.24, 0.26, 1)
+      pal.quad(h.x + i * 10 + 2, h.y - 4, 6, 5, 0.86, 0.24, 0.26, 1)
     end
   end
 end
