@@ -435,6 +435,19 @@ function M.asset(spec)
       return
     end
 
+    -- auto-name (human): prefill an unbound field with a unique 3-word
+    -- name so Enter creates immediately — no naming paralysis (audit G6).
+    -- Only when default is a bare dir ("ins/"); stays fully editable.
+    if p0.newpath == nil and opts.default and opts.default:find("/$") then
+      local words = cm.require("cm.words")
+      local dir = opts.default
+      p0.newpath = dir .. words.unique(function(nm)
+        local rel = dir .. nm .. "." .. opts.ext
+        return pal.read_file(ed.root .. "/" .. rel) ~= nil
+               or (ed.doc.assets and ed.doc.assets[rel] ~= nil)
+      end) .. "." .. opts.ext
+    end
+
     local text, _, _, st = pal.x_ig_edit {
       id = "pathfield" .. win.id, x = ctx.cx + 10 * z, y = fy + 1,
       w = fw - 4 * z, h = px * 1.7 - 2,

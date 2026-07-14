@@ -3209,6 +3209,31 @@ local function t_ins()
   for _ = 1, 6 do pal.snd_render() end
 end
 
+local function t_words()
+  -- cm.words: the auto-namer / graybox word bank. Data + a pure-over-
+  -- the-seeded-stream name generator (dev RNG by default; seed for tests).
+  local w = cm.require("cm.words")
+  check(#w.list > 100, "words: a decent bank")
+  local kebab = true
+  for _, x in ipairs(w.list) do if x:find("[^a-z]") then kebab = false end end
+  check(kebab, "words: every word is lowercase/kebab-safe")
+  w.seed(1234)
+  local a = w.name()
+  w.seed(1234)
+  check(w.name() == a, "words: a seeded name is reproducible")
+  local parts = {}
+  for pp in a:gmatch("[^%-]+") do parts[#parts + 1] = pp end
+  check(#parts == 3 and parts[1] ~= parts[2] and parts[2] ~= parts[3]
+        and parts[1] ~= parts[3], "words: name = 3 distinct words joined by -")
+  local taken = { [a] = true }
+  w.seed(1234) -- the stream would yield `a` first; unique must dodge it
+  local u = w.unique(function(nm) return taken[nm] end)
+  check(u ~= a and not taken[u], "words: unique() avoids a taken name")
+  local seq, k = { 0, 5, 9 }, 0
+  local pick = w.word(function() k = k + 1; return seq[k] end)
+  check(pick == w.list[1], "words: a caller rng selects the word (sim-safe)")
+end
+
 local function t_song()
   -- R9d (AUDIO.md §4.2/§6): the CSNG codec, the flatten, tick math,
   -- and the sequencer end to end. Runs AFTER t_snd (renders frames).
@@ -4497,6 +4522,7 @@ function game.init()
   t_ed_kit()
   t_snd()
   t_ins()
+  t_words()
   t_song()
   t_ed_lex()
   t_ed_assets()
