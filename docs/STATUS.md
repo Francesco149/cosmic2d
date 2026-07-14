@@ -3,6 +3,98 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-14 (the final-polish batch — the next-session queue +
+two live human asks, seven streams, all built + committed)
+
+Worked the queued "final polish" items + two mid-session human requests.
+Each a logical commit; suite ALL GREEN throughout (selftest **23082**
+unchanged — these are data/render/dev changes; every new PAL path bypasses
+at its default so the pixel + PCM + trace goldens are byte-identical).
+
+- **Picker metadata (`f2c9f7d`, G3)**: the picker now evaluates each
+  project.lua (pcall-guarded load, name-regex fallback) and draws two
+  subtitle rows per tile — a byline (`by <author>  ·  v<version>`) + the
+  description; the path stands in for whichever the metadata omits. Tiles
+  grew 92→100px. demo shows its byline+desc; metadata-less projects show
+  their path.
+- **Checkerboard-tilemap parallax backdrop (`fce83a3`+`34ce3af`, human
+  ask)**: replaced the demo's procedural checker parallax with a REAL .tm
+  tilemap (`demo/bg.tm`) laid from the stock checker sprites — a period-8
+  lattice of framed blocks, tiled to cover the view, dimmed + per-room
+  tinted (warm town / cool overworld). `cm.tmap.draw` gained an optional
+  r,g,b,a tint (default white = byte-identical) to do the dimming. Dogfoods
+  the stock tileset as a backdrop (G13). bg.tm is a committed editable asset.
+- **In-editor help window + docs (`609758b`, G7)**: `engine/stock/docs/`
+  (getting-started / editor / scripting — trimmed, cross-linked) + a new
+  `help` window kind (spawn menu → help) that lists them and opens a chosen
+  one in a code-editor window; the code ed already renders .md (faces +
+  Ctrl+click link nav + history). Stock docs open via
+  `../../engine/stock/docs/*` (the resolve_link convention; verified the
+  link path resolves). One line in the ed.lua roster; the rest derives.
+- **Per-room color grade (`c8b6b79`, M10)**: `pal.x_grade{brightness,
+  contrast,saturation,tint}` — a render-only grade BAKED INTO the game
+  target as a post-pass (sample target → grade shader → scratch → swap), so
+  the readback (--shot + pixel goldens) AND the live composite both see it.
+  Opt-in per frame (reset every begin_frame → can't leak across a reboot);
+  the ungraded path never runs the pass → default frame + every golden
+  byte-identical. `cm.grade` wraps it with named moods (warm/cool/dusk/
+  night/noir/dream); the demo grades town warm / overworld cool. **Caught +
+  fixed a real design bug**: the grade first went on the *composite* blit,
+  but headless --shot reads G.target DIRECTLY (pre-composite) — invisible to
+  --shot/goldens. Moving it to a target post-pass is the correct "goldens
+  read back post-LUT" (ARCHITECTURE.md) design.
+- **Game-window mute music / mute sfx (`cedb2d2`, human ask)**: two monitor
+  mutes in the game window header (editor). `pal.x_snd_mute(music, sfx)`
+  renders a category-filtered copy for the DEVICE push when a mute is live
+  (`bank_render_dev` renders each voice ONCE into the hashed `full` always,
+  the device `dev` only when its slot category — music 32..47 / sfx 0..31 —
+  is unmuted), so the sim bank + PCM hash stay the full mix: golden
+  `c8826fe3771e33d9` byte-identical, rewind unaffected. Cleared each boot so
+  play always starts audible; the window re-applies its toggles per frame.
+- **Cozy town song intro (`920bcb7`, human ask)**: the town BGM slammed in
+  all three tracks at tick 0. Added a 4-bar buildup that PRESERVES the theme
+  entirely — the pad/bass/bell clips shift 4 bars later; the intro fills
+  bars 0-3 with a soft pad swell (the theme's own opening chords at ~58%
+  vel) + a soft bass root easing in over bars 2-3 (pad → +bass → full theme
+  → loop the 20 bars). Rebuilt with a one-shot generator from the existing
+  patterns; no melody recomposed. **Needs the human's EARS** to judge
+  cozy/catchy — structural only.
+- **kit.winui (`7a519fb`, R9g — the flagged winui generalization, PARTIAL)**:
+  lifted the palette multi-window fix into `cm.ed.kit.winui(p, win)` — the
+  per-window scratch nested under the shared path-keyed plumbing, keyed by
+  win.id. palette now calls it (behavior-identical; two windows on one .pal
+  verified independent). **DEFERRED — the map/synth/music application**: they
+  carry the same latent shared-UI-state pattern but it's a careful mechanical
+  refactor each needs a real-event GESTURE TAPE to verify (not safe to rush):
+  - map (172 sites): p.sel, p.g, p.csel, p.asel, p.pan, p.guides, p.run,
+    p.click, p.colmenu → all per-window via winui.
+  - synth: p.drag, p.pdrag + the audition state (held/kdecay/pianodown, tied
+    to p.edslot/vbase/vnext voice allocation — think through per-window vs
+    per-asset).
+  - music: p.nsels, p.playing, p.pslots/pvoice/pheld, p.blips.
+  - sound.lua is already correct (plumbing keyed by win.id, not path).
+
+**Proof:** `nix run .#test` **ALL GREEN** every time (goldens byte-
+identical — the tmap tint, x_grade, and x_snd_mute all bypass at default;
+demo isn't a golden). Grade proven with a forced-noir shot (town → near-
+grayscale) + the town/overworld warm/cool shots; mute chips render;
+help window opens docs with faces+links; backdrop parallax confirmed;
+song plays clean 200 frames + the new arrangement drawn in the music
+window. ~10 shots on llm-feed. **cosmic2d-win RE-STAGE IN FLIGHT** (the
+human authorized it; PAL changed — grade + mute).
+
+**Next step (resume here):** the human's TASTE + EARS pass on the live
+windows build — (1) the town song intro (does it ease in cozy? tune in the
+music window), (2) the mute music/sfx toggles (game window header, live
+audio), (3) the per-room grade (town warm / overworld cool; `cm.grade`
+presets to try), (4) the checker-tilemap backdrop + parallax, (5) the help
+window + docs, (6) picker metadata. Then **the deferred winui pass** (map/
+synth/music via kit.winui — gesture-tape each, the field inventory above).
+Good `/clear` point once the human has run the re-staged exe — everything
+committed, docs current.
+
+---
+
 **Date**: 2026-07-14 (feedback round on the alpha-polish batch — the
 human's live bug reports, all fixed)
 
