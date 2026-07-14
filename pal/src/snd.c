@@ -180,7 +180,10 @@ static struct {
 
 /* ---- the kernel (shared by both banks) ---- */
 
-static int32_t wave_sample(uint8_t wave, uint32_t ph, uint32_t oldph,
+/* ph = this sample's phase (FM-modulated); prevph = the previous sample's
+ * phase. Only LFSR noise reads prevph — it steps when the phase MSB toggles
+ * between the two, so a freq-driven advance (ph - prevph ≈ incs) clocks it. */
+static int32_t wave_sample(uint8_t wave, uint32_t ph, uint32_t prevph,
                            uint16_t *lfsr) {
   switch (wave) {
   default:
@@ -196,7 +199,7 @@ static int32_t wave_sample(uint8_t wave, uint32_t ph, uint32_t oldph,
   }
   case 6:
   case 7: { /* LFSR noise, stepped on phase MSB toggles (freq-clocked) */
-    if ((ph ^ oldph) & 0x80000000u) {
+    if ((ph ^ prevph) & 0x80000000u) {
       uint16_t l = *lfsr ? *lfsr : 0x7fff;
       uint16_t bit = (l ^ (l >> 1)) & 1;
       l = (uint16_t)((l >> 1) | (bit << 14));
@@ -395,7 +398,15 @@ static void voice_render(const SndPatch *p, SndVoice *v, int32_t *acc,
           mod = ((int32_t)os->fb1 + os->fb2) >> (10 - (p->fb & 7));
         uint32_t oldph = os->phase;
         uint32_t ph = oldph + (uint32_t)((int64_t)mod << SND_MOD_SHIFT);
-        int32_t w = wave_sample(op->wave, ph, oldph, &os->lfsr);
+        /* LFSR noise is FREQUENCY-clocked: it steps when the phase MSB
+         * toggles as the phase advances by incs[o] from the previous
+         * sample. wave_sample detects that via (ph ^ prevph) & MSB, so
+         * prevph must be LAST sample's phase = oldph - incs[o] (the phase
+         * accumulates only incs each sample; mod is applied fresh, not
+         * stored). Passing oldph here froze the LFSR on every unmodulated
+         * noise op — i.e. all the gb drums (alg 7, no mod) rendered as a
+         * DC click, not a hiss. Tonal waves ignore this arg (goldens safe). */
+        int32_t w = wave_sample(op->wave, ph, oldph - incs[o], &os->lfsr);
         int32_t oo = w * (int32_t)(os->env >> 12) >> 12;
         oo = oo * op->level >> 8;
         out[o] = oo;

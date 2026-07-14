@@ -3137,7 +3137,10 @@ local function t_snd()
   -- every render in this test is deterministic and t_snd is the only
   -- renderer before this line, so the accumulator itself is the golden
   pal.log(("snd golden: %016x"):format(h1))
-  check(h1 == 0xc8826fe3771e33d9, -- pinned 2026-07-13 (R9b)
+  check(h1 == 0x9df7dc572822ef01, -- re-cut 2026-07-15: the LFSR-noise
+        -- freq-clock fix (snd.c) — the ladder renders a noise op (slot 3),
+        -- which was frozen (DC) before and is broadband now. Deliberate
+        -- re-cut, not an unexpected break (was 0xc8826fe3771e33d9, R9b).
         "snd golden: the committed PCM hash")
 
   -- R9f: the filter + sweep must CHANGE the PCM (the golden above proves
