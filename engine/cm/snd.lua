@@ -154,6 +154,21 @@ end
 -- the derived caches (NOT state: rebuilt whenever they don't match)
 local cache = { path = nil, flat = nil, doc = nil, slots = nil }
 
+-- resolve a track's instrument: direct first (absolute / cwd-relative),
+-- then relative to the song's PROJECT dir (a song at <proj>/sound/x.song
+-- storing tr.ins "ins/y.ins" -> <proj>/ins/y.ins). Makes a self-contained
+-- project's songs play from any cwd (the game runs from the engine root;
+-- packaging relocates the tree) — the editor stores project-relative ins.
+local function read_ins(song_path, ins_path)
+  if not ins_path or ins_path == "" then return nil end
+  local b = pal.read_file(ins_path)
+  if b then return b end
+  local sdir = song_path and song_path:match("^(.*)/[^/]*$") -- .../sound
+  local proj = sdir and sdir:match("^(.*)/[^/]*$")           -- the project
+  if proj then return pal.read_file(proj .. "/" .. ins_path) end
+  return nil
+end
+
 local function load_song(path)
   if cache.path == path and cache.flat then return true end
   local bytes = pal.read_file(path)
@@ -168,7 +183,7 @@ local function load_song(path)
   for ti, tr in ipairs(doc.tracks) do
     local slot = 31 + ti
     if slot > 47 then break end
-    local ibytes = tr.ins ~= "" and pal.read_file(tr.ins)
+    local ibytes = read_ins(path, tr.ins)
     if ibytes then
       local iok, idoc = pcall(cm.require("cm.ins").decode, ibytes)
       if iok then
