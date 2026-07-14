@@ -10,6 +10,7 @@
 
 local gfx = cm.require("cm.gfx")
 local map = cm.require("cm.map")
+local tmap = cm.require("cm.tmap")
 local palette = cm.require("cm.palette")
 
 local M = {}
@@ -115,6 +116,51 @@ local SKY = {
   overworld = palette.load("engine/stock/pal/frostbyte-8.pal"),
 }
 
+-- The parallax backdrop is a real .tm tilemap (demo/bg.tm) laid from the
+-- stock checkerboard sprites (engine/stock/spr/tiles) — a repeating lattice
+-- of distant framed blocks (top-lit id1, edges id3/4, interior id2) with a
+-- lone slab for rhythm. Written on first boot, then a committed editable
+-- asset (open it in the tilemap window). draw_bg tiles + dims + per-room
+-- tints it under the sky. The pattern's period is 8 tiles so it wraps
+-- seamlessly.
+local BG_W, BG_H, BG_T = 16, 16, 16
+
+local function bg_id(tx, ty)
+  local u, v = tx % 8, ty % 8
+  if u >= 2 and u <= 5 and v >= 2 and v <= 5 then -- a 4x4 framed block
+    if v == 2 then return 1 end -- top surface (lit lip)
+    if u == 2 then return 3 end -- left edge
+    if u == 5 then return 4 end -- right edge
+    return 2                    -- interior fill
+  end
+  if u == 0 and v == 6 then return 5 end -- a lone slab out in the gap
+  return 0
+end
+
+local function build_bg()
+  local doc = tmap.blank(BG_W, BG_H, BG_T, "engine/stock/spr/tiles.spr")
+  for ty = 0, BG_H - 1 do
+    for tx = 0, BG_W - 1 do
+      local id = bg_id(tx, ty)
+      if id ~= 0 then tmap.set(doc, tx, ty, id) end
+    end
+  end
+  return doc
+end
+
+-- Load (and first-boot-write) the backdrop .tm; re-decodes on asset_epoch
+-- bumps so a tilemap-window edit hot-reloads.
+function M.load_bg()
+  local ep = cm.asset_epoch or 0
+  if M.bg and M.bg_ep == ep then return M.bg end
+  local path = cm.main.args.project .. "/bg.tm"
+  if not pal.read_file(path) then -- dev bootstrap; inert once committed
+    pal.write_file(path, tmap.encode(build_bg()))
+  end
+  M.bg, M.bg_ep = tmap.decode(pal.read_file(path)), ep
+  return M.bg
+end
+
 function M.draw_bg(camx, camy)
   local paint = cm.require("cm.paint")
   local cols = SKY[M.current] and SKY[M.current].colors
@@ -131,21 +177,22 @@ function M.draw_bg(camx, camy)
       pal.quad(0, i * bh, 480, bh, r / 255, g / 255, b / 255, 1)
     end
   end
-  -- 2) a SOFT checkerboard parallax layer (scrolls slower than the world) —
-  --    neutral depth, deliberately style-free; the VFX/LUT layer recolors
-  --    the whole vibe later. mul 0.4 = background at ~40% scroll speed.
+  -- 2) the checkerboard-tilemap parallax backdrop (demo/bg.tm) — tiled to
+  --    cover the view, dimmed, and tinted from the room palette; scrolls at
+  --    ~40% so it reads as distant structures. The VFX/LUT layer recolors
+  --    the whole vibe later.
   if cols and #cols >= 5 then
+    local bg = M.load_bg()
+    local tex = gfx.texture("engine/stock/spr/tiles.png")
     gfx.layer(0.4, 0.45)
-    local ts = 40
+    local lx, ly = (camx or 0) * 0.4, (camy or 0) * 0.45
+    local pw, ph = bg.w * bg.tile, bg.h * bg.tile
+    local vw, vh = pal.gfx_size()
     local r, g, b = paint.unpack(cols[3])
-    local x0 = math.floor((camx or 0) * 0.4 / ts) * ts
-    local y0 = math.floor((camy or 0) * 0.45 / ts) * ts
-    for ty = 0, 270 // ts + 2 do
-      for tx = 0, 480 // ts + 2 do
-        local wx, wy = x0 + tx * ts, y0 + ty * ts
-        if ((wx // ts) + (wy // ts)) % 2 == 0 then
-          pal.quad(wx, wy, ts, ts, r / 255, g / 255, b / 255, 0.13)
-        end
+    r, g, b = r / 255, g / 255, b / 255
+    for oy = math.floor(ly / ph) * ph, ly + vh, ph do
+      for ox = math.floor(lx / pw) * pw, lx + vw, pw do
+        tmap.draw(bg, tex, ox, oy, lx, ly, r, g, b, 0.28)
       end
     end
   end
