@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic primitive complete (2026-07-15)
+## Current handoff — A1 session metadata durable (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -34,10 +34,19 @@ replacement plus a natural missing-directory failure are also covered. Linux
 and Windows builds compile; `nix run .#test` is ALL GREEN with 23,129
 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** migrate editor session metadata and `.recent.dat` to
-`pal.write_file_atomic`, preserve/load a last-known-good session when the live
-file is corrupt, and surface write/recovery failures instead of silently
-continuing. Add focused corruption and injected-failure tests. Do not mix in
-journal or multi-output sprite migration yet.
+**A1 packet 2 is complete.** Editor `session.dat` and engine-root
+`.recent.dat` now use atomic replacement. Every successful editor save also
+atomically maintains `session.dat.good`; corrupt live metadata restores that
+copy, while double corruption starts fresh with an explicit recovery notice.
+Session/recent write failures are logged and open the console rather than
+silently continuing. Focused tests inject failures into the recovery and live
+replacement steps, prove the previous files survive, cover single/double
+corruption, and pin recents ordering. `nix run .#test` is ALL GREEN: 23,139
+self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** migrate editor journals to atomic checkpoint creation
+and add last-known-good journal recovery without changing the existing append
+stream or branching semantics. Cover interrupted/corrupt checkpoint recovery
+and visible failures. Do not mix in multi-output sprite migration yet.
 
 There is no known blocker or human-only verification required.

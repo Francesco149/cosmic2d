@@ -79,10 +79,12 @@ domain is structurally parallel:
 ### Persistence: the session file
 
 `<project>/.ed/session.dat` = a `CEDS` chunk container wrapping the
-ed-doc canon bytes (+ a version chunk). Saved on a **400 ms debounce**
-after any doc mutation (teidraw's autosave shape); loaded at editor boot.
-This single file is what makes layout + unsaved work survive a restart —
-half of the R3 exit criterion. `.ed/` is per-project, untracked
+ed-doc canon bytes (+ a version chunk). Saved atomically on a **400 ms
+debounce** after any doc mutation (teidraw's autosave shape); loaded at editor
+boot. The same encoded state is atomically maintained as `session.dat.good`;
+if the live copy is damaged, boot restores that last-known-good copy and opens
+the console with a recovery notice. These files make layout + unsaved work
+survive a restart. `.ed/` is per-project, untracked
 (gitignored by the engine's default project scaffolding).
 
 ## 3. The canvas
@@ -311,7 +313,8 @@ picker replaces it) · game window. New windows spawn at the click point.
   dirty calc. Pure over byte strings + pal file I/O → selftestable.
 - **`cm.ed.win.note` / `.text` / `.game`** — the roster; each registers
   a kind: `draw(win, ctx)` + `input(win, ctx)` + doc-schema.
-- **`cm.ed.session`** — session.dat save/load + the 400 ms debounce.
+- **`cm.ed.session`** — atomic session.dat/session.dat.good save, recovery
+  load, and the 400 ms debounce.
 
 selftest additions (all headless, no ig): cam KATs (round-trip,
 zoom-anchor invariant, fit), wm KATs (hit priority, threshold state

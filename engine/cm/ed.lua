@@ -136,7 +136,8 @@ end
 
 function M.launch(root)
   M.root = root
-  M.doc = session.load(root)
+  local recovery
+  M.doc, recovery = session.load(root)
   if M.doc then
     wm.init(M.doc)
     M.doc.cam = M.doc.cam or cam.new()
@@ -144,6 +145,10 @@ function M.launch(root)
     M.doc = fresh_doc()
   end
   M.on = true
+  if recovery then
+    pal.log("[ed] RECOVERY: " .. recovery)
+    cm.require("cm.console").open = true
+  end
   cm.require("cm.view").mode = "canvas" -- no game blit; we draw the target
   -- a saved game window carries its FOV width choice (§12.3): re-apply
   for _, w in ipairs(M.doc.wins) do
@@ -362,7 +367,13 @@ function M.filter_events(events)
 end
 
 local function save_now()
-  if M.doc and M.root then session.save(M.root, M.doc) end
+  if M.doc and M.root then
+    local ok, err = session.save(M.root, M.doc)
+    if not ok then
+      pal.log("[ed] SESSION SAVE FAILED: " .. tostring(err))
+      cm.require("cm.console").open = true
+    end
+  end
   M.g.save_due = nil
 end
 

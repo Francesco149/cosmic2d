@@ -3040,14 +3040,59 @@ local function t_ed_session()
   -- save/load through the real file path shape
   local root = tmproot() .. "/cosmic_selftest_ed"
   check(session.save(root, doc) == true, "ed.session: save writes")
+  check(pal.read_file(session.good_path(root)) == blob,
+        "ed.session: save maintains last-known-good copy")
   local loaded = session.load(root)
   check(loaded and state.canon(loaded) == state.canon(doc),
         "ed.session: load round-trips")
   check(session.load(root .. "_nope") == nil, "ed.session: missing = nil")
 
-  -- a corrupt session file degrades to nil (fresh boot), never an error
+  -- A corrupt live file recovers the independently valid copy and reports it.
   pal.write_file(session.path(root), "CEDSgarbage")
-  check(session.load(root) == nil, "ed.session: corrupt = nil")
+  local recovered, notice = session.load(root)
+  check(recovered and state.canon(recovered) == state.canon(doc),
+        "ed.session: corrupt live recovers last-known-good")
+  check(notice and notice:find("restored", 1, true),
+        "ed.session: recovery is surfaced")
+
+  -- Failures at either atomic replacement keep the prior valid pair intact.
+  check(session.save(root, doc) == true,
+        "ed.session: restore valid pair before failure injection")
+  local newer = wm.init({ v = 1, cam = { x = 999, y = 0, zoom = 1 } })
+  local before_live = pal.read_file(session.path(root))
+  local before_good = pal.read_file(session.good_path(root))
+  local ok, err = session.save(root, newer, { good = { _fail = "rename" } })
+  check(not ok and err:find("last%-known%-good"),
+        "ed.session: backup write failure is reported")
+  check(pal.read_file(session.path(root)) == before_live and
+        pal.read_file(session.good_path(root)) == before_good,
+        "ed.session: backup failure preserves valid pair")
+  ok, err = session.save(root, newer, { live = { _fail = "rename" } })
+  check(not ok and err:find("live session", 1, true),
+        "ed.session: live write failure is reported")
+  check(pal.read_file(session.path(root)) == before_live and
+        session.decode(pal.read_file(session.good_path(root))).cam.x == 999,
+        "ed.session: live failure preserves old live and new recovery copy")
+
+  -- With both copies damaged, boot fresh but return an actionable notice.
+  pal.write_file(session.path(root), "bad live")
+  pal.write_file(session.good_path(root), "bad good")
+  local fresh, damaged = session.load(root)
+  check(fresh == nil and damaged and damaged:find("starting fresh", 1, true),
+        "ed.session: double corruption is surfaced")
+
+  -- Recents use the same atomic seam: a failed update cannot truncate them.
+  local recent = cm.require("cm.recent")
+  local old_path = recent.path
+  recent.path = tmproot() .. "/cosmic_selftest_recent.dat"
+  pal.write_file(recent.path, "old/project")
+  ok, err = recent.note("new/project", { _fail = "write" })
+  check(not ok and err and pal.read_file(recent.path) == "old/project",
+        "recent: injected failure preserves prior list")
+  check(recent.note("new/project") == true and
+        pal.read_file(recent.path) == "new/project\nold/project",
+        "recent: atomic update orders and preserves entries")
+  recent.path = old_path
 end
 
 local function t_ed_journal()

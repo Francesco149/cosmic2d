@@ -216,19 +216,12 @@ end
 -- cap 12) in the engine-root .recent.dat — the picker's memory; how
 -- sibling-repo projects (../cosmic2d-game/cosmic) get tiles
 local function note_recent(path)
-  local lines = {}
-  local seen = { [path] = true }
-  lines[1] = path
-  local old = pal.read_file(".recent.dat")
-  if old then
-    for line in old:gmatch("[^\n]+") do
-      if not seen[line] and #lines < 12 then
-        seen[line] = true
-        lines[#lines + 1] = line
-      end
-    end
+  local ok, err = cm.require("cm.recent").note(path)
+  if not ok then
+    pal.log("[recent] SAVE FAILED: " .. tostring(err))
+    return nil, err
   end
-  pal.write_file(".recent.dat", table.concat(lines, "\n"))
+  return true
 end
 
 function M.boot()
@@ -246,8 +239,10 @@ function M.boot()
   cm.set_project_root(args.project)
   -- the picker's memory: live real-project boots only (never headless
   -- runs, never the picker itself — and never a locked shipped game)
+  local recent_err
   if not args.headless and not args.picker and not args.locked then
-    note_recent(args.project)
+    local ok
+    ok, recent_err = note_recent(args.project)
   end
 
   pal.gfx_init {
@@ -279,6 +274,7 @@ function M.boot()
   M.ui = cm.require("cm.ui")
   M.repl = cm.require("cm.repl")
   M.console = cm.require("cm.console")
+  if recent_err then M.console.open = true end
   M.perf = cm.require("cm.perf")
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")

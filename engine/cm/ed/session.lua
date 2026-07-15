@@ -13,6 +13,7 @@ local MAGIC = "CEDS"
 
 function M.dir(root) return root .. "/.ed" end
 function M.path(root) return M.dir(root) .. "/session.dat" end
+function M.good_path(root) return M.dir(root) .. "/session.dat.good" end
 
 function M.encode(doc)
   local w = chunk.writer(MAGIC)
@@ -32,22 +33,40 @@ function M.decode(blob)
   error("session has no DOCB chunk", 0)
 end
 
-function M.save(root, doc)
+function M.save(root, doc, fail)
   pal.mkdir(M.dir(root))
-  return pal.write_file(M.path(root), M.encode(doc))
+  local blob = M.encode(doc)
+  local ok, err = pal.write_file_atomic(M.good_path(root), blob,
+                                        fail and fail.good)
+  if not ok then return nil, "last-known-good: " .. tostring(err) end
+  ok, err = pal.write_file_atomic(M.path(root), blob, fail and fail.live)
+  if not ok then return nil, "live session: " .. tostring(err) end
+  return true
 end
 
--- nil when there is no session yet; errors loudly on a corrupt one are
--- contained by the caller (a broken session file should not brick --edit)
-function M.load(root)
-  local blob = pal.read_file(M.path(root))
-  if not blob then return nil end
+local function decode_file(path)
+  local blob, err = pal.read_file(path)
+  if not blob then return nil, err end
   local ok, doc = pcall(M.decode, blob)
-  if not ok then
-    pal.log("[ed] session.dat unreadable (" .. tostring(doc) .. "); fresh")
-    return nil
+  if ok then return doc end
+  return nil, doc
+end
+
+-- Returns doc [, recovery_message]. A damaged live file falls back to the
+-- separately atomically-maintained last-known-good copy.
+function M.load(root)
+  local doc, err = decode_file(M.path(root))
+  if doc then return doc end
+  local good, good_err = decode_file(M.good_path(root))
+  if good then
+    return good, "session.dat unreadable (" .. tostring(err) ..
+                 "); restored session.dat.good"
   end
-  return doc
+  -- A genuinely absent session is the normal first-run case.
+  if pal.read_file(M.path(root)) == nil and
+     pal.read_file(M.good_path(root)) == nil then return nil end
+  return nil, "session metadata unreadable (live: " .. tostring(err) ..
+              "; backup: " .. tostring(good_err) .. "); starting fresh"
 end
 
 return M
