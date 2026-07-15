@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic trace/history complete (2026-07-16)
+## Current handoff — A1 atomic options/snapshots complete (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -156,9 +156,20 @@ failure publishes nothing, and index failure preserves the prior manifest;
 corrupt indexed tails are rejected and removed. `nix run .#test` is ALL GREEN:
 23,251 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** migrate viewport/options and runtime snapshot writes to
-atomic replacement with focused failure coverage, then audit the remaining A1
-write sites before closing the primitive-migration item. Player storage itself
-belongs to A4.
+**A1 packet 14 is complete.** Machine-local viewport/options `video.dat` and
+explicit runtime snapshot saves now use atomic replacement and return named
+errors. Video-setting failures are logged with their path and cause; snapshot
+callers receive a `write snapshot failed` error suitable for their UI. Injected
+rename failures prove both paths preserve the previous valid generation and a
+retry publishes complete canonical settings/snapshot bytes. The persistence
+audit found only intentional journal appends, explicit screenshot output,
+compatibility sidecar helpers, and the current picker's project-creation paths
+outside the atomic primitive. `nix run .#test` is ALL GREEN: 23,255
+self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** finish the A1 write-site audit by making compatibility
+sidecar helpers and picker recents/project scaffolding fail safely, with
+focused partial-project and replacement-failure coverage. Intentional journal
+appends retain their checkpoint recovery design; player storage belongs to A4.
 
 There is no known blocker or human-only verification required.

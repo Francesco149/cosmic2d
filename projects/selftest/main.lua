@@ -198,6 +198,17 @@ local function t_snapshot()
   local snap = state.snapshot()
   local epoch_before = cm.code_epoch
 
+  -- Explicit runtime snapshots publish as one atomic generation.
+  local snapshot_path = "/tmp/cosmic_selftest_atomic.csnap"
+  pal.write_file(snapshot_path, "known-good-snapshot")
+  local sok, serr = state.save(snapshot_path, { _fail = "rename" })
+  check(not sok and serr:find("write snapshot failed", 1, true)
+        and pal.read_file(snapshot_path) == "known-good-snapshot",
+        "snapshot: interrupted save preserves previous file")
+  check(state.save(snapshot_path)
+        and pal.read_file(snapshot_path) == snap,
+        "snapshot: retry publishes complete snapshot")
+
   -- wreck everything the snapshot should put back
   sim:i64(0, 9999)
   rand.seed(1)
@@ -1628,6 +1639,25 @@ local function t_viewport()
 
   pal.x_fov(64, 64)            -- restore for the remaining pixel tests
   check(select(1, pal.gfx_size()) == 64, "fov: restored to 64x64")
+
+  -- Machine-local video/options state is atomic and reports failure while
+  -- retaining the last valid settings generation.
+  local view = cm.require("cm.view")
+  local old_project = cm.main.args.project
+  local root = "/tmp/cosmic_selftest_video"
+  pal.mkdir(root)
+  cm.main.args.project = root
+  local path = root .. "/video.dat"
+  pal.write_file(path, "known-good-video")
+  view._save_fail = { _fail = "rename" }
+  local vok, verr = view.save_video()
+  check(not vok and type(verr) == "string"
+        and pal.read_file(path) == "known-good-video",
+        "video: interrupted options save preserves previous file")
+  view._save_fail = nil
+  check(view.save_video() and pal.read_file(path) ~= "known-good-video",
+        "video: retry publishes complete options")
+  cm.main.args.project = old_project
 end
 
 -- ---- cm.ui: the two mouse spaces (M8.4) ----

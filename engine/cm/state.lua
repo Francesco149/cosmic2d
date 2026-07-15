@@ -323,8 +323,10 @@ function M.restore(blob)
   cm.restore_bundle(snap.code)
 end
 
-function M.save(path)
-  return pal.write_file(path, M.snapshot())
+function M.save(path, fail)
+  local ok, err = pal.write_file_atomic(path, M.snapshot(), fail)
+  if not ok then return nil, "write snapshot failed: " .. tostring(err) end
+  return true
 end
 
 function M.load(path)

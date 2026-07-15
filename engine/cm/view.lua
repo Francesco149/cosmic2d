@@ -78,7 +78,12 @@ function M.save_video()
   if not path then return end -- headless / before boot wired args: nothing to do
   local t = { ui_scale = M.cfg.ui_scale, fullscreen = M.fullscreen,
               win_w = M.win_w, win_h = M.win_h }
-  pal.write_file(path, cm.require("cm.state").canon(t))
+  local ok, err = pal.write_file_atomic(path, cm.require("cm.state").canon(t),
+                                        M._save_fail)
+  if not ok then
+    pal.log(("[video] save FAILED %s: %s"):format(path, tostring(err)))
+  end
+  return ok, err
 end
 
 -- pick a windowed preset (the options menu): leave fullscreen first — SDL
