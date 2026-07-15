@@ -223,8 +223,18 @@ end
 -- default dims: 16x16 (tests stub their own; the window passes tex_dims)
 local function dim16() return 16, 16 end
 
+-- a wall-clock 60 Hz playhead for the editor's animation PREVIEW (a live
+-- clip auto-plays while you edit; the game uses the sim frame instead).
+local function anim_clock()
+  return math.floor((pal.time_ns and pal.time_ns() or 0) / 16666667)
+end
+
 function M.place_rect(doc, i, dims)
   local p = doc.places[i]
+  if p.anim then -- an auto-playing .spr is one frame, not the whole strip
+    local info = map.spr_info(p.path)
+    if info then return p.x, p.y, info.w, info.h end
+  end
   local w, h = (dims or dim16)(p.path)
   return p.x, p.y, w, h
 end
@@ -1111,7 +1121,9 @@ local function draw_placement(ed, p, pl, sx0, sy0, w, h, zoom, z, disabled,
                           .tileset_tex(ed, p, td.tileset)
     if t then
       local u0, u1 = 0, 1
-      if pl.flip then u0, u1 = 1, 0 end
+      local fi, fw = map.place_frame(pl.path, pl.anim, anim_clock())
+      if fi then u0, u1 = fi * fw / t.w, (fi + 1) * fw / t.w end
+      if pl.flip then u0, u1 = u1, u0 end
       pal.x_ig_image(t.id, sx0, sy0, sw, sh, u0, 0, u1, 1)
       shown_image = true
     elseif td and ttex then
@@ -2447,6 +2459,21 @@ function M.draw(win, ctx)
         if o.vis ~= false and pchip("flip", o.flip or false) then
           o.flip = not o.flip or nil
           commit(ed, win.path)
+        end
+        -- anim: pick a clip to auto-play (the trivial "leave it looping"
+        -- case — cycles nil -> clip1 -> ... -> nil through the .spr's clips)
+        if asset_kind(o.path) == "spr" and o.vis ~= false then
+          local info = map.spr_info(o.path)
+          local clips = info and info.clips
+          if clips and #clips > 0 then
+            if pchip("anim:" .. (o.anim or "—"), o.anim ~= nil) then
+              local idx = 0
+              for n, c in ipairs(clips) do if c.name == o.anim then idx = n end end
+              local nxt = clips[idx + 1]
+              o.anim = nxt and nxt.name or nil
+              commit(ed, win.path)
+            end
+          end
         end
       end
       if pchip("+col", p.colmenu or false) then

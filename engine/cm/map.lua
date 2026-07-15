@@ -676,6 +676,46 @@ local function place_tm(inst, p)
   return rec
 end
 
+-- a placed .spr's animation info (frame count + per-frame size + the
+-- .anim sidecar clips), cached by path + asset epoch. The baked strip is
+-- `frames` frames of `w`x`h`; clips index into it. nil for non-.spr /
+-- unreadable. Shared by both banks (game draw + the editor preview).
+local spr_cache = {}
+function M.spr_info(path)
+  if kind_of(path) ~= "spr" then return nil end
+  local ep = cm.asset_epoch or 0
+  local rec = spr_cache[path]
+  if rec and rec.ep == ep then return rec.info end
+  local proj = (cm.main and cm.main.args and cm.main.args.project) or "."
+  local info
+  local sb = pal.read_file(proj .. "/" .. path)
+  if sb then
+    local ok, sdoc = pcall(cm.require("cm.sprite").decode, sb)
+    if ok then
+      info = { frames = math.max(1, sdoc.frames or 1), w = sdoc.w,
+               h = sdoc.h,
+               clips = cm.require("cm.anim").load(
+                 proj .. "/" .. path:gsub("%.[sS][pP][rR]$", ".anim")) }
+    end
+  end
+  spr_cache[path] = { ep = ep, info = info }
+  return info
+end
+
+-- the current animation frame (0-based) + per-frame size for a placement,
+-- or nil when it isn't an auto-playing .spr. `elapsed` is the playhead
+-- (the sim frame in-game — render-only, deterministic; a wall clock in the
+-- editor preview). Falls back to frame 0 if the named clip is gone.
+function M.place_frame(path, anim_name, elapsed)
+  if not anim_name then return nil end
+  local info = M.spr_info(path)
+  if not info then return nil end
+  local clip = info.clips and cm.require("cm.anim").find(info.clips, anim_name)
+  local fi = clip and cm.require("cm.anim").frame_at(clip, elapsed) or 0
+  if fi < 0 then fi = 0 elseif fi >= info.frames then fi = info.frames - 1 end
+  return fi, info.w, info.h, info.frames
+end
+
 -- draw the placements in file order (= z order) with gfx.layer(1) active,
 -- camera-culled; flip_x mirrors via swapped u. Art stacks on top of the
 -- collider fill until a per-map flag turns the fill off (§5).
@@ -695,11 +735,16 @@ function M.draw_places(inst, camx, camy)
       else
         local t = kind_of(p.path) ~= "tm" and place_tex(inst, p) or nil
         if t then
-          if p.x < camx + vw and p.x + t.w > camx
-             and p.y < camy + vh and p.y + t.h > camy then
-            local u0, u1 = 0, 1
-            if p.flip then u0, u1 = 1, 0 end
-            pal.quad(p.x, p.y, t.w, t.h, 1, 1, 1, 1, t.id, u0, 0, u1, 1)
+          -- an auto-playing clip draws one frame; otherwise the whole image
+          local fi, fw, fh = M.place_frame(p.path, p.anim,
+            cm.require("cm.state").frame())
+          local dw, dh = fi and fw or t.w, fi and fh or t.h
+          if p.x < camx + vw and p.x + dw > camx
+             and p.y < camy + vh and p.y + dh > camy then
+            local su0, su1 = 0, 1
+            if fi then su0, su1 = fi * fw / t.w, (fi + 1) * fw / t.w end
+            if p.flip then su0, su1 = su1, su0 end
+            pal.quad(p.x, p.y, dw, dh, 1, 1, 1, 1, t.id, su0, 0, su1, 1)
           end
         elseif is_visual(p.path) then
           -- a dangling visual (deleted/typo): the checkerboard, loudly
