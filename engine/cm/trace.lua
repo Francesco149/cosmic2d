@@ -156,9 +156,12 @@ local function hist_index(dir)
 end
 
 local function index_append(R, seg)
-  pal.x_file_append(hist_index(hist_dir(R)),
-                    ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
-                                             seg.fbytes))
+  local path = hist_index(hist_dir(R))
+  local old = pal.read_file(path) or ""
+  local line = ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
+                                           seg.fbytes)
+  return pal.write_file_atomic(path, old .. line,
+                               M._write_fail and M._write_fail.index)
 end
 
 -- write a closed segment to its history file (CSEG container: keyframe +
@@ -179,13 +182,25 @@ local function spill_seg(R, seg)
   local blob = w.result()
   pal.mkdir(hist_dir(R))
   local path = ("%s/seg_%06d"):format(hist_dir(R), seg.id)
-  if not pal.write_file(path, blob) then
-    pal.log("[trace] history spill failed (" .. path .. "); spill off")
+  local ok, err = pal.write_file_atomic(path, blob,
+                         M._write_fail and M._write_fail.segment)
+  if not ok then
+    pal.log(("[trace] history spill failed (%s): %s; spill off")
+            :format(path, tostring(err)))
     M.ring.spill = false
     return
   end
   seg.file, seg.fbytes, seg.spilled = path, #blob, true
-  index_append(R, seg)
+  ok, err = index_append(R, seg)
+  if not ok then
+    -- An unindexed segment is unreachable on the next boot. Keep this
+    -- session's RAM generation authoritative and remove the orphan.
+    pal.x_remove(path)
+    seg.file, seg.fbytes, seg.spilled = nil, nil, nil
+    pal.log(("[trace] history index failed (%s): %s; spill off")
+            :format(hist_index(hist_dir(R)), tostring(err)))
+    M.ring.spill = false
+  end
 end
 
 -- drop a spilled segment's RAM copy (the skeleton keeps id/first/frames/
@@ -312,7 +327,13 @@ local function hist_adopt(R)
                                                  e.fbytes)
   end
   pal.mkdir(dir)
-  pal.write_file(hist_index(dir), table.concat(lines))
+  local ok, err = pal.write_file_atomic(hist_index(dir), table.concat(lines),
+                         M._write_fail and M._write_fail.adopt_index)
+  if not ok then
+    pal.log(("[trace] history index compact failed (%s): %s; spill off")
+            :format(hist_index(dir), tostring(err)))
+    M.ring.spill = false
+  end
   pal.log(("[trace] adopted %d history segments (frames %d..%d)")
           :format(#chain, R.segs[1].first, state.frame()))
 end
@@ -565,9 +586,11 @@ local function write_trace(path, project, kf, first_i)
   end
   w.chunk("TAIL", 1, pack("<I4", frames))
   local blob = w.result()
-  local ok = pal.write_file(path, blob)
+  local ok, err = pal.write_file_atomic(path, blob,
+                         M._write_fail and M._write_fail.trace)
   pal.log(("[trace] wrote %s: %d frames, %d bytes%s")
-          :format(path, frames, #blob, ok and "" or " (WRITE FAILED)"))
+          :format(path, frames, #blob,
+                  ok and "" or " (WRITE FAILED: " .. tostring(err) .. ")"))
   return ok, frames
 end
 

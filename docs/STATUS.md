@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic asset creation complete (2026-07-15)
+## Current handoff — A1 atomic trace/history complete (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -145,9 +145,20 @@ when its generated tilemap cannot be committed. Focused injected rename
 failures cover all four paths. `nix run .#test` is ALL GREEN: 23,247
 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** migrate trace/history persistence (trace files, spilled
-segments, and history index) to atomic replacement with focused interrupted
-and corrupt-file coverage. Keep runtime snapshot/player persistence for later
-packets.
+**A1 packet 13 is complete.** `.ctrace` exports, rewind-history segment
+containers, append-equivalent history index updates, and adoption-time index
+compaction now use atomic replacement. A segment becomes authoritative only
+after both its container and index entry are durable; an index failure removes
+the unreachable orphan, retains the RAM generation, and disables further
+spilling for the session. Errors include paths and causes. Injected failures
+prove an interrupted trace export preserves its previous valid file, segment
+failure publishes nothing, and index failure preserves the prior manifest;
+corrupt indexed tails are rejected and removed. `nix run .#test` is ALL GREEN:
+23,251 self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** migrate viewport/options and runtime snapshot writes to
+atomic replacement with focused failure coverage, then audit the remaining A1
+write sites before closing the primitive-migration item. Player storage itself
+belongs to A4.
 
 There is no known blocker or human-only verification required.

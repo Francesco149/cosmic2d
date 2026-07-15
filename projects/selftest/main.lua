@@ -1482,6 +1482,12 @@ local function t_ring()
   -- export the retained window: a normal CTRC with KEYF at the boundaries
   local ok, frames = trace.ring_export("/tmp/st_ring.ctrace")
   check(ok and frames == 12, "ring: export frame count")
+  local trace_good = pal.read_file("/tmp/st_ring.ctrace")
+  trace._write_fail = { trace = { _fail = "rename" } }
+  ok = trace.ring_export("/tmp/st_ring.ctrace")
+  check(not ok and pal.read_file("/tmp/st_ring.ctrace") == trace_good,
+        "ring: interrupted trace export preserves previous trace")
+  trace._write_fail = nil
   local tags = {}
   for _, c in ipairs(chunklib.read(pal.read_file("/tmp/st_ring.ctrace"),
                                    "CTRC")) do
@@ -2686,8 +2692,48 @@ local function t_ring_spill()
   check(left == nil or #left == 0,
         "ring adopt: a forked timeline wipes clean")
 
+  -- Segment and manifest publication fail closed. A segment never becomes
+  -- authoritative before both its container and index entry are durable.
+  trace.ring.spill = true
+  trace._write_fail = { segment = { _fail = "rename" } }
+  for i = 1000, 1003 do
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+  end
+  check(not pal.read_file(root .. "/.ed/history/seg_000001")
+        and not trace.ring.spill,
+        "ring spill: interrupted segment publishes no partial history")
+
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  trace._write_fail = nil
+  trace.ring.spill = true
+  sim:i64(0, f0 + 1999)
+  trace.ring_start({ project = root })
+  local index_path = root .. "/.ed/history/index"
+  pal.write_file(index_path, "known-good-index\n")
+  trace._write_fail = { index = { _fail = "rename" } }
+  for i = 2000, 2003 do
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+  end
+  check(pal.read_file(index_path) == "known-good-index\n"
+        and not pal.read_file(root .. "/.ed/history/seg_000001")
+        and not trace.ring.spill,
+        "ring spill: index failure preserves manifest and removes orphan")
+
+  -- A corrupt indexed tail is rejected and removed rather than adopted.
+  trace._write_fail = nil
+  pal.write_file(index_path, "7 1 4 12\n")
+  local corrupt = root .. "/.ed/history/seg_000007"
+  pal.write_file(corrupt, "CSEGtruncated")
+  check(trace.hist_peek(root) == nil and not pal.read_file(corrupt),
+        "ring adopt: corrupt history tail is discarded")
+
   trace.ring.kf, trace.ring.seconds = save_kf, save_sec
   trace.ring.spill = save_spill
+  trace._write_fail = nil
   sim:i64(0, f0)
   pal.buf_free("st.spill")
   trace.ring_start({ project = "selftest" }) -- leave a clean ring behind
