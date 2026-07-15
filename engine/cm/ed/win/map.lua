@@ -2870,8 +2870,12 @@ function M.graybox_apply(win, ed)
   local tmap = cm.require("cm.tmap")
   local td = tmap.graybox(doc)
   local tmpath = win.path:gsub("%.[mM][aA][pP]$", "") .. "_gb.tm"
-  if not pal.write_file(ed.root .. "/" .. tmpath, tmap.encode(td)) then
-    pal.log("[ed] graybox write FAILED: " .. tmpath)
+  local ok, err = pal.write_file_atomic(ed.root .. "/" .. tmpath,
+                                        tmap.encode(td), p._create_fail)
+  if not ok then
+    pal.log(("[ed] graybox write FAILED: %s (%s)")
+            :format(tmpath, tostring(err)))
+    if ed.summon_console then ed.summon_console() end
     return false
   end
   cm.asset_epoch = (cm.asset_epoch or 0) + 1 -- live .tm caches re-read

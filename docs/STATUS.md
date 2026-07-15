@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic code/text saves complete (2026-07-15)
+## Current handoff — A1 atomic asset creation complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -135,9 +135,19 @@ console; retry publishes the complete source and clears dirty state. `nix run
 .#test` is ALL GREEN: 23,239 self-checks, every trace verify, and all pixel
 goldens.
 
-**Exact next packet:** migrate editor asset import/create writes (asset-browser
-drops/conversions, map-created tilemaps, and audio-created instruments) to
-atomic replacement with focused failure coverage and actionable console
-errors. Keep trace/history and runtime snapshot persistence for later packets.
+**A1 packet 12 is complete.** Editor-created and imported assets now publish
+with atomic replacement: raw and converted OS drops, map graybox `.tm`
+generation, stock-instrument copies bound into songs, and sound-to-sampler
+`.ins` creation. Image conversion encodes to memory before publication.
+Failures name the target and cause, summon the console, publish no partial new
+asset, preserve any previous valid generation, and leave map state unchanged
+when its generated tilemap cannot be committed. Focused injected rename
+failures cover all four paths. `nix run .#test` is ALL GREEN: 23,247
+self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** migrate trace/history persistence (trace files, spilled
+segments, and history index) to atomic replacement with focused interrupted
+and corrupt-file coverage. Keep runtime snapshot/player persistence for later
+packets.
 
 There is no known blocker or human-only verification required.

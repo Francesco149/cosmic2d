@@ -1327,14 +1327,20 @@ end
 -- synth carried, or an absolute path) is copied into the project's
 -- ins/ so the .song stays self-contained (AUDIO.md §4.1). Returns the
 -- project-relative path, or nil if unreadable.
-local function resolve_ins(ed, path)
+function M.resolve_ins(ed, path)
   if pal.read_file(ed.root .. "/" .. path) then return path end
   local bytes = pal.read_file(path) -- cwd-relative (stock) or absolute
   if not bytes then return nil end
   local rel = "ins/" .. (path:match("([^/]+)$") or "instrument.ins")
   if not pal.read_file(ed.root .. "/" .. rel) then -- reuse an existing copy
     pal.mkdir(ed.root .. "/ins")
-    if not pal.write_file(ed.root .. "/" .. rel, bytes) then return nil end
+    local ok, err = pal.write_file_atomic(ed.root .. "/" .. rel, bytes,
+                                          ed.g and ed.g._ins_import_fail)
+    if not ok then
+      pal.log(("[ed] preset import FAILED: %s (%s)"):format(rel, tostring(err)))
+      if ed.summon_console then ed.summon_console() end
+      return nil
+    end
     cm.require("cm.ed.win.assets").invalidate(ed)
     pal.log("[ed] imported preset -> " .. rel)
   end
@@ -1346,7 +1352,7 @@ function M.drop(win, ed, path, wx, wy)
   local _, p = open_asset(ed, win.path)
   local doc = p.doc
   if not doc then return false end
-  local rel = resolve_ins(ed, path)
+  local rel = M.resolve_ins(ed, path)
   if not rel then return false end
   -- row math mirrors the rail draw (world coords -> track index)
   local py = wy - (win.y + 24 + 4) - 4

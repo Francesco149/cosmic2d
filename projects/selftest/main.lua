@@ -4111,6 +4111,14 @@ local function t_ed_assets()
   local rel2 = A.add_dropped(ed, src)
   check(rel2 == "art/cosmic_selftest_drop_src_2.png",
         "ed.assets: the collision suffix speaks the converted name")
+  local drop_summoned = false
+  ed.summon_console = function() drop_summoned = true end
+  ed.g._drop_fail = { _fail = "rename" }
+  local rel3 = A.add_dropped(ed, src)
+  check(rel3 == nil and not pal.read_file(root .. "/art/cosmic_selftest_drop_src_3.png"),
+        "ed.assets: interrupted converted drop publishes no partial asset")
+  check(drop_summoned, "ed.assets: failed drop summons the console")
+  ed.g._drop_fail = nil
   pal.x_remove(root .. "/" .. rel)
   pal.x_remove(root .. "/" .. rel2)
   pal.x_remove(src)
@@ -4174,6 +4182,20 @@ local function t_ed_map()
         "ed.map save: failure retains dirty working bytes")
   check(summoned, "ed.map save: failure summons the console")
   sp._save_fail = nil
+
+  -- Graybox-created tilemaps atomically replace their previous generation;
+  -- editor/map state changes only after publication succeeds.
+  local gbpath = "atomic_gb.tm"
+  local gbbytes = tmap.encode(tmap.blank(1, 1, 16, "old.spr"))
+  pal.write_file(root .. "/" .. gbpath, gbbytes)
+  sp._create_fail = { _fail = "rename" }
+  summoned = false
+  check(not W.graybox_apply(swin, sed)
+        and pal.read_file(root .. "/" .. gbpath) == gbbytes,
+        "ed.map graybox: failure preserves previous tilemap")
+  check(not sp.doc.nofill and #sp.doc.places == 0 and summoned,
+        "ed.map graybox: failure leaves map unchanged and summons console")
+  sp._create_fail = nil
 
   -- The real tilemap-window path has the same durability/error contract.
   local TW = cm.require("cm.ed.win.tmap")
@@ -4640,6 +4662,37 @@ local function t_ed_synth()
   check(not W.dirty(win, ed) and published.name == "unsaved"
         and published.patch.gain == 207,
         "ed.synth save: retry publishes complete source")
+
+  -- Project-local copies of stock instruments are atomic too.
+  local MW = cm.require("cm.ed.win.music")
+  local preset = root .. "/external.ins"
+  pal.write_file(preset, ins.encode(ins.fresh("preset")))
+  local import_summoned = false
+  local ied = { root = root, g = { _ins_import_fail = { _fail = "rename" } },
+                summon_console = function() import_summoned = true end }
+  check(MW.resolve_ins(ied, preset) == nil
+        and not pal.read_file(root .. "/ins/external.ins"),
+        "ed.music import: interrupted preset copy publishes no partial asset")
+  check(import_summoned, "ed.music import: failure summons the console")
+
+  -- Sound-to-sampler creation preserves an existing valid instrument.
+  local SW = cm.require("cm.ed.win.sound")
+  pal.mkdir(root .. "/ins")
+  local sample_path = root .. "/ins/found.ins"
+  local sample_old = ins.encode(ins.fresh("old"))
+  pal.write_file(sample_path, sample_old)
+  local sound_summoned = false
+  local sed = { root = root, parked = false,
+                g = { sndw = { [7] = {
+                  pcm = string.pack("<i2i2", 100, -100),
+                  _create_fail = { _fail = "rename" },
+                } } },
+                summon_console = function() sound_summoned = true end,
+                touch = function() end }
+  SW.to_ins({ id = 7, path = "sound/found.wav" }, sed)
+  check(pal.read_file(sample_path) == sample_old,
+        "ed.sound instrument: failure preserves previous instrument")
+  check(sound_summoned, "ed.sound instrument: failure summons the console")
 
   check(W.env_fx_to_ms(0, 2000) == 0, "ed.synth: fx 0 = 0 ms (instant)")
   check(W.env_fx_to_ms(1, 2000) == 2000, "ed.synth: fx 1 = max ms")

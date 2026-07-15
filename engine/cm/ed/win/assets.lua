@@ -231,22 +231,31 @@ function M.add_dropped(ed, ospath)
     rel = dir .. stem .. "_" .. n .. (ext ~= "" and "." .. ext or "")
     n = n + 1
   end
-  local ok
+  local out = bytes
   if pix then
-    ok = pcall(pal.png_write, ed.root .. "/" .. rel, pix, pw, ph)
-    if ok then
-      pal.log(("[ed] added %s (converted %s, %dx%d)"):format(rel, base, pw, ph))
+    local encok
+    encok, out = pcall(pal.png_encode, pix, pw, ph)
+    if not encok then
+      pal.log(("[ed] drop encode FAILED: %s (%s)"):format(rel, tostring(out)))
+      if ed.summon_console then ed.summon_console() end
+      return
     end
-  else
-    ok = pal.write_file(ed.root .. "/" .. rel, bytes)
-    if ok then pal.log(("[ed] added %s (%d bytes)"):format(rel, #bytes)) end
   end
+  -- `_drop_fail` is only a focused durability-test seam.
+  local ok, err = pal.write_file_atomic(ed.root .. "/" .. rel, out,
+                                        ed.g and ed.g._drop_fail)
   if ok then
+    if pix then
+      pal.log(("[ed] added %s (converted %s, %dx%d)"):format(rel, base, pw, ph))
+    else
+      pal.log(("[ed] added %s (%d bytes)"):format(rel, #bytes))
+    end
     M.invalidate(ed)
     ed.g.aflash = { path = rel, t = pal.time_ns() }
     return rel -- the map window places OS drops at the drop point (R8b)
   else
-    pal.log("[ed] drop write FAILED: " .. rel)
+    pal.log(("[ed] drop write FAILED: %s (%s)"):format(rel, tostring(err)))
+    if ed.summon_console then ed.summon_console() end
   end
 end
 

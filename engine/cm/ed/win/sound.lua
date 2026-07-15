@@ -159,7 +159,7 @@ M.hotkeys = {
 -- the found-sound -> instrument door (AUDIO.md §8): mono-mix the
 -- decoded PCM into a sampler .ins (embedded, root C4) and open the
 -- synth window on it beside this one
-local function to_ins(win, ed)
+function M.to_ins(win, ed)
   local p = plumb(ed, win)
   if not p.pcm or ed.parked then return end
   local mono = {}
@@ -174,8 +174,9 @@ local function to_ins(win, ed)
                           a = 2, d = 0, s = 255, r = 30, gain = 128 } }
   local path = "ins/" .. base .. ".ins"
   pal.mkdir(ed.root .. "/ins")
-  if pal.write_file(ed.root .. "/" .. path,
-                    cm.require("cm.ins").encode(doc)) then
+  local ok, err = pal.write_file_atomic(ed.root .. "/" .. path,
+                    cm.require("cm.ins").encode(doc), p._create_fail)
+  if ok then
     cm.require("cm.ed.win.assets").invalidate(ed)
     local wm = cm.require("cm.ed.wm")
     local K = ed.kinds.synth
@@ -186,6 +187,10 @@ local function to_ins(win, ed)
     ed.doc.focus = sw.id
     pal.log("[ed] imported " .. win.path .. " -> " .. path)
     ed.touch()
+  else
+    pal.log(("[ed] instrument create FAILED: %s (%s)")
+            :format(path, tostring(err)))
+    if ed.summon_console then ed.summon_console() end
   end
 end
 
@@ -194,7 +199,7 @@ function M.header(win, ctx)
   local ed = ctx.ed
   local p = plumb(ed, win)
   local s = cm.require("cm.ed.chips").strip(ctx)
-  if s:chip("→ins", false) then to_ins(win, ed) end
+  if s:chip("→ins", false) then M.to_ins(win, ed) end
   if s:chip("loop", win.loop) then
     win.loop = not win.loop
     local pp = open_sound(ed, win)
