@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A0 complete; begin A1 durability (2026-07-15)
+## Current handoff — A1 atomic primitive complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -25,10 +25,19 @@ animation, and audio, with unsupported gamepad/query/export paths named.
 .#test` is ALL GREEN: 23,106 self-checks, every trace verify, and all pixel
 goldens.
 
-**Exact next packet:** A1 atomic-write primitive plus failure KATs. Define the
-same-directory temporary-file, flush/close, and rename contract at the PAL/Lua
-persistence seam; prove that injected interruption/failure never replaces a
-valid destination with partial bytes. Do not yet migrate every caller in the
-same packet.
+**A1 packet 1 is complete.** PAL API v9 adds `pal.write_file_atomic`: a unique
+same-directory temp is fully written, flushed, OS-synced, closed, and only then
+atomically replaces the destination. It returns `true` or `nil,error`. Injected
+failures at open, partial write, flush, sync, close, and rename each preserve a
+known-good destination byte-for-byte and clean the temp; success and empty-file
+replacement plus a natural missing-directory failure are also covered. Linux
+and Windows builds compile; `nix run .#test` is ALL GREEN with 23,129
+self-checks, every trace verify, and all pixel goldens.
 
-There is no known blocker or human-only verification required before A1.
+**Exact next packet:** migrate editor session metadata and `.recent.dat` to
+`pal.write_file_atomic`, preserve/load a last-known-good session when the live
+file is corrupt, and surface write/recovery failures instead of silently
+continuing. Add focused corruption and injected-failure tests. Do not mix in
+journal or multi-output sprite migration yet.
+
+There is no known blocker or human-only verification required.

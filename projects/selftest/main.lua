@@ -2439,6 +2439,44 @@ local function tmproot()
          or os.getenv("TMPDIR") or "/tmp"
 end
 
+local function t_atomic_write()
+  local path = tmproot() .. "/cosmic_selftest_atomic.bin"
+  local prefix = "cosmic_selftest_atomic.bin.tmp."
+  local function no_temp()
+    for _, name in ipairs(pal.list_dir(tmproot()) or {}) do
+      if name:match("([^/\\]+)$"):sub(1, #prefix) == prefix then return false end
+    end
+    return true
+  end
+  check(pal.write_file(path, "known-good") == true,
+        "atomic: seed destination")
+
+  -- Every injectable pre-rename failure must preserve the valid destination
+  -- and clean its non-authoritative same-directory temporary file.
+  for _, stage in ipairs({ "open", "write", "flush", "sync", "close", "rename" }) do
+    local ok, err = pal.write_file_atomic(path, "replacement", { _fail = stage })
+    check(ok == nil and type(err) == "string" and err:find(stage, 1, true),
+          "atomic: " .. stage .. " reports its seam")
+    check(pal.read_file(path) == "known-good",
+          "atomic: " .. stage .. " preserves destination")
+    check(no_temp(),
+          "atomic: " .. stage .. " cleans temporary")
+  end
+
+  check(pal.write_file_atomic(path, "replacement") == true,
+        "atomic: successful replace")
+  check(pal.read_file(path) == "replacement" and no_temp(),
+        "atomic: replacement is complete and temp is gone")
+  check(pal.write_file_atomic(path, "") == true and pal.read_file(path) == "",
+        "atomic: empty file replace")
+
+  local ok, err = pal.write_file_atomic(
+    tmproot() .. "/cosmic_selftest_missing/child.bin", "x")
+  check(ok == nil and type(err) == "string" and err:find("open", 1, true),
+        "atomic: natural open failure is actionable")
+  pal.x_remove(path)
+end
+
 local function t_ring_spill()
   -- R6b (REWIND.md §3/D053): closed segments spill to .ed/history, the
   -- seconds window becomes RAM residency (demotion), the budget evicts
@@ -4655,6 +4693,7 @@ function game.init()
   t_ed_cam()
   t_ed_wm()
   t_ed_game()
+  t_atomic_write()
   t_ed_session()
   t_ed_journal()
   t_ed_kit()

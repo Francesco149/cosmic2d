@@ -554,6 +554,7 @@ binary incompatible, in either direction (D015).
 | `pal.buf_free(name)` | sim | drop a named buffer (restore/resize paths); true if it existed |
 | buf views: `:u8/:i8/:u16/:i16/:u32/:i32/:i64/:f32/:f64(off [,v])`, `:fill`, `:copy`, `:hash`, `:size`, `:str(off,len)`, `:setstr(off,s)` | sim | bounds-checked, error on OOB (i8/i16 added in v2) |
 | `pal.read_file(p)` / `pal.write_file(p,s)` / `pal.list_dir(p)` / `pal.mtime(p)` / `pal.mkdir(p)` | dev/io | engine enforces project-relative paths |
+| `pal.write_file_atomic(p,s)` → `true` or `nil,error` | dev/io | API v9: unique same-directory temp → complete write → stream flush → OS file sync → close → atomic replace; a pre-replace failure removes the temp and preserves an existing destination |
 | `pal.poll_events()` | input | array of event tables, drained each tick |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |
 

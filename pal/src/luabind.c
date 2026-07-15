@@ -2,7 +2,14 @@
  * and the engine. Semantics + determinism classes: docs/ARCHITECTURE.md. */
 #include "pal.h"
 
+#include <errno.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 #include "lauxlib.h"
 #include "lualib.h"
@@ -992,6 +999,158 @@ static int l_write_file(lua_State *L) {
   return 1;
 }
 
+/* Flush an SDL file stream through the OS durability boundary. SDL_FlushIO
+ * empties user-space buffering; fsync/FlushFileBuffers asks the filesystem to
+ * persist it before the atomic rename. SDL_IOFromFile publishes its native
+ * handle through stream properties while retaining UTF-8 path handling. */
+static bool sync_file(SDL_IOStream *io, char *err, size_t errcap) {
+  SDL_PropertiesID props = SDL_GetIOProperties(io);
+#ifdef _WIN32
+  HANDLE h = (HANDLE)SDL_GetPointerProperty(
+      props, SDL_PROP_IOSTREAM_WINDOWS_HANDLE_POINTER, NULL);
+  if (!h) {
+    SDL_snprintf(err, errcap, "no Windows file handle");
+    return false;
+  }
+  if (!FlushFileBuffers(h)) {
+    SDL_snprintf(err, errcap, "FlushFileBuffers failed (%lu)",
+                 (unsigned long)GetLastError());
+    return false;
+  }
+#else
+  int fd = (int)SDL_GetNumberProperty(
+      props, SDL_PROP_IOSTREAM_FILE_DESCRIPTOR_NUMBER, -1);
+  if (fd < 0) {
+    SDL_snprintf(err, errcap, "no file descriptor");
+    return false;
+  }
+  if (fsync(fd) != 0) {
+    SDL_snprintf(err, errcap, "fsync failed: %s", strerror(errno));
+    return false;
+  }
+#endif
+  return true;
+}
+
+static bool fail_at(lua_State *L, const char *stage) {
+  if (!lua_istable(L, 3)) return false;
+  lua_getfield(L, 3, "_fail");
+  const char *got = lua_tostring(L, -1);
+  bool yes = got && strcmp(got, stage) == 0;
+  lua_pop(L, 1);
+  return yes;
+}
+
+static uint64_t atomic_temp_seq;
+
+/* pal.write_file_atomic(path, bytes [, {_fail=stage}]) -> true | nil,error
+ *
+ * Write a unique path.tmp.PID.SEQ in the destination directory, flush +
+ * OS-sync it, close it, then atomically replace path. Any failure before the
+ * rename removes the temp and leaves an existing destination untouched.
+ * `_fail` is the explicit selftest seam (open/write/flush/sync/close/rename),
+ * not application policy. */
+static int l_write_file_atomic(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+  size_t len;
+  const char *data = luaL_checklstring(L, 2, &len);
+  size_t plen = strlen(path);
+  char *tmp = SDL_malloc(plen + 64);
+  if (!tmp) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "out of memory");
+    return 2;
+  }
+  unsigned long pid =
+#ifdef _WIN32
+      (unsigned long)GetCurrentProcessId();
+#else
+      (unsigned long)getpid();
+#endif
+  SDL_snprintf(tmp, plen + 64, "%s.tmp.%lu.%llu", path, pid,
+               (unsigned long long)++atomic_temp_seq);
+
+  SDL_IOStream *io = NULL;
+  char detail[256] = {0};
+  const char *stage = "open";
+  bool ok = false;
+
+  /* A stale temp is never authoritative. PID + monotonic process sequence
+   * keeps simultaneous writers off each other's temp; remove the exact name
+   * in the unlikely PID-reuse collision before opening it. */
+  SDL_PathInfo tmpinfo;
+  if (SDL_GetPathInfo(tmp, &tmpinfo) && !SDL_RemovePath(tmp)) {
+    SDL_snprintf(detail, sizeof detail, "%s", SDL_GetError());
+    goto done;
+  }
+  if (fail_at(L, "open")) {
+    SDL_snprintf(detail, sizeof detail, "injected failure");
+    goto done;
+  }
+  io = SDL_IOFromFile(tmp, "wb");
+  if (!io) {
+    SDL_snprintf(detail, sizeof detail, "%s", SDL_GetError());
+    goto done;
+  }
+
+  stage = "write";
+  size_t want = fail_at(L, "write") && len ? len / 2 : len;
+  size_t wrote = SDL_WriteIO(io, data, want);
+  if (wrote != want || want != len) {
+    SDL_snprintf(detail, sizeof detail, "%s",
+                 want != len ? "injected partial write" : SDL_GetError());
+    goto done;
+  }
+
+  stage = "flush";
+  if (fail_at(L, "flush") || !SDL_FlushIO(io)) {
+    SDL_snprintf(detail, sizeof detail, "%s",
+                 fail_at(L, "flush") ? "injected failure" : SDL_GetError());
+    goto done;
+  }
+
+  stage = "sync";
+  if (fail_at(L, "sync")) {
+    SDL_snprintf(detail, sizeof detail, "injected failure");
+    goto done;
+  }
+  if (!sync_file(io, detail, sizeof detail)) goto done;
+
+  stage = "close";
+  if (!SDL_CloseIO(io)) {
+    io = NULL;
+    SDL_snprintf(detail, sizeof detail, "%s", SDL_GetError());
+    goto done;
+  }
+  io = NULL;
+  if (fail_at(L, "close")) {
+    SDL_snprintf(detail, sizeof detail, "injected failure");
+    goto done;
+  }
+
+  stage = "rename";
+  if (fail_at(L, "rename") || !SDL_RenamePath(tmp, path)) {
+    SDL_snprintf(detail, sizeof detail, "%s",
+                 fail_at(L, "rename") ? "injected failure" : SDL_GetError());
+    goto done;
+  }
+  ok = true;
+
+done:
+  if (io && !SDL_CloseIO(io) && !detail[0])
+    SDL_snprintf(detail, sizeof detail, "%s", SDL_GetError());
+  if (!ok) SDL_RemovePath(tmp);
+  SDL_free(tmp);
+  if (ok) {
+    lua_pushboolean(L, 1);
+    return 1;
+  }
+  lua_pushnil(L);
+  lua_pushfstring(L, "atomic write %s failed: %s", stage,
+                  detail[0] ? detail : "unknown error");
+  return 2;
+}
+
 /* x_file_append(path, bytes) -> bool — append to a file, creating it if
  * missing. Born for the R3 editor's undo journals (D050): an append-only
  * chunk stream must not rewrite a multi-MB file per gesture. */
@@ -1159,6 +1318,7 @@ static const luaL_Reg pal_funcs[] = {
     {"buf_apply_delta1", l_buf_apply_delta1},
     {"read_file", l_read_file},
     {"write_file", l_write_file},
+    {"write_file_atomic", l_write_file_atomic},
     {"x_file_append", l_x_file_append},
     {"list_dir", l_list_dir},
     {"mtime", l_mtime},

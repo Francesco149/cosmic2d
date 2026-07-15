@@ -2328,3 +2328,37 @@ REVISIT: grouping is placements+markers only (colliders need a unified
 selection first); the demo backdrop shares the ground's checker tileset so
 it blends (art-direction, not structure). D057/D060's map-window sections
 are superseded by this direct-manipulation model.
+
+## D062 — atomic persistence begins in the PAL (A1, 2026-07-15)
+
+**Context.** Every overwrite currently uses `SDL_SaveFile`, which truncates
+the destination before it knows whether writing will finish. Disk-full,
+interruption, or a late close error can therefore replace valid work with a
+partial file. Lua cannot portably force buffered data through the OS durability
+boundary, and UTF-8 Windows paths must keep using SDL's file opening layer.
+
+**Decision.** PAL API v9 adds `pal.write_file_atomic(path, bytes)`, returning
+`true` or `nil,error`. It creates a unique `path.tmp.PID.SEQ` beside the
+destination (same filesystem), writes every byte, calls `SDL_FlushIO`, syncs
+the native file handle (`fsync` / `FlushFileBuffers`), closes it, then uses
+SDL's UTF-8-aware replace rename. No destination mutation occurs before that
+last operation. Any earlier failure closes and removes the non-authoritative
+temp; an existing destination remains byte-identical. Simultaneous processes
+use different temp names. A stale temp is never recovery truth.
+
+The optional `{_fail=stage}` argument is a deliberately explicit KAT seam,
+not application policy. Selftest injects `open`, partial `write`, `flush`,
+`sync`, `close`, and `rename` failures and proves after each that the known-good
+destination is unchanged and no temp remains. It also covers complete and
+empty replacement plus a natural missing-directory error. The function is
+dev/I/O, never simulation state; traces remain unaffected.
+
+This packet establishes the primitive only. Callers keep their existing
+behavior until migrated in small groups with recovery/error UX. Multi-output
+sprite transactions need a higher-level protocol and must not be faked by a
+sequence of independent atomic renames.
+
+**Revisit.** Add parent-directory durability sync if clean-machine/power-cut
+testing finds a supported filesystem where a synced file plus replace rename
+can disappear as directory metadata. Replace fixed policy with platform-native
+transaction support only if a real multi-file asset requires it.
