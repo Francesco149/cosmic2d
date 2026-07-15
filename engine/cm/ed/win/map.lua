@@ -1201,12 +1201,14 @@ local function draw_layer_panel(win, ed, p, doc, x0, y0, pw, ph, z, fpx, ctx)
       pal.x_ig_rect_fill(x0 + 2 * z, y - 1, pw - 4 * z, rowh, 0x322c50ff, 2 * z)
     end
     local bx, bw = x, 12 * z
-    if tog(bx, y, bw, L.vis ~= false, "e") then
-      L.vis = (L.vis == false) or nil; commit(ed, win.path)
+    if tog(bx, y, bw, L.vis ~= false, "e") then -- toggle: visible <-> hidden
+      if L.vis == false then L.vis = nil else L.vis = false end
+      commit(ed, win.path)
     end
     bx = bx + bw + 2 * z
-    if tog(bx, y, bw, L.on ~= false, "g", 0x3a7a52ff) then
-      L.on = (L.on == false) or nil; commit(ed, win.path)
+    if tog(bx, y, bw, L.on ~= false, "g", 0x3a7a52ff) then -- on <-> off
+      if L.on == false then L.on = nil else L.on = false end
+      commit(ed, win.path)
     end
     bx = bx + bw + 4 * z
     local nmw = x0 + pw - pad - bx
