@@ -26,7 +26,19 @@ every change is editor/render/dev or bypasses at its default). PAL C is
   seam is sub-pixel CAMERA crawl. `gfx.pixel_snap(true)` rounds each layer's
   translation to a whole pixel — OFF by default (goldens byte-identical), the
   demo opts in. **Needs the human's eyes** (intermittent, live-only).
-- **PROFILED the sim + optimised the recorder (`<hash-skip>`).** The human's
+- **The editor-fps regression was the MAP WINDOW, not the history (`f679b43`,
+  `21b9632`).** The human: history .ed = 170fps, fresh = 240, "apples to apples,
+  all UIs open." Reproduced headless with the SAME session: **history makes no
+  difference** (5.9ms draw both) — a FRESH session is 0.6ms. So it's the open
+  WINDOWS. Per-window draw: **map 2.8ms** dominates, then assets 0.9ms. The map's
+  cost was **draw_fill** — it walked a collider column_ivs + built a table.concat
+  signature string PER SCREEN PIXEL EVERY FRAME (~1280 cols). Cached the fill
+  rects (view-independent; invalidated with p.geom) → map draw **2.8→0.45ms**,
+  total editor draw **5.9→3.5ms** (back under the 240Hz 4.17ms budget). Also
+  added pal.x_ig_image_quads (batch tilemap cells in one drawlist call, scales
+  to big maps). **Open next lever: the asset browser's map/code tile previews
+  (my batch, ~0.9ms) — cache them to textures if the human needs more margin.**
+- **PROFILED the sim + optimised the recorder (`eacde8f`).** The human's
   0.3ms-sim/170fps report → they suspected the win32 demo's accumulated session.
   **Finding: `.ed/history` is 936 MB (5156 segments)** — the rewind stream never
   resets across sessions (under the 1 GB budget, so not evicting; NOT the
