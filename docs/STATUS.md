@@ -3,6 +3,39 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-15 (cont. — the sprite-save GPU crash: root-caused,
+fixed, reproduced both ways; 1 commit, cosmic2d-win RE-STAGED)
+
+Human: saving a sprite with the map editor open CRASHED the engine. It was
+a real GPU use-after-free (VK_ERROR_DEVICE_LOST), and my own change lit the
+fuse — sprite-save now bumps cm.asset_epoch, which fires a mid-frame
+texture reload.
+
+**Root cause (`ddb27ef`).** Draw segments reference textures by slot ID,
+resolved to G.texs[id].tex at FLUSH (no used-check). cm.gfx's texture
+reload did tex_free(old) IMMEDIATELY (SDL_ReleaseGPUTexture + slot cleared)
+mid-frame — but a segment queued earlier that same frame (in the editor
+the running GAME *and* the map window both draw the tileset) then resolved
+a released texture at submit → the driver lost the device. **Fix**:
+tex_free DEFERS — marks the slot pending (stays 'used' with a live texture;
+skipped by tex_create, refused by tex_update) instead of releasing;
+tex_reap() at the top of each present runs a two-stage queue so a slot
+freed on frame N releases at present N+1 (frame N is submitted by then,
+SDL_GPU's own deferral covers the rest). A mid-frame free can never dangle
+an in-flight segment now.
+
+**Reproduced BOTH ways** (the diligence the human asked for): the exact
+scenario (open town.map, save art/tiles.spr) throws VK_ERROR_DEVICE_LOST on
+the pre-fix staged exe and saves CLEAN on the fixed one. Goldens ALL GREEN
+(the deferred free is render-invariant); selftest 23106 (the freed-slot
+tex_update KAT still passes — a pended slot refuses update).
+
+cosmic2d-win RE-STAGED + native-verified (selftest 23106, kitcheck 830
+byte-exact). The human re-tests: edit art/tiles.spr with town.map open →
+Ctrl+S no longer crashes; the tilemaps hot-reload. Good `/clear` point.
+
+---
+
 **Date**: 2026-07-15 (cont. — sprite editability + tilemap hot-reload; 1
 commit, cosmic2d-win RE-STAGED)
 
