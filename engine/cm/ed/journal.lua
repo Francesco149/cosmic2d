@@ -39,49 +39,109 @@ function M.file(root, path)
   return root .. "/.ed/journal/" .. path:gsub("/", "__") .. ".jrn"
 end
 
-local function rewrite(j)
+function M.good_file(root, path) return M.file(root, path) .. ".good" end
+
+local function encode(entries)
   local w = chunk.writer(M.MAGIC)
-  for _, e in ipairs(j.entries) do
-    -- writer.chunk re-frames; encode via the same shape for byte parity
+  for _, e in ipairs(entries) do
     w.chunk("ENTR", 1, pack("<i8I1s4", e.t or 0, e.flags or 0, e.bytes))
   end
-  pal.mkdir(j.dir)
-  return pal.write_file(j.path, w.result())
+  return w.result()
 end
 
--- open (or start) the journal for an asset. A corrupt file degrades to a
--- fresh journal with one log line — history is a convenience, never a boot
--- blocker. pos lands on the last entry (jpos, when given, re-parks it —
+local function alert(message)
+  pal.log("[ed] JOURNAL " .. message)
+  local ok, con = pcall(cm.require, "cm.console")
+  if ok then con.open = true end
+end
+
+local function rewrite(j)
+  pal.mkdir(j.dir)
+  local blob = encode(j.entries)
+  -- Publish the authoritative stream first. If its atomic replacement fails,
+  -- the old live+checkpoint pair stays coherent. If checkpoint publication
+  -- alone fails, the new live stream is still complete and wins on next open.
+  local ok, err = pal.write_file_atomic(j.path, blob, j._fail and j._fail.live)
+  if not ok then return nil, "live: " .. tostring(err) end
+  ok, err = pal.write_file_atomic(j.good_path, blob,
+                                  j._fail and j._fail.good)
+  if not ok then return nil, "checkpoint: " .. tostring(err) end
+  return true
+end
+
+local function decode(blob)
+  local chunks = chunk.read(blob, M.MAGIC)
+  local entries = {}
+  for _, c in ipairs(chunks) do
+    if c.tag == "ENTR" and c.version == 1 then
+      entries[#entries + 1] = decode_entry(c.payload)
+    end
+  end
+  return entries
+end
+
+-- Open (or start) the journal for an asset. A corrupt/missing live stream
+-- restores its last atomic rewrite checkpoint; double corruption starts fresh
+-- with a visible alert, never a boot blocker. pos lands on the last entry
+-- (jpos, when given, re-parks it —
 -- the session-restored cursor). cap overrides M.CAP per asset kind
 -- (sprite journals are full .spr snapshots — EDITOR.md §12.6 caps them
 -- lower than text).
-function M.open(root, asset_path, jpos, cap)
+function M.open(root, asset_path, jpos, cap, fail)
   local j = {
     path = M.file(root, asset_path),
+    good_path = M.good_file(root, asset_path),
     dir = root .. "/.ed/journal",
     entries = {},
     pos = 0,
     cap = cap or M.CAP,
+    _fail = fail,
   }
   local blob = pal.read_file(j.path)
+  local good = pal.read_file(j.good_path)
   if blob then
-    local ok, chunks = pcall(chunk.read, blob, M.MAGIC)
+    local ok, entries = pcall(decode, blob)
     if ok then
-      for _, c in ipairs(chunks) do
-        if c.tag == "ENTR" and c.version == 1 then
-          j.entries[#j.entries + 1] = decode_entry(c.payload)
+      j.entries = entries
+    else
+      local gok, recovered
+      if good then gok, recovered = pcall(decode, good) end
+      if gok then
+        j.entries = recovered
+        alert("RECOVERY: " .. j.path .. " unreadable (" .. tostring(entries) ..
+              "); restored " .. j.good_path)
+        local rok, rerr = pal.write_file_atomic(j.path, good,
+                                                fail and fail.restore)
+        if not rok then
+          alert("RECOVERY WRITE FAILED: " .. j.path .. ": " .. tostring(rerr))
         end
+      else
+        alert("RECOVERY: " .. j.path .. " unreadable (" .. tostring(entries) ..
+              "); checkpoint unreadable (" .. tostring(recovered) ..
+              "); starting fresh")
+      end
+    end
+  elseif good then
+    local gok, recovered = pcall(decode, good)
+    if gok then
+      j.entries = recovered
+      alert("RECOVERY: " .. j.path .. " missing; restored " .. j.good_path)
+      local rok, rerr = pal.write_file_atomic(j.path, good,
+                                              fail and fail.restore)
+      if not rok then
+        alert("RECOVERY WRITE FAILED: " .. j.path .. ": " .. tostring(rerr))
       end
     else
-      pal.log("[ed] journal unreadable (" .. tostring(chunks) .. "): " ..
-              j.path .. " — starting fresh")
+      alert("RECOVERY: " .. j.path .. " missing; checkpoint unreadable (" ..
+            tostring(recovered) .. "); starting fresh")
     end
   end
   if #j.entries > j.cap then -- over cap from an older, bigger cap
     local keep = {}
     for i = #j.entries - j.cap + 1, #j.entries do keep[#keep + 1] = j.entries[i] end
     j.entries = keep
-    rewrite(j)
+    local ok, err = rewrite(j)
+    if not ok then alert("SAVE FAILED: " .. j.path .. ": " .. tostring(err)) end
   end
   j.pos = #j.entries
   if jpos and jpos >= 0 and jpos <= #j.entries then j.pos = jpos end
@@ -97,7 +157,8 @@ function M.push(j, bytes, flags, t)
   if tip and tip.bytes == bytes and (j.pos == #j.entries) then
     if flags and flags ~= tip.flags then -- e.g. a save marks the same text
       tip.flags = flags
-      rewrite(j)
+      local ok, err = rewrite(j)
+      if not ok then alert("SAVE FAILED: " .. j.path .. ": " .. tostring(err)) end
     end
     return false
   end
@@ -106,7 +167,8 @@ function M.push(j, bytes, flags, t)
     for i = #j.entries, j.pos + 1, -1 do j.entries[i] = nil end
     j.entries[#j.entries + 1] = e
     j.pos = #j.entries
-    rewrite(j)
+    local ok, err = rewrite(j)
+    if not ok then alert("SAVE FAILED: " .. j.path .. ": " .. tostring(err)) end
     return true
   end
   j.entries[#j.entries + 1] = e
@@ -114,15 +176,18 @@ function M.push(j, bytes, flags, t)
   if #j.entries > (j.cap or M.CAP) then
     table.remove(j.entries, 1)
     j.pos = #j.entries
-    rewrite(j)
+    local ok, err = rewrite(j)
+    if not ok then alert("SAVE FAILED: " .. j.path .. ": " .. tostring(err)) end
     return true
   end
   if #j.entries == 1 then
-    rewrite(j) -- first entry writes the container (magic + record)
+    local ok, err = rewrite(j) -- first entry writes the container + checkpoint
+    if not ok then alert("SAVE FAILED: " .. j.path .. ": " .. tostring(err)) end
   else
     pal.mkdir(j.dir)
     if not pal.x_file_append(j.path, encode_entry(e)) then
-      rewrite(j) -- append failed (moved dir?): full rewrite recovers
+      local ok, err = rewrite(j) -- append failed: full rewrite recovers
+      if not ok then alert("SAVE FAILED: " .. j.path .. ": " .. tostring(err)) end
     end
   end
   return true

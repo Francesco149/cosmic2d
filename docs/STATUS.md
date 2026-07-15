@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 session metadata durable (2026-07-15)
+## Current handoff — A1 session and journal recovery complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -44,9 +44,23 @@ replacement steps, prove the previous files survive, cover single/double
 corruption, and pin recents ordering. `nix run .#test` is ALL GREEN: 23,139
 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** migrate editor journals to atomic checkpoint creation
-and add last-known-good journal recovery without changing the existing append
-stream or branching semantics. Cover interrupted/corrupt checkpoint recovery
-and visible failures. Do not mix in multi-output sprite migration yet.
+**A1 packet 3 is complete.** Journal full rewrites now atomically publish both
+`<asset>.jrn.good` and the live append stream; ordinary edits retain the cheap
+single-chunk append path. A corrupt or missing live journal restores and
+repairs the latest checkpoint. The session's newer working bytes then pass
+through the existing adoption path, so current unsaved work survives even if
+post-checkpoint undo steps do not. Checkpoint, live-publish, and recovery-write
+failures are visible in the console. Injected-failure tests prove no partial
+file becomes authoritative, corrupt/missing live recovery, valid-checkpoint
+adoption after a failed repair, and safe fresh fallback after double
+corruption. The A1 last-known-good session/journal roadmap item is proven
+complete. `nix run .#test` is ALL GREEN: 23,145 self-checks, every trace
+verify, and all pixel goldens.
+
+**Exact next packet:** make `.spr` plus its baked `.png`/`.anim`/`.meta`
+outputs transactional as one editor save operation, with rollback or an
+explicit recovery manifest so a failed bake cannot claim success. Add
+injected failure coverage at every output boundary and visible editor errors.
+Do not migrate unrelated asset families in the same packet.
 
 There is no known blocker or human-only verification required.

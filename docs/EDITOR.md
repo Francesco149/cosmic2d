@@ -236,7 +236,17 @@ simple, and journals stay debuggable). For text assets the bytes are
 the text; R4 asset kinds define their own canonical bytes (`.spr` docs
 already have them).
 
-- **Load**: whole file on asset open (teidraw), entries capped at
+Full rewrites (first entry, branch, cap trim, saved-flag change) are atomic and
+also maintain `<key>.jrn.good` as the last valid checkpoint. Ordinary pushes
+still append one chunk rather than rewriting a potentially large journal. If
+the live stream is missing or has an interrupted/corrupt tail, asset open
+restores the checkpoint atomically and reports recovery in the console. The
+session's working bytes are newer authority for current unsaved work and are
+then appended again by the normal adoption path; only undo steps after the
+last full checkpoint may be absent after an interrupted append.
+
+- **Load**: whole file on asset open (teidraw), recover `.jrn.good` when the
+  live stream is invalid, entries capped at
   **4096** (configurable) — truncate oldest past the cap.
 - **Push** on gesture end: edit-widget deactivate, 600 ms idle while
   active, window close, session end. Identical-to-tip pushes are

@@ -3110,7 +3110,8 @@ local function t_ed_journal()
   check(pal.read_file(ap) == "abcdef", "x_file_append bytes land in order")
 
   -- fresh journal: baseline + pushes + dedupe (reset any prior run's file)
-  pal.write_file(journal.file(root, "a.txt"), "")
+  pal.x_remove(journal.file(root, "a.txt"))
+  pal.x_remove(journal.good_file(root, "a.txt"))
   local j = journal.open(root, "a.txt")
   check(#j.entries == 0 and j.pos == 0, "ed.journal: fresh is empty")
   check(journal.push(j, "one", journal.SAVED, 1) == true, "ed.journal: push 1")
@@ -3145,6 +3146,42 @@ local function t_ed_journal()
   local j4 = journal.open(root, "a.txt")
   check(#j4.entries == 2 and j4.entries[2].bytes == "fork",
         "ed.journal: branch rewrite persisted")
+  check(pal.read_file(journal.good_file(root, "a.txt")) ==
+        pal.read_file(journal.file(root, "a.txt")),
+        "ed.journal: rewrite atomically maintains checkpoint")
+
+  -- A damaged live append stream restores the last full rewrite checkpoint.
+  pal.write_file(journal.file(root, "a.txt"), "CJRNtruncated")
+  local jr = journal.open(root, "a.txt")
+  check(#jr.entries == 2 and jr.entries[2].bytes == "fork",
+        "ed.journal: corrupt live restores checkpoint")
+  check(pal.read_file(journal.file(root, "a.txt")) ==
+        pal.read_file(journal.good_file(root, "a.txt")),
+        "ed.journal: recovery repairs the live file")
+
+  -- Injected checkpoint/live/restore failures preserve authoritative files.
+  local failpath = "fail.txt"
+  pal.x_remove(journal.file(root, failpath))
+  pal.x_remove(journal.good_file(root, failpath))
+  local jfg = journal.open(root, failpath, nil, nil,
+                           { good = { _fail = "rename" } })
+  journal.push(jfg, "one", 0, 1)
+  check(pal.read_file(jfg.path) ~= nil and pal.read_file(jfg.good_path) == nil,
+        "ed.journal: checkpoint failure leaves complete live authoritative")
+  pal.x_remove(jfg.path)
+  local jfl = journal.open(root, failpath, nil, nil,
+                           { live = { _fail = "rename" } })
+  journal.push(jfl, "two", 0, 2)
+  check(pal.read_file(jfl.path) == nil and pal.read_file(jfl.good_path) == nil,
+        "ed.journal: live failure publishes neither file")
+  local seed = journal.open(root, failpath)
+  journal.push(seed, "recoverable", 0, 3)
+  pal.write_file(jfl.path, "bad live")
+  local jfr = journal.open(root, failpath, nil, nil,
+                           { restore = { _fail = "rename" } })
+  check(#jfr.entries == 1 and jfr.entries[1].bytes == "recoverable" and
+        pal.read_file(jfl.path) == "bad live",
+        "ed.journal: failed repair still adopts valid checkpoint")
 
   -- the cap drops the oldest (per-open cap — R4d/§12.6 sprite journals)
   local j4c = journal.open(root, "a.txt", nil, 3)
@@ -3160,10 +3197,11 @@ local function t_ed_journal()
   check(#j5b.entries == 2 and j5b.entries[2].bytes == "x2",
         "ed.journal: reopen trims to a smaller cap")
 
-  -- a corrupt journal degrades to fresh, never an error
+  -- With no valid checkpoint, corruption degrades to fresh with an alert.
   pal.write_file(journal.file(root, "bad.txt"), "CJRNnotachunk")
+  pal.write_file(journal.good_file(root, "bad.txt"), "bad checkpoint")
   local jb = journal.open(root, "bad.txt")
-  check(#jb.entries == 0, "ed.journal: corrupt = fresh")
+  check(#jb.entries == 0, "ed.journal: double corrupt = fresh")
 end
 
 local function t_snd()
@@ -3559,7 +3597,8 @@ local function t_ed_kit()
   -- fresh open: no disk file -> fresh bytes, no baseline entry
   -- (reset both the journal AND the asset across runs — a prior run's
   -- save leaves a.k on disk, which would take the adopt-disk path)
-  pal.write_file(journal.file(root, "a.k"), "")
+  pal.x_remove(journal.file(root, "a.k"))
+  pal.x_remove(journal.good_file(root, "a.k"))
   pal.x_remove(root .. "/a.k")
   local ed = mked()
   local win = { path = "a.k" }
@@ -3640,7 +3679,8 @@ local function t_ed_kit()
       if p.due then R.push(ed, path); closed = closed + 1 end
     end,
   }
-  pal.write_file(journal.file(root, "b.r"), "")
+  pal.x_remove(journal.file(root, "b.r"))
+  pal.x_remove(journal.good_file(root, "b.r"))
   pal.write_file(root .. "/b.r", "")
   local edr = mked()
   local winr = { path = "b.r" }
