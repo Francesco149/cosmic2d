@@ -361,7 +361,19 @@ function M.boot()
   -- runs. Generational collects the young garbage in cheap minor passes and
   -- rarely does a full one, roughly halving the worst pauses. Pure memory
   -- management: determinism/goldens are byte-identical (GC never touches logic).
-  collectgarbage("generational")
+  -- Keep the GC heap small + its collections even (Lua 5.4, incremental). The
+  -- always-on ring recorder churns a lot of short-lived garbage every sim
+  -- frame; the default pacing lets the heap grow, then a big MAJOR collection
+  -- lands as the rhythmic sim spike the human saw (worse the longer a session
+  -- runs). A tighter pause (collect at +20% heap, not the default +100%) with
+  -- a stronger step multiplier keeps the heap small and each collection tiny +
+  -- frequent — far fewer big spikes AND a smaller working set, which measured
+  -- as the LOWEST average frame time of every option tried. Deliberately NOT
+  -- generational: it cut spikes too, but its write barriers + larger retained
+  -- heap cost more per frame at a high refresh rate (the human's 240->170fps
+  -- regression). Pure memory management — determinism + goldens byte-identical.
+  collectgarbage("setpause", 120)
+  collectgarbage("setstepmul", 400)
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
   M.trace.ring_start({ project = args.project })
