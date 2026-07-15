@@ -635,6 +635,17 @@ end
 -- cell grid from the tileset strip (R8d, below). Textures memoize in
 -- cm.gfx keyed by full path; a missing or unreadable file logs once per
 -- instance and skips.
+-- resolve an asset path to a readable disk path: the PROJECT root first, then
+-- the engine root / cwd — so engine/stock/* placements + tilesets load in-game
+-- the way the stock instruments/palettes do (D061). nil if neither exists.
+local function res_asset(path)
+  local root = (cm.main and cm.main.args and cm.main.args.project) or "."
+  local a = root .. "/" .. path
+  if (pal.mtime(a) or 0) > 0 then return a end
+  if (pal.mtime(path) or 0) > 0 then return path end
+  return nil
+end
+
 local function place_tex(inst, p)
   inst._ptex = inst._ptex or {}
   local hit = inst._ptex[p.path]
@@ -646,10 +657,12 @@ local function place_tex(inst, p)
   end
   local t = false
   if target then
-    local root = (cm.main and cm.main.args and cm.main.args.project) or "."
-    local ok, tex = pcall(cm.require("cm.gfx").texture, root .. "/" .. target)
-    if ok then t = tex
-    else pal.log("[map] placement image unreadable: " .. p.path) end
+    local rp = res_asset(target)
+    if rp then
+      local ok, tex = pcall(cm.require("cm.gfx").texture, rp)
+      if ok then t = tex end
+    end
+    if not t then pal.log("[map] placement image unreadable: " .. p.path) end
   end
   inst._ptex[p.path] = t
   return t or nil
@@ -665,18 +678,20 @@ local function place_tm(inst, p)
   if rec ~= nil and (rec == false or rec.ep == ep) then
     return rec or nil
   end
-  local root = (cm.main and cm.main.args and cm.main.args.project) or "."
-  local bytes = pal.read_file(root .. "/" .. p.path)
+  local tmp = res_asset(p.path)
+  local bytes = tmp and pal.read_file(tmp)
   local ok, doc = false, nil
   if bytes then
     ok, doc = pcall(cm.require("cm.tmap").decode, bytes)
   end
   local tex
   if ok and doc.tileset ~= "" then
-    local png = doc.tileset:gsub("%.spr$", ".png")
-    local okt, t = pcall(cm.require("cm.gfx").texture, root .. "/" .. png,
-                         rec and true or nil)
-    if okt then tex = t end
+    local pngp = res_asset(doc.tileset:gsub("%.spr$", ".png"))
+    if pngp then
+      local okt, t = pcall(cm.require("cm.gfx").texture, pngp,
+                           rec and true or nil)
+      if okt then tex = t end
+    end
   end
   if not (ok and tex) then
     pal.log("[map] .tm placement unrenderable: " .. p.path)

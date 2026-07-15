@@ -169,8 +169,12 @@ function M.tileset_tex(ed, p, tsp)
   local ep = cm.asset_epoch or 0
   local reload = p.ts_ep ~= nil and p.ts_ep ~= ep or nil
   p.ts_ep = ep
-  local ok, t = pcall(cm.require("cm.gfx").texture, ed.root .. "/" .. png,
-                      reload)
+  -- resolve project-root first, then engine root / cwd (engine/stock/* tilesets
+  -- load in the editor the way the game resolves them, D061)
+  local rp
+  if (pal.mtime(ed.root .. "/" .. png) or 0) > 0 then rp = ed.root .. "/" .. png
+  elseif (pal.mtime(png) or 0) > 0 then rp = png else return nil end
+  local ok, t = pcall(cm.require("cm.gfx").texture, rp, reload)
   if ok then return t end
 end
 

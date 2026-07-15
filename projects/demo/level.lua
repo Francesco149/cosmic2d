@@ -4,9 +4,11 @@
 -- map window (dogfooding). Markers carry the spawn, the portals, coins,
 -- and a hazard; main.lua reads them for room logic + sfx.
 --
--- The look is the graybox collider fill (the engine's current art path,
--- MAPS.md §5) tinted per-room from a stock palette — cozy town warm,
--- overworld cool.
+-- The look is 100% PLACED sprites (D061): each room's .map carries a
+-- **backdrop** layer (a static hill-silhouette .tm, named so code can reach
+-- it) behind a **ground** layer (the colliders autotiled into a .tm) — both
+-- render in the map editor. Colliders draw nothing. A per-room grade adds
+-- the mood (warm town / cool overworld).
 
 local gfx = cm.require("cm.gfx")
 local map = cm.require("cm.map")
@@ -74,6 +76,55 @@ ROOMS.overworld = {
   },
 }
 
+-- ---- the sprite-only visuals: two placed tilemaps per room (D061) ----
+-- The look is 100% PLACED sprites now (no runtime graybox, no procedural
+-- parallax): a **ground** layer (the collider geometry autotiled into a
+-- .tm, so it renders in the map editor too) behind which a **backdrop**
+-- layer sits — a static hill silhouette .tm, named "backdrop" so code can
+-- reach it via cm.map.ref("backdrop"). Colliders render nothing (nofill).
+
+-- a static hill silhouette across the whole room (build-time asset gen —
+-- math.sin is fine here, it's not sim; the .tm is committed)
+local function build_backdrop(def, tileset)
+  local w = math.max(1, math.ceil(def.w / T))
+  local h = math.max(1, math.ceil(def.h / T))
+  local hills = math.max(3, math.floor(h * 0.55)) -- fill the lower ~half
+  local td = tmap.blank(w, h, T, tileset)
+  local period = 2 * math.pi / w
+  for tx = 0, w - 1 do
+    local n = math.sin(period * tx) + 0.5 * math.sin(period * tx * 2 + 1.7)
+              + 0.3 * math.sin(period * tx * 3 + 2.3)
+    local ridge = math.floor((h - hills) + (1 - (n + 1.8) / 3.6) * hills + 0.5)
+    if ridge < 0 then ridge = 0 elseif ridge > h - 1 then ridge = h - 1 end
+    for ty = ridge, h - 1 do
+      tmap.set(td, tx, ty, ty == ridge and 1 or 2) -- lit ridge / mass
+    end
+  end
+  return td
+end
+
+-- generate a room's .map + its two .tm assets (dev bootstrap; inert once
+-- the files are committed). Returns the encoded .map bytes.
+local function bootstrap_room(def, room, proj)
+  local tiles = "engine/stock/spr/tiles.spr"
+  local gb = tmap.graybox(def, { tile = T, tileset = tiles })
+  pal.write_file(proj .. "/" .. room .. "_gb.tm", tmap.encode(gb))
+  local bg = build_backdrop(def, tiles)
+  pal.write_file(proj .. "/" .. room .. "_bg.tm", tmap.encode(bg))
+  return map.encode {
+    name = def.name, w = def.w, h = def.h, grid = def.grid, bg = def.bg,
+    nofill = true, -- colliders draw nothing; the placed tilemaps ARE the art
+    layers = { { name = "backdrop", vis = true, on = true },
+               { name = "ground", vis = true, on = true } },
+    colliders = def.colliders,
+    places = {
+      { path = room .. "_bg.tm", x = 0, y = 0, layer = 1, name = "backdrop" },
+      { path = room .. "_gb.tm", x = 0, y = 0, layer = 2 },
+    },
+    markers = def.markers,
+  }
+end
+
 -- ---- load / reload a room ----
 
 M.current = nil
@@ -85,15 +136,11 @@ function M.reset(room)
   local proj = cm.main.args.project
   local path = proj .. "/" .. room .. ".map"
   if not pal.read_file(path) then -- dev bootstrap; inert once committed
-    pal.write_file(path, map.encode(ROOMS[room]))
+    pal.write_file(path, bootstrap_room(ROOMS[room], room, proj))
   end
   local inst = map.use{ path = path, name = "demo.mapc" }
   M.inst, M.world = inst, inst.world
   M.pw, M.ph = inst.doc.w, inst.doc.h
-  -- the level VISUALS are a checkerboard tilemap autotiled from the colliders
-  -- (MAPS.md §5 end state) — colliders themselves render nothing in game.
-  M.fg = tmap.graybox(inst.doc, { tile = 16,
-                                  tileset = "engine/stock/spr/tiles.spr" })
   M.current = room
   M.spawn = { x = 56, y = 316 }
   M.portals, M.coins, M.hazards = {}, {}, {}
@@ -120,76 +167,16 @@ local SKY = {
   overworld = palette.load("engine/stock/pal/frostbyte-8.pal"),
 }
 
--- The background is a parallax LANDSCAPE: two silhouette tilemap layers (far
--- mountains, near hills) laid from the stock checker tiles, colorized from the
--- room palette and scrolled at different depths. All the background COLOR
--- lives in these tinted tiles — there's no separate sky gradient to drift out
--- of sync; a flat per-room sky sits behind. Built in memory (procedural,
--- deterministic; math.sin here is render-only, never sim). SIL_W = the page
--- width in tiles = the horizontal period, so the wrap is seamless.
-local SIL_W = 48
-
--- a silhouette layer: SIL_W x H tiles, filled below an undulating ridge. rmax
--- is the ridge height in tiles; phase shifts the contour so layers differ.
-local function build_sil(H, rmax, phase)
-  local doc = tmap.blank(SIL_W, H, 16, "engine/stock/spr/tiles.spr")
-  local w = 2 * math.pi / SIL_W
-  for tx = 0, SIL_W - 1 do
-    local n = math.sin(w * tx + phase) + 0.5 * math.sin(w * tx * 2 + phase * 1.7)
-              + 0.3 * math.sin(w * tx * 3 + phase * 2.3)
-    local r = math.floor((n + 1.8) / 3.6 * rmax + 0.5)
-    if r < 0 then r = 0 elseif r > rmax then r = rmax end
-    for ty = rmax - r, H - 1 do
-      tmap.set(doc, tx, ty, ty == rmax - r and 1 or 2) -- lit ridge / mass
-    end
-  end
-  return doc
-end
-
-local sil_far, sil_near
-local function silhouettes()
-  if not sil_far then
-    sil_far = build_sil(22, 13, 0.0)  -- distant mountains (taller)
-    sil_near = build_sil(22, 8, 2.3)  -- nearer rolling hills
-  end
-  return sil_far, sil_near
-end
-
--- draw the silhouette OPAQUE, tiled horizontally at a world `top` (row-0 y),
--- tinted; a small muly gives a gentle vertical drift. Opaque = no muddy
--- inter-layer blend (the checker tiles are solid).
-local function draw_sil(doc, tex, mulx, muly, top, camx, camy, r, g, b)
-  gfx.layer(mulx, muly)
-  local lx, ly = (camx or 0) * mulx, (camy or 0) * muly
-  local pw, vw = doc.w * doc.tile, pal.gfx_size()
-  for ox = math.floor(lx / pw) * pw, lx + vw, pw do
-    tmap.draw(doc, tex, ox, top, lx, ly, r, g, b, 1)
-  end
-end
-
+-- The landscape is now a PLACED backdrop layer inside the .map (world-space,
+-- not parallaxed — it's just placed there, named "backdrop"). All that's left
+-- to draw here is a flat per-room sky behind it (screen-fixed base color).
 function M.draw_bg(camx, camy)
   local paint = cm.require("cm.paint")
   local cols = SKY[M.current] and SKY[M.current].colors
   if not (cols and #cols >= 7) then return end
-  local tex = gfx.texture("engine/stock/spr/tiles.png")
-  local function col(i)
-    local r, g, b = paint.unpack(cols[i])
-    return r / 255, g / 255, b / 255
-  end
-  -- 1) a flat per-room sky (screen-fixed; a flat fill can't reveal a parallax
-  --    mismatch the way the old moving gradient did)
+  local r, g, b = paint.unpack(cols[6])
   gfx.layer(0)
-  local sr, sg, sb = col(6)
-  pal.quad(0, 0, 480, 270, sr, sg, sb, 1)
-  -- 2) two opaque silhouette layers from the checker tiles — distant mountains
-  --    (lighter/hazier, slow) behind nearer hills (darker, fast). Opaque, so
-  --    the near layer cleanly occludes the far one (no muddy blend). Tinted
-  --    dark room shades = a colorized landscape that all moves together.
-  local far, near = silhouettes()
-  local fr, fg, fb = col(4)
-  draw_sil(far, tex, 0.18, 0.09, 58, camx, camy, fr, fg, fb)
-  local nr, ng, nb = col(3)
-  draw_sil(near, tex, 0.36, 0.15, 106, camx, camy, nr, ng, nb)
+  pal.quad(0, 0, 480, 270, r / 255, g / 255, b / 255, 1)
 end
 
 -- per-room MOOD grade (M10, cm.grade) — a render-only color-grade pass over
@@ -207,12 +194,9 @@ function M.collected() -- sim-state set of picked-up coin ids
 end
 
 function M.draw(camx, camy)
-  -- the level geometry as a checkerboard tilemap (colliders render NOTHING —
-  -- placed tiles + sprites make every visual, MAPS.md §5); gfx.layer(1) is
-  -- already set by main.draw, so world coords draw straight.
-  if M.fg then
-    tmap.draw(M.fg, gfx.texture("engine/stock/spr/tiles.png"), 0, 0, camx, camy)
-  end
+  -- every visual is a PLACED sprite/tilemap now (the backdrop + ground layers
+  -- in the .map); colliders render nothing. gfx.layer(1) is already set by
+  -- main.draw, so world coords draw straight.
   map.draw_places(M.inst, camx, camy)
   -- everything below draws in WORLD coords — gfx.camera (pal.camera) does
   -- the screen offset, so no cam subtraction (that was the parallax bug)
