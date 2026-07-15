@@ -10,7 +10,9 @@ windows around, and lay out a workspace that suits the task.
 
 - **code editor** — a project file in a syntax-lit editor. `.md` docs (like
   this one) get headings, links, and code spans; Ctrl+click a link to follow
-  it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and redo (across restarts).
+  it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and redo. Journals normally preserve
+  undo across restarts, but are still cache data rather than a durability
+  guarantee.
 - **sprite editor** (+ **animation**) — paint frames, define clips.
 - **map editor** — collider chains, one-ways, and markers (spawns, portals,
   props). **tilemap** — a grid of tiles placed as one object.
@@ -34,7 +36,8 @@ opens · **esc** closes.
 - **Ctrl+Space** — the launcher (find/open anything, pan to a window).
 - **Right-click** — spawn menu. **Middle-drag** / **wheel** — pan and zoom.
 - **Ctrl+S** — save the focused window's file.
-- **Ctrl+Z / Ctrl+Y** — undo / redo (per asset, kept across restarts).
+- **Ctrl+Z / Ctrl+Y** — undo / redo (per asset; journals normally survive a
+  restart, but source saves remain the durable boundary).
 - **Esc** — release the current tool / view lock.
 - Each window shows its own hotkeys in a hint strip while it's focused, and a
   **?** button in its title bar opens that window's help (hotkeys + workflow).

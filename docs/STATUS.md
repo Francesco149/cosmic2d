@@ -14,11 +14,11 @@ project/export UX, gamepad/player settings, broader genre proofs, and release
 validation are still explicit gates.
 
 **Current packet:** finish A0. This session archived the former 3,112-line
-STATUS diary without alteration and reduced this file to the live handoff.
-Continue by validating repo and in-engine documentation links, removing stale
-references to moved/dead projects or superseded UI, rewriting the shipped
-scripting help as a public task/API guide, and reconciling claims such as
-“self-contained” and “undo forever” with current behavior.
+STATUS diary without alteration and reduced this file to the live handoff. A
+local-link audit passes; it also removed the retired tilemap graybox help and
+made distribution and persistent-undo claims match their current, pre-alpha
+guarantees. The exact next packet is rewriting the shipped scripting help as a
+real public task/API guide, followed by an A0 exit review.
 
 **Exit proof required:** every local documentation/help link resolves; shipped
 help describes only current behavior; `ALPHA.md`'s A0 checklist and the docs

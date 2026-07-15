@@ -67,10 +67,10 @@ Goal: a new session or contributor can identify current truth in minutes.
 - [x] Compress `STATUS.md` to a short current handoff; move completed session
   history to `docs/history/STATUS-2026-07.md` without losing it.
 - [x] Add a docs index with `active`, `contract`, and `historical` labels.
-- [ ] Audit every repo and in-engine link; remove references to moved or dead
+- [x] Audit every repo and in-engine link; remove references to moved or dead
   projects and superseded UI.
 - [ ] Rewrite the in-engine scripting guide into a real public API/task guide.
-- [ ] Reconcile claims such as "self-contained," "undo forever," and current
+- [x] Reconcile claims such as "self-contained," "undo forever," and current
   alpha status with actual behavior.
 
 Exit: `STATUS.md` + this file are sufficient orientation; all shipped help

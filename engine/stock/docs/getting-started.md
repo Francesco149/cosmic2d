@@ -1,8 +1,9 @@
 # Getting started
 
 Welcome to **cosmic2d** — a tiny 2D pixel-art engine and fantasy console.
-One folder holds the engine, its editor, and your games. Make a game with
-the built-in editor, share it by zipping a folder.
+Make a game with the built-in editor in this engine folder. General in-editor
+export is still under construction; the current developer packager can build
+the bundled demo.
 
 This is a rendered doc reader. Click a link to follow it in place
 (ctrl+click opens it in a new reader); the header arrows — or the mouse

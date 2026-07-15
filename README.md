@@ -1,9 +1,9 @@
 # cosmic2d
 
-A tiny 2D pixel-art engine / fantasy console. One self-contained folder holds
-the engine, its editor and tools, and your game projects — make a game with
-the built-in editor, share it by zipping a folder, and the recipient can play
-it, edit it live, or build their own with the same binary.
+A tiny 2D pixel-art engine / fantasy console. The intended distribution is one
+folder containing the engine, editor, tools, and game projects. Today the
+source checkout is built with Nix; clean-machine, extract-and-run artifacts
+and in-editor export are still alpha release gates.
 
 **Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
 and an out-of-the-box demo game are here. The deterministic suite is green,
@@ -29,9 +29,8 @@ bin/cosmic projects/demo            # play the demo directly
 bin/cosmic projects/demo --edit     # open it in the editor
 ```
 
-A packaged engine bundle (`nix build .#cosmic` / `.#cosmic-windows`) drops two
-launchers in its **root** so there's nothing to figure out — extract and run
-the one you want:
+The current development bundles (`nix build .#cosmic` / `.#cosmic-windows`)
+drop two launchers in their **root**:
 
 - **`cosmic2d-editor`** (`.exe`) — the project picker / editor front door.
 - **`demo`** (`.exe`) — the bundled demo, straight to play.
@@ -52,17 +51,17 @@ sound effects, and two 30-second BGMs.
 
 ## Ship a game
 
-Package a project into a standalone, play-only artifact for someone who just
-wants to play:
+The developer packager can make the bundled demo into a play-only artifact:
 
 ```sh
-nix run .#package -- demo          # -> demo-windows.zip (self-contained)
+nix run .#package -- demo          # -> demo-windows.zip
 nix run .#package -- demo linux    # -> demo-linux.tar.gz
 ```
 
 The bundle contains only the engine runtime + that one project + this README
-and LICENSE; the launcher is renamed so running it boots the game locked to
-play mode (no editor, no other projects).
+and LICENSE; the renamed launcher boots the game locked to play mode. This is
+not yet the promised general export flow or a clean-machine-certified release;
+those are gates A2 and A3 in `docs/ALPHA.md`.
 
 ## Shape of the thing
 
@@ -83,8 +82,9 @@ two-layer design + determinism rules), `EDITOR.md`, `AUDIO.md`, `MAPS.md`.
 
 ## Platforms
 
-Linux and Windows desktop (the Windows build is a self-contained cross-build,
-produced by the packager above). macOS is not yet supported.
+Development builds run on Linux and Windows desktop; the Windows binary is a
+cross-build. Portable clean-machine artifacts are still being validated.
+macOS is not supported for this alpha.
 
 ## License
 

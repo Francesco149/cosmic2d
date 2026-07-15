@@ -17,7 +17,4 @@ are the tiles). Place a tilemap on a map layer as one object.
 - **shift+1** fit the view · **wheel / middle-drag** zoom / pan (while focused)
 - **ctrl+z / ctrl+y** undo / redo · **ctrl+s** save
 
-Tip: in the map editor, the **graybox** chip autotiles your colliders into a
-`.tm` you can then hand-edit here.
-
 Next: [The map editor](engine/stock/docs/win-map.md)

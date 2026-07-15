@@ -449,9 +449,11 @@ cosmic2d/
   bin/                 built PAL binaries (gitignored until release packaging)
 ```
 
-The repo root **is** the self-contained environment ("the console"). Sharing
-a game = zipping this folder. `projects/` holds cartridges; a config picks the
-startup project + mode for end-user shipping.
+The repo root is the development form of the console and `projects/` holds its
+cartridges. Release bundles preserve that one-folder model, but arbitrary
+project export and clean-machine portability are alpha gates A2/A3 rather than
+current guarantees. A config selects the startup project and mode in today's
+developer-built play-only bundle.
 
 ## Conventions
 
