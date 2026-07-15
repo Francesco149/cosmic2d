@@ -2397,3 +2397,34 @@ reject or recover outstanding manifests before packaging.
 **Revisit.** Add automatic boot-time scanning if assets can commonly be saved
 without subsequently being loaded by the editor, or rollback copies if field
 testing shows runtime readers observing interrupted generations is harmful.
+
+## D064 — `.ed` has working recovery and derived cache, not one deletion policy (A1, 2026-07-15)
+
+**Context.** `.ed` was described loosely as an untracked cache, but it holds
+three different persistence roles. `session.dat` can be the only copy of
+unsaved asset bytes, journals are the cross-session undo record, and rewind
+history is reconstructible observation data. Treating the directory as one
+disposable cache would turn a compatibility recovery action into data loss.
+
+**Decision.** `.ed/owner.dat` is a `CEDO` container with `OWNR v1`, schema 1,
+and owner `cosmic2d`. The editor owns the directory and projects do not ship or
+commit it. Session plus journals are **working recovery**; history is
+**derived cache**. A missing marker is the legacy schema-1 layout and is
+adopted atomically without clearing anything. A corrupt marker makes only
+derived history untrustworthy: history is cleared, the marker is republished,
+and recovery is reported. A foreign or newer marker walls off history and the
+editor, preserving the entire directory so an older binary cannot downgrade
+unknown data. Validation runs before boot's history scan.
+
+`cm.ed.clear_cache()` is the deliberate compatibility escape hatch: it removes
+only rewind-history files and atomically adopts the current marker. It never
+deletes session or journals. Failure is logged and opens the console.
+
+**Proof.** Selftests pin legacy adoption, corrupt-marker rebuild, newer-schema
+refusal, explicit rebuild, idempotence, atomic marker failure, and preservation
+of working recovery at every boundary.
+
+**Revisit.** Add a UI confirmation surface around the explicit command when
+project lifecycle/settings UI exists (A3), or split another `.ed` subtree into
+a new ownership class if it can neither be rebuilt nor safely read by its own
+versioned codec.

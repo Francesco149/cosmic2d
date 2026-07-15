@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 transactional sprite saves complete (2026-07-15)
+## Current handoff — A1 `.ed` compatibility contract complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -69,14 +69,26 @@ matching recovery. `nix run .#test` is ALL GREEN: 23,176 self-checks, every
 trace verify, and all pixel goldens. Linux and cross-built Windows packages
 both compile.
 
+**A1 packet 5 is complete.** `.ed/owner.dat` (`CEDO` schema 1) now records
+that the directory is engine-owned but not wholly disposable: session and
+journal files are working recovery that may contain the only copy of unsaved
+work, while rewind history is derived cache. Missing markers adopt the legacy
+layout. Corrupt markers rebuild only history and report recovery; foreign or
+newer markers preserve everything and refuse the older editor. The explicit
+`cm.ed.clear_cache()` operation opts into a derived-history rebuild without
+ever deleting session/journals. Ownership is checked before boot reads rewind
+history. Focused tests cover legacy, corrupt, newer, explicit-clear, and
+marker-publication failure paths. `nix run .#test` is ALL GREEN: 23,185
+self-checks, every trace verify, and all pixel goldens.
+
 The export contract is now explicit in `ALPHA.md`: shipped games include the
 engine, editor/tooling, source project, and assets for curious players. The
 normal named launcher remains locked directly to play mode via D052; “play
 only” describes that default entrance, not a stripped artifact.
 
-**Exact next packet:** define `.ed` cache ownership and compatibility/version
-behavior, then add a safe clear/rebuild operation with focused corrupt/old
-cache coverage and visible recovery reporting. Do not migrate unrelated asset
-families in the same packet.
+**Exact next packet:** migrate `.map` source saves to atomic replacement with
+focused injected-failure coverage proving the previous map survives, dirty
+working bytes remain, and the editor reports the failure. Do not migrate other
+asset families in the same packet.
 
 There is no known blocker or human-only verification required.

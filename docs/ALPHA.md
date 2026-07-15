@@ -93,7 +93,7 @@ Goal: power loss, disk-full, or a damaged cache cannot silently destroy work.
 - [x] Make multi-output assets transactional (`.spr` source plus baked
   `.png`/`.anim`/`.meta`); report every failure in the editor.
 - [x] Keep and recover from last-known-good session/journal metadata.
-- [ ] Define `.ed` cache ownership, compatibility/version behavior, and safe
+- [x] Define `.ed` cache ownership, compatibility/version behavior, and safe
   clear/rebuild operations.
 - [ ] Add disk-full/interrupted/corrupt-file tests at the persistence seams.
 

@@ -87,6 +87,20 @@ the console with a recovery notice. These files make layout + unsaved work
 survive a restart. `.ed/` is per-project, untracked
 (gitignored by the engine's default project scaffolding).
 
+### `.ed` ownership and compatibility
+
+`.ed` is owned by the cosmic2d editor and must not be edited or shipped as
+project source, but it is **not all disposable cache**. `session.dat` and
+`journal/` are working-recovery data and can contain the only copy of unsaved
+work. `history/` is derived rewind cache and may be rebuilt. `owner.dat`
+(`CEDO`, schema 1) records that contract. A missing marker is a legacy schema-1
+directory and is adopted in place. A corrupt marker clears only `history/`,
+preserves session/journals, writes the current marker atomically, and opens the
+console with a recovery report. A foreign or newer marker is preserved and
+refused so an older editor cannot downgrade unknown data.
+`cm.ed.clear_cache()` is the explicit opt-in door to rebuild derived history
+and adopt the current marker; it never means “delete `.ed`.”
+
 ## 3. The canvas
 
 Straight from igcanvas + teidraw's tuning (constants lifted from

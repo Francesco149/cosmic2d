@@ -3146,6 +3146,65 @@ local function t_ed_session()
   recent.path = old_path
 end
 
+local function t_ed_cache()
+  local cache = cm.require("cm.ed.cache")
+  local root = tmproot() .. "/cosmic_selftest_cache"
+  local dir = root .. "/.ed"
+  pal.mkdir(root)
+  pal.mkdir(dir)
+  pal.mkdir(dir .. "/journal")
+  pal.mkdir(dir .. "/history")
+  for _, n in ipairs(pal.list_dir(dir .. "/history") or {}) do
+    pal.x_remove(dir .. "/history/" .. n)
+  end
+  pal.x_remove(cache.path(root))
+
+  -- A pre-marker directory is schema 1: adopt it without discarding either
+  -- working recovery or valid derived history.
+  pal.write_file(dir .. "/session.dat", "working")
+  pal.write_file(dir .. "/journal/a.jrn", "undo")
+  pal.write_file(dir .. "/history/seg_000001", "legacy history")
+  local ok, notice = cache.prepare(root)
+  check(ok and notice == nil and cache.decode(pal.read_file(cache.path(root))) == 1,
+        "ed.cache: missing marker adopts legacy schema")
+  check(pal.read_file(dir .. "/session.dat") == "working" and
+        pal.read_file(dir .. "/journal/a.jrn") == "undo" and
+        pal.read_file(dir .. "/history/seg_000001") == "legacy history",
+        "ed.cache: legacy adoption preserves every data class")
+
+  -- Unknown newer metadata is refused without touching anything: an older
+  -- editor cannot infer which parts a future schema made disposable.
+  pal.write_file_atomic(cache.path(root), cache.encode(cache.SCHEMA + 1))
+  ok, notice = cache.prepare(root)
+  check(not ok and notice and notice:find("IS NEWER", 1, true),
+        "ed.cache: newer schema is visibly refused")
+  check(pal.read_file(dir .. "/history/seg_000001") == "legacy history" and
+        pal.read_file(dir .. "/session.dat") == "working" and
+        pal.read_file(dir .. "/journal/a.jrn") == "undo",
+        "ed.cache: newer schema preserves the whole directory")
+  ok, notice = cache.clear(root)
+  check(ok and notice == 1 and
+        pal.read_file(dir .. "/history/seg_000001") == nil,
+        "ed.cache: explicit rebuild opts into current schema")
+
+  -- Corrupt ownership takes the same safe path and an explicit clear is
+  -- idempotent. Marker publication failure is actionable.
+  pal.write_file(dir .. "/history/seg_000002", "cache")
+  pal.write_file(cache.path(root), "not a CEDO")
+  ok, notice = cache.prepare(root)
+  check(ok and notice and notice:find("unreadable", 1, true) and
+        pal.read_file(dir .. "/history/seg_000002") == nil,
+        "ed.cache: corrupt marker safely rebuilds and reports")
+  ok, notice = cache.clear(root)
+  check(ok and notice == 0, "ed.cache: explicit rebuild is idempotent")
+  ok, notice = cache.clear(root, { _fail = "rename" })
+  check(not ok and notice:find("owner marker", 1, true),
+        "ed.cache: marker publication failure is actionable")
+  check(pal.read_file(dir .. "/session.dat") == "working" and
+        pal.read_file(dir .. "/journal/a.jrn") == "undo",
+        "ed.cache: failed rebuild never touches working recovery")
+end
+
 local function t_ed_journal()
   local journal = cm.require("cm.ed.journal")
   local root = tmproot() .. "/cosmic_selftest_ed"
@@ -4831,6 +4890,7 @@ function game.init()
   t_ed_game()
   t_atomic_write()
   t_ed_session()
+  t_ed_cache()
   t_ed_journal()
   t_ed_kit()
   t_snd()

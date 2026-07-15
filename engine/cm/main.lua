@@ -304,11 +304,27 @@ function M.boot()
   -- the chain, contiguous by construction). Live windowed sessions only,
   -- matching the spill gate below: headless/verify/captures start at 0
   -- and never touch history, so goldens stay byte-identical.
+  M.ed_cache_ok = nil
   if not args.headless then
-    local last = cm.require("cm.trace").hist_peek(args.project)
-    if last then
-      pal.buf("cm.sim", 64):i64(0, last)
-      pal.log(("[trace] continuing the past stream at frame %d"):format(last + 1))
+    -- Validate .ed ownership before trace reads its derived history. A newer
+    -- or foreign schema is preserved and walled off; corrupt ownership safely
+    -- rebuilds history while leaving session/journals alone.
+    local cache_ok, cache_message =
+      cm.require("cm.ed.cache").prepare(args.project)
+    M.ed_cache_ok = cache_ok
+    if not cache_ok then
+      pal.log("[ed] " .. tostring(cache_message))
+      M.console.open = true
+    elseif cache_message then
+      pal.log("[ed] RECOVERY: " .. cache_message)
+      M.console.open = true
+    end
+    if cache_ok then
+      local last = cm.require("cm.trace").hist_peek(args.project)
+      if last then
+        pal.buf("cm.sim", 64):i64(0, last)
+        pal.log(("[trace] continuing the past stream at frame %d"):format(last + 1))
+      end
     end
   end
 
@@ -372,7 +388,7 @@ function M.boot()
   collectgarbage("setstepmul", 400)
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
-  M.trace.ring_start({ project = args.project })
+  M.trace.ring_start({ project = M.ed_cache_ok == false and "" or args.project })
   -- the editor resumes where the stream left off (D056): when the
   -- adopted history reaches the present, restore its last frame so the
   -- sim continues exactly where the previous session quit (the code

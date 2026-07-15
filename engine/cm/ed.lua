@@ -23,6 +23,7 @@ local M = select(2, ...) or {}
 local cam = cm.require("cm.ed.cam")
 local wm = cm.require("cm.ed.wm")
 local session = cm.require("cm.ed.session")
+local cache = cm.require("cm.ed.cache")
 local ease = cm.require("cm.ease")
 
 M.on = M.on or false
@@ -136,6 +137,16 @@ end
 
 function M.launch(root)
   M.root = root
+  local cache_ok, cache_message = cache.prepare(root)
+  if not cache_ok then
+    pal.log("[ed] " .. tostring(cache_message))
+    cm.require("cm.console").open = true
+    M.on = false
+    return nil, cache_message
+  elseif cache_message then
+    pal.log("[ed] RECOVERY: " .. cache_message)
+    cm.require("cm.console").open = true
+  end
   local recovery
   M.doc, recovery = session.load(root)
   if M.doc then
@@ -155,6 +166,21 @@ function M.launch(root)
     if w.kind == "game" and w.fw then M.kinds.game.apply_fov(w) end
   end
   pal.log("[ed] editor shell on (" .. root .. ")")
+end
+
+-- Console/API door for a safe cache rebuild. This intentionally preserves
+-- session.dat and journals: they may be the only copy of unsaved work.
+function M.clear_cache()
+  if not M.root then return nil, "editor has no project" end
+  local ok, n = cache.clear(M.root)
+  if not ok then
+    pal.log("[ed] CACHE REBUILD FAILED: " .. tostring(n))
+    cm.require("cm.console").open = true
+    return nil, n
+  end
+  pal.log("[ed] rebuilt derived cache; preserved session and journals; removed " ..
+          tostring(n) .. " files")
+  return true, n
 end
 
 function M.touch() -- a captured-doc mutation: arm the session debounce
