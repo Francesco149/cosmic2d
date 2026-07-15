@@ -23,14 +23,16 @@
 -- game hot-reloads (MAPS.md §9), so traces replay it and rewind scrubs
 -- across it.
 --
--- R8c roster: the COLLIDER tool (header tool chips sel/col/mkr) — line
--- chains drawn click by click (enter/dblclick ends open, C closes, esc
--- cancels), quads/circles dragged out, vertex/edge/whole-collider drag
--- editing with insert-on-edge-click, the §7 point snap (vertices >
--- edges > 45 lock > grid), one-way/closed flag chips; ATTACHED
--- colliders on the select tool (+col auto-fit picker, editable only
--- while the placement selects, del removes); the MARKER tool (drag =
--- new rect, corner resize, kind/label/note/extras inspector fields).
+-- D061 (teidraw): direct manipulation is UNIFIED across tools — clicking
+-- any collider vertex/edge, placement, or marker selects + moves it, and
+-- click-again DRILLS to whatever's beneath (M.hit_stack + M.drill_pick).
+-- The COLLIDER tool only differs on an EMPTY press: the teidraw LINE
+-- grammar — drag-on-first-click lays a 2-point line, or click, click lays
+-- one, then shift+click APPENDS points to the last line (C closes it);
+-- quad/circle still drag out. The §7 point snap (vertices > edges > 45
+-- lock > grid) rides every draw. ATTACHED colliders edit only while their
+-- placement selects (+col auto-fit); the MARKER tool empty-press drags a
+-- new rect (corner resize, kind/label/note/extras inspector fields).
 --
 -- Sim/editor line: everything here touches working bytes only; the one
 -- sim-facing op is the recorded repl.submit on save.
@@ -1688,22 +1690,29 @@ function M.draw(win, ctx)
   local thr = 7 / zoom -- handle pick radius, map px
   local ct = win.ctype or "line"
 
-  -- finish the modal chain draw (collider line tool); the keys block reaches
-  -- this to end/close on enter/C
-  local function finish_chain(closed)
-    local gd = p.g
-    p.g, p.guides = nil, nil
-    if gd and #gd.verts // 2 >= (closed and 3 or 2) then
-      doc.colliders[#doc.colliders + 1] = {
-        kind = "chain", oneway = win.coneway or false,
-        closed = closed or false, verts = gd.verts }
-      p.csel = { c = #doc.colliders }
-      p.lastcol = #doc.colliders
-      commit(ed, win.path)
-    end
+  local click_used = false -- a click consumed by the line2 placement below
+
+  -- the teidraw line grammar (D061): a 2-point line (drag-on-first-click OR
+  -- click-then-click), then shift+click APPENDS points to the last line.
+  local function new_line(x0, y0, x1, y1)
+    doc.colliders[#doc.colliders + 1] = {
+      kind = "chain", oneway = win.coneway or false, closed = false,
+      verts = { x0, y0, x1, y1 } }
+    p.csel = { c = #doc.colliders }
+    p.lastcol = #doc.colliders
+    commit(ed, win.path)
     ctx.touch()
   end
-  p.finish_chain = finish_chain
+  local function append_pt(x, y)
+    local c = p.lastcol and doc.colliders[p.lastcol]
+    if not (c and c.kind == "chain") then return false end
+    c.verts[#c.verts + 1] = x
+    c.verts[#c.verts + 1] = y
+    p.csel = { c = p.lastcol }
+    commit(ed, win.path)
+    ctx.touch()
+    return true
+  end
 
   -- the §7 edge-run (R8d): line tool + CTRL, idle — hovering a placed .tm's
   -- exposed tile edge proposes the WHOLE contiguous run; one click lays it.
@@ -1734,40 +1743,42 @@ function M.draw(win, ctx)
     pal.x_ig_circle_fill(ox + r[3] * zoom, oy + r[4] * zoom, 3.5, COL.guide)
   end
 
-  -- the modal chain draw preview + click-to-append (collider line tool)
-  if p.g and p.g.mode == "chain" then
-    local gd = p.g
-    local ax, ay = gd.verts[#gd.verts - 1], gd.verts[#gd.verts]
-    gd.cx, gd.cy = ptsnap(mx, my, gd.tg, ax, ay)
-    local v = gd.verts
+  -- the line placement preview: "line2" waits for the 2nd click (rubber-band
+  -- from point A); shift-over-empty previews the append from the last vertex
+  if tool == "collider" and ct == "line" then
     local lt = math.max(1, math.min(2.5, zoom))
-    for k = 1, #v - 3, 2 do
-      pal.x_ig_line(ox + v[k] * zoom, oy + v[k + 1] * zoom,
-                    ox + v[k + 2] * zoom, oy + v[k + 3] * zoom, COL.sel, lt)
-    end
-    pal.x_ig_line(ox + ax * zoom, oy + ay * zoom, ox + gd.cx * zoom,
-                  oy + gd.cy * zoom, COL.guide, lt)
-    for k = 1, #v - 1, 2 do
-      pal.x_ig_circle_fill(ox + v[k] * zoom, oy + v[k + 1] * zoom,
+    if p.g and p.g.mode == "line2" then
+      local gd = p.g
+      gd.cx, gd.cy = ptsnap(mx, my, gd.tg, gd.x0, gd.y0)
+      pal.x_ig_line(ox + gd.x0 * zoom, oy + gd.y0 * zoom,
+                    ox + gd.cx * zoom, oy + gd.cy * zoom, COL.guide, lt)
+      pal.x_ig_circle_fill(ox + gd.x0 * zoom, oy + gd.y0 * zoom,
                            math.max(2, lt + 1), COL.sel)
-    end
-    if over and i.clicked[1] and not p.pan then
-      local now = pal.time_ns()
-      if gd.lt and now - gd.lt < 320 * 1e6 and math.abs(i.wx - gd.lsx) <= 6
-         and math.abs(i.wy - gd.lsy) <= 6 then
-        finish_chain(false) -- double-click ends the open chain
-      else
-        if gd.cx ~= ax or gd.cy ~= ay then
-          v[#v + 1], v[#v + 2] = gd.cx, gd.cy
+      if over and i.clicked[1] and not p.pan then
+        p.g = nil
+        click_used = true
+        if gd.cx ~= gd.x0 or gd.cy ~= gd.y0 then
+          new_line(gd.x0, gd.y0, gd.cx, gd.cy)
         end
-        gd.lt, gd.lsx, gd.lsy = now, i.wx, i.wy
-        ctx.touch()
       end
+    elseif not p.g and g.shift and over and p.lastcol
+           and doc.colliders[p.lastcol]
+           and doc.colliders[p.lastcol].kind == "chain" then
+      local c = doc.colliders[p.lastcol]
+      local ax, ay = c.verts[#c.verts - 1], c.verts[#c.verts]
+      local cx, cy = ptsnap(mx, my, M.snap_targets(doc,
+                       { dims = dims, tm = tmfn }), ax, ay)
+      pal.x_ig_line(ox + ax * zoom, oy + ay * zoom, ox + cx * zoom,
+                    oy + cy * zoom, COL.guide, lt)
+      pal.x_ig_circle_fill(ox + cx * zoom, oy + cy * zoom,
+                           math.max(2, lt + 1), COL.ghost)
+      p.append_at = { cx, cy } -- the press-start reuses this exact spot
     end
   end
+  if not (tool == "collider" and g.shift) then p.append_at = nil end
 
   -- ---- (1) live gesture UPDATE — dispatched by gd.mode, tool-agnostic ----
-  if p.g and p.g.mode ~= "chain" then
+  if p.g and p.g.mode ~= "line2" then
     local gd = p.g
     if gd.mode == "press" then
       -- a grab was armed on press: drag past the threshold starts the move;
@@ -1800,6 +1811,29 @@ function M.draw(win, ctx)
       elseif not i.buttons[1] then
         p.csel = nil
         p.g = nil
+        ctx.touch()
+      end
+    elseif gd.mode == "linepress" then
+      -- the teidraw line: drag past the threshold = drag-place a 2-pt line;
+      -- a still-click = point A set, wait for the 2nd click (line2)
+      if math.abs(i.wx - gd.sx) > 4 or math.abs(i.wy - gd.sy) > 4 then
+        gd.mode = "lineseg"
+      elseif not i.buttons[1] then
+        gd.mode = "line2"
+        gd.cx, gd.cy = gd.x0, gd.y0
+      end
+    elseif gd.mode == "lineseg" then
+      -- drag-place: rubber-band a 2-point line from A to the snapped cursor
+      local nx, ny = ptsnap(mx, my, gd.tg, gd.x0, gd.y0)
+      gd.cx, gd.cy = nx, ny
+      local lt = math.max(1, math.min(2.5, zoom))
+      pal.x_ig_line(ox + gd.x0 * zoom, oy + gd.y0 * zoom,
+                    ox + nx * zoom, oy + ny * zoom, COL.sel, lt)
+      pal.x_ig_circle_fill(ox + gd.x0 * zoom, oy + gd.y0 * zoom,
+                           math.max(2, lt + 1), COL.sel)
+      if not i.buttons[1] then
+        p.g, p.guides = nil, nil
+        if nx ~= gd.x0 or ny ~= gd.y0 then new_line(gd.x0, gd.y0, nx, ny) end
         ctx.touch()
       end
     elseif gd.mode == "move" then
@@ -2146,26 +2180,32 @@ function M.draw(win, ctx)
   end
 
   -- ---- (3) PRESS-START: grab an item, else the tool's empty-press ----
-  if over and i.clicked[1] and not p.pan and not p.g then
+  if over and i.clicked[1] and not p.pan and not p.g and not click_used then
     if tool == "collider" then
-      if not grab_at() then
+      local lastc = ct == "line" and p.lastcol and doc.colliders[p.lastcol]
+      if g.shift and lastc and lastc.kind == "chain" then
+        -- shift+click EXTENDS the last line (teidraw): append a snapped point
+        local cx, cy
+        if p.append_at then cx, cy = p.append_at[1], p.append_at[2]
+        else
+          local ax, ay = lastc.verts[#lastc.verts - 1], lastc.verts[#lastc.verts]
+          cx, cy = ptsnap(mx, my, M.snap_targets(doc, { dims = dims, tm = tmfn }),
+                          ax, ay)
+        end
+        append_pt(cx, cy)
+      elseif not grab_at() then
         if p.run then
-          doc.colliders[#doc.colliders + 1] = {
-            kind = "chain", oneway = win.coneway or false, closed = false,
-            verts = { p.run[1], p.run[2], p.run[3], p.run[4] } }
-          p.csel = { c = #doc.colliders }
-          p.lastcol = #doc.colliders
+          new_line(p.run[1], p.run[2], p.run[3], p.run[4])
           p.run = nil
-          commit(ed, win.path)
-          ctx.touch()
         else
           p.csel = nil
           local tg = M.snap_targets(doc, { dims = dims, tm = tmfn })
           local x0, y0 = ptsnap(mx, my, tg)
           if ct == "line" then
-            p.g = { mode = "chain", verts = { x0, y0 }, tg = tg,
-                    cx = x0, cy = y0, lt = pal.time_ns(),
-                    lsx = i.wx, lsy = i.wy }
+            -- ambiguous press: a drag = drag-place a 2-pt line, a still-click
+            -- = point A (then line2 waits for the 2nd click)
+            p.g = { mode = "linepress", x0 = x0, y0 = y0, tg = tg,
+                    sx = i.wx, sy = i.wy }
           else
             p.g = { mode = "dpress", drag = ct == "quad" and "quadd" or "circd",
                     sx = i.wx, sy = i.wy, tg = tg, x0 = x0, y0 = y0 }
@@ -2265,10 +2305,6 @@ function M.draw(win, ctx)
             p.sel = M.paste(doc, clip, dx, dy)
             commit(ed, win.path)
           end
-        elseif p.g and p.g.mode == "chain" then
-          -- the modal chain draw (collider line tool): enter ends, C closes
-          if sc == KEY.enter then p.finish_chain(false)
-          elseif sc == KEY.c then p.finish_chain(true) end
         elseif p.csel and not p.g then
           -- a selected free collider (any tool now — direct manipulation)
           if sc >= KEY.right and sc <= KEY.up then
@@ -2281,6 +2317,13 @@ function M.draw(win, ctx)
           elseif sc == KEY.del or sc == KEY.backspace then
             if M.col_del(doc.colliders, p.csel) then
               p.csel = nil
+              commit(ed, win.path)
+            end
+          elseif sc == KEY.c then
+            -- C closes/opens the selected chain (closed+solid = fillable ground)
+            local c = doc.colliders[p.csel.c]
+            if c.kind == "chain" and #c.verts // 2 >= 3 then
+              c.closed = not c.closed
               commit(ed, win.path)
             end
           end
@@ -2421,16 +2464,22 @@ function M.draw(win, ctx)
       end
       pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
                     p.csel.v and "drag moves the vertex · del removes it"
-                    or "click an edge of the selected chain to insert · del deletes",
+                    or "drag moves the whole collider · c closes · del removes",
                     0)
     else
       if schip("one-way", win.coneway or false) then
         win.coneway = not win.coneway
         ctx.touch()
       end
-      local hint = p.g and p.g.mode == "chain"
-        and "click adds · enter/dblclick ends · c closes · esc cancels"
-        or "press empty draws (ctrl: from anywhere, snapped) · plain press picks"
+      local ct2 = win.ctype or "line"
+      local hint
+      if p.g and (p.g.mode == "line2" or p.g.mode == "linepress") then
+        hint = "click the 2nd point to finish the line · esc cancels"
+      elseif ct2 == "line" then
+        hint = "drag = a line · click, click = a line · shift+click extends it"
+      else
+        hint = "drag out the " .. ct2 .. " · ctrl snaps · click picks"
+      end
       pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
                     hint, 0)
     end
