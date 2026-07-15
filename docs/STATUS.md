@@ -3,6 +3,29 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-15 (cont. — sprite editability + tilemap hot-reload; 1
+commit, cosmic2d-win RE-STAGED)
+
+Human feedback: no way to edit the tilemap sprites (not in the browser, no
+sprite in the right-click menu), and editing a tilemap didn't update the
+map editor. All fixed (`4cdfcd8`):
+- **sprite gains M.menu** — the spawn menu now offers a new sprite editor
+  (it was missing entirely; sound/image still menu-less by design).
+- **sprite save bumps cm.asset_epoch** — the "updating doesn't update"
+  bug: the tmap window already bumped the epoch, but the sprite (tileset)
+  window didn't, so tileset edits never hot-reloaded into tilemaps/maps.
+  Validated the whole invalidation path with a running game that grows a
+  placed .tm on an epoch bump (3x3 → 8x8 live).
+- **demo tileset is project-local** (art/tiles.spr, copied from stock) — it
+  shows in the demo asset browser with a preview + opens in the sprite
+  editor; the .tm files point at it (self-contained). Regenerated the demo
+  maps against it.
+
+cosmic2d-win RE-STAGED + verified (selftest 23106, kitcheck 830-frame
+verify byte-exact). Good `/clear` point.
+
+---
+
 **Date**: 2026-07-15 (cont. — the human's feedback round on D061 + a song
 retune; 3 commits, suite green, cosmic2d-win RE-STAGED again)
 
