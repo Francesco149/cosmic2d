@@ -106,7 +106,7 @@ end
 -- generate a room's .map + its two .tm assets (dev bootstrap; inert once
 -- the files are committed). Returns the encoded .map bytes.
 local function bootstrap_room(def, room, proj)
-  local tiles = "engine/stock/spr/tiles.spr"
+  local tiles = "art/tiles.spr"
   local gb = tmap.graybox(def, { tile = T, tileset = tiles })
   pal.write_file(proj .. "/" .. room .. "_gb.tm", tmap.encode(gb))
   local bg = build_backdrop(def, tiles)

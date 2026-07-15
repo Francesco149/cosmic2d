@@ -22,6 +22,7 @@ local sprite = cm.require("cm.sprite")
 local paint = cm.require("cm.paint")
 
 M.kind = "sprite"
+M.menu = "sprite" -- spawn-menu entry: an unbound sprite ed → type a path to make one
 M.help = "win-sprite"
 M.exts = { "spr" }
 M.DEF_W, M.DEF_H = 460, 380
@@ -105,7 +106,12 @@ local A = cm.require("cm.ed.kit").asset {
   write = function(ed, path, a, p) -- sprite.save writes + bakes siblings
     return sprite.save(p.doc, ed.root .. "/" .. path)
   end,
-  after_save = function(ed, path) return "[ed] saved + baked " .. path end,
+  after_save = function(ed, path)
+    -- render-only hot-reload: tilemaps + maps using this sprite re-read its
+    -- baked texture next frame (the tmap-save convention, cm.asset_epoch)
+    cm.asset_epoch = (cm.asset_epoch or 0) + 1
+    return "[ed] saved + baked " .. path
+  end,
 }
 
 local open_asset, commit = A.open_asset, A.commit
