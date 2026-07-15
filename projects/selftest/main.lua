@@ -1170,6 +1170,24 @@ local function t_map()
         and td2.tileset == "art/tiles.spr" and tmap.get(td2, 1, 2) == 7,
         "tmap: round trip")
   check(tmap.encode(td2) == traw, "tmap: canonical bytes")
+
+  -- Tilemap source publication is atomic. An interrupted replacement leaves
+  -- the previous valid generation byte-for-byte intact; a retry publishes the
+  -- complete newer document.
+  local tsavepath = (os.getenv("TMPDIR") or "/tmp")
+                    .. "/cosmic_selftest_atomic.tm"
+  check(tmap.save(td2, tsavepath) == true, "tmap save: seed generation")
+  local tsaved = pal.read_file(tsavepath)
+  local tnewer = tmap.decode(traw)
+  tmap.set(tnewer, 0, 0, 11)
+  local tsok, tserr = tmap.save(tnewer, tsavepath, { _fail = "rename" })
+  check(not tsok and tserr:find("write tilemap failed")
+        and pal.read_file(tsavepath) == tsaved,
+        "tmap save: failed replacement preserves previous source")
+  check(tmap.save(tnewer, tsavepath) == true
+        and tmap.get(tmap.decode(pal.read_file(tsavepath)), 0, 0) == 11,
+        "tmap save: retry publishes complete source")
+
   local bad = chunklib.writer("CTLM")
   bad.chunk("HEAD", 1, string.pack("<i4i4I4s4", 4, 3, 16, ""))
   bad.chunk("GRID", 1, "\0\0") -- wrong size for 4x3
@@ -3991,6 +4009,7 @@ local function t_ed_map()
   -- dims stub: every placement is 20x10.
   local W = cm.require("cm.ed.win.map")
   local map = cm.require("cm.map")
+  local tmap = cm.require("cm.tmap")
   local dims = function() return 20, 10 end
   local doc = {
     name = "t", w = 320, h = 200, grid = 8,
@@ -4033,6 +4052,33 @@ local function t_ed_map()
         "ed.map save: failure retains dirty working bytes")
   check(summoned, "ed.map save: failure summons the console")
   sp._save_fail = nil
+
+  -- The real tilemap-window path has the same durability/error contract.
+  local TW = cm.require("cm.ed.win.tmap")
+  local tmpath = "atomic.tm"
+  local tmdisk = tmap.blank(2, 2, 16, "disk.spr")
+  local tmdiskbytes = tmap.encode(tmdisk)
+  pal.write_file(root .. "/" .. tmpath, tmdiskbytes)
+  local tmsummoned = false
+  local tmed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+                 touch = function() end,
+                 summon_console = function() tmsummoned = true end }
+  local tmwin = { path = tmpath }
+  local _, tmp = TW.open_win(tmwin, tmed)
+  tmap.set(tmp.doc, 0, 0, 9)
+  tmp._save_fail = { _fail = "rename" }
+  TW.save(tmwin, tmed)
+  check(pal.read_file(root .. "/" .. tmpath) == tmdiskbytes,
+        "ed.tmap save: failure preserves previous tilemap")
+  check(TW.dirty(tmwin, tmed) and tmap.get(tmp.doc, 0, 0) == 9,
+        "ed.tmap save: failure retains dirty working bytes")
+  check(tmsummoned, "ed.tmap save: failure summons the console")
+  tmp._save_fail = nil
+  TW.save(tmwin, tmed)
+  check(not TW.dirty(tmwin, tmed)
+        and tmap.get(tmap.decode(pal.read_file(root .. "/" .. tmpath)),
+                     0, 0) == 9,
+        "ed.tmap save: retry publishes complete source")
 
   -- pick: topmost placement wins; markers overlay when shown
   local it = W.pick(doc, 45, 176, dims, false) -- inside a AND b -> b (z)

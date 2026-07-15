@@ -56,6 +56,15 @@ function M.decode(bytes)
   return doc
 end
 
+-- Publish the editable source as one atomic replacement. Tilemaps have no
+-- baked siblings, so this is a single-file transaction; `fail` is the focused
+-- selftest seam forwarded to PAL's staged failure injector.
+function M.save(doc, path, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode(doc), fail)
+  if not ok then return nil, "write tilemap failed: " .. tostring(err) end
+  return true
+end
+
 -- fresh all-empty doc
 function M.blank(w, h, tile, tileset)
   return { w = w, h = h, tile = tile, tileset = tileset or "",

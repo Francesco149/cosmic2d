@@ -105,6 +105,11 @@ local A = cm.require("cm.ed.kit").asset {
   end,
   adopt = decode_into,
   encode = tmap.encode,
+  write = function(ed, path, a, p)
+    -- `_save_fail` exists only as the focused durability-test seam. Keeping
+    -- it on ephemeral plumbing means it can never enter session state.
+    return tmap.save(p.doc, ed.root .. "/" .. path, p._save_fail)
+  end,
   after_save = function(ed, path)
     -- render-only hot-reload: map windows + the running game re-read
     -- their .tm caches on the epoch (the sprite-save convention, D040)

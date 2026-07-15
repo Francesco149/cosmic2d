@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic `.map` saves complete (2026-07-15)
+## Current handoff — A1 atomic `.tm` saves complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -94,8 +94,16 @@ the editor console; a retry publishes a complete decodable generation. `nix
 run .#test` is ALL GREEN: 23,191 self-checks, every trace verify, and all pixel
 goldens.
 
-**Exact next packet:** migrate `.tm` tilemap source saves to atomic replacement
-with focused injected-failure coverage proving the previous tilemap survives,
+**A1 packet 7 is complete.** `.tm` source saves now use the PAL atomic-write
+primitive through a tilemap-specific save API and the real tilemap-window write
+hook. An injected replacement failure preserves the previous valid tilemap
+byte-for-byte, keeps the newer working document dirty, reports the named
+failure, and summons the editor console; retry publishes a complete decodable
+generation and clears dirty state. `nix run .#test` is ALL GREEN: 23,198
+self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** migrate `.pal` palette source saves to atomic replacement
+with focused injected-failure coverage proving the previous palette survives,
 dirty working bytes remain, and the editor reports the failure. Do not migrate
 other asset families in the same packet.
 
