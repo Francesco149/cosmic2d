@@ -26,11 +26,17 @@ every change is editor/render/dev or bypasses at its default). PAL C is
   seam is sub-pixel CAMERA crawl. `gfx.pixel_snap(true)` rounds each layer's
   translation to a whole pixel — OFF by default (goldens byte-identical), the
   demo opts in. **Needs the human's eyes** (intermittent, live-only).
-- **Generational GC (`de33132`).** Root-caused the rhythmic sim spikes: the
-  always-on ring recorder churns ~1.8KB/frame → periodic MAJOR collections
-  (grow over a session, gone on a fresh run). Lua 5.4 generational ≈ halves
-  the worst pauses (measured on a 4000-frame instrumented run). Determinism
-  untouched.
+- **GC tuning for the sim spikes (`de33132` → `<tuned>`).** Root-caused: the
+  always-on ring recorder churns garbage every frame → periodic MAJOR
+  collections (grow over a session, gone on a fresh run). First went
+  generational (cut spikes) but the human hit a **240→170 fps** regression at
+  high refresh (generational's write barriers + larger heap). Final answer is
+  **tuned INCREMENTAL** (setpause=120 + setstepmul=400): the heap stays small,
+  collections tiny + even — measured the LOWEST average frame time of every
+  option AND fewer big spikes, with no generational cost. The GC mode barely
+  moves the *average* (why the fps regression never reproduced headless), so
+  this is the safe best-measured pick. Determinism untouched. **The human
+  re-confirms the fps live.**
 - **Tilemap right-click erase (`b7165fe`)** — rmb erases with the current
   tool's shape, no E switch.
 - **Map editor idle affordances (`31b5efc`)** — MOVE highlights the item under
