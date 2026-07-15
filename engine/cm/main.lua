@@ -185,6 +185,16 @@ local function resolve_project(args)
   end
   local exe = (pal.exe or ""):gsub("\\", "/"):match("([^/]+)$") or "cosmic"
   exe = exe:gsub("%.exe$", ""):lower()
+  -- the editor launcher (root of the shipped engine, the human's ask): opens
+  -- the project picker, the editor's front door — clicking a tile opens it in
+  -- the editor, the play zone boots it. Distinct from a game launcher below.
+  if exe == "cosmic2d-editor" or exe == "cosmic-editor" or exe == "editor" then
+    args.project = "projects/picker"
+    args.picker = true
+    args.edit = nil -- the picker owns edit-vs-play per tile (boot.next mode)
+    pal.log("[boot] launcher: editor front door (project picker)")
+    return
+  end
   if exe ~= "cosmic" and exe ~= "" then
     for _, dir in ipairs({ exe, "projects/" .. exe }) do
       if pal.read_file(dir .. "/project.lua") then

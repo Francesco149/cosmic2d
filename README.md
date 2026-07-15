@@ -28,6 +28,13 @@ bin/cosmic projects/demo            # play the demo directly
 bin/cosmic projects/demo --edit     # open it in the editor
 ```
 
+A packaged engine bundle (`nix build .#cosmic` / `.#cosmic-windows`) drops two
+launchers in its **root** so there's nothing to figure out — extract and run
+the one you want:
+
+- **`cosmic2d-editor`** (`.exe`) — the project picker / editor front door.
+- **`demo`** (`.exe`) — the bundled demo, straight to play.
+
 ## Make a game
 
 Everything is authored in the editor (`--edit`, or via the picker): an

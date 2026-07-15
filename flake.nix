@@ -45,6 +45,13 @@
             cp README.md LICENSE $out/
             cp -r pal/shaders $out/pal/
             cp -r pal/vendor/fonts $out/pal/vendor/
+            # root launchers (the human's ask): extract -> run the one you want.
+            # The binary auto-chdirs to the dir holding engine/, so a launcher
+            # beside engine/ resolves projects/ fine; argv[0]'s basename routes
+            # (main.lua resolve_project): cosmic2d-editor -> the project picker
+            # (opens projects in the editor), demo -> projects/demo locked.
+            cp $out/bin/cosmic $out/cosmic2d-editor
+            cp $out/bin/cosmic $out/demo
           '';
         };
 
@@ -79,6 +86,14 @@
             for f in $out/bin/*.dll; do
               if [ -L "$f" ]; then t=$(readlink -f "$f"); rm "$f"; cp "$t" "$f"; fi
             done
+            # root launchers (the human's ask): extract -> double-click the one
+            # you want. argv[0]'s basename routes (main.lua resolve_project):
+            # cosmic2d-editor.exe -> the project picker (opens in the editor),
+            # demo.exe -> projects/demo locked to play. The runtime DLLs go
+            # beside them (Windows loads DLLs from the launching exe's own dir).
+            cp $out/bin/cosmic.exe $out/cosmic2d-editor.exe
+            cp $out/bin/cosmic.exe $out/demo.exe
+            cp $out/bin/*.dll $out/
           '';
         };
         default = cosmic;
