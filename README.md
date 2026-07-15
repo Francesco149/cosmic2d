@@ -5,9 +5,10 @@ the engine, its editor and tools, and your game projects — make a game with
 the built-in editor, share it by zipping a folder, and the recipient can play
 it, edit it live, or build their own with the same binary.
 
-**Status: alpha.** The engine, the infinite-canvas editor, the audio stack,
-and an out-of-the-box demo game are all here. Rough edges remain, but you can
-make and ship a small platformer today.
+**Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
+and an out-of-the-box demo game are here. The deterministic suite is green,
+but portable distribution, storage hardening, gamepad support, project/export
+UX, and broader genre demos are still release gates; see `docs/ALPHA.md`.
 
 ## Try it
 

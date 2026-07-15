@@ -1,4 +1,10 @@
-# cosmic2d — the revamp (the UX reboot)
+# cosmic2d — the revamp (the UX reboot; historical plan)
+
+> **Roadmap status, 2026-07-15:** the revamp supplied the current editor,
+> project picker, rewind foundation, maps, and audio stack. This document is
+> retained for design intent and unresolved details, but it is no longer the
+> active queue. See `docs/ALPHA.md` for release work and `docs/STATUS.md` for
+> the exact handoff.
 
 > **Source of truth**: the human's teidraw board `cosmic2d`
 > (`/mnt/f/Documents/teidraw/cosmic2d` — see CLAUDE.md "Diagrams" for how to

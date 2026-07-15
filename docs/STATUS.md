@@ -3,6 +3,32 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+## Current handoff — alpha release program (2026-07-15)
+
+The general alpha-readiness audit is now persisted as **`docs/ALPHA.md`**, the
+single active roadmap. It covers durability, real portable distributions,
+project lifecycle/in-editor export, gamepad/rebinding/player storage,
+genre-neutral runtime ergonomics, three bundled mini-demos (platformer,
+top-down action, arcade), the full rewind/replay UI, documentation,
+accessibility, and the release-candidate gate. `PLAN.md` and `REVAMP.md` are
+clearly marked historical; `CLAUDE.md` now orients new sessions here. README
+correctly says alpha candidate rather than alpha.
+
+**Documentation audit finding:** this file itself is no longer a quick handoff;
+it has grown into a multi-thousand-line session diary. **Exact next packet is
+A0 documentation reset:** move everything below the current handoff into
+`docs/history/STATUS-2026-07.md`, retain only a compact current state here,
+then validate every shipped/repo doc link and stale claim. Preserve history
+verbatim. The labeled docs index is already `docs/README.md`. This is
+documentation-only; run link checks and the normal suite as a baseline before
+starting A1 atomic persistence.
+
+**Proof this planning session:** prior audit ran `nix run .#test` successfully
+(23,106 self-checks, all trace verifies, all pixel goldens). No runtime code or
+goldens changed in this planning step.
+
+---
+
 **Date**: 2026-07-15 (cont. — a 12-item human feedback batch + a perf/cleanup
 follow-up round: 3 bug fixes, the editor-fps fix, 8 editor/packaging features,
 then follow-ups the human asked for after testing — drop the collider

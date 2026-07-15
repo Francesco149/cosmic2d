@@ -4,13 +4,10 @@ The distilled project vision and the milestone roadmap. This file replaces the
 original SEED brainstorm; nothing from it was dropped, only organized.
 `docs/STATUS.md` tracks where we currently are against this plan.
 
-> **2026-07-12 — THE REVAMP (D045)**: the M-series below is paused at its
-> 2026-07 state. The active roadmap is **docs/REVAMP.md** (R0–R7): the
-> teidraw-style infinite-canvas editor, the repo split (engine / demos /
-> game), the script-engine gate, and the rewind feature. The pillars and
-> product decisions below still bind; game-driven milestones (old M11–M15)
-> resume in `../cosmic2d-game` after the revamp core lands, re-scoped as
-> needed.
+> **2026-07-15 — HISTORICAL ROADMAP.** The M-series below records the original
+> build sequence and is not an active task list. The product pillars still
+> bind unless superseded in `DECISIONS.md`. Current work is scoped in
+> **docs/ALPHA.md**; the intervening UX reboot is recorded in `REVAMP.md`.
 
 ## What this is
 

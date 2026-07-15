@@ -8,7 +8,7 @@ included. You (the agent) are the primary developer.
 (**cosmic**) lives in **`../cosmic2d-game`** and experiments/demos in
 **`../cosmic2d-demos`** — each with its own CLAUDE.md. Pre-split history:
 branch `pre-revamp` (keep forever). The active roadmap is
-**docs/REVAMP.md**.
+**docs/ALPHA.md**; `REVAMP.md` is the completed/recent design history.
 
 ## Session start — do this first
 
@@ -16,7 +16,8 @@ branch `pre-revamp` (keep forever). The active roadmap is
 2. `git log --oneline -10`.
 3. llm-feed health: `curl -sf http://localhost:8777/healthz` → `ok`;
    if down: `cd /opt/src/llm-feed && nix run nixpkgs#python3 -- /opt/src/llm-feed/feed.py serve` (background, leave running).
-4. Open PLAN/ARCHITECTURE/DECISIONS/PROCESS in `docs/` only as needed.
+4. Read the relevant gate in `docs/ALPHA.md`; open
+   ARCHITECTURE/DECISIONS/PROCESS only as needed.
 
 ## Diagrams (teidraw)
 
@@ -39,12 +40,15 @@ default windows-side save dir. Resolve it like this:
 
 ## The docs (all in `docs/`)
 
+- **README.md** — labeled documentation map (active/contracts/historical).
 - **STATUS.md** — living handoff; update at session/milestone end.
-- **PLAN.md** — vision, pillars, milestone roadmap with exit criteria.
-- **REVAMP.md** — **the active roadmap (D045)**: the teidraw-style
+- **ALPHA.md** — **the active roadmap**: release gates, common-genre coverage,
+  bundled mini-demos, dependencies, and the session hygiene contract.
+- **PLAN.md** — original vision, pillars, and historical M-series roadmap.
+- **REVAMP.md** — the D045 teidraw-style
   infinite-canvas editor UX reboot, repo split, script-engine gate, rewind.
-  Distilled from the human's `cosmic2d` teidraw board (the source of truth —
-  re-export it when direction is unclear).
+  Retained as design history; re-export its source board when that UX intent
+  is unclear, but do not treat unfinished prose there as the active queue.
 - **ARCHITECTURE.md** — two-layer design, state model, determinism iron
   rules, PAL API contract.
 - **IMGUI.md** — the R2 design (D049): imgui hosted in the PAL, the
