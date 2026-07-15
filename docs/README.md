@@ -23,6 +23,8 @@ mistaken for current work.
 
 ## Historical design context
 
+- `history/STATUS-2026-07.md` — verbatim detailed session handoffs through the
+  alpha-roadmap reset; use current `STATUS.md` for what to do next.
 - `PLAN.md` — original vision and M-series build roadmap; pillars still matter.
 - `REVAMP.md` — D045 UX reboot/R-series plan that produced the current editor.
 - `STUDIO.md` — superseded full-window sprite-studio design; retained to explain
@@ -34,4 +36,3 @@ Player/author-facing documentation lives under `engine/stock/docs/`. It must
 describe only shipped behavior and use links that the in-engine reader can
 resolve. Gate A0 audits it; gate A8 turns it into the complete create-to-export
 guide and public API/task reference.
-

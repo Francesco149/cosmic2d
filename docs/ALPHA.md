@@ -64,7 +64,7 @@ are templates and regression fixtures, not showcase games. Internal projects
 Goal: a new session or contributor can identify current truth in minutes.
 
 - [x] Create this alpha roadmap and make it the active pointer.
-- [ ] Compress `STATUS.md` to a short current handoff; move completed session
+- [x] Compress `STATUS.md` to a short current handoff; move completed session
   history to `docs/history/STATUS-2026-07.md` without losing it.
 - [x] Add a docs index with `active`, `contract`, and `historical` labels.
 - [ ] Audit every repo and in-engine link; remove references to moved or dead

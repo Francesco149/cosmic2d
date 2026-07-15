@@ -1,5 +1,11 @@
 # the studio — in-engine sprite & animation editor (M10)
 
+> **Historical design, superseded 2026-07-15.** This document records the
+> full-window studio that produced the current sprite/animation asset model.
+> Authoring now happens in the sprite window described by `EDITOR.md`; use
+> `ALPHA.md` for active work. References below to `GAME.md`, the sandbox, and
+> M10 describe the pre-split repository and are retained as design history.
+
 The art-authoring tool that lives inside the console. This is M10's keystone:
 GAME.md §10 requires it ("the in-engine sprite editor must comfortably author
 character sprites and portraits with gradients"), and it is pulled ahead of M9
