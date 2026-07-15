@@ -3763,6 +3763,28 @@ local function t_ed_map()
         "ed.map: markers skip when hidden")
   check(W.pick(doc, 300, 20, dims, true) == nil, "ed.map: empty pick")
 
+  -- hit_stack: the drill order (collider handles > markers > placements)
+  local st = W.hit_stack(doc, 120, 140, dims, { thr = 4 })
+  check(#st == 1 and st[1].t == "cedge" and st[1].c == 2,
+        "ed.map: hit_stack a bare quad edge")
+  st = W.hit_stack(doc, 100, 140, dims, { thr = 4 })
+  check(st[1].t == "cvert" and st[1].c == 2 and st[1].v == 1,
+        "ed.map: hit_stack vertex outranks edge")
+  st = W.hit_stack(doc, 45, 181, dims, { thr = 4, with_markers = true })
+  check(#st == 2 and st[1].t == "cedge" and st[1].c == 1
+        and st[2].t == "place" and st[2].i == 2,
+        "ed.map: hit_stack drills a collider edge -> the sprite beneath")
+  -- drill_pick: repeated clicks at the ~same screen point step down + wrap
+  local dk, dr = W.drill_pick(st, nil, 200, 100, 5)
+  check(dk == 1, "ed.map: drill first click = top of stack")
+  dk, dr = W.drill_pick(st, dr, 202, 101, 5)
+  check(dk == 2, "ed.map: drill re-click steps down")
+  dk, dr = W.drill_pick(st, dr, 202, 101, 5)
+  check(dk == 1, "ed.map: drill wraps at the bottom")
+  dk = W.drill_pick(st, dr, 260, 101, 5)
+  check(dk == 1, "ed.map: drill resets when the point moves")
+  check(W.drill_pick({}, nil, 0, 0, 5) == nil, "ed.map: drill empty stack nil")
+
   -- marquee
   local got = W.pick_rect(doc, 25, 165, 65, 190, dims, true)
   check(#got == 3, "ed.map: marquee places + marker")
