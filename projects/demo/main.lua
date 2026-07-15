@@ -62,6 +62,7 @@ function game.init()
   end
   d.coins = d.coins or {}
 
+  gfx.pixel_snap(true) -- crisp, seam-free tilemaps (no sub-pixel edge crawl)
   level.reset(d.room or "town")
   fx.init()
   player.init()

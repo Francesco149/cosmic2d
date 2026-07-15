@@ -5,6 +5,7 @@
 local M = select(2, ...) or {}
 
 local cam_x, cam_y = 0, 0
+local snap = false -- pixel-snap the camera (M.pixel_snap) — off by default
 local textures = {} -- path -> {id=, w=, h=} (VM reboot rebuilds; old ids
                     -- leak by the live-reload-leaks pillar)
 
@@ -13,11 +14,33 @@ function M.camera(x, y)
   cam_x, cam_y = x, y
 end
 
+-- Pixel-snap the camera (opt-in, render-only). A smoothly-lerped camera lands
+-- on fractional world/target pixels; because the internal target is 1:1 with
+-- world px, a fractional camera makes every tile edge rasterize between pixels,
+-- so as the view scrolls the edges CRAWL and adjacent tiles briefly leave a
+-- 1px seam ("empty pixels rippling through the columns" — the human's report).
+-- Snapping each layer's translation to a whole pixel pins the world grid to
+-- the target grid → rock-stable, seam-free tiles (the standard pixel-art fix).
+-- The player/entities keep their sub-pixel world positions (they move relative
+-- to the snapped camera); only the camera quantizes. Off by default so the
+-- goldens (smoke never snaps) stay byte-identical; the demo + shipped games
+-- opt in.
+function M.pixel_snap(on)
+  snap = on ~= false
+end
+
 -- activate a parallax layer: subsequent quads shift by camera * multiplier
--- (0 = screen-fixed UI, 1 = world, 0.5 = background at half speed)
+-- (0 = screen-fixed UI, 1 = world, 0.5 = background at half speed). With
+-- pixel_snap on, the per-layer translation rounds to a whole pixel so each
+-- layer (world AND every parallax depth) stays pixel-aligned independently.
 function M.layer(mul_x, mul_y)
   mul_x = mul_x or 1
-  pal.camera(cam_x * mul_x, cam_y * (mul_y or mul_x))
+  local tx, ty = cam_x * mul_x, cam_y * (mul_y or mul_x)
+  if snap then
+    tx = tx >= 0 and (tx + 0.5) // 1 or -((-tx + 0.5) // 1)
+    ty = ty >= 0 and (ty + 0.5) // 1 or -((-ty + 0.5) // 1)
+  end
+  pal.camera(tx, ty)
 end
 
 -- load (memoized by path) a PNG from the project/engine tree as a texture.
