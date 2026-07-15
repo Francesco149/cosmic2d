@@ -33,6 +33,26 @@
       # different allowlists. Dev carries fixtures/tests; editor carries only
       # the picker and intentional demos; play is staged by the packager below.
       packages = forAll (pkgs: rec {
+        # nixpkgs makes SDL's optional Vulkan/X11 loaders point directly into
+        # the Nix store. That is useful inside Nix, but those compiled-in
+        # paths make a bundled release unusable after extraction elsewhere.
+        # Keep the normal package untouched and restore SDL's upstream soname
+        # lookups only for the portable build.
+        sdl3-portable = pkgs.sdl3.overrideAttrs (old: {
+          pname = "sdl3-portable";
+          postPatch = (old.postPatch or "") + ''
+            sed -i \
+              -e 's|/nix/store/[^" ]*/lib/libvulkan\.so|libvulkan.so|g' \
+              -e 's|/nix/store/[^" ]*/lib/libX11-xcb\.so|libX11-xcb.so|g' \
+              src/video/x11/SDL_x11vulkan.c \
+              src/video/wayland/SDL_waylandvulkan.c \
+              src/video/offscreen/SDL_offscreenvulkan.c \
+              src/video/kmsdrm/SDL_kmsdrmvulkan.c \
+              src/video/vivante/SDL_vivantevulkan.c \
+              src/video/android/SDL_androidvulkan.c
+          '';
+        });
+
         cosmic-dev = pkgs.stdenv.mkDerivation {
           pname = "cosmic2d-dev";
           version = "0.1-m1";
@@ -59,6 +79,59 @@
             old.installPhase;
         });
         cosmic = cosmic-editor;
+
+        cosmic-portable-editor = cosmic-editor.overrideAttrs (_: {
+          pname = "cosmic2d-portable-editor";
+          buildInputs = [ sdl3-portable ];
+        });
+
+        # Portable Linux editor tree. Keep glibc as the supported-machine ABI,
+        # but carry every other linked library and resolve it relative to the
+        # executable. Stripping also removes build paths from debug sections.
+        cosmic-linux-portable = pkgs.runCommand "cosmic2d-linux-portable-0.1-m1" {
+          nativeBuildInputs = [ pkgs.patchelf pkgs.binutils pkgs.findutils ];
+        } ''
+          cp -r --no-preserve=mode ${cosmic-portable-editor} $out
+          chmod -R u+w $out
+          mkdir -p $out/lib
+
+          # ldd reports SDL's complete transitive closure. SDL_GPU dlopens the
+          # Vulkan loader, so carry it too; the host still supplies its ICD.
+          ldd ${cosmic-portable-editor}/bin/cosmic \
+            | sed -n 's|.*=> \(/nix/store/[^ ]*\).*|\1|p' \
+            | while read -r lib; do
+                case "$(basename "$lib")" in
+                  ld-linux-*|libc.so.*|libm.so.*|libmvec.so.*|libpthread.so.*|librt.so.*|libdl.so.*) ;;
+                  *) cp -L "$lib" "$out/lib/$(basename "$lib")" ;;
+                esac
+              done
+          cp -L ${pkgs.vulkan-loader}/lib/libvulkan.so.1 $out/lib/
+          chmod -R u+w $out
+
+          while IFS= read -r f; do
+            if ${pkgs.binutils}/bin/readelf -h "$f" >/dev/null 2>&1; then
+              ${pkgs.binutils}/bin/strip --strip-unneeded "$f" 2>/dev/null || true
+              case "$f" in
+                */bin/*|*/cosmic2d-editor|*/demo)
+                  ${pkgs.patchelf}/bin/patchelf --set-rpath '$ORIGIN/../lib' "$f"
+                  ${pkgs.patchelf}/bin/patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$f"
+                  ;;
+                *) ${pkgs.patchelf}/bin/patchelf --set-rpath '$ORIGIN' "$f" ;;
+              esac
+            fi
+          done < <(find $out -type f)
+
+          while IFS= read -r f; do
+            if ${pkgs.binutils}/bin/readelf -h "$f" >/dev/null 2>&1; then
+              metadata="$(${pkgs.patchelf}/bin/patchelf --print-rpath "$f" 2>/dev/null || true)
+$(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
+              if grep -F '/nix/store/' <<<"$metadata"; then
+                echo "ELF runtime metadata still names the Nix store: $f" >&2
+                exit 1
+              fi
+            fi
+          done < <(find $out -type f)
+        '';
 
         # M6 — Windows cross build (mingw-w64 + cross SDL3, both from nixpkgs;
         # the PAL is pure SDL3 so the C ports as-is). The cross stdenv sets
@@ -157,8 +230,8 @@
           # player: the engine runtime + that project only (no tests, no
           # sibling projects), with the launcher renamed so it boots locked
           # to play mode (the R5 convention, D052). Windows is a
-          # self-contained zip (SDL3.dll bundled); linux is a tar.gz that
-          # needs SDL3 on the box (or run via nix). Output lands in $PWD.
+          # self-contained archives. Linux bundles non-glibc libraries with a
+          # relative RPATH; the supported host ABI is x86_64 glibc Linux.
           packager = pkgs.writeShellApplication {
             name = "cosmic-package";
             runtimeInputs = with pkgs; [ coreutils findutils zip gnutar gzip ];
@@ -166,7 +239,7 @@
               name="''${1:-demo}"
               target="''${2:-win}"
               win="${self.packages.${pkgs.system}.cosmic-windows-dev}"
-              lin="${self.packages.${pkgs.system}.cosmic-dev}"
+              lin="${self.packages.${pkgs.system}.cosmic-linux-portable}"
               src="${self}"
               case "$target" in
                 win|windows) base="$win"; exe="cosmic.exe"; newexe="$name.exe"; suffix="windows";;
@@ -180,6 +253,7 @@
               mkdir -p "$root"
               bash "$src/tools/stage-manifest.sh" "$base" \
                 "$src/dist/manifests/play.txt" "$root" "$name"
+              if [ "$suffix" = linux ]; then cp -r "$base/lib" "$root/lib"; fi
               chmod -R u+w "$root"
               # rename the launcher -> boots projects/<name> locked to play mode
               mv "$root/bin/$exe" "$root/bin/$newexe"

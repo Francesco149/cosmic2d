@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 distribution manifests complete (2026-07-16)
+## Current handoff — A2 portable Linux artifact complete (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -190,8 +190,22 @@ available. A clean staging fixture proves `selftest`, `smoke`, `igcanvas`, and
 Linux and Windows dev/editor packages all build; `nix run .#test` is ALL GREEN:
 23,264 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** produce the portable Linux bundled-libraries/RPATH
-tarball and a clean-container smoke script, proving it has no Nix-store runtime
-dependency and launches from an extracted read-only install tree.
+**A2 packet 2 is complete.** Linux editor and play trees now carry SDL3's
+non-glibc runtime closure plus the Vulkan loader in `lib/`; every ELF resolves
+through an `$ORIGIN`-relative RPATH and uses the standard x86_64 glibc loader,
+with a build-time rejection for Nix-store RPATH/interpreter metadata. The
+portable target builds its own SDL3 variant, restoring upstream Vulkan and X11
+soname lookups instead of nixpkgs' absolute Nix-store `dlopen` substitutions.
+The Linux packager consumes that portable tree and emits a 13 MiB demo tarball.
+`tests/linux-portable-smoke.sh` extracts the archive as the only host input in
+a stock Debian 13 container, verifies `ldd` resolves nothing from `/nix/store`,
+makes the install tree read-only, and boots one headless frame under software
+Vulkan/Xvfb with writable state confined to `/tmp`. Debian 13's Lavapipe
+manifest is `lvp_icd.json`; using that clean-machine path completes the launch
+with SDL's Vulkan GPU backend. The archive build, dependency checks, read-only
+install check, and clean-container boot all pass.
+
+**Exact next packet:** ship Windows GUI-subsystem launchers while retaining a
+separate console/headless executable for diagnostics and CI.
 
 There is no known blocker or human-only verification required.

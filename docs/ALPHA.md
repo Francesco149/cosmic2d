@@ -108,7 +108,7 @@ Goal: artifacts work on clean supported machines exactly as advertised.
   contains only bundled demos and user projects; exported games still carry
   the engine/editor and editable project, with the named launcher locked to
   play mode by default.
-- [ ] Produce a portable Linux artifact (AppImage or bundled-libs/RPATH
+- [x] Produce a portable Linux artifact (AppImage or bundled-libs/RPATH
   tarball) that has no Nix-store runtime dependency.
 - [ ] Ship Windows GUI-subsystem launchers; retain a separate console/headless
   executable for diagnostics and CI.
