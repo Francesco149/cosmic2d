@@ -7,14 +7,17 @@ A map is collision + placed things. You build a level by **drawing colliders**
 Direct manipulation is **teidraw-style**: click anything to select and move it;
 click again to drill to whatever is beneath.
 
-## Tools (header chips)
+## Modes (header chips + keys)
 
-- **select** — the default. Move anything, marquee-select on empty canvas.
-- **collider** — draw terrain. Empty-canvas gestures draw; existing things
-  still grab.
-- **marker** — drag out a labelled rectangle (spawn / portal / trigger).
+- **move** — the default: unified direct manipulation (below). Nothing to
+  enter; **esc** always returns here.
+- **sel** (`v`) — **box-select**: drag a marquee; it selects and immediately
+  returns to *move* so you can manipulate what you caught.
+- **col** (`c`) — draw colliders. Places ONLY; it never grabs existing things
+  (that's *move*'s job).
+- **mkr** (`m`) — drag out a labelled rectangle (spawn / portal / trigger).
 
-## Selecting & moving (any tool)
+## Move mode — select & move anything
 
 - **click** a collider vertex → drag moves that point.
 - **click** a collider line → drag moves the whole collider (both ends together).
@@ -22,7 +25,8 @@ click again to drill to whatever is beneath.
 - **click again** on the same spot → selects the next thing *underneath* (e.g.
   the collider line, then the sprite it overlaps). This is drill-down.
 - **shift+click** adds/removes a sprite or marker from the selection.
-- **drag on empty** (select tool) = marquee.
+- **click empty** deselects. (For a rubber-band selection, use **v** box-select.)
+- a single selected marker shows corner knobs — drag one to resize it.
 
 ## Drawing colliders (collider tool, line type)
 
@@ -30,9 +34,12 @@ click again to drill to whatever is beneath.
 - **click, then click** → also lays a 2-point line (a rubber-band shows between).
 - **shift+click** after → **appends** another point to that last line — extend
   terrain point by point.
-- **c** closes the selected chain into a loop (solid + closed = fillable ground).
+- **esc** cancels a placement in progress (and stays in col mode); **esc**
+  again returns to move mode.
 - **quad / circle** types drag out. **ctrl** while drawing snaps to vertices,
   edges, 45°, and the grid (a guide shows the lock).
+- select a chain (in **move** mode) and toggle its **one-way / closed** chips in
+  the inspector (closed + solid = fillable ground).
 
 ## Layers (right panel)
 
@@ -57,9 +64,11 @@ confines picking and new drops to the active layer.
 
 ## Keys
 
+- **c** col · **v** box-select · **m** markers · **esc** back to move
 - **arrows** nudge 1px (**shift** ×8) · **del** removes the selection
 - **[ / ]** send a placement back / forward in its layer
 - **ctrl+a** all · **ctrl+c/x/v** copy/cut/paste · **ctrl+d** duplicate
+- **ctrl+g** group · **ctrl+shift+g** ungroup
 - **shift+1** fit the map · **shift+2** fit the selection
 - **ctrl+wheel** dials the grid step · **wheel / middle-drag** zoom / pan
 - **ctrl+s** save (the running game hot-reloads the map)

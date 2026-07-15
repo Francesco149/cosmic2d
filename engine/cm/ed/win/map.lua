@@ -23,16 +23,15 @@
 -- game hot-reloads (MAPS.md §9), so traces replay it and rewind scrubs
 -- across it.
 --
--- D061 (teidraw): direct manipulation is UNIFIED across tools — clicking
--- any collider vertex/edge, placement, or marker selects + moves it, and
--- click-again DRILLS to whatever's beneath (M.hit_stack + M.drill_pick).
--- The COLLIDER tool only differs on an EMPTY press: the teidraw LINE
--- grammar — drag-on-first-click lays a 2-point line, or click, click lays
--- one, then shift+click APPENDS points to the last line (C closes it);
--- quad/circle still drag out. The §7 point snap (vertices > edges > 45
--- lock > grid) rides every draw. ATTACHED colliders edit only while their
--- placement selects (+col auto-fit); the MARKER tool empty-press drags a
--- new rect (corner resize, kind/label/note/extras inspector fields).
+-- D061 (teidraw): FOUR modes, keyed. **move** (default, esc returns here) is
+-- unified direct manipulation — click any collider vertex/edge, placement, or
+-- marker selects + moves it, click-again DRILLS beneath (M.hit_stack +
+-- M.drill_pick); empty click deselects. **sel** (v) is one-shot box-select —
+-- marquee, then back to move. **col** (c) PLACES colliders only (never grabs):
+-- the LINE grammar — drag = a 2-pt line, or click,click, then shift+click
+-- APPENDS to the last line; quad/circle drag out; esc cancels the placement.
+-- **mkr** (m) drags out a marker. The §7 point snap rides every draw. ATTACHED
+-- colliders edit in move mode while their placement selects (+col auto-fit).
 --
 -- Sim/editor line: everything here touches working bytes only; the one
 -- sim-facing op is the recorded repl.submit on save.
@@ -68,14 +67,14 @@ local COL = {
 
 local KEY = { right = 79, left = 80, down = 81, up = 82, del = 76,
               backspace = 42, rbracket = 48, lbracket = 47, n1 = 30,
-              n2 = 31, enter = 40, a = 4, c = 6, d = 7, g = 10, v = 25,
-              x = 27 }
+              n2 = 31, enter = 40, a = 4, c = 6, d = 7, g = 10, m = 16,
+              v = 25, x = 27 }
 
 local GRID_STEPS = { 1, 2, 4, 8, 16, 32, 64 }
 local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
 
 function M.defaults()
-  return { path = "", tool = "select", giz = true, mk = true, fill = true,
+  return { path = "", tool = "move", giz = true, mk = true, fill = true,
            ctype = "line", lpanel = true }
 end
 
@@ -206,6 +205,11 @@ function M.escape(win, ed)
     end
     p.g = nil
     p.guides = nil
+    ed.touch()
+    return true
+  end
+  if (win.tool or "move") ~= "move" then -- esc returns to unified manipulation
+    win.tool = "move"
     ed.touch()
     return true
   end
@@ -1082,12 +1086,14 @@ function M.snap_pt(tg, x, y, opts)
          math.floor(y / step + 0.5) * step, {}, "grid"
 end
 
--- ---- header: tool radio (sel/col/mkr) + giz / mk / fill chips ----
+-- ---- header: tool radio (move/sel/col/mkr) + giz / mk / fill chips ----
+-- move = unified direct manipulation (default); sel = box-select (v, one-shot
+-- → returns to move); col = place colliders (c); mkr = place markers (m).
 
 local CHIPS = { { "lpanel", "lyr" }, { "giz", "giz" }, { "mk", "mk" },
                { "fill", "fill" } }
 local TOOLS = { { "marker", "mkr" }, { "collider", "col" },
-                { "select", "sel" } } -- right-to-left draw order
+                { "sel", "sel" }, { "move", "move" } } -- right-to-left draw
 
 function M.header(win, ctx)
   local z = ctx.z
@@ -1118,7 +1124,7 @@ function M.header(win, ctx)
     x = x - 5 * z -- a breath between the toggle group and the tools
     used = used + 5 * z
     for _, t in ipairs(TOOLS) do
-      if chip(t[2], (win.tool or "select") == t[1]) then
+      if chip(t[2], (win.tool or "move") == t[1]) then
         win.tool = t[1]
         local p = ctx.ed.g.mw and ctx.ed.g.mw[win.path]
         if p then -- a tool switch drops the live gesture + selections
@@ -1526,7 +1532,9 @@ local function draw_gizmos(p, view, sel, tool, csel, asel)
   for ci, c in ipairs(doc.colliders) do
     local on = csel and csel.c == ci
     one(c, 0, 0, on and COL.sel or COL.solid, on and COL.sel or COL.oneway)
-    if tool == "collider" then handles(c, 0, 0, on and csel.v or nil) end
+    -- vertex handles: all colliders while drawing (col mode), else just the
+    -- selected one (its grab points, move mode)
+    if tool == "collider" or on then handles(c, 0, 0, on and csel.v or nil) end
   end
   for i, pl in ipairs(doc.places) do -- attached: dim until selected (§6)
     if pl.cols then
@@ -1536,7 +1544,7 @@ local function draw_gizmos(p, view, sel, tool, csel, asel)
         local hot = on and asel and asel.c == aci
         one(c, pl.x, pl.y, hot and COL.sel or (COL.solid & ~0xff) | a,
             hot and COL.sel or (COL.oneway & ~0xff) | a)
-        if on and tool == "select" then -- editable only while selected
+        if on and tool == "move" then -- editable only while selected
           handles(c, pl.x, pl.y, hot and asel.v or nil)
         end
       end
@@ -1672,7 +1680,7 @@ function M.draw(win, ctx)
   end
 
   -- markers (the marker tool forces them visible; §6)
-  local tool = win.tool or "select"
+  local tool = win.tool or "move"
   if win.mk or tool == "marker" then
     for mi, mk in ipairs(doc.markers) do
       local sx0, sy0 = ox + mk.x * zoom, oy + mk.y * zoom
@@ -1680,8 +1688,8 @@ function M.draw(win, ctx)
                     math.max(1, 1.2 * z))
       pal.x_ig_text(sx0 + 2, sy0 + 1, math.max(4, 8.5 * z), COL.marker,
                     mk.kind, 0)
-      if tool == "marker" and p.sel and #p.sel == 1
-         and p.sel[1].t == "marker" and p.sel[1].i == mi then
+      if p.sel and #p.sel == 1 and p.sel[1].t == "marker"
+         and p.sel[1].i == mi then -- resize knobs (move mode; any tool)
         local qv = M.quad_verts(mk) -- corner resize knobs
         local kr = math.max(2.5, math.min(2.5, zoom) + 1.5)
         for ki = 1, 4 do
@@ -1699,7 +1707,7 @@ function M.draw(win, ctx)
   -- (§6: editable only while the object is selected)
   local apl = #p.sel == 1 and p.sel[1].t == "place"
               and doc.places[p.sel[1].i] or nil
-  if p.asel and not (tool == "select" and apl and apl.cols
+  if p.asel and not (tool == "move" and apl and apl.cols
                      and apl.cols[p.asel.c]) then
     p.asel = nil
   end
@@ -2010,8 +2018,8 @@ function M.draw(win, ctx)
         p.sel = still and {}
                 or M.pick_rect(doc, gd.mx0, gd.my0, gd.mx1, gd.my1, dims,
                                win.mk, lockL)
-        p.csel = nil
-        p.g = nil
+        p.csel, p.g = nil, nil
+        if gd.ret then win.tool = gd.ret end -- box-select → back to move
         ctx.touch()
       end
     elseif gd.mode == "cvert" then
@@ -2364,40 +2372,44 @@ function M.draw(win, ctx)
                           ax, ay)
         end
         append_pt(cx, cy)
-      elseif not grab_at() then
-        if p.run then
-          new_line(p.run[1], p.run[2], p.run[3], p.run[4])
-          p.run = nil
-        else
-          p.csel = nil
-          local tg = M.snap_targets(doc, { dims = dims, tm = tmfn })
-          local x0, y0 = ptsnap(mx, my, tg)
-          if ct == "line" then
-            -- ambiguous press: a drag = drag-place a 2-pt line, a still-click
-            -- = point A (then line2 waits for the 2nd click)
-            p.g = { mode = "linepress", x0 = x0, y0 = y0, tg = tg,
-                    sx = i.wx, sy = i.wy }
-          else
-            p.g = { mode = "dpress", drag = ct == "quad" and "quadd" or "circd",
-                    sx = i.wx, sy = i.wy, tg = tg, x0 = x0, y0 = y0 }
-          end
-          ctx.touch()
-        end
-      end
-    elseif tool == "marker" then
-      if not grab_at() then
+      elseif p.run then
+        -- the edge-run: one click lays the whole segment (§7-R8d)
+        new_line(p.run[1], p.run[2], p.run[3], p.run[4])
+        p.run = nil
+      else
+        -- col mode PLACES only — it never grabs existing items; move/edit
+        -- anything in the SELECT tool (the human's ask). Draw the strip type.
+        p.csel = nil
         local tg = M.snap_targets(doc, { dims = dims, tm = tmfn })
         local x0, y0 = ptsnap(mx, my, tg)
-        p.sel = {}
-        p.g = { mode = "mnew", x0 = x0, y0 = y0, tg = tg,
-                sx = i.wx, sy = i.wy }
+        if ct == "line" then
+          -- ambiguous press: a drag = drag-place a 2-pt line, a still-click
+          -- = point A (then line2 waits for the 2nd click)
+          p.g = { mode = "linepress", x0 = x0, y0 = y0, tg = tg,
+                  sx = i.wx, sy = i.wy }
+        else
+          p.g = { mode = "dpress", drag = ct == "quad" and "quadd" or "circd",
+                  sx = i.wx, sy = i.wy, tg = tg, x0 = x0, y0 = y0 }
+        end
         ctx.touch()
       end
-    else -- select (the default): grab anything, else marquee
+    elseif tool == "marker" then
+      -- marker mode PLACES only (drag a new rect); move/resize in move mode
+      local tg = M.snap_targets(doc, { dims = dims, tm = tmfn })
+      local x0, y0 = ptsnap(mx, my, tg)
+      p.sel = {}
+      p.g = { mode = "mnew", x0 = x0, y0 = y0, tg = tg, sx = i.wx, sy = i.wy }
+      ctx.touch()
+    elseif tool == "sel" then
+      -- box select (the human's ask): drag a marquee, then RETURN to move so
+      -- you immediately manipulate what you selected. `ret` carries that.
+      p.csel = nil
+      p.g = { mode = "marquee", sx = i.wx, sy = i.wy, ret = "move",
+              mx0 = mx, my0 = my, mx1 = mx, my1 = my }
+      ctx.touch()
+    else -- "move": unified direct manipulation — click grabs, empty deselects
       if not grab_at() then
-        p.sel, p.csel = {}, nil
-        p.g = { mode = "marquee", sx = i.wx, sy = i.wy,
-                mx0 = mx, my0 = my, mx1 = mx, my1 = my }
+        p.sel, p.csel, p.drill = {}, nil, nil
         ctx.touch()
       end
     end
@@ -2485,6 +2497,14 @@ function M.draw(win, ctx)
             p.sel = M.paste(doc, clip, dx, dy)
             commit(ed, win.path)
           end
+        elseif not g.ctrl and (sc == KEY.c or sc == KEY.v or sc == KEY.m) then
+          -- mode keys (the human's ask): c = col · v = box-select · m = markers
+          -- (esc → move). A switch drops the live gesture + collider selection.
+          if p.g and p.g.mutates then decode_into(p, working(ed, win.path).map) end
+          p.g, p.guides, p.csel = nil, nil, nil
+          win.tool = sc == KEY.c and "collider" or sc == KEY.v and "sel"
+                     or "marker"
+          ctx.touch()
         elseif p.csel and not p.g then
           -- a selected free collider (any tool now — direct manipulation)
           if sc >= KEY.right and sc <= KEY.up then
@@ -2497,13 +2517,6 @@ function M.draw(win, ctx)
           elseif sc == KEY.del or sc == KEY.backspace then
             if M.col_del(doc.colliders, p.csel) then
               p.csel = nil
-              commit(ed, win.path)
-            end
-          elseif sc == KEY.c then
-            -- C closes/opens the selected chain (closed+solid = fillable ground)
-            local c = doc.colliders[p.csel.c]
-            if c.kind == "chain" and #c.verts // 2 >= 3 then
-              c.closed = not c.closed
               commit(ed, win.path)
             end
           end
@@ -2783,7 +2796,7 @@ function M.draw(win, ctx)
   elseif #p.sel > 1 or tool == "marker" then
     local hint = #p.sel > 1
       and (#p.sel .. " selected · ctrl+c/x/d clip · [ ] z · shift+2 fit")
-      or "drag on empty = new marker · corners resize · del removes"
+      or "drag = a new marker · move/resize it in move mode (esc)"
     pal.x_ig_text(ctx.cx + 4 * z, iy + (INSP - px) * 0.45, px * 0.9,
                   COL.dim, hint, 0)
   else
@@ -2840,7 +2853,7 @@ function M.draw(win, ctx)
     end
     pal.x_ig_clip_push(x, iy, math.max(0, ctx.cx + ctx.cw - x - 2 * z), INSP)
     pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
-                  ("drag in to place · ctrl snaps · %d placement%s")
+                  ("c col · v box-select · m markers · esc back · %d placement%s")
                   :format(#doc.places, #doc.places == 1 and "" or "s"), 0)
     pal.x_ig_clip_pop()
   end
