@@ -761,6 +761,28 @@ static int l_png_write(lua_State *L) {
   return 0;
 }
 
+static void png_lua_write(void *context, void *data, int size) {
+  luaL_addlstring((luaL_Buffer *)context, data, (size_t)size);
+}
+
+/* pal.png_encode(rgba, w, h) -> PNG bytes.  The sprite transaction needs the
+ * complete bake in memory before it publishes any member of the generation. */
+static int l_png_encode(lua_State *L) {
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+  int w = (int)luaL_checkinteger(L, 2);
+  int h = (int)luaL_checkinteger(L, 3);
+  if (w <= 0 || h <= 0 || len != (size_t)w * h * 4)
+    return luaL_error(L, "png_encode: data is %I bytes, want w*h*4=%I",
+                      (lua_Integer)len, (lua_Integer)w * h * 4);
+  luaL_Buffer b;
+  luaL_buffinit(L, &b);
+  if (!stbi_write_png_to_func(png_lua_write, &b, w, h, 4, data, w * 4))
+    return luaL_error(L, "png_encode failed");
+  luaL_pushresult(&b);
+  return 1;
+}
+
 static int l_png_read(lua_State *L) {
   size_t len;
   const char *data = luaL_checklstring(L, 1, &len);
@@ -1300,6 +1322,7 @@ static const luaL_Reg pal_funcs[] = {
     {"present", l_present},
     {"read_pixels", l_read_pixels},
     {"png_write", l_png_write},
+    {"png_encode", l_png_encode},
     {"png_read", l_png_read},
     {"tex_create", l_tex_create},
     {"tex_update", l_tex_update},

@@ -2362,3 +2362,38 @@ sequence of independent atomic renames.
 testing finds a supported filesystem where a synced file plus replace rename
 can disappear as directory metadata. Replace fixed policy with platform-native
 transaction support only if a real multi-file asset requires it.
+
+## D063 — sprite saves publish recoverable generations (A1, 2026-07-15)
+
+**Context.** A sprite save produces one editable `.spr` and three runtime
+outputs (`.png`, `.anim`, `.meta`). Independent atomic replacements can still
+leave generations mixed after a crash, and the old path ignored failures from
+every bake. PNG also wrote directly to a pathname, preventing the complete
+generation from being staged before publication.
+
+**Decision.** PAL API v10 adds render/dev-only `pal.png_encode`, the same stb
+PNG encoder as `png_write` but returning bytes in memory. `cm.sprite.save`
+first encodes all four outputs, atomically writes `<asset>.spr.txn` containing
+the complete intended generation, then atomically publishes `.png`, `.anim`,
+`.meta`, and finally `.spr`. It always publishes an `.anim`, including the
+canonical empty table, so deleting the last clip cannot leave stale runtime
+data. Only after all four replacements succeed is the manifest removed and
+the document marked clean / asset epoch advanced.
+
+The manifest is recovery truth, not a stale temp: `sprite.load` and the next
+`sprite.save` finish it idempotently before proceeding. A corrupt manifest is
+an actionable error and is never guessed through. The editor's existing save
+error path logs the named failed boundary, opens it as an error in the console,
+and retains dirty working bytes. Injected failures cover manifest creation,
+each of the four publications, and manifest cleanup; recovery proves matching
+source, pixels, empty/non-empty clips, and metadata.
+
+**Consequence.** During an interrupted publication, a runtime process that
+does not participate in editor recovery may briefly observe some newer baked
+files while the old source remains. The durable manifest makes that state
+explicit and repairable; save never claims success. Export validation must
+reject or recover outstanding manifests before packaging.
+
+**Revisit.** Add automatic boot-time scanning if assets can commonly be saved
+without subsequently being loaded by the editor, or rollback copies if field
+testing shows runtime readers observing interrupted generations is harmful.

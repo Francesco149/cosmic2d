@@ -356,6 +356,7 @@ function M.asset(spec)
     else
       pal.log("[ed] SAVE FAILED " .. win.path ..
               (err and (": " .. tostring(err)) or ""))
+      if ed.summon_console then ed.summon_console() end
     end
   end
 

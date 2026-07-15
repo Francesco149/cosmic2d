@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 9 /* v9: pal.write_file_atomic (A1 durability seam) */
+#define PAL_VERSION_API 10 /* v10: pal.png_encode (transactional sprite bake) */
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256

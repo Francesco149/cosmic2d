@@ -548,6 +548,7 @@ binary incompatible, in either direction (D015).
 | `pal.present()` | render | upload, render, scale-blit, (headless: render only) |
 | `pal.read_pixels()` | dev/test | internal target → string (RGBA8), post-render |
 | `pal.png_write(path, str, w, h)` | dev | screenshot/golden output |
+| `pal.png_encode(str, w, h)` → PNG bytes | dev | API v10: in-memory encoding so a multi-file asset can durably stage a complete generation before publishing any output |
 | `pal.tex_create(w,h, pixels_str)` / `pal.tex_free(id)` | render | RGBA8; id 0 = builtin white |
 | `pal.buf(name_or_nil, size)` | sim | named = persistent + snapshot; view userdata; size mismatch with a live name errors |
 | `pal.buf_list()` | sim | iterate named buffers (snapshot/inspector) |

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 session and journal recovery complete (2026-07-15)
+## Current handoff — A1 transactional sprite saves complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -57,10 +57,26 @@ corruption. The A1 last-known-good session/journal roadmap item is proven
 complete. `nix run .#test` is ALL GREEN: 23,145 self-checks, every trace
 verify, and all pixel goldens.
 
-**Exact next packet:** make `.spr` plus its baked `.png`/`.anim`/`.meta`
-outputs transactional as one editor save operation, with rollback or an
-explicit recovery manifest so a failed bake cannot claim success. Add
-injected failure coverage at every output boundary and visible editor errors.
-Do not migrate unrelated asset families in the same packet.
+**A1 packet 4 is complete.** Sprite saves now encode the full `.spr` plus
+`.png`/`.anim`/`.meta` generation before publication, durably record it in an
+atomic `.spr.txn` recovery manifest, atomically publish runtime outputs then
+source, and only then clear the manifest and claim success. Load and the next
+save finish interrupted generations idempotently. PAL API v10 adds in-memory
+`png_encode`; empty clip tables now replace stale `.anim` files. Named errors
+flow through the editor save console while dirty bytes remain. Injected tests
+cover manifest creation, all four output boundaries, manifest cleanup, and
+matching recovery. `nix run .#test` is ALL GREEN: 23,176 self-checks, every
+trace verify, and all pixel goldens. Linux and cross-built Windows packages
+both compile.
+
+The export contract is now explicit in `ALPHA.md`: shipped games include the
+engine, editor/tooling, source project, and assets for curious players. The
+normal named launcher remains locked directly to play mode via D052; “play
+only” describes that default entrance, not a stripped artifact.
+
+**Exact next packet:** define `.ed` cache ownership and compatibility/version
+behavior, then add a safe clear/rebuild operation with focused corrupt/old
+cache coverage and visible recovery reporting. Do not migrate unrelated asset
+families in the same packet.
 
 There is no known blocker or human-only verification required.

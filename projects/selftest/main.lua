@@ -2084,6 +2084,57 @@ local function t_sprite()
         "sprite: load round-trip (" .. tostring(err) .. ")")
   check(pal.read_file((tmp:gsub("%.spr$", ".png"))) ~= nil, "sprite: bake png written")
 
+  -- A save publishes one recoverable .spr/.png/.anim/.meta generation.  Every
+  -- output boundary reports failure, retains the manifest, and load completes
+  -- that exact generation before exposing the source.  A manifest-write
+  -- failure touches no member at all.
+  local tx = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_sprite_tx.spr"
+  local old = sprite.new(3, 2)
+  paint.set(sprite.cell(old), 0, 0, RED)
+  old.clips = { { name = "old", loop = "loop",
+                  frames = { { frame = 0, dur = 3 } } } }
+  old.pivot = { x = 0, y = 1 }
+  check(sprite.save(old, tx) == true, "sprite txn: seed generation")
+  local exts = { "spr", "png", "anim", "meta" }
+  local function generation(path)
+    local t = {}
+    for _, ext in ipairs(exts) do
+      t[ext] = pal.read_file(path:gsub("%.spr$", "." .. ext))
+    end
+    return t
+  end
+  local before = generation(tx)
+  local newer = sprite.new(4, 2)
+  paint.set(sprite.cell(newer), 3, 1, GRN)
+  newer.clips = {} -- also proves an empty .anim replaces a stale clip table
+  newer.pivot = { x = 3, y = 0 }
+  local ok, terr = sprite.save(newer, tx, { manifest = { _fail = "rename" } })
+  check(not ok and terr:find("manifest") and pal.read_file(tx .. ".txn") == nil,
+        "sprite txn: manifest failure is reported without recovery claim")
+  local untouched = generation(tx)
+  for _, ext in ipairs(exts) do
+    check(untouched[ext] == before[ext],
+          "sprite txn: manifest failure preserves ." .. ext)
+  end
+  for _, boundary in ipairs { "png", "anim", "meta", "spr", "cleanup" } do
+    check(sprite.save(old, tx) == true, "sprite txn: reset before " .. boundary)
+    local inject = {}
+    inject[boundary] = boundary == "cleanup" and true or { _fail = "rename" }
+    ok, terr = sprite.save(newer, tx, inject)
+    local label = boundary == "cleanup" and "manifest" or boundary
+    check(not ok and terr:find(label) and pal.read_file(tx .. ".txn") ~= nil,
+          "sprite txn: " .. boundary .. " failure is reported + recoverable")
+    local recovered, rerr = sprite.load(tx)
+    check(recovered and recovered.w == 4 and recovered.pivot.x == 3,
+          "sprite txn: load recovers " .. boundary .. " (" .. tostring(rerr) .. ")")
+    check(pal.read_file(tx .. ".txn") == nil,
+          "sprite txn: recovery clears manifest after " .. boundary)
+    local clips = cm.require("cm.anim").load(tx:gsub("%.spr$", ".anim"))
+    local meta = sprite.load_meta(tx:gsub("%.spr$", ".meta"))
+    check(clips and #clips == 0 and meta and meta.pivot.x == 3,
+          "sprite txn: recovered sidecars agree after " .. boundary)
+  end
+
   -- pivot (Phase 5): default feet-center, round-trips the .spr HEAD + the .meta
   -- sidecar, set_pivot is one clamped undo step, and save bakes the .meta.
   local pv = sprite.new(8, 6)

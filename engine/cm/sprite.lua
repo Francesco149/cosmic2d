@@ -796,18 +796,65 @@ function M.load_meta(path)
   return M.decode_meta(bytes)
 end
 
--- write <path>.spr (editable source) + bake the build product the game loads:
--- <path>.png (the flattened strip) and, when the doc has clips, <path>.anim (the
--- clip table as canonical bytes — cm.anim.save). The caller (studio) ensures the
--- art dir exists. Returns true, or nil+err.
-function M.save(doc, path)
+-- A sprite save is one recoverable generation.  The manifest contains every
+-- intended byte before any member is replaced.  Bakes publish first and the
+-- editable source last; a crash/failure leaves the manifest for load/save to
+-- finish idempotently.  This is deliberately not four pretend-independent
+-- "successful" atomic writes (A1 / D063).
+local TXMAGIC = "CSPRTXN1"
+
+local function txn_path(path) return path .. ".txn" end
+
+local function txn_encode(files)
+  return pack("<c8s8s8s8s8", TXMAGIC, files.spr, files.png,
+              files.anim, files.meta)
+end
+
+local function txn_decode(bytes)
+  local ok, magic, spr, png, an, meta, pos = pcall(unpack, "<c8s8s8s8s8", bytes)
+  if not ok or magic ~= TXMAGIC or pos ~= #bytes + 1 then return nil end
+  return { spr = spr, png = png, anim = an, meta = meta }
+end
+
+local function publish(path, files, fail)
+  -- Runtime products become complete before the new source claims the save.
+  for _, ext in ipairs { "png", "anim", "meta", "spr" } do
+    local out = ext == "spr" and path or with_ext(path, "." .. ext)
+    local ok, err = pal.write_file_atomic(out, files[ext], fail and fail[ext])
+    if not ok then return nil, "publish ." .. ext .. " failed: " .. tostring(err) end
+  end
+  if fail and fail.cleanup then return nil, "remove recovery manifest failed: injected failure" end
+  if not pal.x_remove(txn_path(path)) then
+    return nil, "remove recovery manifest failed"
+  end
+  return true
+end
+
+function M.recover(path, fail)
   if not path:match("%.spr$") then path = path .. ".spr" end
-  if not pal.write_file(path, M.encode(doc)) then return nil, "write .spr failed" end
+  local bytes = pal.read_file(txn_path(path))
+  if not bytes then return true end
+  local files = txn_decode(bytes)
+  if not files then return nil, "corrupt sprite recovery manifest: " .. txn_path(path) end
+  return publish(path, files, fail)
+end
+
+-- write <path>.spr plus its .png/.anim/.meta runtime products.  Even an empty
+-- clip table gets an .anim file, so deleting the last clip cannot leave a stale
+-- runtime sidecar. `fail` is the focused selftest seam for transaction stages.
+function M.save(doc, path, fail)
+  if not path:match("%.spr$") then path = path .. ".spr" end
+  local ok, err = M.recover(path, fail and fail.recover)
+  if not ok then return nil, "recover previous sprite save failed: " .. tostring(err) end
   local strip = M.bake_image(doc)
-  pal.png_write(with_ext(path, ".png"), strip.buf:str(0, strip.w * strip.h * 4),
-                strip.w, strip.h)
-  if #doc.clips > 0 then anim.save(with_ext(path, ".anim"), doc.clips) end
-  M.save_meta(with_ext(path, ".meta"), doc) -- pivot (+ slices) the game reads
+  local rgba = strip.buf:str(0, strip.w * strip.h * 4)
+  local files = { spr = M.encode(doc), png = pal.png_encode(rgba, strip.w, strip.h),
+                  anim = anim.encode(doc.clips or {}), meta = M.encode_meta(doc) }
+  ok, err = pal.write_file_atomic(txn_path(path), txn_encode(files),
+                                  fail and fail.manifest)
+  if not ok then return nil, "write recovery manifest failed: " .. tostring(err) end
+  ok, err = publish(path, files, fail)
+  if not ok then return nil, err end
   doc.path, doc.dirty = path, false
   -- signal live asset hot-reload (render-only, D040): a running game watches
   -- cm.asset_epoch and re-loads the baked .png/.anim/.meta when it advances, so a
@@ -820,6 +867,8 @@ function M.save(doc, path)
 end
 
 function M.load(path)
+  local rok, rerr = M.recover(path)
+  if not rok then return nil, rerr end
   local bytes, err = pal.read_file(path)
   if not bytes then return nil, err or "no file" end
   local ok, doc = pcall(M.decode, bytes)

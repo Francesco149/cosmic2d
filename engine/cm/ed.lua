@@ -426,6 +426,7 @@ local function summon_console()
            cy + (sh / doc.cam.zoom - h) * 0.6, w, h, kind.defaults())
   M.touch()
 end
+M.summon_console = summon_console -- persistence paths surface actionable errors
 
 local function anim_to(target)
   M.g.anim = { from = { x = M.doc.cam.x, y = M.doc.cam.y,

@@ -12,6 +12,13 @@ editor, choose a bundled demo or create a project, and make and export a small
 intent-driven grammar consistently across code, art, maps, audio, debugging,
 and project operations.
 
+An exported game remains an inspectable cosmic2d project and includes the
+engine and authoring tools. Its normal named-launcher path boots directly into
+play mode with the editor disabled (the existing D052 lock), but a curious
+player can deliberately open the included editor and poke around. “Play-only”
+below describes the default launch experience, not removal of tooling or
+source assets.
+
 Alpha means the supported paths are trustworthy, documented, and complete.
 It does not mean every possible 2D subsystem is built. Unsupported paths must
 be named honestly rather than implied by "batteries included."
@@ -83,7 +90,7 @@ Goal: power loss, disk-full, or a damaged cache cannot silently destroy work.
 - [ ] Add an atomic write primitive (same-directory temp, flush/close, rename)
   and use it for project metadata, assets, editor sessions, journals, options,
   recents, traces, and player saves.
-- [ ] Make multi-output assets transactional (`.spr` source plus baked
+- [x] Make multi-output assets transactional (`.spr` source plus baked
   `.png`/`.anim`/`.meta`); report every failure in the editor.
 - [x] Keep and recover from last-known-good session/journal metadata.
 - [ ] Define `.ed` cache ownership, compatibility/version behavior, and safe
@@ -97,8 +104,10 @@ explains recovery; source and baked assets cannot claim a false successful save.
 
 Goal: artifacts work on clean supported machines exactly as advertised.
 
-- [ ] Split dev/test, editor, and play-only manifests. Release picker contains
-  only bundled demos and user projects.
+- [ ] Split dev/test, editor, and default-play manifests. Release picker
+  contains only bundled demos and user projects; exported games still carry
+  the engine/editor and editable project, with the named launcher locked to
+  play mode by default.
 - [ ] Produce a portable Linux artifact (AppImage or bundled-libs/RPATH
   tarball) that has no Nix-store runtime dependency.
 - [ ] Ship Windows GUI-subsystem launchers; retain a separate console/headless
