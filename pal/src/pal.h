@@ -15,7 +15,11 @@
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
-#define PAL_MAX_WATCH 64
+#define PAL_MAX_WATCH 256 /* every cm.require'd file watches for hot-reload;
+   the append-only list is shared across VM reboots (D052 project switch), so
+   picker (~4) + a project's editor (~69: 60 engine + project + specials) must
+   both fit, plus headroom for hopping projects in one session. The watcher
+   thread only stats up to watch_count, so a bigger cap is free at runtime. */
 #define PAL_VERT_BYTES 20 /* x f32, y f32, u f32, v f32, rgba u8x4 */
 #define PAL_EV_TEXT_MAX 40 /* utf-8 bytes per text event (longer commits split) */
 #define PAL_EV_DROP_MAX 512 /* bytes per OS-drop path (longer paths ignored) */
