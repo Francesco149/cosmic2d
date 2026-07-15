@@ -545,7 +545,10 @@ static void grade_pass(SDL_GPUCommandBuffer *cmd) {
   G.grade_tmp = t;
 }
 
+static void tex_reap(void); /* defined below, near pal_gfx_tex_free */
+
 bool pal_gfx_present(void) {
+  tex_reap(); /* release textures freed 2 presents ago (their frames submitted) */
   SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(G.dev);
   if (!cmd) { pal_log("gfx: acquire cmd: %s", SDL_GetError()); return false; }
 
@@ -750,14 +753,36 @@ int pal_gfx_tex_create(const void *pixels, int w, int h) {
 /* re-upload into an existing texture in place (no GPU realloc). false if the id
  * is free or the size changed — the caller should free + create instead. */
 bool pal_gfx_tex_update(int id, const void *pixels, int w, int h) {
-  if (id <= 0 || id >= PAL_MAX_TEX || !G.texs[id].used) return false;
+  if (id <= 0 || id >= PAL_MAX_TEX || !G.texs[id].used || G.texs[id].pend)
+    return false;
   if (G.texs[id].w != w || G.texs[id].h != h) return false;
   return tex_upload(G.texs[id].tex, pixels, w, h);
 }
 
+/* DEFER the GPU release. Draw segments queued this frame reference this slot by
+ * ID (resolved to G.texs[id].tex at flush, with no used-check), so releasing —
+ * or clearing — the slot now would dangle/NULL them at submit. Instead mark it
+ * pending: it stays 'used' with a valid texture (skipped by tex_create,
+ * refused by tex_update) until tex_reap() releases it after its frame ships. */
 bool pal_gfx_tex_free(int id) {
-  if (id <= 0 || id >= PAL_MAX_TEX || !G.texs[id].used) return false;
-  SDL_ReleaseGPUTexture(G.dev, G.texs[id].tex);
-  G.texs[id].used = false;
+  if (id <= 0 || id >= PAL_MAX_TEX || !G.texs[id].used || G.texs[id].pend)
+    return false;
+  G.texs[id].pend = 1;
   return true;
+}
+
+/* two-stage deferred delete, run at the top of each present: a slot freed on
+ * frame N (pend=1) is bumped to pend=2 this present (frame N still references
+ * it in the pass about to submit), then released the NEXT present — frame N is
+ * submitted by then, so SDL_GPU's own deferral covers the GPU-side lifetime.
+ * Slot 0 (the default white) is never freed. */
+static void tex_reap(void) {
+  for (int i = 1; i < PAL_MAX_TEX; i++) {
+    if (G.texs[i].pend == 2) {
+      SDL_ReleaseGPUTexture(G.dev, G.texs[i].tex);
+      G.texs[i] = (PalTexture){0};
+    } else if (G.texs[i].pend == 1) {
+      G.texs[i].pend = 2;
+    }
+  }
 }

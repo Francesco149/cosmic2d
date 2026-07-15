@@ -67,6 +67,11 @@ typedef struct {
   SDL_GPUTexture *tex;
   int w, h;
   bool used;
+  int pend; /* deferred free: 0 = live; 1 = freed this frame; 2 = release next
+             * present. The slot stays 'used' with a valid tex until reaped, so
+             * draw segments (which reference textures by ID, resolved at flush)
+             * always bind a live texture — a mid-frame free can't dangle them.
+             * tex_create skips pended slots; tex_update refuses them. */
 } PalTexture;
 
 typedef struct {
