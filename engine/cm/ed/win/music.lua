@@ -50,8 +50,12 @@ local GRID_LABEL = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" }
 function M.defaults()
   return { path = "", pat = 1, trk = 1, grid = 4,
            tpp = 0.5, lownote = 45, tick0 = 0, -- the roll's view
+           arh = 60, ar_tpp = 0.14, ar_t0 = 0, ar_sy = 0, -- the arrangement's
            cursor = 0 } -- the scrub-bar position (pattern ticks)
 end
+
+local LANE_H = 15 -- arrangement track lane height (logical px): fixed + a
+                  -- reasonable size, vertical-scrolls when tracks overflow
 
 function M.title(win)
   return win.path:match("([^/]+)$") or "music"
@@ -413,7 +417,7 @@ function M.draw(win, ctx)
   -- ---- geometry ----
   local RAIL = math.min(120 * z, ctx.cw * 0.22)
   local TR_H = px * 1.9   -- transport row
-  local AR_H = 30 * z     -- arrangement strip (song overview)
+  local AR_H = math.max(24 * z, (win.arh or 60) * z) -- arrangement (resizable)
   local RULER_H = 15 * z  -- the scrub ruler (pattern space, roll-aligned)
   local VEL_H = 30 * z    -- velocity lane
   local x0, y0 = ctx.cx, ctx.cy
@@ -592,39 +596,64 @@ function M.draw(win, ctx)
   -- (no pattern chips — round 7: each clip owns its pattern; you pick
   -- what the roll edits by clicking a clip in the arrangement)
 
-  -- ---- the arrangement strip ----
+  -- ---- the arrangement strip: its OWN view (win.ar_tpp px/tick, win.ar_t0
+  -- left tick, win.ar_sy vertical scroll) — MMB pans, wheel zooms, height
+  -- win.arh resizes, and each lane keeps a FIXED reasonable height that
+  -- scrolls vertically when there are many tracks (the human's ask) ----
   local ay = y0 + TR_H
-  pal.x_ig_rect_fill(rx, ay, rw, AR_H, COL.well, 3 * z)
   local bar = PPQ * (doc.beats_per_bar or 4)
-  local atpp = tpp * 0.25 -- the strip is 4x denser than the roll
+  local atpp = math.max(0.02, win.ar_tpp or 0.14) * z -- px per tick (own zoom)
+  local ar_t0 = win.ar_t0 or 0
+  local lane_h = LANE_H * z
+  local content_h = #doc.tracks * lane_h
+  local ar_max_sy = math.max(0, content_h - AR_H)
+  local ar_sy = math.max(0, math.min(win.ar_sy or 0, ar_max_sy))
+  win.ar_sy = ar_sy
+  pal.x_ig_rect_fill(rx, ay, rw, AR_H, COL.well, 3 * z)
+  pal.x_ig_clip_push(rx, ay, rw, AR_H)
   local L = math.max(song.length(doc), bar * 16)
-  for t = 0, L, bar do
-    local lx = rx + t * atpp
-    if lx > rx + rw then break end
-    pal.x_ig_line(lx, ay, lx, ay + AR_H, COL.gridln, 1)
+  do
+    local t = math.tointeger(ar_t0 // bar) * bar
+    while t <= L do
+      local lx = rx + (t - ar_t0) * atpp
+      if lx > rx + rw then break end
+      if lx >= rx then pal.x_ig_line(lx, ay, lx, ay + AR_H, COL.gridln, 1) end
+      t = t + bar
+    end
   end
-  local lane_h = AR_H / math.max(1, #doc.tracks)
-  -- clips sharing the SELECTED clip's pattern glow together (deliberate
-  -- reuse is visible — round 8; a linked ctrl+drag copy reads at a glance)
+  -- lane bands + track labels (scroll under ar_sy; the active track highlit)
+  for ti = 1, #doc.tracks do
+    local ly = ay + (ti - 1) * lane_h - ar_sy
+    if ly + lane_h > ay and ly < ay + AR_H then
+      if (win.trk or 1) == ti then
+        pal.x_ig_rect_fill(rx, ly, rw, lane_h, 0x7fd8a814, 0)
+      end
+      pal.x_ig_line(rx, ly + lane_h - 1, rx + rw, ly + lane_h - 1, COL.gridln, 1)
+      pal.x_ig_text(rx + 3 * z, ly + (lane_h - px * 0.7) * 0.5, px * 0.7,
+                    COL.dim, doc.tracks[ti].name or ("t" .. ti), 0)
+    end
+  end
+  -- clips sharing the SELECTED clip's pattern glow together (round 8)
   local sel_pat = p.csel and doc.clips[p.csel] and doc.clips[p.csel].pattern
   for ci, c in ipairs(doc.clips) do
-    local cx0 = rx + c.tick * atpp
+    local cx0 = rx + (c.tick - ar_t0) * atpp
     local cw0 = c.len * atpp
-    local cy0 = ay + (c.track) * lane_h
-    if cx0 < rx + rw then
-      local vis_r = math.min(cx0 + cw0, rx + rw) -- clipped right edge
+    local cy0 = ay + c.track * lane_h - ar_sy
+    if cx0 < rx + rw and cx0 + cw0 > rx and cy0 + lane_h > ay
+       and cy0 < ay + AR_H then
+      local vis_l, vis_r = math.max(cx0, rx), math.min(cx0 + cw0, rx + rw)
       local hov = ctx.hot and i.wx >= cx0 and i.wx < cx0 + cw0
                   and i.wy >= cy0 and i.wy < cy0 + lane_h
       local kin = sel_pat and c.pattern == sel_pat and p.csel ~= ci
-      pal.x_ig_rect_fill(cx0, cy0 + 1, vis_r - cx0, lane_h - 2,
+      pal.x_ig_rect_fill(vis_l, cy0 + 1, vis_r - vis_l, lane_h - 3,
                          (p.csel == ci or hov) and COL.clip_hot
                          or kin and COL.note_dim or COL.clip, 2 * z)
-      -- the resize handle: a faint tick always, a bright bar on hover
       local edge_hot = hov and (cx0 + cw0 - i.wx) < 6 * z
       pal.x_ig_rect_fill(vis_r - (edge_hot and 3 or 1.5) * z, cy0 + 1,
-                         (edge_hot and 3 or 1.5) * z, lane_h - 2,
-                         edge_hot and COL.hot or 0xffffff30, edge_hot and 1 * z or 0)
-      pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.7, COL.dim,
+                         (edge_hot and 3 or 1.5) * z, lane_h - 3,
+                         edge_hot and COL.hot or 0xffffff30,
+                         edge_hot and 1 * z or 0)
+      pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.68, COL.dim,
                     "p" .. c.pattern, 0)
     end
   end
@@ -632,24 +661,60 @@ function M.draw(win, ctx)
   if p.playing then
     local SL = snd.seq.samples_at(song.length(doc), doc.bpm)
     if SL > 0 then
-      local ptick = snd.seq.ticks_at(p.ppos % SL, doc.bpm)
-      pal.x_ig_line(rx + ptick * atpp, ay, rx + ptick * atpp, ay + AR_H,
-                    COL.head, math.max(1, 1.2 * z))
+      local phx = rx + (snd.seq.ticks_at(p.ppos % SL, doc.bpm) - ar_t0) * atpp
+      if phx >= rx and phx <= rx + rw then
+        pal.x_ig_line(phx, ay, phx, ay + AR_H, COL.head, math.max(1, 1.2 * z))
+      end
     end
   end
-  -- arrangement gestures: press empty = stamp; press clip = move;
-  -- right edge = resize. CTRL = REUSE (round 8, the human: place the same
-  -- pattern multiple times) — ctrl+drag a clip duplicates it LINKED (a
-  -- copy sharing the pattern), ctrl+press empty stamps the ACTIVE pattern
-  -- linked; both track their pattern so one edit updates every placement.
-  -- arrangement layout anchors (event tapes / gesture hit-tests read this)
-  p.arr = { x = rx, y = ay, atpp = atpp, lane_h = lane_h, bar = bar }
+  -- a vertical scrollbar hint when the tracks overflow the panel
+  if ar_max_sy > 0 then
+    local th = math.max(8 * z, AR_H * AR_H / content_h)
+    local tyv = ay + (AR_H - th) * (ar_sy / ar_max_sy)
+    pal.x_ig_rect_fill(rx + rw - 2.5 * z, tyv, 2 * z, th, 0xffffff40, 1)
+  end
+  pal.x_ig_clip_pop()
+  -- the resize handle: drag the panel's bottom edge to grow / shrink it
+  local rh_y = ay + AR_H
+  local rh_hot = ctx.hot and i.wx >= rx and i.wx < rx + rw
+                 and i.wy >= rh_y - 3 * z and i.wy < rh_y + 2 * z
+  pal.x_ig_rect_fill(rx + rw * 0.5 - 12 * z, rh_y - 1 * z, 24 * z, 2 * z,
+                     (rh_hot or (p.g and p.g.t == "arh")) and COL.hot
+                     or COL.gridln, 1)
+  if ctx.hot and i.clicked[1] and rh_hot and not p.g then p.g = { t = "arh" } end
+  if p.g and p.g.t == "arh" then
+    if i.buttons[1] then
+      win.arh = math.max(24, math.min(240, (i.wy - ay) / z))
+      ctx.touch()
+    else p.g = nil end
+  end
+
   local over_arr = i.wx >= rx and i.wx < rx + rw and i.wy >= ay
                    and i.wy < ay + AR_H
-  if ctx.hot and i.clicked[1] and over_arr and not p.g then
-    local tick = (i.wx - rx) / atpp
-    local lane = math.min(#doc.tracks - 1,
-                          math.max(0, (i.wy - ay) // lane_h))
+  -- MMB pans the arrangement on both axes (focused only, like the roll)
+  if ctx.focused and i.clicked[2] and over_arr then
+    p.arpan = { mx = i.wx, my = i.wy, t0 = ar_t0, sy = ar_sy }
+  end
+  if p.arpan then
+    if i.buttons[2] then
+      win.ar_t0 = math.max(0, p.arpan.t0 - (i.wx - p.arpan.mx) / atpp)
+      win.ar_sy = math.max(0, math.min(ar_max_sy,
+        p.arpan.sy - (i.wy - p.arpan.my)))
+      ar_t0, ar_sy = win.ar_t0, win.ar_sy
+      ctx.touch()
+    else p.arpan = nil end
+  end
+
+  -- arrangement gestures: press empty = stamp; press clip = move; right edge =
+  -- resize a clip. CTRL = REUSE (round 8) — ctrl+drag a clip duplicates it
+  -- LINKED, ctrl+press on empty stamps the ACTIVE pattern linked (edit one, all
+  -- follow). Layout anchors (event tapes / hit-tests + M.wheel read p.arr).
+  p.arr = { x = rx, y = ay, w = rw, h = AR_H, atpp = atpp, t0 = ar_t0,
+            sy = ar_sy, lane_h = lane_h, bar = bar }
+  if ctx.hot and i.clicked[1] and over_arr and not p.g and not rh_hot then
+    local tick = ar_t0 + (i.wx - rx) / atpp
+    local lane = math.min(#doc.tracks - 1, math.max(0,
+      math.tointeger((i.wy - ay + ar_sy) // lane_h)))
     local hit, edge
     for ci, c in ipairs(doc.clips) do
       if c.track == lane and tick >= c.tick and tick < c.tick + c.len then
@@ -712,7 +777,7 @@ function M.draw(win, ctx)
   if p.g and (p.g.t == "clipmove" or p.g.t == "clipsize") then
     local c = doc.clips[p.g.ci]
     if i.buttons[1] and c then
-      local tick = (i.wx - rx) / atpp
+      local tick = ar_t0 + (i.wx - rx) / atpp
       if p.g.t == "clipmove" then
         local nt = math.max(0, ((tick - p.g.dt + bar / 2) // bar) * bar)
         nt = math.tointeger(nt)
@@ -817,9 +882,10 @@ function M.draw(win, ctx)
     return
   end
 
-  -- MMB pans the roll — focused only (focus is the one gate); the
-  -- content follows the mouse on both axes
-  if ctx.focused and i.clicked[2] then
+  -- MMB pans the roll — focused only (focus is the one gate); the content
+  -- follows the mouse on both axes. Not when the press was over the
+  -- arrangement (it has its own MMB pan above).
+  if ctx.focused and i.clicked[2] and not over_arr then
     p.pan = { mx = i.wx, my = i.wy, t0 = tick0, lf = lowf }
   end
   if p.pan then
@@ -1211,9 +1277,25 @@ end
 function M.wheel(win, ed, dy)
   if win.path == "" or ed.doc.focus ~= win.id then return false end
   local p = ed.g.muw and ed.g.muw[win.path]
-  local r = p and p.view
-  if not (r and p.doc) then return false end
+  if not (p and p.doc) then return false end
   local i = cm.require("cm.ui").inp
+  local z = ed.doc.cam.zoom
+  -- over the arrangement? zoom ITS time axis (its own view), pinning the tick
+  local ar = p.arr
+  if ar and i.wx >= ar.x and i.wx < ar.x + ar.w and i.wy >= ar.y
+     and i.wy < ar.y + ar.h then
+    local old = win.ar_tpp or 0.14
+    local new = math.max(0.02, math.min(4, old * (dy > 0 and 1.2 or 1 / 1.2)))
+    if new ~= old then
+      local at = (win.ar_t0 or 0) + (i.wx - ar.x) / (old * z)
+      win.ar_t0 = math.max(0, at - (i.wx - ar.x) / (new * z))
+      win.ar_tpp = new
+      ed.touch()
+    end
+    return true
+  end
+  local r = p.view
+  if not r then return false end
   local ax = i.wx
   if ax < r.rx or ax >= r.rx + r.rw then ax = r.rx + r.rw * 0.5 end
   local old = win.tpp or 0.5
