@@ -361,9 +361,10 @@ function M.draw(win, ctx)
                   t * zoom, t * zoom, 0xE8E4FF66, 1)
   end
 
-  -- tool gestures (one gesture = one journal entry)
-  local function apply_cell(cx2, cy2)
-    local id = win.tool == "eraser" and 0 or (win.tid or 1)
+  -- tool gestures (one gesture = one journal entry). RIGHT mouse erases with
+  -- the current tool's shape — no need to switch to E first (the human's ask).
+  local function apply_cell(cx2, cy2, erase)
+    local id = (erase or win.tool == "eraser") and 0 or (win.tid or 1)
     if tmap.get(doc, cx2, cy2) ~= id then
       tmap.set(doc, cx2, cy2, id)
       return true
@@ -372,10 +373,10 @@ function M.draw(win, ctx)
   if p.g then
     local gd = p.g
     if gd.mode == "stroke" then
-      if i.buttons[1] then
+      if i.buttons[gd.btn] then
         if inmap and (cellx ~= gd.lx or celly ~= gd.ly) then
           gd.lx, gd.ly = cellx, celly
-          if apply_cell(cellx, celly) then gd.moved = true end
+          if apply_cell(cellx, celly, gd.erase) then gd.moved = true end
           ctx.touch()
         end
       else
@@ -388,25 +389,28 @@ function M.draw(win, ctx)
       pal.x_ig_rect(ox + x0 * t * zoom, oy + y0 * t * zoom,
                     (x1 - x0 + 1) * t * zoom, (y1 - y0 + 1) * t * zoom,
                     COL.sel, math.max(1, 1.2 * z))
-      if not i.buttons[1] then
+      if not i.buttons[gd.btn] then
         p.g = nil
         tmap.fill_rect(doc, gd.x0, gd.y0, cellx, celly,
-                       win.tool == "eraser" and 0 or (win.tid or 1))
+          (gd.erase or win.tool == "eraser") and 0 or (win.tid or 1))
         commit(ed, win.path)
       end
     end
-  elseif over and inmap and i.clicked[1] and not p.pan then
-    if win.tool == "pick" then
+  elseif over and inmap and not p.pan and (i.clicked[1] or i.clicked[3]) then
+    local erase = i.clicked[3] and not i.clicked[1] or false -- rmb = erase
+    local btn = erase and 3 or 1
+    if win.tool == "pick" and not erase then
       local id = tmap.get(doc, cellx, celly)
       if id ~= 0 then
         win.tid = id
         ctx.touch()
       end
     elseif win.tool == "fill" then
-      p.g = { mode = "frect", x0 = cellx, y0 = celly }
-    else -- pen / eraser
+      p.g = { mode = "frect", x0 = cellx, y0 = celly, btn = btn, erase = erase }
+    else -- pen / eraser (or rmb-erase over the pick tool)
       p.g = { mode = "stroke", lx = cellx, ly = celly, mutates = true,
-              moved = apply_cell(cellx, celly) or false }
+              btn = btn, erase = erase,
+              moved = apply_cell(cellx, celly, erase) or false }
       ctx.touch()
     end
   end
@@ -421,7 +425,7 @@ function M.draw(win, ctx)
   if ctx.focused and win.edit then
     pal.x_ig_rect(cvx + 1, cvy + 1, cvw - 2, cvh - 2, COL.hot,
                   math.max(1, 1.5 * z), 3 * z)
-    local fl = "EDITING — wheel/mmb here · esc out"
+    local fl = "EDITING — wheel/mmb here · rmb erases · esc out"
     local fpx = math.max(4, 10 * z)
     local fw2 = pal.x_ig_text_size(fl, fpx, 0)
     pal.x_ig_rect_fill(cvx + 4 * z, cvy + 4 * z, fw2 + 10 * z, fpx * 1.5,
