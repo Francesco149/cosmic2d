@@ -75,8 +75,11 @@ default windows-side save dir. Resolve it like this:
 ## Iron rules
 
 - All project knowledge lives in the repo, never in private auto-memory.
-- Commit in logical units as you go; trailer
-  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`; direct to `main`.
+- Commit in logical units as you go, direct to `main`. End each commit with a
+  `Co-Authored-By` trailer naming **your own model slug**, not an identity
+  copied from this file, another agent, or earlier history. For example, Codex
+  uses `Co-Authored-By: Codex <noreply@openai.com>`; an Anthropic agent uses
+  its actual Claude model slug with `<noreply@anthropic.com>`.
 - Determinism discipline in all sim code (ARCHITECTURE.md): fixed timestep,
   engine PRNG only, no libm trig, no hash-order dependence, state only in
   named buffers / doc tree.

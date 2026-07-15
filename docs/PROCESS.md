@@ -31,8 +31,11 @@ auto-memory: future sessions must orient from a fresh clone + these docs.
 - Commit **in logical units as you go** — one coherent change per commit
   (docs distill, vendor import, feature, fix), not end-of-session megacommits.
 - Direct to `main`, no PRs unless asked. Imperative subject, body explains
-  why when non-obvious. Always end with the trailer:
-  `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`
+  why when non-obvious. Always end with a `Co-Authored-By` trailer naming the
+  committing agent's **own model slug**. Never copy another agent's identity
+  from an example or an earlier commit. Codex uses
+  `Co-Authored-By: Codex <noreply@openai.com>`; Anthropic agents use their
+  actual Claude model slug with `<noreply@anthropic.com>`.
 - Never commit `bin/`, build output, or llm-feed runtime data (gitignored).
 
 ## Build / run / test
