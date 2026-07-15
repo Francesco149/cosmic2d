@@ -175,6 +175,11 @@ local A = cm.require("cm.ed.kit").asset {
   adopt = decode_into,
   encode = map.encode,
   post_encode = function(p) p.geom = nil end,
+  write = function(ed, path, a, p)
+    -- `_save_fail` exists only as the focused durability-test seam. Keeping
+    -- it on ephemeral plumbing means it can never enter session state.
+    return map.save(p.doc, ed.root .. "/" .. path, p._save_fail)
+  end,
   after_save = function(ed, path)
     -- the recorded hot-reload (MAPS.md §9): the running game re-instances
     -- the saved map at the start of the next sim frame; traces replay it

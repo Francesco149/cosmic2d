@@ -1075,6 +1075,23 @@ local function t_map()
   check(not pcall(map.decode, "CMAP"), "map: no HEAD refused")
   check(not pcall(map.decode, "XXXXjunk"), "map: bad magic refused")
 
+  -- Map source publication is atomic. An interrupted replacement leaves the
+  -- previous valid generation byte-for-byte intact; a retry publishes the
+  -- complete newer document.
+  local savepath = (os.getenv("TMPDIR") or "/tmp")
+                   .. "/cosmic_selftest_atomic.map"
+  check(map.save(d, savepath) == true, "map save: seed generation")
+  local saved = pal.read_file(savepath)
+  local newer = map.decode(raw)
+  newer.name = "new generation"
+  local sok, serr = map.save(newer, savepath, { _fail = "rename" })
+  check(not sok and serr:find("write map failed")
+        and pal.read_file(savepath) == saved,
+        "map save: failed replacement preserves previous source")
+  check(map.save(newer, savepath) == true
+        and map.decode(pal.read_file(savepath)).name == "new generation",
+        "map save: retry publishes complete source")
+
   -- instancing: file -> collider buffer + tables (the level.lua successor)
   local tmp = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest.map"
   check(pal.write_file(tmp, raw) == true, "map: tmp write")
@@ -3973,6 +3990,7 @@ local function t_ed_map()
   -- cm.ed.win.map — the pure select-tool core + the §7 snap (R8b).
   -- dims stub: every placement is 20x10.
   local W = cm.require("cm.ed.win.map")
+  local map = cm.require("cm.map")
   local dims = function() return 20, 10 end
   local doc = {
     name = "t", w = 320, h = 200, grid = 8,
@@ -3990,6 +4008,31 @@ local function t_ed_map()
         note = "" },
     },
   }
+
+  -- The real map-window save path retains unsaved working bytes and reports
+  -- an atomic replacement failure through the editor console.
+  local root = tmproot() .. "/cosmic_selftest_ed_map_save"
+  pal.mkdir(root)
+  local path = "atomic.map"
+  local diskdoc = { name = "disk", w = 64, h = 64, grid = 8,
+                    colliders = {}, places = {}, markers = {} }
+  local diskbytes = map.encode(diskdoc)
+  pal.write_file(root .. "/" .. path, diskbytes)
+  local summoned = false
+  local sed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+                touch = function() end,
+                summon_console = function() summoned = true end }
+  local swin = { path = path }
+  local _, sp = W.open_win(swin, sed)
+  sp.doc.name = "unsaved"
+  sp._save_fail = { _fail = "rename" }
+  W.save(swin, sed)
+  check(pal.read_file(root .. "/" .. path) == diskbytes,
+        "ed.map save: failure preserves previous map")
+  check(W.dirty(swin, sed) and sp.doc.name == "unsaved",
+        "ed.map save: failure retains dirty working bytes")
+  check(summoned, "ed.map save: failure summons the console")
+  sp._save_fail = nil
 
   -- pick: topmost placement wins; markers overlay when shown
   local it = W.pick(doc, 45, 176, dims, false) -- inside a AND b -> b (z)

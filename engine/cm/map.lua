@@ -273,6 +273,15 @@ function M.decode(bytes)
   return doc
 end
 
+-- Publish the editable source as one atomic replacement. Maps have no baked
+-- siblings, so unlike sprites this is a single-file transaction; `fail` is
+-- the focused selftest seam forwarded to PAL's staged failure injector.
+function M.save(doc, path, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode(doc), fail)
+  if not ok then return nil, "write map failed: " .. tostring(err) end
+  return true
+end
+
 -- marker extras as a flat k->v table (last write wins, queries only)
 function M.extras(mk)
   local t = {}

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 `.ed` compatibility contract complete (2026-07-15)
+## Current handoff — A1 atomic `.map` saves complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -86,9 +86,17 @@ engine, editor/tooling, source project, and assets for curious players. The
 normal named launcher remains locked directly to play mode via D052; “play
 only” describes that default entrance, not a stripped artifact.
 
-**Exact next packet:** migrate `.map` source saves to atomic replacement with
-focused injected-failure coverage proving the previous map survives, dirty
-working bytes remain, and the editor reports the failure. Do not migrate other
-asset families in the same packet.
+**A1 packet 6 is complete.** `.map` source saves now use the PAL atomic-write
+primitive through a map-specific save API and the real map-window write hook.
+An injected replacement failure preserves the previous valid map byte-for-byte,
+keeps the newer working document dirty, reports the named failure, and summons
+the editor console; a retry publishes a complete decodable generation. `nix
+run .#test` is ALL GREEN: 23,191 self-checks, every trace verify, and all pixel
+goldens.
+
+**Exact next packet:** migrate `.tm` tilemap source saves to atomic replacement
+with focused injected-failure coverage proving the previous tilemap survives,
+dirty working bytes remain, and the editor reports the failure. Do not migrate
+other asset families in the same packet.
 
 There is no known blocker or human-only verification required.
