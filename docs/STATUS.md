@@ -3,6 +3,35 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-15 (cont. — the human's feedback round on D061 + a song
+retune; 3 commits, suite green, cosmic2d-win RE-STAGED again)
+
+Live-pass feedback, all addressed:
+
+- **Map modes fixed (`c153f02`).** The human: in col mode, click-drag was
+  grabbing sprites instead of placing colliders. Root cause: grab_at ran
+  in every tool. Reworked to the teidraw split — **draw-tools PLACE, move
+  MANIPULATES**. FOUR modes on win.tool: **move** (default, unified direct
+  manipulation), **sel** (one-shot box-select → auto-returns to move),
+  **col**, **marker**; grab_at is move-only. Keys **c** col · **v** box ·
+  **m** mkr · **esc** ladder (cancel a live placement + stay → return to
+  move → clear selection → unfocus — exactly the human's ask). The chain-
+  close moved to the inspector `closed` chip. Chips now read move/sel/col/
+  mkr; inspector shows the key hints.
+- **Town song lead retuned (`2f5d882`).** The human still heard dissonance
+  on the lead. Dumped the song: it's C major (pad C·G·Am·Em·F·C·F·G) but
+  the bell lead had 7 chromatic notes (Eb ×4, Bb ×2, F# ×1) rubbing a
+  semitone/maj7 against the chord tones. Moved each to the nearest diatonic
+  chord/scale tone (Eb→D, Bb→A, F#→G), contour kept. A bell-vs-pad clash
+  scan: 7 → **0**. Determinism verify-PASSES 120 frames.
+
+**cosmic2d-win RE-STAGED + native-verified** (selftest 23106 PASS,
+kitcheck 830-frame verify byte-exact). The human re-checks
+`bin\cosmic.exe projects\demo --edit` — the map modes (c/v/esc) + the
+retuned town theme. Good `/clear` point.
+
+---
+
 **Date**: 2026-07-15 (cont. — the teidraw map UX + grouping, the rendered
 help reader, per-window help, sprite-only demo: a 7-part human ask, all
 shipped; 9 commits, suite ALL GREEN throughout; D061)
