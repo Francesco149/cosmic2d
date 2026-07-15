@@ -5,9 +5,10 @@
 
 **Date**: 2026-07-15 (cont. — a 12-item human feedback batch + a perf/cleanup
 follow-up round: 3 bug fixes, the editor-fps fix, 8 editor/packaging features,
-then two follow-ups the human asked for after testing — drop the collider
-auto-fill, split the demo map visual; ~13 commits, suite ALL GREEN throughout,
-NOT yet re-staged to windows)
+then follow-ups the human asked for after testing — drop the collider
+auto-fill, split the demo map visual, and a launcher-crash fix (watch cap);
+~15 commits, suite ALL GREEN throughout, **RE-STAGED to windows** twice
+w/ the 966MB history preserved through both rebuilds)
 
 Worked the human's whole feedback list end to end, then the two follow-ups.
 Each is a focused commit; `nix run .#test` stayed **ALL GREEN** (selftest +
@@ -16,6 +17,21 @@ its default). **PAL C DID change** this round (`pal.x_ig_image_quads`, the
 batched tilemap-cell drawlist call) → the next re-stage needs a full
 `nix build .#cosmic-windows`, not a Lua-only copy.
 
+- **Launcher "watch list full" crash (`0e9e225`).** Opening the editor via the
+  `cosmic2d-editor.exe` launcher (picker → project, D052) crashed on the first
+  draw. The hot-reload watch list is C-side (`G.watch`) and **survives VM
+  reboots by design**, so the picker's module watches persist into the project
+  it launches. The demo editor alone loads **58 modules (~58 watches, ~66 with
+  every window open)** — right against the old **64** cap — so the leftover
+  picker watches tipped it over (the `cm.ed.launcher` require was just the
+  straw). Direct `--edit` skips the picker → fit. The watcher thread is
+  deliberately append-only + stable-index (stats lock-free), so resetting the
+  list mid-session would race it. Instead raised **PAL_MAX_WATCH 64 → 256**:
+  engine modules (60) are shared/deduped across projects, hot-reloads don't grow
+  the list, only per-project deltas accumulate; the watcher loops to
+  `watch_count` not the cap, so it's free at runtime. Verified force-loading all
+  59 engine modules reaches 66 watches, no overflow. **PAL C change → the
+  re-stage rebuilt the exe.**
 - **Dropped the collider auto-fill (`bd3dbc5`).** The human: "map visuals are
   always made by placing sprites anyway, so the auto fill for colliders should
   just not exist. we want the gizmos but auto filling with a texture is
