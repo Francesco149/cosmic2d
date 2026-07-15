@@ -1548,9 +1548,17 @@ function M.draw(win, ctx)
   local mx, my = s2mx(i.wx), s2my(i.wy)
   -- the active layer (new placements land here; teidraw auto-selects it
   -- from whatever you click) + the lock filter (interactions confined to
-  -- the active layer when win.lock is on)
+  -- the active layer when win.lock is on). Default = the topmost ENABLED
+  -- layer, so a fresh drop lands somewhere it'll actually exist in-game.
   local nlayers = #doc.layers
-  local active = math.min(nlayers, math.max(1, win.layer or nlayers))
+  local active = win.layer
+  if not active then
+    active = nlayers
+    for k = nlayers, 1, -1 do
+      if doc.layers[k].on ~= false then active = k; break end
+    end
+  end
+  active = math.min(nlayers, math.max(1, active))
   win.layer = active
   local lockL = win.lock and active or nil
   local snap_opts = function(skipset)
