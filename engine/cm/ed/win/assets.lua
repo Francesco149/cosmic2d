@@ -152,29 +152,44 @@ function M.invalidate(ed)
   ed.g.files = nil -- the text picker's list too
 end
 
--- preview texture for a path (nil = glyph tile). PNGs directly; a .spr
--- previews its baked .png sibling when present.
+-- a cached preview object for a path (nil = fall back to a glyph). An image
+-- (PNG, or a .spr's baked .png) previews its texture; a .map draws a schematic,
+-- a .tm its filled cells, code its first lines — the same renderers the
+-- Ctrl+Space launcher uses (cm.ed.preview), so the human's "map thumbnail /
+-- code excerpt" shows in the browser too. Cached on ed.g.athumb (cleared on
+-- drop/save/delete).
 local function preview(ed, path)
   local g = ed.g
   g.athumb = g.athumb or {}
   local hit = g.athumb[path]
   if hit ~= nil then return hit or nil end
-  local target
   local cls, ext = M.class_of(path)
-  if ext == "spr" then
-    local png = path:gsub("%.[sS][pP][rR]$", ".png")
-    local mt = pal.mtime(ed.root .. "/" .. png)
-    if mt and mt > 0 then target = png end
-  elseif cls == "image" then -- cm.gfx.texture decodes any stb format
-    target = path
+  local pv = false
+  if ext == "spr" or cls == "image" then
+    local target = path
+    if ext == "spr" then
+      local png = path:gsub("%.[sS][pP][rR]$", ".png")
+      target = (pal.mtime(ed.root .. "/" .. png) or 0) > 0 and png or nil
+    end
+    if target then
+      local ok, tex = pcall(cm.require("cm.gfx").texture, ed.root .. "/" .. target)
+      if ok then pv = { kind = "image", tex = tex } end
+    end
+  elseif ext == "map" then
+    local ok, doc = pcall(cm.require("cm.map").decode,
+                          pal.read_file(ed.root .. "/" .. path) or "")
+    if ok then pv = { kind = "map", doc = doc } end
+  elseif ext == "tm" then
+    local ok, doc = pcall(cm.require("cm.tmap").decode,
+                          pal.read_file(ed.root .. "/" .. path) or "")
+    if ok then pv = { kind = "tm", doc = doc } end
+  elseif cls == "code" then
+    local lines = cm.require("cm.ed.preview").head_lines(
+      pal.read_file(ed.root .. "/" .. path), 14)
+    if lines then pv = { kind = "code", lines = lines } end
   end
-  local t = false
-  if target then
-    local ok, tex = pcall(cm.require("cm.gfx").texture, ed.root .. "/" .. target)
-    if ok then t = tex end
-  end
-  g.athumb[path] = t
-  return t or nil
+  g.athumb[path] = pv
+  return pv or nil
 end
 
 -- ---- the OS drop add (called from cm.ed.filter_events) ----
@@ -419,17 +434,25 @@ function M.draw(win, ctx)
         g.aflash = nil
       end
     end
-    local t = preview(ed, e.rel)
-    if t then
-      local m = 4 * z
-      local s = math.min((tile - 2 * m) / t.w, (tile - 2 * m) / t.h)
-      local dw, dh = t.w * s, t.h * s
-      pal.x_ig_image(t.id, x + (tile - dw) * 0.5, y + (tile - dh) * 0.5,
+    local pv = preview(ed, e.rel)
+    if pv and pv.kind == "image" then
+      local tex, m = pv.tex, 4 * z
+      local s = math.min((tile - 2 * m) / tex.w, (tile - 2 * m) / tex.h)
+      local dw, dh = tex.w * s, tex.h * s
+      pal.x_ig_image(tex.id, x + (tile - dw) * 0.5, y + (tile - dh) * 0.5,
                      dw, dh)
+    elseif pv and pv.kind == "map" then
+      cm.require("cm.ed.preview").draw_map(pv.doc, x + 3 * z, y + 3 * z,
+                                           tile - 6 * z, tile - 6 * z)
+    elseif pv and pv.kind == "tm" then
+      cm.require("cm.ed.preview").draw_tm(pv.doc, x + 3 * z, y + 3 * z,
+                                          tile - 6 * z, tile - 6 * z, COL.glyph)
+    elseif pv and pv.kind == "code" then
+      cm.require("cm.ed.preview").draw_lines(pv.lines, x + 3 * z, y + 2 * z,
+        tile - 4 * z, tile - name_h, math.max(4, tile * 0.085), COL.dim)
     else
       local class, ext = M.class_of(e.rel)
-      local glyph = class == "code" and "{ }" or class == "sound" and "~"
-                    or class == "image" and "im" or "?"
+      local glyph = class == "sound" and "~" or "?"
       local gpx = tile * 0.3
       local gwd = pal.x_ig_text_size(glyph, gpx, 1)
       pal.x_ig_text(x + (tile - gwd) * 0.5, y + tile * 0.32, gpx,

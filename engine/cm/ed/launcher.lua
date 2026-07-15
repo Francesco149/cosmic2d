@@ -8,6 +8,7 @@
 
 local M = {}
 local assets = cm.require("cm.ed.win.assets")
+local preview = cm.require("cm.ed.preview")
 
 -- the top-level guides (win-*.md are per-window help off the ? button; these
 -- three are the readable walkthroughs a newcomer wants from the palette)
@@ -115,10 +116,10 @@ local function build_preview(ed, e)
         if ok then pv.tex = tex end
       end
     elseif cls == "code" then
-      pv.lines = M.head_lines(pal.read_file(ed.root .. "/" .. e.path))
+      pv.lines = preview.head_lines(pal.read_file(ed.root .. "/" .. e.path))
     end
   elseif e.cat == "doc" then
-    pv.lines = M.head_lines(pal.read_file("engine/stock/docs/" .. e.doc .. ".md"))
+    pv.lines = preview.head_lines(pal.read_file("engine/stock/docs/" .. e.doc .. ".md"))
   elseif e.cat == "spawn" then
     pv.blurb = "Spawn a new\n" .. e.label .. ".\n\nThe window's ? button\n"
                .. "opens its guide."
@@ -127,75 +128,6 @@ local function build_preview(ed, e)
                .. "fitting the zoom down\nonly if it overflows\nthe screen."
   end
   return pv
-end
-
-function M.head_lines(bytes)
-  if not bytes then return nil end
-  local out = {}
-  for line in (bytes .. "\n"):gmatch("([^\n]*)\n") do
-    out[#out + 1] = line:gsub("\t", "  ")
-    if #out >= 20 then break end
-  end
-  return out
-end
-
--- a map schematic: colliders as lines, placements/markers as rects, scaled to
--- fit the preview rect (the human's "thumbnail of a map")
-local function draw_map(doc, px, py, pw, ph)
-  local minx, miny, maxx, maxy = 1e9, 1e9, -1e9, -1e9
-  local function ext(x, y) if x < minx then minx = x end if x > maxx then maxx = x end
-    if y < miny then miny = y end if y > maxy then maxy = y end end
-  for _, c in ipairs(doc.colliders or {}) do
-    if c.kind == "chain" then
-      for k = 1, #c.verts, 2 do ext(c.verts[k], c.verts[k + 1]) end
-    elseif c.kind == "quad" then ext(c.x, c.y); ext(c.x + c.w, c.y + c.h)
-    elseif c.kind == "circle" then ext(c.cx - c.r, c.cy - c.r); ext(c.cx + c.r, c.cy + c.r) end
-  end
-  for _, p in ipairs(doc.places or {}) do ext(p.x, p.y); ext(p.x + 32, p.y + 32) end
-  for _, mk in ipairs(doc.markers or {}) do ext(mk.x, mk.y); ext(mk.x + mk.w, mk.y + mk.h) end
-  if minx > maxx then
-    pal.x_ig_text(px + 6, py + 6, 12, COL.dim, "empty map", 0)
-    return
-  end
-  local mw, mh = math.max(1, maxx - minx), math.max(1, maxy - miny)
-  local s = math.min(pw / mw, ph / mh) * 0.92
-  local ox = px + (pw - mw * s) * 0.5 - minx * s
-  local oy = py + (ph - mh * s) * 0.5 - miny * s
-  for _, p in ipairs(doc.places or {}) do
-    pal.x_ig_rect_fill(ox + p.x * s, oy + p.y * s, math.max(2, 32 * s),
-                       math.max(2, 32 * s), 0x7fd8a844, 1)
-  end
-  for _, mk in ipairs(doc.markers or {}) do
-    pal.x_ig_rect(ox + mk.x * s, oy + mk.y * s, mk.w * s, mk.h * s, COL.mk, 1)
-  end
-  for _, c in ipairs(doc.colliders or {}) do
-    if c.kind == "chain" then
-      for k = 1, #c.verts - 2, 2 do
-        pal.x_ig_line(ox + c.verts[k] * s, oy + c.verts[k + 1] * s,
-                      ox + c.verts[k + 2] * s, oy + c.verts[k + 3] * s, COL.col, 1)
-      end
-    elseif c.kind == "quad" then
-      pal.x_ig_rect(ox + c.x * s, oy + c.y * s, c.w * s, c.h * s, COL.col, 1)
-    elseif c.kind == "circle" then
-      pal.x_ig_circle(ox + c.cx * s, oy + c.cy * s, c.r * s, COL.col, 1)
-    end
-  end
-end
-
--- a .tm schematic: a dot per non-empty cell
-local function draw_tm(doc, px, py, pw, ph)
-  local tmap = cm.require("cm.tmap")
-  local s = math.min(pw / doc.w, ph / doc.h) * 0.92
-  local ox = px + (pw - doc.w * s) * 0.5
-  local oy = py + (ph - doc.h * s) * 0.5
-  for ty = 0, doc.h - 1 do
-    for tx = 0, doc.w - 1 do
-      if tmap.get(doc, tx, ty) ~= 0 then
-        pal.x_ig_rect_fill(ox + tx * s, oy + ty * s, math.max(1, s),
-                           math.max(1, s), COL.plc, 0)
-      end
-    end
-  end
 end
 
 local function draw_preview(ed, pv, px, py, pw, ph)
@@ -207,15 +139,11 @@ local function draw_preview(ed, pv, px, py, pw, ph)
     local dw, dh = pv.tex.w * sc, pv.tex.h * sc
     pal.x_ig_image(pv.tex.id, px + (pw - dw) * 0.5, py + (ph - dh) * 0.5, dw, dh)
   elseif pv.map then
-    draw_map(pv.map, px + 4, py + 4, pw - 8, ph - 8)
+    preview.draw_map(pv.map, px + 4, py + 4, pw - 8, ph - 8, COL)
   elseif pv.tm then
-    draw_tm(pv.tm, px + 4, py + 4, pw - 8, ph - 8)
+    preview.draw_tm(pv.tm, px + 4, py + 4, pw - 8, ph - 8, COL.plc)
   elseif pv.lines then
-    pal.x_ig_clip_push(px, py, pw, ph)
-    for n, line in ipairs(pv.lines) do
-      pal.x_ig_text(px + 6, py + 5 + (n - 1) * 13, 11, COL.code, line, 1)
-    end
-    pal.x_ig_clip_pop()
+    preview.draw_lines(pv.lines, px, py, pw, ph, 11, COL.code)
   elseif pv.blurb then
     pal.x_ig_clip_push(px, py, pw, ph)
     local y = py + 8
