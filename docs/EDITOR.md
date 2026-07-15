@@ -441,8 +441,15 @@ vendored-pin-internal, revisited on any imgui bump.
   links, emphasis markers), plain. Comment/string carry state is a
   per-line-start array recomputed on change (cheap, correct across
   multi-line strings).
-- **Docs are a special *code* format, not a rendered view**: .md keeps
-  the mono grid (the ghost overlay must match the widget's layout
+- **(D061 supersede)** The dedicated **`help` window is a RENDERED reader**
+  now (headings/wrapped paragraphs/bullets/code, links drawn as link text;
+  click follows in place, ctrl+click opens a new reader, an asset link opens
+  its editor; ◀ ▶ + mouse back/fwd history). Every window's title bar has a
+  **? button** → `ed.open_help(kind)` on the kind's `M.help` doc. The code ed
+  below keeps this RAW-source .md mode for *editing* docs; `resolve_link` is
+  exposed + shared with the reader.
+- **Docs are a special *code* format in the code ed, not a rendered view**:
+  .md keeps the mono grid (the ghost overlay must match the widget's layout
   glyph-for-glyph), but headings/links/code spans get faces. **Links**:
   Ctrl+click any token that resolves to a project file (md link targets,
   `require`-style dotted module names, bare relative paths) → **opens a

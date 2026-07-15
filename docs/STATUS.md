@@ -3,6 +3,66 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-15 (cont. — the teidraw map UX + grouping, the rendered
+help reader, per-window help, sprite-only demo: a 7-part human ask, all
+shipped; 9 commits, suite ALL GREEN throughout; D061)
+
+The human's batch, end to end. `nix run .#test` **ALL GREEN** every
+checkpoint (selftest 23063→**23106** +17 KATs; the 830-frame kitcheck +
+every pixel golden byte-identical — the codec + resolution changes bypass
+at their defaults / are backward-compatible).
+
+- **Map: unified direct manipulation + drill (`ac0ee2d`).** The three
+  tool-modal gesture blocks became ONE model: a shared gd.mode-dispatched
+  UPDATE, a unified on-hit `grab_at`, tool-specific empty-press. Click ANY
+  item (collider vertex/edge, sprite, marker) selects + moves it; **click
+  again drills** to what's beneath (`M.hit_stack` + `M.drill_pick`). Free
+  colliders grab/nudge/del in every tool now.
+- **Map: teidraw line grammar (`6d82c7f`).** Retired the modal chain —
+  drag = a 2-pt line, or click,click = one, then **shift+click appends**
+  to the last line (`p.lastcol`); C closes a chain.
+- **Map: grouping (`ee74532`).** A persisted `gid` on **PLCE v3 / MRKR
+  v2** (v1/v2 → gid=nil). ctrl+g / ctrl+shift+g; click a member selects
+  the group (a hull draws the bounds), click-again drills into the member;
+  paste re-groups. Placements + markers (colliders ungrouped in v1).
+- **e/g toggles (verified, no code change).** They were never broken — the
+  demo had zero placements to show/hide. Task below fixes that.
+- **engine/stock/* placements resolve (`38244ee` + in `32bcd6f`).** Editor
+  (`res_path`) AND game (`cm.map.res_asset`) try project-root then
+  engine-root/cwd. Fixed a `x and pcall(...)` multi-return truncation that
+  silently dropped the texture.
+- **Help: a rendered reader (`bbc75ff`).** The help window is a proper
+  markdown VIEW — links as link TEXT, click = follow in place, ctrl+click
+  = new reader, asset links open their editor; ◀ ▶ + mouse back/fwd; docs
+  home; src = raw. Supersedes EDITOR.md §12.2's "code format, not rendered".
+- **Per-window help + hotkeys (`3028945`).** A **? button on every window**
+  → the kind's doc in the reader. Authored win-{map,sprite,tmap,synth,
+  music,sound,palette,assets}.md; palette gained a hotkey table.
+- **Demo: sprite-only visuals (`32bcd6f`).** 100% placed sprites, editor-
+  visible: a **ground** layer (colliders autotiled into a placed .tm) + a
+  **backdrop** layer (a static hill .tm, named "backdrop", NOT parallaxed).
+  Runtime graybox + procedural parallax gone. verify-replays 90 frames
+  byte-exact (render change, sim untouched).
+
+**Proof:** ~9 shots on llm-feed (the map UX render, collider grammar, the
+group hull, e/g proof, engine-stock resolution, the rendered reader, the ?
+button + win-map.md, the demo in editor + game). Docs updated: MAPS §14,
+EDITOR §12.2, DECISIONS D061.
+
+**Next step (resume here):** the human's TASTE + HANDS pass — this is all
+GESTURE UX that needs live driving (headless can't drive drags): (1) map —
+click-drag a collider point / line / sprite, click-again to drill, the
+line grammar (drag vs click,click, shift+click extend), ctrl+g grouping +
+drill-in; (2) the ? button on each window + the rendered reader (link nav,
+ctrl+click, back/fwd); (3) the demo's sprite-only look (the backdrop
+shares the ground's checker tileset so it blends — **art-direct it**: a
+distinct backdrop tile/tint, or hand-place decor). **cosmic2d-win NOT yet
+re-staged** — PAL C is unchanged (all Lua + a codec bump), so a Lua-bundle
+re-stage suffices when the human wants it. Good `/clear` point — everything
+committed, tree clean, docs current.
+
+---
+
 **Date**: 2026-07-15 (the GB-noise KERNEL BUG + the map-editor layer/asset
 rework — 6 commits, suite ALL GREEN throughout)
 

@@ -547,3 +547,44 @@ auto-selects its layer (teidraw); `lock` confines picking/marquee + drops
 to the active layer. The inspector gains a `vis` toggle (image ↔ named
 ref) and an `anim:<clip>` cycler for .spr. Panel/active-layer/lock live on
 `win` (per-window), not the path-keyed plumb.
+
+## 14. Teidraw direct manipulation + grouping (as-built, D061, 2026-07-15)
+
+The R8 tool-modal gestures (§6) collapsed into one teidraw model. §6/§7's
+select/collider/marker split still names the tools, but SELECTION + MOVE are
+now unified across all of them.
+
+**Unified select/move/drill.** `M.hit_stack(doc, mx, my, dims, opts)` returns
+everything under a point front→back: free-collider vertices, then edges, then
+markers, then placements (reverse Z). `M.drill_pick(stack, prev, sx, sy, thr)`
+steps one entry down on a repeat click at the ~same screen point (wraps;
+resets when the point moves). A single `grab_at` (used by every tool on a hit)
+selects + arms the right drag: a **vertex** moves that point, an **edge** moves
+the whole collider (both ends), a **sprite/marker** moves whole — and
+click-again drills to what's beneath (line → the sprite under it). The
+gesture-UPDATE handlers run in one `gd.mode`-dispatched block, tool-agnostic;
+only the EMPTY-press differs (collider draws, marker new-rect, select marquee).
+Free colliders are selectable/nudgeable/deletable in ANY tool now.
+
+**The line grammar** (collider tool, line type): drag-on-first-click lays a
+2-point line; or click, click lays one (`line2` waits for the 2nd click with a
+rubber-band); then **shift+click appends** a point to the last line
+(`p.lastcol`). `C` closes the selected chain. quad/circle still drag out. The
+modal chain (§6) is retired; insert-on-edge is dropped (an edge click moves the
+whole collider).
+
+**Grouping.** A persisted `gid` (0 = ungrouped) rides **PLCE v3 / MRKR v2**
+(v1/v2 decode gid=nil). Groups span placements + markers (free colliders stay
+ungrouped in v1). `ctrl+g` groups the selection (≥2), `ctrl+shift+g` ungroups.
+Clicking a member selects the whole group (they move together; a faint hull
+draws the bounds, bright when selected); click-again drills into the member
+(`M.drill_chain` inserts a `{t="group"}` level before its first member). Paste
+re-groups a copied group under a fresh gid. Pure cores: `item_gid`,
+`group_members`, `next_gid`, `group_sel`, `ungroup_sel`, `drill_chain` — all
+KAT'd.
+
+**Engine-stock placements resolve in the editor.** `res_path(ed, path)` tries
+the project root then the engine root / cwd, so `engine/stock/*` sprites and
+tilesets render in the map window the way the game resolves them (win_tex,
+tm_doc, tmap.tileset_tex). The game side mirrors it (`cm.map.res_asset` for
+place_tex/place_tm). Stock art is placeable in any project.

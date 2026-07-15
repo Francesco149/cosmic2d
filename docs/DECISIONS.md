@@ -2258,3 +2258,73 @@ a use wants layered markers. Free colliders aren't layerable — revisit if
 prototype overlays need disable-able geometry that isn't attached to a
 placement. The map window's per-window UI state is hand-rolled on `win`;
 fold into kit.winui with the deferred synth/music pass if it drifts.
+
+## D061 — the teidraw map UX + grouping, the rendered help reader, per-window help, sprite-only demo (human, 2026-07-15)
+
+A seven-part human ask, all shipped. Theme: the map editor's direct
+manipulation was not teidraw-grade, and help/hotkeys were thin.
+
+**Map: unified direct manipulation + drill.** The three tool-modal gesture
+blocks (select/collider/marker) collapsed into ONE model — a shared
+gesture-UPDATE dispatch (by `gd.mode`, tool-agnostic), a unified on-hit
+`grab_at`, and a tool-specific EMPTY press. Clicking ANY item (a free
+collider vertex/edge, a placement, a marker) selects + moves it in the
+default tool; **click-again DRILLS** to whatever's beneath (`M.hit_stack`
+front→back + `M.drill_pick` step-and-wrap). A collider line moves both
+ends together; a vertex moves alone; the sprite under the line is one more
+click down. Free colliders became selectable/nudgeable/deletable in every
+tool (the keys block's `p.csel` handling lost its collider-tool gate). The
+transplanted drag handlers are byte-identical to the old ones — only the
+arming + drill are new; the pure cores stay KAT'd.
+
+**Map: teidraw line grammar.** The modal chain (click-click-click-enter)
+is retired for the line tool: **drag-on-first-click lays a 2-point line**,
+or **click, click** lays one (a rubber-band shows between), then
+**shift+click APPENDS** points to the last line (`p.lastcol`). `C` closes
+the selected chain. quad/circle unchanged. insert-on-edge-of-selected-chain
+dropped (an edge click now moves the whole collider).
+
+**Map: grouping (persisted).** A stable `gid` (0 = ungrouped) rides
+**PLCE v3 + MRKR v2** (v1/v2 decode with gid=nil — backward compatible, no
+golden touched). Groups span placements + markers (free colliders stay
+ungrouped in v1). `ctrl+g` groups (≥2), `ctrl+shift+g` ungroups; clicking a
+member selects the whole group (moves together, a faint hull shows the
+bounds), click-again drills into the member (`M.drill_chain` inserts a
+group level before its first member). Paste re-groups a copied group under
+a fresh gid.
+
+**Help: a real rendered reader (not the code grid).** The help window is
+now a proper markdown VIEW — headings, wrapped paragraphs, bullets, code
+spans/fences, and **links drawn as their link TEXT** (not the `[..](..)`
+source). One window navigates in place (click = follow here, **ctrl+click =
+a new reader**, an asset link opens its editor via `kind_for`); ◀ ▶ +
+mouse back/forward walk history; `docs` = the list home; `src` opens the
+raw markdown. Supersedes EDITOR.md §12.2's "docs are a code format, not a
+rendered view" — the human asked for the rendered view. `text.resolve_link`
+is exposed + shared.
+
+**Per-window help + hotkeys.** Every window's title bar grew a shell-drawn
+**? button** → `M.open_help(kind)` opens the kind's doc (`M.help`, else the
+editor guide) in the reader. Authored `win-{map,sprite,tmap,synth,music,
+sound,palette,assets}.md` (hotkeys + workflow). palette gained a hotkey
+table (it had none); the rest already declared theirs.
+
+**Demo: sprite-only visuals.** The demo's look is 100% PLACED sprites now,
+editor-visible: a **ground** layer (colliders autotiled into a placed
+`.tm`) + a **backdrop** layer (a static hill `.tm`, named, NOT parallaxed).
+The runtime graybox + procedural parallax are gone. This also made the
+demo's e/g layer toggles *do* something (they had nothing to show/hide
+before — the "toggles are broken" report was an empty demo, not a bug).
+
+**Engine-stock resolution, everywhere.** A recurring gap: the editor AND
+the game resolved placement/tileset paths only under the project root, so
+`engine/stock/*` assets drew a null-ref. Both now try project-root then
+engine-root/cwd (`res_path` in the map window, `res_asset` in cm.map,
+`tileset_tex` in the tmap window) — the stock-instrument convention. Caught
+a Lua gotcha in the fix: `local ok, tex = rp and pcall(...)` truncates
+pcall's multi-return to one, silently dropping the texture.
+
+REVISIT: grouping is placements+markers only (colliders need a unified
+selection first); the demo backdrop shares the ground's checker tileset so
+it blends (art-direction, not structure). D057/D060's map-window sections
+are superseded by this direct-manipulation model.
