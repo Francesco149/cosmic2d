@@ -29,6 +29,7 @@ local song = cm.require("cm.song")
 local snd = cm.require("cm.snd")
 
 M.kind = "music"
+M.help = "win-music"
 M.menu = "music"
 M.exts = { "song" }
 M.DEF_W, M.DEF_H = 720, 440

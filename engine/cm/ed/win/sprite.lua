@@ -22,6 +22,7 @@ local sprite = cm.require("cm.sprite")
 local paint = cm.require("cm.paint")
 
 M.kind = "sprite"
+M.help = "win-sprite"
 M.exts = { "spr" }
 M.DEF_W, M.DEF_H = 460, 380
 M.JCAP = 512

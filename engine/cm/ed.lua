@@ -82,6 +82,20 @@ function M.open_asset_window(path, wx, wy)
   return win
 end
 
+-- open a kind's help doc in the rendered reader (the per-window "?" button,
+-- D061). Each kind names its doc via `M.help` (a stock-doc basename);
+-- absent = the general editor guide. Reachable from game code as proof too.
+function M.open_help(kindname, wx, wy)
+  local kind = M.kinds[kindname]
+  local name = (kind and kind.help) or "editor"
+  local path = "../../engine/stock/docs/" .. name .. ".md"
+  local win = wm.spawn(M.doc, "help", wx or 60, wy or 60, 520, 480,
+                       M.kinds.help.defaults())
+  win.path, win.hist, win.hpos = path, { path }, 1
+  M.touch()
+  return win
+end
+
 -- the palette (igcanvas's, promoted)
 local C = {
   bg = 0x141220ff, grid = 0x3a3560, -- grid alpha applied per zoom
@@ -958,6 +972,24 @@ local function draw_win(ig, win, zi)
       hdr_right = rx - 8 * z
     end
   end
+  -- a HELP button on EVERY window's title bar (D061): opens the kind's doc
+  -- in the rendered reader — hotkeys + workflow, one click away
+  if w > 90 * z then
+    local i = cm.require("cm.ui").inp
+    local hw = pal.x_ig_text_size("?", tpx, 0) + 10 * z
+    local hx = hdr_right - hw
+    local hov = hot and i.wx >= hx and i.wx < hx + hw
+                and i.wy >= y and i.wy < y + hdr
+    pal.x_ig_rect_fill(hx, y + 3 * z, hw, hdr - 6 * z,
+                       hov and C.hdr_hot or C.hdr, 4 * z)
+    pal.x_ig_text(hx + 5 * z, y + (hdr - tpx) * 0.45, tpx,
+                  hov and C.hud or C.title_dim, "?", 0)
+    if hov and i.clicked[1] then
+      M.open_help(win.kind, win.x + win.w + 20, win.y)
+    end
+    hdr_right = hx - 6 * z
+  end
+
   -- kind header extras (history arrows, edit toggles…), right-aligned;
   -- remember where the button zone begins (screen x, read next frame):
   -- a press left of it is the title-bar move handle (live round 3)

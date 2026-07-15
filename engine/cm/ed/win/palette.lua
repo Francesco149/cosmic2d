@@ -16,6 +16,7 @@ local palette = cm.require("cm.palette")
 local paint = cm.require("cm.paint")
 
 M.kind = "palette"
+M.help = "win-palette"
 M.menu = "palette"
 M.exts = { "pal" }
 M.DEF_W, M.DEF_H = 380, 476
@@ -92,6 +93,38 @@ end
 local function winui(p, win)
   return cm.require("cm.ed.kit").winui(p, win)
 end
+
+-- per-window hotkeys (EDITOR.md §13): no-modifier swatch ops; the hint strip
+-- renders them under the focused window. Each op runs on the working doc.
+local function bound(win) return win.path ~= "" end
+local function palop(fn)
+  return function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    if not p or not p.doc then return end
+    if fn(win, p.doc, winui(p, win)) then commit(ed, win.path) end
+    ed.touch()
+  end
+end
+M.hotkeys = {
+  { key = "left", hint = "prev", when = bound, fn = palop(
+    function(win, doc, u) win.sel = math.max(1, (win.sel or 1) - 1)
+      u.selc = nil end) },
+  { key = "right", hint = "next", when = bound, fn = palop(
+    function(win, doc, u) win.sel = math.min(#doc.colors, (win.sel or 1) + 1)
+      u.selc = nil end) },
+  { key = "a", hint = "add", when = bound, fn = palop(
+    function(win, doc, u) table.insert(doc.colors, (win.sel or 1) + 1, 0xffffffff)
+      win.sel = (win.sel or 1) + 1; u.selc = nil; return true end) },
+  { key = "d", hint = "dup", when = bound, fn = palop(
+    function(win, doc, u) local s = win.sel or 1
+      table.insert(doc.colors, s + 1, doc.colors[s])
+      win.sel = s + 1; u.selc = nil; return true end) },
+  { key = "del", hint = "del", when = bound, fn = palop(
+    function(win, doc, u) if #doc.colors > 1 then
+        table.remove(doc.colors, win.sel or 1)
+        win.sel = math.max(1, (win.sel or 1) - 1); u.selc = nil; return true
+      end end) },
+}
 
 -- horizontal drag slider; `st` holds the per-window drag state (st.drag).
 -- Returns new value while dragging, done on release.

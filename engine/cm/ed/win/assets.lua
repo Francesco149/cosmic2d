@@ -18,6 +18,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "assets"
+M.help = "win-assets"
 M.menu = "assets"
 M.DEF_W, M.DEF_H = 520, 380
 

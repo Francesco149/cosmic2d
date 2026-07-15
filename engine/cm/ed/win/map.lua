@@ -43,6 +43,7 @@ local tmap = cm.require("cm.tmap")
 local wv = cm.require("cm.ed.winview")
 
 M.kind = "map"
+M.help = "win-map"
 M.menu = "map"
 M.exts = { "map" }
 M.DEF_W, M.DEF_H = 560, 420

@@ -11,6 +11,7 @@
 local M = select(2, ...) or {}
 
 M.kind = "sound"
+M.help = "win-sound"
 M.exts = { "wav", "mp3", "ogg" }
 M.DEF_W, M.DEF_H = 460, 170
 

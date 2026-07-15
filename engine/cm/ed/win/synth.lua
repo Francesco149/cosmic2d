@@ -20,6 +20,7 @@ local ins = cm.require("cm.ins")
 local snd = cm.require("cm.snd")
 
 M.kind = "synth"
+M.help = "win-synth"
 M.menu = "synth"
 M.exts = { "ins" }
 M.DEF_W, M.DEF_H = 560, 512
