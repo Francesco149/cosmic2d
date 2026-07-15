@@ -1923,6 +1923,45 @@ function M.draw(win, ctx)
   end
   if not (tool == "collider" and g.shift) then p.append_at = nil end
 
+  -- ---- idle affordances (the human's ask): in MOVE, highlight the item the
+  -- cursor is over (= what a click grabs); in COL / MARKER, a cursor ghost so
+  -- the placement mode is unmistakable ----
+  if over and not p.g and not p.pan and not (g.adrag and g.adrag.moved) then
+    local fcx, fcy = math.floor(mx + 0.5), math.floor(my + 0.5)
+    local scx, scy = ox + fcx * zoom, oy + fcy * zoom
+    if tool == "move" then
+      local hit = M.hit_stack(doc, mx, my, dims,
+        { thr = thr, with_markers = win.mk, only_layer = lockL })[1]
+      if hit then
+        local lt = math.max(1, 1.6 * z)
+        if hit.t == "place" or hit.t == "marker" then
+          local hx, hy, hw, hh = item_rect(doc, hit, dims)
+          pal.x_ig_rect(ox + hx * zoom - 2, oy + hy * zoom - 2,
+                        hw * zoom + 4, hh * zoom + 4, COL.hot, lt)
+        elseif hit.t == "cvert" then
+          pal.x_ig_circle(ox + hit.x * zoom, oy + hit.y * zoom,
+                          math.max(4, 4.5 * z), COL.hot, lt)
+        elseif hit.t == "cedge" then
+          pal.x_ig_circle_fill(ox + hit.x * zoom, oy + hit.y * zoom,
+                               math.max(3, 3.5 * z), COL.hot)
+        end
+      end
+    elseif tool == "collider" and not p.run and not p.append_at then
+      -- crosshair + landing dot: "click to place a collider here"
+      local col = win.coneway and COL.oneway or COL.solid
+      local r = math.max(5, 7 * z)
+      pal.x_ig_line(scx - r, scy, scx + r, scy, col, 1)
+      pal.x_ig_line(scx, scy - r, scx, scy + r, col, 1)
+      pal.x_ig_circle_fill(scx, scy, math.max(2, 2.5 * z), col)
+    elseif tool == "marker" then
+      -- a ghost marker box: "drag from here to place a marker"
+      local gsz = win.grid or doc.grid or 8
+      pal.x_ig_rect_fill(scx, scy, gsz * zoom, gsz * zoom,
+                         (COL.marker & ~0xff) | 0x22)
+      pal.x_ig_rect(scx, scy, gsz * zoom, gsz * zoom, COL.marker, 1)
+    end
+  end
+
   -- ---- (1) live gesture UPDATE — dispatched by gd.mode, tool-agnostic ----
   if p.g and p.g.mode ~= "line2" then
     local gd = p.g
