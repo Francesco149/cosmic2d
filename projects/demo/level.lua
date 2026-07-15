@@ -103,24 +103,75 @@ local function build_backdrop(def, tileset)
   return td
 end
 
--- generate a room's .map + its two .tm assets (dev bootstrap; inert once
--- the files are committed). Returns the encoded .map bytes.
+-- the axis-aligned bounds of any collider (map px)
+local function collider_bounds(c)
+  if c.kind == "quad" then return c.x, c.y, c.w, c.h end
+  if c.kind == "circle" then return c.cx - c.r, c.cy - c.r, 2 * c.r, 2 * c.r end
+  local minx, miny, maxx, maxy = 1e9, 1e9, -1e9, -1e9
+  for i = 1, #c.verts, 2 do
+    local x, y = c.verts[i], c.verts[i + 1]
+    minx = math.min(minx, x); maxx = math.max(maxx, x)
+    miny = math.min(miny, y); maxy = math.max(maxy, y)
+  end
+  return minx, miny, maxx - minx, maxy - miny
+end
+
+local function shift_collider(c, dx, dy)
+  if c.kind == "quad" then
+    return { kind = "quad", x = c.x + dx, y = c.y + dy, w = c.w, h = c.h }
+  elseif c.kind == "circle" then
+    return { kind = "circle", cx = c.cx + dx, cy = c.cy + dy, r = c.r }
+  end
+  local v = {}
+  for i = 1, #c.verts, 2 do v[i], v[i + 1] = c.verts[i] + dx, c.verts[i + 1] + dy end
+  return { kind = "chain", oneway = c.oneway, closed = c.closed, verts = v }
+end
+
+-- a shape-keyed name so identical pieces (both walls, the floor + ceiling)
+-- share ONE asset placed at several spots
+local function piece_name(c, bw, bh)
+  if c.kind == "chain" then return ("platform_%d"):format(bw) end
+  if c.kind == "quad" then
+    if bh <= 2 * T and bw > 4 * T then return ("floor_%d"):format(bw) end
+    if bw <= 2 * T and bh > 4 * T then return ("wall_%d"):format(bh) end
+    return ("block_%dx%d"):format(bw, bh)
+  end
+  return ("blob_%d"):format(bw)
+end
+
+-- generate a room's .map + its .tm assets (dev bootstrap; inert once the files
+-- are committed). The geometry is SPLIT into small reusable pieces: each
+-- collider becomes its own placed .tm (autotiled in isolation, deduped by
+-- shape), so a platform is a separate object you can drag/edit/delete without
+-- moving the whole map. The backdrop stays a single room-sized tilemap.
 local function bootstrap_room(def, room, proj)
   local tiles = "art/tiles.spr"
-  local gb = tmap.graybox(def, { tile = T, tileset = tiles })
-  pal.write_file(proj .. "/" .. room .. "_gb.tm", tmap.encode(gb))
-  local bg = build_backdrop(def, tiles)
-  pal.write_file(proj .. "/" .. room .. "_bg.tm", tmap.encode(bg))
+  pal.write_file(proj .. "/" .. room .. "_bg.tm",
+                 tmap.encode(build_backdrop(def, tiles)))
+  local places = { { path = room .. "_bg.tm", x = 0, y = 0, layer = 1,
+                     name = "backdrop" } }
+  local made = {}
+  for _, c in ipairs(def.colliders) do
+    local bx, by, bw, bh = collider_bounds(c)
+    bw, bh = math.max(T, math.floor(bw + 0.5)), math.max(T, math.floor(bh + 0.5))
+    local file = piece_name(c, bw, bh) .. ".tm"
+    if not made[file] then
+      made[file] = true
+      local piece = tmap.graybox(
+        { w = bw, h = bh, colliders = { shift_collider(c, -bx, -by) }, places = {} },
+        { tile = T, tileset = tiles })
+      pal.write_file(proj .. "/" .. file, tmap.encode(piece))
+    end
+    places[#places + 1] = { path = file, x = math.floor(bx + 0.5),
+                            y = math.floor(by + 0.5), layer = 2 }
+  end
   return map.encode {
     name = def.name, w = def.w, h = def.h, grid = def.grid, bg = def.bg,
     nofill = true, -- colliders draw nothing; the placed tilemaps ARE the art
     layers = { { name = "backdrop", vis = true, on = true },
                { name = "ground", vis = true, on = true } },
     colliders = def.colliders,
-    places = {
-      { path = room .. "_bg.tm", x = 0, y = 0, layer = 1, name = "backdrop" },
-      { path = room .. "_gb.tm", x = 0, y = 0, layer = 2 },
-    },
+    places = places,
     markers = def.markers,
   }
 end
