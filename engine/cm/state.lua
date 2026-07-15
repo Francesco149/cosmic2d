@@ -87,14 +87,14 @@ local function canon_value(v, parts, seen)
     parts[#parts + 1] = v and "\2" or "\1"
   elseif t == "number" then
     if math.type(v) == "integer" then
-      parts[#parts + 1] = "\3" .. pack("<i8", v)
-    elseif v ~= v then
-      error("doc tree cannot hold NaN", 0)
+      parts[#parts + 1] = pack("<Bi8", 3, v) -- tag in the format = 1 alloc,
+    elseif v ~= v then                        -- not 2 (byte-identical output;
+      error("doc tree cannot hold NaN", 0)    -- default alignment is 1, no pad)
     else
-      parts[#parts + 1] = "\4" .. pack("<d", v)
+      parts[#parts + 1] = pack("<Bd", 4, v)
     end
   elseif t == "string" then
-    parts[#parts + 1] = "\5" .. pack("<s4", v)
+    parts[#parts + 1] = pack("<Bs4", 5, v)
   elseif t == "table" then
     if seen[v] then
       error("doc tree must be a tree: table appears twice", 0)
@@ -112,13 +112,13 @@ local function canon_value(v, parts, seen)
     end
     table.sort(ikeys)
     table.sort(skeys)
-    parts[#parts + 1] = "\6" .. pack("<I4", #ikeys + #skeys)
+    parts[#parts + 1] = pack("<BI4", 6, #ikeys + #skeys)
     for _, k in ipairs(ikeys) do
-      parts[#parts + 1] = "\3" .. pack("<i8", k)
+      parts[#parts + 1] = pack("<Bi8", 3, k)
       canon_value(v[k], parts, seen)
     end
     for _, k in ipairs(skeys) do
-      parts[#parts + 1] = "\5" .. pack("<s4", k)
+      parts[#parts + 1] = pack("<Bs4", 5, k)
       canon_value(v[k], parts, seen)
     end
   else
@@ -165,6 +165,40 @@ end
 
 function M.doc_bytes()
   return M.canon(M.doc)
+end
+
+-- a cheap 64-bit hash of the doc for the recorder's change detection: canon()
+-- is ~100us (the doc's static config re-serializes every frame otherwise), so
+-- record_frame hashes first and only re-serializes when this moves. Traversal
+-- only — no key sort, no per-value string build (pairs() order is stable within
+-- a run for an unchanged table, which is all equality-vs-last-frame needs).
+-- Integer arithmetic wraps mod 2^64 (Lua 5.4). A 2^-64 collision would mis-skip
+-- a doc change; --verify re-executes + byte-compares state, so a real one fails
+-- the goldens rather than silently corrupting — safe in practice.
+local FNVP = 0x100000001b3
+local function hash_value(v, h)
+  local t = type(v)
+  if t == "number" then
+    if math.type(v) == "integer" then
+      h = (h ~ v) * FNVP
+    else
+      h = (h ~ unpack("<i8", pack("<d", v))) * FNVP
+    end
+  elseif t == "string" then
+    h = (h ~ #v) * FNVP
+    for i = 1, #v do h = (h ~ v:byte(i)) * FNVP end
+  elseif t == "boolean" then
+    h = (h ~ (v and 2 or 1)) * FNVP
+  elseif t == "table" then
+    for k, vv in pairs(v) do h = hash_value(vv, hash_value(k, h)) end
+  elseif v == nil then
+    h = (h ~ 7) * FNVP
+  end
+  return h
+end
+
+function M.doc_hash()
+  return hash_value(M.doc, 0xcbf29ce484222325)
 end
 
 -- ---- snapshots ----

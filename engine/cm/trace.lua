@@ -366,6 +366,7 @@ local function ring_init(R)
                        size = b.size }
   end
   R.prev_doc = state.doc_bytes()
+  R.prev_doc_hash = state.doc_hash()
   R.prev_edoc, R.prev_edrev = "", nil
   R.prev_edoc = ed_canon(R) or ""
   R.last_frame = state.frame()
@@ -489,12 +490,23 @@ function M.record_frame(input_record, evals)
   for _, r in ipairs(recs) do
     parts[#parts + 1] = pack("<s4I1s4", r.name, r.kind, r.payload)
   end
-  local doc = state.doc_bytes()
-  if doc == R.prev_doc then
+  -- record the doc only when it CHANGED. Re-canon() every frame dominated the
+  -- recorder (~100us — the doc's static config re-serializes otherwise), so
+  -- hash first (a cheap traversal) and canon only when it moves. R.prev_doc
+  -- stays current either way (an unchanged hash == an unchanged doc), so the
+  -- keyframe capture that reads R.prev_doc is still correct.
+  local dh = state.doc_hash()
+  if dh == R.prev_doc_hash then
     parts[#parts + 1] = "\0"
   else
-    parts[#parts + 1] = "\1" .. pack("<s4", doc)
-    R.prev_doc = doc
+    local doc = state.doc_bytes()
+    if doc == R.prev_doc then
+      parts[#parts + 1] = "\0"
+    else
+      parts[#parts + 1] = "\1" .. pack("<s4", doc)
+      R.prev_doc = doc
+    end
+    R.prev_doc_hash = dh
   end
   seg_append(seg, "FRAM", table.concat(parts))
   -- the editor stream (R6a): one EDOC after this frame's FRAM when the
@@ -676,7 +688,7 @@ function M.ring_load(path)
   R.segs = segs
   R.next_id = #segs + 1
   R.last_frame = f0 + frames -- the loaded newest; exits rewind to rebase
-  R.prev, R.prev_doc = {}, nil
+  R.prev, R.prev_doc, R.prev_doc_hash = {}, nil, nil
   M._R = R
   pal.log(("[trace] replay loaded: %s (%d frames)"):format(path, frames))
   return f0, f0 + frames
@@ -855,6 +867,7 @@ function M.rewind(f)
     R.prev[name] = { mirror = m, size = #b }
   end
   R.prev_doc = st.doct
+  R.prev_doc_hash = nil -- force a re-hash + compare on the next recorded frame
   R.prev_edoc = st.edoc or "" -- rebase the editor stream at f (R6c);
   R.prev_edrev = nil -- force a re-check on the next recorded frame
   R.last_frame = f
