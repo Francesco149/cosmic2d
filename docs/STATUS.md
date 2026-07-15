@@ -26,6 +26,21 @@ every change is editor/render/dev or bypasses at its default). PAL C is
   seam is sub-pixel CAMERA crawl. `gfx.pixel_snap(true)` rounds each layer's
   translation to a whole pixel — OFF by default (goldens byte-identical), the
   demo opts in. **Needs the human's eyes** (intermittent, live-only).
+- **PROFILED the sim + optimised the recorder (`<hash-skip>`).** The human's
+  0.3ms-sim/170fps report → they suspected the win32 demo's accumulated session.
+  **Finding: `.ed/history` is 936 MB (5156 segments)** — the rewind stream never
+  resets across sessions (under the 1 GB budget, so not evicting; NOT the
+  per-frame cost though — a fresh run is already 0.28ms). The **sim breakdown**:
+  game 42µs + AUDIO (snd_render) ~88µs + **RECORDER ~145µs**. The recorder's
+  bulk was `state.doc_bytes()` — canon()ing the whole doc EVERY frame to detect
+  a change, and the demo's ~60 static feel-knobs re-serialized every frame
+  (~100µs, GC-growing). Fixed: record_frame now `doc_hash()`es first + canons
+  only when it moves → recorder **145 → ~105µs** (byte-exact; goldens --verify
+  re-execute + compare, ALL GREEN). Audio (88µs) is inherent to R9. **Open:
+  the 170fps cap is a TOTAL-frame (draw/present) thing — 0.3ms sim can't fill a
+  5.9ms frame; at 240fps the 60Hz sim lands on 1/4 of frames, so a heavy sim
+  frame tips over the vsync deadline IF the draw is already near it. Need the
+  human's DRAW number + a re-stage (win32 is pre-batch) to confirm live.**
 - **GC tuning for the sim spikes (`de33132` → `<tuned>`).** Root-caused: the
   always-on ring recorder churns garbage every frame → periodic MAJOR
   collections (grow over a session, gone on a fresh run). First went
