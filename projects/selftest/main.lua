@@ -3501,6 +3501,25 @@ local function t_ins()
         "ins: fm doc round-trips")
   check(ins.encode(d2) == bytes, "ins: canonical encode")
 
+  -- Instrument source publication is atomic. An interrupted replacement
+  -- leaves the previous valid generation intact; retry publishes all CINS
+  -- bytes, including embedded sample data.
+  local savepath = (os.getenv("TMPDIR") or "/tmp")
+                   .. "/cosmic_selftest_atomic.ins"
+  check(ins.save(d2, savepath) == true, "ins save: seed generation")
+  local saved = pal.read_file(savepath)
+  local newer = ins.decode(bytes)
+  newer.name = "newer"
+  newer.patch.ops[2].coarse = 9
+  local sok, serr = ins.save(newer, savepath, { _fail = "rename" })
+  check(not sok and serr:find("write instrument failed")
+        and pal.read_file(savepath) == saved,
+        "ins save: failed replacement preserves previous source")
+  check(ins.save(newer, savepath) == true
+        and ins.decode(pal.read_file(savepath)).patch.ops[2].coarse == 9,
+        "ins save: retry publishes complete source")
+  pal.x_remove(savepath)
+
   local sdoc = { name = "crunch", pcm = string.pack("<i2i2i2", 5, -9, 7),
                  patch = { type = "sample", root = 60, loop = false,
                            a = 1, r = 10, s = 255 } }
@@ -4506,6 +4525,38 @@ local function t_ed_synth()
   -- axis; fx=0 pins to 0 (instant); and the DRAW (ms->fx) and DRAG
   -- (fx->ms) are exact inverses so a handle never jumps on grab.
   local W = cm.require("cm.ed.win.synth")
+  local ins = cm.require("cm.ins")
+
+  -- The real synth-window save path preserves the last valid source and the
+  -- newer working instrument when atomic publication fails.
+  local root = tmproot() .. "/cosmic_selftest_ed_ins_save"
+  pal.mkdir(root)
+  local path = "atomic.ins"
+  local diskbytes = ins.encode(ins.fresh("disk"))
+  pal.write_file(root .. "/" .. path, diskbytes)
+  local summoned = false
+  local ed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+               touch = function() end,
+               summon_console = function() summoned = true end }
+  local win = { path = path }
+  local _, p = W.open_win(win, ed)
+  p.doc.name = "unsaved"
+  p.doc.patch.gain = 207
+  p._save_fail = { _fail = "rename" }
+  W.save(win, ed)
+  check(pal.read_file(root .. "/" .. path) == diskbytes,
+        "ed.synth save: failure preserves previous instrument")
+  check(W.dirty(win, ed) and p.doc.name == "unsaved"
+        and p.doc.patch.gain == 207,
+        "ed.synth save: failure retains dirty working bytes")
+  check(summoned, "ed.synth save: failure summons the console")
+  p._save_fail = nil
+  W.save(win, ed)
+  local published = ins.decode(pal.read_file(root .. "/" .. path))
+  check(not W.dirty(win, ed) and published.name == "unsaved"
+        and published.patch.gain == 207,
+        "ed.synth save: retry publishes complete source")
+
   check(W.env_fx_to_ms(0, 2000) == 0, "ed.synth: fx 0 = 0 ms (instant)")
   check(W.env_fx_to_ms(1, 2000) == 2000, "ed.synth: fx 1 = max ms")
   -- log front-loading: the axis midpoint is FAR below the linear 1000 ms

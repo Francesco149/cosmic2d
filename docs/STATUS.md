@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic `.pal` saves complete (2026-07-15)
+## Current handoff — A1 atomic `.ins` saves complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -110,9 +110,18 @@ failure, and summons the editor console; retry publishes a complete decodable
 generation and clears dirty state. `nix run .#test` is ALL GREEN: 23,205
 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** migrate `.ins` instrument source saves to atomic
-replacement with focused injected-failure coverage proving the previous
-instrument survives, dirty working bytes remain, and the editor reports the
-failure. Do not migrate other asset families in the same packet.
+**A1 packet 9 is complete.** `.ins` source saves now use the PAL atomic-write
+primitive through an instrument-specific save API and the real synth-window
+write hook. An injected replacement failure preserves the previous valid CINS
+source byte-for-byte, including its embedded-PCM contract, keeps the newer
+working instrument dirty, emits the named instrument failure, and summons the
+editor console; retry publishes a complete decodable generation and clears
+dirty state. `nix run .#test` is ALL GREEN: 23,212 self-checks, every trace
+verify, and all pixel goldens.
+
+**Exact next packet:** migrate `.song` music source saves to atomic replacement
+with focused injected-failure coverage proving the previous song survives,
+dirty working bytes remain, and the editor reports the failure. Do not migrate
+other asset families in the same packet.
 
 There is no known blocker or human-only verification required.

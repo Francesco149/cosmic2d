@@ -69,6 +69,16 @@ function M.decode(bytes)
   return doc
 end
 
+-- Publish the editable source as one atomic replacement. Instruments embed
+-- sample PCM in their CINS source and have no baked siblings, so one durable
+-- replacement is the complete transaction. `fail` is the focused selftest
+-- seam forwarded to PAL's staged failure injector.
+function M.save(doc, path, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode(doc), fail)
+  if not ok then return nil, "write instrument failed: " .. tostring(err) end
+  return true
+end
+
 -- push a doc into a bank slot. bank = "sim" | "ed"; key names the PCM
 -- buffer for sample instruments (callers pass something stable — the
 -- asset path, a slot id). Returns the patch table it uploaded.
