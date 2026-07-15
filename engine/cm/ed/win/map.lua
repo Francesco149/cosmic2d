@@ -155,7 +155,7 @@ local function decode_into(p, bytes)
     p.doc = nil
     p.err = tostring(doc)
   end
-  p.geom = nil
+  p.geom, p.fill_rects = nil, nil
   p.sel = {}
 end
 
@@ -175,7 +175,7 @@ local A = cm.require("cm.ed.kit").asset {
   fresh = function(ed, path) return fresh_bytes(path) end, -- a new map
   adopt = decode_into,
   encode = map.encode,
-  post_encode = function(p) p.geom = nil end,
+  post_encode = function(p) p.geom, p.fill_rects = nil, nil end,
   after_save = function(ed, path)
     -- the recorded hot-reload (MAPS.md §9): the running game re-instances
     -- the saved map at the start of the next sim frame; traces replay it
@@ -1442,37 +1442,57 @@ local function draw_layer_panel(win, ed, p, doc, x0, y0, pw, ph, z, fpx, ctx)
   end
 end
 
--- the graybox strip fill inside the window (screen coords; the same
--- column/interval math as the game render — cm.map.geom + column_ivs)
-local function draw_fill(p, view, X0, X1, Y0s, Y1s)
-  local geom = p.geom
-  local zoom, ox, oy = view.zoom, view.ox, view.oy
+-- the graybox strip fill's rects, in MAP coords: contiguous columns with the
+-- same solid-interval signature collapse into one {x,y,w,h}. Computed ONCE over
+-- the whole map (the collider geometry is view-independent + changes only on an
+-- edit), then cached on p.fill_rects. Was recomputed every frame — a column_ivs
+-- walk + a table.concat signature string PER SCREEN PIXEL — the ~2.3ms map-draw
+-- hotspot (the human's editor-fps regression).
+local function compute_fill_rects(geom, w)
+  local out = {}
   local scratch = {}
-  local run_x, run_sig, run_ivs
+  local run_x, run_ivs
   local function flush(xe)
     if not run_ivs then return end
     for j = 1, #run_ivs, 2 do
-      local a, b = run_ivs[j], run_ivs[j + 1]
-      local sy0, sy1 = oy + a * zoom, oy + b * zoom
-      if sy1 > Y0s and sy0 < Y1s then
-        pal.x_ig_rect_fill(ox + run_x * zoom, sy0, (xe - run_x) * zoom,
-                           sy1 - sy0, COL.fill)
-        pal.x_ig_rect_fill(ox + run_x * zoom, sy0, (xe - run_x) * zoom,
-                           math.max(1, zoom), COL.lip)
+      out[#out + 1] = { run_x, run_ivs[j], xe - run_x,
+                        run_ivs[j + 1] - run_ivs[j] }
+    end
+  end
+  local function same(a, b)
+    if not b or #a ~= #b then return false end
+    for k = 1, #a do if a[k] ~= b[k] then return false end end
+    return true
+  end
+  for cx = 0, w - 1 do
+    local ivs = map.column_ivs(geom.loops, cx + 0.5, scratch)
+    if not same(ivs, run_ivs) then
+      flush(cx)
+      local c = {} -- copy: scratch is reused next column
+      for k = 1, #ivs do c[k] = ivs[k] end
+      run_x, run_ivs = cx, c
+    end
+  end
+  flush(w)
+  return out
+end
+
+-- draw the cached fill rects (screen coords, culled to the visible canvas)
+local function draw_fill(p, view, X0, X1, Y0s, Y1s, w)
+  p.fill_rects = p.fill_rects or compute_fill_rects(p.geom, w)
+  local zoom, ox, oy = view.zoom, view.ox, view.oy
+  local lip = math.max(1, zoom)
+  for _, r in ipairs(p.fill_rects) do
+    if r[1] < X1 and r[1] + r[3] > X0 then -- horizontal cull (map px)
+      local sy0 = oy + r[2] * zoom
+      local sh = r[4] * zoom
+      if sy0 + sh > Y0s and sy0 < Y1s then -- vertical cull (screen px)
+        local sx0, sw = ox + r[1] * zoom, r[3] * zoom
+        pal.x_ig_rect_fill(sx0, sy0, sw, sh, COL.fill)
+        pal.x_ig_rect_fill(sx0, sy0, sw, lip, COL.lip)
       end
     end
   end
-  -- sample at most one column per screen px (zoomed out maps stay cheap)
-  local step = math.max(1, math.floor(1 / zoom + 0.5))
-  for cx = X0, X1 - 1, step do
-    local ivs = map.column_ivs(geom.loops, cx + 0.5, scratch)
-    local sig = table.concat(ivs, ",")
-    if sig ~= run_sig then
-      flush(cx)
-      run_x, run_sig, run_ivs = cx, sig, ivs
-    end
-  end
-  flush(X1)
 end
 
 local function draw_gizmos(p, view, sel, tool, csel, asel)
@@ -1645,7 +1665,7 @@ function M.draw(win, ctx)
   local X0 = math.max(0, math.floor(s2mx(cvx)))
   local X1 = math.min(doc.w, math.ceil(s2mx(cvx + cvw)))
   if win.fill and X1 > X0 then
-    draw_fill(p, view, X0, X1, cvy, cvy + cvh)
+    draw_fill(p, view, X0, X1, cvy, cvy + cvh, doc.w)
     -- one-way slabs + open solid strokes (screen-space lines read the same)
     for _, s in ipairs(p.geom.slabs) do
       pal.x_ig_line(ox + s[1] * zoom, oy + s[2] * zoom,
