@@ -56,10 +56,15 @@ line grammar (drag vs click,click, shift+click extend), ctrl+g grouping +
 drill-in; (2) the ? button on each window + the rendered reader (link nav,
 ctrl+click, back/fwd); (3) the demo's sprite-only look (the backdrop
 shares the ground's checker tileset so it blends — **art-direct it**: a
-distinct backdrop tile/tint, or hand-place decor). **cosmic2d-win NOT yet
-re-staged** — PAL C is unchanged (all Lua + a codec bump), so a Lua-bundle
-re-stage suffices when the human wants it. Good `/clear` point — everything
-committed, tree clean, docs current.
+distinct backdrop tile/tint, or hand-place decor). **cosmic2d-win
+RE-STAGED + native-verified** (the human asked): native selftest **23106
+PASS** == linux, the 830-frame kitcheck **verify-PASSES byte-exact** on
+win32 (the PLCE v3 / MRKR v2 codec bump + res_asset are bit-identical
+cross-platform), the demo's sprite-only visuals render clean natively; the
+windows-side .ed sessions were wiped as ever. The human runs
+`bin\cosmic.exe projects\demo --edit` (or `projects\smoke --edit`) from
+`cosmic2d-win`. Good `/clear` point — everything committed, tree clean,
+docs current.
 
 ---
 
