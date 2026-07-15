@@ -104,76 +104,17 @@ M.launch = launch -- scripted driving (proofs, keyboard flows later)
 
 -- ---- new project (G5): scaffold + open in the editor ----
 
-local PROJECT_TMPL = [==[
--- a fresh cosmic2d project. Tweak these; the picker + packager read them.
-return {
-  name = "__NAME__",
-  internal_w = 480,
-  internal_h = 270,
-  window_scale = 2,
-  entry = "main.lua",
-  author = "",
-  version = "0.1",
-  description = "",
-}
-]==]
-
-local MAIN_TMPL = [==[
--- __NAME__ — a fresh project. Edit me while the game runs (hot reload)!
--- The engine calls init() once, then step() + draw() every frame (60Hz).
--- Spawn editor windows with right-click on the canvas (--edit).
-
-local state = cm.require("cm.state")
-local input = cm.require("cm.input")
-local text = cm.require("cm.text")
-local m = cm.require("cm.math")
-
-local W, H = pal.gfx_size()
-local game = {}
-
-function game.init()
-  input.map({
-    { "left", input.key.left }, { "right", input.key.right },
-    { "jump", input.key.space },
-  })
-  local d = state.doc
-  d.x = d.x or W / 2
-  d.y = d.y or H - 24
-  d.vy = d.vy or 0
-end
-
-function game.step()
-  local d = state.doc
-  if input.down("left") then d.x = d.x - 2 end
-  if input.down("right") then d.x = d.x + 2 end
-  if input.pressed("jump") and d.y >= H - 24 then d.vy = -5.2 end
-  d.vy = d.vy + 0.3
-  d.y = m.min(H - 24, d.y + d.vy)
-  if d.y >= H - 24 then d.vy = 0 end
-  d.x = m.clamp(d.x, 0, W - 16)
-end
-
-function game.draw()
-  pal.begin_frame(0.13, 0.15, 0.22, 1)
-  pal.quad(0, H - 8, W, 8, 0.30, 0.40, 0.36, 1)          -- the floor
-  local d = state.doc
-  pal.quad(d.x, d.y - 16, 16, 16, 0.95, 0.75, 0.42, 1)   -- you
-  text.draw(6, 6, "hello from __NAME__ — arrows + space. edit main.lua!",
-            { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
-end
-
-return game
-]==]
-
 local function scaffold()
   local words = cm.require("cm.words")
   local name = words.unique(function(nm)
     return pal.read_file("projects/" .. nm .. "/project.lua") ~= nil
   end)
   local dir = "projects/" .. name
-  pal.mkdir(dir)
-  pal.write_file(dir .. "/project.lua", (PROJECT_TMPL:gsub("__NAME__", name)))
-  pal.write_file(dir .. "/main.lua", (MAIN_TMPL:gsub("__NAME__", name)))
+  local ok, err = cm.require("cm.project").scaffold(dir, name)
+  if not ok then
+    pal.log("[picker] CREATE FAILED: " .. tostring(err))
+    return nil, err
+  end
   M.scan = nil
   pal.log("[picker] new project " .. dir)
   launch(dir, "edit")
@@ -244,15 +185,13 @@ function M.draw()
                    and i.wy >= ry and i.wy < ry + rs
       pal.x_ig_text(rx + 5, ry + 1, 12, rhov and C.text or C.dim, "x", 0)
       if rhov and i.clicked[1] then
-        local rec = pal.read_file(".recent.dat") or ""
-        local out = {}
-        for line in rec:gmatch("[^\n]+") do
-          if norm(line) ~= t.path then out[#out + 1] = norm(line) end
+        local ok, err = cm.require("cm.recent").remove(t.path)
+        if ok then
+          M.scan = nil
+          pal.log("[picker] pruned " .. t.path)
+        else
+          pal.log("[picker] PRUNE FAILED: " .. tostring(err))
         end
-        pal.write_file(".recent.dat",
-                       table.concat(out, "\n") .. (#out > 0 and "\n" or ""))
-        M.scan = nil
-        pal.log("[picker] pruned " .. t.path)
       end
     end
     if t.ok then

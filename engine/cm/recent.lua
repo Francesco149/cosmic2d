@@ -22,4 +22,13 @@ function M.note(path, fail)
   return pal.write_file_atomic(M.path, table.concat(lines, "\n"), fail)
 end
 
+function M.remove(path, fail)
+  local lines = {}
+  local old = pal.read_file(M.path) or ""
+  for line in old:gmatch("[^\n]+") do
+    if line ~= path then lines[#lines + 1] = line end
+  end
+  return pal.write_file_atomic(M.path, table.concat(lines, "\n"), fail)
+end
+
 return M

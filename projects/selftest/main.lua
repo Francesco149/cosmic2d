@@ -2597,6 +2597,63 @@ local function t_atomic_write()
   check(ok == nil and type(err) == "string" and err:find("open", 1, true),
         "atomic: natural open failure is actionable")
   pal.x_remove(path)
+
+  -- Standalone compatibility sidecar helpers use the same replacement seam.
+  local anim = cm.require("cm.anim")
+  local ap = tmproot() .. "/cosmic_selftest_sidecar.anim"
+  pal.write_file(ap, "known-good-animation")
+  ok, err = anim.save(ap, {}, { _fail = "rename" })
+  check(not ok and err:find(ap, 1, true) and pal.read_file(ap) == "known-good-animation",
+        "anim sidecar: failed replacement preserves prior bytes and names path")
+  check(anim.save(ap, {}) == true and anim.load(ap) ~= nil,
+        "anim sidecar: retry publishes decodable bytes")
+  pal.x_remove(ap)
+
+  local sprite = cm.require("cm.sprite")
+  local mp = tmproot() .. "/cosmic_selftest_sidecar.meta"
+  pal.write_file(mp, "known-good-metadata")
+  local sd = sprite.new(2, 2)
+  ok, err = sprite.save_meta(mp, sd, { _fail = "rename" })
+  check(not ok and err:find(mp, 1, true) and pal.read_file(mp) == "known-good-metadata",
+        "sprite metadata: failed replacement preserves prior bytes and names path")
+  check(sprite.save_meta(mp, sd) == true and sprite.load_meta(mp) ~= nil,
+        "sprite metadata: retry publishes decodable bytes")
+  pal.x_remove(mp)
+
+  -- A scaffold publishes project.lua last and rolls back all earlier files.
+  local project = cm.require("cm.project")
+  local dir = tmproot() .. "/cosmic_selftest_scaffold"
+  pal.x_remove(dir .. "/project.lua")
+  pal.x_remove(dir .. "/main.lua")
+  pal.x_remove(dir)
+  ok, err = project.scaffold(dir, "test-project", { main = { _fail = "rename" } })
+  check(not ok and err:find("main.lua", 1, true)
+        and not pal.read_file(dir .. "/main.lua") and not pal.read_file(dir .. "/project.lua"),
+        "project scaffold: source failure leaves no partial project")
+  ok, err = project.scaffold(dir, "test-project", { meta = { _fail = "rename" } })
+  check(not ok and err:find("project.lua", 1, true)
+        and not pal.read_file(dir .. "/main.lua") and not pal.read_file(dir .. "/project.lua"),
+        "project scaffold: authority failure rolls back source")
+  check(project.scaffold(dir, "test-project") == true
+        and pal.read_file(dir .. "/main.lua")
+        and pal.read_file(dir .. "/project.lua"):find('name = "test%-project"'),
+        "project scaffold: success publishes a complete discoverable project")
+  pal.x_remove(dir .. "/project.lua")
+  pal.x_remove(dir .. "/main.lua")
+  pal.x_remove(dir)
+
+  local recent = cm.require("cm.recent")
+  local old_recent = recent.path
+  recent.path = tmproot() .. "/cosmic_selftest_remove_recent.dat"
+  pal.write_file(recent.path, "keep\nremove\nalso-keep")
+  ok, err = recent.remove("remove", { _fail = "rename" })
+  check(not ok and pal.read_file(recent.path) == "keep\nremove\nalso-keep",
+        "recent prune: failed replacement preserves prior list")
+  check(recent.remove("remove") == true
+        and pal.read_file(recent.path) == "keep\nalso-keep",
+        "recent prune: retry publishes filtered list")
+  pal.x_remove(recent.path)
+  recent.path = old_recent
 end
 
 local function t_ring_spill()

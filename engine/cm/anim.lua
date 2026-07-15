@@ -127,9 +127,12 @@ function M.decode(bytes)
 end
 
 -- write / read the .anim sidecar (dev/asset class: boot-time-or-explicit, never
--- sim input — the same rule as knobs.dat / map.dat). save returns true / nil.
-function M.save(path, clips)
-  return pal.write_file(path, M.encode(clips)) and true or nil
+-- sim input — the same rule as knobs.dat / map.dat). Atomic replacement keeps
+-- a compatibility caller from truncating the last usable sidecar.
+function M.save(path, clips, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode(clips), fail)
+  if not ok then return nil, "write animation sidecar " .. path .. " failed: " .. tostring(err) end
+  return true
 end
 
 function M.load(path)

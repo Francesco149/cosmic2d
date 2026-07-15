@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic options/snapshots complete (2026-07-16)
+## Current handoff — A1 durability complete (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -167,9 +167,22 @@ compatibility sidecar helpers, and the current picker's project-creation paths
 outside the atomic primitive. `nix run .#test` is ALL GREEN: 23,255
 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** finish the A1 write-site audit by making compatibility
-sidecar helpers and picker recents/project scaffolding fail safely, with
-focused partial-project and replacement-failure coverage. Intentional journal
-appends retain their checkpoint recovery design; player storage belongs to A4.
+**A1 packet 15 is complete, closing A1.** Standalone `.anim` and `.meta`
+compatibility sidecar helpers now replace atomically and return errors naming
+their target. Picker recents pruning uses the shared atomic recents API.
+Project scaffolding moved to `cm.project`: it atomically publishes `main.lua`
+first and the discoverability/authority file `project.lua` last, rolling back
+all earlier output on either failure and never launching a partial project.
+Injected rename failures prove prior sidecars and recents survive byte-for-byte,
+both scaffold boundaries leave no partial project, and retries publish complete
+decodable/discoverable results. The final write-site audit leaves only designed
+journal appends, explicit user-requested screenshots, test/bootstrap fixture
+writes, and player storage reserved for A4. `nix run .#test` is ALL GREEN:
+23,264 self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** begin A2 with a dev/test, editor-release, and
+default-play manifest split plus a clean picker fixture. Prove release manifests
+exclude `selftest`, `smoke`, `igcanvas`, and `uigallery` while retaining the
+intentional bundled demos and editable engine/tooling contract.
 
 There is no known blocker or human-only verification required.

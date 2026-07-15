@@ -785,8 +785,10 @@ function M.decode_meta(bytes)
                      y = math.floor(tonumber(p.y) or 0) }, slices = slices }
 end
 
-function M.save_meta(path, doc)
-  return pal.write_file(path, M.encode_meta(doc)) and true or nil
+function M.save_meta(path, doc, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode_meta(doc), fail)
+  if not ok then return nil, "write sprite metadata " .. path .. " failed: " .. tostring(err) end
+  return true
 end
 
 -- the game's read path (render-only, like anim.load): nil on any failure.

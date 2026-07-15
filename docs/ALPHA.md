@@ -87,7 +87,7 @@ links resolve; historical docs cannot be mistaken for active work.
 
 Goal: power loss, disk-full, or a damaged cache cannot silently destroy work.
 
-- [ ] Add an atomic write primitive (same-directory temp, flush/close, rename)
+- [x] Add an atomic write primitive (same-directory temp, flush/close, rename)
   and use it for project metadata, assets, editor sessions, journals, options,
   recents, traces, and player saves.
 - [x] Make multi-output assets transactional (`.spr` source plus baked
@@ -95,7 +95,7 @@ Goal: power loss, disk-full, or a damaged cache cannot silently destroy work.
 - [x] Keep and recover from last-known-good session/journal metadata.
 - [x] Define `.ed` cache ownership, compatibility/version behavior, and safe
   clear/rebuild operations.
-- [ ] Add disk-full/interrupted/corrupt-file tests at the persistence seams.
+- [x] Add disk-full/interrupted/corrupt-file tests at the persistence seams.
 
 Exit: injected failures never replace a valid file with a partial file; the UI
 explains recovery; source and baked assets cannot claim a false successful save.
