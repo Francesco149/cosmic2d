@@ -4,8 +4,9 @@ Welcome to **cosmic2d** — a tiny 2D pixel-art engine and fantasy console.
 One folder holds the engine, its editor, and your games. Make a game with
 the built-in editor, share it by zipping a folder.
 
-This help opens shipped docs in the code editor. Ctrl+click a link below to
-follow it; the header arrows (or mouse back/forward) walk your history.
+This is a rendered doc reader. Click a link to follow it in place
+(ctrl+click opens it in a new reader); the header arrows — or the mouse
+back/forward buttons — walk your history. `src` opens the raw markdown.
 
 ## Run something
 
