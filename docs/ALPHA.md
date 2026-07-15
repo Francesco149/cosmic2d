@@ -112,7 +112,8 @@ Goal: artifacts work on clean supported machines exactly as advertised.
   tarball) that has no Nix-store runtime dependency.
 - [x] Ship Windows GUI-subsystem launchers; retain a separate console/headless
   executable for diagnostics and CI.
-- [ ] Add icons, version resources, crash-log location, licenses/notices, and
+- [ ] Add icons, version resources, a documented crash-log/report location and
+  stable project/history-stream/frame envelope for A7, licenses/notices, and
   artifact checksums. Decide signing expectations for an unsigned alpha.
 - [ ] Test extract-and-run in clean Windows and Linux VMs/containers, including
   paths with spaces/non-ASCII and read-only install locations.
@@ -205,19 +206,45 @@ gamepad, editable end to end, export cleanly, and are readable starter sources.
 
 Goal: turn the existing mechanics into a flagship debugging and recording tool.
 
-- [ ] Pannable/zoomable roughly ten-minute timeline with frame sample previews,
-  current/live markers, input/code/error/restart events, and responsive seeking.
+- [ ] Replace the hover slider with a persistent full-width timeline tray:
+  default to the ten minutes ending at live, wheel-zoom at cursor,
+  middle-drag pan, frame-level near zoom, and full-history far zoom.
+- [ ] Capture/display roughly one presented-frame thumbnail per minute and a
+  log-scaled max-per-pixel state-activity envelope, split into sim, editor, and
+  project-file/asset deltas so one-frame significant events survive zoom-out.
+- [ ] Show current/live/retention markers plus input transitions, code epochs,
+  asset saves/imports, restarts/session boundaries, errors, and crashes without
+  requiring state reconstruction to draw the timeline.
 - [ ] Visible disk budget/use, retention controls, pause/clear, and recovery
-  behavior; long sessions remain bounded and understandable.
-- [ ] Mark in/out and clip moments; name and export replay clips with needed
-  code/assets/metadata or an explicitly versioned dependency contract.
-- [ ] Load/browse replay files from picker/editor, with compatibility errors
-  that explain what is missing.
+  behavior across state, thumbnails, audio, and deduplicated project blobs;
+  long sessions remain bounded and understandable.
+- [ ] Implement the exact scrub grammar: click seeks; left-drag selects an
+  inclusive A/B range and loops it; Esc clears the loop/clip mode; Esc again
+  closes rewind immediately. Active clip/export and dropped-replay modes cannot
+  disappear through hover timeout, F4, or outside clicks.
+- [ ] Give live history, replay files, and crash-focused views immutable
+  timeline sources. Dragging a replay into any editor view opens/fits/loops it;
+  dismissing it restores the untouched live ring and present rather than
+  adopting the replay's future.
+- [ ] Generalize the history store and additive `.ctrace` packaging around the
+  same segment + content-addressed project-blob model. A new clip is standalone:
+  exact A state through inclusive B, editor state, code, **all project source
+  and assets**, file epochs, events, previews, metadata, and captured audio when
+  available. Legacy traces remain readable and clearly dependency-bound.
+- [ ] Export a selected clip atomically to a timestamped file in `replays/`
+  beside `engine/`, then reveal/select it in Explorer/the platform file manager;
+  offer an actionable writable-location path when the engine root is read-only.
+- [ ] Make structured crash reports locate an exact history stream/frame. A
+  drop opens and loops up to one minute before the crash, preferring an embedded
+  tail and otherwise resolving local retained history; evicted/missing tails
+  explain the failed identity instead of guessing by time.
 - [ ] Export recording-friendly image/video/frame/audio paths only after the
   replay artifact is stable; avoid embedding a full video editor.
 
-Exit: a user can find a moment in ten minutes of history, replay it, clip it,
-save it, reload it in a fresh process, and understand storage use.
+Exit: a user can spot a high-activity moment in ten minutes of history, seek or
+A/B-loop it, export it, drag the standalone replay into a fresh editor and poke
+around its bundled project, dismiss back to the untouched live session, and
+reach the preceding minute from a crash report while understanding storage use.
 
 ### A8 — documentation, accessibility, and release candidate
 

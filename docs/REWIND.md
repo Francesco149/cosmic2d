@@ -1,12 +1,11 @@
-# rewind — the R6 design (D053)
+# rewind — R6 mechanics and the A7 product timeline (D053/D065)
 
-> The REVAMP §3.3/§6 design doc for **R6 — rewind**, the flagship engine
-> feature: a disk-streamed ~1 GB state history of the WHOLE engine —
-> sim *and* editor — browsable frame by frame, interactive but ephemeral
-> (D046 §7b), with resume-from-frame and asset bring-back. Extends the
-> M5/D032 machinery (cm.trace's segment ring + cm.scrub's park-and-render
-> model); the R3/R4 editor state model (D050/D051) was built so this doc
-> could be written. Binding ADR: **D053**.
+> Sections 1–9 describe the **built R6 mechanics**: a disk-streamed ~1 GB
+> state history of the WHOLE engine — sim *and* editor — browsable frame by
+> frame, interactive but ephemeral (D046 §7b), with resume-from-frame and
+> asset bring-back. Sections 10–16 specify the **planned A7 product surface**:
+> the full timeline, A/B loops, standalone replay clips, and crash handoff
+> requested on 2026-07-16. Binding ADRs: **D053** and **D065**.
 
 ## 1. What exists (and is kept verbatim)
 
@@ -134,7 +133,7 @@ closed since — non-problems by construction, exactly as D046 predicted.
 File-level epochs (assets never opened in any window) are out of scope:
 the journals already cover every asset the editor ever touched.
 
-## 6. The UI (the pill)
+## 6. The built R6 UI (the pill)
 
 - The reserved top-right corner (D050 §3) gets the **rewind pill**:
   the retained span ("42 min") + a dot while recording. Hover (or `F4`
@@ -149,6 +148,10 @@ the journals already cover every asset the editor ever touched.
 - Play-mode sessions (no shell) keep the legacy F4 scrubber unchanged;
   it still owns the non-editor story until it re-hosts someday.
 
+This compact hover bar proved the park/reconstruct mechanics. It is not the
+final product UI: A7 replaces the hover-only bar with the persistent timeline
+tray in §10 while retaining the pill as its collapsed entrance.
+
 ## 7. Determinism / goldens stance
 
 Everything here is an observer: capture reads state after the fact,
@@ -158,7 +161,7 @@ action is resume (`trace.rewind`), which already exists and already
 carries the restore contract. No golden regenerates for R6 — pinned by
 running the suite unchanged.
 
-## 8. Module plan + build order
+## 8. R6 module plan + build order (built)
 
 - **R6a — the editor stream**: EDOC in ring segments + keyframes,
   doc_rev gating, ring_state_at returns `edoc`; KATs (rev gate, ring
@@ -195,7 +198,181 @@ running the suite unchanged.
   The rev gate bounds frequency, not size; if soaks show pain, the
   escape hatch is delta-ing the ed canon like buffers (kind 2 = delta,
   format has room).
-- **Replay files** — exported .ctrace with EDOC replays the editor too
-  (nice); but ring_load of a foreign trace into a live editor session
-  must stash exactly like parking does. R6c covers it or ring_load
-  refuses under the shell (decide in build).
+- **Replay files (current limitation)** — exported `.ctrace` with EDOC can
+  replay the editor, but `ring_load` replaces the live ring and exiting adopts
+  the replay. A7 must not build its viewer on that destructive path; §13 gives
+  live history and foreign replay files separate immutable sources.
+
+## 10. A7 surface: one real timeline tray
+
+The rewind pill remains in the top-right corner, but clicking it (or `F4`)
+opens a proper full-width timeline tray rather than a 58 px hover slider. It
+stays open while the session is parked; it never disappears on a hover timeout
+while the user is seeking, selecting, viewing a replay, or investigating a
+crash.
+
+The tray has four aligned lanes over one time axis:
+
+1. **Preview filmstrip.** Capture a small thumbnail of the presented frame
+   approximately every 60 seconds. The default ten-minute viewport therefore
+   shows about ten useful landmarks. At wider zooms the renderer decimates
+   samples to avoid overlap; it never manufactures a preview by re-running the
+   sim. A thumbnail is navigation media, not state truth.
+2. **Activity envelope.** Per-frame state activity is indexed when recording
+   and drawn log-scaled. Each screen column uses the maximum in its frame bin,
+   not the average, so a one-frame spike remains visible when zoomed out.
+   Sim-state, editor-state, and project-file/asset changes use separate stacked
+   colors; a tooltip gives exact changed-byte counts. This visualizes actual
+   logical delta magnitude rather than total snapshot size.
+3. **Event lane.** Code epochs, asset saves/imports, input transitions,
+   restarts/session boundaries, contained errors, and crash boundaries get
+   named markers. Large unexplained activity remains visible even without a
+   marker — the activity lane is the honest fallback.
+4. **Ruler and transport.** The playhead, live edge, retained/evicted edge,
+   A/B handles, frame/time readout, play/step controls, storage use, and clip
+   export live here. Panning away from the present exposes a clear “back to
+   live” affordance rather than silently snapping the view.
+
+Timeline navigation follows the editor grammar: **wheel zooms at the cursor**,
+**middle-drag pans**, and the initial camera ends at live while showing roughly
+ten minutes (or all retained history when shorter). Zoom reaches frame-level
+inspection at the near end and the full retained stream at the far end.
+Seeking remains bounded by the existing one-second segment keyframes and decode
+LRU; preview/activity queries use indexes and must not decode frame state.
+
+## 11. Exact pointer grammar and persistence
+
+- **Left click → seek.** A press/release that stays inside the normal drag
+  threshold parks on that frame. Seeking never changes the timeline.
+- **Left drag → select A/B.** Crossing the drag threshold creates an ordered,
+  inclusive range regardless of drag direction. On release it immediately
+  plays A→B and wraps to A until dismissed. Handles can refine either edge;
+  dragging an empty point starts a new range.
+- **Esc is deliberately layered.** With an A/B range active, the first Esc
+  stops the loop and clears the range but leaves rewind open at the current
+  frame. A second Esc closes rewind immediately and restores the stashed live
+  present. F4, outside clicks, and pill collapse cannot bypass the first step.
+- **A loaded replay is persistent.** Dropping a replay onto any editor view
+  opens it, fits its exported interval, and activates its A/B loop. The first
+  Esc clears that loop; the next exits the replay source, restores the untouched
+  live source/present, and resumes recording. It never adopts the replay as the
+  user's live future merely because the viewer closed.
+
+“Clip mode” means an A/B selection is active. Playback, export controls, and
+the timeline remain available, but the tray cannot be dismissed until Esc has
+explicitly cleared the selection. Export progress likewise has an explicit
+cancel/complete state; closing the tray cannot orphan a half-published file.
+
+## 12. Activity and preview records
+
+The recorder already sees every FRAM/EDOC delta. A7 adds observer-only summary
+data to each segment:
+
+- per frame: changed bytes for named sim buffers, sim doc, editor doc, and
+  project files, plus event bits;
+- multi-resolution max buckets in the segment index for cheap zoomed-out
+  rendering;
+- a `THMB` sample near each minute boundary, encoded after the compositor has
+  produced the frame the user actually saw;
+- optional frame-aligned audio blocks for replay/showcase playback. Legacy
+  traces without them remain viewable and are labelled silent.
+
+These records never enter named buffers or the sim doc and verification ignores
+them. The disk budget counts segments, thumbnails, audio, and uniquely retained
+project blobs. Evicting old segments reference-counts/garbage-collects blobs
+that no retained frame can reach. Preview capture may skip a sample under load;
+it may never stall or alter a sim step to hit an exact timestamp.
+
+## 13. Timeline sources, not destructive ring replacement
+
+The product UI reads an immutable **timeline source** interface: range,
+`state_at`, activity buckets, events, previews, and `files_at`. There are three
+source kinds:
+
+- the live disk-backed history (recording is dormant only while parked);
+- a foreign replay artifact;
+- a crash focus, which resolves to either of the above plus a crash marker.
+
+Opening a foreign source stashes the live present and live source object. It
+does not call today's destructive `ring_load`, truncate history, or replace the
+recorder's segment array. Closing restores exactly what was stashed. “Resume
+here” remains available only for the live history source; foreign replay state
+cannot accidentally become project state. Replay code has the same trust
+boundary as opening a project and the UI must say so before executing an
+untrusted bundle.
+
+## 14. One logical history/replay format, self-contained clips
+
+History remains a directory store and a replay remains one `.ctrace` file, but
+they use the same logical records and segment decoder:
+
+- FRAM/EDOC/EPOC/keyframes remain the state timeline and old golden traces stay
+  readable;
+- a content-addressed blob store holds project files without copying unchanged
+  sprites/sounds/code into every segment;
+- each standalone segment keyframe references a complete project manifest;
+  file epochs update that manifest on editor saves/imports and observed external
+  changes;
+- a packed clip carries the complete manifest at A and every file version
+  needed to materialize the complete project through B, plus the selected state
+  segments, editor state, events, thumbnails, metadata, and any captured audio.
+  In other words, it carries **all project source and assets**, not only
+  currently open editor assets or the files draw happened to touch.
+
+Physical packaging stays additive under the existing skip-tolerant CTRC chunk
+container, so legacy `.ctrace` goldens remain dependency-bound but valid. New
+UI exports are standalone. On load, their project tree is materialized/mounted
+as an isolated replay workspace: the normal editor and asset browser can poke
+around it, while the existing parked write wall keeps those experiments
+ephemeral. Compatibility checks name the missing PAL/engine/schema capability
+instead of failing as a generic bad trace.
+
+The live history store uses the same manifests/blobs so **any retained range,
+including an adopted previous-session range, is exportable**. This supersedes
+R6.5's “adopted history has no bundle; keep current code / cannot export”
+limitation. History recorded before the A7 manifest store is visibly marked
+legacy and may be browsed, but cannot claim to produce a standalone exact clip.
+
+An A/B export snapshots the exact state and project manifest at A, includes the
+frames through inclusive B, and records the intended loop bounds as metadata.
+Loading that artifact therefore opens on the same range and starts the same
+loop without changing its contents.
+
+## 15. Export UX
+
+The **Export replay** button exists when A/B is selected. Its zero-config
+destination is `replays/` beside the engine's `engine/` directory, created on
+first use; the default filename includes project, wall-clock export time, and
+clip duration. Publication is atomic. Only after success does the engine reveal
+and select the file in Explorer/the platform file manager (falling back to
+opening the folder). A read-only engine root produces an actionable choose-a-
+writable-folder path rather than silently writing somewhere surprising.
+
+The trace artifact is the recording/showcase master. Direct image sequence,
+video, or separate audio exports come only after this artifact is stable; they
+are consumers of the same A/B source, not a second editing timeline.
+
+## 16. Crash reports as timeline entry points
+
+A crash/error report has a small structured envelope in addition to readable
+logs: project identity, history-stream identity, last fully committed frame,
+the attempted next-frame input/evals when available, code epoch, error kind,
+and traceback/log path. A contained Lua error flushes/pins a one-minute tail;
+for a PAL/native failure, the next launch resolves the newest durable segment
+(the open segment may be missing and the UI says exactly how much tail was
+recovered). Reports may embed that tail or reference the local history; the
+viewer prefers embedded data, then an exact local stream/frame match.
+
+Dropping a crash report onto any editor view opens the resolved timeline, fits
+up to 60 seconds ending at the last committed frame, marks the failed next-frame
+boundary immediately after it, and starts the safe pre-roll as an A/B loop. The
+normal Esc layering applies: first dismiss the loop, second dismiss the crash/
+replay view. If the referenced history was evicted or belongs to another machine
+and no tail is embedded, the UI reports that fact and the identities it tried —
+it never guesses by timestamp.
+
+The crash boundary is honest. A game step that throws may have partially
+mutated live state, so history ends at the last committed frame and records the
+failed attempt as an event; it does not bless partial state as a rewind frame.
+From there the user can inspect, export the pre-roll, or explicitly resume the
+last safe frame and retry.

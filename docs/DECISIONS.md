@@ -2428,3 +2428,69 @@ of working recovery at every boundary.
 project lifecycle/settings UI exists (A3), or split another `.ed` subtree into
 a new ownership class if it can neither be rebuilt nor safely read by its own
 versioned codec.
+
+## D065 — A7 rewind becomes a full timeline and standalone replay system (human spec, 2026-07-16)
+
+**Context.** R6 proved whole-engine capture, disk spill, frame reconstruction,
+editor parking, resume, and asset bring-back, but its hover pill is still a
+thin transport over the entire retained range. The human wants the flagship
+product surface: minute-scale visual landmarks, a zoomable/pannable ten-minute
+view, state-delta activity, A/B clip loops, one-click standalone export, replay
+drag-in, and crash reports that lead straight to the preceding minute. Full
+design: `REWIND.md` §§10–16.
+
+**Decision.**
+
+1. **A persistent timeline tray supersedes the hover bar.** It opens from the
+   pill/F4, defaults to the ten minutes ending at live, wheel-zooms at the
+   cursor, and middle-drag pans. A roughly one-minute presented-frame
+   filmstrip sits above a log-scaled max-per-pixel activity envelope (separate
+   sim/editor/project-file deltas) and explicit code/save/input/restart/error/
+   crash events. Index queries never reconstruct frame state.
+2. **The left-button grammar is click=seek, drag=A/B.** Releasing a drag loops
+   the inclusive range until Esc. Esc first clears clip mode; Esc again closes
+   rewind immediately. A clip/export state cannot be bypassed by F4, hover
+   collapse, or an outside click. Dropped replay files open persistently and
+   use the same two-step Esc hierarchy.
+3. **Foreign viewing gets an immutable timeline-source abstraction.** Live
+   history, a replay, and a crash-focused source share range/state/activity/
+   event/preview/file queries. Loading a replay no longer replaces the live
+   ring or adopts its end on close: the live source/present are stashed and
+   restored untouched. Resume-from-frame is a live-history action only.
+4. **History directory and replay file share one logical segment/blob model.**
+   Additive CTRC chunks preserve every old `.ctrace` and golden. A content-
+   addressed store deduplicates complete project manifests and file epochs;
+   retained segment keyframes reference the manifest that was true there. A
+   new UI-exported clip packs state/editor segments, code, every project source
+   file and asset reachable from A through B, events, previews, metadata, and
+   captured audio when available. It materializes as an isolated replay
+   workspace, so the normal editor/asset browser can poke around under the
+   parked write wall. This supersedes D055's adopted-history limitation: new-
+   format previous-session ranges carry bundle/manifest references and are
+   exportable; pre-A7 history is labelled legacy rather than falsely standalone.
+5. **Export is one atomic, reveal-on-success action.** The default is a
+   timestamped `.ctrace` in engine-root `replays/` (beside `engine/`), then
+   Explorer/the platform file manager opens with the result selected. A
+   read-only root asks for a writable destination. Video/image/audio rendering
+   remains a later consumer of the stable replay artifact, not an embedded
+   video editor.
+6. **Crash reports carry an exact history locator.** The structured envelope
+   names project, history stream, last committed frame, code epoch, error/log,
+   and attempted input/evals when available. A contained error pins/embeds a
+   one-minute tail; a native failure resolves the newest durable tail on next
+   launch. Dropping the report opens and loops the minute before its crash
+   boundary. Missing/evicted history fails by identity, never a timestamp guess.
+   Partial state from a throwing step is not recorded as a valid frame.
+
+**Consequences.** The present R6 ring remains the state codec, but A7 is more
+than drawing a larger slider: it needs summary indexes, preview/media observers,
+project-file epochs, a deduplicated blob budget, non-destructive sources, a
+platform reveal primitive, and a structured crash handoff. The A2 crash-log
+packet should establish the envelope/location now, without prematurely building
+the A7 viewer. All new capture data stays observer-only and is ignored by the
+determinism verifier.
+
+**Revisit.** Thumbnail cadence may become adaptive if one minute is too sparse
+when zoomed in; audio may move to an optional budget class if it materially
+shrinks useful history; a cryptographically signed replay trust model waits
+until sharing untrusted projects becomes a supported promise.

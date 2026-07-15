@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 Windows launch modes complete (2026-07-16)
+## Current handoff — A7 rewind contract captured; A2 packaging continues (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -12,6 +12,20 @@ bundle are working, with the deterministic suite green at the last baseline.
 The project remains an alpha candidate: durability, clean portable releases,
 project/export UX, gamepad/player settings, broader genre proofs, and release
 validation are still explicit gates.
+
+**A7 rewind product design is captured (D065).** The human's requested full
+timeline now has a binding contract in `REWIND.md` §§10–16 and an expanded A7
+gate: a persistent default-ten-minute tray; minute thumbnails; log-scaled
+sim/editor/project state-delta activity; wheel zoom + middle pan; click seek +
+drag A/B loop; two-step Esc persistence; non-destructive replay/crash sources;
+standalone clips containing the exact selected state, code, all project source
+and assets, file epochs, previews/events/audio where available; atomic export
+to engine-root `replays/` followed by Explorer/file-manager reveal; and a crash
+report drop that resolves/loops the preceding minute by stream/frame identity.
+This was a design packet only — the built R6 pill/ring are unchanged and A7
+still executes in roadmap order. The immediately upcoming A2 crash-log work
+must establish the stable report location and project/history locator envelope
+that A7 will consume, without pulling the timeline implementation forward.
 
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
@@ -217,8 +231,9 @@ packages build, and a fresh demo Windows archive contains all three intended
 entrances. `nix run .#test` is ALL GREEN: 23,264 self-checks, every trace
 verify, and all pixel goldens.
 
-**Exact next packet:** add Windows/application icons and version resources,
-define and expose the crash-log location, then carry release notices and
-checksums into the artifacts with an explicit unsigned-alpha policy.
+**Exact next packet:** add Windows/application icons and version resources;
+define and expose the crash-log/report location plus a stable project/history-
+stream/frame envelope for D065; then carry release notices and checksums into
+the artifacts with an explicit unsigned-alpha policy.
 
 There is no known blocker or human-only verification required.

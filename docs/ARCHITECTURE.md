@@ -147,7 +147,9 @@ What this buys:
   frame and calling draw — no re-simulation, so playback works even on a
   machine/driver where determinism would wobble. Traces live inside the
   project folder and travel with the zip (v1 assumes the matching project;
-  embedding assets for fully standalone replays is a later option).
+  embedding assets for fully standalone replays is not built yet). A7/D065
+  specifies the additive, content-addressed standalone exporter without
+  changing this description of today's v1 files.
 - **Time-machine debugging**: the scrubber random-accesses any frame's full
   state for inspection without executing game code.
 - **Determinism oracle**: the golden runner re-simulates the input records
