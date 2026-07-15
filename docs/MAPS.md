@@ -500,3 +500,50 @@ is insertion-ordered), collider buffer canonical.
 6. *(new, resolved at asking)* **Per-placement colliders** confirmed
    the right call; placements gained **optional names** for code
    addressing (§4).
+
+## 13. Layers, asset attachment, refs, animation (as-built, D060, 2026-07-15)
+
+The R8 map gained a full layer/asset system so you build levels by PLACING
+things (not only drawing colliders). All of it is codec + window + game.
+
+**Layers (LAYR chunk).** `doc.layers = { {name, vis, on}, ... }`, ordered
+back→front (z). Two independent flags:
+- `vis` — EDITOR-only render. `false` = the layer's placements don't draw
+  and can't be picked in the editor; the game is unaffected. (Declutter.)
+- `on` — the master switch. `false` = the placements act as if they DON'T
+  EXIST in-game: no draw, no attached colliders, no name in `by_name`, no
+  fill. In the editor they show dimmed so you can re-enable them. (Prototype
+  overlays.) Gated in `M.use`/`reload`/`geom`/`draw_places` via `place_on`.
+Absent LAYR ⇒ one synthesized `{name="main",vis=on=true}`; every placement
+falls onto it (old maps upgrade transparently). `M.z_order(doc)` gives the
+stable layer-ordered draw sequence (original indices, deterministic).
+
+**Placements = any asset (PLCE v2).** `{ path, x, y, layer(1-based idx),
+flip, vis, name, anim, cols }`. Visual kinds (.spr/.png/.tm) render their
+image; every other kind — or a visual with `vis=false` — is a NAMED REF: no
+image, a code handle at a position, drawn as a labelled tag in the editor.
+v1 PLCE still decodes (bit1 `hidden`→`vis=false`, no anim, layer→1).
+
+**Null refs — graceful, loud.** `cm.map.ref(name)` → a usable cwd-relative
+path from the live map, or (missing name / unreadable file) a `[map] NULL
+REF` warning + `debug.traceback` and the built-in fallback for the kind:
+`M.FALLBACK = { spr/png = the checker tileset, ins = error.ins, song =
+error.song, pal = error.pal }` (all in `engine/stock/`). A dangling VISUAL
+placement draws a magenta/black checkerboard in the editor AND in-game
+(`M.draw_null`). `e.g. cm.snd.music(cm.map.ref("bgm"))` plays the attached
+song, or the error jingle if it's gone.
+
+**Animation (trivial auto-play).** A `.spr` placement's `anim` names a clip
+from its `.anim` sidecar; it auto-plays one frame (not the whole strip),
+sized to the frame. `M.spr_info(path)` caches frames/size/clips;
+`M.place_frame(path, anim, elapsed)` → the current frame. `elapsed` is the
+sim frame in-game (deterministic, render-only) and a wall clock in the
+editor preview. Richer animation stays code-driven.
+
+**The map window.** A right-side LAYER PANEL (header chip `lyr`): rows
+front-at-top with `e`(vis)/`g`(on) toggles, active-layer highlight, a
+`lock` toggle, and a `+ x ^ v` + rename footer. Clicking a placement
+auto-selects its layer (teidraw); `lock` confines picking/marquee + drops
+to the active layer. The inspector gains a `vis` toggle (image ↔ named
+ref) and an `anim:<clip>` cycler for .spr. Panel/active-layer/lock live on
+`win` (per-window), not the path-keyed plumb.

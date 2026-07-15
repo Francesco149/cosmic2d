@@ -2203,3 +2203,58 @@ if the palette editor grows up; a starter-sprite/tileset stock set +
 in-editor help + picker metadata (audit G13/G7/G3) when the "batteries"
 push resumes. The live-feel exit is the human's ears + eyes on the
 drums/SFX, the demo, and the palettes.
+
+## D060 — the gb-noise kernel bug + the map-editor layer/asset rework (2026-07-15)
+
+Two human asks; both surfaced something structural.
+
+**The gb noise was a KERNEL BUG, not a tuning problem.** Sessions had
+retuned the gb drums repeatedly and the human still heard no high-range
+noise. Rendering the drums headless and looking at the spectrum settled it:
+100% of every drum's energy sat below 500 Hz (hat centroid 12 Hz — a DC
+click, not a hiss). `wave_sample` stepped the LFSR on `(ph ^ oldph) & MSB`,
+but the caller passes `ph = oldph + mod` (the FM modulation), so for an
+unmodulated op (every gb drum: alg 7, no mod) `ph == oldph` and the LFSR
+NEVER advanced. Freq-clocked noise must step off the frequency increment;
+fixed: pass `prevph = oldph - incs[o]`. Tonal waves ignore that arg, so the
+PCM golden changes ONLY because its ladder renders a noise op — a
+deliberate re-cut (`0xc8826fe…` → `0x9df7dc5…`), the documented "kernel
+change re-cuts the golden" path. LESSON: the PCM golden proves determinism,
+not musicality — an audio change needs a spectral/audible check, not just a
+green hash. (Added a headless render+FFT probe to the toolkit.)
+
+**Map layers/placements are first-class; any asset can attach.** The demo
+proved the gap: its maps have zero placements (colliders are the graybox
+fill, coins are markers), so the editor "only rendered colliders" because
+nothing was placed. The rework (MAPS.md §13):
+
+- **Named LAYERS gate both banks.** A LAYR chunk holds ordered layers with
+  two independent flags: `vis` (EDITOR-only render — declutter) and `on`
+  (the master switch — an off layer's placements act as if they don't exist
+  in-game: no draw, no attached colliders, no ref). This is the split the
+  human asked for (hide-while-working vs disable-for-prototyping). Free
+  colliders stay layer-independent (level geometry); attached colliders
+  follow their placement's layer, which covers prototype overlays.
+- **Placement = any asset.** Visual kinds (.spr/.png/.tm) render; every
+  other kind — or a visual with `novis` — is a code-addressable NAMED REF
+  drawn as a labelled tag. PLCE went to v2 (adds `anim`; layer is a 1-based
+  index; bit1 = `novis`, was `hidden`); v1 still decodes (migration).
+- **Null refs degrade LOUDLY, never fatally.** `cm.map.ref(name)` returns
+  the resolved path or, on a missing name / dangling file, logs a warning +
+  a `debug.traceback` and returns a built-in fallback for the kind
+  (`engine/stock/error.{ins,song,pal}` + the checker tileset). The editor
+  and the game both draw a magenta/black checkerboard for a dangling
+  visual. A deleted asset is impossible to miss and never crashes the game.
+- **teidraw layer UX.** Clicking a placement auto-selects its layer; a
+  `lock` toggle confines picking + new drops to the active layer. The panel
+  is per-window state (win.layer/lock/lpanel), not the path-keyed plumb —
+  correct for the multi-window contract without needing kit.winui yet.
+- **Trivial animation.** A placed `.spr` picks a clip that auto-plays (one
+  frame, deterministic off the sim frame in-game / a wall clock in the
+  editor). The "just leave it looping" case; code drives anything richer.
+
+REVISIT: markers aren't layered (annotations, always present) — revisit if
+a use wants layered markers. Free colliders aren't layerable — revisit if
+prototype overlays need disable-able geometry that isn't attached to a
+placement. The map window's per-window UI state is hand-rolled on `win`;
+fold into kit.winui with the deferred synth/music pass if it drifts.

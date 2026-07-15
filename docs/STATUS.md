@@ -3,6 +3,85 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-15 (the GB-noise KERNEL BUG + the map-editor layer/asset
+rework — 6 commits, suite ALL GREEN throughout)
+
+Two human asks, both delivered end to end.
+
+**1 — the gb drums had NO high-range noise: a kernel bug, not tuning
+(`e685dbf`).** The human kept not hearing the noise despite session after
+session of retuning. Root cause found by rendering the drums headless and
+looking at the SPECTRUM: every drum had 100% of its energy below 500 Hz
+(hat spectral centroid **12 Hz**). The LFSR noise op stepped only when
+`(ph ^ oldph) & MSB` toggled, but within one sample `ph = oldph + mod` (the
+FM modulation only, never the frequency increment). The gb drums are alg 7
+with NO modulation → `mod = 0` → `ph == oldph` → **the LFSR never advanced**
+→ every noise op was a frozen DC click. That is why nothing the past
+sessions did (level, fixed_hz, the highpass, the snare sizzle) ever
+changed the sound. Fix: clock the LFSR off the frequency increment
+(`prevph = oldph - incs[o]`). Tonal waves ignore that arg → byte-identical.
+After: hat centroid 12 → **5462 Hz**, snare 5 → **3848 Hz**, both broadband.
+The PCM golden was re-cut deliberately (it renders a noise op). A/B WAV at
+`C:\Users\headpats\gb_drums_before_after.wav`; spectrogram on llm-feed.
+**PAL C changed → needs a windows RE-STAGE for the human to hear it in the
+demo.** The stock + demo `ins/gb-noise-*` are byte-identical (no retune
+needed — the kernel was the whole problem).
+
+**2 — the map editor: render placed assets + layers + attach anything +
+null-ref fallbacks + teidraw UX (`0bfd489` `bc0feb7` `c7a29f8` `96e9f40`
++ the anim commit).** The demo maps have ZERO placements (platforms are
+colliders drawn as the graybox fill, coins are markers) — so "it only
+renders colliders" was literally true: nothing was placed. Built the whole
+capability:
+- **Codec (`0bfd489`)**: a LAYR chunk (named layers, per-layer vis + on
+  flags, z-ordered) + PLCE v2 (adds `anim`; the u8 layer becomes a 1-based
+  index; bit1 flips from `hidden` to `novis`). PLCE v1 still decodes
+  (migration: hidden→vis=false, layer→1, default layer synthesized).
+  Layers gate BOTH banks — `layer.on=false` = the placements act as if they
+  don't exist in-game (colliders, refs, draw all skipped); `layer.vis` is
+  editor-only. `M.z_order` sorts draws by layer.
+- **Editor render (`bc0feb7`)**: placements draw in layer z-order — images
+  render, a dangling visual path draws a magenta/black CHECKERBOARD + a
+  console warning, and any non-visual asset (or a visual set `vis=false`)
+  draws as a NAMED-REF tag. `placeable()` accepts any extension now.
+- **Layer panel + teidraw UX (`c7a29f8`)**: a right-side panel (`lyr`
+  chip) — front-at-top rows with `e`(editor-visible)/`g`(game-on) toggles,
+  active-layer highlight, a `lock` toggle, and a `+ x ^ v` + rename footer.
+  Clicking a placement auto-selects its layer (teidraw); `lock` confines
+  picking/marquee + new drops to the active layer. `M.pick` is z-ordered +
+  layer-filtered.
+- **Named refs + fallbacks (`96e9f40`)**: `cm.map.ref(name)` resolves a
+  named placement to a usable path; a missing name / dangling file logs a
+  `[map] NULL REF` warning + a **debug.traceback** and returns the built-in
+  fallback for the kind. New stock assets `engine/stock/error.{ins,song,pal}`
+  (harsh buzz / descending-tritone jingle / magenta-black palette); visual
+  kinds fall back to the checker tileset. The game draws the checkerboard
+  in-world for a dangling visual too.
+- **Animation auto-play (last commit)**: a placed `.spr` can pick a clip
+  (`anim:<clip>` inspector chip) that just auto-plays — one frame (not the
+  strip) in the editor preview AND in-game, deterministic off the sim frame.
+
+**Proof:** selftest map KATs rewritten + extended (LAYR round-trip, vis/anim
+carry, place_on/z_order gating, legacy v1 migration, ref fallbacks); the
+PCM golden re-cut; `nix run .#test` **ALL GREEN** every checkpoint. Verified
+headless with a `maptest` scratch project carrying every placement variety
+(editor + in-game shots on llm-feed). The sibling game's legacy maps still
+migrate + play.
+
+**Next step (resume here):** the human's TASTE + EARS pass. (1) **Re-stage
+cosmic2d-win** (PAL changed — the noise fix) and listen to the gb drums in
+the demo — they should finally sizzle. (2) Walk the new map editor
+(`bin\cosmic.exe <proj> --edit`, open/spawn a map window): the layer panel
+toggles, lock + auto-select, drop any asset (a .song attaches as a named
+ref), the null-ref checkerboard, an `anim:` clip. Then wire a real
+placement/parallax layer into the demo or the game to dogfood it (the demo
+still uses colliders+markers only — the capability is there, unused). Docs
+updated (MAPS.md §13 = the as-built layer/asset/ref/anim system, DECISIONS
+D060 = the rationale). Good `/clear` point — everything committed, tree
+clean.
+
+---
+
 **Date**: 2026-07-14 (cont. — the human's demo look + music pass; 5 asks,
 all built + committed, incl. a real tmap bug caught)
 
