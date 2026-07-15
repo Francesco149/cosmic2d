@@ -3562,6 +3562,24 @@ local function t_palette()
   check(d2.name == "test" and #d2.colors == 3 and d2.colors[2] == 0xaabbccff,
         "palette: doc round-trips")
   check(pl.encode(d2) == bytes, "palette: canonical encode")
+  -- Palette source publication is atomic. An interrupted replacement leaves
+  -- the previous valid generation byte-for-byte intact; a retry publishes the
+  -- complete newer document.
+  local savepath = (os.getenv("TMPDIR") or "/tmp")
+                   .. "/cosmic_selftest_atomic.pal"
+  check(pl.save(d2, savepath) == true, "palette save: seed generation")
+  local saved = pal.read_file(savepath)
+  local newer = pl.decode(bytes)
+  newer.name = "newer"
+  newer.colors[1] = 0x010203ff
+  local sok, serr = pl.save(newer, savepath, { _fail = "rename" })
+  check(not sok and serr:find("write palette failed")
+        and pal.read_file(savepath) == saved,
+        "palette save: failed replacement preserves previous source")
+  check(pl.save(newer, savepath) == true
+        and pl.decode(pal.read_file(savepath)).colors[1] == 0x010203ff,
+        "palette save: retry publishes complete source")
+  pal.x_remove(savepath)
   -- hex import/export (Lospec .hex; R low byte, alpha forced opaque)
   local cols = pl.parse_hex("#ff0000\n00ff00\n0000ff")
   local r, g, b = paint.unpack(cols[1])
@@ -4010,6 +4028,7 @@ local function t_ed_map()
   local W = cm.require("cm.ed.win.map")
   local map = cm.require("cm.map")
   local tmap = cm.require("cm.tmap")
+  local palette = cm.require("cm.palette")
   local dims = function() return 20, 10 end
   local doc = {
     name = "t", w = 320, h = 200, grid = 8,
@@ -4079,6 +4098,35 @@ local function t_ed_map()
         and tmap.get(tmap.decode(pal.read_file(root .. "/" .. tmpath)),
                      0, 0) == 9,
         "ed.tmap save: retry publishes complete source")
+
+  -- The real palette-window path has the same durability/error contract.
+  local PW = cm.require("cm.ed.win.palette")
+  local ppath = "atomic.pal"
+  local pdisk = palette.fresh("disk")
+  local pdiskbytes = palette.encode(pdisk)
+  pal.write_file(root .. "/" .. ppath, pdiskbytes)
+  local psummoned = false
+  local ped = { root = root, g = {}, doc = { assets = {} }, parked = false,
+                touch = function() end,
+                summon_console = function() psummoned = true end }
+  local pwin = { path = ppath }
+  local _, pp = PW.open_win(pwin, ped)
+  pp.doc.name = "unsaved"
+  pp.doc.colors[1] = 0x112233ff
+  pp._save_fail = { _fail = "rename" }
+  PW.save(pwin, ped)
+  check(pal.read_file(root .. "/" .. ppath) == pdiskbytes,
+        "ed.palette save: failure preserves previous palette")
+  check(PW.dirty(pwin, ped) and pp.doc.name == "unsaved"
+        and pp.doc.colors[1] == 0x112233ff,
+        "ed.palette save: failure retains dirty working bytes")
+  check(psummoned, "ed.palette save: failure summons the console")
+  pp._save_fail = nil
+  PW.save(pwin, ped)
+  local psaved = palette.decode(pal.read_file(root .. "/" .. ppath))
+  check(not PW.dirty(pwin, ped) and psaved.name == "unsaved"
+        and psaved.colors[1] == 0x112233ff,
+        "ed.palette save: retry publishes complete source")
 
   -- pick: topmost placement wins; markers overlay when shown
   local it = W.pick(doc, 45, 176, dims, false) -- inside a AND b -> b (z)

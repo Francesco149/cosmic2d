@@ -60,6 +60,15 @@ function M.decode(bytes)
   return doc
 end
 
+-- Publish the editable source as one atomic replacement. Palettes have no
+-- baked siblings, so this is a single-file transaction; `fail` is the focused
+-- selftest seam forwarded to PAL's staged failure injector.
+function M.save(doc, path, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode(doc), fail)
+  if not ok then return nil, "write palette failed: " .. tostring(err) end
+  return true
+end
+
 -- ---- the code-facing door (games reference a palette) ----
 
 local pcache = {}

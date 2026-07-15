@@ -62,6 +62,11 @@ local A = cm.require("cm.ed.kit").asset {
   end,
   adopt = decode_into,
   encode = palette.encode,
+  write = function(ed, path, a, p)
+    -- `_save_fail` exists only as the focused durability-test seam. Keeping
+    -- it on ephemeral plumbing means it can never enter session state.
+    return palette.save(p.doc, ed.root .. "/" .. path, p._save_fail)
+  end,
 }
 local open_asset, commit = A.open_asset, A.commit
 M.open_win = A.open_win
