@@ -178,6 +178,15 @@ function M.decode(bytes)
   return M.normalize(doc)
 end
 
+-- Publish the editable source as one atomic replacement. Songs are a single
+-- CSNG source with no baked siblings; `fail` is the focused selftest seam
+-- forwarded to PAL's staged failure injector.
+function M.save(doc, path, fail)
+  local ok, err = pal.write_file_atomic(path, M.encode(doc), fail)
+  if not ok then return nil, "write song failed: " .. tostring(err) end
+  return true
+end
+
 -- the flatten: arrangement -> per-track absolute-tick note lists. A clip
 -- LOOPS its pattern to fill its length (the "auto loop"); notes clip at
 -- the clip edge. Pure — the sequencer walks this, never the doc.

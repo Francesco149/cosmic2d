@@ -98,6 +98,11 @@ local A = cm.require("cm.ed.kit").asset {
   fresh = function() return song.encode(song.fresh()) end,
   adopt = decode_into,
   encode = song.encode,
+  write = function(ed, path, a, p)
+    -- `_save_fail` exists only as the focused durability-test seam. Keeping
+    -- it on ephemeral plumbing means it can never enter session state.
+    return song.save(p.doc, ed.root .. "/" .. path, p._save_fail)
+  end,
 }
 
 local plumb, working, open_asset, commit =

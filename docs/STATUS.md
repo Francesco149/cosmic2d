@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic `.ins` saves complete (2026-07-15)
+## Current handoff — A1 atomic `.song` saves complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -119,9 +119,18 @@ editor console; retry publishes a complete decodable generation and clears
 dirty state. `nix run .#test` is ALL GREEN: 23,212 self-checks, every trace
 verify, and all pixel goldens.
 
-**Exact next packet:** migrate `.song` music source saves to atomic replacement
-with focused injected-failure coverage proving the previous song survives,
-dirty working bytes remain, and the editor reports the failure. Do not migrate
-other asset families in the same packet.
+**A1 packet 10 is complete.** `.song` source saves now use the PAL atomic-write
+primitive through a song-specific save API and the real music-window write
+hook. An injected replacement failure preserves the previous valid CSNG
+arrangement byte-for-byte, keeps the newer working song dirty, emits the named
+song failure, and summons the editor console; retry publishes a complete
+decodable generation and clears dirty state. `nix run .#test` is ALL GREEN:
+23,219 self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** migrate code/text-window source saves (`.lua`, `.md`,
+`.txt`, `.json`, `.glsl`) to atomic replacement with focused injected-failure
+coverage proving the previous file survives, dirty working bytes remain, and
+the editor reports the failure. Do not migrate asset import/create paths in the
+same packet.
 
 There is no known blocker or human-only verification required.

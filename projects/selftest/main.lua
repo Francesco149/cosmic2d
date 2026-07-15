@@ -3652,6 +3652,54 @@ local function t_song()
         "song: pattern round-trips, canonical note order")
   check(song.encode(d2) == bytes, "song: canonical encode")
 
+  -- Song source publication is atomic. An interrupted replacement leaves the
+  -- previous arrangement intact; retry publishes the complete newer CSNG.
+  local savepath = (os.getenv("TMPDIR") or "/tmp")
+                   .. "/cosmic_selftest_atomic.song"
+  check(song.save(d2, savepath) == true, "song save: seed generation")
+  local saved = pal.read_file(savepath)
+  local newer = song.decode(bytes)
+  newer.bpm = 173
+  newer.tracks[1].name = "newer"
+  local sok, serr = song.save(newer, savepath, { _fail = "rename" })
+  check(not sok and serr:find("write song failed")
+        and pal.read_file(savepath) == saved,
+        "song save: failed replacement preserves previous source")
+  check(song.save(newer, savepath) == true
+        and song.decode(pal.read_file(savepath)).bpm == 173,
+        "song save: retry publishes complete source")
+  pal.x_remove(savepath)
+
+  -- The real music-window path keeps both the disk generation and dirty
+  -- working arrangement trustworthy across a failed atomic replacement.
+  local MW = cm.require("cm.ed.win.music")
+  local root = tmproot() .. "/cosmic_selftest_ed_song_save"
+  pal.mkdir(root)
+  local path = "atomic.song"
+  pal.write_file(root .. "/" .. path, bytes)
+  local summoned = false
+  local ed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+               touch = function() end,
+               summon_console = function() summoned = true end }
+  local win = { path = path }
+  local _, p = MW.open_win(win, ed)
+  p.doc.bpm = 199
+  p.doc.tracks[1].name = "unsaved"
+  p._save_fail = { _fail = "rename" }
+  MW.save(win, ed)
+  check(pal.read_file(root .. "/" .. path) == bytes,
+        "ed.music save: failure preserves previous song")
+  check(MW.dirty(win, ed) and p.doc.bpm == 199
+        and p.doc.tracks[1].name == "unsaved",
+        "ed.music save: failure retains dirty working bytes")
+  check(summoned, "ed.music save: failure summons the console")
+  p._save_fail = nil
+  MW.save(win, ed)
+  local published = song.decode(pal.read_file(root .. "/" .. path))
+  check(not MW.dirty(win, ed) and published.bpm == 199
+        and published.tracks[1].name == "unsaved",
+        "ed.music save: retry publishes complete source")
+
   -- the flatten: the clip LOOPS its 4-beat pattern to fill 8 beats
   local flat = song.flatten(d2)
   check(#flat == 1 and #flat[1] == 4, "song: clip loops the pattern")
