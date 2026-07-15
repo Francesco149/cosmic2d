@@ -36,10 +36,11 @@ local COL = {
 }
 
 local TOOLS = { { "pen", "P" }, { "eraser", "E" }, { "fill", "F" },
-                { "pick", "K" } }
+                { "pick", "K" }, { "curve", "~" } }
 
 function M.defaults()
-  return { path = "", edit = false, tool = "pen", color = 0xffffffff }
+  return { path = "", edit = false, tool = "pen", color = 0xffffffff,
+           color2 = 0x000000ff, palettes = {} }
 end
 
 -- per-window hotkeys (EDITOR.md §13): tool keys mirror the rail chips
@@ -57,6 +58,12 @@ M.hotkeys = {
   { key = "e", hint = "eraser", when = editing, fn = set_tool("eraser") },
   { key = "f", hint = "fill", when = editing, fn = set_tool("fill") },
   { key = "k", hint = "pick", when = editing, fn = set_tool("pick") },
+  { key = "c", hint = "curve", when = editing, fn = set_tool("curve") },
+  { key = "x", hint = "swap colors", when = editing,
+    fn = function(win, ed)
+      win.color, win.color2 = win.color2 or 0x000000ff, win.color or 0xffffffff
+      ed.touch()
+    end },
   { key = "shift+1", hint = "fit",
     when = function(win) return win.path ~= "" end,
     fn = function(win, ed)
@@ -78,6 +85,36 @@ function M.rebind(win, ed, path)
   win.path = path
   win.zoom, win.px, win.py = nil, nil, nil
   ed.touch()
+end
+
+-- a .pal dropped on the sprite ed STACKS as an extra swatch source at the
+-- bottom (the human's ask: drag palettes in, multiple, each removable). A .spr
+-- still rebinds (accepts/rebind above); everything else falls through. Returns
+-- true = the drop is handled here (kind.drop outranks rebind, ed.lua §drop).
+function M.drop(win, ed, path, wx, wy)
+  if not path:lower():find("%.pal$") then return false end
+  win.palettes = win.palettes or {}
+  for _, q in ipairs(win.palettes) do if q == path then return true end end
+  win.palettes[#win.palettes + 1] = path
+  ed.touch()
+  return true
+end
+
+-- an attached .pal's colors (cm.paint-packed, same as doc.palette), cached on
+-- the window's plumbing + refreshed when the file's mtime changes.
+local function attached_colors(ed, p, path)
+  p.palc = p.palc or {}
+  local mt = pal.mtime(ed.root .. "/" .. path) or 0
+  local hit = p.palc[path]
+  if hit and hit.mt == mt then return hit.colors, hit.name end
+  local colors, name = {}, path:match("([^/]+)%.pal$") or path
+  local bytes = pal.read_file(ed.root .. "/" .. path)
+  if bytes then
+    local ok, d = pcall(cm.require("cm.palette").decode, bytes)
+    if ok and d then colors, name = d.colors or {}, (d.name ~= "" and d.name) or name end
+  end
+  p.palc[path] = { mt = mt, colors = colors, name = name }
+  return colors, name
 end
 
 -- ---- the asset citizen (cm.ed.kit, R9a) — plumbing on ed.g.sw[path],
@@ -213,6 +250,8 @@ cm.require("cm.ed.kit").viewlock(M, {
 -- Esc while the global eyedropper is armed drops back to the pen — the
 -- visible exit from pick-anywhere (the shell's Esc ladder calls this)
 function M.escape(win, ed)
+  local p = ed.g.sw and ed.g.sw[win.path]
+  if p and p.curve then p.curve = nil; ed.touch(); return true end
   if win.edit and win.tool == "pick" then
     win.tool = "pen"
     ed.touch()
@@ -254,6 +293,30 @@ local function hex_parse(s) -- "#RRGGBB[AA]" → paint packing
                       v & 255)
   end
   return nil
+end
+
+-- the 2-point curve (paint.curve = the MS-Paint cubic Bézier): a quadratic
+-- through a single bend point B is the cubic with each control 2/3 of the way
+-- from its endpoint toward B — a "simple 2-point curve" (the old editor's).
+local function commit_curve(cell, cur, bx, by, color)
+  paint.curve(cell, cur.x0, cur.y0,
+    cur.x0 + (bx - cur.x0) * 2 / 3, cur.y0 + (by - cur.y0) * 2 / 3,
+    cur.x3 + (bx - cur.x3) * 2 / 3, cur.y3 + (by - cur.y3) * 2 / 3,
+    cur.x3, cur.y3, color)
+end
+
+-- preview the same quadratic as an imgui polyline (screen space, pixel centers)
+local function curve_preview(ox, oy, zoom, x0, y0, bx, by, x3, y3, col, lt)
+  local pxp, pyp
+  for s = 0, 14 do
+    local t = s / 14
+    local u = 1 - t
+    local qx = u * u * x0 + 2 * u * t * bx + t * t * x3
+    local qy = u * u * y0 + 2 * u * t * by + t * t * y3
+    local sx2, sy2 = ox + (qx + 0.5) * zoom, oy + (qy + 0.5) * zoom
+    if pxp then pal.x_ig_line(pxp, pyp, sx2, sy2, col, lt) end
+    pxp, pyp = sx2, sy2
+  end
 end
 
 -- ---- content ----
@@ -298,9 +361,12 @@ function M.draw(win, ctx)
   end
 
   -- ---- edit mode layout ----
+  local g = ed.g
   local TR = 26 * z -- tools rail
   local LR = math.min(96 * z, ctx.cw * 0.3) -- layers rail
-  local BB = 40 * z -- palette + frames rows
+  local nAtt = #(win.palettes or {})
+  local ATT_H = 16 * z -- one row per dragged-in palette (the human's stack)
+  local BB = 40 * z + nAtt * ATT_H -- palette + frames rows + attached palettes
   local cvx, cvy = ctx.cx + TR, ctx.cy
   local cvw, cvh = ctx.cw - TR - LR, ctx.ch - BB
   if cvw < 40 or cvh < 40 then return end
@@ -316,12 +382,22 @@ function M.draw(win, ctx)
     end
     ty = ty + TR - 5 * z
   end
-  -- current color swatch at the rail bottom
-  pal.x_ig_rect_fill(ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z,
-                     TR - 9 * z, TR - 9 * z, disp(win.color or 0xffffffff),
-                     3 * z)
-  pal.x_ig_rect(ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z,
-                TR - 9 * z, TR - 9 * z, 0x00000066, 1, 3 * z)
+  -- primary + secondary color swatches (LEFT paints primary, RIGHT paints the
+  -- secondary — the 2-color ask; the X key or a right-click here swaps them)
+  local swz = TR - 9 * z
+  local sbx, sby = ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z
+  local s2 = swz * 0.62
+  pal.x_ig_rect_fill(sbx + swz - s2, sby + swz - s2, s2, s2,
+                     disp(win.color2 or 0x000000ff), 2 * z)
+  pal.x_ig_rect(sbx + swz - s2, sby + swz - s2, s2, s2, 0x000000aa, 1, 2 * z)
+  pal.x_ig_rect_fill(sbx, sby, swz * 0.78, swz * 0.78,
+                     disp(win.color or 0xffffffff), 2 * z)
+  pal.x_ig_rect(sbx, sby, swz * 0.78, swz * 0.78, 0x000000aa, 1, 2 * z)
+  if ctx.hot and i.wx >= sbx and i.wx < sbx + swz and i.wy >= sby
+     and i.wy < sby + swz and i.clicked[3] then
+    win.color, win.color2 = win.color2 or 0x000000ff, win.color or 0xffffffff
+    ctx.touch()
+  end
 
   -- the canvas, via cm.ed.winview: captured fields in WORLD units
   -- (win.zoom = world units per sprite px, win.px/py = world-unit pan)
@@ -374,52 +450,105 @@ function M.draw(win, ctx)
     end
   end
 
-  -- paint gestures
+  -- ---- paint gestures ----
   local layer = doc.layers[doc.cur_layer]
   local cell = layer and sprite.cell(doc, doc.cur_layer, doc.cur_frame)
   local function pixel_at(wxp, wyp)
     return math.floor((wxp - ox) / zoom), math.floor((wyp - oy) / zoom)
   end
-  if over_canvas and cell and not (layer.locked) and not p.pan then
-    local mx, my = pixel_at(i.wx, i.wy)
-    -- hover cell outline
-    if paint.in_bounds(cell, mx, my) then
-      pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom,
-                    0xE8E4FF66, 1)
+  -- the paint color for a mouse button: RIGHT paints the secondary color (the
+  -- 2-color ask); the eraser always clears
+  local function paintcol(rmb)
+    if win.tool == "eraser" then return 0 end
+    return rmb and (win.color2 or 0x000000ff) or (win.color or 0xffffffff)
+  end
+  local mx, my = pixel_at(i.wx, i.wy)
+  local paintable = over_canvas and cell and not (layer and layer.locked)
+                    and not p.pan
+  local inb = cell and paint.in_bounds(cell, mx, my)
+  local lt = math.max(1, math.min(2, zoom * 0.5))
+
+  if win.tool == "curve" then
+    -- click A, click B (endpoints), then move to bow it, click to lay it.
+    if paintable and inb then
+      pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom, 0xE8E4FF66, 1)
     end
-    if i.clicked[1] then
+    local cur = p.curve
+    if cur then
+      if cur.stage == "p3" then
+        pal.x_ig_line(ox + (cur.x0 + 0.5) * zoom, oy + (cur.y0 + 0.5) * zoom,
+                      ox + (mx + 0.5) * zoom, oy + (my + 0.5) * zoom,
+                      COL.accent, lt)
+        if over_canvas and i.clicked[1] then
+          cur.x3, cur.y3, cur.stage = mx, my, "bend"
+          ctx.touch()
+        end
+      else -- "bend": preview the quadratic through the cursor
+        curve_preview(ox, oy, zoom, cur.x0, cur.y0, mx, my, cur.x3, cur.y3,
+                      COL.accent, lt)
+        if over_canvas and i.clicked[1] and cell then
+          commit_curve(cell, cur, mx, my, win.color or 0xffffffff)
+          p.last = { x = cur.x3, y = cur.y3 }
+          p.curve, p.comp_dirty = nil, true
+          commit(ed, win.path)
+        end
+      end
+      if i.clicked[3] then p.curve = nil; ctx.touch() end -- rmb cancels
+    elseif paintable and i.clicked[1] and inb then
+      p.curve = { x0 = mx, y0 = my, stage = "p3" }
+      ctx.touch()
+    end
+
+  elseif paintable then
+    if inb then
+      pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom, 0xE8E4FF66, 1)
+    end
+    -- shift = a straight line from the LAST painted pixel (pen / eraser)
+    local lineable = g.shift and p.last
+                     and (win.tool == "pen" or win.tool == "eraser")
+    if lineable and inb then
+      pal.x_ig_line(ox + (p.last.x + 0.5) * zoom, oy + (p.last.y + 0.5) * zoom,
+                    ox + (mx + 0.5) * zoom, oy + (my + 0.5) * zoom,
+                    COL.accent, lt)
+    end
+    local rmb = i.clicked[3]
+    if i.clicked[1] or rmb then
       if win.tool == "pick" then
         local c = paint.get(p.comp, mx, my)
         if c and c ~= 0 then
-          win.color = c
+          if rmb then win.color2 = c else win.color = c end
           ctx.touch()
         end
       elseif win.tool == "fill" then
-        if paint.in_bounds(cell, mx, my) then
-          paint.flood(cell, mx, my, win.color or 0xffffffff)
-          p.comp_dirty = true
+        if inb then
+          paint.flood(cell, mx, my, paintcol(rmb))
+          p.last, p.comp_dirty = { x = mx, y = my }, true
           commit(ed, win.path)
         end
+      elseif lineable and not rmb then
+        paint.line(cell, p.last.x, p.last.y, mx, my, paintcol(false))
+        p.last, p.comp_dirty = { x = mx, y = my }, true
+        commit(ed, win.path)
       else
-        p.stroke = { lx = mx, ly = my }
-        local c = win.tool == "eraser" and 0 or (win.color or 0xffffffff)
-        if paint.in_bounds(cell, mx, my) then paint.set(cell, mx, my, c) end
+        p.stroke = { lx = mx, ly = my, rmb = rmb }
+        if inb then paint.set(cell, mx, my, paintcol(rmb)) end
         p.comp_dirty = true
       end
     end
   end
   if p.stroke then
-    if i.buttons[1] then
-      local mx, my = pixel_at(i.wx, i.wy)
-      if mx ~= p.stroke.lx or my ~= p.stroke.ly then
-        local c = win.tool == "eraser" and 0 or (win.color or 0xffffffff)
+    if i.buttons[p.stroke.rmb and 3 or 1] then
+      local nx, ny = pixel_at(i.wx, i.wy)
+      if nx ~= p.stroke.lx or ny ~= p.stroke.ly then
         if cell then
-          paint.line(cell, p.stroke.lx, p.stroke.ly, mx, my, c)
+          paint.line(cell, p.stroke.lx, p.stroke.ly, nx, ny,
+                     paintcol(p.stroke.rmb))
         end
-        p.stroke.lx, p.stroke.ly = mx, my
+        p.stroke.lx, p.stroke.ly = nx, ny
         p.comp_dirty = true
       end
     else
+      p.last = { x = p.stroke.lx, y = p.stroke.ly }
       p.stroke = nil
       commit(ed, win.path) -- the gesture = one journal entry
     end
@@ -481,7 +610,7 @@ function M.draw(win, ctx)
   local n = 0
   for ci, c in ipairs(doc.palette) do
     local x = sx0 + n * (sw + 2 * z)
-    if x + sw > ctx.cx + ctx.cw - 90 * z then break end
+    if x + sw > ctx.cx + ctx.cw - 108 * z then break end
     pal.x_ig_rect_fill(x, py0, sw, sw, disp(c), 2 * z)
     if (win.color or 0) == c then
       pal.x_ig_rect(x - 1, py0 - 1, sw + 2, sw + 2, COL.hot, 1, 2 * z)
@@ -491,16 +620,40 @@ function M.draw(win, ctx)
     if hov and i.clicked[1] then
       win.color = c
       ctx.touch()
+    elseif hov and i.clicked[3] then
+      win.color2 = c
+      ctx.touch()
     end
     n = n + 1
   end
-  -- hex add (enter commits)
-  local hx = ctx.cx + ctx.cw - 86 * z
-  pal.x_ig_rect(hx, py0, 82 * z, sw, 0x4a437088, 1, 2 * z)
+  -- hex ADD field (bottom-right): type #RRGGBB[AA] + Enter to add that color
+  -- to the palette (and select it). A live preview swatch + a placeholder make
+  -- what it does obvious (the human couldn't tell) — the swatch shows the
+  -- parsed color, or a dim "+" while the text isn't a valid hex yet.
+  local addw = 100 * z
+  local pvw = sw
+  local hx = ctx.cx + ctx.cw - addw
+  local boxx = hx + pvw + 3 * z
+  local boxw = addw - pvw - 3 * z
+  local pv = hex_parse(p.hex or "")
+  if pv then
+    pal.x_ig_rect_fill(hx, py0, pvw, sw, disp(pv), 2 * z)
+    pal.x_ig_rect(hx, py0, pvw, sw, COL.accent, 1, 2 * z)
+  else
+    pal.x_ig_rect_fill(hx, py0, pvw, sw, COL.btn, 2 * z)
+    local gw = pal.x_ig_text_size("+", px * 0.9, 1)
+    pal.x_ig_text(hx + (pvw - gw) * 0.5, py0 + (sw - px * 0.9) * 0.4, px * 0.9,
+                  COL.dim, "+", 1)
+  end
+  pal.x_ig_rect(boxx, py0, boxw, sw, 0x4a437088, 1, 2 * z)
+  if (p.hex or "") == "" then
+    pal.x_ig_text(boxx + 3 * z, py0 + (sw - px * 0.8) * 0.45, px * 0.8,
+                  0x8a84b088, "#hex adds color", 1)
+  end
   if not ctx.occluded then
     local text, _, _, st = pal.x_ig_edit {
-      id = "sphex" .. win.id, x = hx + 2 * z, y = py0 + 1,
-      w = 78 * z, h = sw - 2, text = p.hex or "", px = px * 0.9, font = 1,
+      id = "sphex" .. win.id, x = boxx + 2 * z, y = py0 + 1,
+      w = boxw - 4 * z, h = sw - 2, text = p.hex or "", px = px * 0.9, font = 1,
       enter = true, multiline = false,
     }
     p.hex = text
@@ -546,6 +699,40 @@ function M.draw(win, ctx)
     end
     opx = opx + 25 * z
   end
+
+  -- ---- attached palettes: dragged-in .pal files, stacked, each removable
+  -- (the human's ask). Left-click a swatch = primary, right-click = secondary
+  local aty = ctx.cy + cvh + 40 * z
+  local ssz = math.max(7, 11 * z)
+  local remove_idx
+  for ai, ppath in ipairs(win.palettes or {}) do
+    local rowy = aty + (ai - 1) * ATT_H
+    local colors, pname = attached_colors(ed, p, ppath)
+    local xw = ATT_H - 4 * z
+    if button(i, ctx, sx0, rowy, xw, ATT_H - 3 * z, "×", false, px * 0.85) then
+      remove_idx = ai
+    end
+    local nx = sx0 + xw + 3 * z
+    pal.x_ig_clip_push(nx, rowy, 44 * z, ATT_H)
+    pal.x_ig_text(nx, rowy + (ATT_H - px * 0.8) * 0.4, px * 0.8, COL.dim,
+                  pname, 0)
+    pal.x_ig_clip_pop()
+    local cx = nx + 46 * z
+    for _, c in ipairs(colors) do
+      if cx + ssz > ctx.cx + ctx.cw - 4 * z then break end
+      local sy = rowy + (ATT_H - ssz) * 0.5
+      pal.x_ig_rect_fill(cx, sy, ssz, ssz, disp(c), 1)
+      if win.color == c or win.color2 == c then
+        pal.x_ig_rect(cx - 1, sy - 1, ssz + 2, ssz + 2, COL.hot, 1)
+      end
+      local hov = ctx.hot and i.wx >= cx and i.wx < cx + ssz
+                  and i.wy >= sy and i.wy < sy + ssz
+      if hov and i.clicked[1] then win.color = c; ctx.touch()
+      elseif hov and i.clicked[3] then win.color2 = c; ctx.touch() end
+      cx = cx + ssz + 2 * z
+    end
+  end
+  if remove_idx then table.remove(win.palettes, remove_idx); ctx.touch() end
 end
 
 return M

@@ -12,21 +12,30 @@ Paint a pixel sprite; define animation clips in the paired **animation** window.
 
 ## Tools (edit mode)
 
-- **p** pen · **e** eraser · **f** fill · **k** pick (eyedropper)
+- **p** pen · **e** eraser · **f** fill · **k** pick (eyedropper) · **~ c** curve
 
 The pick tool is a **global eyedropper** — click anywhere (other windows, the
 live game) to sample that color.
 
-## Keys
+The **curve** tool is the classic 2-point curve: click the start, click the
+end, then move the mouse to bow the line and click to lay it (esc cancels).
 
-- **shift+1** fit the view · **wheel / middle-drag** zoom / pan (while focused)
-- **ctrl+z / ctrl+y** undo / redo · **ctrl+s** save
-- **esc** drops the tool / releases the view lock
+## Two colors + lines
 
-## Colors
+- **left-click paints the primary color, right-click the secondary** — the two
+  swatches sit at the bottom of the tool rail; **x** swaps them, and a
+  right-click on either the rail swatch or a palette swatch sets the secondary.
+- **hold shift** and click with the pen/eraser to draw a **straight line from
+  the last pixel you painted** (a preview line shows first).
+
+## Colors & palettes
 
 New assets auto-name with three random words, so nothing blocks on a filename —
-press **enter** to create. Design a palette in the **palette** window and
-eyedrop from its swatches.
+press **enter** to create. The bottom-right **`#hex adds color`** field appends
+a typed `#RRGGBB[AA]` to the palette (the swatch left of it previews the parse).
+
+**Drag a `.pal` in** to stack it as an extra swatch source at the bottom — add
+as many as you like; each row has a **×** to remove it. Left/right-click its
+swatches to set the primary/secondary color.
 
 Next: [Using the editor](engine/stock/docs/editor.md)
