@@ -145,6 +145,8 @@ local function all_files(ed)
   return g.afiles
 end
 
+M.all_files = all_files -- the launcher (Ctrl+Space) shares this cached list
+
 function M.invalidate(ed)
   ed.g.afiles = nil
   ed.g.files = nil -- the text picker's list too

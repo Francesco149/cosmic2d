@@ -20,8 +20,18 @@ windows around, and lay out a workspace that suits the task.
 - **assets** — browse the project's files; double-click one to open it.
 - **console**, **perf**, and this **help** window.
 
+## The launcher (Ctrl+Space)
+
+Press **Ctrl+Space** anywhere for a fuzzy command palette — one field over
+**everything**: open any asset or doc, spawn any window kind by name, or **pan
+to** any open window (it centers the window at your current zoom, fitting down
+only if it overflows). The highlighted result shows a live **preview** — an
+image thumbnail, a map schematic, or a code/doc excerpt. **↑↓** move · **enter**
+opens · **esc** closes.
+
 ## Keys that matter
 
+- **Ctrl+Space** — the launcher (find/open anything, pan to a window).
 - **Right-click** — spawn menu. **Middle-drag** / **wheel** — pan and zoom.
 - **Ctrl+S** — save the focused window's file.
 - **Ctrl+Z / Ctrl+Y** — undo / redo (per asset, kept across restarts).

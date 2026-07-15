@@ -128,7 +128,8 @@ local function fresh_doc()
            "alt+drag    move from anywhere\n" ..
            "alt+rclick  close (never loses work)\n" ..
            "alt+v       selection mode\n" ..
-           "edges       drag to resize\nrclick      spawn menu"
+           "edges       drag to resize\nrclick      spawn menu\n" ..
+           "ctrl+space  the launcher — find/open anything"
   doc.sel, doc.focus = {}, 0
   return doc
 end
@@ -296,7 +297,7 @@ function M.filter_events(events)
   if not M.on then return events end
   local win = playing_game()
   local g = M.g
-  local live = win and not g.alt and not g.ig_kb
+  local live = win and not g.alt and not g.ig_kb and not g.launcher
   local rect = win and g.grect and g.grect[win.id]
   local out = {}
   for _, e in ipairs(events) do
@@ -431,6 +432,51 @@ local function step_anim()
   M.touch()
 end
 
+-- ---- Ctrl+Space launcher support (cm.ed.launcher reads these) ----
+function M.spawnable() return MENU_ITEMS end -- {name, menu-label} spawn roster
+
+-- spawn a window kind centered in the current view
+function M.spawn_kind(kindname, ig)
+  local kind = M.kinds[kindname]
+  if not kind then return end
+  local extra, dw, dh = kind.defaults()
+  dw = dw or kind.DEF_W or 260
+  dh = dh or kind.DEF_H or 180
+  if kindname == "text" then dw, dh = M.text_spawn_size() end
+  local c = M.doc.cam
+  local cx = c.x + ((ig and ig.w or 1280) / c.zoom - dw) * 0.5
+  local cy = c.y + ((ig and ig.h or 800) / c.zoom - dh) * 0.5
+  local win = wm.spawn(M.doc, kindname, cx, cy, dw, dh, extra)
+  M.doc.focus = win.id
+  M.touch()
+  return win
+end
+
+-- open a stock doc (basename) in the rendered help reader
+function M.open_doc(name)
+  local path = "../../engine/stock/docs/" .. name .. ".md"
+  local win = wm.spawn(M.doc, "help", M.doc.cam.x + 40, M.doc.cam.y + 40,
+                       520, 480, M.kinds.help.defaults())
+  win.path, win.hist, win.hpos = path, { path }, 1
+  M.doc.focus = win.id
+  M.touch()
+  return win
+end
+
+-- pan-to a window: center it at the CURRENT zoom, fitting the zoom DOWN only if
+-- the window overflows the viewport (the human's spec); eased like shift+1
+function M.pan_to_window(win, ig)
+  if not (win and ig) then return end
+  local c = M.doc.cam
+  local fit = cam.fit(win.x, win.y, win.w, win.h, ig.w, ig.h)
+  local z = math.min(c.zoom, fit.zoom)
+  anim_to({ x = win.x + win.w * 0.5 - ig.w * 0.5 / z,
+            y = win.y + win.h * 0.5 - ig.h * 0.5 / z, zoom = z })
+  M.doc.focus = win.id
+  wm.to_front(M.doc, win.id)
+  M.touch()
+end
+
 -- the focused window's asset commands (EDITOR.md §6): resolve the focused
 -- kind and call its hook when it has one
 local function kind_call(fn)
@@ -464,7 +510,11 @@ local function hotkeys(ig, i)
   for _, e in ipairs(i.keys) do
     if e.down and not e.rep and g.ctrl then
       if e.scancode == K.s then kind_call("save")
-      elseif e.scancode == K.f then kind_call("find") end
+      elseif e.scancode == K.f then kind_call("find")
+      elseif e.scancode == K.space then -- Ctrl+Space: the global launcher
+        local L = cm.require("cm.ed.launcher")
+        if L.active(M) then L.close(M) else L.open(M) end
+      end
     end
   end
   if ig.kb then return end -- an edit widget owns the keyboard
@@ -482,7 +532,8 @@ local function hotkeys(ig, i)
         -- window; wm disarms it the moment a select lands something
         g.selmode = not g.selmode or nil
       elseif sc == K.escape then
-        if g.menu then g.menu = nil
+        if g.launcher then cm.require("cm.ed.launcher").close(M)
+        elseif g.menu then g.menu = nil
         elseif g.selmode then g.selmode = nil
         elseif kind_escape() then -- the focused kind ate it (find bar)
         elseif cm.require("cm.scrub").paused() then
@@ -607,8 +658,8 @@ local function interact(ig)
   end
   g.wheel_taken = nil
 
-  -- the spawn menu owns clicks while open (draw() hit-tests it)
-  if g.menu then return end
+  -- the spawn menu / launcher own clicks while open (draw() hit-tests them)
+  if g.menu or g.launcher then return end
 
   -- the rewind bar owns its rect while shown (draw_rewind hit-tests it)
   if g.rw_bar and i.wx >= g.rw_bar.x and i.wx < g.rw_bar.x + g.rw_bar.w
@@ -863,7 +914,9 @@ end
 function M.hot_id()
   local doc, g = M.doc, M.g
   if g.alt or g.space or g.selmode then return nil end
-  if g.state or g.pan or g.adrag or g.menu or g.rpend then return nil end
+  if g.state or g.pan or g.adrag or g.menu or g.rpend or g.launcher then
+    return nil
+  end
   if not g.cursor then return nil end
   local i = cm.require("cm.ui").inp
   if g.rw_bar and i.wx >= g.rw_bar.x and i.wx < g.rw_bar.x + g.rw_bar.w
@@ -1264,6 +1317,7 @@ local function draw(ig)
     pal.x_ig_overlay(false)
   end
   draw_menu(ig, i)
+  cm.require("cm.ed.launcher").draw(M, ig, i)
   draw_hud(ig)
   draw_rewind(ig, i)
 end
