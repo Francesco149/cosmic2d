@@ -256,10 +256,10 @@ local function draw_picker(win, ctx)
     local filter, changed = pal.x_ig_edit {
       id = "pick" .. win.id, x = ctx.cx + pad, y = ctx.cy + pad * 0.6,
       w = ctx.cw - 2 * pad, h = px * 1.6, text = win.filter or "",
-      px = px, font = 1,
+      px = px, font = 1, multiline = false, -- single-line search (see assets.lua)
     }
     if changed then
-      win.filter = filter
+      win.filter = filter:gsub("[\r\n\t]", "")
       ctx.touch()
     end
   end

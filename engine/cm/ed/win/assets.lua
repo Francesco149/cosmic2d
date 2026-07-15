@@ -350,11 +350,14 @@ function M.draw(win, ctx)
     local text, changed = pal.x_ig_edit {
       id = "af" .. win.id, x = ctx.cx + 6 * z, y = fy + 1,
       w = ctx.cw - 12 * z, h = fh - 2, text = win.filter or "",
-      px = px, font = 1,
+      px = px, font = 1, multiline = false, -- a search field is single-line;
+      -- the multiline default spawns a child window whose active-ID tracking
+      -- is flaky under the host's NoFocusOnAppearing flag (2nd+ keystrokes were
+      -- being dropped -> "fuzzy finds nothing past 1 char", the human's bug)
     }
     if changed then
-      win.filter = text
-      ctx.touch()
+      win.filter = text:gsub("[\r\n\t]", "") -- never let a stray control char
+      ctx.touch()                            -- into the needle (kills matches)
     end
   else
     pal.x_ig_text(ctx.cx + 8 * z + 4, fy + 3, px, 0xffffffff,
