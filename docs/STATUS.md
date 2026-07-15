@@ -3,6 +3,74 @@
 > Updated every session end and at milestone boundaries. A fresh session
 > should be able to resume from this file alone (see PROCESS.md).
 
+**Date**: 2026-07-15 (cont. — a 12-item human feedback batch: 3 bug fixes,
+a perf fix, and 8 editor/packaging features; 11 commits, suite ALL GREEN
+throughout, NOT yet re-staged to windows)
+
+Worked the human's whole feedback list end to end. Each is a focused commit;
+`nix run .#test` stayed **ALL GREEN** (selftest + traces + pixels byte-exact —
+every change is editor/render/dev or bypasses at its default). PAL C is
+**unchanged** this batch → the re-stage is Lua-only when the human wants it.
+
+- **Music silent after a restart in town (`dd48a4d`).** reset_game frees
+  snd.bank + re-runs game.init WITHOUT rebooting the VM, but cm.snd.load_song's
+  cache is a module upvalue that survived → it short-circuited and never
+  re-uploaded the track patches into the wiped bank. `cm.snd.seq.reset()` drops
+  the cache; reset_game calls it.
+- **Asset fuzzy search dropped the 2nd+ char (`0dee282`).** The filter box
+  omitted `multiline=false` → a multiline child window with flaky active-ID
+  tracking ate keystrokes past the first. Now single-line (+ the code-file
+  picker too), needle strips control chars.
+- **Tilemap edge-crawl seam / opt-in pixel-snap (`b9408ca`).** Couldn't repro
+  a hard gap headless (the tile draw shares edges — proven gap-free); the
+  seam is sub-pixel CAMERA crawl. `gfx.pixel_snap(true)` rounds each layer's
+  translation to a whole pixel — OFF by default (goldens byte-identical), the
+  demo opts in. **Needs the human's eyes** (intermittent, live-only).
+- **Generational GC (`de33132`).** Root-caused the rhythmic sim spikes: the
+  always-on ring recorder churns ~1.8KB/frame → periodic MAJOR collections
+  (grow over a session, gone on a fresh run). Lua 5.4 generational ≈ halves
+  the worst pauses (measured on a 4000-frame instrumented run). Determinism
+  untouched.
+- **Tilemap right-click erase (`b7165fe`)** — rmb erases with the current
+  tool's shape, no E switch.
+- **Map editor idle affordances (`31b5efc`)** — MOVE highlights the item under
+  the cursor (what a click grabs); COL shows a crosshair + landing dot, MARKER
+  a ghost box.
+- **Sprite editor batch (`a2b73b7`)** — right-click = secondary color, shift =
+  line from the last pixel, a **curve** tool (paint.curve), **drag-in stacked
+  palettes** (removable), and the bottom-right hex field clarified
+  (`#hex adds color` + a live preview swatch).
+- **Music arrangement rework (`d5656c5`)** — its OWN view: wheel-zoom +
+  MMB-pan + a resize handle, and FIXED readable track lanes that vertical-
+  scroll (were AR_H/#tracks → tiny).
+- **Root launchers (`6afbdbf`)** — the shipped bundle drops `cosmic2d-editor`
+  + `demo` (`.exe`) in its ROOT (renamed copies; argv[0] routes; auto-chdir
+  finds engine/). Verified the built linux bundle boots both.
+- **Ctrl+Space launcher (`ca74e7a`) + shared previews (`ace6267`)** — one
+  fuzzy field over open WINDOWS (pan-to = center at current zoom, fit down if
+  it overflows), spawnable KINDS, ASSETS, and DOCS, with a live preview (image
+  / map schematic / code excerpt). The same `cm.ed.preview` renderers now also
+  fill the asset-browser tiles (map thumbnails + code excerpts — the human's
+  ask for BOTH).
+
+**Proof:** 4 shots on llm-feed (launcher map+code previews, sprite ed, music
+arrangement); the asset-browser + launcher previews + both packaged launchers
+verified headless. Docs updated: win-{tmap,sprite,music}.md, editor.md, the
+welcome note, README.
+
+**Next step (resume here):** the human's TASTE + HANDS pass — nearly all of
+this is gesture/visual UX that headless can't drive: (1) the tilemap seam —
+does `gfx.pixel_snap` kill it live? (in-game vs in-editor-preview?); (2) the
+sprite tools (rmb 2nd colour, shift-line, curve, drag a .pal in); (3) the map
+hover + col/marker cursors; (4) the music arrangement pan/zoom/resize; (5)
+Ctrl+Space — fuzzy open / pan-to / previews; (6) the perf spikes — are they
+gone/smaller live? (7) restart-in-town music. If good, **re-stage
+cosmic2d-win** (Lua-only — PAL C unchanged) so the human tests natively, and
+the root launchers ship. Good `/clear` point — everything committed, tree
+clean, docs current.
+
+---
+
 **Date**: 2026-07-15 (cont. — the sprite-save GPU crash: root-caused,
 fixed, reproduced both ways; 1 commit, cosmic2d-win RE-STAGED)
 
