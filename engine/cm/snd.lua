@@ -154,6 +154,18 @@ end
 -- the derived caches (NOT state: rebuilt whenever they don't match)
 local cache = { path = nil, flat = nil, doc = nil, slots = nil }
 
+-- forget the derived song cache. The uploaded track patches live in the
+-- snd.bank named buffer, but this cache is a module upvalue: a game RESTART
+-- (cm.main.reset_game) frees snd.bank and re-runs game.init WITHOUT rebooting
+-- the VM, so without this the next step()'s load_song short-circuits on the
+-- stale cache and never re-uploads the patches into the fresh (empty) bank —
+-- the music then triggers silent voices ("music stops after restarting in
+-- town", the human's bug). reset_game calls this; a VM reboot re-requires the
+-- module fresh so its cache starts empty anyway.
+function M.seq.reset()
+  cache.path, cache.flat, cache.doc, cache.slots = nil, nil, nil, nil
+end
+
 -- resolve a track's instrument: direct first (absolute / cwd-relative),
 -- then relative to the song's PROJECT dir (a song at <proj>/sound/x.song
 -- storing tr.ins "ins/y.ins" -> <proj>/ins/y.ins). Makes a self-contained

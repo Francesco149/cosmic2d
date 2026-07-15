@@ -133,6 +133,10 @@ function M.reset_game()
   local f = sim:i64(0)
   for off = 8, 56, 8 do sim:i64(off, 0) end -- rand + reserved reset
   cm.require("cm.rand").ensure_seeded(M.proj.seed or 0x70657474616e3264)
+  -- snd.bank was just freed above; drop the sequencer's derived cache so the
+  -- restarted game re-uploads its song's track patches into the fresh bank
+  -- (else the music plays silent voices — the restart-goes-quiet bug).
+  cm.require("cm.snd").seq.reset()
   if M.game then guarded(M.game.init) end
   pal.log(("[main] game restarted (frame %d)"):format(f))
 end
