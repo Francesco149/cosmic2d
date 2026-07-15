@@ -22,10 +22,12 @@ changed the sound. Fix: clock the LFSR off the frequency increment
 (`prevph = oldph - incs[o]`). Tonal waves ignore that arg → byte-identical.
 After: hat centroid 12 → **5462 Hz**, snare 5 → **3848 Hz**, both broadband.
 The PCM golden was re-cut deliberately (it renders a noise op). A/B WAV at
-`C:\Users\headpats\gb_drums_before_after.wav`; spectrogram on llm-feed.
-**PAL C changed → needs a windows RE-STAGE for the human to hear it in the
-demo.** The stock + demo `ins/gb-noise-*` are byte-identical (no retune
-needed — the kernel was the whole problem).
+`C:\Users\headpats\gb_drums_before_after.wav`; spectrogram on llm-feed. The
+stock + demo `ins/gb-noise-*` are byte-identical (no retune needed — the
+kernel was the whole problem). **The human confirmed the drums are fixed.**
+**cosmic2d-win RE-STAGED + verified** (native selftest **23089 PASS** +
+kitcheck 830-frame trace byte-exact — the noise fix is bit-identical on
+win32; the windows-side .ed sessions were wiped as ever).
 
 **2 — the map editor: render placed assets + layers + attach anything +
 null-ref fallbacks + teidraw UX (`0bfd489` `bc0feb7` `c7a29f8` `96e9f40`
@@ -68,9 +70,9 @@ headless with a `maptest` scratch project carrying every placement variety
 (editor + in-game shots on llm-feed). The sibling game's legacy maps still
 migrate + play.
 
-**Next step (resume here):** the human's TASTE + EARS pass. (1) **Re-stage
-cosmic2d-win** (PAL changed — the noise fix) and listen to the gb drums in
-the demo — they should finally sizzle. (2) Walk the new map editor
+**Next step (resume here):** the human's TASTE + EARS pass. cosmic2d-win is
+RE-STAGED (native-verified) — the drums are confirmed fixed. (2) Walk the
+new map editor
 (`bin\cosmic.exe <proj> --edit`, open/spawn a map window): the layer panel
 toggles, lock + auto-select, drop any asset (a .song attaches as a named
 ref), the null-ref checkerboard, an `anim:` clip. Then wire a real
