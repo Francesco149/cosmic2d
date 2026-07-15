@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 atomic `.song` saves complete (2026-07-15)
+## Current handoff — A1 atomic code/text saves complete (2026-07-15)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -127,10 +127,17 @@ song failure, and summons the editor console; retry publishes a complete
 decodable generation and clears dirty state. `nix run .#test` is ALL GREEN:
 23,219 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** migrate code/text-window source saves (`.lua`, `.md`,
-`.txt`, `.json`, `.glsl`) to atomic replacement with focused injected-failure
-coverage proving the previous file survives, dirty working bytes remain, and
-the editor reports the failure. Do not migrate asset import/create paths in the
-same packet.
+**A1 packet 11 is complete.** Code/text-window source saves (`.lua`, `.md`,
+`.txt`, `.json`, `.glsl`) now use atomic replacement. Injected rename failures
+for every routed extension preserve the previous file byte-for-byte, keep the
+newer working text dirty, emit the named path and failure, and summon the
+console; retry publishes the complete source and clears dirty state. `nix run
+.#test` is ALL GREEN: 23,239 self-checks, every trace verify, and all pixel
+goldens.
+
+**Exact next packet:** migrate editor asset import/create writes (asset-browser
+drops/conversions, map-created tilemaps, and audio-created instruments) to
+atomic replacement with focused failure coverage and actionable console
+errors. Keep trace/history and runtime snapshot persistence for later packets.
 
 There is no known blocker or human-only verification required.

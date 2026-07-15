@@ -3105,6 +3105,42 @@ local function t_ed_game()
   ed.doc = keep_doc
 end
 
+local function t_ed_text_save()
+  local W = cm.require("cm.ed.win.text")
+  local root = tmproot() .. "/cosmic_selftest_ed_text_save"
+  pal.mkdir(root)
+
+  -- Every format routed to the code/text window shares this source-save
+  -- contract. Pin each extension so prose, data, and shaders cannot drift
+  -- back to the old truncating path independently.
+  for _, ext in ipairs({ "lua", "md", "txt", "json", "glsl" }) do
+    local path = "atomic." .. ext
+    local diskbytes = "known-good " .. ext .. "\n"
+    local workingbytes = "unsaved replacement " .. ext .. "\n"
+    pal.write_file(root .. "/" .. path, diskbytes)
+    local summoned = false
+    local ed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+                 touch = function() end,
+                 summon_console = function() summoned = true end }
+    local win = { path = path }
+    local a, p = W.open_win(win, ed)
+    a.text = workingbytes
+    p._save_fail = { _fail = "rename" }
+    W.save(win, ed)
+    check(pal.read_file(root .. "/" .. path) == diskbytes,
+          "ed.text save: ." .. ext .. " failure preserves previous source")
+    check(W.dirty(win, ed) and a.text == workingbytes,
+          "ed.text save: ." .. ext .. " failure retains dirty working bytes")
+    check(summoned,
+          "ed.text save: ." .. ext .. " failure summons the console")
+    p._save_fail = nil
+    W.save(win, ed)
+    check(not W.dirty(win, ed)
+          and pal.read_file(root .. "/" .. path) == workingbytes,
+          "ed.text save: ." .. ext .. " retry publishes complete source")
+  end
+end
+
 local function t_ed_session()
   local session = cm.require("cm.ed.session")
   local wm = cm.require("cm.ed.wm")
@@ -5125,6 +5161,7 @@ function game.init()
   t_ed_wm()
   t_ed_game()
   t_atomic_write()
+  t_ed_text_save()
   t_ed_session()
   t_ed_cache()
   t_ed_journal()

@@ -69,6 +69,13 @@ A = cm.require("cm.ed.kit").asset {
   -- an empty file — no fresh(): a new asset adopts the disk bytes)
   baseline_always = true,
   adopt = function(p) p.force_set = true end,
+  write = function(ed, path, a, p)
+    -- `_save_fail` is an ephemeral durability-test seam. Code and prose are
+    -- source assets too: never let a short/interrupted write replace their
+    -- last valid generation.
+    return pal.write_file_atomic(ed.root .. "/" .. path, a.text,
+                                 p._save_fail)
+  end,
   pre_undo = function(ed, path, a, p) -- close the open gesture first
     if p.due then A.push(ed, path) end
   end,
