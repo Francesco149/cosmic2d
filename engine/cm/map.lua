@@ -318,9 +318,55 @@ function M.use(o)
 end
 
 -- the named-placement handle (D057b): the placement table itself —
--- mutate x/y/hidden freely, it is render-only state (like the camera).
+-- mutate x/y/vis freely, it is render-only state (like the camera).
 function M.get(name)
   return M.cur and M.cur.by_name[name] or nil
+end
+
+-- built-in fallbacks for a dangling / missing named ref: graceful
+-- degradation, loud but non-fatal. Paths resolve from the ENGINE ROOT
+-- (cwd), like the stock instruments — a packaged game bundles engine/stock.
+M.FALLBACK = {
+  spr = "engine/stock/spr/tiles.spr", png = "engine/stock/spr/tiles.png",
+  ins = "engine/stock/error.ins", song = "engine/stock/error.song",
+  pal = "engine/stock/error.pal",
+}
+
+local function kind_of(path)
+  return (path and path:match("%.([%w]+)$") or ""):lower()
+end
+M.kind_of = kind_of
+
+local function is_visual(path)
+  local k = kind_of(path)
+  return k == "spr" or k == "png" or k == "tm"
+end
+M.is_visual = is_visual
+
+-- cm.map.ref(name): resolve a named placement to a usable (cwd-relative)
+-- asset path from the LIVE map. A missing name or an unreadable file is
+-- NON-FATAL — it logs a warning + a traceback and returns the built-in
+-- fallback for the kind (checkerboard sprite / error jingle / placeholder
+-- palette), so a deleted asset degrades loudly instead of crashing.
+-- Returns: path, kind, ok. `ok=false` means the fallback is in play.
+function M.ref(name)
+  local cur = M.cur
+  local proj = (cm.main and cm.main.args and cm.main.args.project) or "."
+  local p = cur and cur.by_name[name]
+  if not p then
+    pal.log(("[map] NULL REF: no placement named %q on map %q")
+            :format(tostring(name), cur and cur.name or "<none>"))
+    pal.log(debug.traceback("  at", 2))
+    return nil, nil, false
+  end
+  local kind = kind_of(p.path)
+  local full = proj .. "/" .. p.path
+  if pal.read_file(full) then return full, kind, true end
+  local fb = M.FALLBACK[kind]
+  pal.log(("[map] NULL REF %q -> %s unreadable; falling back to %s")
+          :format(name, p.path, fb or "(no fallback for ." .. kind .. ")"))
+  pal.log(debug.traceback("  at", 2))
+  return fb, kind, false
 end
 
 -- the map-editor hot-reload entry (MAPS.md §9): re-decode the saved file
@@ -642,14 +688,12 @@ function M.draw_places(inst, camx, camy)
     -- draw the image only for a live layer + a visible visual placement;
     -- off-layer / novis / non-visual placements are refs (no image)
     if place_on(doc, p) and p.vis ~= false then
-      if p.path:lower():find("%.tm$") then
-        local rec = place_tm(inst, p)
-        if rec then -- tmap.draw culls per cell; flip is a no-op for grids
-          tmap = tmap or cm.require("cm.tmap")
-          tmap.draw(rec.doc, rec.tex, p.x, p.y, camx, camy)
-        end
+      local rec = kind_of(p.path) == "tm" and place_tm(inst, p) or nil
+      if rec then -- a .tm: tmap.draw culls per cell; flip is a no-op
+        tmap = tmap or cm.require("cm.tmap")
+        tmap.draw(rec.doc, rec.tex, p.x, p.y, camx, camy)
       else
-        local t = place_tex(inst, p)
+        local t = kind_of(p.path) ~= "tm" and place_tex(inst, p) or nil
         if t then
           if p.x < camx + vw and p.x + t.w > camx
              and p.y < camy + vh and p.y + t.h > camy then
@@ -657,8 +701,32 @@ function M.draw_places(inst, camx, camy)
             if p.flip then u0, u1 = 1, 0 end
             pal.quad(p.x, p.y, t.w, t.h, 1, 1, 1, 1, t.id, u0, 0, u1, 1)
           end
+        elseif is_visual(p.path) then
+          -- a dangling visual (deleted/typo): the checkerboard, loudly
+          M.draw_null(inst, p, camx, camy)
         end
       end
+    end
+  end
+end
+
+-- the in-game null-ref placeholder: a small magenta/black checkerboard at
+-- the placement (matches the editor's) + a one-shot console warning. A
+-- deleted asset stays obvious in the running game, never a silent gap.
+function M.draw_null(inst, p, camx, camy)
+  inst._warned = inst._warned or {}
+  if not inst._warned[p.path] then
+    inst._warned[p.path] = true
+    pal.log(("[map] null asset ref: %s%s — checkerboard placeholder")
+            :format(p.path, p.name and (' ("' .. p.name .. '")') or ""))
+  end
+  local S = 16 -- placeholder cell size in world px
+  for r = 0, 1 do
+    for c = 0, 1 do
+      local col = (c + r) % 2 == 0 and 0xE8 or 0x24
+      pal.quad(p.x + c * S, p.y + r * S, S, S,
+               col / 255, (col == 0xE8 and 0x38 or 0x18) / 255,
+               (col == 0xE8 and 0xE8 or 0x30) / 255, 1)
     end
   end
 end

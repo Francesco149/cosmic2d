@@ -1092,6 +1092,17 @@ local function t_map()
   check(awn and awn.x == 200 and map.get("nope") == nil,
         "map: get(name) placement handle")
 
+  -- named-ref resolution + graceful fallback (cm.map.ref). awning.spr is a
+  -- synthetic path (no file), so ref falls back to the checkerboard sprite.
+  local rp, rk, rok = map.ref("awn")
+  check(rok == false and rk == "spr" and rp == map.FALLBACK.spr,
+        "map.ref: a dangling visual falls back to the checkerboard")
+  -- bgm sits on the OFF overlay layer -> it acts as if it doesn't exist
+  check(map.ref("bgm") == nil and select(3, map.ref("bgm")) == false,
+        "map.ref: a name on a disabled layer is absent")
+  check(select(3, map.ref("nope")) == false,
+        "map.ref: an unknown name returns nil, false")
+
   -- reload in place (R8b, MAPS.md §9): the held world wrapper + instance
   -- adopt the saved file's new geometry without re-plumbing
   local held_world = inst.world
