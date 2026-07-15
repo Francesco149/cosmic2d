@@ -55,7 +55,6 @@ local COL = {
   btn = 0x262238ff, btn_on = 0x4a4370ff, btn_hot = 0x3a3560ff,
   text = 0xd8d2f2ff, dim = 0x8a84b0ff, hot = 0xE8E4FFff,
   danger = 0xf07a7aff,
-  fill = 0x5c5852ff, lip = 0x767068ff,      -- the graybox strips
   solid = 0x8ad0ffff, oneway = 0x7fd8a8ff,  -- collider gizmos
   marker = 0xf0d070ff, sel = 0x7fd8a8ff,
   guide = 0xE8E4FFcc, ghost = 0x7fd8a866,
@@ -74,7 +73,7 @@ local GRID_STEPS = { 1, 2, 4, 8, 16, 32, 64 }
 local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
 
 function M.defaults()
-  return { path = "", tool = "move", giz = true, mk = true, fill = true,
+  return { path = "", tool = "move", giz = true, mk = true,
            ctype = "line", lpanel = true }
 end
 
@@ -155,7 +154,7 @@ local function decode_into(p, bytes)
     p.doc = nil
     p.err = tostring(doc)
   end
-  p.geom, p.fill_rects = nil, nil
+  p.geom = nil
   p.sel = {}
 end
 
@@ -175,7 +174,7 @@ local A = cm.require("cm.ed.kit").asset {
   fresh = function(ed, path) return fresh_bytes(path) end, -- a new map
   adopt = decode_into,
   encode = map.encode,
-  post_encode = function(p) p.geom, p.fill_rects = nil, nil end,
+  post_encode = function(p) p.geom = nil end,
   after_save = function(ed, path)
     -- the recorded hot-reload (MAPS.md §9): the running game re-instances
     -- the saved map at the start of the next sim frame; traces replay it
@@ -1086,12 +1085,11 @@ function M.snap_pt(tg, x, y, opts)
          math.floor(y / step + 0.5) * step, {}, "grid"
 end
 
--- ---- header: tool radio (move/sel/col/mkr) + giz / mk / fill chips ----
+-- ---- header: tool radio (move/sel/col/mkr) + lyr / giz / mk chips ----
 -- move = unified direct manipulation (default); sel = box-select (v, one-shot
 -- → returns to move); col = place colliders (c); mkr = place markers (m).
 
-local CHIPS = { { "lpanel", "lyr" }, { "giz", "giz" }, { "mk", "mk" },
-               { "fill", "fill" } }
+local CHIPS = { { "lpanel", "lyr" }, { "giz", "giz" }, { "mk", "mk" } }
 local TOOLS = { { "marker", "mkr" }, { "collider", "col" },
                 { "sel", "sel" }, { "move", "move" } } -- right-to-left draw
 
@@ -1442,59 +1440,6 @@ local function draw_layer_panel(win, ed, p, doc, x0, y0, pw, ph, z, fpx, ctx)
   end
 end
 
--- the graybox strip fill's rects, in MAP coords: contiguous columns with the
--- same solid-interval signature collapse into one {x,y,w,h}. Computed ONCE over
--- the whole map (the collider geometry is view-independent + changes only on an
--- edit), then cached on p.fill_rects. Was recomputed every frame — a column_ivs
--- walk + a table.concat signature string PER SCREEN PIXEL — the ~2.3ms map-draw
--- hotspot (the human's editor-fps regression).
-local function compute_fill_rects(geom, w)
-  local out = {}
-  local scratch = {}
-  local run_x, run_ivs
-  local function flush(xe)
-    if not run_ivs then return end
-    for j = 1, #run_ivs, 2 do
-      out[#out + 1] = { run_x, run_ivs[j], xe - run_x,
-                        run_ivs[j + 1] - run_ivs[j] }
-    end
-  end
-  local function same(a, b)
-    if not b or #a ~= #b then return false end
-    for k = 1, #a do if a[k] ~= b[k] then return false end end
-    return true
-  end
-  for cx = 0, w - 1 do
-    local ivs = map.column_ivs(geom.loops, cx + 0.5, scratch)
-    if not same(ivs, run_ivs) then
-      flush(cx)
-      local c = {} -- copy: scratch is reused next column
-      for k = 1, #ivs do c[k] = ivs[k] end
-      run_x, run_ivs = cx, c
-    end
-  end
-  flush(w)
-  return out
-end
-
--- draw the cached fill rects (screen coords, culled to the visible canvas)
-local function draw_fill(p, view, X0, X1, Y0s, Y1s, w)
-  p.fill_rects = p.fill_rects or compute_fill_rects(p.geom, w)
-  local zoom, ox, oy = view.zoom, view.ox, view.oy
-  local lip = math.max(1, zoom)
-  for _, r in ipairs(p.fill_rects) do
-    if r[1] < X1 and r[1] + r[3] > X0 then -- horizontal cull (map px)
-      local sy0 = oy + r[2] * zoom
-      local sh = r[4] * zoom
-      if sy0 + sh > Y0s and sy0 < Y1s then -- vertical cull (screen px)
-        local sx0, sw = ox + r[1] * zoom, r[3] * zoom
-        pal.x_ig_rect_fill(sx0, sy0, sw, sh, COL.fill)
-        pal.x_ig_rect_fill(sx0, sy0, sw, lip, COL.lip)
-      end
-    end
-  end
-end
-
 local function draw_gizmos(p, view, sel, tool, csel, asel)
   local geom = p.geom
   local zoom, ox, oy = view.zoom, view.ox, view.oy
@@ -1661,23 +1606,9 @@ function M.draw(win, ctx)
   pal.x_ig_rect(ox - 1, oy - 1, doc.w * zoom + 2, doc.h * zoom + 2,
                 COL.bounds, 1)
 
-  -- visible map-px range
-  local X0 = math.max(0, math.floor(s2mx(cvx)))
-  local X1 = math.min(doc.w, math.ceil(s2mx(cvx + cvw)))
-  if win.fill and X1 > X0 then
-    draw_fill(p, view, X0, X1, cvy, cvy + cvh, doc.w)
-    -- one-way slabs + open solid strokes (screen-space lines read the same)
-    for _, s in ipairs(p.geom.slabs) do
-      pal.x_ig_line(ox + s[1] * zoom, oy + s[2] * zoom,
-                    ox + s[3] * zoom, oy + s[4] * zoom, COL.oneway,
-                    math.max(2, 3 * zoom * 0.5))
-    end
-    for _, s in ipairs(p.geom.lines) do
-      pal.x_ig_line(ox + s[1] * zoom, oy + s[2] * zoom,
-                    ox + s[3] * zoom, oy + s[4] * zoom, COL.fill,
-                    math.max(1.5, 2 * zoom * 0.5))
-    end
-  end
+  -- colliders are collision-only: they show as GIZMOS (draw_gizmos, below),
+  -- never as an auto graybox FILL (the human's call — map visuals are placed
+  -- sprites/tilemaps; the fill was redundant with the gizmos + a perf sink).
 
   -- placements — layer z-order (bg behind foreground). A layer with
   -- vis=false is hidden in the EDITOR only (skip); a layer with on=false
