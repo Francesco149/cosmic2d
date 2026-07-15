@@ -195,7 +195,10 @@ local function resolve_project(args)
     pal.log("[boot] launcher: editor front door (project picker)")
     return
   end
-  if exe ~= "cosmic" and exe ~= "" then
+  -- The Windows diagnostic/CI executable is the same neutral engine entrance
+  -- as cosmic.exe; its distinct basename exists only to select the console
+  -- PE subsystem, not a project.
+  if exe ~= "cosmic" and exe ~= "cosmic-console" and exe ~= "" then
     for _, dir in ipairs({ exe, "projects/" .. exe }) do
       if pal.read_file(dir .. "/project.lua") then
         args.project = dir

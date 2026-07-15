@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 portable Linux artifact complete (2026-07-16)
+## Current handoff — A2 Windows launch modes complete (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -205,7 +205,20 @@ manifest is `lvp_icd.json`; using that clean-machine path completes the launch
 with SDL's Vulkan GPU backend. The archive build, dependency checks, read-only
 install check, and clean-container boot all pass.
 
-**Exact next packet:** ship Windows GUI-subsystem launchers while retaining a
-separate console/headless executable for diagnostics and CI.
+**A2 packet 3 is complete.** The Windows object tree now links into two explicit
+entrances: normal `cosmic.exe`, editor, and named-game launchers use the Windows
+GUI subsystem and therefore do not create a terminal on double-click;
+`bin/cosmic-console.exe` retains the console subsystem for diagnostics,
+stdout/stderr, headless runs, and CI. Both dev and public-editor distributions
+contain the pair, and Windows play packaging retains the console executable
+while deriving its game/editor launchers from the GUI executable. Build-time PE
+header checks reject either subsystem being wrong. The dev and editor cross
+packages build, and a fresh demo Windows archive contains all three intended
+entrances. `nix run .#test` is ALL GREEN: 23,264 self-checks, every trace
+verify, and all pixel goldens.
+
+**Exact next packet:** add Windows/application icons and version resources,
+define and expose the crash-log location, then carry release notices and
+checksums into the artifacts with an explicit unsigned-alpha policy.
 
 There is no known blocker or human-only verification required.

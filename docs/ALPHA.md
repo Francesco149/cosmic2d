@@ -110,7 +110,7 @@ Goal: artifacts work on clean supported machines exactly as advertised.
   play mode by default.
 - [x] Produce a portable Linux artifact (AppImage or bundled-libs/RPATH
   tarball) that has no Nix-store runtime dependency.
-- [ ] Ship Windows GUI-subsystem launchers; retain a separate console/headless
+- [x] Ship Windows GUI-subsystem launchers; retain a separate console/headless
   executable for diagnostics and CI.
 - [ ] Add icons, version resources, crash-log location, licenses/notices, and
   artifact checksums. Decide signing expectations for an unsigned alpha.

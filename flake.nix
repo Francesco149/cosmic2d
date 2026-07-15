@@ -134,10 +134,11 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
         '';
 
         # M6 — Windows cross build (mingw-w64 + cross SDL3, both from nixpkgs;
-        # the PAL is pure SDL3 so the C ports as-is). The cross stdenv sets
-        # CC/PKG_CONFIG/PKG_CONFIG_PATH; we only add EXE + a console subsystem
-        # (-mconsole, so stderr/headless work) and static libgcc. Output is a
-        # self-contained tree: cosmic.exe + SDL3.dll beside engine/projects/.
+        # the PAL is pure SDL3 so the C ports as-is). Link the shared object
+        # tree twice: cosmic.exe is a GUI-subsystem application for normal
+        # double-click launches, while cosmic-console.exe retains a console
+        # for diagnostics, headless runs, and CI. Both keep static compiler
+        # runtimes; SDL3 remains the only adjacent runtime DLL.
         cosmic-windows-dev = let cross = pkgs.pkgsCross.mingwW64;
         in cross.stdenv.mkDerivation {
           pname = "cosmic2d-windows-dev";
@@ -147,8 +148,10 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
           buildInputs = [ cross.sdl3 ];
           dontStrip = true;
           buildPhase = ''
-            make -C pal EXE=.exe \
+            make -C pal EXE=.exe BIN=../bin/cosmic-console.exe \
               LDFLAGS="-mconsole -static-libgcc -static-libstdc++"
+            make -C pal EXE=.exe BIN=../bin/cosmic.exe \
+              LDFLAGS="-mwindows -static-libgcc -static-libstdc++"
           '';
           installPhase = ''
             bash tools/stage-manifest.sh . dist/manifests/dev.txt $out
@@ -168,6 +171,19 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
             cp $out/bin/cosmic.exe $out/cosmic2d-editor.exe
             cp $out/bin/cosmic.exe $out/demo.exe
             cp $out/bin/*.dll $out/
+
+            # Catch regressions where a normal launcher opens a terminal, or
+            # the diagnostic binary loses stderr/stdout console attachment.
+            gui_subsystem="$(${cross.stdenv.cc.bintools.targetPrefix}objdump -p \
+              $out/bin/cosmic.exe | sed -n 's/^[[:space:]]*Subsystem[[:space:]]*//p')"
+            console_subsystem="$(${cross.stdenv.cc.bintools.targetPrefix}objdump -p \
+              $out/bin/cosmic-console.exe | sed -n 's/^[[:space:]]*Subsystem[[:space:]]*//p')"
+            case "$gui_subsystem" in *"Windows GUI"*) ;; *)
+              echo "cosmic.exe is not a Windows GUI executable: $gui_subsystem" >&2; exit 1;;
+            esac
+            case "$console_subsystem" in *"Windows CUI"*) ;; *)
+              echo "cosmic-console.exe is not a Windows console executable: $console_subsystem" >&2; exit 1;;
+            esac
           '';
         };
 

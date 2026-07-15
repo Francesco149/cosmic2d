@@ -37,6 +37,11 @@ bundles drop two launchers in their **root**:
 - **`cosmic2d-editor`** (`.exe`) — the project picker / editor front door.
 - **`demo`** (`.exe`) — the bundled demo, straight to play.
 
+Windows `.exe` launchers use the GUI subsystem, so opening them normally does
+not create a second console window. For diagnostics, automation, and headless
+runs, use `bin/cosmic-console.exe`; it is the same engine with stdout/stderr
+attached to the calling terminal.
+
 ## Make a game
 
 Everything is authored in the editor (`--edit`, or via the picker): an

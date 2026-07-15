@@ -5,7 +5,9 @@ CC ?= cc
 CXX ?= c++
 PKG_CONFIG ?= pkg-config
 EXE ?=
-BIN := ../bin/cosmic$(EXE)
+# Override BIN when one object tree needs multiple launchers (the Windows
+# distribution links both GUI- and console-subsystem executables).
+BIN ?= ../bin/cosmic$(EXE)
 BUILD := build
 
 CFLAGS := -O2 -g -std=c11 -Wall -Wextra -Wno-unused-parameter \
