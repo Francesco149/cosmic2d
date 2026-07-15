@@ -29,8 +29,10 @@ bin/cosmic projects/demo            # play the demo directly
 bin/cosmic projects/demo --edit     # open it in the editor
 ```
 
-The current development bundles (`nix build .#cosmic` / `.#cosmic-windows`)
-drop two launchers in their **root**:
+The editor release bundles (`nix build .#cosmic` / `.#cosmic-windows`) contain
+only the intentional demo and picker; `.#cosmic-dev` and
+`.#cosmic-windows-dev` additionally carry internal tests and fixtures. Editor
+bundles drop two launchers in their **root**:
 
 - **`cosmic2d-editor`** (`.exe`) — the project picker / editor front door.
 - **`demo`** (`.exe`) — the bundled demo, straight to play.
@@ -58,10 +60,11 @@ nix run .#package -- demo          # -> demo-windows.zip
 nix run .#package -- demo linux    # -> demo-linux.tar.gz
 ```
 
-The bundle contains only the engine runtime + that one project + this README
-and LICENSE; the renamed launcher boots the game locked to play mode. This is
-not yet the promised general export flow or a clean-machine-certified release;
-those are gates A2 and A3 in `docs/ALPHA.md`.
+The bundle contains the selected editable project, engine/editor tooling,
+README, and LICENSE. Its named launcher boots the game locked to play mode;
+`bin/cosmic2d-editor` remains available for a deliberate authoring entrance.
+This is not yet the promised general export flow or a clean-machine-certified
+release; those are gates A2 and A3 in `docs/ALPHA.md`.
 
 ## Shape of the thing
 

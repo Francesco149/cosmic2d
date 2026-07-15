@@ -104,7 +104,7 @@ explains recovery; source and baked assets cannot claim a false successful save.
 
 Goal: artifacts work on clean supported machines exactly as advertised.
 
-- [ ] Split dev/test, editor, and default-play manifests. Release picker
+- [x] Split dev/test, editor, and default-play manifests. Release picker
   contains only bundled demos and user projects; exported games still carry
   the engine/editor and editable project, with the named launcher locked to
   play mode by default.

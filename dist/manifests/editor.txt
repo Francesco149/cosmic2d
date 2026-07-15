@@ -1,0 +1,9 @@
+# Public editor release: tooling, picker, and intentional bundled demos.
+bin
+engine
+projects/picker
+projects/demo
+README.md
+LICENSE
+pal/shaders
+pal/vendor/fonts

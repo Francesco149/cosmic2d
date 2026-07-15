@@ -29,22 +29,19 @@
         };
       });
 
-      # the console, built from tracked sources: bin/ + engine/ + projects/
-      # + tests/ laid out exactly like the repo (binary paths are relative)
+      # Three explicit distribution shapes share the compiled PAL but stage
+      # different allowlists. Dev carries fixtures/tests; editor carries only
+      # the picker and intentional demos; play is staged by the packager below.
       packages = forAll (pkgs: rec {
-        cosmic = pkgs.stdenv.mkDerivation {
-          pname = "cosmic2d";
+        cosmic-dev = pkgs.stdenv.mkDerivation {
+          pname = "cosmic2d-dev";
           version = "0.1-m1";
           src = self;
           nativeBuildInputs = [ pkgs.pkg-config pkgs.glslang ];
           buildInputs = [ pkgs.sdl3 ];
           buildPhase = "make -C pal";
           installPhase = ''
-            mkdir -p $out/pal/vendor
-            cp -r bin engine projects tests $out/
-            cp README.md LICENSE $out/
-            cp -r pal/shaders $out/pal/
-            cp -r pal/vendor/fonts $out/pal/vendor/
+            bash tools/stage-manifest.sh . dist/manifests/dev.txt $out
             # root launchers (the human's ask): extract -> run the one you want.
             # The binary auto-chdirs to the dir holding engine/, so a launcher
             # beside engine/ resolves projects/ fine; argv[0]'s basename routes
@@ -55,14 +52,22 @@
           '';
         };
 
+        cosmic-editor = cosmic-dev.overrideAttrs (old: {
+          pname = "cosmic2d-editor";
+          installPhase = builtins.replaceStrings
+            [ "dist/manifests/dev.txt" ] [ "dist/manifests/editor.txt" ]
+            old.installPhase;
+        });
+        cosmic = cosmic-editor;
+
         # M6 — Windows cross build (mingw-w64 + cross SDL3, both from nixpkgs;
         # the PAL is pure SDL3 so the C ports as-is). The cross stdenv sets
         # CC/PKG_CONFIG/PKG_CONFIG_PATH; we only add EXE + a console subsystem
         # (-mconsole, so stderr/headless work) and static libgcc. Output is a
         # self-contained tree: cosmic.exe + SDL3.dll beside engine/projects/.
-        cosmic-windows = let cross = pkgs.pkgsCross.mingwW64;
+        cosmic-windows-dev = let cross = pkgs.pkgsCross.mingwW64;
         in cross.stdenv.mkDerivation {
-          pname = "cosmic2d-windows";
+          pname = "cosmic2d-windows-dev";
           version = "0.1-m6";
           src = self;
           nativeBuildInputs = [ pkgs.pkg-config pkgs.glslang ];
@@ -73,11 +78,7 @@
               LDFLAGS="-mconsole -static-libgcc -static-libstdc++"
           '';
           installPhase = ''
-            mkdir -p $out/pal/vendor
-            cp -r bin engine projects tests $out/
-            cp README.md LICENSE $out/
-            cp -r pal/shaders $out/pal/
-            cp -r pal/vendor/fonts $out/pal/vendor/
+            bash tools/stage-manifest.sh . dist/manifests/dev.txt $out
             cp ${cross.sdl3.out}/bin/SDL3.dll $out/bin/
           '';
           # the mingw stdenv symlinks runtime DLLs (libmcfgthread) into bin/;
@@ -96,6 +97,14 @@
             cp $out/bin/*.dll $out/
           '';
         };
+
+        cosmic-windows-editor = cosmic-windows-dev.overrideAttrs (old: {
+          pname = "cosmic2d-windows-editor";
+          installPhase = builtins.replaceStrings
+            [ "dist/manifests/dev.txt" ] [ "dist/manifests/editor.txt" ]
+            old.installPhase;
+        });
+        cosmic-windows = cosmic-windows-editor;
         default = cosmic;
       });
 
@@ -107,12 +116,14 @@
       # `nix flake check` (checks.goldens).
       apps = forAll (pkgs:
         let
-          cosmic = self.packages.${pkgs.system}.cosmic;
+          cosmic = self.packages.${pkgs.system}.cosmic-dev;
           suite = ''
             export VK_DRIVER_FILES=${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.x86_64.json
             export LD_LIBRARY_PATH=${pkgs.vulkan-loader}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
             cd ${cosmic}
             fail=0
+            echo "== release manifests =="
+            ./tests/release-manifests.sh || fail=1
             echo "== selftest =="
             ./bin/cosmic projects/selftest --headless --frames 1 || fail=1
             for t in tests/traces/*.ctrace; do
@@ -154,8 +165,8 @@
             text = ''
               name="''${1:-demo}"
               target="''${2:-win}"
-              win="${self.packages.${pkgs.system}.cosmic-windows}"
-              lin="${self.packages.${pkgs.system}.cosmic}"
+              win="${self.packages.${pkgs.system}.cosmic-windows-dev}"
+              lin="${self.packages.${pkgs.system}.cosmic-dev}"
               src="${self}"
               case "$target" in
                 win|windows) base="$win"; exe="cosmic.exe"; newexe="$name.exe"; suffix="windows";;
@@ -167,14 +178,15 @@
               fi
               work="$(mktemp -d)"; root="$work/$name"
               mkdir -p "$root"
-              cp -r --no-preserve=mode,ownership "$base"/. "$root"/
+              bash "$src/tools/stage-manifest.sh" "$base" \
+                "$src/dist/manifests/play.txt" "$root" "$name"
               chmod -R u+w "$root"
-              # keep only this project; drop the golden suite
-              find "$root/projects" -mindepth 1 -maxdepth 1 ! -name "$name" -exec rm -rf {} +
-              rm -rf "$root/tests"
               # rename the launcher -> boots projects/<name> locked to play mode
               mv "$root/bin/$exe" "$root/bin/$newexe"
               chmod +x "$root/bin/$newexe" # --no-preserve dropped the +x bit
+              # Tooling remains deliberately available in an exported game;
+              # only the named launcher defaults to locked play mode.
+              cp "$root/bin/$newexe" "$root/bin/cosmic2d-editor''${exe##cosmic}"
               cp "$src/README.md" "$root/README.md" 2>/dev/null || true
               cp "$src/LICENSE" "$root/LICENSE" 2>/dev/null || true
               printf 'cosmic2d — %s\n\nRun  bin/%s  to play.\n' "$name" "$newexe" > "$root/PLAY.txt"

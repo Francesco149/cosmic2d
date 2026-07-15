@@ -1,0 +1,11 @@
+# Development and deterministic-test tree.
+bin
+engine
+projects
+tests
+dist
+tools/stage-manifest.sh
+README.md
+LICENSE
+pal/shaders
+pal/vendor/fonts

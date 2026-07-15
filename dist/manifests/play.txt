@@ -1,0 +1,9 @@
+# Exported game: editable engine/tooling, picker, and the selected project.
+bin
+engine
+projects/picker
+projects/@PROJECT@
+README.md
+LICENSE
+pal/shaders
+pal/vendor/fonts

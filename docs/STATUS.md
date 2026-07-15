@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A1 durability complete (2026-07-16)
+## Current handoff — A2 distribution manifests complete (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -180,9 +180,18 @@ journal appends, explicit user-requested screenshots, test/bootstrap fixture
 writes, and player storage reserved for A4. `nix run .#test` is ALL GREEN:
 23,264 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** begin A2 with a dev/test, editor-release, and
-default-play manifest split plus a clean picker fixture. Prove release manifests
-exclude `selftest`, `smoke`, `igcanvas`, and `uigallery` while retaining the
-intentional bundled demos and editable engine/tooling contract.
+**A2 packet 1 is complete.** Dev/test, editor-release, and default-play trees
+are now staged from explicit allowlist manifests. The public editor contains
+only the picker and intentional `demo`; play exports contain the picker and
+selected editable project. Both retain the engine/editor tooling, while the
+named game launcher remains locked to play and a deliberate editor launcher is
+available. A clean staging fixture proves `selftest`, `smoke`, `igcanvas`, and
+`uigallery` cannot leak into either release shape and remain present in dev.
+Linux and Windows dev/editor packages all build; `nix run .#test` is ALL GREEN:
+23,264 self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** produce the portable Linux bundled-libraries/RPATH
+tarball and a clean-container smoke script, proving it has no Nix-store runtime
+dependency and launches from an extracted read-only install tree.
 
 There is no known blocker or human-only verification required.
