@@ -964,16 +964,18 @@ local function t_map()
       { kind = "circle", cx = 30, cy = 30, r = 9 },
     },
     places = {
-      { path = "art/sign.png", x = 20, y = 160, layer = 1, vis = false },
+      { path = "art/sign.png", x = 20, y = 160, layer = 1, vis = false,
+        gid = 7 },
       { path = "art/awning.spr", x = 200, y = 120, name = "awn",
         flip = true, layer = 2, anim = "wave",
         cols = { { kind = "chain", oneway = true,
                    verts = { 0, 0, 48, 0 } } } },
-      { path = "sound/bgm.song", x = 8, y = 8, name = "bgm", layer = 3 },
+      { path = "sound/bgm.song", x = 8, y = 8, name = "bgm", layer = 3,
+        gid = 7 },
     },
     markers = {
       { x = 10, y = 150, w = 30, h = 30, kind = "spawn", label = "start",
-        note = "", extras = { { k = "name", v = "start" } } },
+        note = "", gid = 7, extras = { { k = "name", v = "start" } } },
       { x = 300, y = 150, w = 16, h = 30, kind = "portal", label = "out",
         note = "n", extras = { { k = "to", v = "b" }, { k = "at", v = "x" } } },
     },
@@ -1000,6 +1002,10 @@ local function t_map()
   check(d.places[1].vis == false and d.places[2].vis == true
         and d.places[3].name == "bgm" and d.places[3].anim == nil,
         "map: the vis flag rides PLCE bit1; anim + non-visual ref carry")
+  check(d.places[1].gid == 7 and d.places[3].gid == 7
+        and d.places[2].gid == nil and d.markers[1].gid == 7
+        and d.markers[2].gid == nil,
+        "map: the group gid rides PLCE v3 / MRKR v2 (0 = ungrouped)")
   check(#d.markers == 2 and d.markers[1].kind == "spawn"
         and d.markers[2].extras[2].v == "x"
         and map.extras(d.markers[2]).to == "b", "map: markers round trip")
@@ -3784,6 +3790,40 @@ local function t_ed_map()
   dk = W.drill_pick(st, dr, 260, 101, 5)
   check(dk == 1, "ed.map: drill resets when the point moves")
   check(W.drill_pick({}, nil, 0, 0, 5) == nil, "ed.map: drill empty stack nil")
+
+  -- groups (D061): gid tags, membership, drill chain, ungroup, paste-regroup
+  local gdoc = {
+    name = "g", w = 100, h = 100, grid = 8, colliders = {},
+    places = { { path = "a.png", x = 0, y = 0 }, { path = "b.png", x = 10, y = 0 },
+               { path = "c.png", x = 50, y = 50 } },
+    markers = { { x = 20, y = 20, w = 8, h = 8, kind = "spawn", label = "",
+                  note = "" } },
+  }
+  local ggid = W.group_sel(gdoc, { { t = "place", i = 1 }, { t = "place", i = 2 },
+                                   { t = "marker", i = 1 } })
+  check(ggid == 1 and gdoc.places[1].gid == 1 and gdoc.places[2].gid == 1
+        and gdoc.markers[1].gid == 1 and gdoc.places[3].gid == nil,
+        "ed.map: group_sel tags the selection")
+  check(W.group_sel(gdoc, { { t = "place", i = 3 } }) == nil,
+        "ed.map: group_sel needs >= 2 items")
+  check(#W.group_members(gdoc, 1) == 3, "ed.map: group_members finds all")
+  check(W.next_gid(gdoc) == 2, "ed.map: next_gid past the max")
+  check(W.item_gid(gdoc, { t = "place", i = 1 }) == 1
+        and W.item_gid(gdoc, { t = "place", i = 3 }) == nil,
+        "ed.map: item_gid reads the tag")
+  local ch = W.drill_chain(gdoc, { { t = "place", i = 1 }, { t = "place", i = 3 } })
+  check(#ch == 3 and ch[1].t == "group" and ch[1].gid == 1
+        and ch[2].t == "place" and ch[2].i == 1
+        and ch[3].t == "place" and ch[3].i == 3,
+        "ed.map: drill_chain inserts the group level once, before its member")
+  local gclip = W.copy_sel(gdoc, { { t = "place", i = 1 }, { t = "place", i = 2 } })
+  local gns = W.paste(gdoc, gclip, 100, 100)
+  check(gdoc.places[gns[1].i].gid and gdoc.places[gns[1].i].gid ~= 1
+        and gdoc.places[gns[1].i].gid == gdoc.places[gns[2].i].gid,
+        "ed.map: paste keeps a copied group grouped under a fresh gid")
+  check(W.ungroup_sel(gdoc, { { t = "place", i = 1 } })
+        and gdoc.places[1].gid == nil and gdoc.markers[1].gid == nil,
+        "ed.map: ungroup clears the whole group")
 
   -- marquee
   local got = W.pick_rect(doc, 25, 165, 65, 190, dims, true)

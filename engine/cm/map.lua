@@ -175,23 +175,26 @@ function M.encode(doc)
   end
   for _, p in ipairs(doc.places or {}) do
     -- 1-based index -> disk 0-based, clamped into the layer range (a bad
-    -- / legacy index can never overflow the u8 or dangle)
+    -- / legacy index can never overflow the u8 or dangle). v3 adds `gid`
+    -- (0 = ungrouped) — a teidraw group tag (D061).
     local li = math.max(1, math.min(#layers, p.layer or 1)) - 1
-    local parts = { pack("<I1I4i4i4s4s4s4I2", li,
+    local parts = { pack("<I1I4i4i4s4s4s4I4I2", li,
                          (p.flip and 1 or 0) | ((p.vis == false) and 2 or 0),
                          p.x, p.y, p.path,
-                         p.name or "", p.anim or "", #(p.cols or {})) }
+                         p.name or "", p.anim or "", p.gid or 0,
+                         #(p.cols or {})) }
     for _, c in ipairs(p.cols or {}) do parts[#parts + 1] = col_pack(c) end
-    w.chunk("PLCE", 2, table.concat(parts))
+    w.chunk("PLCE", 3, table.concat(parts))
   end
   for _, mk in ipairs(doc.markers or {}) do
-    local parts = { pack("<i4i4i4i4s4s4s4I2", mk.x, mk.y, mk.w, mk.h,
+    -- v2 adds `gid` (0 = ungrouped) before the extras count
+    local parts = { pack("<i4i4i4i4s4s4s4I4I2", mk.x, mk.y, mk.w, mk.h,
                          mk.kind, mk.label or "", mk.note or "",
-                         #(mk.extras or {})) }
+                         mk.gid or 0, #(mk.extras or {})) }
     for _, e in ipairs(mk.extras or {}) do
       parts[#parts + 1] = pack("<s4s4", e.k, e.v)
     end
-    w.chunk("MRKR", 1, table.concat(parts))
+    w.chunk("MRKR", 2, table.concat(parts))
   end
   w.chunk("TAIL", 1, "")
   return w.result()
@@ -221,12 +224,16 @@ function M.decode(bytes)
       end
     elseif c.tag == "COLL" and c.version == 1 then
       doc.colliders[#doc.colliders + 1] = col_unpack(c.payload, 1)
-    elseif c.tag == "PLCE" and (c.version == 1 or c.version == 2) then
+    elseif c.tag == "PLCE" and c.version >= 1 and c.version <= 3 then
       local p, pos = {}, 1
       local layer, flags
       layer, flags, p.x, p.y, p.path, p.name, pos =
         unpack("<I1I4i4i4s4s4", c.payload, pos)
-      if c.version == 2 then p.anim, pos = unpack("<s4", c.payload, pos) end
+      if c.version >= 2 then p.anim, pos = unpack("<s4", c.payload, pos) end
+      if c.version >= 3 then -- v3: the teidraw group tag (0 = ungrouped)
+        local gid; gid, pos = unpack("<I4", c.payload, pos)
+        p.gid = gid ~= 0 and gid or nil
+      end
       p.layer = layer + 1 -- disk 0-based -> Lua 1-based (clamped below)
       p.flip = flags & 1 ~= 0
       p.vis = flags & 2 == 0 -- bit1 = novis (v1: hidden) -> vis=false
@@ -238,11 +245,16 @@ function M.decode(bytes)
       for i = 1, n do p.cols[i], pos = col_unpack(c.payload, pos) end
       if #p.cols == 0 then p.cols = nil end
       doc.places[#doc.places + 1] = p
-    elseif c.tag == "MRKR" and c.version == 1 then
+    elseif c.tag == "MRKR" and (c.version == 1 or c.version == 2) then
       local mk, pos = {}, 1
       local n
-      mk.x, mk.y, mk.w, mk.h, mk.kind, mk.label, mk.note, n, pos =
-        unpack("<i4i4i4i4s4s4s4I2", c.payload, pos)
+      mk.x, mk.y, mk.w, mk.h, mk.kind, mk.label, mk.note, pos =
+        unpack("<i4i4i4i4s4s4s4", c.payload, pos)
+      if c.version == 2 then -- v2: the teidraw group tag (0 = ungrouped)
+        local gid; gid, pos = unpack("<I4", c.payload, pos)
+        mk.gid = gid ~= 0 and gid or nil
+      end
+      n, pos = unpack("<I2", c.payload, pos)
       mk.extras = {}
       for _ = 1, n do
         local k, v

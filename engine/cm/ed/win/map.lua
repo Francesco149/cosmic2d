@@ -62,11 +62,13 @@ local COL = {
   ref_bg = 0x2a2540e0, ref_ic = 0x8fb8ffff, -- named-ref tag
   null1 = 0xE838E8ff, null2 = 0x241830ff,    -- null-ref checkerboard
   dis = 0x0a0812aa,                          -- disabled-layer dim overlay
+  grp = 0x7a6cc0aa, grp_sel = 0xc7b6ffff,    -- group hulls (D061)
 }
 
 local KEY = { right = 79, left = 80, down = 81, up = 82, del = 76,
               backspace = 42, rbracket = 48, lbracket = 47, n1 = 30,
-              n2 = 31, enter = 40, a = 4, c = 6, d = 7, v = 25, x = 27 }
+              n2 = 31, enter = 40, a = 4, c = 6, d = 7, g = 10, v = 25,
+              x = 27 }
 
 local GRID_STEPS = { 1, 2, 4, 8, 16, 32, 64 }
 local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
@@ -396,6 +398,93 @@ function M.drill_pick(stack, prev, sx, sy, thr)
   return k, { sx = sx, sy = sy, k = k }
 end
 
+-- ---- groups (teidraw, D061): a stable per-item `gid` tags membership ----
+-- A group spans placements + markers (free colliders stay ungrouped in v1);
+-- it is just "every item sharing a gid". Selecting a member selects the whole
+-- group (move together); click-again drills into the individual member.
+
+function M.item_gid(doc, it)
+  if it.t == "place" then
+    return doc.places[it.i] and doc.places[it.i].gid
+  elseif it.t == "marker" then
+    return doc.markers[it.i] and doc.markers[it.i].gid
+  end
+end
+
+function M.group_members(doc, gid)
+  local out = {}
+  for i, pl in ipairs(doc.places) do
+    if pl.gid == gid then out[#out + 1] = { t = "place", i = i } end
+  end
+  for i, mk in ipairs(doc.markers) do
+    if mk.gid == gid then out[#out + 1] = { t = "marker", i = i } end
+  end
+  return out
+end
+
+function M.next_gid(doc)
+  local mx = 0
+  for _, pl in ipairs(doc.places) do
+    if pl.gid and pl.gid > mx then mx = pl.gid end
+  end
+  for _, mk in ipairs(doc.markers) do
+    if mk.gid and mk.gid > mx then mx = mk.gid end
+  end
+  return mx + 1
+end
+
+-- assign a fresh gid to every place/marker in `sel` (needs >= 2 to be useful);
+-- returns the new gid, or nil if there was nothing to group
+function M.group_sel(doc, sel)
+  local n = 0
+  for _, it in ipairs(sel) do
+    if it.t == "place" or it.t == "marker" then n = n + 1 end
+  end
+  if n < 2 then return nil end
+  local gid = M.next_gid(doc)
+  for _, it in ipairs(sel) do
+    local o = it.t == "place" and doc.places[it.i]
+              or it.t == "marker" and doc.markers[it.i]
+    if o then o.gid = gid end
+  end
+  return gid
+end
+
+-- clear the gid on every group `sel` touches; returns true if any cleared
+function M.ungroup_sel(doc, sel)
+  local gids, any = {}, false
+  for _, it in ipairs(sel) do
+    local gid = M.item_gid(doc, it)
+    if gid then gids[gid] = true end
+  end
+  for _, pl in ipairs(doc.places) do
+    if pl.gid and gids[pl.gid] then pl.gid = nil; any = true end
+  end
+  for _, mk in ipairs(doc.markers) do
+    if mk.gid and gids[mk.gid] then mk.gid = nil; any = true end
+  end
+  return any
+end
+
+-- expand a hit stack into the DRILL CHAIN: a grouped place/marker gets a
+-- { t="group", gid, members } entry inserted before its first member, so
+-- clicks cycle group -> that member -> whatever's beneath (teidraw drill-in)
+function M.drill_chain(doc, stack)
+  local chain, seen = {}, {}
+  for _, s in ipairs(stack) do
+    if s.t == "place" or s.t == "marker" then
+      local gid = M.item_gid(doc, s)
+      if gid and not seen[gid] then
+        seen[gid] = true
+        chain[#chain + 1] = { t = "group", gid = gid,
+                              members = M.group_members(doc, gid) }
+      end
+    end
+    chain[#chain + 1] = s
+  end
+  return chain
+end
+
 -- z within the layer = order in doc.places (§6); dir +1 = forward one.
 -- The whole selected placement set shifts one slot, order preserved
 -- (markers in the selection are untouched — z lives in places). Single
@@ -460,15 +549,23 @@ end
 -- selection (the pasted set, on top in file order).
 function M.paste(doc, clip, dx, dy)
   local sel = {}
+  -- pasted items keep their internal grouping under fresh gids (a copied
+  -- group stays a group); names drop (they address uniquely)
+  local base, gmap, gc = M.next_gid(doc), {}, 0
+  local function regid(old)
+    if not old then return nil end
+    if not gmap[old] then gc = gc + 1; gmap[old] = base + gc - 1 end
+    return gmap[old]
+  end
   for _, pl in ipairs(clip.places or {}) do
     local c = deep(pl)
-    c.x, c.y, c.name = c.x + dx, c.y + dy, nil
+    c.x, c.y, c.name, c.gid = c.x + dx, c.y + dy, nil, regid(pl.gid)
     doc.places[#doc.places + 1] = c
     sel[#sel + 1] = { t = "place", i = #doc.places }
   end
   for _, mk in ipairs(clip.markers or {}) do
     local c = deep(mk)
-    c.x, c.y = c.x + dx, c.y + dy
+    c.x, c.y, c.gid = c.x + dx, c.y + dy, regid(mk.gid)
     doc.markers[#doc.markers + 1] = c
     sel[#sel + 1] = { t = "marker", i = #doc.markers }
   end
@@ -1594,6 +1691,31 @@ function M.draw(win, ctx)
     draw_gizmos(p, view, p.sel, tool, p.csel, p.asel)
   end
 
+  -- group hulls (teidraw, D061): a faint box around each group's bounds so
+  -- "these move together" is legible; the selected group's hull brightens
+  do
+    local selgid = {}
+    for _, it in ipairs(p.sel) do
+      local gid = M.item_gid(doc, it)
+      if gid then selgid[gid] = true end
+    end
+    local seen = {}
+    local function hull(gid)
+      if seen[gid] then return end
+      seen[gid] = true
+      local bx, by, bw, bh = M.sel_bounds(doc, M.group_members(doc, gid), dims)
+      if bx then
+        local on = selgid[gid]
+        pal.x_ig_rect(ox + bx * zoom - 3, oy + by * zoom - 3,
+                      bw * zoom + 6, bh * zoom + 6,
+                      on and COL.grp_sel or COL.grp,
+                      math.max(1, (on and 1.5 or 1) * z))
+      end
+    end
+    for _, pl in ipairs(doc.places) do if pl.gid then hull(pl.gid) end end
+    for _, mk in ipairs(doc.markers) do if mk.gid then hull(mk.gid) end end
+  end
+
   -- selection outlines
   for _, it in ipairs(p.sel) do
     local x, y, w, h = item_rect(doc, it, dims)
@@ -2080,9 +2202,29 @@ function M.draw(win, ctx)
       { thr = thr, with_markers = (win.mk or tool == "marker"),
         only_layer = lockL })
     if #stack == 0 then p.drill = nil; return false end
-    local k, drill = M.drill_pick(stack, p.drill, i.wx, i.wy, 5)
+    -- expand into the drill CHAIN (group levels inserted) and step through it
+    local chain = M.drill_chain(doc, stack)
+    local k, drill = M.drill_pick(chain, p.drill, i.wx, i.wy, 5)
     p.drill = drill
-    local it = stack[k]
+    local it = chain[k]
+
+    -- a GROUP level: select every member, arm the move over the whole set
+    if it.t == "group" then
+      p.csel, p.asel = nil, nil
+      p.sel = it.members
+      local items, skipset = {}, {}
+      for _, s in ipairs(p.sel) do
+        local o = s.t == "place" and doc.places[s.i] or doc.markers[s.i]
+        items[#items + 1] = { ref = o, x0 = o.x, y0 = o.y }
+        if s.t == "place" then skipset[s.i] = true end
+      end
+      local bx, by, bw, bh = M.sel_bounds(doc, p.sel, dims)
+      p.g = { mode = "press", next = "move", item = it, items = items,
+              skipset = skipset, sx = i.wx, sy = i.wy,
+              ax0 = bx or 0, ay0 = by or 0, aw = bw or 0, ah = bh or 0 }
+      ctx.touch()
+      return true
+    end
 
     -- a free collider: vertex = move that point, edge = move both/all points
     if it.t == "cvert" or it.t == "cedge" then
@@ -2130,6 +2272,19 @@ function M.draw(win, ctx)
     -- a placement or marker: select (shift toggles) + arm the move
     p.csel = nil
     if it.t == "place" then win.layer = doc.places[it.i].layer or active end
+    -- a grouped member reached HERE = a drill-in past its group level: select
+    -- just this member and move it alone (teidraw "click again to move within")
+    if M.item_gid(doc, it) then
+      p.sel = { it }
+      local o = it.t == "place" and doc.places[it.i] or doc.markers[it.i]
+      local ax, ay, aw, ah = item_rect(doc, it, dims)
+      p.g = { mode = "press", next = "move", item = it,
+              items = { { ref = o, x0 = o.x, y0 = o.y } },
+              skipset = (it.t == "place") and { [it.i] = true } or {},
+              sx = i.wx, sy = i.wy, ax0 = ax, ay0 = ay, aw = aw, ah = ah }
+      ctx.touch()
+      return true
+    end
     if g.shift then
       local at = M.sel_has(p.sel, it)
       if at then table.remove(p.sel, at) else p.sel[#p.sel + 1] = it end
@@ -2275,6 +2430,15 @@ function M.draw(win, ctx)
             win.px = ((cvw - bw * s) * 0.5 - bx * s) / z
             win.py = ((cvh - bh * s) * 0.5 - by * s) / z
             ctx.touch()
+          end
+        elseif g.ctrl and sc == KEY.g and not p.g then
+          -- ctrl+g groups the selection · ctrl+shift+g ungroups (teidraw)
+          if g.shift then
+            if M.ungroup_sel(doc, p.sel) then p.drill = nil
+              commit(ed, win.path) end
+          else
+            if M.group_sel(doc, p.sel) then p.drill = nil
+              commit(ed, win.path) end
           end
         elseif g.ctrl and sc == KEY.a and not p.g then
           p.sel = M.all_items(doc)
