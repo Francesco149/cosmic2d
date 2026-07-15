@@ -573,6 +573,35 @@ static int l_ig_image(lua_State *L) {
   return 0;
 }
 
+/* Batch: draw `count` textured quads of ONE texture in a SINGLE drawlist
+ * command (one PrimReserve + N writes), instead of an AddImage call each.
+ * Each quad is 8 floats in `quads`: x, y, w, h, u0, v0, u1, v1 (screen px +
+ * uv); rgba tints them all. The map/tilemap editors render thousands of cells
+ * per frame — per-cell AddImage was ~2.9 ms; this collapses the Lua↔C + imgui
+ * per-call overhead. luabind.c marshals a pal.buf into this. */
+extern "C" void pal_ig_image_quads(int tex, const float *quads, int count,
+                                   uint32_t rgba) {
+  if (!in_frame() || count <= 0 || !quads) return;
+  SDL_GPUTexture *t;
+  if (tex == -1) {
+    t = G.target;
+  } else {
+    if (tex < 0 || tex >= PAL_MAX_TEX || !G.texs[tex].used) return;
+    t = G.texs[tex].tex;
+  }
+  want_px(true);
+  ImDrawList *d = dl();
+  ImU32 col = ig_col(rgba);
+  d->PushTexture((ImTextureID)(intptr_t)t);
+  d->PrimReserve(6 * count, 4 * count);
+  for (int i = 0; i < count; i++) {
+    const float *q = quads + i * 8;
+    d->PrimRectUV(ImVec2(q[0], q[1]), ImVec2(q[0] + q[2], q[1] + q[3]),
+                  ImVec2(q[4], q[5]), ImVec2(q[6], q[7]), col);
+  }
+  d->PopTexture();
+}
+
 static int l_ig_clip_push(lua_State *L) {
   if (!in_frame()) return 0;
   float x = (float)luaL_checknumber(L, 1), y = (float)luaL_checknumber(L, 2);

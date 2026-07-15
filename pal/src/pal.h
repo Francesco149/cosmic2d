@@ -267,5 +267,8 @@ void pal_ig_render_draw(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pass,
                         SDL_GPUTextureFormat fmt, bool keep);
 /* register the pal.x_ig_* functions into the pal table at the stack top */
 void pal_ig_lua_register(lua_State *L);
+/* batch N textured quads (8 floats each: x,y,w,h,u0,v0,u1,v1) in one drawlist
+ * command — the tilemap/map editors' fast path (luabind marshals a pal.buf) */
+void pal_ig_image_quads(int tex, const float *quads, int count, uint32_t rgba);
 
 #endif

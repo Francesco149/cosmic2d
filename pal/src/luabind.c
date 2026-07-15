@@ -687,6 +687,24 @@ static int l_draw_quads(lua_State *L) {
   return 0;
 }
 
+/* pal.x_ig_image_quads(tex, buf, count[, off[, rgba]]) — batch N textured
+ * quads (8 f32 each: x,y,w,h,u0,v0,u1,v1, screen px + uv) onto the imgui
+ * drawlist in ONE call; rgba tints all (default white). The map/tilemap
+ * editors' fast path — see pal_ig_image_quads (ig.cpp). No-op outside a frame. */
+static int l_ig_image_quads(lua_State *L) {
+  int tex = (int)luaL_checkinteger(L, 1);
+  BufView *v = checkview_at(L, 2);
+  lua_Integer count = luaL_checkinteger(L, 3);
+  lua_Integer off = luaL_optinteger(L, 4, 0);
+  uint32_t rgba = (uint32_t)luaL_optinteger(L, 5, 0xffffffffu);
+  if (count < 0) return luaL_error(L, "x_ig_image_quads: negative count");
+  if (off < 0 || (size_t)(off + count * 32) > v->b->size)
+    return luaL_error(L, "x_ig_image_quads: out of bounds (off=%I count=%I size=%I)",
+                      off, count, (lua_Integer)v->b->size);
+  pal_ig_image_quads(tex, (const float *)(v->b->data + off), (int)count, rgba);
+  return 0;
+}
+
 static int l_clip(lua_State *L) {
   check_gfx(L);
   if (lua_gettop(L) == 0) {
@@ -1117,6 +1135,7 @@ static const luaL_Reg pal_funcs[] = {
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
     {"draw_quads", l_draw_quads},
+    {"x_ig_image_quads", l_ig_image_quads},
     {"clip", l_clip},
     {"camera", l_camera},
     {"present", l_present},

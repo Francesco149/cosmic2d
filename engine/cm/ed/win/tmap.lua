@@ -197,24 +197,44 @@ end
 -- window-side mirror of cm.tmap.draw (the drawlist wants per-image
 -- calls, not the bulk buffer). view = { zoom, ox, oy } in screen px —
 -- the map window offsets ox/oy by the placement to reuse this.
+-- render the visible cells as ONE batched drawlist call (pal.x_ig_image_quads)
+-- rather than an x_ig_image per cell — a placed room-sized tilemap is thousands
+-- of cells, and the per-call overhead dominated the editor draw (~2.9ms). One
+-- reused scratch buffer of quads (8 f32 each), same shape as the game's
+-- tmap.draw. Culls to the visible canvas rect; the GPU scissor clips the edges.
+local QSTRIDE = 8 * 4
+local cells_scratch -- render plumbing; grown when a bigger view needs it
+local sunpack = string.unpack
 function M.draw_cells(doc, tex, view, cvx, cvy, cvw, cvh)
   local t = doc.tile
   local zoom, ox, oy = view.zoom, view.ox, view.oy
-  local c0 = math.max(0, math.floor((cvx - ox) / (t * zoom)))
-  local c1 = math.min(doc.w - 1, math.ceil((cvx + cvw - ox) / (t * zoom)))
-  local r0 = math.max(0, math.floor((cvy - oy) / (t * zoom)))
-  local r1 = math.min(doc.h - 1, math.ceil((cvy + cvh - oy) / (t * zoom)))
+  local ts = t * zoom
+  local c0 = math.max(0, math.floor((cvx - ox) / ts))
+  local c1 = math.min(doc.w - 1, math.ceil((cvx + cvw - ox) / ts))
+  local r0 = math.max(0, math.floor((cvy - oy) / ts))
+  local r1 = math.min(doc.h - 1, math.ceil((cvy + cvh - oy) / ts))
+  if c1 < c0 or r1 < r0 then return end
   local tw, th = tex.w, tex.h
+  local need = (c1 - c0 + 1) * (r1 - r0 + 1) * QSTRIDE
+  if not cells_scratch or cells_scratch:size() < need then
+    cells_scratch = pal.buf(nil, need)
+  end
+  local s, cells, n = cells_scratch, doc.cells, 0
   for r = r0, r1 do
+    local base = r * doc.w * 2
     for c = c0, c1 do
-      local id = tmap.get(doc, c, r)
+      local id = sunpack("<I2", cells, base + c * 2 + 1)
       if id ~= 0 and id * t <= tw then
-        pal.x_ig_image(tex.id, ox + c * t * zoom, oy + r * t * zoom,
-                       t * zoom, t * zoom, (id - 1) * t / tw, 0,
-                       id * t / tw, t / th)
+        local o = n * QSTRIDE
+        s:f32(o, ox + c * ts); s:f32(o + 4, oy + r * ts)
+        s:f32(o + 8, ts); s:f32(o + 12, ts)
+        s:f32(o + 16, (id - 1) * t / tw); s:f32(o + 20, 0)
+        s:f32(o + 24, id * t / tw); s:f32(o + 28, t / th)
+        n = n + 1
       end
     end
   end
+  if n > 0 then pal.x_ig_image_quads(tex.id, s, n) end
 end
 
 local function button(i, ctx, x, y, w, h, label, on, px)
