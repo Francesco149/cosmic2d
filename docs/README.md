@@ -34,5 +34,6 @@ mistaken for current work.
 
 Player/author-facing documentation lives under `engine/stock/docs/`. It must
 describe only shipped behavior and use links that the in-engine reader can
-resolve. Gate A0 audits it; gate A8 turns it into the complete create-to-export
-guide and public API/task reference.
+resolve. A0's scripting guide covers the supported small-project path and its
+current limits; gate A8 expands this into the complete create-to-export guide
+and exhaustive public API/task reference.

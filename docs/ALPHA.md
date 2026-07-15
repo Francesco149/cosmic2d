@@ -69,7 +69,7 @@ Goal: a new session or contributor can identify current truth in minutes.
 - [x] Add a docs index with `active`, `contract`, and `historical` labels.
 - [x] Audit every repo and in-engine link; remove references to moved or dead
   projects and superseded UI.
-- [ ] Rewrite the in-engine scripting guide into a real public API/task guide.
+- [x] Rewrite the in-engine scripting guide into a real public API/task guide.
 - [x] Reconcile claims such as "self-contained," "undo forever," and current
   alpha status with actual behavior.
 
