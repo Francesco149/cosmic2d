@@ -344,6 +344,14 @@ function M.boot()
   -- the ring trace is always on in live sessions (D032); --record pins it.
   -- Real windowed sessions stream history to disk (R6b/REWIND.md §3);
   -- headless/CI never write a byte.
+  -- Generational GC (Lua 5.4): the sim + the always-on ring recorder churn a
+  -- lot of short-lived garbage per frame (delta mirrors, encoded chunks), so
+  -- the default incremental collector builds up and fires periodic MAJOR
+  -- collections — the rhythmic sim spikes the human saw, growing as a session
+  -- runs. Generational collects the young garbage in cheap minor passes and
+  -- rarely does a full one, roughly halving the worst pauses. Pure memory
+  -- management: determinism/goldens are byte-identical (GC never touches logic).
+  collectgarbage("generational")
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
   M.trace.ring_start({ project = args.project })
