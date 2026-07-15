@@ -1171,15 +1171,29 @@ local function dashed(x0, y0, x1, y1, col, t)
   end
 end
 
--- placement image for the WINDOW draw (ed-root textures; .spr shows its
--- baked sibling; .tm and missing files return nil = placeholder box)
+-- resolve an asset path to a readable disk path: the PROJECT root first
+-- (ed.root), then the engine root / cwd — so `engine/stock/*` placements
+-- render in the editor exactly the way the game resolves them (D061). nil
+-- when neither exists.
+local function res_path(ed, path)
+  local a = ed.root .. "/" .. path
+  if (pal.mtime(a) or 0) > 0 then return a end
+  if (pal.mtime(path) or 0) > 0 then return path end
+  return nil
+end
+M.res_path = res_path
+
+-- placement image for the WINDOW draw (.spr shows its baked sibling; .tm
+-- and missing files return nil = placeholder box)
 local function win_tex(ed, path)
   local l = path:lower()
   local target
   if l:find("%.png$") then target = path
   elseif l:find("%.spr$") then target = path:gsub("%.spr$", ".png") end
   if not target then return nil end
-  local ok, t = pcall(cm.require("cm.gfx").texture, ed.root .. "/" .. target)
+  local rp = res_path(ed, target)
+  if not rp then return nil end
+  local ok, t = pcall(cm.require("cm.gfx").texture, rp)
   if ok then return t end
 end
 
@@ -1196,7 +1210,8 @@ local function tm_doc(ed, p, path)
   if rec == nil then
     rec = false
     if path:lower():find("%.tm$") then
-      local bytes = pal.read_file(ed.root .. "/" .. path)
+      local rp = res_path(ed, path)
+      local bytes = rp and pal.read_file(rp)
       if bytes then
         local ok, td = pcall(tmap.decode, bytes)
         if ok then rec = td end
