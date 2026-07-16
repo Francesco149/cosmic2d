@@ -2769,6 +2769,14 @@ local function t_atomic_write()
         and pal.read_file(pubtmp) == "new archive"
         and pal.read_file(pubdst) == "complete archive",
         "export io: an existing artifact is never overwritten implicitly")
+  pok, perr = pal.x_file_publish(pubtmp, pubdst,
+                                 { _replace = true, _fail = "rename" })
+  check(not pok and pal.read_file(pubtmp) == "new archive"
+        and pal.read_file(pubdst) == "complete archive",
+        "export io: failed explicit replacement preserves the last good artifact")
+  check(pal.x_file_publish(pubtmp, pubdst, { _replace = true }) == true
+        and pal.read_file(pubdst) == "new archive" and not pal.read_file(pubtmp),
+        "export io: explicit replacement atomically advances the artifact")
   pal.x_remove(pubtmp); pal.x_remove(pubdst)
 
   -- API 13's background pair preserves the same authority ordering without

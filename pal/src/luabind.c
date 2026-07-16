@@ -1586,16 +1586,23 @@ static int l_x_path_info(lua_State *L) {
   return 1;
 }
 
-/* pal.x_file_publish(temp,dest [, {_fail=sync|rename}]) -> true | nil,error.
- * The destination must not exist: the exporter chooses a new artifact name,
- * syncs its complete sibling temp, then makes that one rename authoritative.
- * On failure the temp remains non-authoritative for the caller to remove. */
+/* pal.x_file_publish(temp,dest [, {_fail=sync|rename,_replace=bool}])
+ * -> true | nil,error. Existing destinations require explicit replacement;
+ * either way the exporter syncs its complete sibling temp before making that
+ * one rename authoritative. On failure the temp remains non-authoritative for
+ * the caller to remove and an earlier destination stays untouched. */
 static int l_x_file_publish(lua_State *L) {
   const char *temp = luaL_checkstring(L, 1);
   const char *dest = luaL_checkstring(L, 2);
   const char *fail = fail_stage_at(L, 3);
+  bool replace = false;
+  if (lua_istable(L, 3)) {
+    lua_getfield(L, 3, "_replace");
+    replace = lua_toboolean(L, -1);
+    lua_pop(L, 1);
+  }
   SDL_PathInfo info;
-  if (SDL_GetPathInfo(dest, &info)) {
+  if (!replace && SDL_GetPathInfo(dest, &info)) {
     lua_pushnil(L);
     lua_pushfstring(L, "destination already exists: %s", dest);
     return 2;

@@ -466,7 +466,7 @@ local function run(job, opts)
   local ext = ctx.target == "windows" and ".zip" or ".tar.gz"
   ctx.final = join(output, ctx.basename .. ext)
   ctx.sidecar = ctx.final .. ".sha256"
-  if fs.info(ctx.final) or fs.info(ctx.sidecar) then
+  if not opts.replace and (fs.info(ctx.final) or fs.info(ctx.sidecar)) then
     fail("output already exists; move it or choose another folder: " .. ctx.final)
   end
   local nonce = tostring((opts.nonce or pal.time_ns())):gsub("[^0-9]", "")
@@ -499,8 +499,12 @@ local function run(job, opts)
   end
 
   job_yield(job, "publishing", "syncing complete artifact", job.total, job.total)
-  local published, publish_err = fs.publish(ctx.temp, ctx.final,
-                                             opts.fail and opts.fail.publish)
+  local publish_opts = {}
+  if opts.fail and opts.fail.publish then
+    for key, value in pairs(opts.fail.publish) do publish_opts[key] = value end
+  end
+  publish_opts._replace = opts.replace or false
+  local published, publish_err = fs.publish(ctx.temp, ctx.final, publish_opts)
   if not published then fail(publish_err) end
   job.temp = nil
   local digest, hash_err = fs.sha_file(ctx.final)
