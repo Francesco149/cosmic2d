@@ -87,6 +87,12 @@ default windows-side save dir. Resolve it like this:
   found, not a golden to regenerate.
 - Visual changes: headless screenshot → look at it yourself → push to
   llm-feed with title+note. Human is the taste check, not the smoke test.
+- After building agent-authored engine/editor changes, run
+  `tools/build-windows.sh`. It cross-builds the full development tree, stages
+  it to the Windows filesystem, preserves durable Windows-side editor state
+  (derived history cache is rebuilt), and refreshes the human's Start Menu
+  shortcut. A stale Windows stage is not a completed native-test handoff; if
+  WSL/Windows interop is unavailable, say so.
 - Sessions are autonomous until human verification truly blocks; suggest
   `/clear` after a milestone is committed and STATUS is current.
 
@@ -94,6 +100,7 @@ default windows-side save dir. Resolve it like this:
 
 ```sh
 nix develop -c make -C pal                                   # build bin/cosmic
+tools/build-windows.sh                                       # build + stage native Windows dev tree
 bin/cosmic                                                   # the project picker (R5): the front door
 bin/cosmic projects/smoke                                    # the minimal test room (M7 moveset)
 bin/cosmic projects/smoke --headless --frames 120 --shot /tmp/s.png

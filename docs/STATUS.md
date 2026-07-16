@@ -57,6 +57,15 @@ packets.
 
 There is no known blocker or human-only verification required.
 
+**Native Windows developer handoff is now automatic.** The canonical
+`tools/build-windows.sh` path cross-builds the complete development tree,
+publishes it to the Windows user's stable `cosmic2d-win` directory without
+discarding durable editor sessions/journals or machine-local state (derived
+history cache is rebuilt), and idempotently installs a per-user **cosmic2d
+editor** Start Menu shortcut. Repository agent protocol now requires that
+handoff after built engine/editor changes, eliminating stale Windows snapshots
+as a source of false visual reports.
+
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
 unambiguous; all local documentation/help links resolve; obsolete graybox help

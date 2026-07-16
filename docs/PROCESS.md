@@ -59,15 +59,14 @@ nix flake check                     # same suite as a sandboxed derivation
 
 **Testing the Windows build (native, via WSL interop)** — the cross build
 is runnable directly from WSL; the exe runs on the Windows side (real
-win32 SDL3, host vulkan). Stage it on the Windows filesystem first (the
-exe can't live in the nix store):
+win32 SDL3, host vulkan). The normal agent handoff builds the full development
+tree, atomically stages it on the Windows filesystem, preserves `.recent.dat`,
+durable project `.ed` state (sessions/journals; derived history is rebuilt), and
+machine-local video/knob/map state, then creates or refreshes the per-user
+**cosmic2d editor** Start Menu shortcut:
 
 ```sh
-nix build .#cosmic-windows
-rm -rf /mnt/c/Users/headpats/cosmic2d-win
-mkdir -p /mnt/c/Users/headpats/cosmic2d-win
-cp -rL result/* /mnt/c/Users/headpats/cosmic2d-win/
-chmod -R u+w /mnt/c/Users/headpats/cosmic2d-win
+tools/build-windows.sh
 cd /mnt/c/Users/headpats/cosmic2d-win
 ./bin/cosmic.exe projects/selftest --headless --frames 1   # 22k checks, native
 ./bin/cosmic.exe projects/smoke --verify tests/traces/smoke_kitcheck.ctrace
@@ -98,18 +97,22 @@ also checks project PE title/version resources and UTF-16 player-argument
 delegation. The PowerShell file is directly runnable on a clean Windows
 machine; its WSL wrapper only copies inputs onto NTFS and invokes it.
 
-The human's live windows run: `bin\cosmic.exe projects\smoke --edit` from
-the `cosmic2d-win` dir. Windows-only gotcha found this way: unix-absolute
-paths (`/tmp/...`) can't be `pal.mkdir`'d there — tests use the platform
-temp root; engine code is immune (project paths are engine-root-relative).
+The human's normal live entrance is **cosmic2d editor** in the Start Menu; its
+shortcut targets `C:\Users\headpats\cosmic2d-win\cosmic2d-editor.exe`. A direct
+fixture run remains `bin\cosmic.exe projects\smoke --edit` from that directory.
+Windows-only gotcha found this way: unix-absolute paths (`/tmp/...`) can't be
+`pal.mkdir`'d there — tests use the platform temp root; engine code is immune
+(project paths are engine-root-relative).
 
-**The staging is a SNAPSHOT** (bit us 2026-07-13): the human's live
-windows runs use whatever was staged last — after any engine/PAL change
-that should be visible there, RE-STAGE (the block above) before either
-side judges visuals natively ("the fix doesn't work" on windows usually
-means a stale `cosmic2d-win`). The recipe's `rm -rf` also wipes the
-staging's `projects/*/.ed` sessions — the human's windows-side layouts
-reset; warn when re-staging under them.
+**The staging is a SNAPSHOT** (bit us 2026-07-13): the human's live Windows
+runs use whatever was staged last. After building any agent-authored engine or
+editor change, `tools/build-windows.sh` is mandatory before either side judges
+the result natively ("the fix doesn't work" on Windows usually means a stale
+stage). Publication uses a complete sibling tree and swap; a copy failure
+leaves the previous stage intact. If Windows has the staged executable locked,
+the helper asks for the running editor to be closed instead of publishing a
+partial tree. Override the destination with `COSMIC_WINDOWS_STAGE` or the
+helper's one optional argument.
 
 **Nix builds source the GIT tree** (bit twice, 2026-07-13): `nix run
 .#test`, `nix build .#cosmic-windows` and flake checks copy the git

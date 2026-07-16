@@ -6,6 +6,7 @@
 
 # nix
 /result
+/result-*
 /.direnv/
 
 # agent-harness local settings
