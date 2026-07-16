@@ -4304,6 +4304,71 @@ local function t_project_export()
   rm_tree(base)
 end
 
+-- ---- D080 picker list model + navigation math ----
+
+local function t_picker_nav()
+  local pick = cm.require("cm.pick")
+  local tiles = {
+    { name = "Zelda Clone", path = "projects/zc", author = "ana" },
+    { name = "asteroids", path = "/games/Asteroids", author = "Bo" },
+    { name = "asteroids", path = "/else/asteroids2" },
+    { name = "projet π", path = "/ailleurs/projet π original" },
+  }
+
+  check(pick.match(tiles[1], nil) and pick.match(tiles[1], ""),
+        "pick: an empty query matches every tile")
+  check(pick.match(tiles[1], "ZELDA") and pick.match(tiles[1], "zc")
+        and pick.match(tiles[2], "ANA") == false and pick.match(tiles[1], "ana"),
+        "pick: matching is case-insensitive over name, path, and author")
+  check(pick.match(tiles[4], "π") and not pick.match(tiles[4], "omega"),
+        "pick: non-ASCII query bytes compare exactly")
+  check(not pick.match(tiles[3], "a-s"),
+        "pick: queries are plain text, never Lua patterns")
+
+  local all = pick.view(tiles, nil, "recent")
+  check(#all == 4 and all[1] == tiles[1] and all[4] == tiles[4],
+        "pick: recent mode preserves the incoming order")
+  local hit = pick.view(tiles, "asteroids", "recent")
+  check(#hit == 2 and hit[1] == tiles[2] and hit[2] == tiles[3],
+        "pick: filtering keeps relative order")
+  check(#pick.view(tiles, "no such project", "recent") == 0,
+        "pick: an unmatched query yields an empty view")
+  local named = pick.view(tiles, nil, "name")
+  check(named[1] == tiles[3] and named[2] == tiles[2]
+        and named[3] == tiles[4] and named[4] == tiles[1]
+        and tiles[1].name == "Zelda Clone",
+        "pick: name mode sorts case-insensitively with a path tiebreak"
+        .. " and never mutates the input")
+
+  -- an 8-cell grid in 3 columns:  1 2 3 / 4 5 6 / 7 8
+  check(pick.nav(1, "left", 8, 3) == 1 and pick.nav(8, "right", 8, 3) == 8,
+        "pick: the cursor clamps at the row ends without wrapping")
+  check(pick.nav(2, "down", 8, 3) == 5 and pick.nav(5, "up", 8, 3) == 2,
+        "pick: vertical moves keep the column")
+  check(pick.nav(2, "up", 8, 3) == 2 and pick.nav(3, "up", 8, 3) == 3,
+        "pick: up from the first row keeps the column in place")
+  check(pick.nav(6, "down", 8, 3) == 8 and pick.nav(7, "down", 8, 3) == 7,
+        "pick: down off a full bottom row lands on the last cell; the"
+        .. " bottom row itself stays put")
+  check(pick.nav(5, "home", 8, 3) == 1 and pick.nav(5, "end", 8, 3) == 8,
+        "pick: home/end reach the first and last cell")
+  check(pick.nav(1, "pgdn", 20, 3, 2) == 7 and pick.nav(7, "pgup", 20, 3, 2) == 1
+        and pick.nav(19, "pgdn", 20, 3, 2) == 20,
+        "pick: page moves jump page_rows rows and clamp")
+  check(pick.nav(5, "down", 0, 0) == 1 and pick.nav(nil, "right", 3, 3) == 2,
+        "pick: degenerate grids and a missing cursor stay in range")
+
+  check(pick.clamp(-10, 400, 300) == 0 and pick.clamp(500, 400, 300) == 100
+        and pick.clamp(50, 200, 300) == 0,
+        "pick: scroll clamps to the scrollable range")
+  check(pick.ensure_visible(0, 350, 100, 600, 300) == 150
+        and pick.ensure_visible(300, 0, 100, 600, 300) == 0
+        and pick.ensure_visible(100, 150, 100, 600, 300) == 100,
+        "pick: ensure_visible makes the smallest clamped scroll change")
+  check(pick.ensure_visible(0, 0, 500, 400, 300) == 100,
+        "pick: a cell taller than the view keeps its bottom edge reachable")
+end
+
 -- ---- A2 diagnostics + D065 crash locator envelope ----
 
 local function t_crash()
@@ -7273,6 +7338,7 @@ function game.init()
   t_project_archive()
   t_project_delete()
   t_project_export()
+  t_picker_nav()
   t_crash()
   t_ed_text_save()
   t_ed_session()
