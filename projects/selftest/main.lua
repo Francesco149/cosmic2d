@@ -5036,11 +5036,41 @@ local function t_ed_hot()
   ed.g.state = "alt_move" -- a wm gesture in flight (the title-bar drag)
   check(at(160, 60) == nil, "ed.hot: a wm gesture blanks the gate")
   ed.g.state = nil
-  ed.g.rw_bar = { x = 150, y = 50, w = 100, h = 40 }
-  check(at(160, 60) == nil, "ed.hot: the rewind bar owns its rect")
-  ed.g.rw_bar = nil
+  ed.g.rw = { rect = { x = 150, y = 50, w = 100, h = 40 } }
+  check(at(160, 60) == nil, "ed.hot: the rewind tray owns its rect")
+  ed.g.rw = nil
   ed.doc, ed.g = was_doc, was_g
   ui.inp.wx, ui.inp.wy = ux, uy
+end
+
+local function t_ed_rewind()
+  -- A7 tray camera: ten minutes ending at live, zoom anchored under the
+  -- cursor, hand-style middle pan, and frame mapping at both edges.
+  local rw = cm.require("cm.ed.rewind")
+  local v = rw.default_view(0, 72000)
+  check(v.start == 36000 and v.span == 36000 and v.follow,
+        "rewind tray: default is ten minutes ending live")
+  local short = rw.default_view(100, 400)
+  check(short.start == 100 and short.span == 300,
+        "rewind tray: short history fits in full")
+
+  local anchor = v.start + v.span * 0.25
+  rw.zoom_view(v, 0.25, 2, 0, 72000)
+  check(math.abs((v.start + v.span * 0.25) - anchor) < 1e-9
+        and v.span < 36000 and not v.follow,
+        "rewind tray: wheel zoom keeps cursor frame fixed")
+  local p = { start = 30000, span = 10000, follow = false }
+  rw.pan_view(p, 100, 1000, 0, 72000)
+  check(p.start == 29000 and not p.follow,
+        "rewind tray: middle pan moves the time camera")
+  check(rw.frame_at(p, 10, 10, 1000, 0, 72000) == 29000
+        and rw.frame_at(p, 1010, 10, 1000, 0, 72000) == 39000,
+        "rewind tray: axis endpoints map to exact frames")
+
+  local tiny = { start = 0, span = 100, follow = false }
+  rw.zoom_view(tiny, 0.5, 100, 0, 100)
+  check(tiny.span == rw.MIN_SPAN,
+        "rewind tray: near zoom clamps at frame-readable span")
 end
 
 local function t_ed_pick()
@@ -5171,15 +5201,49 @@ local function t_ed_park()
   ed.doc_rev = 1
   trace.ring_start({ project = "selftest" })
   local irec = ("\0"):rep(10)
+  local pressed = string.pack("<I4i2i2I1i1", 1, 0, 0, 0, 0)
   for i = 1, 6 do
     if i == 4 then
       ed.doc.mark = "B"
       ed.touch()
     end
     sim:i64(0, f0 + i)
-    trace.record_frame(irec, nil)
+    trace.record_frame(i == 5 and pressed or irec, nil)
   end
   local present = ed.doc
+
+  local tl = trace.ring_timeline(f0, f0 + 6, 6)
+  local sim_activity, ed_activity, input_event = false, false, false
+  for _, b in ipairs(tl.data) do
+    sim_activity = sim_activity or b.sim > 0
+    ed_activity = ed_activity or b.editor > 0
+    input_event = input_event
+      or ((b.events & trace.timeline_event.INPUT) ~= 0)
+  end
+  check(sim_activity and ed_activity,
+        "rewind tray: summary splits sim and editor activity")
+  check(input_event, "rewind tray: summary marks input transitions")
+
+  -- Inclusive loop playback shows A, then every frame through B, then wraps.
+  local rewind = cm.require("cm.ed.rewind")
+  rewind.open(ed)
+  scrub.open()
+  scrub.set_loop(f0 + 2, f0 + 4)
+  check(not rewind.toggle(ed) and rewind.opened(ed) and scrub.has_loop(),
+        "rewind loop: F4 cannot dismiss active clip mode")
+  scrub.frame()
+  check(scrub.at == f0 + 2, "rewind loop: A gets a complete first tick")
+  scrub.frame()
+  check(scrub.at == f0 + 3, "rewind loop: advances inside range")
+  scrub.frame()
+  check(scrub.at == f0 + 4, "rewind loop: inclusive B is shown")
+  scrub.frame()
+  check(scrub.at == f0 + 2, "rewind loop: wraps B to A")
+  check(rewind.escape(ed) and scrub.paused() and not scrub.play
+        and not scrub.has_loop() and rewind.opened(ed),
+        "rewind loop: first Esc clears clip but stays parked")
+  check(rewind.escape(ed) and not scrub.paused() and not rewind.opened(ed),
+        "rewind loop: second Esc closes and restores live")
 
   ed.g.mw = { stale = true } -- the map window's decoded-doc plumbing
   ed.g.tmw = { stale = true } -- the tilemap window's too (R8d)
@@ -5366,6 +5430,7 @@ function game.init()
   t_ed_filter()
   t_ed_viewlock()
   t_ed_hot()
+  t_ed_rewind()
   t_ed_pick()
   t_ed_winview()
   t_ed_park()

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A7 rewind contract captured; A2 packaging continues (2026-07-16)
+## Current handoff — A7 rewind tray foundation built (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -13,19 +13,25 @@ The project remains an alpha candidate: durability, clean portable releases,
 project/export UX, gamepad/player settings, broader genre proofs, and release
 validation are still explicit gates.
 
-**A7 rewind product design is captured (D065).** The human's requested full
-timeline now has a binding contract in `REWIND.md` §§10–16 and an expanded A7
-gate: a persistent default-ten-minute tray; minute thumbnails; log-scaled
-sim/editor/project state-delta activity; wheel zoom + middle pan; click seek +
-drag A/B loop; two-step Esc persistence; non-destructive replay/crash sources;
-standalone clips containing the exact selected state, code, all project source
-and assets, file epochs, previews/events/audio where available; atomic export
-to engine-root `replays/` followed by Explorer/file-manager reveal; and a crash
-report drop that resolves/loops the preceding minute by stream/frame identity.
-This was a design packet only — the built R6 pill/ring are unchanged and A7
-still executes in roadmap order. The immediately upcoming A2 crash-log work
-must establish the stable report location and project/history locator envelope
-that A7 will consume, without pulling the timeline implementation forward.
+**A7 rewind tray packet 1 is complete (D065).** Editor sessions now use a
+persistent full-width four-lane tray instead of the R6 hover bar. Its live
+camera follows up to ten minutes ending at live, reaches one-frame inspection
+and full retained history, wheel-zooms at the cursor, middle-pans, and offers a
+clear return to live. The ruler exposes current/live/retention markers,
+storage/budget/segment facts, transport, resume-here, and bring-back. Click
+seeks; a thresholded left drag creates an ordered inclusive A/B loop; and the
+two-step Esc contract clears the clip before restoring the present. F4 cannot
+bypass an active clip. The tray derives honest sim/editor activity and basic
+input/code/eval/session markers read-only from resident FRAM/EDOC data; it
+labels unavailable presented-frame previews instead of inventing thumbnails.
+
+The next A7 packet persists multi-resolution activity/event indexes and minute
+`THMB` samples with the history segments, then adds project-file epochs. Older
+history remains browsable but must label missing index coverage. Immutable
+foreign replay/crash sources, standalone project-blob clips, atomic export,
+and crash-report handoff remain later A7 work. A2 crash-log/packaging work must
+still establish the stable report location and history-locator envelope those
+views will consume.
 
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
@@ -36,7 +42,7 @@ project lifecycle, deterministic state, input, rendering, maps/collision,
 animation, and audio, with unsupported gamepad/query/export paths named.
 
 **Proof:** implementation-signature and local-link checks pass. `nix run
-.#test` is ALL GREEN: 23,106 self-checks, every trace verify, and all pixel
+.#test` is ALL GREEN: 23,279 self-checks, every trace verify, and all pixel
 goldens.
 
 **A1 packet 1 is complete.** PAL API v9 adds `pal.write_file_atomic`: a unique

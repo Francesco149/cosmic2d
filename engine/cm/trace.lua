@@ -72,6 +72,10 @@ local pack, unpack = string.pack, string.unpack
 -- RAM residency, not the history bound, once spill is on.
 M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024 }
 
+-- Read-only timeline marker bits returned by ring_timeline(). They are chrome
+-- metadata derived from existing records, never sim state and never verified.
+M.timeline_event = { INPUT = 1, CODE = 2, EVAL = 4, SESSION = 8 }
+
 -- M._R = ring session { project, segs, next_id, prev, prev_doc, last_frame }
 -- M._rec = active pin { path, project, kf, from_id }
 
@@ -732,6 +736,108 @@ local function decode_fram(p)
   local doc
   if p:byte(pos) == 1 then doc = unpack("<s4", p, pos + 1) end
   return irec, recs, doc
+end
+
+-- A lightweight FRAM reader for the A7 activity lane. It counts the bytes
+-- actually carried by logical deltas/full replacements and the sim document;
+-- it does not allocate buffers, apply deltas, or reconstruct frame state.
+local function timeline_fram(p)
+  local irec, pos = unpack("<s4", p)
+  local nbufs
+  nbufs, pos = unpack("<I4", p, pos)
+  local changed = 0
+  for _ = 1, nbufs do
+    local name, kind, payload
+    name, kind, payload, pos = unpack("<s4I1s4", p, pos)
+    changed = changed + #payload
+  end
+  if p:byte(pos) == 1 then
+    local doc = unpack("<s4", p, pos + 1)
+    changed = changed + #doc
+  end
+  -- Mouse motion is intentionally not an "input transition" marker. Action
+  -- bits + mouse buttons are discrete user decisions; wheel already produces
+  -- visible state activity when a game consumes it.
+  local input_key = #irec >= 9 and (irec:sub(1, 4) .. irec:sub(9, 9)) or irec
+  return changed, input_key
+end
+
+-- Summarize a retained interval into max-per-bin activity and event bits for
+-- the product timeline. This deliberately reads only resident chunk streams:
+-- old R6 disk skeletons have no summary index, and drawing the tray must never
+-- synchronously load/decode hundreds of history files. `missing` tells the UI
+-- to label that honest legacy gap. A later A7 packet persists the same summary
+-- shape as multi-resolution segment indexes.
+function M.ring_timeline(from_frame, to_frame, bins)
+  local R = M._R
+  local lo, hi = M.ring_range()
+  if not R or not lo then return { data = {}, missing = false } end
+  from_frame = math.max(lo, math.floor(from_frame))
+  to_frame = math.min(hi, math.ceil(to_frame))
+  if to_frame < from_frame then from_frame, to_frame = to_frame, from_frame end
+  bins = math.max(1, math.floor(bins or 1))
+  local data = {}
+  for i = 1, bins do
+    data[i] = { sim = 0, editor = 0, files = 0, events = 0 }
+  end
+  local span = math.max(1, to_frame - from_frame)
+  local function bucket(f)
+    if f < from_frame or f > to_frame then return nil end
+    return math.min(bins,
+      math.floor((f - from_frame) / span * bins) + 1)
+  end
+  local function event(f, bit)
+    local bi = bucket(f)
+    if bi then data[bi].events = data[bi].events | bit end
+  end
+
+  local missing = false
+  local last_input
+  local prior_adopted
+  local E = M.timeline_event
+  for _, seg in ipairs(R.segs) do
+    local sf, sl = seg.first - 1, seg.first + seg.frames - 1
+    local adopted = seg.adopted == true
+    if prior_adopted ~= nil and prior_adopted ~= adopted then
+      event(seg.first - 1, E.SESSION)
+    end
+    prior_adopted = adopted
+    if sl >= from_frame and sf <= to_frame then
+      if not seg.chunks then
+        missing = true
+        last_input = nil
+      else
+        local frame = seg.first - 1
+        local pending = 0
+        for _, c in ipairs(seg.chunks) do
+          if c.tag == "EVAL" then
+            pending = pending | E.EVAL
+          elseif c.tag == "EPOC" then
+            event(frame, E.CODE)
+          elseif c.tag == "FRAM" then
+            frame = frame + 1
+            local sim, ikey = timeline_fram(c.payload)
+            local bi = bucket(frame)
+            if bi then
+              if sim > data[bi].sim then data[bi].sim = sim end
+              data[bi].events = data[bi].events | pending
+            end
+            pending = 0
+            if last_input and ikey ~= last_input then event(frame, E.INPUT) end
+            last_input = ikey
+          elseif c.tag == "EDOC" then
+            local bi = bucket(frame)
+            if bi then
+              local ok, edoc = pcall(unpack, "<s4", c.payload, 2)
+              local n = ok and #edoc or 0
+              if n > data[bi].editor then data[bi].editor = n end
+            end
+          end
+        end
+      end
+    end
+  end
+  return { data = data, missing = missing, from = from_frame, to = to_frame }
 end
 
 -- the segment whose FRAMs contain frame f (so its input record and EPOC

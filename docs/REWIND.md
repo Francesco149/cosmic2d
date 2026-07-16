@@ -3,9 +3,11 @@
 > Sections 1–9 describe the **built R6 mechanics**: a disk-streamed ~1 GB
 > state history of the WHOLE engine — sim *and* editor — browsable frame by
 > frame, interactive but ephemeral (D046 §7b), with resume-from-frame and
-> asset bring-back. Sections 10–16 specify the **planned A7 product surface**:
-> the full timeline, A/B loops, standalone replay clips, and crash handoff
-> requested on 2026-07-16. Binding ADRs: **D053** and **D065**.
+> asset bring-back. Sections 10–16 specify the **A7 product surface**: the full
+> timeline, A/B loops, standalone replay clips, and crash handoff requested on
+> 2026-07-16. The editor tray and live-history interaction foundation are now
+> built; the status note in §10 names the remaining packets. Binding ADRs:
+> **D053** and **D065**.
 
 ## 1. What exists (and is kept verbatim)
 
@@ -148,9 +150,10 @@ the journals already cover every asset the editor ever touched.
 - Play-mode sessions (no shell) keep the legacy F4 scrubber unchanged;
   it still owns the non-editor story until it re-hosts someday.
 
-This compact hover bar proved the park/reconstruct mechanics. It is not the
-final product UI: A7 replaces the hover-only bar with the persistent timeline
-tray in §10 while retaining the pill as its collapsed entrance.
+This compact hover bar proved the park/reconstruct mechanics. A7 has now
+replaced it in editor sessions with the persistent timeline tray in §10 while
+retaining the pill as its collapsed entrance. Play-mode sessions still use the
+legacy scrubber described above.
 
 ## 7. Determinism / goldens stance
 
@@ -239,6 +242,16 @@ ten minutes (or all retained history when shorter). Zoom reaches frame-level
 inspection at the near end and the full retained stream at the far end.
 Seeking remains bounded by the existing one-second segment keyframes and decode
 LRU; preview/activity queries use indexes and must not decode frame state.
+
+**Implementation status (2026-07-16).** The editor tray, camera, transport,
+live-ring click seeking, inclusive A/B playback, and layered Esc/F4 persistence
+are built. Until the segment indexes in §12 land, the activity/event lanes use
+a read-only summary of already-resident FRAM/EDOC streams; they never reconstruct
+state or load a demoted disk skeleton just to paint chrome, and uncovered older
+history is labelled as missing. The preview lane explicitly reports that no
+presented-frame samples exist. Persistent multi-resolution summaries, `THMB`
+records, project-file epochs, full event coverage, immutable foreign/crash
+sources, standalone packaging, and export remain later A7 packets.
 
 ## 11. Exact pointer grammar and persistence
 

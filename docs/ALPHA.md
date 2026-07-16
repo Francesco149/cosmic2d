@@ -206,7 +206,7 @@ gamepad, editable end to end, export cleanly, and are readable starter sources.
 
 Goal: turn the existing mechanics into a flagship debugging and recording tool.
 
-- [ ] Replace the hover slider with a persistent full-width timeline tray:
+- [x] Replace the hover slider with a persistent full-width timeline tray:
   default to the ten minutes ending at live, wheel-zoom at cursor,
   middle-drag pan, frame-level near zoom, and full-history far zoom.
 - [ ] Capture/display roughly one presented-frame thumbnail per minute and a
@@ -218,10 +218,12 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
 - [ ] Visible disk budget/use, retention controls, pause/clear, and recovery
   behavior across state, thumbnails, audio, and deduplicated project blobs;
   long sessions remain bounded and understandable.
-- [ ] Implement the exact scrub grammar: click seeks; left-drag selects an
-  inclusive A/B range and loops it; Esc clears the loop/clip mode; Esc again
-  closes rewind immediately. Active clip/export and dropped-replay modes cannot
-  disappear through hover timeout, F4, or outside clicks.
+- [x] Implement the exact live-history scrub grammar: click seeks; left-drag
+  selects an inclusive A/B range and loops it; Esc clears the loop/clip mode;
+  Esc again closes rewind immediately. Active clips cannot disappear through
+  hover timeout, F4, or outside clicks.
+- [ ] Extend that dismissal guard to export progress and dropped-replay modes
+  when those modes exist.
 - [ ] Give live history, replay files, and crash-focused views immutable
   timeline sources. Dragging a replay into any editor view opens/fits/loops it;
   dismissing it restores the untouched live ring and present rather than

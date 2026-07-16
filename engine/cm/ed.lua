@@ -542,6 +542,30 @@ end
 
 local function hotkeys(ig, i)
   local doc, g = M.doc, M.g
+  local rewind = cm.require("cm.ed.rewind")
+  local rw_consumed = false
+  -- Rewind is shell chrome, so F4/Esc remain reachable while a code editor
+  -- owns the imgui keyboard. Esc follows A7's clip-first, tray-second stack.
+  for _, e in ipairs(i.keys) do
+    if e.down and not e.rep then
+      if e.scancode == K.f4 then
+        rewind.toggle(M)
+        rw_consumed = true
+      elseif e.scancode == K.escape
+             and (rewind.opened(M) or cm.require("cm.scrub").paused()) then
+        rewind.escape(M)
+        rw_consumed = true
+      end
+    end
+  end
+  if rw_consumed then return end
+  if rewind.opened(M) then
+    for _, e in ipairs(i.keys) do
+      if e.down and not e.rep then rewind.key(M, e.scancode, g.shift) end
+    end
+    return -- no canvas/window hotkey fires through the persistent tray
+  end
+
   -- ctrl combos that must fire even while an edit widget owns the
   -- keyboard (UX round 5 — imgui assigns no meaning to these; save and
   -- find are exactly what you reach for mid-typing)
@@ -628,14 +652,15 @@ local function interact(ig)
   local i = cm.require("cm.ui").inp
   local doc, g = M.doc, M.g
   track_mods(i.keys)
+  hotkeys(ig, i)
+  consume_legacy_keys(i.keys)
+  local rw_owns = cm.require("cm.ed.rewind").owns_pointer(M, i)
   -- the ALT layer owns the pointer: gate mouse off imgui in C (widgets
   -- render unchanged — no shimmer — but can never take the A-click).
   -- CTRL gates it too (UX round 4b): ctrl+wheel is the kinds' size dial
   -- and imgui must not also scroll its child on it (bonus: a ctrl+click
   -- link-open no longer moves the widget caret)
-  pal.x_ig_mouse(not (g.alt or g.ctrl))
-  hotkeys(ig, i)
-  consume_legacy_keys(i.keys)
+  pal.x_ig_mouse(not (g.alt or g.ctrl or rw_owns))
   step_anim()
 
   g.ig_kb = ig.kb -- filter_events (next tick) must not feed the game while
@@ -644,6 +669,11 @@ local function interact(ig)
 
   local wwx, wwy = cam.s2w(doc.cam, i.wx, i.wy)
   g.cursor = { wx = wwx, wy = wwy } -- draw-side hover reuse
+
+  -- Rewind owns the complete pointer sequence (including drags that leave
+  -- the tray). Its draw pass below advances the gesture after the canvas and
+  -- all window widgets have been held inert.
+  if rw_owns then return end
 
   -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. CTRL → the
   -- hovered kind's size dial (code-ed font, assets preview) when it has
@@ -698,12 +728,6 @@ local function interact(ig)
 
   -- the spawn menu / launcher own clicks while open (draw() hit-tests them)
   if g.menu or g.launcher then return end
-
-  -- the rewind bar owns its rect while shown (draw_rewind hit-tests it)
-  if g.rw_bar and i.wx >= g.rw_bar.x and i.wx < g.rw_bar.x + g.rw_bar.w
-     and i.wy >= g.rw_bar.y and i.wy < g.rw_bar.y + g.rw_bar.h then
-    return
-  end
 
   -- an asset-tile drag in flight (the picker armed it; the shell carries
   -- it, EDITOR.md §12.5): release over an accepting window = rebind, over
@@ -957,8 +981,7 @@ function M.hot_id()
   end
   if not g.cursor then return nil end
   local i = cm.require("cm.ui").inp
-  if g.rw_bar and i.wx >= g.rw_bar.x and i.wx < g.rw_bar.x + g.rw_bar.w
-     and i.wy >= g.rw_bar.y and i.wy < g.rw_bar.y + g.rw_bar.h then
+  if cm.require("cm.ed.rewind").owns_pointer(M, i) then
     return nil
   end
   local z = doc.cam.zoom
@@ -1159,144 +1182,6 @@ local function draw_menu(ig, i)
   if i.clicked[1] and not clicked_inside then g.menu = nil end
 end
 
--- the rewind pill + bar (R6d, REWIND.md §6): the reserved top-right
--- corner. The pill shows the retained span; hovering it (or being
--- parked) expands the full-width bar — timeline, step/play, resume
--- here, close. All of it is a FRONT-END over cm.scrub's machinery (its
--- legacy panel keeps running invisibly under the canvas): the bar
--- reads/writes scrub.at/play and calls open/close/rewind_here. Chrome,
--- not editor state — a rewound frame does not show a rewound pill.
-local function rw_button(i, x, y, w, h, label, accent)
-  local hov = i.wx >= x and i.wx < x + w and i.wy >= y and i.wy < y + h
-  pal.x_ig_rect_fill(x, y, w, h, hov and C.menu_hot or 0x262238ff, 5)
-  local tw = pal.x_ig_text_size(label, 12, 0)
-  pal.x_ig_text(x + (w - tw) * 0.5, y + (h - 12) * 0.45, 12,
-                accent and C.sel or (hov and C.hud or C.title_dim), label, 0)
-  return hov and i.clicked[1]
-end
-
-local function draw_rewind(ig, i)
-  local scrub = cm.require("cm.scrub")
-  local trace = cm.require("cm.trace")
-  local g = M.g
-  local lo, hi = trace.ring_range()
-  local parked = scrub.paused()
-  pal.x_ig_overlay(true)
-
-  -- the pill
-  local label
-  if parked then
-    label = "parked"
-  elseif lo then
-    local span = (hi - lo) // 60
-    if span >= 3600 then -- cross-session streams get long (R6.5)
-      label = ("%dh%02dm"):format(span // 3600, span % 3600 // 60)
-    elseif span >= 60 then
-      label = ("%dm%02ds"):format(span // 60, span % 60)
-    else
-      label = ("%ds"):format(span)
-    end
-  else
-    label = "·"
-  end
-  local px = 13
-  local lw = pal.x_ig_text_size(label, px, 0)
-  local pw = lw + 24
-  local x0, y0, h0 = ig.w - pw - 8, 8, 26
-  pal.x_ig_rect_fill(x0, y0, pw, h0, parked and 0x3a3560f2 or C.pill, 8)
-  pal.x_ig_text(x0 + 12, y0 + 6, px, parked and C.sel or C.hud_dim, label, 0)
-  local now = pal.time_ns()
-  if i.wx >= x0 and i.wx < x0 + pw and i.wy >= y0 and i.wy < y0 + h0 then
-    g.rw_until = now + 2500 * 1e6 -- teidraw's video-pill timeout shape
-  end
-
-  local open = lo and (parked or (g.rw_until and now < g.rw_until))
-  if not open then
-    g.rw_bar = nil
-    pal.x_ig_overlay(false)
-    return
-  end
-
-  -- the bar
-  local bx, by, bw, bh = 8, 42, ig.w - 16, 58
-  g.rw_bar = { x = bx - 4, y = y0, w = bw + 8, h = by + bh - y0 + 4 }
-  if (i.wx >= bx and i.wx < bx + bw and i.wy >= by and i.wy < by + bh) then
-    g.rw_until = now + 2500 * 1e6
-  end
-  pal.x_ig_rect_fill(bx, by, bw, bh, 0x1e1b2ef6, 10)
-  pal.x_ig_rect(bx, by, bw, bh, C.win_edge, 1, 10)
-
-  -- the timeline
-  local tx, tw2, ty = bx + 14, bw - 28, by + 12
-  pal.x_ig_line(tx, ty + 4, tx + tw2, ty + 4, 0x3a3560ff, 3)
-  local at = parked and scrub.at or hi
-  local t = (at - lo) / math.max(1, hi - lo)
-  pal.x_ig_circle_fill(tx + t * tw2, ty + 4, 6,
-                       parked and C.sel or 0xb0a8dcff)
-  if not g.alt and i.buttons[1] and i.wx >= tx - 8 and i.wx < tx + tw2 + 8
-     and i.wy >= ty - 8 and i.wy < ty + 16 then
-    if not parked then
-      scrub.open()
-      parked = scrub.paused()
-    end
-    if parked then
-      local nt = math.max(0, math.min(1, (i.wx - tx) / tw2))
-      scrub.at = math.floor(lo + nt * (hi - lo) + 0.5)
-      scrub.play = false
-    end
-  end
-
-  -- transport + doors
-  local byy = ty + 22
-  local info = parked
-    and ("frame %d / %d   t%+.2fs"):format(scrub.at, hi, (scrub.at - hi) / 60)
-    or ("frame %d — drag the timeline to browse the past"):format(hi)
-  pal.x_ig_text(tx, byy + 4, 12, parked and C.hud or C.hud_dim, info, 0)
-  local bxx = bx + bw - 14
-  local function place(w)
-    bxx = bxx - w - 6
-    return bxx
-  end
-  if parked then
-    if rw_button(i, place(52), byy, 52, 22, "close") then scrub.close() end
-    if rw_button(i, place(94), byy, 94, 22, "resume here", true) then
-      scrub.rewind_here()
-    end
-    -- door two: the focused asset window's past state → the present
-    local fwin = wm.get(M.doc, M.doc.focus)
-    if fwin and fwin.path and fwin.path ~= "" and M.doc.assets
-       and M.doc.assets[fwin.path] then
-      if rw_button(i, place(88), byy, 88, 22, "bring back", true) then
-        local got = M.bring_back()
-        if got then g.rw_flash = { path = got, t = now } end
-      end
-    end
-    if g.rw_flash and now - g.rw_flash.t < 1.5e9 then
-      pal.x_ig_text(tx + 260, byy + 4, 12, C.sel,
-                    "brought back: " .. g.rw_flash.path, 0)
-    end
-    if rw_button(i, place(40), byy, 40, 22, scrub.play and "stop" or "play") then
-      if scrub.play then
-        scrub.play = false
-      else
-        if scrub.at >= hi then scrub.at = lo end
-        scrub.play = scrub.at < hi
-      end
-    end
-    if rw_button(i, place(28), byy, 28, 22, ">") then
-      scrub.play = false
-      scrub.at = math.min(hi, scrub.at + 1)
-    end
-    if rw_button(i, place(28), byy, 28, 22, "<") then
-      scrub.play = false
-      scrub.at = math.max(lo, scrub.at - 1)
-    end
-  else
-    if rw_button(i, place(52), byy, 52, 22, "park") then scrub.open() end
-  end
-  pal.x_ig_overlay(false)
-end
-
 local function draw_hud(ig)
   local doc = M.doc
   pal.x_ig_overlay(true)
@@ -1305,8 +1190,7 @@ local function draw_hud(ig)
   local lw = pal.x_ig_text_size(label, 15, 0)
   pal.x_ig_rect_fill(10, 8, lw + 24, 28, C.pill, 8)
   pal.x_ig_text(22, 13, 15, C.hud, label, 0)
-  -- zoom pill, top-right — offset left: the corner is reserved for the R6
-  -- rewind pill (EDITOR.md §3)
+  -- zoom pill, top-right -- offset left for the persistent rewind entrance.
   local zs = ("%d%%"):format(math.floor(doc.cam.zoom * 100 + 0.5))
   local zw = pal.x_ig_text_size(zs, 15, 1)
   pal.x_ig_rect_fill(ig.w - zw - 24 - 110, 8, zw + 24, 26, C.pill, 8)
@@ -1357,7 +1241,7 @@ local function draw(ig)
   draw_menu(ig, i)
   cm.require("cm.ed.launcher").draw(M, ig, i)
   draw_hud(ig)
-  draw_rewind(ig, i)
+  cm.require("cm.ed.rewind").draw(M, ig, i)
 end
 
 -- ---- the frame (called from cm.main after game.draw) ----

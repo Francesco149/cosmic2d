@@ -35,6 +35,14 @@ function M.paused()
   return M.on == true
 end
 
+function M.has_loop()
+  return M.loop_a ~= nil
+end
+
+function M.loop_range()
+  return M.loop_a, M.loop_b
+end
+
 -- write frame f's state into the live buffers/doc (idempotent per frame).
 -- R6c: the editor parks alongside — the frame's EDOC becomes the shown
 -- (fully interactive, fully ephemeral) editor doc; the present is
@@ -57,7 +65,46 @@ function M.open()
   M.lo, M.hi = lo, hi
   M.at, M.shown = hi, hi -- the present is already in the buffers
   M.play = false
+  M.play_hold, M.loop_a, M.loop_b = nil, nil, nil
   M.irec = trace.ring_state_at(hi).input
+end
+
+-- Public transport primitives used by both the legacy panel and A7's editor
+-- tray. A/B is ordered and inclusive. set_loop parks at A for one complete
+-- display tick before walking A..B and wrapping; seeking stops playback but
+-- deliberately keeps clip mode until Esc clears it.
+function M.seek(f)
+  if not M.on then return end
+  M.play, M.play_hold = false, nil
+  M.at = math.min(math.max(math.floor(f + 0.5), M.lo), M.hi)
+end
+
+function M.set_loop(a, b)
+  if not M.on then return end
+  a = math.min(math.max(math.floor(a + 0.5), M.lo), M.hi)
+  b = math.min(math.max(math.floor(b + 0.5), M.lo), M.hi)
+  if b < a then a, b = b, a end
+  M.loop_a, M.loop_b = a, b
+  M.at, M.play, M.play_hold = a, true, true
+end
+
+function M.clear_loop()
+  M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
+  M.play = false
+end
+
+function M.toggle_play()
+  if not M.on then return end
+  if M.play then
+    M.play, M.play_hold = false, nil
+    return
+  end
+  if M.loop_a and (M.at < M.loop_a or M.at >= M.loop_b) then
+    M.at, M.play_hold = M.loop_a, true
+  elseif not M.loop_a and M.at >= M.hi then
+    M.at, M.play_hold = M.lo, true
+  end
+  M.play = true
 end
 
 -- back to the present, timeline intact (recording resumes seamlessly);
@@ -71,6 +118,7 @@ function M.close()
   apply(M.hi)
   cm.require("cm.ed").unpark(false) -- the stashed present comes back
   M.on, M.play = false, false
+  M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
 end
 
 -- the playhead becomes the new present; the future is discarded (for a
@@ -83,6 +131,7 @@ function M.rewind_here()
   cm.require("cm.ed").unpark(true)
   M.shown = M.at
   M.on, M.play, M.replay = false, false, false
+  M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
   if cm.main and cm.main.after_restore then cm.main.after_restore() end
 end
 
@@ -107,6 +156,7 @@ local function do_load(path)
   M.lo, M.hi = rlo, rhi
   M.at, M.shown = rlo, rlo
   M.play = rhi > rlo -- it's a showcase: roll it
+  M.play_hold, M.loop_a, M.loop_b = true, nil, nil
   M.irec = nil
 end
 
@@ -126,11 +176,6 @@ local function held_actions(irec)
   return table.concat(out, " ")
 end
 
-local function seek(f)
-  M.play = false
-  M.at = math.min(math.max(f, M.lo), M.hi)
-end
-
 -- ---- the per-tick frame (cm.main: after editor, before perf/console) ----
 
 function M.frame()
@@ -139,22 +184,35 @@ function M.frame()
     M.pending = nil
     do_load(path)
   end
-  for _, k in ipairs(ui.inp.keys) do
-    if k.down and not k.rep and k.scancode == KEY_F4 then
-      if M.on then M.close() else M.open() end
-    elseif M.on and k.down and k.scancode == KEY_LEFT then
-      seek(M.at - 1)
-    elseif M.on and k.down and k.scancode == KEY_RIGHT then
-      seek(M.at + 1)
+  local ed = cm.require("cm.ed")
+  if not ed.on then
+    for _, k in ipairs(ui.inp.keys) do
+      if k.down and not k.rep and k.scancode == KEY_F4 then
+        if M.on then M.close() else M.open() end
+      elseif M.on and k.down and k.scancode == KEY_LEFT then
+        M.seek(M.at - 1)
+      elseif M.on and k.down and k.scancode == KEY_RIGHT then
+        M.seek(M.at + 1)
+      end
     end
   end
   if not M.on then return end
 
   if M.play then
-    M.at = M.at + 1
-    if M.at >= M.hi then M.at, M.play = M.hi, false end
+    if M.play_hold then
+      M.play_hold = nil
+    elseif M.loop_a then
+      if M.at >= M.loop_b then M.at = M.loop_a else M.at = M.at + 1 end
+    else
+      M.at = M.at + 1
+      if M.at >= M.hi then M.at, M.play = M.hi, false end
+    end
   end
   apply(M.at)
+
+  -- Editor sessions render the persistent A7 tray on the native imgui
+  -- overlay. Keep the legacy game-space panel for play-mode sessions only.
+  if ed.on then return end
 
   local W, H = view.surface_size() -- ui canvas when the editor owns it (D036)
   local st = ui.style
@@ -169,23 +227,18 @@ function M.frame()
 
   local v = ui.slider("", M.at, M.lo, M.hi,
                       { id = "timeline", label_w = 0, fmt = "%d" })
-  if v ~= M.at then seek(v) end
+  if v ~= M.at then M.seek(v) end
 
   ui.row({ 1, 1.2, 1, 1.2, 1.2, 1, 1.2, 2.2, 1.6, 1.4 })
-  if ui.button("|<") then seek(M.lo) end
-  if ui.button("-60") then seek(M.at - 60) end
-  if ui.button("<") then seek(M.at - 1) end
+  if ui.button("|<") then M.seek(M.lo) end
+  if ui.button("-60") then M.seek(M.at - 60) end
+  if ui.button("<") then M.seek(M.at - 1) end
   if ui.button(M.play and "stop" or "play") then
-    if M.play then
-      M.play = false
-    else
-      if M.at >= M.hi then M.at = M.lo end
-      M.play = M.at < M.hi
-    end
+    M.toggle_play()
   end
-  if ui.button(">") then seek(M.at + 1) end
-  if ui.button("+60") then seek(M.at + 60) end
-  if ui.button(">|") then seek(M.hi) end
+  if ui.button(">") then M.seek(M.at + 1) end
+  if ui.button("+60") then M.seek(M.at + 60) end
+  if ui.button(">|") then M.seek(M.hi) end
   if ui.button(M.replay and "play from here" or "rewind here",
                { id = "rewind" }) then
     M.rewind_here()
