@@ -42,17 +42,30 @@ CameraTuning under doc.knobs.cam. Captured-cursor mouse look (their
 EnableMouseLook) is DEFERRED: needs a PAL relative-mouse API + input
 record v2 — record v1 is frozen and engine-shared (merge-sensitive).
 
+## 2026-07-16 (playtest round 2) — phase-through fixed, mantle, wasd
+
+Human: "feels better", but diagonal stair walks PHASED THROUGH and one
+pillar was solid on one axis. Root cause (frame-exact _G.DBG trace): a
+side clamp stores face-hw in the f32 buffer; (face-hw)+hw can round past
+the face, the exact side test reads flush as "squeezed", and the player
+slides in. **All side tests now carry EPS=1e-3** (rule in D3D-010: any
+geometry test against f32-stored sim state needs an epsilon). Plus two
+human requests: **mantle** (steps ≤ move.step_h lift you instead of
+blocking — demo(2) walks the whole stair run jumpless; grounded-only,
+headroom-checked) and **wasd move / arrows camera** (yaw + pitch, pausing
+yaw-follow; drag/wheel/c unchanged). Soak harness kept in-cartridge:
+game.demo(2) walk + _G.DBG=n telemetry. Captured-cursor mouse look
+re-confirmed as post-merge work (PAL relative-mouse API + record v2).
+
 ## Exact next step
 
-**Human re-check of bounce** (collision + the new camera feel — drag
-look, wheel zoom, circling strength). Then **grow the primitive
-vocabulary**: prism/lathe emitters in gb.lua (ports of proto
-draw_prism/draw_lathe) so the playground escapes axis-aligned boxes —
-colliders stay AABB, deco rotates. Consider the PAL relative-mouse API
-(+ record v2) if the human wants true captured mouse look after trying
-drag-look. After that: the level stops being a hand-typed table — first
-editor-primitive distillation step (still parked until gameplay is
-polished, human directive 2026-07-16).
+**Human re-check** (stairs walkable, pillar solid, wasd/arrow feel).
+Then **grow the primitive vocabulary**: prism/lathe emitters in gb.lua
+(ports of proto draw_prism/draw_lathe) so the playground escapes
+axis-aligned boxes — colliders stay AABB, deco rotates. After that: the
+level stops being a hand-typed table — first editor-primitive
+distillation step (still parked until gameplay is polished, human
+directive 2026-07-16).
 
 Parked (unchanged): VI-soft bilinear presentation + 5551/dither grade pass
 (the adopted default presentation — not yet in the PAL blit).
