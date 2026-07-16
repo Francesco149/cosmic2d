@@ -4,7 +4,9 @@
 --
 -- Controls: wasd move (camera-relative: w = away from camera) · space
 -- jump · arrows = camera yaw/pitch · mouse drag = look · wheel = zoom ·
--- c recenter · ` console (game.demo(1) = autoplay, game.demo(2) = walk).
+-- c recenter · ` console (game.demo(1) = autoplay loop, game.demo(2) =
+-- walk, game.demo(3) = the full lap route: stairs -> keep -> platforms ->
+-- goal star -> home, forever).
 --
 -- The camera is the FollowCamera model from the human's godot cosmic
 -- project (F:\Documents\cosmic src/camera): explicit orbit yaw/pitch/dist,
@@ -121,6 +123,7 @@ function game.init()
   end
   if d.demo == nil then d.demo = 0 end
   if d.demo_t0 == nil then d.demo_t0 = 0 end
+  if d.demo_wp == nil then d.demo_wp = 1 end
   d.score = d.score or 0   -- gems collected, all time
   d.laps = d.laps or 0     -- goal stars touched
   d.clear_t = d.clear_t or 0
@@ -173,12 +176,52 @@ function game.demo(on)
   if on and on ~= 0 then
     d.demo = on
     d.demo_t0 = state.frame()
+    if on == 3 then d.demo_wp = 1 end
   else
     d.demo = 0
   end
 end
 
 local ACTIONS = { "left", "right", "up", "down", "jump" }
+
+-- demo(3): the lap route as waypoints { x, z, jump? } — steer straight at
+-- the current one (world-space wish, no camera in the loop), advance
+-- within 0.5u, press jump when LEAVING a jump-flagged point (platform
+-- hops; air steering carries to the next point). The index is sim state
+-- (doc.demo_wp) so snapshots/traces replay exactly. Mantle walks the
+-- stairs; the final leg walks off the tower and falls home.
+local ROUTE = {
+  { 12.65, 18 },         -- up the stair run (mantle does the climbing)
+  { 16.0, 17.0 },        -- onto the keep roof, angling for the edge
+  { 17.5, 14.6, true },  -- roof edge: hop to platform 1
+  { 17.5, 12.5 },        -- platform 1
+  { 16.3, 11.3, true },  -- p1 corner: hop to platform 2
+  { 14.5, 8.5 },         -- platform 2
+  { 15.8, 7.2, true },   -- p2 corner: hop to platform 3
+  { 18.5, 4.5 },         -- platform 3
+  { 19.7, 4.5, true },   -- p3 edge: the gap to the goal tower
+  { 23.5, 4.5 },         -- tower top: the star (lap!)
+  { 26.5, 11 },          -- walk off the tower, fall home
+  { 4, 18 },             -- the spawn plaza; wraps to 1
+}
+
+local function route_ctl()
+  local d = state.doc
+  local px, _, pz = player.pos()
+  local wp = ROUTE[d.demo_wp]
+  local dx, dz = wp[1] - px, wp[2] - pz
+  local dist = m.sqrt(dx * dx + dz * dz)
+  local jump = false
+  if dist < 0.5 then
+    jump = wp[3] or false
+    d.demo_wp = d.demo_wp % #ROUTE + 1
+    wp = ROUTE[d.demo_wp]
+    dx, dz = wp[1] - px, wp[2] - pz
+    dist = m.sqrt(dx * dx + dz * dz)
+  end
+  if dist > 1e-4 then dx, dz = dx / dist, dz / dist else dx, dz = 0, 0 end
+  return { wishx = dx, wishz = dz, jump_pressed = jump }
+end
 
 -- camera-relative wish vector from held dirs: forward = cam->player on xz
 local function build_ctl()
@@ -191,6 +234,7 @@ local function build_ctl()
       end
     end
   end
+  if d.demo == 3 then return route_ctl() end -- world-space, no camera
   local fwd, side, jump_pressed
   if d.demo == 2 then -- pure forward walk (collision soak tests)
     fwd, side, jump_pressed = 1, 0, false
