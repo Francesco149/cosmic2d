@@ -4,7 +4,52 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
-## 2026-07-17 (round 7) — moving platforms + the reload-pattern bug
+## 2026-07-17 (round 8) — the N64 presentation lands (D3D-015)
+
+Autonomous round (playtest verdicts still pending; course polish stays
+gated on them, so the round took the one human-approved verdict-free
+item): the **VI-soft presentation + 5551 grade** — the D3D-003 adopted
+default look, parked since the fork, now in the PAL (pal 0/api16).
+`pal.x_grade{quant=n}` = Bayer-4 dithered n-bit quantize appended to
+the grade post-pass (internal res, bakes into the target — goldens see
+it, like the real console framebuffer); `pal.x_soft(on)` = the
+game-layer present blit resamples bilinearly + smears [1,2,1]/4 one
+dest px horizontally (blit_soft.frag + a linear sampler; composite
+only — internal target/goldens untouched, ui/ig stay sharp). Both are
+per-frame render-class opt-ins reset at begin_frame; proto r3d.c
+fb_write_png --soft is the reference math. Sharp defaults byte-stable:
+inherited suite passed unregenerated before bounce opted in.
+
+bounce adopts both via **doc.knobs.look = {quant=5, soft=1}** (live
+knobs, armed in draw). The three bounce pixel goldens re-shot on pinned
+lavapipe (deliberate look change — the internal frame now carries the
+dither; trace goldens replay untouched). New: **bounce_soft.png, the
+suite's first composite golden** (--win 960x720, f150) pinning the soft
+blit end to end; byte-stable across runs. Verified: full suite ALL
+GREEN from the committed tree; 3 shots on llm-feed (soft composite,
+dither before/after zoom, re-shot ferry golden) with a softness-level
+question.
+
+## Exact next step
+
+1. **Human feel-check on the feed** (all open): NEW — the presentation
+   round (softness level ok vs proto? keep soft as the bounce default
+   or prefer sharp? dither strength read?) plus the mover round (lift
+   speed/size, ferry speed + dock wait, dome-rim walk difficulty, wall
+   balance-beam fun) and the still-open round-4/5/6 questions
+   (dome-stand embed depth, star touch timing, round collision
+   fairness, monolith bounds, gem radius/spin/bob, goal-star
+   readability).
+2. Then (human directive order, gameplay first): more course / feel
+   polish per verdicts; editor distillation stays parked. proto3d can
+   adopt the look knobs on its next touch (no golden depends on it).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2 for captured-cursor mouse look. Parked (unchanged): the
+PS1-preset extras (affine wobble + vertex snap) — VI-soft + 5551 grade
+SHIPPED this round.
+
+## 2026-07-17 (round 7) — moving platforms + the reload-pattern bug (superseded — see above)
 
 Autonomous round (playtest verdicts still pending): first the flagged
 proto3d latent issue (texids/sky → rc., money shot re-verified), then
@@ -36,20 +81,7 @@ mid-crossing, pinning horizontal carry). bounce_demo/lap pixels re-shot
 look-equivalent (+88 tris; routes and HUD byte-identical at the golden
 frames). Verified: full suite ALL GREEN; 4 shots on llm-feed.
 
-## Exact next step
-
-1. **Human feel-check on the feed** (all open): the mover round — lift
-   speed/size, ferry speed + dock wait, dome-rim walk difficulty, wall
-   balance-beam fun — plus the still-open round-4/5/6 questions
-   (dome-stand embed depth, star touch timing, round collision
-   fairness, monolith bounds, gem radius/spin/bob, goal-star
-   readability).
-2. Then (human directive order, gameplay first): more course / feel
-   polish per verdicts; editor distillation stays parked.
-
-Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
-record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
-bilinear presentation + 5551/dither grade.
+## Exact next step (rolled into round 8's list above)
 
 ## 2026-07-16 (round 6) — playtest fixes + the lap demo (superseded — see above)
 

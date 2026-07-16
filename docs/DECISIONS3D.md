@@ -306,3 +306,41 @@ source drift (the exact case that crashed). Also reaffirmed the hard
 way: pixel goldens are shot on PINNED LAVAPIPE only (VK_DRIVER_FILES=
 $COSMIC_LVP_ICD, the dev-shell export) — a dzn/WSL shot looks right
 and byte-mismatches.
+
+## D3D-015 — the N64 presentation lands: x_grade quant= + pal.x_soft (2026-07-17)
+
+The D3D-003 adopted default look (human-picked on the graybox shot) is in
+the engine — pal 0/api16, both halves per-frame render-class opt-ins
+reset at begin_frame, proto r3d.c fb_write_png (--soft) the reference
+math:
+
+- **The 5551 framebuffer grade**: `pal.x_grade{quant=n}` — a Bayer-4
+  dithered n-bit-per-channel quantize appended to the existing grade
+  post-pass shader (quant=5 = the N64 16-bit framebuffer). It runs at
+  INTERNAL res and bakes into the game target, so readback and pixel
+  goldens see it — the deliberate design (the dither is part of the
+  frame, exactly like the real console's framebuffer). quant=0 and the
+  grade-off path stay byte-identical; every inherited golden passed
+  unregenerated.
+- **The VI-soft present blit**: `pal.x_soft(on)` — the game-layer blit
+  in the composite samples bilinearly (new linear clamp sampler, new
+  blit_soft.frag) and smears horizontally 3-tap [1,2,1]/4 with taps one
+  DESTINATION pixel apart — the VI resample + smear. Presentation only:
+  the internal target never sees it (goldens/readback untouched); the
+  ui canvas and ig layer stay sharp; sharp integer pixels remain the
+  engine default (D3D-003: selectable, and 2D cartridges never call it).
+
+bounce adopts both via **doc.knobs.look = {quant=5, soft=1}** (armed in
+draw each frame, so the knobs are live; render-class — the sim never
+reads them). The three bounce pixel goldens were re-shot on pinned
+lavapipe (deliberate look change — the internal frame now carries the
+dither); trace goldens replay untouched (--verify never draws). New:
+**bounce_soft.png, the suite's first COMPOSITE golden** (--win 960x720)
+— it pins the soft blit shader + linear sampler end to end, which no
+internal-target golden can. Shot twice, byte-stable on lavapipe.
+
+Deliberately NOT done: quantizing inside the 3D scene pass (the grade
+already covers the whole frame, HUD included, like real hardware), and
+soft-blitting the ui/editor layer (dev chrome wants sharp text). The
+"mild horizontal smear" strength is fixed in the shader for now — knob
+it only if the human asks after the feel-check.
