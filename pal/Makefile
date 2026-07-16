@@ -5,6 +5,10 @@ CC ?= cc
 CXX ?= c++
 PKG_CONFIG ?= pkg-config
 EXE ?=
+# GNU cc reports the matching target tool, including the mingw prefix in the
+# cross build.  It is only invoked for EXE=.exe builds below.
+WINDRES ?= $(shell $(CC) -print-prog-name=windres)
+COSMIC_VERSION ?= $(shell tr -d '\r\n' < ../VERSION)
 # Override BIN when one object tree needs multiple launchers (the Windows
 # distribution links both GUI- and console-subsystem executables).
 BIN ?= ../bin/cosmic$(EXE)
@@ -35,7 +39,12 @@ IMGUI_SRC := vendor/imgui/imgui.cpp vendor/imgui/imgui_draw.cpp \
              vendor/imgui/misc/cpp/imgui_stdlib.cpp \
              vendor/imgui/backends/imgui_impl_sdl3.cpp \
              vendor/imgui/backends/imgui_impl_sdlgpu3.cpp
-PAL_OBJ := $(PAL_SRC:src/%.c=$(BUILD)/%.o) $(PAL_CXX:src/%.cpp=$(BUILD)/%_cxx.o)
+WIN_OBJ :=
+ifeq ($(EXE),.exe)
+WIN_OBJ := $(BUILD)/windows_res.o
+endif
+PAL_OBJ := $(PAL_SRC:src/%.c=$(BUILD)/%.o) $(PAL_CXX:src/%.cpp=$(BUILD)/%_cxx.o) \
+           $(WIN_OBJ)
 LUA_OBJ := $(LUA_SRC:vendor/lua/src/%.c=$(BUILD)/lua_%.o)
 IMGUI_OBJ := $(addprefix $(BUILD)/ig_,$(notdir $(IMGUI_SRC:.cpp=.o)))
 
@@ -55,6 +64,10 @@ $(BUILD)/%.o: src/%.c src/pal.h | $(BUILD)
 
 $(BUILD)/%_cxx.o: src/%.cpp src/pal.h | $(BUILD)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD)/windows_res.o: res/windows.rc res/cosmic2d.ico ../VERSION | $(BUILD)
+	$(WINDRES) --include-dir res --input-format rc --output-format coff \
+		--define 'COSMIC_VERSION_STRING=\"$(COSMIC_VERSION)\\0\"' -o $@ $<
 
 $(BUILD)/lua_%.o: vendor/lua/src/%.c | $(BUILD)
 	$(CC) $(LUA_CFLAGS) -c -o $@ $<

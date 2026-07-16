@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A7 rewind state integrity + tray foundation (2026-07-16)
+## Current handoff — A2 application identity + A7 rewind foundation (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -39,13 +39,24 @@ map-table edits restore coherently, including reconstruction without
 `game.init`; the mechanism is reusable rather than a scrubber-specific map
 exception.
 
-The next A7 packet persists multi-resolution activity/event indexes and minute
-`THMB` samples with the history segments, then adds project-file epochs. Older
-history remains browsable but must label missing index coverage. Immutable
-foreign replay/crash sources, standalone project-blob clips, atomic export,
-and crash-report handoff remain later A7 work. A2 crash-log/packaging work must
-still establish the stable report location and history-locator envelope those
-views will consume.
+**A2 packet 4 is complete.** A canonical 256 px cosmic2d mark now has a
+documented multi-resolution Windows ICO (256 through 16 px). Both GUI and
+console executables embed it plus Explorer `VERSIONINFO`; every copied editor
+and named-game launcher inherits the same identity. Repository `VERSION` is
+the single public package/resource string (`0.1-alpha`). Cross-package fixup
+rejects a missing icon group, version resource/string, or wrong subsystem on
+all four dev/editor entrances. Dev, public-editor, and renamed play artifacts
+all pass; the play archive proves GUI editor/game plus CUI diagnostics retain
+the resources. The Linux portable derivation still builds. `nix run .#test`
+is ALL GREEN: 23,287 self-checks, every trace verify, and all pixel goldens.
+
+**Exact next packet:** stay in A2 and define the platform-correct crash-log/
+report location plus the stable project/history-stream/frame envelope D065's
+crash-focused timeline will consume. After that, carry release notices and
+checksums into artifacts with an explicit unsigned-alpha policy. A7's queued
+implementation packet remains persisted multi-resolution activity/event
+indexes and minute `THMB` samples, followed by project-file epochs; legacy
+coverage must remain honestly labelled.
 
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
@@ -251,9 +262,19 @@ packages build, and a fresh demo Windows archive contains all three intended
 entrances. `nix run .#test` is ALL GREEN: 23,264 self-checks, every trace
 verify, and all pixel goldens.
 
-**Exact next packet:** add Windows/application icons and version resources;
-define and expose the crash-log/report location plus a stable project/history-
-stream/frame envelope for D065; then carry release notices and checksums into
-the artifacts with an explicit unsigned-alpha policy.
+**A2 packet 4 is complete.** The repository now carries one canonical cosmic2d
+application mark as a 256 px PNG and a documented Windows ICO with 256, 128,
+64, 48, 32, 24, and 16 px entries. `windres` binds the icon and English
+`VERSIONINFO` into both GUI and console executables; copied editor/demo and
+renamed play launchers retain it. A root `VERSION` supplies the shared
+`0.1-alpha` derivation/resource string. Cross-build fixup rejects missing icon
+group/version resources, incorrect strings, or subsystem regressions on every
+staged entrance. Windows dev/editor builds, a fresh play archive inspection,
+the Linux portable build, and `nix run .#test` all pass; the suite is ALL GREEN
+at 23,287 self-checks with every trace and pixel golden matching.
+
+**Exact next packet:** define and expose the crash-log/report location plus a
+stable project/history-stream/frame envelope for D065; then carry release
+notices and checksums into artifacts with an explicit unsigned-alpha policy.
 
 There is no known blocker or human-only verification required.

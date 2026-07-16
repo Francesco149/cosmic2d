@@ -1,0 +1,44 @@
+#include <windows.h>
+
+/* Explorer/taskbar identity.  Keep this icon first so Windows also uses it
+ * for launchers copied or renamed by the release packager. */
+#define IDI_COSMIC2D 101
+IDI_COSMIC2D ICON "cosmic2d.ico"
+
+/* The numeric tuple is required by VERSIONINFO; the string is the public
+ * alpha identifier shown by Explorer.  Keep the tuple in step with VERSION. */
+#ifndef COSMIC_VERSION_STRING
+#error COSMIC_VERSION_STRING must come from the repository VERSION file
+#endif
+1 VERSIONINFO
+ FILEVERSION 0,1,0,0
+ PRODUCTVERSION 0,1,0,0
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG | VS_FF_PRERELEASE
+#else
+ FILEFLAGS VS_FF_PRERELEASE
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904b0"
+    BEGIN
+      VALUE "CompanyName", "cosmic2d contributors\0"
+      VALUE "FileDescription", "cosmic2d 2D game engine\0"
+      VALUE "FileVersion", COSMIC_VERSION_STRING
+      VALUE "InternalName", "cosmic2d\0"
+      VALUE "LegalCopyright", "Copyright (c) 2026 cosmic2d contributors\0"
+      VALUE "OriginalFilename", "cosmic.exe\0"
+      VALUE "ProductName", "cosmic2d\0"
+      VALUE "ProductVersion", COSMIC_VERSION_STRING
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END

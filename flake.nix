@@ -5,6 +5,7 @@
 
   outputs = { self, nixpkgs }:
     let
+      releaseVersion = nixpkgs.lib.removeSuffix "\n" (builtins.readFile ./VERSION);
       systems = [ "x86_64-linux" ];
       forAll = f: nixpkgs.lib.genAttrs systems (system:
         f (import nixpkgs { inherit system; }));
@@ -55,7 +56,7 @@
 
         cosmic-dev = pkgs.stdenv.mkDerivation {
           pname = "cosmic2d-dev";
-          version = "0.1-m1";
+          version = releaseVersion;
           src = self;
           nativeBuildInputs = [ pkgs.pkg-config pkgs.glslang ];
           buildInputs = [ pkgs.sdl3 ];
@@ -88,7 +89,7 @@
         # Portable Linux editor tree. Keep glibc as the supported-machine ABI,
         # but carry every other linked library and resolve it relative to the
         # executable. Stripping also removes build paths from debug sections.
-        cosmic-linux-portable = pkgs.runCommand "cosmic2d-linux-portable-0.1-m1" {
+        cosmic-linux-portable = pkgs.runCommand "cosmic2d-linux-portable-${releaseVersion}" {
           nativeBuildInputs = [ pkgs.patchelf pkgs.binutils pkgs.findutils ];
         } ''
           cp -r --no-preserve=mode ${cosmic-portable-editor} $out
@@ -142,7 +143,7 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
         cosmic-windows-dev = let cross = pkgs.pkgsCross.mingwW64;
         in cross.stdenv.mkDerivation {
           pname = "cosmic2d-windows-dev";
-          version = "0.1-m6";
+          version = releaseVersion;
           src = self;
           nativeBuildInputs = [ pkgs.pkg-config pkgs.glslang ];
           buildInputs = [ cross.sdl3 ];
@@ -184,6 +185,34 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
             case "$console_subsystem" in *"Windows CUI"*) ;; *)
               echo "cosmic-console.exe is not a Windows console executable: $console_subsystem" >&2; exit 1;;
             esac
+
+            # Every shipped entrance is a copy of one of these two binaries,
+            # but assert each staged file: Explorer identity is a release
+            # property, not an incidental linker detail.
+            expected_version="$(tr -d '\r\n' < VERSION)"
+            for exe in $out/bin/cosmic.exe $out/bin/cosmic-console.exe \
+                       $out/cosmic2d-editor.exe $out/demo.exe; do
+              resource_dump="$(${cross.stdenv.cc.bintools.targetPrefix}objdump -p "$exe")"
+              for signature in \
+                "The .rsrc Resource Directory section:" \
+                "Entry: ID: 0x000003" \
+                "Entry: ID: 0x00000e" \
+                "Entry: ID: 0x000010"; do
+                if ! grep -Fq "$signature" <<<"$resource_dump"; then
+                  echo "$exe lacks Windows resource signature: $signature" >&2
+                  exit 1
+                fi
+              done
+              version_strings="$(${cross.stdenv.cc.bintools.targetPrefix}strings -el "$exe")"
+              for signature in "FileDescription" "cosmic2d 2D game engine" \
+                               "ProductName" "cosmic2d" "ProductVersion" \
+                               "$expected_version"; do
+                if ! grep -Fxq "$signature" <<<"$version_strings"; then
+                  echo "$exe lacks Windows version string: $signature" >&2
+                  exit 1
+                fi
+              done
+            done
           '';
         };
 
