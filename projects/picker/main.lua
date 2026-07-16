@@ -9,7 +9,11 @@
 -- archive streams a dated no-replace backup, and delete demands the exact
 -- folder name (or a just-made archive as its safety net) before the tree and
 -- its tile go. A tile opens the project IN THE EDITOR (the picker is the
--- editor's front door); the ▶ zone boots play mode.
+-- editor's front door); the ▶ zone boots play mode. "+ New project" opens
+-- the starter chooser (D081): an editable random three-word folder name
+-- plus the blank/platformer/top-down/arcade template row from
+-- cm.project.TEMPLATES, scaffolded through the same atomic rollback
+-- contract as ever.
 --
 -- Navigation and scale (D080): the grid scrolls (wheel, draggable bar,
 -- PgUp/PgDn), a search field + sort toggle reorder it through cm.pick's
@@ -348,24 +352,39 @@ local function refresh()
 end
 M.refresh = refresh
 
--- ---- new project (G5): scaffold + open in the editor ----
+-- ---- new project (G5/D081): template chooser → scaffold → editor ----
 
-local function scaffold()
-  local words = cm.require("cm.words")
-  local name = words.unique(function(nm)
-    return pal.read_file("projects/" .. nm .. "/project.lua") ~= nil
+local function fresh_name()
+  return cm.require("cm.words").unique(function(nm)
+    return pal.x_path_info("projects/" .. nm) ~= nil
   end)
+end
+
+local function create(name, template)
   local dir = "projects/" .. name
-  local ok, err = cm.require("cm.project").scaffold(dir, name)
+  local ok, err = project.scaffold(dir, name, nil, template)
   if not ok then
     pal.log("[picker] CREATE FAILED: " .. tostring(err))
     return nil, err
   end
   M.scan = nil
-  pal.log("[picker] new project " .. dir)
+  pal.log("[picker] new project " .. dir .. " (" .. (template or "blank") .. ")")
   launch(dir, "edit")
+  return true, dir
 end
-M.scaffold = scaffold
+
+-- Scripted/proof door: create directly, bypassing the chooser modal.
+-- A random three-word name stays the instant default.
+function M.scaffold(template, name)
+  return create(name or fresh_name(), template)
+end
+
+-- The "+ New project" chooser (D081): a prefilled editable folder name
+-- plus one row of starter templates. Everything ephemeral, like the rest.
+function M.open_new()
+  M.action = { mode = "new", template = 1, parent = "projects",
+               rename = fresh_name(), focus = true }
+end
 
 -- ---- draw ----
 
@@ -529,7 +548,7 @@ function M.draw()
         elseif sc == 40 and not e.rep then -- Enter: open / play / repair
           local t = list[nav.cursor]
           if not t then
-            scaffold()
+            M.open_new()
           elseif t.ok then
             launch(t.path, nav.shift and "play" or "edit")
           elseif t.recent then
@@ -691,8 +710,8 @@ function M.draw()
     end
   end
 
-  -- the "+ New project" tile, at the end of the grid (G5): scaffolds a
-  -- 3-random-words project from the template and opens it in the editor
+  -- the "+ New project" tile, at the end of the grid (G5/D081): opens the
+  -- starter chooser — an editable three-word name plus the template row
   do
     local idx = cells
     local col, row = (idx - 1) % cols, (idx - 1) // cols
@@ -710,8 +729,8 @@ function M.draw()
       pal.x_ig_text(x + 14, y + 14, 18, hov and C.text or C.accent,
                     "+ New project", 0)
       pal.x_ig_text(x + 14, y + 42, 11, C.dim,
-                    "3 random words · opens in the editor", 1)
-      if hov and gi.clicked[1] and not modal_at_start then scaffold() end
+                    "blank · platformer · top-down · arcade", 1)
+      if hov and gi.clicked[1] and not modal_at_start then M.open_new() end
     end
   end
   pal.x_ig_clip_pop()
@@ -729,12 +748,13 @@ function M.draw()
   if M.action then
     local a = M.action
     local pw = math.min(560, ig.w - 48)
-    -- The delete layout is the tallest; 240 keeps its buttons on screen at
-    -- 300% fixed chrome on an ordinary 1280x800 window (D074's logical 266).
+    -- The delete/new layouts are the tallest; 240 keeps their buttons on
+    -- screen at 300% fixed chrome on an ordinary 1280x800 window (D074's
+    -- logical 266).
     local ph = (a.mode == "rename" or a.mode == "menu") and 224
                or a.mode == "duplicate" and 226
                or a.mode == "archive" and 226
-               or a.mode == "delete" and 240 or 224
+               or (a.mode == "delete" or a.mode == "new") and 240 or 224
     local px, py = (ig.w - pw) * 0.5, math.max(24, (ig.h - ph) * 0.38)
     local busy = (a.job and not a.job.terminal) or false
     for _, key in ipairs(i.keys) do
@@ -816,13 +836,18 @@ function M.draw()
                     or a.mode == "duplicate" and "duplicate project"
                     or a.mode == "archive" and "archive project"
                     or a.mode == "delete" and "delete project folder"
+                    or a.mode == "new" and "new project"
                     or "project folder", 0)
-    pal.x_ig_text(px + 18, py + 42, 12, C.accent, a.name or "project", 0)
+    pal.x_ig_text(px + 18, py + 42, 12, C.accent,
+                  a.mode == "new"
+                    and (project.TEMPLATES[a.template].label .. " starter")
+                    or a.name or "project", 0)
     pal.x_ig_clip_push(px + 18, py + 61, pw - 36, 18)
-    -- Duplicate/archive trade the source-path row (already on the tile and
-    -- menu) for the destination parent so the flow fits 300% fixed chrome.
+    -- Duplicate/archive/new trade the source-path row (already on the tile
+    -- and menu) for the destination parent so the flow fits 300% chrome.
     pal.x_ig_text(px + 18, py + 61, 10, C.dim,
-                  (a.mode == "duplicate" or a.mode == "archive")
+                  (a.mode == "duplicate" or a.mode == "archive"
+                   or a.mode == "new")
                     and ("into  " .. tostring(a.parent))
                     or a.path, 1)
     pal.x_ig_clip_pop()
@@ -1091,6 +1116,76 @@ function M.draw()
                                 a.kcursor == 2) or (act and a.kcursor == 2)) then
           M.action = nil
         end
+      end
+    elseif a.mode == "new" then
+      local fy, fh = py + 84, 32
+      local valid, name_error, submit, factive =
+        name_field("picker_project_new_name", fy, fh, true)
+      -- an existing file or folder wins over a grammar-valid name; the
+      -- check is remembered per spelling so it costs one stat per edit
+      if valid and a.checked ~= a.rename then
+        a.checked = a.rename
+        a.exists = pal.x_path_info("projects/" .. a.rename) ~= nil
+      end
+      if valid and a.exists then
+        valid, name_error = nil, "projects/" .. a.rename .. " already exists"
+      end
+      local status = a.error or name_error
+      if status then
+        pal.x_ig_clip_push(px + 18, fy + 39, pw - 36, 18)
+        pal.x_ig_text(px + 18, fy + 39, 10, C.bad, status, 0)
+        pal.x_ig_clip_pop()
+      else
+        pal.x_ig_text(px + 18, fy + 39, 10, C.dim,
+                      "A fresh three-word folder name — keep it or type "
+                      .. "your own.", 0)
+      end
+      -- the starter row: what the first main.lua teaches. Enter on a
+      -- template selects it; create (the safe default) scaffolds.
+      local act = not factive and not submit and kb_row(6, 5)
+      local trow_y, trow_h = py + 144, 28
+      local trow_w = (pw - 36 - 3 * 8) / 4
+      for k, t in ipairs(project.TEMPLATES) do
+        local bx = px + 18 + (k - 1) * (trow_w + 8)
+        local chosen = a.template == k
+        local hov = i.wx >= bx and i.wx < bx + trow_w
+                    and i.wy >= trow_y and i.wy < trow_y + trow_h
+        pal.x_ig_rect_fill(bx, trow_y, trow_w, trow_h,
+                           chosen and 0x2a4438ff
+                           or (hov and C.tile_hot or 0x141220ff), 6)
+        pal.x_ig_rect(bx, trow_y, trow_w, trow_h,
+                      (a.kcursor == k or hov or chosen) and C.accent
+                      or C.tile_edge, a.kcursor == k and 1.5 or 1, 6)
+        local lw = pal.x_ig_text_size(t.label, 11, 0)
+        pal.x_ig_text(bx + (trow_w - lw) * 0.5, trow_y + 8, 11,
+                      chosen and C.text or C.dim, t.label, 0)
+        if (hov and i.clicked[1]) or (act and a.kcursor == k) then
+          a.template = k
+        end
+      end
+      pal.x_ig_clip_push(px + 18, py + 180, pw - 36, 14)
+      pal.x_ig_text(px + 18, py + 180, 10, C.dim,
+                    project.TEMPLATES[a.template].note, 1)
+      pal.x_ig_clip_pop()
+      local by = py + ph - 44
+      if (button(px + 18, by, 96, 28, "create", valid ~= nil, a.kcursor == 5)
+          or (submit and valid) or (act and a.kcursor == 5 and valid)) then
+        local tmpl = project.TEMPLATES[a.template]
+        local name = a.rename
+        local ok, err = create(name, tmpl.key)
+        if ok then
+          say("created projects/" .. name .. " from the " .. tmpl.label
+              .. " starter")
+          M.action = nil
+        else
+          a.error = err
+          a.checked = nil -- a failed scaffold may have raced a collision
+          say(err, true)
+        end
+      end
+      if M.action and (button(px + 124, by, 72, 28, "cancel", true,
+                              a.kcursor == 6) or (act and a.kcursor == 6)) then
+        M.action = nil
       end
     else
       pal.x_ig_text(px + 18, py + 91, 11, C.dim,
