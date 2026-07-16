@@ -4,6 +4,36 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-16 (later still) — demo 1's movement slice is playable
+
+**projects/bounce**: the bouncy cube runs/jumps around an axis-aligned
+graybox playground, all from Lua — no baked dump. gb.lua ports the proto
+material checkers + pre-lit gbox emitters; level.lua's ONE box list is
+both visuals and colliders; player.lua = camera-relative run + D029
+fixed-apex jump (coyote/buffer/fall_mul) + landing squash / air stretch /
+lean straight from draw_bouncy_cube + blob-shadow landing cue; pull-string
+follow camera as sim state (input is camera-relative — smoke.cam
+precedent). Every feel value lives under doc.knobs (move/cam/feel).
+game.demo(1) = autoplay loop (stairs → keep → arc left) for screenshots
+and a future golden. ADR: D3D-008. Also: cm.m4 (m4 promoted to the engine
++ transform helpers, proto3d byte-identical), PAL_DBG_3D seg dump.
+Verified: 2D goldens green; 4 autoplay shots pushed to llm-feed (stair
+run, air stretch + shadow, squash, face portrait). NOT yet human
+feel-checked — asked via the feed note.
+
+## Exact next step
+
+**Feel iteration on bounce** once the human plays it (knobs are live), and
+in parallel **grow the primitive vocabulary**: prism/lathe emitters in
+gb.lua (ports of proto draw_prism/draw_lathe) so the playground escapes
+axis-aligned boxes — then rotated deco needs no collider change (colliders
+stay AABB, deco rotates). After that: the level stops being a hand-typed
+table — first editor-primitive distillation step (still parked until
+gameplay is polished, human directive 2026-07-16).
+
+Parked (unchanged): VI-soft bilinear presentation + 5551/dither grade pass
+(the adopted default presentation — not yet in the PAL blit).
+
 ## 2026-07-16 (later) — the PAL 3D pipeline is live
 
 **pal 0/api15**: `pal.x_view3d{mvp, fog_start, fog_end, fog, fog_on}` +
@@ -23,7 +53,7 @@ against proto/out/graybox.png + pushed to llm-feed (2 shots). Also fixed:
 proto --dump kept dangling pointers to stack-local textures (segfault on
 graybox/mascot dumps) — registry copies the struct now.
 
-## Exact next step
+## Exact next step (done — see the entry above)
 
 **Demo 1's movement slice** (the roadmap's gameplay-first directive):
 bouncy-cube run/jump/squash-stretch in proto3d or a new cartridge —
