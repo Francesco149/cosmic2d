@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — arbitrary-project Build/Export complete; picker lifecycle next (2026-07-16)
+## Current handoff — external-project picker lifecycle complete; location actions next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -13,6 +13,36 @@ A0–A2 are complete and A3 is in progress. Broader project lifecycle,
 gamepad/player settings, shared genre-neutral runtime slices and demos,
 complete rewind product UI, and the release-candidate pass remain explicit
 alpha gates.
+
+**D076 closes the external-project entry/return packet.** PAL API 15 exposes
+SDL's asynchronous native folder chooser through a process-owned, pollable
+mailbox whose callback never enters Lua. The picker can now **open folder** for
+an arbitrary project in place, validate its `project.lua` through the exact
+boot contract, publish it newest-first to recents before switching, and
+**refresh** without a restart. Missing or invalid recent roots stay visible
+with explicit **repair** and **remove** actions; repair atomically promotes the
+validated replacement, while removal never touches project files. Legacy
+Windows separators, trailing slashes, and `./` aliases collapse to one entry.
+
+The editor's fixed **← projects** action is a recovery boundary, not a raw
+reboot. It refuses an active export, restores the live present when rewind is
+parked, closes pending text gestures into journals, atomically saves the
+session, tears down ephemeral owners, stops explicit recording, and drains the
+history tail before the one-shot project carrier reboots into picker mode. The
+carrier now outranks the original command line, so this also works after a
+direct `--edit` launch.
+
+**D076 proof:** focused Linux selftest passes **23,412 checks** and the staged
+native Windows executable passes **23,414** on PAL API 15. `nix run .#test` is
+ALL GREEN across release manifests, every historical trace, and all
+pixel/audio goldens; native Windows also verifies the 830-frame
+`smoke_kitcheck` trace. A checksum-verified fresh public Linux archive ran in
+stock Debian 13, registered and opened the spaced external root
+`/external project`, showed it first in a new picker process, and reopened it
+from the persisted recent entry. Inspected public-Linux and native-Windows
+picker/editor captures are on llm-feed. `tools/build-windows.sh` refreshed the
+complete Windows stage and Start Menu shortcut while preserving three durable
+state entries.
 
 **D075 closes the in-editor player-export packet.** PAL API 14 adds exact
 SHA-256/rolling CRC-32, link-aware path inspection, atomic new/explicit-replace
@@ -130,13 +160,16 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** make external-project entry a normal picker lifecycle:
-import/open a folder, refresh recents immediately, repair or remove a missing
-project path, and provide an explicit return-to-picker action from an editor.
-Exit when a fresh public archive can open an external project and revisit it
-after restart without a terminal. Leave rename/move/duplicate/archive, richer
-sort/search/keyboard navigation, and starter-template expansion for later A3
-packets.
+**Exact next packet:** add the first location-changing project actions:
+**reveal**, **rename**, and **move** from a ready picker tile. Preflight source,
+destination, collisions, permissions, and active-editor ownership; update
+recents only after the filesystem operation succeeds, and leave the original
+root discoverable after every failure. Exit when fresh Linux and Windows
+archives can rename/move an external project into a spaced/non-ASCII path,
+reveal it in the native file manager, restart, and reopen the new root without
+a terminal. Leave duplicate, archive/delete, richer
+sort/search/keyboard/scrolling/thumbnails, and starter-template expansion for
+later A3 packets.
 
 There is no known blocker or human-only verification required.
 
