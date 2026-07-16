@@ -776,12 +776,15 @@ typedef struct { float pos[3], uv[2]; uint8_t col[4]; } dvtx;
 typedef struct { int32_t tex; uint32_t flags; dvtx v[3]; } dtri;
 static dtri *g_tris; static size_t g_ntris, g_captris;
 static const tex_t *g_reg[32]; static int g_nreg;
+/* value copies for finish(): scenes pass stack-local tex_t structs whose
+ * lifetime ends with the scene function; px is heap and leaked on purpose */
+static tex_t g_regcpy[32];
 
 static int reg_tex(const tex_t *t){
   if(!t) return -1;
   for(int i=0;i<g_nreg;i++) if(g_reg[i]==t) return i;
   if(g_nreg>=32) return 0; /* registry full (per-tile-baked scenes don't dump) */
-  g_reg[g_nreg]=t; return g_nreg++;
+  g_reg[g_nreg]=t; g_regcpy[g_nreg]=*t; return g_nreg++;
 }
 static void cap_vtx(dvtx *d, vtx_t v, float alpha){
   d->pos[0]=v.pos.x; d->pos[1]=v.pos.y; d->pos[2]=v.pos.z;
@@ -823,9 +826,9 @@ static void finish(fb_t *f, const char *out, int scale, int quant){
   uint32_t n=(uint32_t)g_nreg;
   fwrite(&n,4,1,fp);
   for(int i=0;i<g_nreg;i++){
-    int32_t d[2]={g_reg[i]->w,g_reg[i]->h};
+    int32_t d[2]={g_regcpy[i].w,g_regcpy[i].h};
     fwrite(d,4,2,fp);
-    fwrite(g_reg[i]->px,4,(size_t)g_reg[i]->w*g_reg[i]->h,fp);
+    fwrite(g_regcpy[i].px,4,(size_t)g_regcpy[i].w*g_regcpy[i].h,fp);
   }
   n=(uint32_t)g_ntris;
   fwrite(&n,4,1,fp);
