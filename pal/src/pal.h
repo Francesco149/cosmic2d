@@ -11,8 +11,9 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 15 /* v15: experimental 3D retro pipeline
-                              (x_view3d/x_tris — the cosmic3d fork) */
+#define PAL_VERSION_API 16 /* v16: retro presentation — x_grade quant= +
+                              x_soft VI blit (the cosmic3d fork); v15: the
+                              3D retro pipeline (x_view3d/x_tris) */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -150,8 +151,8 @@ typedef struct {
   int ui_w, ui_h;    /* ui canvas size in px (pal.x_ui_target) */
   float ui_scale;    /* integer px scale the ui canvas blits to the window at */
   int cur_target;    /* 0 = game, 1 = ui — where subsequent quads accumulate */
-  SDL_GPUSampler *sampler;
-  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit, *pipe_grade;
+  SDL_GPUSampler *sampler, *sampler_lin; /* nearest (default) / linear (VI) */
+  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit, *pipe_blit_soft, *pipe_grade;
   SDL_GPUBuffer *vbuf;
   SDL_GPUTransferBuffer *tbuf;
   uint32_t gpubuf_cap; /* bytes in vbuf/tbuf */
@@ -178,9 +179,16 @@ typedef struct {
   int vp_x, vp_y, vp_scale; /* game viewport origin (window px) + integer scale */
   /* per-frame render-only color grade on the game-target blit (pal.x_grade);
    * reset each begin_frame so it is opt-in per frame and can't leak across a
-   * reboot. grade[8] = brightness, contrast, saturation, pad, tint rgb, pad. */
+   * reboot. grade[8] = brightness, contrast, saturation, quant bits (0 = off:
+   * Bayer-4 dithered n-bit-per-channel quantize, the 5551 grade), tint rgb,
+   * pad. */
   bool grade_set;
   float grade[8];
+  /* per-frame VI-soft presentation (pal.x_soft): the game-target blit samples
+   * bilinearly + smears one dest px horizontally (the N64 VI resample look;
+   * proto --soft is the reference). Reset each begin_frame like the grade.
+   * Presentation only — the internal target (readback/goldens) never sees it. */
+  bool soft_set;
   SDL_GPUTexture *grade_tmp; /* ping-pong scratch for the grade post-pass */
   int grade_tmp_w, grade_tmp_h;
   /* cached swapchain px size (pal.x_window_size), updated each present; the

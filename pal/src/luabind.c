@@ -640,11 +640,14 @@ static int l_x_compose(lua_State *L) {
   return 0;
 }
 
-/* pal.x_grade{ brightness=, contrast=, saturation=, tint={r,g,b} } : a
- * render-only color grade over the game-target blit (per-room mood). Reset
+/* pal.x_grade{ brightness=, contrast=, saturation=, tint={r,g,b}, quant= } :
+ * a render-only color grade over the game-target blit (per-room mood). Reset
  * every begin_frame, so set it each frame you want it; pal.x_grade() (no arg)
- * turns it off. Defaults are the identity grade. Render/dev, never sim (D036,
- * the sim can't read it — it only affects the final composite). */
+ * turns it off. Defaults are the identity grade. quant = bits per channel
+ * (0 = off): a Bayer-4 dithered quantize after the grade — quant=5 is the
+ * retro 5551-framebuffer look. The grade bakes into the internal target, so
+ * readback/pixel goldens see it. Render/dev, never sim (D036, the sim can't
+ * read it — it only affects what is presented). */
 static int l_x_grade(lua_State *L) {
   check_gfx(L);
   if (lua_isnoneornil(L, 1)) {
@@ -658,7 +661,8 @@ static int l_x_grade(lua_State *L) {
   G.grade[1] = (float)luaL_optnumber(L, -1, 1.0);
   lua_getfield(L, 1, "saturation");
   G.grade[2] = (float)luaL_optnumber(L, -1, 1.0);
-  G.grade[3] = 0.0f;
+  lua_getfield(L, 1, "quant");
+  G.grade[3] = (float)luaL_optnumber(L, -1, 0.0);
   float tr = 1.0f, tg = 1.0f, tb = 1.0f;
   lua_getfield(L, 1, "tint");
   if (lua_istable(L, -1)) {
@@ -674,6 +678,18 @@ static int l_x_grade(lua_State *L) {
   G.grade[6] = tb;
   G.grade[7] = 0.0f;
   G.grade_set = true;
+  return 0;
+}
+
+/* pal.x_soft(on) : VI-soft presentation — the game-target blit resamples
+ * bilinearly with a mild one-dest-px horizontal smear (the emulator/VI blur;
+ * proto --soft is the reference, the adopted default look for the N64
+ * preset). Reset every begin_frame like the grade, so call it each frame you
+ * want it. Presentation only, never sim (D036): the internal target that
+ * readback and pixel goldens see is untouched — only the composite softens. */
+static int l_x_soft(lua_State *L) {
+  check_gfx(L);
+  G.soft_set = lua_toboolean(L, 1);
   return 0;
 }
 
@@ -1823,6 +1839,7 @@ static const luaL_Reg pal_funcs[] = {
     {"x_target", l_x_target},
     {"x_compose", l_x_compose},
     {"x_grade", l_x_grade},
+    {"x_soft", l_x_soft},
     {"x_capture", l_x_capture},
     {"x_capture_read", l_x_capture_read},
     {"x_clipboard", l_x_clipboard},

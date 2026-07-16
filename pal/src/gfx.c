@@ -202,6 +202,17 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
                  .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
                  .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE});
   if (!G.sampler) return false;
+  /* linear twin for the VI-soft present blit (pal.x_soft); clamp keeps the
+   * edge rows/cols from bleeding the letterbox black in. */
+  G.sampler_lin = SDL_CreateGPUSampler(
+      G.dev, &(SDL_GPUSamplerCreateInfo){
+                 .min_filter = SDL_GPU_FILTER_LINEAR,
+                 .mag_filter = SDL_GPU_FILTER_LINEAR,
+                 .mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST,
+                 .address_mode_u = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+                 .address_mode_v = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE,
+                 .address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE});
+  if (!G.sampler_lin) return false;
 
   SDL_GPUShader *quad_vs =
       load_shader("pal/shaders/quad.vert.spv", SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
@@ -214,7 +225,11 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
    * grade is active; the default blit stays quad_fs (bit-identical). */
   SDL_GPUShader *grade_fs = load_shader("pal/shaders/blit.frag.spv",
                                         SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
-  if (!quad_vs || !quad_fs || !blit_vs || !grade_fs) return false;
+  /* the VI-soft blit (pal.x_soft): bilinear resample + horizontal smear on
+   * the game-layer blit only; the sharp default stays quad_fs. */
+  SDL_GPUShader *soft_fs = load_shader("pal/shaders/blit_soft.frag.spv",
+                                       SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+  if (!quad_vs || !quad_fs || !blit_vs || !grade_fs || !soft_fs) return false;
 
   G.pipe_scene = make_pipeline(quad_vs, quad_fs,
                                SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, true, true);
@@ -227,6 +242,7 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
       G.headless ? SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM
                  : SDL_GetGPUSwapchainTextureFormat(G.dev, G.win);
   G.pipe_blit = make_pipeline(blit_vs, quad_fs, blit_fmt, true, false);
+  G.pipe_blit_soft = make_pipeline(blit_vs, soft_fs, blit_fmt, true, false);
   /* the grade is a post-pass on the game target (UNORM), before readback +
    * composite — so a headless --shot and the pixel goldens see the graded
    * frame. Opaque (no blend): it overwrites the whole scratch target. */
@@ -237,7 +253,9 @@ bool pal_gfx_init(const PalGfxConfig *cfg) {
   SDL_ReleaseGPUShader(G.dev, quad_fs);
   SDL_ReleaseGPUShader(G.dev, blit_vs);
   SDL_ReleaseGPUShader(G.dev, grade_fs);
-  if (!G.pipe_scene || !G.pipe_blit || !G.pipe_grade) return false;
+  SDL_ReleaseGPUShader(G.dev, soft_fs);
+  if (!G.pipe_scene || !G.pipe_blit || !G.pipe_blit_soft || !G.pipe_grade)
+    return false;
 
   G.readback_cap = (uint32_t)(cfg->w * cfg->h * 4);
   G.readback = SDL_CreateGPUTransferBuffer(
@@ -352,6 +370,7 @@ void pal_gfx_begin(float r, float g, float b, float a) {
   G.clip_on = false;
   G.cur_target = 0; /* draws default to the game target each frame */
   G.grade_set = false; /* the color grade is opt-in per frame (pal.x_grade) */
+  G.soft_set = false;  /* so is the VI-soft present blit (pal.x_soft) */
   G.v3count = 0;
   G.seg3d_count = 0;
   G.view3d_count = 0; /* 3D is opt-in per frame, like the grade */
@@ -658,17 +677,17 @@ static void scene_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *tex, int tw,
 }
 
 /* blit a target into the bound swapchain pass at a window-px rect (top-left
- * origin + size). pipe_blit must already be bound. */
+ * origin + size). The right blit pipeline must already be bound. */
 static void blit_layer(SDL_GPUCommandBuffer *cmd, SDL_GPURenderPass *pp,
-                       SDL_GPUTexture *tex, float ox, float oy, float w,
-                       float h, float sw, float sh) {
+                       SDL_GPUTexture *tex, SDL_GPUSampler *smp, float ox,
+                       float oy, float w, float h, float sw, float sh) {
   /* NDC rect: x0,y0 = top-left, x1,y1 = bottom-right (y down in pixels) */
   float rect[4] = {ox / sw * 2 - 1, 1 - oy / sh * 2, (ox + w) / sw * 2 - 1,
                    1 - (oy + h) / sh * 2};
   SDL_PushGPUVertexUniformData(cmd, 0, rect, sizeof rect);
   SDL_BindGPUFragmentSamplers(
-      pp, 0,
-      &(SDL_GPUTextureSamplerBinding){.texture = tex, .sampler = G.sampler}, 1);
+      pp, 0, &(SDL_GPUTextureSamplerBinding){.texture = tex, .sampler = smp},
+      1);
   SDL_DrawGPUPrimitives(pp, 6, 1, 0, 0);
 }
 
@@ -705,13 +724,28 @@ static void composite(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *dst, int sw,
       .store_op = SDL_GPU_STOREOP_STORE,
   };
   SDL_GPURenderPass *pp = SDL_BeginGPURenderPass(cmd, &pct, 1, NULL);
-  SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
-  if (!hide_game)
-    blit_layer(cmd, pp, G.target, G.lay_ox, G.lay_oy, (float)G.iw * gs,
-               (float)G.ih * gs, (float)sw, (float)sh);
-  if (G.ui_target && G.ui_scale > 0)
-    blit_layer(cmd, pp, G.ui_target, 0, 0, (float)G.ui_w * G.ui_scale,
-               (float)G.ui_h * G.ui_scale, (float)sw, (float)sh);
+  if (!hide_game) {
+    /* game layer: sharp nearest blit, or the VI-soft resample (pal.x_soft) —
+     * bilinear sampling + a 3-tap smear whose taps are one DESTINATION px
+     * apart (the frag uniform). Only this layer softens; ui/ig stay sharp. */
+    if (G.soft_set) {
+      SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit_soft);
+      float px[4] = {1.0f / ((float)G.iw * gs), 0, 0, 0};
+      SDL_PushGPUFragmentUniformData(cmd, 0, px, sizeof px);
+      blit_layer(cmd, pp, G.target, G.sampler_lin, G.lay_ox, G.lay_oy,
+                 (float)G.iw * gs, (float)G.ih * gs, (float)sw, (float)sh);
+    } else {
+      SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
+      blit_layer(cmd, pp, G.target, G.sampler, G.lay_ox, G.lay_oy,
+                 (float)G.iw * gs, (float)G.ih * gs, (float)sw, (float)sh);
+    }
+  }
+  if (G.ui_target && G.ui_scale > 0) {
+    SDL_BindGPUGraphicsPipeline(pp, G.pipe_blit);
+    blit_layer(cmd, pp, G.ui_target, G.sampler, 0, 0,
+               (float)G.ui_w * G.ui_scale, (float)G.ui_h * G.ui_scale,
+               (float)sw, (float)sh);
+  }
   /* the ig layer (imgui draw data) renders last = above everything, at
    * native destination resolution. No-op when no ig frame was prepared. */
   pal_ig_render_draw(cmd, pp, fmt, ig_keep);
