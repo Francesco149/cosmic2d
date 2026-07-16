@@ -28,3 +28,13 @@
 # unsaved-persists state is per-machine, never in the repo
 .ed/
 .recent.dat
+
+# cosmic3d fork: staged CC0/CC-BY packs (230MB; assets/README.md documents
+# contents + re-fetch; per-pack LICENSE-NOTE.txt inside)
+/assets/*
+!/assets/README.md
+
+# prototype build artifacts (out/*.png money shots ARE committed)
+/proto/proto
+/proto/gpu_proto
+/proto/out/*.c3dd

@@ -1,4 +1,12 @@
-# cosmic2d
+# cosmic3d
+
+**The 3D sibling of cosmic2d** — a fork specializing the same PAL+Lua
+deterministic engine for N64-era retro 3D and Ragnarok-Online-style 2.5D.
+See `CLAUDE.md` (orientation), `docs/COSMIC3D.md` (design), and
+`docs/STATUS.md` (current state). The inherited 2D engine below remains
+functional and its test suite must stay green.
+
+---
 
 A tiny 2D pixel-art engine / fantasy console. The intended distribution is one
 folder containing the engine, editor, tools, and game projects. The source

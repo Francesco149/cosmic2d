@@ -1,111 +1,77 @@
-# cosmic2d — agent orientation
+# cosmic3d — agent orientation
 
-Tiny 2D pixel-art engine / fantasy console: small C platform binary ("PAL") +
-hot-reloadable Lua engine/editor/games, deterministic to the bit, batteries
-included. You (the agent) are the primary developer.
+The **3D sibling of cosmic2d**: same two-layer architecture (small C PAL +
+hot-reloadable deterministic Lua engine/editor), same batteries-included
+philosophy, specialized for two aesthetics — **N64-era retro 3D** and
+**Ragnarok-Online-style 2.5D** (3D terrain + billboard sprites). You (the
+agent) are the primary developer.
 
-**This repo is engine-only since revamp R0 (D045/D046)**: the flagship game
-(**cosmic**) lives in **`../cosmic2d-game`** and experiments/demos in
-**`../cosmic2d-demos`** — each with its own CLAUDE.md. Pre-split history:
-branch `pre-revamp` (keep forever). The active roadmap is
-**docs/ALPHA.md**; `REVAMP.md` is the completed/recent design history.
+**This repo is a git fork of `/opt/src/cosmic2d`** (remote `upstream`,
+push-disabled — NEVER push to it; another agent works that repo). The fork
+plan: diverge now, re-merge ergonomics after cosmic2d 1.0. Keep changes to
+shared engine files surgical and additive where possible; new 3D docs/modules
+go in NEW files so future merges stay clean.
 
 ## Session start — do this first
 
 1. Read `docs/STATUS.md` (current state + exact next step).
 2. `git log --oneline -10`.
 3. llm-feed health: `curl -sf http://localhost:8777/healthz` → `ok`;
-   if down: `cd /opt/src/llm-feed && nix run nixpkgs#python3 -- /opt/src/llm-feed/feed.py serve` (background, leave running).
-4. Read the relevant gate in `docs/ALPHA.md`; open
-   ARCHITECTURE/DECISIONS/PROCESS only as needed.
+   if down: `nix run nixpkgs#python3 -- /opt/src/llm-feed/feed.py serve` (background, leave running).
+4. Read `docs/COSMIC3D.md` (the 3D design doc) as needed; inherited cosmic2d
+   docs (ARCHITECTURE/EDITOR/MAPS/AUDIO/DECISIONS/PROCESS) describe the shared
+   engine and still bind.
 
-## Diagrams (teidraw)
+## The 3D docs (new in this fork)
 
-When the human says "look at the/my diagram", it's a **teidraw board** in the
-default windows-side save dir. Resolve it like this:
+- **docs/COSMIC3D.md** — the design/scoping doc: renderer verdict (GPU retro
+  pipeline), the two aesthetic presets, map model (splat-paint + bake), the
+  rigid-part figure character model, mascot, demo roadmap, all human
+  decisions with dates. **Read before proposing 3D designs.**
+- **docs/DECISIONS3D.md** — append-only ADR log for fork-specific choices
+  (shared docs/DECISIONS.md stays untouched for merge cleanliness).
+- **docs/research-3d/** — the research reports: cosmic2d transplant map, N64
+  aesthetic, RO 2.5D formats + editor UX, **ro-render-recipe.md** (exact
+  lightmap/water/sprite math from roBrowser/BrowEdit3/Rebuild — the
+  authoritative RO reference), CC0 assets, anime sprite licensing,
+  Body Harvest/slopstudio techniques. Do not redo this research.
+- **proto/** — the aesthetic prototype: deterministic software rasterizer +
+  SDL_GPU retro-pipeline twin rendering identical scenes; 12 scenes cover
+  every target look (see proto/README.md; money shots committed in
+  proto/out/). This is the LOOK REFERENCE — the engine's 3D pipeline must
+  reproduce it. `retro.vert/frag` are the working shader drafts.
+- **assets/** — 230MB license-verified CC0/CC-BY packs (gitignored;
+  assets/README.md documents contents + re-fetch; per-pack LICENSE-NOTE.txt
+  inside). Kushnariova pack is CC-BY: attribution required if bundled.
 
-1. Boards home = `boardsDir` in
-   `/mnt/c/Users/headpats/AppData/Roaming/teidraw/settings.json`
-   (currently `F:\Documents\teidraw` → **`/mnt/f/Documents/teidraw/`**);
-   each board is a folder (`board.json` + `assets/`). The board for this
-   project is `cosmic2d` unless told otherwise; `recent` in that settings
-   file shows what the human last worked on.
-2. Export with the Linux CLI at `/opt/src/teidraw/build/teidraw`:
-   ```sh
-   teidraw <boardDir> --export-txt out.txt   # reading-order text — the bulk of the information
-   teidraw <boardDir> --export out.png       # rendered board — for the drawn/spatial parts
-   ```
-   Read the text export first (positions + full text + arrows), then look at
-   the PNG for anything drawn. Exports go in the scratchpad, not the repo.
-
-## The docs (all in `docs/`)
-
-- **README.md** — labeled documentation map (active/contracts/historical).
-- **STATUS.md** — living handoff; update at session/milestone end.
-- **ALPHA.md** — **the active roadmap**: release gates, common-genre coverage,
-  bundled mini-demos, dependencies, and the session hygiene contract.
-- **PLAN.md** — original vision, pillars, and historical M-series roadmap.
-- **REVAMP.md** — the D045 teidraw-style
-  infinite-canvas editor UX reboot, repo split, script-engine gate, rewind.
-  Retained as design history; re-export its source board when that UX intent
-  is unclear, but do not treat unfinished prose there as the active queue.
-- **ARCHITECTURE.md** — two-layer design, state model, determinism iron
-  rules, PAL API contract.
-- **IMGUI.md** — the R2 design (D049): imgui hosted in the PAL, the
-  drawlist+widgets script surface, window model, C/C++ layer rules.
-- **EDITOR.md** — the R3+R4 design (D050/D051): the infinite-canvas editor
-  shell — ALT grammar, the captured editor state domain (R6-ready),
-  unsaved-persists + undo-forever journals, and §12 the windows (code ed /
-  playable game / console / assets / sprite ed). The STUDIO.md successor.
-- **AUDIO.md** — the R9 design (D058): the audio engine (frame-locked
-  FM/sampler synth in the PAL, sim vs editor banks, PCM-hash goldens),
-  the sound player / synth / music windows, `.ins`/`.song` assets,
-  stock presets incl. the gameboy family, and the **windowkit** (R9a:
-  per-window hotkeys + the generalized asset-window contract).
-- **MAPS.md** — the R8 design (D057): the map system rework — collider
-  chains (slopes) + freehand placements + markers as `.map` assets,
-  tilemaps demoted to placeable `.tm` objects, the map/tilemap windows,
-  the CTRL-snap grammar.
-- *(moved at R0)* GAME.md / STORY.md / maps → `../cosmic2d-game/docs/`;
-  PROCART.md → `../cosmic2d-demos/docs/`.
-- **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.
-- **PROCESS.md** — session protocol, commits, build/test/verify commands,
-  llm-feed recipes, when to ask the human.
-
-## Iron rules
+## Iron rules (inherited from cosmic2d, all still bind)
 
 - All project knowledge lives in the repo, never in private auto-memory.
 - Commit in logical units as you go, direct to `main`. End each commit with a
-  `Co-Authored-By` trailer naming **your own model slug**, not an identity
-  copied from this file, another agent, or earlier history. For example, Codex
-  uses `Co-Authored-By: Codex <noreply@openai.com>`; an Anthropic agent uses
-  its actual Claude model slug with `<noreply@anthropic.com>`.
-- Determinism discipline in all sim code (ARCHITECTURE.md): fixed timestep,
-  engine PRNG only, no libm trig, no hash-order dependence, state only in
-  named buffers / doc tree.
-- Goldens run on pinned lavapipe only; an unexpectedly broken golden is a bug
-  found, not a golden to regenerate.
+  `Co-Authored-By` trailer naming **your own model slug** (e.g. an Anthropic
+  agent uses its actual Claude model slug with `<noreply@anthropic.com>`).
+- Determinism discipline in all sim code (docs/ARCHITECTURE.md): fixed
+  timestep, engine PRNG only, no libm trig in sim paths, state only in named
+  buffers / doc tree. **3D corollary: the sim never reads pixels; camera/
+  presentation are render-class; terrain/entity state lives in named buffers.**
+- Goldens run on pinned lavapipe only; a broken golden is a bug found.
 - Visual changes: headless screenshot → look at it yourself → push to
   llm-feed with title+note. Human is the taste check, not the smoke test.
-- After building agent-authored engine/editor changes, run
-  `tools/build-windows.sh`. It cross-builds the full development tree, stages
-  it to the Windows filesystem, preserves durable Windows-side editor state
-  (derived history cache is rebuilt), and refreshes the human's Start Menu
-  shortcut. A stale Windows stage is not a completed native-test handoff; if
-  WSL/Windows interop is unavailable, say so.
 - Sessions are autonomous until human verification truly blocks; suggest
   `/clear` after a milestone is committed and STATUS is current.
 
 ## Quick commands
 
 ```sh
-nix develop -c make -C pal                                   # build bin/cosmic
-tools/build-windows.sh                                       # build + stage native Windows dev tree
-bin/cosmic                                                   # the project picker (R5): the front door
-bin/cosmic projects/smoke                                    # the minimal test room (M7 moveset)
-bin/cosmic projects/smoke --headless --frames 120 --shot /tmp/s.png
-bin/cosmic projects/igcanvas                                 # the imgui canvas (R2); headless: --win 1280x800 --frames 40 --shot
-bin/cosmic projects/smoke --edit                             # the editor shell (R3/R4): canvas + windows (code/sprite/assets/console)
-bin/cosmic ../cosmic2d-game/cosmic                           # the game (sibling repo; path is engine-root-relative)
-nix run .#test                                               # goldens (selftest + traces + pixels)
+nix develop -c make -C pal                    # build bin/cosmic (2D engine, still green)
+bin/cosmic projects/smoke                     # inherited smoke cartridge
+nix run .#test                                # inherited goldens (keep green!)
+# the look-reference prototype:
+cd proto && nix shell nixpkgs#gcc -c gcc -O2 -std=gnu11 -w -o proto r3d.c main.c -lm
+./proto ro2 out/ro2.png --soft                # see proto/README.md for all scenes
 ```
+
+## Diagrams (teidraw)
+
+Same protocol as cosmic2d (see upstream CLAUDE.md §Diagrams); the board for
+this project is `cosmic3d` unless told otherwise.
