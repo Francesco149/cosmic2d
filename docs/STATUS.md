@@ -4,6 +4,40 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-16 (later) — the PAL 3D pipeline is live
+
+**pal 0/api15**: `pal.x_view3d{mvp, fog_start, fog_end, fog, fog_on}` +
+`pal.x_tris(tex, buf, count, off, flags)` (flags: 1 alphatest, 2 nearest,
+4 blend/no-depth-write) — retro.vert/frag in pal/shaders/, D16 depth
+target, opaque+blend pipelines, same batch/segment model as quads. 3D is
+a pre-pass owning the clear; 2D LOADs over it (HUD on top). All lazily
+created; the frame path without 3D is byte-identical — **inherited 2D
+goldens green, unregenerated**. Views append (≤64/frame): sky NDC pass =
+no-arg x_view3d. ADR: D3D-007. `frame_stats` grew tris/segs3d.
+
+**projects/proto3d**: the graybox scene (proto dump, now a committed
+scene asset) at 60fps from Lua — parse .c3dd, named buffers p3d.*, Lua
+camera math (m4.lua), orbit/zoom controls, HUD text over 3D. Frame 0 =
+the money-shot framing; ~0.8ms/frame headless lavapipe. Verified by eye
+against proto/out/graybox.png + pushed to llm-feed (2 shots). Also fixed:
+proto --dump kept dangling pointers to stack-local textures (segfault on
+graybox/mascot dumps) — registry copies the struct now.
+
+## Exact next step
+
+**Demo 1's movement slice** (the roadmap's gameplay-first directive):
+bouncy-cube run/jump/squash-stretch in proto3d or a new cartridge —
+colliders + walk surface from simple box/prism data (start axis-aligned),
+camera follow, feel knobs in the doc tree like smoke's KNOBS. Squash/
+stretch = nonuniform scale on the cube verts before submit (CPU-side,
+like the prototype's draw_bouncy_cube). Then grow the Lua-side primitive
+vocabulary (gbox/prism/lathe emitters into vertex buffers) so the scene
+stops being a baked dump and becomes editable gameplay space.
+
+Parked (unchanged): editor-primitive distillation until gameplay is
+polished; VI-soft bilinear presentation + 5551/dither grade pass (the
+adopted default presentation — not yet in the PAL blit).
+
 ## 2026-07-16 — the fork exists; planning + prototype imported
 
 **Where we are.** Forked from cosmic2d @ f791824 (git remote `upstream`,
@@ -38,7 +72,7 @@ the design — read **docs/COSMIC3D.md**; the short form:
 **Suite state**: inherited cosmic2d suite untouched since fork (expected
 green; run `nix run .#test` before the first engine change to baseline).
 
-## Exact next step
+## Exact next step (done — see the entry above)
 
 **The PAL 3D pipeline** (mirror proto/gpu_proto.c into pal/src/gfx.c the
 cosmic2d way): `pal.x_view3d{...}` (mvp + fog uniforms), `pal.x_tris(tex,
