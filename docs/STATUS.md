@@ -4,6 +4,39 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-16 (round 6) — playtest fixes + the lap demo
+
+Human playtest verdicts landed: gem timed-respawn read as a bug and the
+round-tower dome could be jumped INTO from the goal tower. Fixed both:
+**gems stay collected until a goal-star lap** (encoding: 0 present,
+k.pop..1 pop-ghost countdown, -1 collected; only the star returns on
+goal.respawn so laps repeat; ghost timing frame-identical, pixel golden
+untouched) and **lathes grew a col flag** — stacked AABB per profile
+ring (half = upper ring radius * chord apothem, boxes inside the round
+visual per D3D-011, degenerate tip skipped). Drop tests: dome cap 6.94,
+shoulder 6.30; the goal-tower leap lands ON the dome. Then STATUS item
+2: **demo(3), the lap route** — waypoint steering (world-space wish, no
+camera; index = doc.demo_wp sim state) runs stairs > keep roof > three
+platforms > goal star > walk-off home, forever (laps f=326/f=950). New
+goldens: bounce_lap.ctrace (1000f, two star touches + lap gem respawn)
++ bounce_lap.png (f346: CLEAR banner, HUD, cube atop the goal tower).
+bounce_demo.ctrace re-recorded (it covered the old timed respawn —
+deliberate change). Verified: full suite ALL GREEN from the committed
+tree; 3 shots on llm-feed (dome cap/shoulder stands, lap banner).
+
+## Exact next step
+
+1. **Human feel-check on the feed** (all open): dome-stand embed depth
+   (cap/shoulder shots), star touch mid-jump timing (lap shot), plus the
+   round-4/5 questions — round collision fairness, monolith bounds, gem
+   radius/spin/bob, goal-star readability from platform 3.
+2. Then (human directive order, gameplay first): more course / feel
+   polish per playtest verdicts; editor distillation stays parked.
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
+bilinear presentation + 5551/dither grade.
+
 ## 2026-07-16 (round 5) — the goal loop + first bounce goldens
 
 Demo 1 is a GAME now (D3D-012): **pickups.lua** — gold diamond gems
@@ -23,21 +56,7 @@ kill-plane reset, live snd bank — replay PASS) and the suite's first 3D
 pixel golden (frame 150, pinned lavapipe). Verified: full suite ALL
 GREEN via nix run .#test; 3 shots on llm-feed with feel questions.
 
-## Exact next step
-
-1. **Human feel-check on the feed**: round collision fairness +
-   monolith bounds (round 4 note), gem pickup radius / spin / bob, and
-   whether the goal star reads as THE goal from platform 3 (round 5
-   notes). Blocked on the human; everything else below is open.
-2. demo(1) never reaches the goal star (it loops the lower course) — a
-   scripted lap-completing demo would let a future golden cover the
-   lap/banner path end to end. Optional, do after the feel verdict.
-3. Then (human directive order, gameplay first): more course / feel
-   polish per playtest; editor distillation stays parked.
-
-Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
-record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
-bilinear presentation + 5551/dither grade.
+## Exact next step (done — see the entry above)
 
 ## 2026-07-16 (round 4) — the primitive vocabulary: prisms + lathes
 
