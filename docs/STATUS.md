@@ -21,15 +21,38 @@ Verified: 2D goldens green; 4 autoplay shots pushed to llm-feed (stair
 run, air stretch + shadow, squash, face portrait). NOT yet human
 feel-checked — asked via the feed note.
 
+## 2026-07-16 (playtest round) — teleports fixed, the godot camera ported
+
+Human played bounce: "feels pretty good", but walking at the stairs /
+jumping could TELEPORT. Root cause: the collision clamp face came from
+the velocity sign, which zeroes on the first hit — a second overlapping
+box (the 0.7u stair/keep pocket vs the 0.9u player) clamped to its far
+face. Fixed: **clamp face from the pre-move side; squeezed overlaps clamp
+nothing; land/bonk only from feet-above/head-below** + level rule: no
+pockets narrower than the player (stairs now flush with the keep).
+ADR: D3D-009. Verified: wall-charge + wall-jump clamp flush, goldens
+green, shots on llm-feed.
+
+Camera (human request): ported their godot cosmic project's FollowCamera
+(F:\Documents\cosmic = /mnt/f/Documents/cosmic, src/camera/ — the feel
+reference for all camera work): orbit yaw/pitch/dist + smoothed focus,
+yaw-follow circling behind the heading, **mouse-drag look + wheel zoom +
+c recenter**, manual steering pauses yaw-follow. Knobs mirror
+CameraTuning under doc.knobs.cam. Captured-cursor mouse look (their
+EnableMouseLook) is DEFERRED: needs a PAL relative-mouse API + input
+record v2 — record v1 is frozen and engine-shared (merge-sensitive).
+
 ## Exact next step
 
-**Feel iteration on bounce** once the human plays it (knobs are live), and
-in parallel **grow the primitive vocabulary**: prism/lathe emitters in
-gb.lua (ports of proto draw_prism/draw_lathe) so the playground escapes
-axis-aligned boxes — then rotated deco needs no collider change (colliders
-stay AABB, deco rotates). After that: the level stops being a hand-typed
-table — first editor-primitive distillation step (still parked until
-gameplay is polished, human directive 2026-07-16).
+**Human re-check of bounce** (collision + the new camera feel — drag
+look, wheel zoom, circling strength). Then **grow the primitive
+vocabulary**: prism/lathe emitters in gb.lua (ports of proto
+draw_prism/draw_lathe) so the playground escapes axis-aligned boxes —
+colliders stay AABB, deco rotates. Consider the PAL relative-mouse API
+(+ record v2) if the human wants true captured mouse look after trying
+drag-look. After that: the level stops being a hand-typed table — first
+editor-primitive distillation step (still parked until gameplay is
+polished, human directive 2026-07-16).
 
 Parked (unchanged): VI-soft bilinear presentation + 5551/dither grade pass
 (the adopted default presentation — not yet in the PAL blit).
