@@ -2048,6 +2048,7 @@ typedef struct {
   int tbl;      /* absolute stack index of the result table */
   int *n;       /* running entry count (shared across recursion) */
   const char *rel; /* this dir's path relative to the requested root ("" = root) */
+  bool prune;      /* skip dot-directories (the list_dir contract) */
 } ListCtx;
 
 static SDL_EnumerationResult SDLCALL list_cb(void *ud, const char *dirname,
@@ -2065,23 +2066,24 @@ static SDL_EnumerationResult SDLCALL list_cb(void *ud, const char *dirname,
   SDL_PathInfo info;
   bool isdir = SDL_GetPathInfo(abspath, &info)
                && info.type == SDL_PATHTYPE_DIRECTORY;
-  if (isdir && fname[0] == '.') return SDL_ENUM_CONTINUE; /* prune .ed/.git */
+  if (isdir && c->prune && fname[0] == '.')
+    return SDL_ENUM_CONTINUE; /* prune .ed/.git */
 
   lua_pushstring(c->L, relpath);
   lua_rawseti(c->L, c->tbl, ++(*c->n));
 
   if (isdir) {
-    ListCtx child = {c->L, c->tbl, c->n, relpath};
+    ListCtx child = {c->L, c->tbl, c->n, relpath, c->prune};
     SDL_EnumerateDirectory(abspath, list_cb, &child);
   }
   return SDL_ENUM_CONTINUE;
 }
 
-static int l_list_dir(lua_State *L) {
+static int list_dir_impl(lua_State *L, bool prune) {
   const char *root = luaL_checkstring(L, 1);
   lua_newtable(L);
   int n = 0;
-  ListCtx c = {L, lua_gettop(L), &n, ""};
+  ListCtx c = {L, lua_gettop(L), &n, "", prune};
   if (!SDL_EnumerateDirectory(root, list_cb, &c)) {
     lua_pop(L, 1);
     lua_pushnil(L);
@@ -2090,6 +2092,15 @@ static int l_list_dir(lua_State *L) {
   }
   return 1;
 }
+
+static int l_list_dir(lua_State *L) { return list_dir_impl(L, true); }
+
+/* pal.x_list_dir_all(root): the same recursive relative-path walk WITHOUT the
+ * dot-directory pruning. Born for the picker's confirmed project delete
+ * (D079): removal must enumerate `.ed` journals and other dot tool state that
+ * every ordinary caller is deliberately protected from seeing. Reading a tree
+ * in order to delete it is the only sanctioned use. */
+static int l_x_list_dir_all(lua_State *L) { return list_dir_impl(L, false); }
 
 static int l_mtime(lua_State *L) {
   SDL_PathInfo info;
@@ -2205,6 +2216,7 @@ static const luaL_Reg pal_funcs[] = {
     {"x_file_publish", l_x_file_publish},
     {"x_windows_exe_identity", l_x_windows_exe_identity},
     {"list_dir", l_list_dir},
+    {"x_list_dir_all", l_x_list_dir_all},
     {"mtime", l_mtime},
     {"mkdir", l_mkdir},
     {"watch_add", l_watch_add},
