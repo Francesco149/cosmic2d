@@ -4,6 +4,41 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-16 (round 5) — the goal loop + first bounce goldens
+
+Demo 1 is a GAME now (D3D-012): **pickups.lua** — gold diamond gems
+(2-cone lathe) hover along the course, pickup = coin sfx + score + an
+expanding pop ghost, timed respawn keeps autoplay worlds alive; the
+ice-white **goal star** atop the accent tower = bell fanfare + lap +
+fading COURSE CLEAR banner + all gems respawn (fresh lap). Knobs under
+doc.knobs.goal; audio.lua = the demo cartridge's SFX pattern + its .ins
+presets (jump/land/kill-respawn hooks in player.lua too). Engine
+(surgical): the **"rc." render-class buffer domain** — PAL resource ids
++ per-draw scratch named "rc.*" are excluded from snapshots/traces/
+goldens like "ed." (texids are session-dependent; --verify never
+draws). bounce renamed texids/dyn/sky into it; proto3d.texids has the
+latent issue, rename on next touch. **First bounce goldens are in the
+suite and green**: a 900-frame demo(1) trace (pickups, mantle stairs,
+kill-plane reset, live snd bank — replay PASS) and the suite's first 3D
+pixel golden (frame 150, pinned lavapipe). Verified: full suite ALL
+GREEN via nix run .#test; 3 shots on llm-feed with feel questions.
+
+## Exact next step
+
+1. **Human feel-check on the feed**: round collision fairness +
+   monolith bounds (round 4 note), gem pickup radius / spin / bob, and
+   whether the goal star reads as THE goal from platform 3 (round 5
+   notes). Blocked on the human; everything else below is open.
+2. demo(1) never reaches the goal star (it loops the lower course) — a
+   scripted lap-completing demo would let a future golden cover the
+   lap/banner path end to end. Optional, do after the feel verdict.
+3. Then (human directive order, gameplay first): more course / feel
+   polish per playtest; editor distillation stays parked.
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
+bilinear presentation + 5551/dither grade.
+
 ## 2026-07-16 (round 4) — the primitive vocabulary: prisms + lathes
 
 gb.lua now speaks the round half of the proto vocabulary: **G.prism**
@@ -21,22 +56,7 @@ indefinitely (future golden material). Verified: facet/monolith walk
 soaks clamp at predicted planes, 2D goldens ALL GREEN, 2 shots on
 llm-feed (hex keep + cone roof; tower + dome + monoliths).
 
-## Exact next step
-
-The playground now has non-axis-aligned structure; movement slice stays
-feel-approved (round-3 verdict). Next, in order of the human directive
-(gameplay first, editor parked):
-
-1. **Feel-check the new structure** via the feed (does round collision
-   read fair? monolith bounds ok?) — asked in the llm-feed note.
-2. **Demo 1 needs a goal loop**: the accent tower is "the goal" but
-   nothing happens — pick up / touch feedback (flash, sound hook, respawn
-   of a collectible) to make the course a game, still knob-driven.
-3. Then: first golden for bounce (demo(1) is deterministic and loops).
-
-Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
-record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
-bilinear presentation + 5551/dither grade; editor-primitive distillation.
+## Exact next step (done — see the entry above)
 
 ## 2026-07-16 (later still) — demo 1's movement slice is playable
 
