@@ -121,7 +121,7 @@ Goal: artifacts work on clean supported machines exactly as advertised.
     signing expectations for an unsigned alpha.
 - [x] Test extract-and-run in clean Windows and Linux VMs/containers, including
   paths with spaces/non-ASCII and read-only install locations.
-- [ ] Make the play-only bundle player-facing: project title/icon/version,
+- [x] Make the play-only bundle player-facing: project title/icon/version,
   controls, credits, and licenses rather than the engine authoring README.
 
 Exit: both clean-machine smoke tests pass from a downloaded archive with no

@@ -15,6 +15,13 @@ return {
   author = "",
   version = "0.1",
   description = "",
+  -- A player export additionally needs project-local icon/controls/credits
+  -- files and at least one license. The project settings UI will fill these;
+  -- see the scripting guide for the declarative metadata contract.
+  -- icon = "icon.png",
+  -- controls = "CONTROLS.md",
+  -- credits = "CREDITS.md",
+  -- licenses = { "LICENSE.md" },
 }
 ]==]
 

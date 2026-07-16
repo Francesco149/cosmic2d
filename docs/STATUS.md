@@ -3,121 +3,54 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 clean-machine release + A7 rewind foundation (2026-07-16)
+## Current handoff — A2 complete; A3 project lifecycle next (2026-07-16)
 
-The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
-and the R-series in `REVAMP.md` are historical context. The runtime, editor,
-audio stack, two-room platformer demo, Linux build, and cross-built Windows
-bundle are working, with the deterministic suite green at the last baseline.
-The project remains an alpha candidate: player-facing release polish,
-project/export UX, gamepad/player settings, broader genre proofs, and release
-validation are still explicit gates.
+The active release program is `ALPHA.md`; the original M-series in
+`PLAN.md` and the R-series in `REVAMP.md` are historical context. The
+runtime, infinite-canvas editor, deterministic rewind core, audio stack,
+two-room platformer demo, and clean Windows/Linux distributions are working.
+A0–A2 are complete. Project/export UX, gamepad/player settings, shared
+genre-neutral runtime slices and demos, complete rewind product UI, and the
+release-candidate pass remain explicit alpha gates.
 
-**A7 rewind tray packet 1 is complete (D065).** Editor sessions now use a
-persistent full-width four-lane tray instead of the R6 hover bar. Its live
-camera follows up to ten minutes ending at live, reaches one-frame inspection
-and full retained history, wheel-zooms at the cursor, middle-pans, and offers a
-clear return to live. The ruler exposes current/live/retention markers,
-storage/budget/segment facts, transport, resume-here, and bring-back. Click
-seeks; a thresholded left drag creates an ordered inclusive A/B loop; and the
-two-step Esc contract clears the clip before restoring the present. F4 cannot
-bypass an active clip. The tray derives honest sim/editor activity and basic
-input/code/eval/session markers read-only from resident FRAM/EDOC data; it
-labels unavailable presented-frame previews instead of inventing thumbnails.
+**A2 is complete (D070).** Play archives now open on a project-owned player
+surface rather than the engine authoring README. A declarative, fail-closed
+metadata contract requires a safe project-local square PNG icon, controls,
+credits, and one or more license files alongside title/version/description.
+It generates the root README, quick start, icon, and legal links. Both
+platforms have an obvious root game launcher while the inspectable project and
+deliberate `bin/cosmic2d-editor` entrance remain included under D052.
 
-**The map/rewind split-state defect is closed (D066).** Every snapshot and
-trace observation now crosses one generic engine-state lifecycle: registered
-runtime facades flush authoritative data into ordinary captured buffers/docs,
-and every restore rebuilds those facades afterward. `cm.map` uses that
-contract to capture each stable map slot's path, canonical CMAP document,
-collision bytes, and the active-slot selector. Restoring across a map switch
-therefore restores the matching visuals, placements, markers, and collision
-world together while preserving held map/world table identities. Bundled
-multi-map level caches are revision-derived views of that captured state. A
-focused A→B→mutated-B rewind regression proves both historical maps and direct
-map-table edits restore coherently, including reconstruction without
-`game.init`; the mechanism is reusable rather than a scrubber-specific map
-exception.
+PAL API v12 applies the validated project PNG to every live game window and
+restores the canonical engine mark on projects without one. Linux's root game
+ELF resolves from `$ORIGIN/lib`. Windows uses a tiny Unicode delegating root
+PE with project-derived multi-resolution icon and exact title/version resources;
+the same-named locked engine under `bin/` and all tooling keep truthful
+cosmic2d identity.
 
-**A2 packet 4 is complete.** A canonical 256 px cosmic2d mark now has a
-documented multi-resolution Windows ICO (256 through 16 px). Both GUI and
-console executables embed it plus Explorer `VERSIONINFO`; every copied editor
-and named-game launcher inherits the same identity. Repository `VERSION` is
-the single public package/resource string (`0.1-alpha`). Cross-package fixup
-rejects a missing icon group, version resource/string, or wrong subsystem on
-all four dev/editor entrances. Dev, public-editor, and renamed play artifacts
-all pass; the play archive proves GUI editor/game plus CUI diagnostics retain
-the resources. The Linux portable derivation still builds. `nix run .#test`
-is ALL GREEN: 23,287 self-checks, every trace verify, and all pixel goldens.
+**A7's foundation remains complete (D065/D066).** The persistent four-lane
+rewind tray owns the live camera, zoom/pan, click seek, inclusive A/B loop, and
+two-step Esc grammar. Generic state participants flush/rebuild runtime facades
+at every capture/restore boundary; `cm.map` proves maps, placements, markers,
+collision, and active selection rewind coherently. Persisted activity/event
+indexes, minute thumbnails, project-file epochs, standalone clip packages, and
+immutable replay/crash sources remain later A7 packets.
 
-**A2 packet 5 is complete (D067).** PAL API v11 now supplies one fixed,
-platform-native per-user writable root. Every interactive process—including a
-Windows GUI launcher and a read-only extracted install—flushes PAL output to a
-unique process log under `diagnostics/`; capped/verify runs do not create log
-files. Contained game errors and Lua parachute failures atomically publish an
-additive `CCRP` `.ccrash` report beside it with project path/name, exact
-history-stream ID, last committed and attempted frames, code epoch, error kind,
-traceback, attempted input/evals, runtime metadata, log path, and recent logs.
-The throwing step's partial state is never recorded as valid history.
+**Proof:** metadata fixtures reject missing/escaping player references and pin
+both generated surfaces; PAL selftest passes 23,302 checks. Fresh final editor
+and demo play archives pass both checksum layers and every public root/bin
+entrance from unrelated Unicode paths under a restricted Debian 13 identity
+and a native Windows mutation-deny ACL. Windows additionally proves the
+project PE resources and UTF-16→UTF-8 argv delegation. The full deterministic
+trace/pixel/audio suite is green.
 
-Durable rewind generations now carry an atomic `CHST` stream marker. Its opaque
-ID persists through normal cross-session adoption, rotates on cache clear or an
-unjoinable fork, and fails closed by disabling spill if it cannot be published.
-`ring_locator()` and `hist_locator()` expose exact project/stream/frame tuples;
-empty identity is explicit rather than a timestamp guess. The location and
-format are documented in the README, architecture, and rewind contract.
+**Exact next packet:** begin A3 with a canonical project-settings model and its
+first in-editor settings window for name/author/version/description, internal
+resolution, and window defaults. Reuse D070's release metadata validation;
+leave icon/file pickers and export target/progress UI as named follow-up
+packets.
 
-**Proof:** the live contained-error probe produced a flushed log plus decodable
-report outside the engine tree. Linux and native Windows selftests pass at
-23,300 checks; `nix run .#test` is ALL GREEN with every trace and pixel golden;
-the Windows dev cross-build and portable Linux artifact both build.
-
-**A2 packet 6 is complete (D068).** Every dev, editor, and play tree now carries
-the cosmic2d license, a public third-party inventory, extracted common notices,
-and exact upstream notice files from the selected platform runtime sources
-pinned by `flake.lock`. Final post-fixup `SHA256SUMS` manifests cover every
-regular file except themselves and reject symlink-bearing trees; packaged zip
-and tar archives receive sibling `.sha256` files. The public policy states
-plainly that alpha artifacts are unsigned, hashes are integrity rather than
-publisher authentication, and future signing needs a stable identity,
-Authenticode entrances, and detached archive signatures.
-
-**Proof:** KATs cover required legal material, spaces/non-ASCII, a nested file
-named `SHA256SUMS`, tamper detection, symlink rejection, and relative archive
-sidecars. Linux/Windows dev and editor trees, the portable Linux tree, and both
-fresh demo play archives build and verify; the extracted archives contain only
-`picker` + `demo`. A fresh read-only offscreen/Lavapipe play boot passes. This
-shell lacked Podman/Docker, so the already-proven Debian 13 smoke was not rerun.
-`nix run .#test` is ALL GREEN at 23,300 checks with every trace and pixel golden.
-
-**A2 packet 7 is complete (D069).** Public editor downloads now exist as
-`cosmic2d-linux.tar.gz` and `cosmic2d-windows.zip`, with sibling hashes and the
-same final extracted-tree integrity contract as play exports. The Linux and
-Windows clean-machine fixtures each take final editor + demo play archives,
-verify both integrity layers, extract below paths containing spaces and
-non-ASCII characters, enforce a genuinely read-only install, launch every
-public editor/game/diagnostic entrance from an unrelated cwd, and prove capped
-runs stay quiet while live logs land in the external platform user-data root.
-
-The matrix exposed and closed three release-only defects: the portable editor
-copy had dropped Linux executable bits, its root launchers used the `bin/`
-RPATH instead of `$ORIGIN/lib`, and Windows self-location fed SDL's UTF-8 base
-path through code-page-bound `_chdir` rather than UTF-16
-`SetCurrentDirectoryW`.
-
-**Proof:** fresh editor and play archives pass as uid 65534 in a stock Debian
-13 Podman container and under a mutation-denying NTFS ACL on native Windows 11.
-Both extracted manifests remain valid after all launches and both live archive
-shapes publish their expected external diagnostic log. Native Windows and
-Linux selftests pass at 23,300 checks; `nix run .#test` is ALL GREEN with every
-trace verify and pixel golden.
-
-**Exact next packet:** finish A2 by making the play-only bundle player-facing:
-derive its title/icon/version, controls, credits, licenses, and concise player
-README from project metadata instead of shipping the engine authoring README.
-A7's queued packet remains persisted multi-resolution activity/event indexes
-and minute `THMB` samples, followed by project-file epochs; legacy coverage
-must remain honestly labelled.
+There is no known blocker or human-only verification required.
 
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
@@ -356,8 +289,9 @@ mutation-deny ACL, and it closed Linux execute-bit/root-RPATH defects plus the
 Windows narrow-character self-location defect. Native selftests and the full
 deterministic suite remain green at 23,300 checks.
 
-**Exact next packet:** finish A2 by replacing the engine-facing play packet
-with project-derived player title/icon/version, controls, credits/licenses,
-and a concise player README.
-
-There is no known blocker or human-only verification required.
+**A2 packet 8 is complete, closing A2 (D070).** Validated project metadata now
+generates the play archive's player README, quick start, root icon, and legal
+links. Root Linux/Windows entrances boot the locked game; Windows exposes
+project PE identity and Unicode delegation while PAL API v12 owns the live
+window icon. Both fresh clean-machine matrices and the deterministic suite pass
+at 23,302 self-checks.

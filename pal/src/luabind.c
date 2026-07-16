@@ -3,6 +3,7 @@
 #include "pal.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -467,6 +468,47 @@ static int l_x_window_size(lua_State *L) {
   lua_pushinteger(L, G.win_w);
   lua_pushinteger(L, G.win_h);
   return 2;
+}
+
+/* pal.x_window_icon(png) -> true | nil,error : decode a project-owned PNG and
+ * apply it to the live OS window. Decode even in headless mode so release and
+ * selftest validation see the same bytes; only the final SDL call is skipped.
+ * SDL copies the surface during SetWindowIcon, so the stb pixels can be freed
+ * before returning. Render/dev only; never enters snapshots or traces. */
+static int l_x_window_icon(lua_State *L) {
+  size_t len;
+  const char *data = luaL_checklstring(L, 1, &len);
+  if (len > INT_MAX) {
+    lua_pushnil(L);
+    lua_pushstring(L, "PNG is too large");
+    return 2;
+  }
+  int w, h, comp;
+  stbi_uc *pix = stbi_load_from_memory((const stbi_uc *)data, (int)len, &w,
+                                       &h, &comp, 4);
+  if (!pix) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "PNG decode failed: %s", stbi_failure_reason());
+    return 2;
+  }
+  SDL_Surface *surface =
+      SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_RGBA32, pix, w * 4);
+  if (!surface) {
+    stbi_image_free(pix);
+    lua_pushnil(L);
+    lua_pushfstring(L, "surface creation failed: %s", SDL_GetError());
+    return 2;
+  }
+  bool ok = !G.win || SDL_SetWindowIcon(G.win, surface);
+  if (!ok) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "set window icon failed: %s", SDL_GetError());
+  }
+  SDL_DestroySurface(surface);
+  stbi_image_free(pix);
+  if (!ok) return 2;
+  lua_pushboolean(L, true);
+  return 1;
 }
 
 /* pal.x_fov(w, h) -> w, h : resize the game internal target (visible world in
@@ -1319,6 +1361,7 @@ static const luaL_Reg pal_funcs[] = {
     {"gfx_init", l_gfx_init},
     {"gfx_size", l_gfx_size},
     {"x_window_size", l_x_window_size},
+    {"x_window_icon", l_x_window_icon},
     {"x_fov", l_x_fov},
     {"x_set_window_size", l_x_set_window_size},
     {"x_set_fullscreen", l_x_set_fullscreen},

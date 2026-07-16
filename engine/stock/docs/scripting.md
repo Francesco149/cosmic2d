@@ -14,6 +14,10 @@ A project needs `project.lua` and an entry file (normally `main.lua`):
       author = "me",
       version = "0.1",
       description = "a small adventure",
+      icon = "icon.png",
+      controls = "CONTROLS.md",
+      credits = "CREDITS.md",
+      licenses = { "LICENSE.md" },
       internal_w = 480,
       internal_h = 270,
       window_scale = 2,
@@ -22,6 +26,18 @@ A project needs `project.lua` and an entry file (normally `main.lua`):
 
 Paths passed to `pal.read_file` are relative to the engine working directory.
 For project assets, prefix them with `cm.main.args.project .. "/"`.
+
+The first four player-facing fields (`name`, `version`, `author`, and
+`description`) are plain strings. A player bundle additionally requires the
+four project-local references above. `icon` is a square 32–1024 px PNG and is
+also used for the live OS window. `controls` and `credits` are non-empty
+Markdown files; `licenses` is a non-empty array of text license/notice files.
+Use forward slashes and no `.`/`..` segments, absolute paths, drive prefixes,
+or backslashes. The packager evaluates `project.lua` as declarative data in an
+empty environment, validates every reference, and fails closed rather than
+publishing an incomplete player README. Project authors remain responsible for
+the licensing of their project-local code and assets; engine/runtime notices
+are carried separately in every archive.
 
 ## Lifecycle
 

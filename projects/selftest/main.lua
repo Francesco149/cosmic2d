@@ -2737,8 +2737,17 @@ end
 -- ---- A2 diagnostics + D065 crash locator envelope ----
 
 local function t_crash()
-  check(pal.version.api >= 11 and type(pal.user_path) == "function",
-        "diagnostics: PAL api11 exposes the per-user path")
+  check(pal.version.api >= 12 and type(pal.user_path) == "function"
+        and type(pal.x_window_icon) == "function",
+        "release identity: PAL api12 exposes user path + project window icon")
+  local icon_png = pal.png_encode(string.rep("\x43\x65\x87\xff", 32 * 32), 32, 32)
+  local icon_ok, icon_err = pal.x_window_icon(icon_png)
+  check(icon_ok == true and icon_err == nil,
+        "release identity: project PNG icon decodes headlessly")
+  icon_ok, icon_err = pal.x_window_icon("not a png")
+  check(icon_ok == nil and type(icon_err) == "string"
+        and icon_err:find("PNG decode failed", 1, true),
+        "release identity: malformed project icon reports a named error")
   local user, uerr = pal.user_path()
   local absolute = type(user) == "string" and
     ((pal.platform == "windows" and user:match("^%a:[/\\]"))

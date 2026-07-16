@@ -70,8 +70,16 @@ fi
     test -x "$editor_root/cosmic2d-editor"
     test -x "$editor_root/demo"
     test -x "$editor_root/bin/cosmic"
+    test -x "$play_root/$GAME"
     test -x "$play_root/bin/$GAME"
     test -x "$play_root/bin/cosmic2d-editor"
+    test -s "$play_root/icon.png"
+    grep -F "# cosmic demo" "$play_root/README.md"
+    grep -F "Version " "$play_root/README.md"
+    grep -F "0.1" "$play_root/README.md"
+    grep -F "## Controls" "$play_root/README.md"
+    grep -F "## Credits" "$play_root/README.md"
+    grep -F "## Licenses" "$play_root/README.md"
     test -f "$editor_root/lib/libvulkan.so.1"
     test -f "$play_root/lib/libvulkan.so.1"
 
@@ -79,7 +87,8 @@ fi
       (cd "$root" && sha256sum --check --strict SHA256SUMS >/dev/null)
     done
     for exe in "$editor_root/bin/cosmic" "$editor_root/cosmic2d-editor" \
-               "$editor_root/demo" "$play_root/bin/$GAME" \
+               "$editor_root/demo" "$play_root/$GAME" \
+               "$play_root/bin/$GAME" \
                "$play_root/bin/cosmic2d-editor"; do
       ! ldd "$exe" | grep -F /nix/store/
     done
@@ -125,6 +134,7 @@ fi
     run_release "$editor_root" "$editor_root/demo" --headless --frames 1
     run_release "$editor_root" "$editor_root/bin/cosmic" \
       --headless --frames 1
+    run_release "$play_root" "$play_root/$GAME" --headless --frames 1
     run_release "$play_root" "$play_root/bin/$GAME" --headless --frames 1
     run_release "$play_root" "$play_root/bin/cosmic2d-editor" \
       --headless --frames 1
@@ -135,7 +145,7 @@ fi
     # root rather than attempting to mutate their read-only project trees.
     run_release "$editor_root" "$editor_root/bin/cosmic" --headless \
       --eval "cm.main.request_quit()"
-    run_release "$play_root" "$play_root/bin/$GAME" --headless \
+    run_release "$play_root" "$play_root/$GAME" --headless \
       --eval "cm.main.request_quit()"
     diag="$xdg/cosmic2d/engine/diagnostics"
     test -d "$diag"

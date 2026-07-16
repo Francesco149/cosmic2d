@@ -442,6 +442,11 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
       apps = forAll (pkgs:
         let
           cosmic = self.packages.${pkgs.system}.cosmic-dev;
+          cross = pkgs.pkgsCross.mingwW64;
+          crossCC = "${cross.stdenv.cc}/bin/${cross.stdenv.cc.targetPrefix}cc";
+          crossBin = "${cross.stdenv.cc.bintools}/bin/${cross.stdenv.cc.bintools.targetPrefix}";
+          crossLibc = "${cross.libc}/lib";
+          crossThreads = "${cross.windows.mcfgthreads}/lib";
           suite = ''
             export VK_DRIVER_FILES=${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.x86_64.json
             export LD_LIBRARY_PATH=${pkgs.vulkan-loader}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
@@ -473,7 +478,7 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
           '';
           runner = pkgs.writeShellApplication {
             name = "cosmic-test";
-            runtimeInputs = [ pkgs.diffutils pkgs.findutils ];
+            runtimeInputs = [ pkgs.diffutils pkgs.findutils pkgs.lua5_4 ];
             text = suite;
           };
 
@@ -481,12 +486,14 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
           # into a standalone, play-locked, self-contained bundle for a
           # player: the engine runtime + that project only (no tests, no
           # sibling projects), with the launcher renamed so it boots locked
-          # to play mode (the R5 convention, D052). Windows is a
-          # self-contained archives. Linux bundles non-glibc libraries with a
+          # to play mode (the R5 convention, D052). Windows emits a
+          # self-contained archive. Linux bundles non-glibc libraries with a
           # relative RPATH; the supported host ABI is x86_64 glibc Linux.
           packager = pkgs.writeShellApplication {
             name = "cosmic-package";
-            runtimeInputs = with pkgs; [ coreutils findutils zip gnutar gzip ];
+            runtimeInputs = with pkgs; [
+              coreutils findutils zip gnutar gzip lua5_4 imagemagick patchelf
+            ] ++ [ cross.stdenv.cc cross.stdenv.cc.bintools ];
             text = ''
               name="''${1:-demo}"
               target="''${2:-win}"
@@ -513,13 +520,65 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
               # Tooling remains deliberately available in an exported game;
               # only the named launcher defaults to locked play mode.
               cp "$root/bin/$newexe" "$root/bin/cosmic2d-editor''${exe##cosmic}"
-              cp "$src/README.md" "$root/README.md" 2>/dev/null || true
-              cp "$src/LICENSE" "$root/LICENSE" 2>/dev/null || true
-              printf 'cosmic2d — %s\n\nRun  bin/%s  to play.\n' "$name" "$newexe" > "$root/PLAY.txt"
+
+              # The root entrance is for the player; the deliberate editor
+              # entrance stays under bin/. Linux can use a retargeted copy of
+              # the engine. Windows gets a tiny Unicode delegating PE so its
+              # Explorer icon/title/version can belong to the project while
+              # the carried engine/editor binaries remain engine-branded.
+              if [ "$suffix" = linux ]; then
+                cp "$root/bin/$newexe" "$root/$newexe"
+                chmod +x "$root/$newexe"
+                # ELF loader token, not a shell variable.
+                # shellcheck disable=SC2016
+                patchelf --set-rpath '$ORIGIN/lib' "$root/$newexe"
+              else
+                cp "$root/bin/"*.dll "$root/"
+              fi
+
+              rc="$work/player.rc"
+              lua "$src/tools/player-bundle.lua" \
+                "$root/projects/$name" "$root" "$name" "$suffix" \
+                ''${suffix:+$rc}
+
+              if [ "$suffix" = windows ]; then
+                magick "$root/icon.png" \
+                  -define icon:auto-resize=256,128,64,48,32,24,16 \
+                  "$work/game.ico"
+                ${crossBin}windres --codepage=65001 --include-dir "$work" \
+                  --input-format rc --output-format coff \
+                  -o "$work/player-res.o" "$rc"
+                ${crossCC} -O2 -s -municode -mwindows -static-libgcc \
+                  "$src/tools/windows-player-launcher.c" "$work/player-res.o" \
+                  -L${crossLibc} -L${crossThreads} -lshell32 \
+                  -o "$root/$newexe"
+
+                resource_dump="$(${crossBin}objdump -p "$root/$newexe")"
+                for signature in "Windows GUI" \
+                  "The .rsrc Resource Directory section:" \
+                  "Entry: ID: 0x000003" "Entry: ID: 0x00000e" \
+                  "Entry: ID: 0x000010"; do
+                  if ! grep -Fq "$signature" <<<"$resource_dump"; then
+                    echo "player launcher lacks Windows signature: $signature" >&2
+                    exit 1
+                  fi
+                done
+                title="$(sed -n '1p' "$root/PLAY.txt")"
+                version="$(sed -n '2s/^version //p' "$root/PLAY.txt")"
+                version_strings="$(${crossBin}strings -el -n 2 "$root/$newexe")"
+                for signature in "FileDescription" "$title" "ProductName" \
+                                 "ProductVersion" "$version"; do
+                  if ! grep -Fxq "$signature" <<<"$version_strings"; then
+                    echo "player launcher lacks project resource string: $signature" >&2
+                    exit 1
+                  fi
+                done
+              fi
+
               bash "$src/tools/release-integrity.sh" tree "$root" "$suffix"
               out="$PWD/$name-$suffix"
               if [ "$suffix" = windows ]; then
-                ( cd "$work" && zip -r -q "$out.zip" "$name" )
+                ( cd "$work" && zip -X -r -q "$out.zip" "$name" )
                 bash "$src/tools/release-integrity.sh" archive "$out.zip"
                 echo "packaged -> $out.zip (+ .sha256)"
               else

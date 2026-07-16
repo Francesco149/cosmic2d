@@ -2683,3 +2683,63 @@ exactly the expected external interactive logs while capped runs produce none,
 and both extracted manifests remain unchanged afterward. Native Windows and
 Linux selftests pass at 23,300 checks; every committed trace and pixel golden
 passes in the full suite.
+
+## D070 — a play archive has project-owned player identity over an inspectable engine (A2, 2026-07-16)
+
+**Context.** The D069 play archive was technically portable but opened with a
+bin-only launcher, the engine authoring README, and cosmic2d's application
+identity. `project.lua` exposed a display name/version/description but had no
+binding contract for an icon, controls, credits, or project-local legal terms.
+Calling that shape player-facing would make the first file a player saw explain
+how to build an engine project, while leaving the actual game's controls and
+license implicit.
+
+**Decision.** A publishable project's declarative `project.lua` now requires
+`name`, `version`, `description`, optional `author`, and four project-local
+release references: `icon`, `controls`, `credits`, and a non-empty `licenses`
+array. References use canonical forward-slash relative paths and may not contain
+absolute/drive prefixes, backslashes, empty/`.`/`..` segments, or link-breaking
+characters. The icon is a square 32–1024 px PNG; player text and license files
+must exist, be non-empty, bounded text. The release helper evaluates the table
+in an empty Lua environment and fails before archive publication on every
+schema/reference error. This is the first export validator, not permission to
+execute arbitrary configuration code during packaging.
+
+The helper replaces the engine README with a concise project-derived player
+README and plain-text quick start, copies the validated icon to the root, embeds
+controls and credits, and links every author-supplied project license plus the
+separate engine/runtime notices. The selected editable project and all tooling
+remain present under the D052 contract. The game's root launcher is the obvious
+entrance; the deliberate `bin/cosmic2d-editor` entrance remains available but
+secondary.
+
+On Linux the root launcher is the locked engine with a root-relative
+`$ORIGIN/lib` RPATH. On Windows the root file is a tiny GUI-subsystem Unicode
+launcher carrying project-derived multi-resolution icon and exact title/version
+resources. It delegates argv with `CreateProcessW` to the same-named locked
+engine under `bin/`; engine/editor/diagnostic PEs retain truthful cosmic2d
+identity. PAL API v12 adds `pal.x_window_icon(PNG)` so the project icon also
+owns the live taskbar/window identity on both platforms. Every boot/switch
+applies either the safe project icon or the carried canonical fallback, since
+the SDL window survives project switches.
+
+**Consequences.** A missing player file is now an actionable packaging failure,
+not a half-described archive. Project authors remain responsible for their own
+code/asset licenses; cosmic2d's license and exact dependency notices are still
+mandatory and separately labelled. The icon is intentionally duplicated at
+the project and archive root for inspectability. Windows numeric version tuples
+derive from up to four numeric components while Explorer's string retains the
+exact project version. The developer packager still selects only projects
+already captured by the Nix source tree; arbitrary opened-project selection,
+settings UI, progress/failure UX, and output choice remain A3.
+
+**Proof.** Metadata fixtures pin generated Linux/Windows player surfaces and
+reject escaping and missing references. PAL headless tests accept a valid PNG
+and report corrupt bytes. Final Linux and Windows editor + play archives verify
+both checksum layers, expose every root/bin entrance from unrelated Unicode
+paths under real read-only permissions, retain external diagnostics, and keep
+their trees byte-valid afterward. Native Windows additionally pins project PE
+title/version resources, Unicode argv delegation, and a real windowed project
+icon application; Debian 13 pins both root ELF RPATH/launch paths. `nix run
+.#test` is ALL GREEN at 23,302 self-checks with every trace and pixel/audio
+golden unchanged.

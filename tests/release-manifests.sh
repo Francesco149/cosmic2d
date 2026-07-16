@@ -26,6 +26,7 @@ assert_present "$stage/editor/projects/picker/project.lua"
 assert_present "$stage/editor/projects/demo/project.lua"
 assert_present "$stage/editor/engine/cm/ed.lua"
 assert_present "$stage/editor/projects/demo/main.lua"
+assert_present "$stage/editor/pal/res/cosmic2d.png"
 assert_legal_skeleton "$stage/editor"
 
 "$repo/tools/stage-manifest.sh" "$repo" \
@@ -36,7 +37,70 @@ done
 assert_present "$stage/play/projects/picker/project.lua"
 assert_present "$stage/play/projects/demo/project.lua"
 assert_present "$stage/play/engine/cm/ed.lua"
+assert_present "$stage/play/pal/res/cosmic2d.png"
+assert_absent "$stage/play/README.md"
 assert_legal_skeleton "$stage/play"
+
+# Player packaging replaces the absent engine README with project-owned
+# metadata. The icon and every player-facing text/legal reference are required
+# and project-relative before any archive is published.
+lua "$repo/tools/player-bundle.lua" \
+  "$stage/play/projects/demo" "$stage/play" demo linux
+assert_present "$stage/play/README.md"
+assert_present "$stage/play/PLAY.txt"
+assert_present "$stage/play/icon.png"
+cmp "$stage/play/icon.png" "$stage/play/projects/demo/icon.png"
+for phrase in "# cosmic demo" 'Version `0.1`' "## Controls" \
+              "flash-jump" "## Credits" "cosmic2d contributors" \
+              "## Licenses" "projects/demo/LICENSE.md" \
+              'Run `./demo`'; do
+  grep -Fq "$phrase" "$stage/play/README.md" || {
+    echo "player README lacks project metadata: $phrase" >&2; exit 1;
+  }
+done
+if grep -Fq "## Make a game" "$stage/play/README.md"; then
+  echo "play bundle retained the engine authoring README" >&2
+  exit 1
+fi
+
+# Windows uses the same metadata and emits resources for its delegating root
+# launcher. Pin the project strings and numeric version mapping before windres.
+lua "$repo/tools/player-bundle.lua" \
+  "$stage/play/projects/demo" "$stage/play" demo windows "$stage/player.rc"
+for phrase in 'IDI_GAME ICON "game.ico"' 'FILEVERSION 0,1,0,0' \
+              'VALUE "FileDescription", "cosmic demo\0"' \
+              'VALUE "ProductVersion", "0.1\0"'; do
+  grep -Fq "$phrase" "$stage/player.rc" || {
+    echo "player RC lacks project metadata: $phrase" >&2; exit 1;
+  }
+done
+
+# Fail closed on paths that escape the project and on missing player files.
+bad="$stage/bad-player-project"
+bad_out="$stage/bad-player-output"
+mkdir -p "$bad" "$bad_out"
+cp "$repo/projects/demo/icon.png" "$bad/icon.png"
+printf '%s\n' \
+  'return {' \
+  '  name="bad", version="1", description="bad",' \
+  '  icon="../icon.png", controls="CONTROLS.md", credits="CREDITS.md",' \
+  '  licenses={"LICENSE.md"},' \
+  '}' > "$bad/project.lua"
+for file in CONTROLS.md CREDITS.md LICENSE.md; do
+  printf 'fixture\n' > "$bad/$file"
+done
+if lua "$repo/tools/player-bundle.lua" "$bad" "$bad_out" bad linux \
+     >/dev/null 2>&1; then
+  echo "player metadata accepted a project-escaping icon" >&2
+  exit 1
+fi
+sed -i 's|icon="../icon.png"|icon="icon.png"|; s|controls="CONTROLS.md"|controls="MISSING.md"|' \
+  "$bad/project.lua"
+if lua "$repo/tools/player-bundle.lua" "$bad" "$bad_out" bad linux \
+     >/dev/null 2>&1; then
+  echo "player metadata accepted a missing controls file" >&2
+  exit 1
+fi
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/dev.txt" "$stage/dev"
@@ -45,6 +109,9 @@ for name in selftest smoke igcanvas uigallery; do
 done
 assert_present "$stage/dev/tests/release-manifests.sh"
 assert_present "$stage/dev/tools/release-integrity.sh"
+assert_present "$stage/dev/tools/player-bundle.lua"
+assert_present "$stage/dev/tools/windows-player-launcher.c"
+assert_present "$stage/dev/pal/res/cosmic2d.png"
 assert_legal_skeleton "$stage/dev"
 
 # The integrity helper runs after every package's final mutation. Exercise it

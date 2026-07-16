@@ -6,9 +6,12 @@ tests
 dist
 tools/stage-manifest.sh
 tools/release-integrity.sh
+tools/player-bundle.lua
+tools/windows-player-launcher.c
 README.md
 LICENSE
 LICENSES
 THIRD_PARTY_NOTICES.md
 pal/shaders
+pal/res/cosmic2d.png
 pal/vendor/fonts

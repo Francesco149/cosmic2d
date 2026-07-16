@@ -91,10 +91,12 @@ tests/windows-portable-smoke.sh \
 ```
 
 Both checks extract under paths containing spaces and non-ASCII characters,
-deny writes to the install trees, launch from an unrelated working directory,
-and prove live diagnostics land in the platform per-user data root. The
-PowerShell file is also directly runnable on a clean Windows machine; its WSL
-wrapper only copies inputs onto NTFS and invokes it.
+deny writes to the install trees, launch every public root/bin entrance from an
+unrelated working directory, validate the project-derived player README/icon,
+and prove live diagnostics land in the platform per-user data root. Windows
+also checks project PE title/version resources and UTF-16 player-argument
+delegation. The PowerShell file is directly runnable on a clean Windows
+machine; its WSL wrapper only copies inputs onto NTFS and invokes it.
 
 The human's live windows run: `bin\cosmic.exe projects\smoke --edit` from
 the `cosmic2d-win` dir. Windows-only gotcha found this way: unix-absolute

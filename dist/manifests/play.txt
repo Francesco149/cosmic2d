@@ -3,9 +3,9 @@ bin
 engine
 projects/picker
 projects/@PROJECT@
-README.md
 LICENSE
 LICENSES
 THIRD_PARTY_NOTICES.md
 pal/shaders
+pal/res/cosmic2d.png
 pal/vendor/fonts

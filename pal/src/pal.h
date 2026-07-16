@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 11 /* v11: pal.user_path (per-user writable data) */
+#define PAL_VERSION_API 12 /* v12: pal.x_window_icon (project PNG icon) */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would

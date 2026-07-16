@@ -45,8 +45,11 @@ to revisit; this file describes *what is*. Keep it current when code changes.
 2. PAL creates the Lua state and runs `engine/boot.lua` — a deliberately thin
    shim that defines the **cm module system** and hands off to `cm.main`.
 3. `cm.main.boot()` parses flags, reads `<project>/project.lua` (plain table:
-   name, internal w/h, window scale, entry, seed), calls `pal.gfx_init{…}`,
-   requires the project entry module, dispatches `--record`/`--verify` modes.
+   name/version/author/description, internal w/h, window scale, entry, seed,
+   and project-local icon/controls/credits/licenses release references), calls
+   `pal.gfx_init{…}`, applies the project PNG through
+   `pal.x_window_icon`, requires the project entry module, and dispatches
+   `--record`/`--verify` modes.
 4. C loop: each iteration calls the global `cm_tick()` under `pcall`.
    Lua decides everything inside the tick (sim steps, drawing, reload polls).
 
@@ -472,7 +475,12 @@ The repo root is the development form of the console and `projects/` holds its
 cartridges. Release bundles preserve that one-folder model. Download-shaped
 Windows and Linux editor archives plus developer-built play exports pass the
 clean-machine matrix in D069; arbitrary-project, in-editor export remains A3.
-A config selects the startup project and mode in today's play-only bundle.
+D070 makes the current play archive itself player-facing: project metadata
+generates its root README/quick-start/icon, a root launcher boots the selected
+project locked to play, and the deliberate editor entrance stays under `bin/`.
+Linux retargets the root ELF to `$ORIGIN/lib`; Windows uses a project-resourced
+Unicode delegating launcher while its same-named engine under `bin/` retains
+cosmic2d identity and the D052 basename lock.
 
 ## Conventions
 
@@ -560,6 +568,7 @@ binary incompatible, in either direction (D015).
 | `pal.sleep_ms(n)` | dev | paces interactive headless sessions |
 | `pal.quit([code])` | — | request loop exit; `code` = process exit code (default 0) |
 | `pal.gfx_init{w,h,scale,title,headless,vsync}` | — | once at boot |
+| `pal.x_window_icon(png_bytes)` → `true` or `nil,error` | render/dev | API v12: decode a project PNG and apply it to the live OS window; headless still validates the bytes |
 | `pal.begin_frame(r,g,b,a)` | render | clear internal target, reset batch |
 | `pal.quad(x,y,w,h, r,g,b,a [,tex,u0,v0,u1,v1])` | render | pixels, top-left origin |
 | `pal.clip(x,y,w,h)` / `pal.clip()` | render | scissor on internal target |
@@ -719,6 +728,16 @@ unique UTC/PID file. `--frames` and `--verify` do not create diagnostic files.
 This is observer/dev state only and never enters snapshots, traces, or sim
 logic. `cm.crash` builds the versioned `CCRP` report codec and atomic publisher
 above this primitive; `docs/REWIND.md` §16 freezes its A7 locator envelope.
+
+### PAL API v12 additions (A2 player identity — D070)
+
+`pal.x_window_icon(png_bytes)` decodes RGBA through the PAL's existing stb
+boundary and applies the resulting SDL surface to the live OS window. It
+returns `true` or `nil,error`; headless calls still decode and validate so CI
+does not silently bless different bytes. This is observer/render state only.
+`cm.main` calls it after every project boot/switch, using the project-local
+`icon` path when safe and the carried canonical cosmic2d PNG otherwise, so a
+surviving picker window never retains the previous project's icon.
 
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.

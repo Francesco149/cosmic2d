@@ -89,6 +89,52 @@ local function load_project(dir)
   return proj
 end
 
+-- A project's PNG icon owns its live window/taskbar identity. Missing or
+-- malformed optional metadata falls back to the carried engine mark so a
+-- picker project switch never leaves the previous game's icon on the window.
+-- Player packaging is stricter and refuses such metadata before publication.
+local function set_project_icon(dir, relative)
+  if pal.version.api < 12 or type(pal.x_window_icon) ~= "function" then
+    error("cosmic2d needs PAL api >= 12 (project window icons)", 0)
+  end
+  local safe = type(relative) == "string" and relative ~= ""
+               and relative:sub(1, 1) ~= "/"
+               and not relative:find("\\", 1, true)
+               and not relative:find(":", 1, true)
+               and not relative:find("[%z\r\n]")
+  if safe then
+    for segment in (relative .. "/"):gmatch("(.-)/") do
+      if segment == "" or segment == "." or segment == ".." then
+        safe = false
+        break
+      end
+    end
+  end
+  if relative ~= nil and not safe then
+    pal.log("[project] invalid icon path; using the cosmic2d icon")
+  end
+  local function apply(path)
+    local png, read_err = pal.read_file(path)
+    if not png then return nil, "read failed: " .. tostring(read_err) end
+    local ok, icon_err = pal.x_window_icon(png)
+    if not ok then return nil, "rejected: " .. tostring(icon_err) end
+    return true
+  end
+  if safe then
+    local path = dir .. "/" .. relative
+    local ok, icon_err = apply(path)
+    if ok then return true end
+    pal.log("[project] icon " .. path .. " " .. tostring(icon_err)
+            .. "; using the cosmic2d icon")
+  end
+  local ok, icon_err = apply("pal/res/cosmic2d.png")
+  if not ok then
+    pal.log("[project] fallback icon unavailable: " .. tostring(icon_err))
+    return nil
+  end
+  return true
+end
+
 -- ---- error containment (D023) ----
 
 local function publish_crash(kind, traceback, attempt, no_locator)
@@ -311,6 +357,7 @@ function M.boot()
     -- flag when windowed.
     maximized = proj.maximized or args.edit or false,
   }
+  set_project_icon(args.project, proj.icon)
   -- headless composite capture (--win WxH): present into an offscreen target at
   -- that window size so a --shot shows the editor-around-game layout (dev/debug)
   if args.win_w then pal.x_capture(args.win_w, args.win_h) end

@@ -7,8 +7,8 @@ tested; in-editor export is still an alpha release gate.
 
 **Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
 and an out-of-the-box demo game are here. The deterministic suite is green,
-but player-facing bundle polish, gamepad support, project/export UX, and broader
-genre demos are still release gates; see `docs/ALPHA.md`.
+but gamepad/player settings, general project/export UX, broader genre demos,
+and release-candidate validation are still gates; see `docs/ALPHA.md`.
 
 ## Try it
 
@@ -80,14 +80,31 @@ nix run .#package -- demo          # -> demo-windows.zip + .sha256
 nix run .#package -- demo linux    # -> demo-linux.tar.gz + .sha256
 ```
 
-The bundle contains the selected editable project, engine/editor tooling,
-README, licenses/notices, a complete extracted-tree `SHA256SUMS`, and the exact
-carried runtime-library inventory. Its named launcher boots the game locked to
-play mode; `bin/cosmic2d-editor` remains available for a deliberate authoring
-entrance. Verify the archive's sibling checksum before extraction and run
-`sha256sum --check SHA256SUMS` from inside the extracted folder afterward.
-This is not yet the promised general export flow or final player-facing release
-bundle; those remain gates A2 and A3 in `docs/ALPHA.md`.
+The archive root is player-facing: run **`demo`** / **`demo.exe`** there. Its
+README is generated from the project's title, version, description, controls,
+credits, and license metadata, and `icon.png` is the project's release icon.
+The Windows root launcher carries that project title/version/icon in Explorer;
+the live game window uses the same icon on both platforms. The selected
+editable project and engine/editor tooling remain included, with
+`bin/cosmic2d-editor` available as a deliberate authoring entrance.
+
+A packaged project supplies these plain-data fields in `project.lua`:
+
+```lua
+icon = "icon.png",             -- square PNG, 32..1024 px
+controls = "CONTROLS.md",
+credits = "CREDITS.md",
+licenses = { "LICENSE.md" },   -- one or more project-local files
+```
+
+All references are jailed forward-slash paths within the project and packaging
+fails before publication if metadata or a referenced file is invalid. The
+bundle also contains the engine/runtime notices, a complete extracted-tree
+`SHA256SUMS`, and the exact carried runtime-library inventory. Verify the
+archive's sibling checksum before extraction and run `sha256sum --check
+SHA256SUMS` from inside the extracted folder afterward. The current command is
+still a developer packager for projects present in the Nix build tree; arbitrary
+opened-project and in-editor export are A3 work.
 
 Alpha artifacts are deliberately unsigned: checksums detect changed bytes but
 do not prove publisher identity. Windows may report an unknown publisher. Do

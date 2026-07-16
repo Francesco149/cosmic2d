@@ -121,13 +121,38 @@ try {
     $editorFront = Join-Path $editorRoot "cosmic2d-editor.exe"
     $editorDemo = Join-Path $editorRoot "demo.exe"
     $editorConsole = Join-Path $editorRoot "bin\cosmic-console.exe"
+    $playFront = Join-Path $playRoot "$game.exe"
     $playGame = Join-Path $playRoot "bin\$game.exe"
     $playEditor = Join-Path $playRoot "bin\cosmic2d-editor.exe"
     $playConsole = Join-Path $playRoot "bin\cosmic-console.exe"
-    foreach ($path in @($editorFront, $editorDemo, $editorConsole,
+    foreach ($path in @($editorFront, $editorDemo, $editorConsole, $playFront,
                         $playGame, $playEditor, $playConsole)) {
         Assert-True (Test-Path -LiteralPath $path -PathType Leaf) "missing launcher: $path"
     }
+    $playerReadme = [IO.File]::ReadAllText((Join-Path $playRoot "README.md"))
+    foreach ($signature in @("# cosmic demo", "Version ``0.1``", "## Controls",
+                              "## Credits", "## Licenses")) {
+        Assert-True ($playerReadme.Contains($signature)) `
+            "player README lacks project metadata: $signature"
+    }
+    Assert-True (Test-Path -LiteralPath (Join-Path $playRoot "icon.png") -PathType Leaf) `
+        "player bundle lacks its project icon"
+    $playerIdentity = [Diagnostics.FileVersionInfo]::GetVersionInfo($playFront)
+    Assert-True ($playerIdentity.FileDescription -ceq "cosmic demo") `
+        "player launcher lacks the project title resource"
+    Assert-True ($playerIdentity.ProductVersion -ceq "0.1") `
+        "player launcher lacks the project version resource"
+
+    # The project-branded root PE delegates to bin/<game>.exe and must preserve
+    # native Unicode argv. PowerShell 5.1 treats a BOM-less UTF-8 script as the
+    # active ANSI code page, so construct lambda by code point. The child sees
+    # UTF-8 Lua source: correct forwarding makes its string exactly two bytes;
+    # mojibake exits 23 and fails Invoke-Cosmic. Keep the expression space-free
+    # because Start-Process joins ArgumentList elements into one command line.
+    $lambda = [char]0x03bb
+    $unicodeEval = "pal.quit((#('$lambda')==2)and(0)or(23))"
+    Invoke-Cosmic $playFront @("--headless", "--frames", "1", "--eval",
+        $unicodeEval) $outside
 
     $protectedRoots += $editorRoot
     Protect-Tree $editorRoot $sid
@@ -154,6 +179,7 @@ try {
     Invoke-Cosmic $editorFront @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $editorDemo @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $editorConsole @("--headless", "--frames", "1") $outside
+    Invoke-Cosmic $playFront @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $playGame @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $playEditor @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $playConsole @("projects/$game", "--headless", "--frames", "1") $outside
