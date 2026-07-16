@@ -111,7 +111,7 @@ function L.ground_below(x, z, y)
 end
 
 function L.build()
-  L.tex = gb.load_textures("bounce.texids")
+  L.tex = gb.load_textures("rc.bounce.texids")
 
   L.colliders = { { GX0, -1, GZ0, GX1, 0, GZ1 } }
   for _, bx in ipairs(BOXES) do

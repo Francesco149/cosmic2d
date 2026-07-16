@@ -96,7 +96,7 @@ function game.save_knobs()
 end
 
 local function build_sky()
-  skybuf = pal.buf("bounce.sky", 6 * 24)
+  skybuf = pal.buf("rc.bounce.sky", 6 * 24)
   local function sv(x, y, c)
     return string.pack("<fffffBBBB", x, y, 0.9999, 0, 0,
                        (c[1] * 255) // 1, (c[2] * 255) // 1, (c[3] * 255) // 1, 255)
@@ -134,10 +134,10 @@ function game.init()
   -- dyn: per-frame cube + shadow + pickup verts (render-class scratch,
   -- rebuilt in draw; a named buffer only so the PAL can read it)
   local dyn_size = (74 + pickups.max_tris()) * 72
-  local ok, db = pcall(pal.buf, "bounce.dyn", dyn_size)
+  local ok, db = pcall(pal.buf, "rc.bounce.dyn", dyn_size)
   if not ok then -- worst case grew across a hot reload
-    pal.buf_free("bounce.dyn")
-    db = pal.buf("bounce.dyn", dyn_size)
+    pal.buf_free("rc.bounce.dyn")
+    db = pal.buf("rc.bounce.dyn", dyn_size)
   end
   dyn = db
 

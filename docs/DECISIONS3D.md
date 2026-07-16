@@ -212,3 +212,35 @@ and falling forever): `y < move.kill_y` (knob, -12) respawns at
 level.spawn with a landing squash so the reset reads as feedback, not a
 glitch. demo(1) now loops the course indefinitely — future golden
 material.
+
+## D3D-012 — the goal loop + the render-class buffer domain "rc." (2026-07-16)
+
+Demo 1 became a game (the STATUS directive: touch feedback, sound hook,
+respawning collectibles, all knob-driven). **pickups.lua**: gold diamond
+gems (2-cone lathe profile, 8 segments) hover along the course
+(level.gems); pickup = coin sfx + doc.score + an expanding fading pop
+ghost (blend pass); a collected gem respawns after goal.respawn frames,
+so autoplay loops keep collecting — the world never goes dead. The
+ice-white goal star (1.9x gem) tops the accent tower: touch = bell
+fanfare triad, doc.laps, a fading 8x16 COURSE CLEAR banner, and every
+gem respawns (a fresh lap). Knobs under doc.knobs.goal (radius, respawn,
+pop, banner, spin, bob). Sim state = per-item respawn countdowns in the
+named buffer bounce.pickups + doc counters; pickup tests use REST
+positions — spin/bob live only in emit (render-class animation off the
+frame counter). audio.lua reuses the demo cartridge's SFX pattern and
+its tuned .ins presets (copied into ins/); player.lua fires
+jump/land/kill-respawn hooks. gb.lathe grew an alpha param (ghosts).
+
+**The "rc." buffer domain** (engine change, cm/state.lua, surgical):
+recording the first bounce trace golden diverged at frame 1 on
+bounce.texids — PAL texture ids are SESSION-DEPENDENT (the id counter
+differs on replay), and bounce.dyn is rebuilt per draw() while --verify
+never draws. These buffers are render-class: they live in named buffers
+only so the PAL and hot-reload can see them, but their bytes are not
+sim state. Rule: **name such buffers "rc.*" — state.sim_buffer excludes
+the prefix from snapshots, traces and goldens** exactly like the D050
+"ed." editor domain. bounce renamed texids/dyn/sky into it. The iron
+rule stands: anything the SIM reads stays in verified buffers
+(bounce.player/cam/pickups); "rc." is for what only the renderer reads.
+(proto3d.texids has the same latent issue; rename when that cartridge
+next gets touched — it has no trace golden.)

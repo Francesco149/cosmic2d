@@ -288,9 +288,14 @@ local SNAP_MAGIC = "CSNP"
 -- the SIM's buffers: name-sorted, excluding the editor domain. Buffer names
 -- prefixed "ed." belong to the R3+ editor's captured state (EDITOR.md §2 /
 -- D050) — never in sim snapshots, traces or goldens; restore never frees
--- them. cm.trace applies the same filter.
+-- them. cm.trace applies the same filter. "rc." is the render-class domain
+-- (D3D-012): PAL resource ids + per-draw vertex scratch that a project
+-- keeps in named buffers only so the PAL/hot-reload can see them — session-
+-- dependent bytes (texture ids) or draw()-rebuilt bytes that verify (which
+-- never draws) must not byte-compare.
 function M.sim_buffer(name)
-  return name:sub(1, 3) ~= "ed."
+  local p = name:sub(1, 3)
+  return p ~= "ed." and p ~= "rc."
 end
 
 local function sorted_buf_list()
