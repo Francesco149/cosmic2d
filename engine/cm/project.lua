@@ -21,7 +21,7 @@ return {
   entry = "main.lua",
   author = "",
   version = "0.1",
-  description = "",
+  description = "__DESC__",
   -- A player export additionally needs project-local icon/controls/credits
   -- files and at least one license. The project settings UI will fill these;
   -- see the scripting guide for the declarative metadata contract.
@@ -66,6 +66,52 @@ function game.draw()
 end
 return game
 ]==]
+
+-- Starter templates (D081): what the picker's "+ New project" chooser
+-- offers. `blank` is the embedded MAIN_TMPL above; the others are real,
+-- readable one-file games under engine/stock/templates whose `__NAME__`
+-- placeholders are substituted at scaffold time. Order is the chooser's
+-- display order; blank stays first as the no-template default.
+M.TEMPLATES = {
+  { key = "blank", label = "blank",
+    note = "the one-file hello: move and jump" },
+  { key = "platformer", label = "platformer",
+    note = "side view: run, jump platforms, reach the flag",
+    main = "engine/stock/templates/platformer.lua" },
+  { key = "topdown", label = "top-down",
+    note = "walk a walled room and collect every gem",
+    main = "engine/stock/templates/topdown.lua" },
+  { key = "arcade", label = "arcade",
+    note = "one screen: shoot falling rocks, chase the best score",
+    main = "engine/stock/templates/arcade.lua" },
+}
+
+-- nil means the default (blank); an unknown key is an explicit error so a
+-- chooser/registry mismatch cannot silently scaffold the wrong game.
+function M.template(key)
+  if key == nil then return M.TEMPLATES[1] end
+  for _, t in ipairs(M.TEMPLATES) do
+    if t.key == key then return t end
+  end
+  return nil, "unknown starter template: " .. tostring(key)
+end
+
+-- The raw main.lua source for a starter template, placeholders intact.
+-- `read` is injectable so failure paths stay KAT-able; blank is embedded
+-- and never touches the filesystem.
+function M.template_main(key, read)
+  local tmpl, err = M.template(key)
+  if not tmpl then return nil, err end
+  if not tmpl.main then return M.MAIN_TMPL end
+  read = read or (pal and pal.read_file)
+  if type(read) ~= "function" then return nil, "template reader is unavailable" end
+  local bytes, rerr = read(tmpl.main)
+  if type(bytes) ~= "string" then
+    return nil, "cannot read starter template " .. tmpl.main .. ": "
+      .. tostring(rerr or "not found")
+  end
+  return bytes
+end
 
 local function trim(value)
   return value:match("^%s*(.-)%s*$")
@@ -606,20 +652,37 @@ function M.save(dir, meta, fail)
   return true, bytes
 end
 
-function M.scaffold(dir, name, fail)
+function M.scaffold(dir, name, fail, template)
+  local tmpl, err = M.template(template)
+  if not tmpl then return nil, err end
+  -- Resolve the template source before any filesystem effect so a missing
+  -- or unreadable template can never leave a partial project behind.
+  local main_src
+  main_src, err = M.template_main(tmpl.key, fail and fail.read)
+  if not main_src then return nil, err end
   if pal.read_file(dir .. "/project.lua") then
     return nil, "project already exists: " .. dir
   end
   if not pal.mkdir(dir) then return nil, "create project directory failed: " .. dir end
   local main = dir .. "/main.lua"
   local meta = dir .. "/project.lua"
-  local ok, err = pal.write_file_atomic(main, (M.MAIN_TMPL:gsub("__NAME__", name)),
-                                         fail and fail.main)
+  -- The name lands inside generated Lua string literals: escape the two
+  -- characters that could break out of them (the folder grammar already
+  -- bans control characters), and substitute through a table so '%' in a
+  -- user-chosen name stays inert.
+  local subs = {
+    __NAME__ = (name:gsub('[\\"]', "\\%1")),
+    __DESC__ = tmpl.main
+      and ("started from the " .. tmpl.label .. " starter template") or "",
+  }
+  local ok
+  ok, err = pal.write_file_atomic(main, (main_src:gsub("__%u+__", subs)),
+                                  fail and fail.main)
   if not ok then
     pal.x_remove(dir)
     return nil, "write project source " .. main .. " failed: " .. tostring(err)
   end
-  ok, err = pal.write_file_atomic(meta, (M.PROJECT_TMPL:gsub("__NAME__", name)),
+  ok, err = pal.write_file_atomic(meta, (M.PROJECT_TMPL:gsub("__%u+__", subs)),
                                   fail and fail.meta)
   if not ok then
     pal.x_remove(main)

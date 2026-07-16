@@ -4304,6 +4304,145 @@ local function t_project_export()
   rm_tree(base)
 end
 
+-- ---- D081 starter templates: registry, substitution, boot smokes ----
+
+local function t_project_templates()
+  local project = cm.require("cm.project")
+  local input = cm.require("cm.input")
+
+  -- the registry: four starters, blank first (the no-template default)
+  check(#project.TEMPLATES == 4 and project.TEMPLATES[1].key == "blank",
+        "templates: registry offers four starters, blank first")
+  local seen = {}
+  for _, t in ipairs(project.TEMPLATES) do
+    check(type(t.key) == "string" and type(t.label) == "string"
+          and type(t.note) == "string" and not seen[t.key],
+          "templates: entry " .. tostring(t.key) .. " is complete and unique")
+    seen[t.key] = true
+  end
+  check(project.template() == project.TEMPLATES[1],
+        "templates: nil resolves to the blank default")
+  local unknown, uerr = project.template("roguelike")
+  check(not unknown and uerr:find("roguelike", 1, true),
+        "templates: an unknown key is an explicit error")
+
+  -- template sources: blank is embedded; the others are real stock files
+  check(project.template_main("blank") == project.MAIN_TMPL,
+        "templates: blank main is the embedded scaffold source")
+  for _, t in ipairs(project.TEMPLATES) do
+    local src = project.template_main(t.key)
+    check(type(src) == "string" and src:find("__NAME__", 1, true) ~= nil
+          and src:find("return game", 1, true) ~= nil,
+          "templates: " .. t.key .. " source is a substitutable game")
+  end
+  local missing, merr = project.template_main("arcade", function()
+    return nil, "io injected"
+  end)
+  check(not missing
+        and merr:find("engine/stock/templates/arcade.lua", 1, true)
+        and merr:find("io injected", 1, true),
+        "templates: an unreadable template names its stock path")
+
+  -- an unreadable template fails scaffold before any filesystem effect
+  local dir = tmproot() .. "/cosmic_selftest_template"
+  local function rm_dir()
+    pal.x_remove(dir .. "/main.lua")
+    pal.x_remove(dir .. "/project.lua")
+    pal.x_remove(dir)
+  end
+  rm_dir()
+  local ok, err = project.scaffold(dir, "tpl", { read = function()
+    return nil, "io injected"
+  end }, "topdown")
+  check(not ok and err:find("topdown", 1, true)
+        and not pal.x_path_info(dir),
+        "templates: a template read failure leaves no partial project")
+
+  -- a hostile-but-legal folder name survives embedding into generated Lua
+  -- (windows filenames cannot hold quotes/backslashes; percent is enough)
+  local tricky = pal.platform == "windows" and "100% new name"
+                 or '100% "new"\\name'
+  ok, err = project.scaffold(dir, tricky)
+  check(ok == true,
+        "templates: tricky-name scaffold succeeds (" .. tostring(err) .. ")")
+  local meta = project.decode(pal.read_file(dir .. "/project.lua"), "@tpl")
+  check(meta ~= nil and meta.name == tricky and meta.description == ""
+        and project.validate_runtime(meta) == true,
+        "templates: tricky name round-trips exactly; blank stays a draft")
+  check(load(pal.read_file(dir .. "/main.lua"), "@tpl", "t", {}) ~= nil,
+        "templates: generated source with a tricky name still parses")
+  rm_dir()
+
+  -- boot smoke: every starter scaffolds, loads, inits, and simulates 120
+  -- frames in a scratch doc with no input. Action defs and the doc are
+  -- restored afterwards so this stays invisible to the rest of the suite.
+  local saved_doc = state.doc
+  local saved_bits = {}
+  for k, v in pairs(input.bit_of) do saved_bits[k] = v end
+  local saved_defs = {}
+  for di, d in ipairs(input.defs) do
+    local keys = {}
+    for j, sc in ipairs(d.keys) do keys[j] = sc end
+    saved_defs[di] = { name = d.name, keys = keys }
+  end
+  for _, t in ipairs(project.TEMPLATES) do
+    rm_dir()
+    check(project.scaffold(dir, "smoke-" .. t.key, nil, t.key) == true,
+          "templates: " .. t.key .. " scaffolds")
+    local bytes = pal.read_file(dir .. "/main.lua")
+    check(bytes ~= nil and not bytes:find("__NAME__", 1, true)
+          and bytes:find("smoke-" .. t.key, 1, true) ~= nil,
+          "templates: " .. t.key .. " substitutes every placeholder")
+    local pmeta = project.decode(pal.read_file(dir .. "/project.lua"), "@tpl")
+    check(pmeta ~= nil and project.validate_runtime(pmeta) == true
+          and (t.key == "blank") == (pmeta.description == "")
+          and (t.key == "blank"
+               or pmeta.description:find(t.label, 1, true) ~= nil),
+          "templates: " .. t.key .. " metadata boots and names provenance")
+    local chunk, cerr = load(bytes, "@" .. dir .. "/main.lua")
+    check(chunk ~= nil,
+          "templates: " .. t.key .. " loads (" .. tostring(cerr) .. ")")
+    local game2 = chunk()
+    check(type(game2) == "table" and type(game2.init) == "function"
+          and type(game2.step) == "function"
+          and type(game2.draw) == "function",
+          "templates: " .. t.key .. " returns an init/step/draw game")
+    state.doc = {}
+    game2.init()
+    -- neutral input: earlier input KATs may have left bits held in the
+    -- applied record; two zero records clear both levels and edges
+    local zero = string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+    input.apply(zero)
+    input.apply(zero)
+    for _ = 1, 120 do game2.step() end
+    state.doc.canary = 7
+    game2.init() -- the hot-reload contract: init must not reset a live run
+    local d = state.doc
+    check(d.canary == 7, "templates: " .. t.key .. " init is reload-safe")
+    if t.key == "arcade" then
+      -- the spawn clock puts exactly two rocks in play by frame 120; at
+      -- the selftest cartridge's tiny resolution a rock may already have
+      -- slipped past, so the invariant is the accounting, not the count:
+      -- with no shots fired, every spawn is still falling or cost a life
+      check(d.t == 120 and d.score == 0
+            and (#d.rocks + (3 - d.lives)) == 2,
+            "templates: arcade rock accounting holds on its spawn clock")
+    elseif t.key == "platformer" then
+      check(d.grounded == true and d.won == false,
+            "templates: platformer settles on the ground")
+    elseif t.key == "topdown" then
+      check(d.count == 0 and #d.got == 6,
+            "templates: topdown tracks its gems")
+    else
+      check(type(d.x) == "number" and type(d.y) == "number",
+            "templates: blank owns a movable dot")
+    end
+  end
+  state.doc = saved_doc
+  input.defs, input.bit_of = saved_defs, saved_bits
+  rm_dir()
+end
+
 -- ---- D080 picker list model + navigation math ----
 
 local function t_picker_nav()
@@ -7338,6 +7477,7 @@ function game.init()
   t_project_archive()
   t_project_delete()
   t_project_export()
+  t_project_templates()
   t_picker_nav()
   t_crash()
   t_ed_text_save()
