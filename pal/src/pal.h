@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 14 /* v14: self-contained release export primitives */
+#define PAL_VERSION_API 15 /* v15: asynchronous native folder chooser */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -187,6 +187,14 @@ typedef struct {
   /* events (C queue -> drained by pal.poll_events) */
   PalEvent events[PAL_MAX_EVENTS];
   int event_count;
+
+  /* One native folder chooser at a time. SDL may complete its asynchronous
+   * dialog callback on another thread, so Lua starts/polls it through this
+   * small process-owned mailbox. It intentionally survives VM reboots like
+   * the window, though normal picker use consumes the result before one. */
+  SDL_Mutex *folder_mutex;
+  int folder_state; /* 0 idle, 1 pending, 2 selected, 3 cancelled, 4 error */
+  char *folder_result;
 
   PalBuf *bufs;
 

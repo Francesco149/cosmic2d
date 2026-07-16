@@ -2714,6 +2714,14 @@ local function t_atomic_write()
         and type(pal.x_file_publish) == "function"
         and type(pal.x_windows_exe_identity) == "function",
         "export io: PAL api14 exposes hash/info/publication primitives")
+  check(pal.version.api >= 15 and type(pal.x_folder_dialog) == "function"
+        and type(pal.x_folder_dialog_poll) == "function",
+        "project lifecycle: PAL api15 exposes native folder chooser")
+  local fok, ferr = pal.x_folder_dialog()
+  check(fok == nil and type(ferr) == "string"
+        and ferr:find("live window", 1, true)
+        and pal.x_folder_dialog_poll() == "idle",
+        "project lifecycle: folder chooser refuses headless use cleanly")
   check(pal.sha256("") ==
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         and pal.sha256("abc") ==

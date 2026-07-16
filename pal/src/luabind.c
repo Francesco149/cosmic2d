@@ -989,6 +989,131 @@ static int l_x_reboot(lua_State *L) {
   return 0;
 }
 
+/* SDL's native dialogs are asynchronous and their callback may run on a
+ * platform thread. Keep the callback completely outside Lua: it copies one
+ * UTF-8 result into a mutex-protected process mailbox, and the live picker
+ * polls that mailbox on the main thread.
+ *
+ * pal.x_folder_dialog([default]) -> true | nil,error
+ * pal.x_folder_dialog_poll() -> "idle" | "pending" | "cancelled"
+ *                            | "selected",path | "error",message
+ */
+enum {
+  FOLDER_IDLE = 0,
+  FOLDER_PENDING,
+  FOLDER_SELECTED,
+  FOLDER_CANCELLED,
+  FOLDER_ERROR,
+};
+
+static void SDLCALL folder_dialog_done(void *userdata,
+                                       const char *const *filelist,
+                                       int filter) {
+  (void)userdata;
+  (void)filter;
+  int state;
+  char *result = NULL;
+  if (!filelist) {
+    state = FOLDER_ERROR;
+    const char *err = SDL_GetError();
+    result = SDL_strdup((err && *err) ? err : "native folder dialog failed");
+  } else if (!filelist[0]) {
+    state = FOLDER_CANCELLED;
+  } else {
+    result = SDL_strdup(filelist[0]);
+    if (result)
+      state = FOLDER_SELECTED;
+    else {
+      state = FOLDER_ERROR;
+      result = SDL_strdup("out of memory copying selected folder");
+    }
+  }
+
+  SDL_LockMutex(G.folder_mutex);
+  if (G.folder_state == FOLDER_PENDING) {
+    SDL_free(G.folder_result);
+    G.folder_result = result;
+    G.folder_state = state;
+    result = NULL;
+  }
+  SDL_UnlockMutex(G.folder_mutex);
+  SDL_free(result); /* a stale callback must not leak its private copy */
+}
+
+static int l_x_folder_dialog(lua_State *L) {
+  if (!G.win || G.headless) {
+    lua_pushnil(L);
+    lua_pushstring(L, "folder chooser requires a live window");
+    return 2;
+  }
+  if (!G.folder_mutex) G.folder_mutex = SDL_CreateMutex();
+  if (!G.folder_mutex) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "create folder-dialog mailbox failed: %s",
+                    SDL_GetError());
+    return 2;
+  }
+
+  SDL_LockMutex(G.folder_mutex);
+  if (G.folder_state != FOLDER_IDLE) {
+    SDL_UnlockMutex(G.folder_mutex);
+    lua_pushnil(L);
+    lua_pushstring(L, "a folder chooser is already active");
+    return 2;
+  }
+  SDL_free(G.folder_result);
+  G.folder_result = NULL;
+  G.folder_state = FOLDER_PENDING;
+  SDL_UnlockMutex(G.folder_mutex);
+
+  const char *start = luaL_optstring(L, 1, NULL);
+  if (start && !*start) start = NULL;
+  SDL_ShowOpenFolderDialog(folder_dialog_done, NULL, G.win, start, false);
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+static int l_x_folder_dialog_poll(lua_State *L) {
+  if (!G.folder_mutex) {
+    lua_pushstring(L, "idle");
+    return 1;
+  }
+
+  SDL_LockMutex(G.folder_mutex);
+  int state = G.folder_state;
+  char *result = NULL;
+  if (state == FOLDER_SELECTED || state == FOLDER_ERROR) {
+    result = G.folder_result;
+    G.folder_result = NULL;
+    G.folder_state = FOLDER_IDLE;
+  } else if (state == FOLDER_CANCELLED) {
+    G.folder_state = FOLDER_IDLE;
+  }
+  SDL_UnlockMutex(G.folder_mutex);
+
+  switch (state) {
+  case FOLDER_PENDING:
+    lua_pushstring(L, "pending");
+    return 1;
+  case FOLDER_SELECTED:
+    lua_pushstring(L, "selected");
+    lua_pushstring(L, result ? result : "");
+    SDL_free(result);
+    return 2;
+  case FOLDER_CANCELLED:
+    lua_pushstring(L, "cancelled");
+    return 1;
+  case FOLDER_ERROR:
+    lua_pushstring(L, "error");
+    lua_pushstring(L, result ? result : "native folder dialog failed");
+    SDL_free(result);
+    return 2;
+  default:
+    lua_pushstring(L, "idle");
+    return 1;
+  }
+}
+
 static int l_scancode_name(lua_State *L) {
   lua_pushstring(L,
                  SDL_GetScancodeName((SDL_Scancode)luaL_checkinteger(L, 1)));
@@ -1799,6 +1924,8 @@ static const luaL_Reg pal_funcs[] = {
     {"blit32", l_blit32},
     {"poll_events", l_poll_events},
     {"x_reboot", l_x_reboot},
+    {"x_folder_dialog", l_x_folder_dialog},
+    {"x_folder_dialog_poll", l_x_folder_dialog_poll},
     {"x_remove", l_x_remove},
     {"scancode_name", l_scancode_name},
     {"text_input", l_text_input},
