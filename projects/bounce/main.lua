@@ -72,6 +72,10 @@ local KNOBS = {
     stretch = 0.32, squash = 0.42, vref = 12,
     squash_frames = 10, lean = 0.15,
   },
+  look = { -- the N64 presentation (D3D-003, render-class: never read by sim)
+    quant = 5, -- framebuffer grade: bits/channel + Bayer dither (0 = off)
+    soft = 1,  -- VI-soft present blit: bilinear + smear (0 = sharp pixels)
+  },
   goal = { -- the pickup loop (pickups.lua)
     r = 0.9,        -- gem pickup radius (the star scales it up)
     respawn = 300,  -- frames until the goal star returns (gems only on lap)
@@ -417,6 +421,13 @@ end
 
 function game.draw()
   pal.begin_frame(0, 0, 0, 1)
+
+  -- the N64 presentation: 5551+Bayer grade baked into the internal target
+  -- (pixel goldens see it) + the VI-soft present blit (composite only).
+  -- Both are per-frame opt-ins, so knob changes take effect live.
+  local kl = state.doc.knobs.look
+  if kl.quant > 0 then pal.x_grade{ quant = kl.quant } end
+  if kl.soft > 0 then pal.x_soft(1) end
 
   -- sky: NDC passthrough gradient (fog off)
   pal.x_view3d()
