@@ -20,10 +20,13 @@ nix develop -c make -C pal     # build bin/cosmic
 bin/cosmic                     # the project picker — the front door
 ```
 
-The picker lists your projects. Open the bundled **demo** (a two-room
-platformer with music that swaps between rooms), or press **+ New project**
-to scaffold your own. A tile opens a project in the editor; the ▶ zone plays
-it.
+The picker lists bundled and recent projects. Open the bundled **demo** (a
+two-room platformer with music that swaps between rooms), press **+ New
+project** to scaffold your own, or choose **open folder** to register an
+existing project wherever it already lives. A tile opens a project in the
+editor; the ▶ zone plays it. Missing recent folders remain visible with
+**repair** and **remove** actions, and the editor's **← projects** button
+returns to this list after safely saving its recovery state.
 
 ```sh
 bin/cosmic projects/demo            # play the demo directly

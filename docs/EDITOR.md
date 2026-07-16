@@ -121,9 +121,12 @@ teidraw's source; they are taste-approved by construction):
 - **Grid**: teidraw's adaptive dot grid — base 32 world units, pitch
   doubled/halved to stay in the 18–44 screen-px comfort band, alpha
   fading in across the band. (igcanvas's grid upgrades to this.)
-- **HUD** (screen-space, `x_ig_overlay`): top-left project pill, top-right
-  logical-zoom pill, adjacent **Aa** display-size control, and the persistent
-  rewind pill in the reserved corner.
+- **HUD** (screen-space, `x_ig_overlay`): top-left **← projects** lifecycle
+  action plus current-project pill, top-right logical-zoom pill, adjacent
+  **Aa** display-size control, and the persistent rewind pill in the reserved
+  corner. Return-to-picker refuses an active export, restores the live present
+  if parked, flushes pending text/journals + `session.dat` + rewind history,
+  then performs the same in-process project switch as the picker.
 - **Accessible display size**: **Aa** independently adjusts **canvas windows**
   (including their fonts) and **fixed chrome** (HUD, launcher, menus, and the
   rewind tray) from 75–300%. Auto mode keeps the existing 100% default on a
@@ -310,8 +313,9 @@ picker replaces it) · game window. New windows spawn at the click point.
   requires the ig surface, loads session.dat, enters the shell.
   Live + `--win` capture only; under `--verify`/plain-headless it is a
   no-op (the D049 absence contract already guarantees `x_ig_frame` nil).
-  F-key toggling in/out of a running game session is *not* R3 (the R5
-  picker/launcher decides the mode story; --edit is enough to build on).
+  F-key toggling in/out of a running game session is *not* R3. The R5/A3
+  picker decides edit vs play; **← projects** is the explicit editor-to-picker
+  door and also works when the editor was opened directly with `--edit`.
 - **Frame flow**: `cm.ed.frame()` runs from cm.main right after
   `game.draw` (before the legacy ui-canvas panels). While the editor is
   on: `cm.view.mode = "canvas"` (no game blit, D049), events are

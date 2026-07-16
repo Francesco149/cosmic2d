@@ -4,6 +4,11 @@ Open any project with `--edit` (or from the picker). The editor is an
 **infinite canvas** of floating windows — pan and zoom the canvas, drag
 windows around, and lay out a workspace that suits the task.
 
+The fixed **← projects** button returns to the project picker. It first closes
+pending text edits into their journals, saves the editor session, and flushes
+rewind history; an active build/export must finish or be cancelled before the
+switch can proceed.
+
 ## Spawning windows
 
 **Right-click the canvas** for the spawn menu. The window kinds:

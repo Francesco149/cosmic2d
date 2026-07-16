@@ -549,6 +549,51 @@ function M.read(dir)
   return meta, bytes
 end
 
+-- Normalize an OS-selected project root into the engine's persistent path
+-- spelling. SDL returns UTF-8 but keeps the host's preferred separators;
+-- forward slashes make one recents file unambiguous on Windows and keep the
+-- existing root .. "/file" joins valid everywhere. This is deliberately not
+-- a realpath: an author-chosen symlink/mount spelling should remain stable.
+function M.normalize_root(value)
+  if type(value) ~= "string" then return nil, "project folder must be a path" end
+  if value == "" then return nil, "project folder must not be empty" end
+  if #value > 1800 then return nil, "project folder path is too long" end
+  if value:find("[%z\r\n]") then
+    return nil, "project folder path contains unsupported control characters"
+  end
+  local path = value:gsub("\\", "/")
+  while path:sub(1, 2) == "./" do path = path:sub(3) end
+  while #path > 1 and path:sub(-1) == "/" and not path:match("^%a:/$") do
+    path = path:sub(1, -2)
+  end
+  if path == "" then return nil, "project folder must not be empty" end
+  return path
+end
+
+-- Validate a folder selected by the picker through the exact declarative
+-- codec/runtime rules boot uses. `read` is injectable so the path grammar and
+-- failure messages stay KAT-able without opening a native dialog.
+function M.inspect_root(value, read)
+  local root, err = M.normalize_root(value)
+  if not root then return nil, err end
+  read = read or pal.read_file
+  if type(read) ~= "function" then return nil, "project reader is unavailable" end
+  local path = root .. "/project.lua"
+  local bytes
+  bytes, err = read(path)
+  if type(bytes) ~= "string" then
+    return nil, "not a cosmic2d project (cannot read " .. path .. "): "
+      .. tostring(err or "not found")
+  end
+  local meta
+  meta, err = M.decode(bytes, "@" .. path)
+  if not meta then return nil, path .. ": " .. tostring(err) end
+  local ok
+  ok, err = M.validate_runtime(meta)
+  if not ok then return nil, path .. ": " .. tostring(err) end
+  return root, meta, bytes
+end
+
 function M.save(dir, meta, fail)
   local ok, err = M.validate_runtime(meta)
   if not ok then return nil, err end

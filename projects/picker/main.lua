@@ -1,8 +1,8 @@
 -- projects/picker — the engine's front door (R5, D052): the teidraw-style
 -- project picker. Boots when `cosmic` is run with no project argument.
--- Scans projects/* for project.lua and merges the engine-root .recent.dat
--- (cm.main writes it on every real boot — that's how sibling-repo
--- projects like ../cosmic2d-game/cosmic get tiles). A tile opens the
+-- Scans projects/* for project.lua and merges the engine-root .recent.dat.
+-- Open folder registers an arbitrary project in place (no copy), while stale
+-- recent tiles can be repaired through the same native chooser. A tile opens the
 -- project IN THE EDITOR (the picker is the editor's front door); the ▶
 -- zone boots plain play mode.
 --
@@ -18,13 +18,18 @@ local M = select(2, ...) or {}
 
 local view
 local chrome = cm.require("cm.ed.chrome")
+local project = cm.require("cm.project")
+local recent = cm.require("cm.recent")
 
 M.scan = M.scan or nil -- ephemeral tile cache (render/dev)
+M.folder = M.folder or nil -- active native chooser intent (open or repair)
+M.notice = M.notice or nil -- latest actionable lifecycle result
 
 local C = {
   bg = 0x141220ff, text = 0xE8E4FFff, dim = 0x8a84b0ff,
   tile = 0x1e1b2eff, tile_edge = 0x4a4370ff, tile_hot = 0x262238ff,
   accent = 0x7fd8a8ff, play = 0xffb46eff, missing = 0x5a5480ff,
+  bad = 0xff8295ff,
 }
 
 function M.init()
@@ -36,53 +41,59 @@ function M.step() end
 
 -- ---- the project list ----
 
--- Load a project's metadata table through the same declarative codec used by
--- boot, settings, and export. Returns meta, exists; falls back to a name-only
--- regex so a broken project still has a repairable tile.
+-- Load a project's metadata table through the same declarative codec and
+-- runtime validation used by boot. Broken metadata falls back to a name-only
+-- regex so a recent entry stays visible and repairable.
 local function proj_meta(dir)
   local src = pal.read_file(dir .. "/project.lua")
-  if not src then return nil, false end
-  local t = cm.require("cm.project").decode(src, "@" .. dir .. "/project.lua")
-  if t then return t, true end
-  return { name = src:match('name%s*=%s*"([^"]*)"') }, true
+  if not src then return nil, "missing", "folder or project.lua is missing" end
+  local t, err = project.decode(src, "@" .. dir .. "/project.lua")
+  if t then
+    local ok
+    ok, err = project.validate_runtime(t)
+    if ok then return t, "ready" end
+  end
+  return { name = src:match('name%s*=%s*"([^"]*)"') }, "invalid", tostring(err)
 end
 
--- One tile record from a project's metadata (nil-safe: a missing/broken
--- project.lua still yields a named tile).
-local function tile(path, meta, ok, recent)
+-- One tile record from a project's metadata (nil-safe: a missing/broken path
+-- still yields a named recent tile).
+local function tile(path, meta, state, is_recent, issue)
   meta = meta or {}
   local name = meta.name
   if not name or name == "" then name = path:match("([^/]+)$") end
-  return { path = path, ok = ok, recent = recent, name = name,
+  return { path = path, ok = state == "ready", state = state,
+           recent = is_recent, issue = issue, name = name or path,
            author = meta.author, version = meta.version,
            desc = meta.description }
-end
-
-local function norm(p) -- .recent.dat lines arrive as typed on the cli
-  return (p:gsub("^%./", ""):gsub("/+$", ""))
 end
 
 local function scan()
   if M.scan then return M.scan end
   local tiles, seen = {}, {}
+  -- Recents are already newest-first; keep that order exactly, then append
+  -- bundled projects that were not recently opened.
+  local rec = pal.read_file(recent.path)
+  if rec then
+    for line in rec:gmatch("[^\n]+") do
+      local path = project.normalize_root(line)
+      if path and not seen[path] then
+        seen[path] = true
+        local meta, state, issue = proj_meta(path)
+        tiles[#tiles + 1] = tile(path, meta, state, true, issue)
+      end
+    end
+  end
   local names = pal.list_dir("projects") or {}
   table.sort(names)
   for _, n in ipairs(names) do
     local dir = n:match("^([^/]+)/project%.lua$")
     if dir and dir ~= "picker" then
       local path = "projects/" .. dir
-      seen[path] = true
-      tiles[#tiles + 1] = tile(path, proj_meta(path), true, false)
-    end
-  end
-  local rec = pal.read_file(".recent.dat")
-  if rec then
-    for line in rec:gmatch("[^\n]+") do
-      local path = norm(line)
       if not seen[path] then
         seen[path] = true
-        local meta, ok = proj_meta(path)
-        table.insert(tiles, 1, tile(path, meta, ok or false, true))
+        local meta, state, issue = proj_meta(path)
+        tiles[#tiles + 1] = tile(path, meta, state, false, issue)
       end
     end
   end
@@ -90,14 +101,81 @@ local function scan()
   return tiles
 end
 
+local say
+
 local function launch(path, mode)
-  local payload = path .. "\n" .. mode
-  local v = pal.buf("boot.next", #payload)
-  v:setstr(0, payload)
   pal.log("[picker] " .. mode .. " " .. path)
-  pal.x_reboot()
+  local ok, err = cm.require("cm.main").switch_project(path, mode)
+  if not ok then say("cannot open project: " .. tostring(err), true) end
+  return ok, err
 end
 M.launch = launch -- scripted driving (proofs, keyboard flows later)
+
+-- ---- arbitrary project folders + stale recent repair ----
+
+say = function(text, bad)
+  M.notice = { text = tostring(text), bad = bad and true or false }
+  pal.log("[picker] " .. (bad and "FAILED: " or "") .. tostring(text))
+end
+
+local function begin_folder(repair)
+  if M.folder then return nil, "a folder chooser is already active" end
+  if pal.version.api < 15 or type(pal.x_folder_dialog) ~= "function"
+     or type(pal.x_folder_dialog_poll) ~= "function" then
+    local err = "opening a project folder needs PAL api >= 15"
+    say(err, true)
+    return nil, err
+  end
+  local ok, err = pal.x_folder_dialog()
+  if not ok then say(err, true); return nil, err end
+  M.folder = { repair = repair }
+  say(repair and ("choose the replacement for " .. repair.path)
+             or "choose a cosmic2d project folder")
+  return true
+end
+M.begin_folder = begin_folder
+
+local function accept_folder(raw)
+  local intent = M.folder
+  M.folder = nil
+  local root, meta = project.inspect_root(raw)
+  if not root then say(meta, true); return nil, meta end
+  local ok, err
+  if intent and intent.repair then
+    ok, err = recent.replace(intent.repair.path, root)
+  else
+    ok, err = recent.note(root)
+  end
+  if not ok then
+    local msg = "cannot update recent projects: " .. tostring(err)
+    say(msg, true)
+    return nil, msg
+  end
+  M.scan = nil -- registration is visible before the project-switch tick ends
+  say((intent and intent.repair and "repaired · opening " or "opening ")
+      .. (meta.name or root))
+  launch(root, "edit")
+  return true
+end
+M.accept_folder = accept_folder -- scripted lifecycle proof door
+
+local function poll_folder()
+  if not M.folder then return false end
+  local state, value = pal.x_folder_dialog_poll()
+  if state == "pending" then return false end
+  if state == "selected" then return accept_folder(value) == true end
+  M.folder = nil
+  if state == "error" then say("folder chooser: " .. tostring(value), true)
+  elseif state == "cancelled" then say("folder selection cancelled")
+  elseif state ~= "idle" then say("unexpected folder chooser state: " .. tostring(state), true) end
+  return false
+end
+
+local function refresh()
+  M.scan = nil
+  say("project list refreshed")
+end
+M.refresh = refresh
 
 -- ---- new project (G5): scaffold + open in the editor ----
 
@@ -139,14 +217,44 @@ function M.draw()
   local pal = chrome.pal
 
   pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
+  if poll_folder() then return end -- selected folder queued a VM reboot
   pal.x_ig_text(28, 22, 26, C.text, "cosmic2d", 0)
   pal.x_ig_text(28 + pal.x_ig_text_size("cosmic2d", 26, 0) + 14, 31, 13,
                 C.dim, "pick a project — click opens the editor; play boots the game", 0)
 
+  local function button(x, y, w, h, label, enabled)
+    local hov = enabled and i.wx >= x and i.wx < x + w
+                and i.wy >= y and i.wy < y + h
+    pal.x_ig_rect_fill(x, y, w, h, hov and C.tile_hot or C.tile, 6)
+    pal.x_ig_rect(x, y, w, h, hov and C.accent or C.tile_edge, 1, 6)
+    local tw = pal.x_ig_text_size(label, 11, 0)
+    pal.x_ig_text(x + (w - tw) * 0.5, y + 6, 11,
+                  enabled and (hov and C.text or C.dim) or C.missing, label, 0)
+    return hov and i.clicked[1]
+  end
+
+  local open_w, refresh_w = 104, 72
+  local refresh_x = ig.w - 28 - refresh_w
+  local open_x = refresh_x - 8 - open_w
+  if button(open_x, 18, open_w, 28,
+            M.folder and "choosing…" or "open folder", not M.folder) then
+    begin_folder()
+  end
+  if button(refresh_x, 18, refresh_w, 28, "refresh", not M.folder) then refresh() end
+  if M.notice then
+    pal.x_ig_clip_push(28, 55, math.max(40, ig.w - 56), 18)
+    pal.x_ig_text(28, 55, 11, M.notice.bad and C.bad or C.dim,
+                  M.notice.text, 0)
+    pal.x_ig_clip_pop()
+  else
+    pal.x_ig_text(28, 55, 11, C.dim,
+                  "Open keeps an external project in its current folder.", 0)
+  end
+
   local tiles = scan()
-  local pad, tw, th = 20, 240, 100
+  local pad, tw, th = 20, 240, 112
   local cols = math.max(1, math.floor((ig.w - 2 * pad) / (tw + pad)))
-  local x0, y0 = 28, 64
+  local x0, y0 = 28, 82
   for idx, t in ipairs(tiles) do
     local col, row = (idx - 1) % cols, (idx - 1) // cols
     local x = x0 + col * (tw + pad)
@@ -173,25 +281,28 @@ function M.draw()
     if sub1 then pal.x_ig_text(x + 14, y + 33, 10, C.dim, sub1, 1) end
     if sub2 then pal.x_ig_text(x + 14, y + 51, 10, C.dim, sub2, 1) end
     pal.x_ig_clip_pop()
-    local tag = (t.recent and not t.ok) and "recent · missing"
-                or (not t.ok and "missing") or (t.recent and "recent")
+    local tag = t.recent and (t.ok and "recent" or ("recent · " .. t.state))
+                or (not t.ok and t.state)
     if tag then
       pal.x_ig_text(x + 14, y + th - 22, 10, t.ok and C.dim or C.missing,
                     tag, 0)
     end
     if not t.ok then
-      -- ✕ prunes the dead entry from .recent.dat (stale-tile cleanup)
-      local rx, ry, rs = x + tw - 26, y + 8, 16
-      local rhov = i.wx >= rx and i.wx < rx + rs
-                   and i.wy >= ry and i.wy < ry + rs
-      pal.x_ig_text(rx + 5, ry + 1, 12, rhov and C.text or C.dim, "x", 0)
-      if rhov and i.clicked[1] then
-        local ok, err = cm.require("cm.recent").remove(t.path)
+      if t.issue then
+        pal.x_ig_clip_push(x + 14, y + 51, tw - 28, 17)
+        pal.x_ig_text(x + 14, y + 51, 10, C.bad, t.issue, 0)
+        pal.x_ig_clip_pop()
+      end
+      if t.recent and button(x + 14, y + th - 52, 70, 24, "repair", not M.folder) then
+        begin_folder(t)
+      end
+      if t.recent and button(x + 92, y + th - 52, 70, 24, "remove", not M.folder) then
+        local ok, err = recent.remove(t.path)
         if ok then
           M.scan = nil
-          pal.log("[picker] pruned " .. t.path)
+          say("removed missing recent · " .. t.path)
         else
-          pal.log("[picker] PRUNE FAILED: " .. tostring(err))
+          say("cannot remove recent: " .. tostring(err), true)
         end
       end
     end

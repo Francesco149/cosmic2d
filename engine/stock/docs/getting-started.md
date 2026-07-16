@@ -13,10 +13,17 @@ back/forward buttons — walk your history. `src` opens the raw markdown.
 
 - `bin/cosmic` opens the **project picker** — the front door. Click a tile
   to open that project in the editor; the ▶ zone plays it.
+- **open folder** registers an existing cosmic2d project in place and opens
+  it. The picker remembers it across restarts. **refresh** rescans immediately;
+  a missing recent folder offers **repair** (choose its new location) and
+  **remove** (forget the shortcut, without deleting project files).
 - The bundled **demo** is a two-room platformer with music that swaps
   between rooms. Open it, walk into a door, grab the coins.
 - **+ New project** scaffolds a fresh, runnable project (auto-named with
   three random words) and opens it in the editor.
+- In an editor, **← projects** returns to the picker after flushing pending
+  text edits, the editor session, and rewind history. Finish or cancel an
+  active player export first.
 - In the editor, open **project settings** from the right-click menu or
   **Ctrl+Space**. Give the project its real name, author/version/description,
   internal resolution, and initial window defaults. On **player files**, choose

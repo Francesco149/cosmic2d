@@ -2988,3 +2988,48 @@ the UI to a 30.5 MiB archive; the freshly staged native Windows editor did the
 same to a project-branded 38.9 MiB ZIP. Both outer hashes and every extracted
 `SHA256SUMS` entry verify. Visual evidence and the complete release matrix are
 recorded in `STATUS.md`.
+
+## D076 — external projects stay in place; project switches cross recovery barriers (A3, 2026-07-16)
+
+**Context.** The picker could create projects only below the carried
+`projects/` directory. An externally opened project became recent only after a
+successful command-line boot, missing paths could only be pruned through a
+small `x`, and an editor had no route back to the picker. Copying a selected
+folder would create two divergent authorities. Calling SDL's folder-dialog
+completion directly into Lua would cross both the main-thread and VM-lifetime
+boundaries. A raw editor reboot could also discard a pending text gesture,
+`session.dat`, an active export temp, or the exact rewind tail.
+
+**Decision.** **Open folder** registers a project root in place; cosmic2d never
+copies or claims ownership of it. PAL API 15 starts SDL's asynchronous native
+folder chooser and exposes a pollable process-owned mailbox. Its callback only
+copies UTF-8 bytes under a mutex and never enters Lua. `cm.project` normalizes
+host separators and validates selected `project.lua` bytes through the same
+declarative/runtime contract as boot. Only then does one atomic recents update
+make the root newest and deduplicate legacy spellings before the editor switch.
+
+Refresh invalidates the picker's metadata scan immediately. A missing/invalid
+recent tile remains visible: **repair** atomically replaces its old root with a
+validated selection, while **remove** forgets only the convenience entry. The
+list stays newest-first. The editor's fixed **← projects** action uses the one
+`cm.main.switch_project` carrier door. It refuses an active export, returns
+from parked rewind to the live present, closes pending text into journals,
+atomically saves the session, releases ephemeral owners, stops an explicit
+recording, and drains/spills history before rebooting into picker mode. The
+carrier outranks original command-line project arguments so direct `--edit`
+entrances can return too.
+
+**Consequences.** A public editor can adopt and revisit a project anywhere the
+user can select without inventing an import-copy policy or requiring a shell.
+Recents are pointers, not project storage: removal never deletes bytes, and a
+moved/deleted root is repaired explicitly. Dialog and picker state remain
+render/dev ephemera and never enter snapshots or deterministic input. Folder
+copy/move/duplicate/archive, search/sort/keyboard navigation, thumbnails, and
+large-list scrolling remain separate A3 packets.
+
+**Proof.** Focused KATs cover API/headless behavior, path normalization,
+selected-folder boot validation, atomic recents failure, repair promotion and
+deduplication, and the active-export return guard. Scripted captures prove an
+external spaced-path project opens, returns to the picker, and remains the
+first recent tile after a fresh process. Full Linux/native-Windows counts and
+public-archive proof are recorded in `STATUS.md`.

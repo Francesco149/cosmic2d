@@ -415,9 +415,12 @@ local function save_now()
     if not ok then
       pal.log("[ed] SESSION SAVE FAILED: " .. tostring(err))
       cm.require("cm.console").open = true
+      M.g.save_due = nil
+      return nil, err
     end
   end
   M.g.save_due = nil
+  return true
 end
 
 -- ---- input ----
@@ -691,7 +694,7 @@ local function interact(ig)
       and ci.wy >= r.y and ci.wy < r.y + r.h
   end
   local display_owns = in_chrome(g.display_pill) or in_chrome(g.display_rect)
-    or (g.display and i.clicked[1])
+    or in_chrome(g.projects_pill) or (g.display and i.clicked[1])
   -- the ALT layer owns the pointer: gate mouse off imgui in C (widgets
   -- render unchanged — no shimmer — but can never take the A-click).
   -- CTRL gates it too (UX round 4b): ctrl+wheel is the kinds' size dial
@@ -1031,6 +1034,7 @@ function M.hot_id()
       and ci.wy >= r.y and ci.wy < r.y + r.h
   end
   if inside(g.display_pill) or inside(g.display_rect)
+     or inside(g.projects_pill)
      or (g.display and i.clicked[1]) then return nil end
   local z = cam.screen_zoom(doc.cam)
   local id, part = wm.hit(doc, g.cursor.wx, g.cursor.wy,
@@ -1251,11 +1255,34 @@ local function draw_hud(ig, i)
   end
 
   pal.x_ig_overlay(true)
-  -- project pill, top-left
+  -- Explicit project lifecycle door, top-left. It is separate from process
+  -- quit: journals/session/history are flushed, then this window retargets to
+  -- the picker in place.
+  local projects = { x = 10, y = 8, w = 86, h = 28 }
+  g.projects_pill = projects
+  local projects_hov = inside(projects)
+  pal.x_ig_rect_fill(projects.x, projects.y, projects.w, projects.h,
+                     projects_hov and C.menu_hot or C.pill, 8)
+  pal.x_ig_text(projects.x + 11, projects.y + 6, 12,
+                projects_hov and C.hud or C.hud_dim, "← projects", 0)
+  if projects_hov and i.clicked[1] then
+    local ok, err = cm.require("cm.main").switch_project(
+      "projects/picker", "picker")
+    if not ok then g.switch_notice = tostring(err) end
+  end
+
+  -- current-project pill
   local label = ("ed — %s"):format(M.root or "?")
   local lw = pal.x_ig_text_size(label, 15, 0)
-  pal.x_ig_rect_fill(10, 8, lw + 24, 28, C.pill, 8)
-  pal.x_ig_text(22, 13, 15, C.hud, label, 0)
+  pal.x_ig_rect_fill(102, 8, lw + 24, 28, C.pill, 8)
+  pal.x_ig_text(114, 13, 15, C.hud, label, 0)
+  if g.switch_notice then
+    local msg = g.switch_notice
+    local mw = pal.x_ig_text_size(msg, 11, 0)
+    pal.x_ig_rect_fill(10, 42, math.min(ig.w - 20, mw + 20), 24,
+                       0x4a2735f4, 7)
+    pal.x_ig_text(20, 47, 11, C.unsaved, msg, 0)
+  end
 
   -- Logical canvas zoom remains captured/rewindable; the adjacent Aa control
   -- owns machine-local content + fixed-chrome accessibility multipliers.
@@ -1407,6 +1434,25 @@ function M.quit_flush()
   M.kinds.project.drop_ephemeral(M)
   M.kinds.text.flush(M) -- pending edit gestures reach their journals
   save_now()
+end
+
+-- A VM project switch has a stricter ordering than an ordinary canvas action:
+-- refuse while an exporter owns a sibling temp, restore the live present if
+-- rewind is parked, close any in-progress text gesture into its journal, and
+-- durably save the editor session before releasing ephemeral resources.
+function M.prepare_switch(action)
+  if not M.on then return true end
+  if M.kinds.project.guard_export(M, action or "switching projects") then
+    return nil, "finish or cancel the export before "
+      .. tostring(action or "switching projects")
+  end
+  if M.parked then M.unpark(false) end
+  M.kinds.text.flush(M)
+  local ok, err = save_now()
+  if not ok then return nil, "cannot save editor session: " .. tostring(err) end
+  drop_ephemeral()
+  M.on = false
+  return true
 end
 
 return M

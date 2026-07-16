@@ -2882,6 +2882,19 @@ local function t_atomic_write()
   check(recent.remove("remove") == true
         and pal.read_file(recent.path) == "keep\nalso-keep",
         "recent prune: retry publishes filtered list")
+  pal.write_file(recent.path, "old/path\nkeep\nnew/path")
+  ok, err = recent.replace("old/path", "new/path", { _fail = "rename" })
+  check(not ok and pal.read_file(recent.path) == "old/path\nkeep\nnew/path",
+        "recent repair: failed replacement preserves stale discoverability")
+  check(recent.replace("old/path", "new/path") == true
+        and pal.read_file(recent.path) == "new/path\nkeep",
+        "recent repair: atomically replaces, promotes, and deduplicates")
+  pal.write_file(recent.path, "C:\\Games\\one\\\nC:/Games/one/\nkeep")
+  check(recent.note("C:\\Games\\two\\") == true
+        and pal.read_file(recent.path) == "C:/Games/two\nC:/Games/one\nkeep",
+        "recent lifecycle: host separators normalize and legacy aliases collapse")
+  check(not recent.note("bad\npath") and not recent.remove(""),
+        "recent lifecycle: line-breaking and empty paths are rejected")
   pal.x_remove(recent.path)
   recent.path = old_recent
 end
@@ -2902,6 +2915,26 @@ return {
   local meta, err = project.decode(src, "@project-fixture")
   check(meta and meta.custom.values[3] == 8,
         "project: declarative source decodes plain nested data")
+  local root, inspected = project.inspect_root("C:\\Games\\my game\\", function(path)
+    if path == "C:/Games/my game/project.lua" then return src end
+  end)
+  check(root == "C:/Games/my game" and inspected
+        and inspected.name == "old name",
+        "project lifecycle: native folder path normalizes and validates")
+  local missing, merr = project.inspect_root("/missing", function() return nil, "gone" end)
+  check(not missing and merr:find("not a cosmic2d project", 1, true)
+        and merr:find("/missing/project.lua", 1, true),
+        "project lifecycle: a non-project folder is actionable")
+  local invalid, ierr = project.inspect_root("/broken", function()
+    return "return { internal_w = 0 }"
+  end)
+  check(not invalid and ierr:find("internal_w", 1, true),
+        "project lifecycle: selected metadata must pass boot validation")
+  check(not project.normalize_root("bad\npath")
+        and project.normalize_root("/") == "/"
+        and project.normalize_root("C:\\") == "C:/"
+        and project.normalize_root("./projects/demo/") == "projects/demo",
+        "project lifecycle: persistent root grammar preserves filesystem roots")
   local blocked, berr = project.decode("return { name = os.getenv('X') }", "@bad")
   check(not blocked and berr:find("project metadata failed", 1, true),
         "project: empty environment rejects ambient configuration code")
@@ -6122,6 +6155,14 @@ local function t_ed_domain()
   ed.launch(tmproot() .. "/cosmic_selftest_ed")
   ed.frame() -- x_ig_frame() is nil headless -> must return quietly
   check(ed.on and ed.doc ~= nil, "ed: launch loads a doc headless")
+  ed.g.project_exports = { lifecycle = {
+    job = { phase = "building", terminal = false }
+  } }
+  local switched, switch_err = ed.prepare_switch("returning to projects")
+  check(not switched and ed.on and switch_err:find("cancel", 1, true),
+        "ed lifecycle: active export guards return to picker")
+  ed.g.project_exports.lifecycle.job.terminal = true
+  ed.kinds.project.drop_ephemeral(ed)
   ed.on, ed.doc, ed.root = was_on, was_doc, was_root
   view.mode = was_mode
 end

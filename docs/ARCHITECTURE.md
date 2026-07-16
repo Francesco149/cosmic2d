@@ -515,6 +515,15 @@ Linux retargets the root ELF to `$ORIGIN/lib`; Windows uses a project-resourced
 Unicode delegating launcher while its same-named engine under `bin/` retains
 cosmic2d identity and the D052 basename lock.
 
+The project picker also remembers arbitrary external roots in `.recent.dat`;
+opening does not copy or take ownership of them. Native chooser paths normalize
+to forward slashes, pass through `cm.project`'s exact boot validator, and enter
+recents atomically before the project-switch reboot. A stale recent entry can
+be atomically replaced with a newly chosen root or removed without touching
+project files. The editor uses `cm.main.switch_project` for its explicit return
+to the picker, after its recovery state and history cross their durability
+barriers.
+
 ## Conventions
 
 - C: C11, `-Wall -Wextra`, prefix `pal_`, no global mutable state outside the

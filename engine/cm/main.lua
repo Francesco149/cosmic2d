@@ -270,19 +270,20 @@ end
 --     named like itself, LOCKED (editor/console dead, --edit ignored);
 --  3. the picker cartridge — the engine's front door.
 local function resolve_project(args)
-  if args.project then return end
   for _, b in ipairs(pal.buf_list()) do
     if b.name == "boot.next" then
       local payload = pal.buf("boot.next", b.size):str(0, b.size)
       local path, mode = payload:match("^([^\n]+)\n?(.*)$")
       for _, ob in ipairs(pal.buf_list()) do pal.buf_free(ob.name) end
       args.project = path
-      if mode == "edit" then args.edit = true end
+      args.edit = mode == "edit" and true or nil
+      args.picker = mode == "picker" and true or nil
       pal.log("[boot] picker switch -> " .. path
               .. (args.edit and " (editor)" or ""))
       return
     end
   end
+  if args.project then return end
   local exe = (pal.exe or ""):gsub("\\", "/"):match("([^/]+)$") or "cosmic"
   exe = exe:gsub("%.exe$", ""):lower()
   -- the editor launcher (root of the shipped engine, the human's ask): opens
@@ -313,6 +314,35 @@ local function resolve_project(args)
   args.project = "projects/picker"
   args.picker = true
   args.edit = nil -- the picker IS a front door; --edit applies to what it opens
+end
+
+-- One project-switch door for both the picker and the editor's explicit back
+-- action. The editor must first publish its recovery state; the trace store is
+-- then drained before the VM that owns its bookkeeping goes away. The carrier
+-- itself is C-owned named state, so it survives exactly one requested reboot.
+function M.switch_project(path, mode)
+  local root, err = cm.require("cm.project").normalize_root(path)
+  if not root then return nil, err end
+  if mode ~= "edit" and mode ~= "play" and mode ~= "picker" then
+    return nil, "unknown project switch mode: " .. tostring(mode)
+  end
+  if M.ed and M.ed.on then
+    local ok
+    ok, err = M.ed.prepare_switch("returning to projects")
+    if not ok then return nil, err end
+  end
+  if M.trace then
+    M.trace.record_stop()
+    if not M.trace.ring_flush() then
+      pal.log("[trace] project switch could not persist an exact history tail")
+    end
+  end
+  local payload = root .. "\n" .. mode
+  local carrier = pal.buf("boot.next", #payload)
+  carrier:setstr(0, payload)
+  pal.log("[main] switch -> " .. root .. " (" .. mode .. ")")
+  pal.x_reboot()
+  return true
 end
 
 -- remember successfully booted projects (most recent first, deduped,
