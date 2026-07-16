@@ -70,7 +70,7 @@ local KNOBS = {
   },
   goal = { -- the pickup loop (pickups.lua)
     r = 0.9,        -- gem pickup radius (the star scales it up)
-    respawn = 300,  -- frames until a collected gem returns
+    respawn = 300,  -- frames until the goal star returns (gems only on lap)
     pop = 12,       -- pickup ghost: expand-and-fade frames
     banner = 100,   -- CLEAR banner frames
     spin = 0.05,    -- gem spin, rad/frame (render-class)

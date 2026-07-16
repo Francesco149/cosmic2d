@@ -1,13 +1,16 @@
 -- pickups — the goal loop that makes the course a game: gems hover along
 -- the course (level.gems) and a big goal star tops the accent tower
--- (level.goal). Touch a gem: score++, coin sfx, a pop ghost, and it
--- respawns after goal.respawn frames (the world stays alive on autoplay
--- loops). Touch the star: lap++, bell fanfare, CLEAR banner, every gem
--- respawns — a fresh lap. Every value is a live knob (doc.knobs.goal).
+-- (level.goal). Touch a gem: score++, coin sfx, a pop ghost — and it STAYS
+-- collected (playtest 2026-07-16: timed gem respawn read as a bug). Touch
+-- the star: lap++, bell fanfare, CLEAR banner, every gem respawns — a
+-- fresh lap; only the star itself returns on a timer (goal.respawn) so
+-- laps can repeat. Every value is a live knob (doc.knobs.goal).
 --
--- Determinism: sim state = per-item respawn countdowns in the named buffer
--- bounce.pickups ([0] goal, [4*i] gem i; 0 = present) + doc counters
--- (score/laps/clear_t). step() reads player pos, writes timers, fires sfx
+-- Determinism: sim state = per-item timers in the named buffer
+-- bounce.pickups ([0] goal, [4*i] gem i). Gem encoding: 0 = present,
+-- k.pop..1 = collected + pop-ghost countdown, -1 = collected for the lap.
+-- Goal keeps the respawn countdown (k.respawn -> 0 = back). Doc counters:
+-- score/laps/clear_t. step() reads player pos, writes timers, fires sfx
 -- (cm.snd is sim-side). Spin/bob are RENDER-class (emit reads the frame
 -- counter; the sim never sees them — pickup tests use the rest position).
 
@@ -56,12 +59,12 @@ function M.step()
     if t == 0 then
       local dx, dy, dz = g[1] - px, g[2] - py, g[3] - pz
       if dx * dx + dy * dy + dz * dz < r2 then
-        buf:f32(4 * i, k.respawn)
+        buf:f32(4 * i, k.pop)
         d.score = d.score + 1
         audio.sfx("coin")
       end
-    else
-      buf:f32(4 * i, t - 1)
+    elseif t > 0 then -- pop ghost ticking down; then hold at -1 for the lap
+      buf:f32(4 * i, t > 1 and t - 1 or -1)
     end
   end
   local t = buf:f32(0)
@@ -115,9 +118,9 @@ end
 function M.emit_fx(out, frame)
   local k = state.doc.knobs.goal
   local n = 0
-  local function ghost(t, p, phase, base_scale, col)
-    if t > 0 and t > k.respawn - k.pop then
-      local u = (k.respawn - t) / k.pop -- 0 at pickup -> 1 gone
+  local function ghost(rem, p, phase, base_scale, col) -- rem pop frames left
+    if rem > 0 and rem <= k.pop then
+      local u = (k.pop - rem) / k.pop -- 0 at pickup -> 1 gone
       n = n + emit_gem(out, p, frame, phase, base_scale * (1 + 1.6 * u),
                        col, ((1 - u) * 200) // 1)
     end
@@ -125,7 +128,7 @@ function M.emit_fx(out, frame)
   for i, g in ipairs(level.gems) do
     ghost(buf:f32(4 * i), g, i, 1, GEM_COL)
   end
-  ghost(buf:f32(0), level.goal, 0, GOAL_SCALE, GOAL_COL)
+  ghost(buf:f32(0) - (k.respawn - k.pop), level.goal, 0, GOAL_SCALE, GOAL_COL)
   return n
 end
 

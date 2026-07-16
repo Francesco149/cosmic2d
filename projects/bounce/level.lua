@@ -61,10 +61,14 @@ local PRISMS = {
   { "stone", 8, 0.8, 0.65, 4.5, -5, 28.5, 0, 1 },
 }
 
--- { mat, prof, n, cx, cz, y0 } — lathe deco, no collider (the dome sits
--- inside its tower's footprint). prof pairs are proto's graybox dome * 0.8.
+-- { mat, prof, n, cx, cz, y0, col } — lathes. col=true builds a stacked
+-- AABB per profile ring (half = the UPPER ring radius * chord apothem, so
+-- every box stays inside the round visual — D3D-011 direction; degenerate
+-- tip rings are skipped, the apex stays soft). The dome tops the round
+-- tower and is jump-reachable from the goal tower (playtest 2026-07-16:
+-- phased into it), so it is solid. prof pairs are proto's dome * 0.8.
 local LATHES = {
-  { "metal", { 2.0, 0, 1.76, 0.8, 1.12, 1.44, 0, 1.76 }, 12, 30, 8, 5.5 },
+  { "metal", { 2.0, 0, 1.76, 0.8, 1.12, 1.44, 0, 1.76 }, 12, 30, 8, 5.5, true },
 }
 
 -- { mat, sx, sy, sz, cx, cz, y0, yaw } — y-rotated slabs. Collider = the
@@ -124,6 +128,20 @@ function L.build()
       local a = m.max(p[3], p[4]) * m.cos(m.pi / p[2])
       L.colliders[#L.colliders + 1] =
         { p[6] - a, p[8], p[7] - a, p[6] + a, p[8] + p[5], p[7] + a }
+    end
+  end
+  for _, lt in ipairs(LATHES) do
+    if lt[7] then
+      local ca = m.cos(m.pi / lt[3])
+      local prof = lt[2]
+      for i = 1, #prof - 2, 2 do
+        local a = m.min(prof[i], prof[i + 2]) * ca
+        local ry0, ry1 = lt[6] + prof[i + 1], lt[6] + prof[i + 3]
+        if a > 0.3 and ry1 > ry0 then
+          L.colliders[#L.colliders + 1] =
+            { lt[4] - a, ry0, lt[5] - a, lt[4] + a, ry1, lt[5] + a }
+        end
+      end
     end
   end
   for _, dc in ipairs(DECO) do
