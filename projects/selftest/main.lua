@@ -3272,7 +3272,8 @@ local function t_project_location()
   -- Integrate the policy with the real PAL + atomic .recent.dat seam. This
   -- covers the transient parent-permission probes that the fake boundary
   -- above intentionally reduces to booleans.
-  local real_base = tmproot() .. "/cosmic_selftest_location_real"
+  local real_base = project.normalize_root(
+    tmproot() .. "/cosmic_selftest_location_real")
   local real_source = real_base .. "/source"
   local real_parent = real_base .. "/destination parent"
   local real_moved = real_parent .. "/source"
