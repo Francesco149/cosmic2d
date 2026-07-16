@@ -741,9 +741,11 @@ function M.draw()
           location.job_cancel(a.job)
         end
       elseif a.archived then
-        pal.x_ig_text(px + 18, py + 90, 10, C.dim, "archived to", 0)
+        -- The parent is on the "into" row; the dated file name is the news.
+        pal.x_ig_text(px + 18, py + 90, 10, C.dim, "archived as", 0)
         pal.x_ig_clip_push(px + 18, py + 106, pw - 36, 16)
-        pal.x_ig_text(px + 18, py + 106, 11, C.accent, a.archived, 1)
+        pal.x_ig_text(px + 18, py + 106, 11, C.accent,
+                      a.archived:match("([^/]+)$") or a.archived, 1)
         pal.x_ig_clip_pop()
         pal.x_ig_text(px + 18, py + 132, 10, C.dim,
                       "The folder is unchanged. Deleting now keeps this "
@@ -794,7 +796,8 @@ function M.draw()
           armed = a.rename == a.folder
           pal.x_ig_text(px + 18, py + 106, 10, C.dim, "safety net", 0)
           pal.x_ig_clip_push(px + 18, py + 122, pw - 36, 16)
-          pal.x_ig_text(px + 18, py + 122, 11, C.accent, a.archived, 1)
+          pal.x_ig_text(px + 18, py + 122, 11, C.accent,
+                        a.archived:match("([^/]+)$") or a.archived, 1)
           pal.x_ig_clip_pop()
           if a.error then
             pal.x_ig_clip_push(px + 18, py + 146, pw - 36, 18)
