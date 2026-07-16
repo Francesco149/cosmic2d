@@ -9,11 +9,18 @@
 
 local M = select(2, ...) or {}
 
-local archive = cm.require("cm.archive")
-
 M.API = 14
-M.MAX_FILE = archive.MAX_FILE
-M.MAX_ZIP_ENTRIES = archive.MAX_ZIP_ENTRIES
+M.MAX_FILE = 0xffffffff -- must match cm.archive (pinned by selftest)
+M.MAX_ZIP_ENTRIES = 65535
+
+-- The container writers live in cm.archive. The host packager dofile()s this
+-- module for player_surface alone (no cm global), so the engine-only
+-- dependency must load lazily.
+local archive_mod
+local function archive()
+  archive_mod = archive_mod or cm.require("cm.archive")
+  return archive_mod
+end
 
 local function trim(s)
   return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -109,7 +116,7 @@ end
 local function fail(message) error(tostring(message), 0) end
 
 local function add_entry(ctx, entry)
-  archive.check_rel(entry.name)
+  archive().check_rel(entry.name)
   if ctx.names[entry.name] then fail("duplicate archive path: " .. entry.name) end
   ctx.names[entry.name] = true
   entry.mode = entry.mode or 420 -- 0644
@@ -359,7 +366,7 @@ local function run(job, opts)
   job_yield(job, "collecting", "walking portable runtime and project", 0, 1)
   collect(ctx, checked)
   job.total = #ctx.entries + 1
-  local writer = archive.writer {
+  local writer = archive().writer {
     format = ctx.target == "windows" and "zip" or "tar.gz",
     crc = fs.crc,
     sink = function(bytes)

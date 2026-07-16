@@ -3670,6 +3670,13 @@ local function t_project_archive()
   local source, parent = "/projects/original π", "/dest parent"
   local bytes = project.PROJECT_TMPL:gsub("__NAME__", "archive test")
 
+  -- cm.export re-declares these so the host packager can dofile() it without
+  -- the cm global; the values must stay the shared writer's exact limits.
+  check(cm.require("cm.export").MAX_FILE == cm.require("cm.archive").MAX_FILE
+        and cm.require("cm.export").MAX_ZIP_ENTRIES
+            == cm.require("cm.archive").MAX_ZIP_ENTRIES,
+        "project archive: export mirrors the shared ZIP32 limits exactly")
+
   local dirs, files, probe_fail
   local function reset()
     dirs = {
