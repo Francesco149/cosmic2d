@@ -220,12 +220,17 @@ Source of truth for byte layouts: the headers of `engine/cm/chunk.lua`,
 - **Snapshot** (`CSNP`): CODE (the D012 bundle: name/path/source triples),
   BUFS (every named buffer, sorted), DOCT (canonical doc bytes). Trace
   keyframes reuse the format without CODE.
-- **Input record** (cm.input, 10 bytes/frame): u32 action down-bits in
+- **Input record** (cm.input): 10 frozen v1 bytes — u32 action down-bits in
   definition order (≤32 actions), i16 mouse x/y in internal pixels, u8
-  mouse-button bits, i8 wheel steps. Applied state (cur+prev) lives in the
-  `cm.input` buffer, so edges (pressed/released) are snapshot-consistent.
+  mouse-button bits, i8 wheel steps — then zero or more additive v2
+  extensions framed `u8 tag, u8 len, payload` (D082; unknown tags skip,
+  malformed framing errors). Tag 1 = PAD: complete gamepad state, up to
+  four ascending slots of u32 SDL-numbered buttons + six i8 axes,
+  deadzoned and quantized on the live side only. Applied state (cur+prev)
+  lives in the `cm.input` and (pad records/readers only) `cm.input.pad`
+  buffers, so edges (pressed/released) are snapshot-consistent.
   Live sampling has "sticky tap": a sub-frame press+release still lands one
-  frame's bit.
+  frame's bit (keys and pad buttons alike).
 - **Trace** (`CTRC`): HEAD (keyframe interval, project, action names), SNAP
   (full starting snapshot), per-frame FRAM (input record + per-buffer
   records: kind 0 = `delta1` vs previous frame, 1 = created/resized with
@@ -236,7 +241,8 @@ Source of truth for byte layouts: the headers of `engine/cm/chunk.lua`,
   (changed sources on mid-recording hot reload, applied at the same frame
   on replay), TAIL (frame count). v1 lists every buffer every frame.
 - **Engine sim buffers**: `cm.sim` = `[0]` i64 frame counter, `[8..39]`
-  xoshiro256++ s0..s3, rest reserved. `cm.input` = documented in input.lua.
+  xoshiro256++ s0..s3, rest reserved. `cm.input` and `cm.input.pad` =
+  documented in input.lua.
 
 ## Determinism (iron rules)
 

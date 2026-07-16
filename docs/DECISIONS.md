@@ -3308,3 +3308,79 @@ checks, the staged native Windows executable 23,543; `nix run .#test` is
 ALL GREEN. Inspected captures on llm-feed: the chooser (default, arcade
 selected, 300% chrome, fresh-archive, native Windows) and the three
 completed/mid-run games.
+
+## D082 — input record v2: additive tagged extensions carry quantized pad state (A4, 2026-07-17)
+
+**Context.** A4 needs gamepads in the deterministic input path. The v1
+input record is FROZEN at 10 bytes (action bits, mouse, buttons, wheel)
+and is the per-frame unit of every historical trace; the golden suite
+replays those bytes through `cm.input.apply` and byte-compares all sim
+state, so any extension that changes how a 10-byte record applies — or
+that makes the engine allocate new sim state under a v1 replay — breaks
+the determinism oracle. Analog axes add a second hazard: raw hardware
+values pass through host float/driver behavior and jitter per LSB, which
+must never enter the sim as unreproducible input.
+
+**Decision.** The record becomes **self-describing and additive**: the
+first 10 bytes are exactly v1, followed by zero or more extensions framed
+`u8 tag, u8 len, len bytes`. A bare v1 record is therefore a valid v2
+record, records of different lengths mix freely inside one trace (FRAM
+already stores them length-prefixed), and `apply()` **skips unknown tags**
+(future records degrade gracefully) while rejecting malformed framing or
+a malformed known extension loudly. **Tag 1 = PAD**: the complete gamepad
+state for the frame — `u8 n`, then up to four 11-byte entries in canonical
+ascending-slot order (`u8 slot 0..3`, `u32` SDL3-numbered button bits,
+six `i8` quantized axes in SDL order lx ly rx ry lt rt). Entry presence IS
+the connected flag; hot-plug appears in the record purely as an entry
+(dis)appearing at a frame boundary, and device identity (SDL instance →
+slot assignment) never enters the record or the sim. **Deadzone and
+quantization happen on the live side only**, in exact integer math
+(`quantize_axis`: magnitudes at or inside the deadzone collapse to 0, the
+remainder rescales to ±127 with floor division, extremes reach exactly
+±127); the recorded value is authoritative, so replay and cross-platform
+verify never re-derive axis math, and retuning the deadzone (an A4
+options knob, default 8000) can never invalidate a trace. Applied pad
+state lives in the new **`cm.input.pad`** named buffer (96 bytes, four
+24-byte slots holding cur/prev buttons, cur/prev axes, cur/prev
+connected), created only by a PAD-carrying record or a pad reader — both
+sim-deterministic — so a v1 replay never observes it. `apply()` touches
+pad state **iff the record carries a PAD extension** (pure record→state;
+no ambient conditionals that could differ between record and verify
+time); the live sampler owns liveness via a latch (`M._pad_live`, set by
+pad connects, PAD-carrying applies, and pad readers, surviving hot
+reload on M) that keeps the extension coming — `n=0` when nothing is
+connected — so held buttons always meet their release edge, while
+keyboard-only sessions stay byte-identical to v1. Sub-frame pad-button
+taps get the same sticky-tap guarantee as keys. Later A4 packets bind
+gamepad buttons to actions **live-side into the existing v1 action
+bits**, so rebinding never invalidates traces either. `pad_reset()` is
+the explicit live-side domain reset for project boot and tests. The
+timeline's input-transition marker now also hashes pad slot+button words
+(never axes — quantized stick drift must not saturate the lane).
+
+**Consequences.** The record format is extensible without another design
+round: a future tag (e.g. higher-resolution axes, touch) is one more
+framed chunk. The alpha envelope is 4 pads × 32 buttons × 6 axes at i8
+resolution — revisit via a new tag if a genre demo genuinely needs finer
+axes. Records grow by 3 bytes/frame (latched, no pads) to 13+11×n bytes;
+the PAD extension keeps being emitted for the rest of a session once
+latched, which is honest and negligible. A restored snapshot carrying pad
+bytes into a session whose games poll pads re-latches the domain through
+the reader path, keeping the stream self-consistent. SDL discovery/
+hot-plug/slot assignment and the rebind UI are the next A4 packets and
+purely live-side by this design.
+
+**Proof.** Linux selftest 23,585 checks and the staged native Windows
+executable 23,587: quantization vectors (deadzone
+inclusivity, interior values, exact ±127 extremes, override, monotonic +
+symmetric sweep), dormant-domain v1 purity, virgin-reader neutrality,
+n=0 latch emission and persistence after the last disconnect, canonical
+single/two-pad encodings, press/hold/release edges, sticky taps,
+deadzone-at-sampling, disconnect release edges, bare-v1 pad
+untouchability, unknown-tag skipping, every malformed-record rejection
+(truncated framing, over-length, duplicate extension, count/length/slot
+violations), snapshot edge restoration, reader argument validation, and
+pad_reset v1 purity. `nix run .#test` is ALL GREEN: every historical
+trace verifies byte-exactly and all pixel/audio goldens match, and the
+Linux-recorded 830-frame `smoke_kitcheck` trace verifies byte-exactly on
+native Windows through the new apply path.

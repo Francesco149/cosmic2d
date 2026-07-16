@@ -177,8 +177,10 @@ export a project without a terminal.
 
 Goal: exported desktop games meet basic player expectations.
 
-- [ ] Design input record v2/additive chunks for gamepad buttons and quantized
+- [x] Design input record v2/additive chunks for gamepad buttons and quantized
   axes without invalidating v1 traces; document the determinism decision.
+  (D082: tagged extensions after the frozen 10 v1 bytes; live-side
+  deadzone/quantization; `cm.input.pad` buffer; hot-plug is live-only.)
 - [ ] SDL gamepad discovery/hot-plug, standard buttons/axes, deadzones, device
   assignment, and keyboard fallback.
 - [ ] Rebind UI/API with multiple bindings per action and conflict handling;

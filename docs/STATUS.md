@@ -3,18 +3,56 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — starter templates close A3; A4 input/gamepad design next (2026-07-17)
+## Current handoff — input record v2 designed (D082); SDL gamepad discovery next (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A3 are complete.** A3's full promise holds: from a fresh archive a
-user can create (from four starter templates), import, rename, relocate,
-duplicate, archive, delete, edit, play, and export projects entirely
-through the shipped UI. Gamepad/player settings (A4), shared genre-neutral
-runtime slices and demos (A5/A6), the complete rewind product UI (A7), and
-the release-candidate pass (A8) remain the open alpha gates.
+**A0–A3 are complete and A4 has begun.** A3's full promise holds: from a
+fresh archive a user can create (from four starter templates), import,
+rename, relocate, duplicate, archive, delete, edit, play, and export
+projects entirely through the shipped UI. The rest of A4 (SDL gamepads,
+rebinding, options, player storage), shared genre-neutral runtime slices
+and demos (A5/A6), the complete rewind product UI (A7), and the
+release-candidate pass (A8) remain the open alpha gates.
+
+**D082 closes the input-record-v2 design packet, the first A4 line.** The
+input record is now self-describing and additive: the first 10 bytes stay
+exactly the frozen v1 unit, followed by zero or more `u8 tag, u8 len,
+payload` extensions — so a bare v1 record is a valid v2 record, every
+historical trace replays unchanged, and record lengths mix freely inside
+one trace. `apply()` skips unknown tags and rejects malformed framing
+loudly. Tag 1 = PAD carries the complete per-frame gamepad state: up to
+four canonical ascending slots of u32 SDL3-numbered buttons plus six i8
+quantized axes. Deadzone (default 8000, a future options knob) and
+quantization to ±127 happen live-side only in exact integer math; the
+recorded value is authoritative, so replay/cross-platform verify never
+re-derive axis math and retuning deadzones or rebinding can never
+invalidate a trace. Applied pad state lives in the new 96-byte
+`cm.input.pad` buffer (cur/prev buttons/axes/connected per slot, edges
+snapshot-consistent), created only by PAD-carrying records or pad readers.
+apply() touches pad state iff the extension is present; a live-side latch
+keeps the extension coming (n=0 when empty) once the domain activates so
+held buttons always meet their release edge, while keyboard-only sessions
+stay byte-identical to v1. Pad buttons get the same sticky-tap guarantee
+as keys; readers are `pad_down/pressed/released`, `pad_axis`,
+`pad_connected` with SDL-numbered constants. Device identity and hot-plug
+are live-only: connect/disconnect is entry presence at a frame boundary.
+The timeline's input-transition marker now also sees pad slot+button words
+(never axes).
+
+**D082 proof:** Linux selftest passes **23,585 checks** and the staged
+native Windows executable **23,587** on PAL API 17 (44 new KATs:
+quantization vectors/monotonicity/symmetry, v1 purity, latch semantics,
+canonical encodings, edges/taps/disconnects, every malformed-record
+rejection, snapshot edge restoration, pad_reset). `nix run .#test` is
+ALL GREEN — every historical trace verifies byte-exactly and all
+pixel/audio goldens match — and the Linux-recorded 830-frame
+`smoke_kitcheck` trace verifies byte-exactly on native Windows through
+the new apply path. `tools/build-windows.sh` refreshed the full Windows
+stage (4 durable state entries preserved) and Start Menu shortcut. No
+visual surface changed, so there are no new captures.
 
 **D081 closes the starter-template packet and with it A3.**
 `cm.project.TEMPLATES` registers blank/platformer/top-down/arcade; blank
@@ -366,18 +404,20 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **input record v2 design** — the first A4 line.
-Design the additive record chunks for gamepad buttons and quantized axes
-so v1 keyboard/mouse traces stay byte-valid and verifiable, and write the
-determinism decision down as an ADR before touching SDL: what is sampled
-(digital buttons, quantized axis values, deadzone policy), where it lives
-in the record layout, how per-frame sampling stays exact across replay
-and cross-platform verify, and how device identity/hot-plug interacts
-with recording. Exit with the documented decision, `cm.input` codec KATs
-for the extended record (round-trip, v1 compatibility, edge semantics),
-and every historical trace still verifying byte-exactly. SDL gamepad
-discovery/hot-plug and the rebind UI are the following packets; the
-starter templates now give A4's binding-display line real surfaces.
+**Exact next packet:** **SDL gamepad discovery/hot-plug** — the second A4
+line. Wire real controllers into the D082 record: PAL-side SDL3 gamepad
+open/close on hot-plug events, a live-side device→slot assignment policy
+(first-connected claims the lowest free slot 1..4; keep the policy in Lua
+where it stays inspectable), translation of SDL button/axis events into
+the existing `cm.input` feed shapes (`pad`/`padbtn`/`padaxis`), and
+`pad_reset()` called at project boot so a new session never inherits the
+previous latch. Exit with: a physical (or SDL virtual) controller driving
+a starter template, records carrying the PAD extension through the real
+windowed loop, a recorded gamepad trace that verifies byte-exactly on
+Linux and native Windows, and hot-plug mid-recording proven benign. The
+rebind UI/API and the binding-display line in the starter templates are
+the packets after; SDL virtual gamepads (`SDL_AttachVirtualJoystick`) look
+like the right headless test vehicle for the discovery layer.
 
 There is no known blocker or human-only verification required.
 
