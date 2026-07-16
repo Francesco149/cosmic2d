@@ -522,12 +522,19 @@ recents atomically before the project-switch reboot. A stale recent entry can
 be atomically replaced with a newly chosen root or removed without touching
 project files. The editor uses `cm.main.switch_project` for its explicit return
 to the picker, after its recovery state and history cross their durability
-barriers. A ready recent tile can also reveal its folder or rename/move it on
-the same filesystem. `cm.project_location` refuses the active editor root,
-aliases, missing/invalid sources, existing or nested destinations, and
-unwritable parents before PAL API v16's collision-safe directory rename. Only
-after that succeeds does one atomic recents replacement advance the pointer;
-if it fails, the old stale tile deliberately remains as a repair handle.
+barriers. A ready recent tile can also reveal its folder, rename/move it on
+the same filesystem, or duplicate it. `cm.project_location` refuses the active
+editor root, aliases, missing/invalid sources, existing or nested
+destinations, and unwritable parents before PAL API v16's collision-safe
+directory rename. Only after that succeeds does one atomic recents replacement
+advance the pointer; if it fails, the old stale tile deliberately remains as a
+repair handle. Duplicate (D078) is a cancellable coroutine copy job: the saved
+project minus machine/editor state (`.ed`, `video.dat`) streams into a unique
+dot-prefixed staging sibling that `pal.list_dir` pruning keeps invisible, the
+staged root revalidates through the boot contract, and publication is the same
+no-replace rename followed by an atomic recents note. Failures and cancel
+clean staging and never write the source; a post-publication recents failure
+reports the exact new root for **open folder** repair.
 
 ## Conventions
 

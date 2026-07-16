@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — project location actions complete; duplicate next (2026-07-16)
+## Current handoff — project duplicate complete; archive/delete next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -13,6 +13,47 @@ A0–A2 are complete and A3 is in progress. Broader project lifecycle,
 gamepad/player settings, shared genre-neutral runtime slices and demos,
 complete rewind product UI, and the release-candidate pass remain explicit
 alpha gates.
+
+**D078 closes the duplicate packet.** Every ready recent tile's `...` menu now
+offers **duplicate**: the native folder dialog chooses an existing destination
+parent, a modal edits the folder name (default `<source> copy`) under D077's
+grammar with live validation, and a cancellable coroutine job copies the saved
+project one file per step with a progress bar. Machine/editor state never
+enters a duplicate: `.ed` (and other dot-directory tool state) is excluded by
+`pal.list_dir`'s pruning contract and machine-local `video.dat` by name. The
+copy lands in a unique dot-prefixed staging sibling that neither the picker
+scan nor the copy walk can observe, the staged root must revalidate through
+the exact boot contract, and the only authoritative transition is PAL API 16's
+atomic no-replace rename followed by an atomic recents note. Preflight refuses
+the active editor root, self-nesting, collisions, aliases, links, invalid
+sources, and unwritable parents before any write; every failure or cancel
+cleans staging, publishes nothing, and never writes the source. Esc/outside
+clicks on a running job can only request cancellation. A recents failure after
+publication names the exact new root for **open folder** repair, and the
+shared `remove_tree`/staged-copy shape is reserved for the later
+cross-filesystem move. The compacted duplicate modal stays fully usable at
+300% fixed chrome.
+
+**D078 proof:** Linux selftest passes **23,446 checks** and the staged native
+Windows executable **23,448** on PAL API 16; `nix run .#test` is ALL GREEN
+across release manifests, every historical trace, and all pixel/audio goldens.
+Fake-fs KATs pin every preflight refusal, machine-state omission, recents
+ordering, injected read/write/publish/recents failures, and mid-copy cancel
+with a byte-identical source and no staging leftovers; real-PAL runs prove
+spaced/UTF-8 duplication plus injected atomic-write and publish failures
+against real staged files. A checksum-verified fresh public Linux archive in
+stock Debian 13 duplicated the external `projet π original` from a spaced
+source area into `destination était ici/projet π copie` through the real
+post-dialog accept path, omitted `.ed`/`video.dat`, kept recents pointing at
+both roots, booted both independently, and showed both tiles in a fresh picker
+process (a read-only-install variant also exercised the honest post-publication
+recents-failure report, which named the exact published root). The fresh
+public Windows ZIP repeated the flow natively over spaced/π `C:` paths with a
+legacy backslash parent spelling, booted both roots, and restarted into a
+picker showing both. Inspected menu, ready-modal, 3,000-file mid-copy,
+completion, 300%, and both archive-restart captures are on llm-feed. A
+mid-copy duplicate of a 3,000-file fixture streams at ~12 files per rendered
+frame with honest per-file progress.
 
 **D077 closes the first project-location packet.** Every ready recent tile now
 has a `...` menu for **reveal**, **rename folder**, and **move folder**. Rename
@@ -192,19 +233,23 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** add failure-safe **duplicate** from a ready picker tile.
-Choose an existing destination parent and editable folder name, copy the saved
-project into a unique non-authoritative sibling staging directory, omit
-machine/editor state (`.ed` and `video.dat`), validate the staged root, then
-publish it with one atomic no-replace rename before adding its recent tile.
-Expose progress and cancellation for large trees. Inject read/write/publish
-failures and prove the complete source plus every colliding destination remain
-untouched and partial staging is cleaned. Exit when fresh Linux and Windows
-archives can duplicate an external project through spaced/non-ASCII paths and
-open both independent roots. Reuse the recursive-copy primitive for a later
-cross-filesystem move; leave archive/delete confirmation, richer picker
-sort/search/keyboard/scrolling/thumbnails, and starter-template expansion for
-later A3 packets.
+**Exact next packet:** add confirmed **archive/delete** from a ready picker
+tile, completing the A3 project-actions line. Archive streams the saved
+project (same `.ed`/`video.dat` omission and link refusal as D078) into a
+dated `.tar.gz`/`.zip` beside a user-chosen destination through the existing
+temp-then-publish exporter shape, with progress, cancel, and an explicit
+no-replace collision stance. Delete requires an explicit typed or two-step
+confirmation naming the folder, refuses the active editor root and aliases,
+and only then removes the tree and its recent tile; a delete offered directly
+from the archive-success state may reuse that archive as its safety net.
+Inject archive-write, publish, and partial-delete failures and prove a
+readable source or an explicit actionable error always survives — a
+half-deleted project must still show a repairable tile, never silently vanish.
+Exit when fresh Linux and Windows archives can archive and then delete an
+external spaced/non-ASCII project, the archive re-imports through open folder
+after extraction, and an injected failure leaves an honest recoverable state.
+Leave richer picker sort/search/keyboard/scrolling/thumbnails and
+starter-template expansion for later A3 packets.
 
 There is no known blocker or human-only verification required.
 

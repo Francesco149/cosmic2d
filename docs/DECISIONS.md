@@ -3088,3 +3088,56 @@ permissions, native failure ordering, post-move recents recovery, and real
 PAL-backed move/rename plus atomic recents. Inspected 100% and 300% picker
 captures cover the folder and rename overlays; full platform/release proof is
 recorded in `STATUS.md`.
+
+## D078 — duplicate is a staged, cancellable copy published by one no-replace rename (A3, 2026-07-16)
+
+**Context.** D077 relocates a project without copying bytes, but starting a
+variant of an existing project still required a file manager and manual
+knowledge of which files are project source. A naive recursive copy directly
+into the destination can be interrupted into a half-project the picker would
+happily boot, can silently follow links, and would drag along machine/editor
+state (`.ed` journals and history, machine-local `video.dat`) that D052/D074
+define as never being project source. Large trees also need visible progress
+and a safe cancel, which a single blocking call cannot give the picker.
+
+**Decision.** Duplicate is a picker-only coroutine job in
+`cm.project_location` (`duplicate_start/step/cancel`), the first consumer of
+the shared recursive copy primitive reserved for the later cross-filesystem
+move. Preflight refuses the active editor root, self-nesting destinations,
+existing destinations, alias sources, links inside the tree, invalid source
+projects, and unwritable destination parents before anything is written. The
+saved project is then copied one file per step into a unique **dot-prefixed
+staging sibling** of the destination — `pal.list_dir` prunes dot-directories,
+so neither the picker scan nor the copy walk can ever observe a half-copy, and
+`.ed`/dot tool state is omitted by the same rule while `video.dat` is excluded
+by name. The staged root must revalidate through the exact boot contract, and
+the only authoritative transition is one atomic no-replace rename (PAL API 16
+`x_path_move`) followed by an atomic `recent.note`.
+
+Any earlier failure or a cancel removes the staging tree and publishes
+nothing; the source is never written. A recents failure after publication
+reports the exact new root instead of pretending the duplicate failed, since
+**open folder** can register it. A hard process kill mid-copy can strand a
+staging directory, but its dot prefix keeps it invisible and unbootable, and
+it lives in the user-chosen destination parent, never inside a project. Esc
+and outside clicks on the running modal request cancellation; they cannot
+abandon the job. The name field defaults to `<source folder> copy` under
+D077's folder-name grammar.
+
+**Consequences.** Users can fork a project from the picker with no terminal,
+across spaced/non-ASCII paths, with honest progress and cancel. A duplicate is
+a clean checkout: it opens with fresh editor state and no inherited undo
+history. Dot-directories such as `.git` are deliberately not copied (matching
+the export contract); authors who want tool state must copy it themselves.
+Cross-filesystem move can now reuse `remove_tree` and the staged-copy shape,
+adding delete-after-verify policy. Archive/delete confirmation and picker
+navigation remain later A3 packets.
+
+**Proof.** Fake-fs KATs pin every preflight refusal, machine-state omission,
+recents ordering, injected read/write/publish/recents failures, and mid-copy
+cancel, each leaving the source byte-identical and no staging behind; real-PAL
+runs prove spaced/UTF-8 duplication, injected atomic-write and publish
+failures against real staged files, and `.ed`/`video.dat` omission. Inspected
+100% and 300% captures cover the menu, ready modal, mid-copy progress on a
+3,000-file fixture, and the published newest-first tile; platform/release
+proof is recorded in `STATUS.md`.
