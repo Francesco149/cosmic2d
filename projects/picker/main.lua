@@ -98,7 +98,23 @@ local function tile(path, meta, state, is_recent, issue)
   return { path = path, ok = ok, state = state, present = present,
            recent = is_recent, issue = issue, name = name or path,
            author = meta.author, version = meta.version,
-           desc = meta.description }
+           desc = meta.description,
+           icon = (ok and type(meta.icon) == "string" and meta.icon ~= "")
+                  and (path .. "/" .. meta.icon) or nil }
+end
+
+-- Tile thumbnails (D080): the declared project icon through cm.gfx's
+-- memoized texture cache. Failures are remembered so a broken icon never
+-- costs a file read per frame; refresh forgets them with the tile cache.
+M.icons = M.icons or {}
+local function icon_tex(path)
+  local got = M.icons[path]
+  if got ~= nil then return got or nil end
+  -- after an explicit refresh, force cm.gfx past its memoized bytes once
+  local ok, tex = pcall(cm.require("cm.gfx").texture, path, M.icons_reload)
+  got = ok and tex or false
+  M.icons[path] = got
+  return got or nil
 end
 
 local function scan()
@@ -327,6 +343,7 @@ end
 
 local function refresh()
   M.scan = nil
+  M.icons, M.icons_reload = {}, true -- re-read icon bytes on next use
   say("project list refreshed")
 end
 M.refresh = refresh
@@ -599,16 +616,26 @@ function M.draw()
     -- two subtitle rows under the name: a byline (author · version) then
     -- the description; the path stands in for whichever the metadata omits
     -- so metadata-less / sibling-repo projects still show where they live.
+    -- A declared project icon becomes a left thumbnail and indents them.
     local bl = byline(t)
     local desc = (t.desc and t.desc ~= "") and t.desc or nil
     local sub1 = bl or t.path
     local sub2 = desc or (bl and t.path) or nil
+    local tex = t.icon and icon_tex(t.icon) or nil
+    local tx0 = x + 14
+    if tex and tex.id then
+      local fit = math.min(40 / tex.w, 40 / tex.h)
+      local dw, dh = tex.w * fit, tex.h * fit
+      pal.x_ig_image(tex.id, x + 14 + (40 - dw) * 0.5,
+                     y + 12 + (40 - dh) * 0.5, dw, dh)
+      tx0 = x + 62
+    end
     pal.x_ig_clip_push(x, y, tw - (t.ok and t.recent and 46 or
                                    (t.ok and 8 or 30)), th)
-    pal.x_ig_text(x + 14, y + 11, 16, t.ok and C.text or C.missing,
+    pal.x_ig_text(tx0, y + 11, 16, t.ok and C.text or C.missing,
                   t.name, 0)
-    if sub1 then pal.x_ig_text(x + 14, y + 33, 10, C.dim, sub1, 1) end
-    if sub2 then pal.x_ig_text(x + 14, y + 51, 10, C.dim, sub2, 1) end
+    if sub1 then pal.x_ig_text(tx0, y + 33, 10, C.dim, sub1, 1) end
+    if sub2 then pal.x_ig_text(tx0, y + 51, 10, C.dim, sub2, 1) end
     pal.x_ig_clip_pop()
     local tag = t.recent and (t.ok and "recent" or ("recent · " .. t.state))
                 or (not t.ok and t.state)
