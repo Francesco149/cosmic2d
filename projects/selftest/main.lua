@@ -3312,6 +3312,311 @@ local function t_project_location()
   pal.x_remove(real_base)
 end
 
+local function t_project_duplicate()
+  local location = cm.require("cm.project_location")
+  local project = cm.require("cm.project")
+  local source, parent = "/projects/original π", "/dest parent"
+  local bytes = project.PROJECT_TMPL:gsub("__NAME__", "duplicate test")
+
+  local dirs, files, notes, note_calls
+  local probe_fail, read_fail
+  local function reset()
+    dirs = {
+      ["/projects"] = { type = "directory", link = false },
+      [source] = { type = "directory", link = false },
+      [source .. "/assets"] = { type = "directory", link = false },
+      [source .. "/.ed"] = { type = "directory", link = false },
+      [parent] = { type = "directory", link = false },
+    }
+    files = {
+      [source .. "/project.lua"] = bytes,
+      [source .. "/main.lua"] = "return {}",
+      [source .. "/assets/hero π.spr"] = "SPRDATA",
+      [source .. "/video.dat"] = "machine-local viewport",
+      [source .. "/.ed/session.dat"] = "editor state",
+    }
+    notes, note_calls, probe_fail, read_fail = {}, 0, nil, nil
+  end
+  reset()
+  local source_keys = {}
+  for path in pairs(dirs) do source_keys[#source_keys + 1] = path end
+  for path in pairs(files) do source_keys[#source_keys + 1] = path end
+  local function source_intact()
+    for _, path in ipairs(source_keys) do
+      if path:sub(1, #source) == source and not (dirs[path] or files[path]) then
+        return false
+      end
+    end
+    return files[source .. "/project.lua"] == bytes
+  end
+  local function staging_leftover()
+    for path in pairs(dirs) do
+      if path:find(".cosmic-duplicate", 1, true) then return path end
+    end
+    for path in pairs(files) do
+      if path:find(".cosmic-duplicate", 1, true) then return path end
+    end
+    return nil
+  end
+
+  local fs = {}
+  function fs.info(path)
+    if dirs[path] then return dirs[path] end
+    local body = files[path]
+    if body then return { type = "file", link = false, size = #body } end
+    return nil, "not found"
+  end
+  function fs.read(path)
+    if read_fail == path then return nil, "injected read failure" end
+    local body = files[path]
+    if body then return body end
+    return nil, "not found"
+  end
+  function fs.probe(path)
+    if path == probe_fail then return nil, "injected permission failure" end
+    return true
+  end
+  -- Mirror pal.list_dir: recursive relative paths that prune dot-DIRECTORIES
+  -- (dot files still appear).
+  function fs.list(root)
+    if not dirs[root] then return nil, "not a directory" end
+    local prefix = root .. "/"
+    local function pruned(rel)
+      local acc = root
+      for part in (rel .. "/"):gmatch("([^/]+)/") do
+        acc = acc .. "/" .. part
+        if part:sub(1, 1) == "." and dirs[acc] then return true end
+      end
+      return false
+    end
+    local out = {}
+    for path in pairs(dirs) do
+      if path:sub(1, #prefix) == prefix and not pruned(path:sub(#prefix + 1)) then
+        out[#out + 1] = path:sub(#prefix + 1)
+      end
+    end
+    for path in pairs(files) do
+      if path:sub(1, #prefix) == prefix and not pruned(path:sub(#prefix + 1)) then
+        out[#out + 1] = path:sub(#prefix + 1)
+      end
+    end
+    return out
+  end
+  function fs.mkdir(path)
+    if files[path] then return false end
+    dirs[path] = dirs[path] or { type = "directory", link = false }
+    return true
+  end
+  function fs.remove(path)
+    if files[path] then files[path] = nil; return true end
+    if dirs[path] then
+      local prefix = path .. "/"
+      for other in pairs(dirs) do
+        if other:sub(1, #prefix) == prefix then return nil, "not empty" end
+      end
+      for other in pairs(files) do
+        if other:sub(1, #prefix) == prefix then return nil, "not empty" end
+      end
+      dirs[path] = nil
+      return true
+    end
+    return nil, "not found"
+  end
+  function fs.write_atomic(path, body, fail)
+    if fail then return nil, "injected write failure" end
+    local dir = path:match("^(.*)/[^/]+$")
+    if not dirs[dir] then return nil, "no parent directory" end
+    files[path] = body
+    return true
+  end
+  function fs.move(from, to, fail)
+    if fail then return nil, "injected publish failure" end
+    if not dirs[from] or dirs[to] or files[to] then return nil, "collision" end
+    local moved_dirs, moved_files, prefix = {}, {}, from .. "/"
+    for path, value in pairs(dirs) do
+      if path == from or path:sub(1, #prefix) == prefix then
+        moved_dirs[to .. path:sub(#from + 1)] = value
+        dirs[path] = nil
+      end
+    end
+    for path, value in pairs(files) do
+      if path:sub(1, #prefix) == prefix then
+        moved_files[to .. path:sub(#from + 1)] = value
+        files[path] = nil
+      end
+    end
+    for path, value in pairs(moved_dirs) do dirs[path] = value end
+    for path, value in pairs(moved_files) do files[path] = value end
+    return true
+  end
+  local rec = {}
+  function rec.note(path, fail)
+    note_calls = note_calls + 1
+    if fail then return nil, "injected recents failure" end
+    table.insert(notes, 1, path)
+    return true
+  end
+
+  local function run(name, opts)
+    opts = opts or {}
+    -- fs/recent default to the fakes; an explicit false selects the real PAL.
+    if opts.fs == nil then opts.fs = fs elseif opts.fs == false then opts.fs = nil end
+    if opts.recent == nil then opts.recent = rec
+    elseif opts.recent == false then opts.recent = nil end
+    if opts.active_root == nil then opts.active_root = false end
+    opts.platform = opts.platform or (opts.fs and "linux") or nil
+    opts.nonce = opts.nonce or 5
+    local job = location.duplicate_start(opts.source or source,
+                                         opts.parent or parent, name, opts)
+    local steps = 0
+    while not job.terminal and steps < 1000 do
+      steps = steps + 1
+      if opts.cancel_at and steps == opts.cancel_at then
+        location.duplicate_cancel(job)
+      end
+      location.duplicate_step(job)
+    end
+    return job
+  end
+
+  local dest = parent .. "/original π copy"
+  local job = run("original π copy")
+  check(job.complete and job.published == dest and dirs[dest]
+        and files[dest .. "/project.lua"] == bytes
+        and files[dest .. "/main.lua"] == "return {}"
+        and files[dest .. "/assets/hero π.spr"] == "SPRDATA"
+        and job.name == "duplicate test",
+        "project duplicate: staged copy publishes a complete valid project")
+  check(not files[dest .. "/video.dat"] and not dirs[dest .. "/.ed"]
+        and not files[dest .. "/.ed/session.dat"],
+        "project duplicate: machine/editor state (.ed, video.dat) is omitted")
+  check(source_intact() and not staging_leftover() and notes[1] == dest,
+        "project duplicate: source is untouched, staging is gone, recents advanced")
+
+  reset()
+  job = run("original π copy", { active_root = source })
+  check(job.error and job.error:find("return to the project picker", 1, true)
+        and source_intact() and not staging_leftover(),
+        "project duplicate: the currently open editor pins its root")
+
+  reset()
+  dirs[dest] = { type = "directory", link = false }
+  job = run("original π copy")
+  check(job.error and job.error:find("destination already exists", 1, true)
+        and note_calls == 0 and not staging_leftover(),
+        "project duplicate: destination collision fails before any copy")
+  reset()
+  job = run("nested copy", { parent = source })
+  check(job.error and job.error:find("duplicated into itself", 1, true),
+        "project duplicate: a project cannot be duplicated into itself")
+  reset()
+  probe_fail = parent
+  job = run("original π copy")
+  check(job.error and job.error:find("destination parent is not writable", 1, true),
+        "project duplicate: destination permission failure is actionable")
+  reset()
+  dirs[source .. "/assets"].link = true
+  job = run("original π copy")
+  check(job.error and job.error:find("contains a link", 1, true)
+        and not staging_leftover() and not dirs[dest],
+        "project duplicate: links are refused instead of followed or flattened")
+
+  reset()
+  read_fail = source .. "/assets/hero π.spr"
+  job = run("original π copy")
+  check(job.error and job.error:find("cannot read", 1, true)
+        and not staging_leftover() and not dirs[dest] and source_intact(),
+        "project duplicate: read failure cleans staging and publishes nothing")
+  reset()
+  job = run("original π copy", { fail = { write = true } })
+  check(job.error and job.error:find("cannot write", 1, true)
+        and not staging_leftover() and not dirs[dest] and source_intact(),
+        "project duplicate: write failure cleans staging and publishes nothing")
+  reset()
+  job = run("original π copy", { fail = { publish = true } })
+  check(job.error and job.error:find("was not published", 1, true)
+        and not staging_leftover() and not dirs[dest] and source_intact(),
+        "project duplicate: publish failure cleans staging and publishes nothing")
+  reset()
+  job = run("original π copy", { fail = { recent = true } })
+  check(job.error and job.error:find("recents could not update", 1, true)
+        and job.error:find(dest, 1, true) and job.published == dest
+        and dirs[dest] and #notes == 0 and not staging_leftover(),
+        "project duplicate: recents failure names the finished new root")
+  reset()
+  job = run("original π copy", { cancel_at = 4 })
+  check(job.cancelled and not job.complete and not dirs[dest]
+        and not staging_leftover() and note_calls == 0 and source_intact(),
+        "project duplicate: cancel mid-copy cleans staging and publishes nothing")
+
+  -- Integrate with the real PAL primitives and atomic .recent.dat seam,
+  -- including spaced/non-ASCII paths and injected native failures.
+  local real_base = project.normalize_root(
+    tmproot() .. "/cosmic_selftest_duplicate")
+  local real_source = real_base .. "/source π project"
+  local real_parent = real_base .. "/dest parent"
+  local real_dest = real_parent .. "/copie π"
+  local real_staging = real_parent .. "/.cosmic-duplicate.77.0"
+  local function real_cleanup()
+    for _, root in ipairs({ real_source, real_dest, real_staging }) do
+      pal.x_remove(root .. "/.ed/session.dat")
+      pal.x_remove(root .. "/.ed")
+      pal.x_remove(root .. "/assets/hero π.spr")
+      pal.x_remove(root .. "/assets")
+      pal.x_remove(root .. "/project.lua")
+      pal.x_remove(root .. "/main.lua")
+      pal.x_remove(root .. "/video.dat")
+      pal.x_remove(root)
+    end
+    pal.x_remove(real_parent)
+    pal.x_remove(real_base .. "/recent.dat")
+    pal.x_remove(real_base)
+  end
+  real_cleanup()
+  pal.mkdir(real_base)
+  pal.mkdir(real_source)
+  pal.mkdir(real_source .. "/assets")
+  pal.mkdir(real_source .. "/.ed")
+  pal.mkdir(real_parent)
+  pal.write_file(real_source .. "/project.lua", bytes)
+  pal.write_file(real_source .. "/main.lua", "return {}")
+  pal.write_file(real_source .. "/assets/hero π.spr", "SPRDATA")
+  pal.write_file(real_source .. "/video.dat", "machine-local")
+  pal.write_file(real_source .. "/.ed/session.dat", "editor state")
+  local real_recent = cm.require("cm.recent")
+  local old_recent = real_recent.path
+  real_recent.path = real_base .. "/recent.dat"
+
+  job = run("copie π", { fs = false, recent = false, source = real_source,
+                         parent = real_parent, nonce = 77,
+                         fail = { write = { _fail = "rename" } } })
+  check(job.error and job.error:find("cannot write", 1, true)
+        and not pal.x_path_info(real_staging)
+        and not pal.x_path_info(real_dest)
+        and pal.read_file(real_source .. "/project.lua") == bytes,
+        "project duplicate: real atomic-write failure cleans staged files")
+  job = run("copie π", { fs = false, recent = false, source = real_source,
+                         parent = real_parent, nonce = 77,
+                         fail = { publish = { _fail = "rename" } } })
+  check(job.error and job.error:find("was not published", 1, true)
+        and not pal.x_path_info(real_staging)
+        and not pal.x_path_info(real_dest),
+        "project duplicate: real publish failure cleans complete staging")
+  job = run("copie π", { fs = false, recent = false, source = real_source,
+                         parent = real_parent, nonce = 77 })
+  check(job.complete and job.published == real_dest
+        and pal.read_file(real_dest .. "/project.lua") == bytes
+        and pal.read_file(real_dest .. "/assets/hero π.spr") == "SPRDATA"
+        and not pal.x_path_info(real_dest .. "/video.dat")
+        and not pal.x_path_info(real_dest .. "/.ed")
+        and not pal.x_path_info(real_staging)
+        and real_recent.contains(real_dest)
+        and pal.read_file(real_source .. "/video.dat") == "machine-local",
+        "project duplicate: real spaced/UTF-8 duplicate publishes and registers")
+  real_recent.path = old_recent
+  real_cleanup()
+end
+
 local function t_project_export()
   local export = cm.require("cm.export")
   local project = cm.require("cm.project")
@@ -6406,6 +6711,7 @@ function game.init()
   t_atomic_write()
   t_project_settings()
   t_project_location()
+  t_project_duplicate()
   t_project_export()
   t_crash()
   t_ed_text_save()
