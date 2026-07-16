@@ -19,7 +19,7 @@ local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local input = cm.require("cm.input")
 local text = cm.require("cm.text")
-local m4 = cm.require("m4")
+local m4 = cm.require("cm.m4")
 
 local W, H = pal.gfx_size()
 local game = {}
@@ -48,7 +48,7 @@ local function load_scene(path)
   magic, ver, p = string.unpack("<I4I4", data, p)
   assert(magic == 0x44443343 and ver == 1, "bad c3dd header")
   p = p + 16 -- w,h,scale,quant: presentation hints, ours come from project.lua
-  p = p + 64 + 64 -- view/proj: recomputed live in Lua (m4.lua)
+  p = p + 64 + 64 -- view/proj: recomputed live in Lua (cm.m4)
   local fog = {}
   for i = 1, 6 do fog[i], p = string.unpack("<f", data, p) end
   local sky_top, sky_bot
