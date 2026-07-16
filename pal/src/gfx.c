@@ -557,6 +557,9 @@ static bool scene3d_pass(SDL_GPUCommandBuffer *cmd) {
         &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
                                         .sampler = G.sampler},
         1);
+    if (getenv("PAL_DBG_3D"))
+      pal_log("seg3d %u: tex=%d flags=%u view=%d first=%u count=%u", i, s->tex,
+              s->flags, s->view, s->first, s->count);
     SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
   }
   SDL_EndGPURenderPass(pass);
