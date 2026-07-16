@@ -125,3 +125,34 @@ feel discipline transplanted, every value a doc.knobs entry. Debug find
 along the way: an "invisible" blend blob shadow was actually correct
 behavior (its own alpha falloff hides the uncovered rim when grounded);
 PAL_DBG_3D now dumps seg3d state for the next such chase.
+
+## D3D-009 — collision clamps from pre-move side; camera = the godot rig (2026-07-16)
+
+Human playtest of bounce found teleports: walking at the stairs or jumping
+could fling the cube across geometry. Root cause: the axis resolver picked
+the clamp face from the VELOCITY SIGN — but velocity zeroes on the first
+hit, so a second overlapping box in the same pass clamped to its far face
+(vx==0 read as "not >0" → +x side). The stair/keep pocket (0.7u gap,
+0.9u player) guaranteed the double overlap. Two rules adopted:
+
+1. **The clamp face comes from which side the player was on pre-move**
+   (x+hw <= b.x0 → clamp -x face; x-hw >= b.x1 → +x face; already
+   overlapping → clamp nothing, let another axis/frame resolve). The
+   y-pass lands only if the feet STARTED at/above the top and bonks only
+   if the head started below the bottom — no more side-clip snap-to-top.
+2. **Level rule: no pockets narrower than the player** between colliders
+   (un-fittable gaps are squeeze cases by construction). The stair run is
+   now flush with the keep.
+
+Camera: replaced the pull-string cam with a port of the human's godot
+cosmic project rig (F:\Documents\cosmic, src/camera/FollowCamera.cs +
+CameraTuning.cs — read it before touching camera feel; knob names
+mirror it): explicit orbit yaw/pitch/dist hung off a smoothed focus,
+composing drives — yaw-follow easing behind the velocity heading (the
+circling on sideways runs), manual look pausing yaw-follow briefly,
+recenter behind the facing, wheel zoom with angle-preserving framing.
+Mouse look ships as DRAG-look (absolute cursor deltas from the frozen
+10-byte input record v1); true captured-cursor look needs a PAL
+relative-mouse API + a record revision — deferred, engine-shared surface,
+merge-sensitive. Headless runs see zeroed mouse fields so autoplay/
+goldens stay deterministic (same design as the godot original).
