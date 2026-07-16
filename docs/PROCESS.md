@@ -75,6 +75,27 @@ cd /mnt/c/Users/headpats/cosmic2d-win
 ./bin/cosmic.exe projects/smoke --edit --win 1280x800 --frames 30 --shot ed.png
 ```
 
+**Clean-machine release matrix** — build the two editor downloads and the two
+demo play exports, then exercise the Linux archives in a stock Debian 13
+container and the Windows archives through native PowerShell/Win32:
+
+```sh
+nix build .#cosmic-linux-release -o result-linux-release
+nix build .#cosmic-windows-release -o result-windows-release
+nix run .#package -- demo linux
+nix run .#package -- demo windows
+nix shell nixpkgs#podman -c tests/linux-portable-smoke.sh \
+  result-linux-release/cosmic2d-linux.tar.gz demo-linux.tar.gz
+tests/windows-portable-smoke.sh \
+  result-windows-release/cosmic2d-windows.zip demo-windows.zip
+```
+
+Both checks extract under paths containing spaces and non-ASCII characters,
+deny writes to the install trees, launch from an unrelated working directory,
+and prove live diagnostics land in the platform per-user data root. The
+PowerShell file is also directly runnable on a clean Windows machine; its WSL
+wrapper only copies inputs onto NTFS and invokes it.
+
 The human's live windows run: `bin\cosmic.exe projects\smoke --edit` from
 the `cosmic2d-win` dir. Windows-only gotcha found this way: unix-absolute
 paths (`/tmp/...`) can't be `pal.mkdir`'d there — tests use the platform

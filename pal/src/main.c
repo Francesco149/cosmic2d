@@ -14,9 +14,21 @@
 #include "lualib.h"
 
 #ifdef _WIN32
-#include <direct.h>
 #include <windows.h>
-#define pal_chdir _chdir
+/* SDL_GetBasePath is UTF-8, while the narrow CRT _chdir follows the active
+ * Windows code page. Keep self-location lossless for extracted paths outside
+ * that code page by crossing the platform boundary as UTF-16. */
+static int pal_chdir(const char *path) {
+  int n = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
+  if (n <= 0) return -1;
+  WCHAR *wide = SDL_malloc((size_t)n * sizeof *wide);
+  if (!wide) return -1;
+  int converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
+                                      wide, n);
+  BOOL ok = converted > 0 && SetCurrentDirectoryW(wide);
+  SDL_free(wide);
+  return ok ? 0 : -1;
+}
 #else
 #include <unistd.h>
 #define pal_chdir chdir

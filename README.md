@@ -1,14 +1,14 @@
 # cosmic2d
 
 A tiny 2D pixel-art engine / fantasy console. The intended distribution is one
-folder containing the engine, editor, tools, and game projects. Today the
-source checkout is built with Nix; clean-machine, extract-and-run artifacts
-and in-editor export are still alpha release gates.
+folder containing the engine, editor, tools, and game projects. The source
+checkout is built with Nix and the extract-and-run archives are clean-machine
+tested; in-editor export is still an alpha release gate.
 
 **Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
 and an out-of-the-box demo game are here. The deterministic suite is green,
-but clean-machine release validation, gamepad support, project/export UX, and
-broader genre demos are still release gates; see `docs/ALPHA.md`.
+but player-facing bundle polish, gamepad support, project/export UX, and broader
+genre demos are still release gates; see `docs/ALPHA.md`.
 
 ## Try it
 
@@ -41,6 +41,13 @@ Windows `.exe` launchers use the GUI subsystem, so opening them normally does
 not create a second console window. For diagnostics, automation, and headless
 runs, use `bin/cosmic-console.exe`; it is the same engine with stdout/stderr
 attached to the calling terminal.
+
+Download-shaped editor archives (plus sibling integrity hashes) build with:
+
+```sh
+nix build .#cosmic-linux-release     # result/cosmic2d-linux.tar.gz + .sha256
+nix build .#cosmic-windows-release   # result/cosmic2d-windows.zip + .sha256
+```
 
 Live runs also keep a flushed process log outside the extracted engine folder,
 so diagnostics still work from a read-only install and from GUI launchers. The
@@ -79,8 +86,8 @@ carried runtime-library inventory. Its named launcher boots the game locked to
 play mode; `bin/cosmic2d-editor` remains available for a deliberate authoring
 entrance. Verify the archive's sibling checksum before extraction and run
 `sha256sum --check SHA256SUMS` from inside the extracted folder afterward.
-This is not yet the promised general export flow or a clean-machine-certified
-release; those are gates A2 and A3 in `docs/ALPHA.md`.
+This is not yet the promised general export flow or final player-facing release
+bundle; those remain gates A2 and A3 in `docs/ALPHA.md`.
 
 Alpha artifacts are deliberately unsigned: checksums detect changed bytes but
 do not prove publisher identity. Windows may report an unknown publisher. Do
@@ -108,8 +115,9 @@ two-layer design + determinism rules), `EDITOR.md`, `AUDIO.md`, `MAPS.md`.
 ## Platforms
 
 Development builds run on Linux and Windows desktop; the Windows binary is a
-cross-build. Portable clean-machine artifacts are still being validated.
-macOS is not supported for this alpha.
+cross-build. Portable editor and play archives are clean-machine tested on a
+stock x86_64 Debian 13 container and native Windows 11. macOS is not supported
+for this alpha.
 
 ## License
 

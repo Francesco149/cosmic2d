@@ -2637,3 +2637,49 @@ attribution over a brittle hand-trimmed legal summary.
 rejection, required legal metadata, and archive sidecar verification. Linux
 portable, Windows dev/editor, and both demo play archives carry and verify
 their final manifests; the full deterministic suite remains green.
+
+## D069 — clean-machine support is proven from final editor and play archives (A2, 2026-07-16)
+
+**Context.** The first Linux portability probe exercised only a play tarball
+and changed its extracted modes while still running as container root. Root can
+bypass ordinary Unix write bits, so that was not proof of a read-only install.
+It also left the public editor tree, root launchers, native Windows path rules,
+and external live diagnostics outside the matrix. A release claim must test the
+download shape a user receives, not a Nix store tree or developer staging.
+
+**Decision.** `cosmic-linux-release` and `cosmic-windows-release` wrap the
+fully fixed-up public editor trees as `cosmic2d-linux.tar.gz` and
+`cosmic2d-windows.zip`, each with the same sibling checksum contract as play
+exports. The clean-machine fixtures take one editor archive and one play
+archive, verify both download and extracted-tree hashes, extract beneath paths
+with spaces and non-ASCII characters, launch from an unrelated cwd, and run
+every public editor/game/diagnostic entrance.
+
+The Linux leg uses stock x86_64 Debian 13 plus its software Vulkan driver and
+runs cosmic2d as unprivileged uid 65534 after a root-owned `a-w` transition.
+It rejects Nix-store dynamic resolution, proves direct write attempts fail, and
+requires interactive logs beneath an isolated `XDG_DATA_HOME`. The Windows leg
+is a PowerShell 5.1 fixture runnable without WSL or developer tools. It applies
+an inheritable NTFS deny ACE only to mutation rights (not generic `W`, whose
+`SYNCHRONIZE` overlap would also prevent execution), drives both GUI and console
+PEs, and requires fresh logs beneath the native roaming AppData root. Its WSL
+shell wrapper is only a local copy-and-invoke convenience.
+
+The matrix owns the self-location boundary it exposed. Portable Linux root
+launchers retain executable bits and use `$ORIGIN/lib`; `bin/` launchers use
+`$ORIGIN/../lib`. Windows converts SDL's UTF-8 executable base path to UTF-16
+and calls `SetCurrentDirectoryW` instead of the active-code-page `_chdir`.
+
+**Consequences.** The A2 clean-machine checkbox is complete for the supported
+x86_64 Linux/glibc and Windows desktop envelopes. This does not claim macOS,
+other architectures, signing/authentication, arbitrary-project export, or that
+the current play packet is suitably player-facing; those remain explicit
+gates. Permission checks must continue under a genuinely restricted identity
+or ACL, and any new public launcher/archive shape joins both matrices.
+
+**Proof.** Fresh editor and demo play archives pass all entrances from
+read-only Unicode paths in Debian 13/Podman and native Windows 11. Both produce
+exactly the expected external interactive logs while capped runs produce none,
+and both extracted manifests remain unchanged afterward. Native Windows and
+Linux selftests pass at 23,300 checks; every committed trace and pixel golden
+passes in the full suite.

@@ -260,6 +260,7 @@
         } ''
           cp -r --no-preserve=mode ${cosmic-portable-editor} $out
           chmod -R u+w $out
+          chmod +x $out/bin/cosmic $out/cosmic2d-editor $out/demo
           mkdir -p $out/lib
 
           # ldd reports SDL's complete transitive closure. SDL_GPU dlopens the
@@ -279,8 +280,12 @@
             if ${pkgs.binutils}/bin/readelf -h "$f" >/dev/null 2>&1; then
               ${pkgs.binutils}/bin/strip --strip-unneeded "$f" 2>/dev/null || true
               case "$f" in
-                */bin/*|*/cosmic2d-editor|*/demo)
+                */bin/*)
                   ${pkgs.patchelf}/bin/patchelf --set-rpath '$ORIGIN/../lib' "$f"
+                  ${pkgs.patchelf}/bin/patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$f"
+                  ;;
+                */cosmic2d-editor|*/demo)
+                  ${pkgs.patchelf}/bin/patchelf --set-rpath '$ORIGIN/lib' "$f"
                   ${pkgs.patchelf}/bin/patchelf --set-interpreter /lib64/ld-linux-x86-64.so.2 "$f"
                   ;;
                 *) ${pkgs.patchelf}/bin/patchelf --set-rpath '$ORIGIN' "$f" ;;
@@ -397,6 +402,34 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
             old.installPhase;
         });
         cosmic-windows = cosmic-windows-editor;
+
+        # Download-shaped public editor artifacts. The underlying trees have
+        # already completed every fixup and own their extracted-file manifest;
+        # these derivations only put that final tree under one archive root and
+        # add the sibling download checksum.
+        cosmic-linux-release = pkgs.runCommand
+          "cosmic2d-linux-release-${releaseVersion}" {
+            nativeBuildInputs = [ pkgs.coreutils pkgs.gnutar pkgs.gzip ];
+          } ''
+            mkdir -p $out work/cosmic2d
+            cp -r ${cosmic-linux-portable}/. work/cosmic2d/
+            chmod -R u+w work/cosmic2d
+            tar czf $out/cosmic2d-linux.tar.gz -C work cosmic2d
+            bash ${self}/tools/release-integrity.sh archive \
+              $out/cosmic2d-linux.tar.gz
+          '';
+
+        cosmic-windows-release = pkgs.runCommand
+          "cosmic2d-windows-release-${releaseVersion}" {
+            nativeBuildInputs = [ pkgs.coreutils pkgs.zip ];
+          } ''
+            mkdir -p $out work/cosmic2d
+            cp -r ${cosmic-windows-editor}/. work/cosmic2d/
+            chmod -R u+w work/cosmic2d
+            (cd work && zip -X -r -q $out/cosmic2d-windows.zip cosmic2d)
+            bash ${self}/tools/release-integrity.sh archive \
+              $out/cosmic2d-windows.zip
+          '';
         default = cosmic;
       });
 

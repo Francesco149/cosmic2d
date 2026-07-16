@@ -119,7 +119,7 @@ Goal: artifacts work on clean supported machines exactly as advertised.
     history-stream/frame envelope for A7.
   - [x] Carry licenses/notices and checksums in the artifacts; document the
     signing expectations for an unsigned alpha.
-- [ ] Test extract-and-run in clean Windows and Linux VMs/containers, including
+- [x] Test extract-and-run in clean Windows and Linux VMs/containers, including
   paths with spaces/non-ASCII and read-only install locations.
 - [ ] Make the play-only bundle player-facing: project title/icon/version,
   controls, credits, and licenses rather than the engine authoring README.

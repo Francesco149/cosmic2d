@@ -3,13 +3,13 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 release identity + A7 rewind foundation (2026-07-16)
+## Current handoff — A2 clean-machine release + A7 rewind foundation (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
 audio stack, two-room platformer demo, Linux build, and cross-built Windows
 bundle are working, with the deterministic suite green at the last baseline.
-The project remains an alpha candidate: clean-machine release validation,
+The project remains an alpha candidate: player-facing release polish,
 project/export UX, gamepad/player settings, broader genre proofs, and release
 validation are still explicit gates.
 
@@ -90,14 +90,34 @@ fresh demo play archives build and verify; the extracted archives contain only
 shell lacked Podman/Docker, so the already-proven Debian 13 smoke was not rerun.
 `nix run .#test` is ALL GREEN at 23,300 checks with every trace and pixel golden.
 
-**Exact next packet:** stay in A2 and complete the clean-machine path/permission
-matrix: extracted editor and play archives on Windows and Linux, paths with
-spaces and non-ASCII, read-only install roots, and writable diagnostics/state
-outside them. Restore a container runtime for the Debian leg and exercise the
-native Windows leg through the console entrance. After that, make the play
-bundle player-facing. A7's queued packet remains persisted multi-resolution
-activity/event indexes and minute `THMB` samples, followed by project-file
-epochs; legacy coverage must remain honestly labelled.
+**A2 packet 7 is complete (D069).** Public editor downloads now exist as
+`cosmic2d-linux.tar.gz` and `cosmic2d-windows.zip`, with sibling hashes and the
+same final extracted-tree integrity contract as play exports. The Linux and
+Windows clean-machine fixtures each take final editor + demo play archives,
+verify both integrity layers, extract below paths containing spaces and
+non-ASCII characters, enforce a genuinely read-only install, launch every
+public editor/game/diagnostic entrance from an unrelated cwd, and prove capped
+runs stay quiet while live logs land in the external platform user-data root.
+
+The matrix exposed and closed three release-only defects: the portable editor
+copy had dropped Linux executable bits, its root launchers used the `bin/`
+RPATH instead of `$ORIGIN/lib`, and Windows self-location fed SDL's UTF-8 base
+path through code-page-bound `_chdir` rather than UTF-16
+`SetCurrentDirectoryW`.
+
+**Proof:** fresh editor and play archives pass as uid 65534 in a stock Debian
+13 Podman container and under a mutation-denying NTFS ACL on native Windows 11.
+Both extracted manifests remain valid after all launches and both live archive
+shapes publish their expected external diagnostic log. Native Windows and
+Linux selftests pass at 23,300 checks; `nix run .#test` is ALL GREEN with every
+trace verify and pixel golden.
+
+**Exact next packet:** finish A2 by making the play-only bundle player-facing:
+derive its title/icon/version, controls, credits, licenses, and concise player
+README from project metadata instead of shipping the engine authoring README.
+A7's queued packet remains persisted multi-resolution activity/event indexes
+and minute `THMB` samples, followed by project-file epochs; legacy coverage
+must remain honestly labelled.
 
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
@@ -329,7 +349,15 @@ unsigned-alpha policy. Packaging KATs, Linux/Windows dev and editor builds,
 portable Linux, both play archives, a read-only portable boot, and the full
 23,300-check deterministic suite pass.
 
-**Exact next packet:** complete the clean-machine paths/non-ASCII/read-only
-matrix on Linux and native Windows, including external writable diagnostics.
+**A2 packet 7 is complete.** Final editor and play archives now pass the
+clean-machine Unicode/read-only/external-diagnostics matrix in Debian 13 and
+native Windows 11. The proof runs with a restricted Unix identity and an NTFS
+mutation-deny ACL, and it closed Linux execute-bit/root-RPATH defects plus the
+Windows narrow-character self-location defect. Native selftests and the full
+deterministic suite remain green at 23,300 checks.
+
+**Exact next packet:** finish A2 by replacing the engine-facing play packet
+with project-derived player title/icon/version, controls, credits/licenses,
+and a concise player README.
 
 There is no known blocker or human-only verification required.
