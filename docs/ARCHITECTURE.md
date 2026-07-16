@@ -607,6 +607,8 @@ binary incompatible, in either direction (D015).
 | `pal.read_file(p)` / `pal.write_file(p,s)` / `pal.list_dir(p)` / `pal.mtime(p)` / `pal.mkdir(p)` | dev/io | engine enforces project-relative paths |
 | `pal.write_file_atomic(p,s)` → `true` or `nil,error` | dev/io | API v9: unique same-directory temp → complete write → stream flush → OS file sync → close → atomic replace; a pre-replace failure removes the temp and preserves an existing destination |
 | `pal.x_write_file_pair_atomic_async(p1,s1,p2,s2)` → job or `nil,error`; `pal.x_write_file_atomic_poll()`; `pal.x_write_file_atomic_drain()` | dev/io | API v13: bounded FIFO worker copies and durably publishes an ordered atomic pair; file 2 is attempted only after file 1, and a file-2 failure removes file 1. Poll never waits; drain is an explicit quit/crash/structural barrier, never a sim operation |
+| `pal.sha256(s)` / `pal.sha256_file(p)` / `pal.crc32(s[,prior])` | dev/io | API v14: platform-identical release-integrity primitives; SHA-256 returns canonical lowercase hex and CRC-32 accepts a prior result for streaming archive construction |
+| `pal.x_path_info(p)` / `pal.x_file_publish(temp,dest)` | dev/io | API v14: path type/size plus link detection; publication syncs a complete sibling temp and renames it to a previously absent artifact name, leaving the temp non-authoritative on failure |
 | `pal.user_path()` → path or `nil,error` | dev/io | API v11: SDL-selected absolute per-user writable root for the fixed `cosmic2d/engine` identity; created on demand, platform separator retained |
 | `pal.poll_events()` | input | array of event tables, drained each tick |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |

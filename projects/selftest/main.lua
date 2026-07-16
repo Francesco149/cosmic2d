@@ -2704,6 +2704,53 @@ local function t_atomic_write()
   check(pal.write_file_atomic(path, "") == true and pal.read_file(path) == "",
         "atomic: empty file replace")
 
+  -- API 14 carries the integrity and one-rename publication seams needed by
+  -- the self-contained in-editor exporter. Hash vectors are the standard
+  -- SHA-256/CRC-32 known answers, independent of the archive layer above.
+  check(pal.version.api >= 14 and type(pal.sha256) == "function"
+        and type(pal.sha256_file) == "function"
+        and type(pal.crc32) == "function"
+        and type(pal.x_path_info) == "function"
+        and type(pal.x_file_publish) == "function",
+        "export io: PAL api14 exposes hash/info/publication primitives")
+  check(pal.sha256("") ==
+          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        and pal.sha256("abc") ==
+          "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+        "export io: SHA-256 string known answers")
+  check(pal.crc32("123456789") == 0xcbf43926
+        and pal.crc32("789", pal.crc32("123456")) == 0xcbf43926,
+        "export io: CRC-32 one-shot and rolling known answer")
+  pal.write_file(path, "abc")
+  local info = pal.x_path_info(path)
+  check(info and info.type == "file" and info.size == 3 and not info.link
+        and pal.sha256_file(path) == pal.sha256("abc"),
+        "export io: path info and streaming file hash")
+
+  local pubtmp = tmproot() .. "/cosmic_selftest_publish.tmp"
+  local pubdst = tmproot() .. "/cosmic_selftest_publish.zip"
+  pal.x_remove(pubtmp); pal.x_remove(pubdst)
+  pal.write_file(pubtmp, "complete archive")
+  local pok, perr = pal.x_file_publish(pubtmp, pubdst, { _fail = "sync" })
+  check(not pok and perr:find("sync", 1, true) and pal.read_file(pubtmp)
+        and not pal.read_file(pubdst),
+        "export io: sync failure leaves only the non-authoritative temp")
+  pok, perr = pal.x_file_publish(pubtmp, pubdst, { _fail = "rename" })
+  check(not pok and perr:find("publish", 1, true) and pal.read_file(pubtmp)
+        and not pal.read_file(pubdst),
+        "export io: rename failure cannot publish a partial artifact")
+  check(pal.x_file_publish(pubtmp, pubdst) == true
+        and not pal.read_file(pubtmp)
+        and pal.read_file(pubdst) == "complete archive",
+        "export io: one rename publishes the complete artifact")
+  pal.write_file(pubtmp, "new archive")
+  pok, perr = pal.x_file_publish(pubtmp, pubdst)
+  check(not pok and perr:find("already exists", 1, true)
+        and pal.read_file(pubtmp) == "new archive"
+        and pal.read_file(pubdst) == "complete archive",
+        "export io: an existing artifact is never overwritten implicitly")
+  pal.x_remove(pubtmp); pal.x_remove(pubdst)
+
   -- API 13's background pair preserves the same authority ordering without
   -- making the caller wait: payload first, cumulative manifest second. The
   -- explicit drain is the quit/crash test boundary, not the live frame path.

@@ -1,5 +1,8 @@
 /* luabind.c — the pal.* Lua module: the porting contract between the PAL
  * and the engine. Semantics + determinism classes: docs/ARCHITECTURE.md. */
+#ifndef _WIN32
+#define _DEFAULT_SOURCE /* lstat under strict -std=c11 */
+#endif
 #include "pal.h"
 
 #include <errno.h>
@@ -9,6 +12,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 
@@ -1499,6 +1503,132 @@ static int l_x_file_append(lua_State *L) {
   return 1;
 }
 
+static void push_hex(lua_State *L, const uint8_t *bytes, size_t len) {
+  static const char hex[] = "0123456789abcdef";
+  luaL_Buffer b;
+  char *out = luaL_buffinitsize(L, &b, len * 2);
+  for (size_t i = 0; i < len; i++) {
+    out[i * 2] = hex[bytes[i] >> 4];
+    out[i * 2 + 1] = hex[bytes[i] & 15];
+  }
+  luaL_pushresultsize(&b, len * 2);
+}
+
+/* pal.sha256(bytes) / pal.sha256_file(path): canonical lowercase hex used by
+ * SHA256SUMS and the archive sibling checksum. */
+static int l_sha256(lua_State *L) {
+  size_t len;
+  const char *bytes = luaL_checklstring(L, 1, &len);
+  uint8_t digest[32];
+  pal_sha256(bytes, len, digest);
+  push_hex(L, digest, sizeof digest);
+  return 1;
+}
+
+static int l_sha256_file(lua_State *L) {
+  uint8_t digest[32];
+  char err[512];
+  if (!pal_sha256_file(luaL_checkstring(L, 1), digest, err, sizeof err)) {
+    lua_pushnil(L);
+    lua_pushstring(L, err);
+    return 2;
+  }
+  push_hex(L, digest, sizeof digest);
+  return 1;
+}
+
+/* pal.crc32(bytes [, prior]) permits both one-shot ZIP member checksums and a
+ * rolling checksum over the uncompressed tar stream inside gzip. */
+static int l_crc32(lua_State *L) {
+  size_t len;
+  const char *bytes = luaL_checklstring(L, 1, &len);
+  uint32_t prior = (uint32_t)luaL_optinteger(L, 2, 0);
+  lua_pushinteger(L, (lua_Integer)pal_crc32(prior, bytes, len));
+  return 1;
+}
+
+/* pal.x_path_info(path) -> {type,size,link} | nil,error. SDL follows links;
+ * release publication must reject them, so query that one bit at the native
+ * seam while retaining SDL's cross-platform type and 64-bit size. */
+static int l_x_path_info(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+  SDL_PathInfo info;
+  if (!SDL_GetPathInfo(path, &info)) {
+    lua_pushnil(L);
+    lua_pushstring(L, SDL_GetError());
+    return 2;
+  }
+  bool link = false;
+#ifdef _WIN32
+  int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
+                                  NULL, 0);
+  if (count > 0) {
+    WCHAR *wide = SDL_malloc((size_t)count * sizeof *wide);
+    if (wide && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
+                                    wide, count) > 0) {
+      DWORD attrs = GetFileAttributesW(wide);
+      link = attrs != INVALID_FILE_ATTRIBUTES
+             && (attrs & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    }
+    SDL_free(wide);
+  }
+#else
+  struct stat st;
+  link = lstat(path, &st) == 0 && S_ISLNK(st.st_mode);
+#endif
+  const char *type = info.type == SDL_PATHTYPE_FILE ? "file"
+                     : info.type == SDL_PATHTYPE_DIRECTORY ? "directory"
+                     : info.type == SDL_PATHTYPE_OTHER ? "other" : "none";
+  lua_createtable(L, 0, 3);
+  lua_pushstring(L, type); lua_setfield(L, -2, "type");
+  lua_pushinteger(L, (lua_Integer)info.size); lua_setfield(L, -2, "size");
+  lua_pushboolean(L, link); lua_setfield(L, -2, "link");
+  return 1;
+}
+
+/* pal.x_file_publish(temp,dest [, {_fail=sync|rename}]) -> true | nil,error.
+ * The destination must not exist: the exporter chooses a new artifact name,
+ * syncs its complete sibling temp, then makes that one rename authoritative.
+ * On failure the temp remains non-authoritative for the caller to remove. */
+static int l_x_file_publish(lua_State *L) {
+  const char *temp = luaL_checkstring(L, 1);
+  const char *dest = luaL_checkstring(L, 2);
+  const char *fail = fail_stage_at(L, 3);
+  SDL_PathInfo info;
+  if (SDL_GetPathInfo(dest, &info)) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "destination already exists: %s", dest);
+    return 2;
+  }
+  SDL_IOStream *io = SDL_IOFromFile(temp, "r+b");
+  if (!io) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "open temporary artifact: %s", SDL_GetError());
+    return 2;
+  }
+  char detail[256] = "injected failure";
+  bool ok = strcmp(fail ? fail : "", "sync") != 0
+            && SDL_FlushIO(io) && sync_file(io, detail, sizeof detail);
+  if (!SDL_CloseIO(io) && ok) {
+    SDL_snprintf(detail, sizeof detail, "close: %s", SDL_GetError());
+    ok = false;
+  }
+  if (!ok) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "sync temporary artifact: %s", detail);
+    return 2;
+  }
+  if ((fail && strcmp(fail, "rename") == 0)
+      || !SDL_RenamePath(temp, dest)) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "publish artifact: %s",
+                    fail ? "injected rename failure" : SDL_GetError());
+    return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 /* recursive directory walk that PRUNES dot-directories (.ed, .git, …).
  * SDL_GlobDirectory would descend into them — and the .ed undo journal is
  * thousands of history files, so globbing the project root stat'd the whole
@@ -1657,6 +1787,11 @@ static const luaL_Reg pal_funcs[] = {
     {"x_write_file_atomic_drain", l_x_write_file_atomic_drain},
     {"user_path", l_user_path},
     {"x_file_append", l_x_file_append},
+    {"sha256", l_sha256},
+    {"sha256_file", l_sha256_file},
+    {"crc32", l_crc32},
+    {"x_path_info", l_x_path_info},
+    {"x_file_publish", l_x_file_publish},
     {"list_dir", l_list_dir},
     {"mtime", l_mtime},
     {"mkdir", l_mkdir},

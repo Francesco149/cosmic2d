@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 13 /* v13: ordered background atomic file pairs */
+#define PAL_VERSION_API 14 /* v14: self-contained release export primitives */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -212,6 +212,12 @@ void pal_async_write_shutdown(void);
  * watcher thread on first call (live sessions only). Falls back to a direct
  * stat for unwatched paths. Dev-only — never sim state. */
 int64_t pal_watch_mtime(const char *path);
+
+/* hash.c -- release archive/checksum helpers (dev/io, API v14). */
+void pal_sha256(const void *data, size_t len, uint8_t out[32]);
+bool pal_sha256_file(const char *path, uint8_t out[32], char *err,
+                     size_t errcap);
+uint32_t pal_crc32(uint32_t prior, const void *data, size_t len);
 
 /* gfx.c */
 typedef struct {
