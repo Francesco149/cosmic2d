@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 application identity + A7 rewind foundation (2026-07-16)
+## Current handoff — A2 diagnostics + A7 rewind foundation (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -50,10 +50,31 @@ all pass; the play archive proves GUI editor/game plus CUI diagnostics retain
 the resources. The Linux portable derivation still builds. `nix run .#test`
 is ALL GREEN: 23,287 self-checks, every trace verify, and all pixel goldens.
 
-**Exact next packet:** stay in A2 and define the platform-correct crash-log/
-report location plus the stable project/history-stream/frame envelope D065's
-crash-focused timeline will consume. After that, carry release notices and
-checksums into artifacts with an explicit unsigned-alpha policy. A7's queued
+**A2 packet 5 is complete (D067).** PAL API v11 now supplies one fixed,
+platform-native per-user writable root. Every interactive process—including a
+Windows GUI launcher and a read-only extracted install—flushes PAL output to a
+unique process log under `diagnostics/`; capped/verify runs do not create log
+files. Contained game errors and Lua parachute failures atomically publish an
+additive `CCRP` `.ccrash` report beside it with project path/name, exact
+history-stream ID, last committed and attempted frames, code epoch, error kind,
+traceback, attempted input/evals, runtime metadata, log path, and recent logs.
+The throwing step's partial state is never recorded as valid history.
+
+Durable rewind generations now carry an atomic `CHST` stream marker. Its opaque
+ID persists through normal cross-session adoption, rotates on cache clear or an
+unjoinable fork, and fails closed by disabling spill if it cannot be published.
+`ring_locator()` and `hist_locator()` expose exact project/stream/frame tuples;
+empty identity is explicit rather than a timestamp guess. The location and
+format are documented in the README, architecture, and rewind contract.
+
+**Proof:** the live contained-error probe produced a flushed log plus decodable
+report outside the engine tree. Linux and native Windows selftests pass at
+23,300 checks; `nix run .#test` is ALL GREEN with every trace and pixel golden;
+the Windows dev cross-build and portable Linux artifact both build.
+
+**Exact next packet:** stay in A2 and carry release licenses/notices plus
+checksums into every artifact, with an explicit unsigned-alpha signing policy.
+After that, continue the clean-machine path/permission matrix. A7's queued
 implementation packet remains persisted multi-resolution activity/event
 indexes and minute `THMB` samples, followed by project-file epochs; legacy
 coverage must remain honestly labelled.
@@ -273,8 +294,16 @@ staged entrance. Windows dev/editor builds, a fresh play archive inspection,
 the Linux portable build, and `nix run .#test` all pass; the suite is ALL GREEN
 at 23,287 self-checks with every trace and pixel golden matching.
 
-**Exact next packet:** define and expose the crash-log/report location plus a
-stable project/history-stream/frame envelope for D065; then carry release
-notices and checksums into artifacts with an explicit unsigned-alpha policy.
+**A2 packet 5 is complete.** PAL API v11 provides the fixed platform-native
+per-user root and interactive process logs. `cm.crash` atomically publishes the
+versioned `CCRP` report envelope; the C parachute and contained-error boundary
+both feed it. Durable history has an exact atomic `CHST` stream identity that
+survives adoption and rotates with the derived generation. KATs cover path,
+codec, publication failure, identity creation/adoption/rotation/failure, and
+durable lookup. Linux and native Windows selftests pass at 23,300 checks; the
+complete deterministic suite, Windows dev build, and portable Linux build pass.
+
+**Exact next packet:** carry release licenses/notices and checksums into every
+artifact and document the unsigned-alpha signing policy.
 
 There is no known blocker or human-only verification required.

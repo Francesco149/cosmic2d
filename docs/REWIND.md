@@ -76,6 +76,12 @@ replaces F4 in editor sessions.
     blobs; stale lines drop on an existence check, a re-spilled id
     dedupes last-wins, and the newest file — the only one a crash can
     half-write — is fully parsed (corrupt → deleted, scan retries).
+  - **The stream marker** (`history/stream`, `CHST` / `STRM v1`) gives the
+    retained generation an opaque `hs1-…` identity. Normal adoption preserves
+    it; clearing history or forking away from its contiguous tail rotates it.
+    `ring_locator()` and `hist_locator(project)` expose exact
+    project/stream/committed-frame tuples for crash resolution. The marker is
+    derived cache and clears with the segments it identifies.
   - **Contiguity is the adoption rule**: the chain must end exactly at
     the present frame (guaranteed at boot by the seed). A mid-session
     `ring_reset` (out-of-band restore) usually fits nothing — a forked
@@ -87,7 +93,7 @@ replaces F4 in editor sessions.
   - **The quit path spills the open segment** (`ring_flush`, cm.main)
     so the session tail joins the stream.
 - Spill is an **observer of an observer**: writes happen at segment
-  close (every `ring.kf` frames), off the sim path, plain `pal.write_file`
+  close (every `ring.kf` frames), off the sim path, atomic file replacement
   — a stall shows in perf as render time, never in sim state.
 
 ## 4. Browsing (interactive but ephemeral, D046 §7b)
@@ -400,3 +406,22 @@ mutated live state, so history ends at the last committed frame and records the
 failed attempt as an event; it does not bless partial state as a rewind frame.
 From there the user can inspect, export the pre-roll, or explicitly resume the
 last safe frame and retry.
+
+**A2 foundation now built (D067).** PAL API v11 exposes one fixed SDL
+per-user application-data root. Interactive processes keep a flushed
+`process-<UTC>-<pid>.log` under its `diagnostics/` child, including Windows GUI
+launches and read-only engine installs; capped/verify runs create no persistent
+logs. A
+contained error or Lua parachute atomically adds a `CCRP` `.ccrash` container.
+Its `HEAD v1` is frozen as report ID, project path + display name, history
+stream ID, last committed frame, attempted frame, code epoch, error kind, and
+log path. Additive `TIME`, `META`, `ERRO`, `INPT`, `EVAL`, and `LOGS` chunks
+carry display time, runtime versions, traceback, attempted input/evals, and a
+portable recent-log copy. Empty stream / frame `-1` means unavailable rather
+than guessed. Project path/name are discovery hints; the stream+frame pair is
+the exact local match.
+
+The contained-error path flushes the open segment before publishing and never
+records the partially mutated throwing step. The later A7 packets still own
+the one-minute pin/embed policy, native-failure next-launch synthesis, crash
+timeline source, drop/view/loop UI, and graceful missing-tail explanation.

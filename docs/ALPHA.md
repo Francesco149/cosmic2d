@@ -115,7 +115,7 @@ Goal: artifacts work on clean supported machines exactly as advertised.
 - [ ] Complete artifact identity, diagnostics, and release metadata:
   - [x] Add a canonical application icon and embed multi-resolution icon plus
     version resources in every Windows executable.
-  - [ ] Define a documented crash-log/report location and stable project/
+  - [x] Define a documented crash-log/report location and stable project/
     history-stream/frame envelope for A7.
   - [ ] Carry licenses/notices and checksums in the artifacts; document the
     signing expectations for an unsigned alpha.

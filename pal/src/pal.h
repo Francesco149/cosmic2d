@@ -11,7 +11,13 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 10 /* v10: pal.png_encode (transactional sprite bake) */
+#define PAL_VERSION_API 11 /* v11: pal.user_path (per-user writable data) */
+
+/* Stable SDL preference identity. SDL maps this pair to the platform-native
+ * per-user writable application-data root; changing either string would
+ * strand diagnostics and, later, player storage in a second directory. */
+#define PAL_PREF_ORG "cosmic2d"
+#define PAL_PREF_APP "engine"
 
 #define PAL_MAX_TEX 256
 #define PAL_MAX_EVENTS 256
@@ -172,6 +178,9 @@ typedef struct {
   /* log ring (pal.log_lines) */
   PalLogLine log_ring[PAL_LOG_RING];
   uint64_t log_seq;
+  char *diagnostics_dir; /* absolute UTF-8 path; interactive processes only */
+  char *log_path;        /* current flushed process log, or NULL in CI */
+  SDL_IOStream *log_io;
 
   PalTexture texs[PAL_MAX_TEX];
 

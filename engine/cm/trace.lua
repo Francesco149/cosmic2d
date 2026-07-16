@@ -76,7 +76,8 @@ M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024 }
 -- metadata derived from existing records, never sim state and never verified.
 M.timeline_event = { INPUT = 1, CODE = 2, EVAL = 4, SESSION = 8 }
 
--- M._R = ring session { project, segs, next_id, prev, prev_doc, last_frame }
+-- M._R = ring session { project, stream_id, segs, next_id, prev, prev_doc,
+--                       last_frame }
 -- M._rec = active pin { path, project, kf, from_id }
 
 local function sorted_buf_list()
@@ -148,6 +149,84 @@ end
 
 local function hist_dir(R)
   return R.project .. "/.ed/history"
+end
+
+local function hist_dir_for(project)
+  return project .. "/.ed/history"
+end
+
+-- Each durable history generation has an exact, opaque identity. It survives
+-- normal launches/adoption and changes when history is cleared or a fork can
+-- no longer join the retained chain. Crash reports match this ID + a frame;
+-- timestamps are never identity (D065). This tiny derived marker lives inside
+-- history/ so cm.ed.clear_cache removes it with the segments it identifies.
+local STREAM_MAGIC = "CHST"
+local function hist_stream_path(dir) return dir .. "/stream" end
+
+local function stream_encode(id)
+  local w = chunk.writer(STREAM_MAGIC)
+  w.chunk("STRM", 1, pack("<s4", id))
+  return w.result()
+end
+
+local function stream_decode(blob)
+  for _, c in ipairs(chunk.read(blob, STREAM_MAGIC)) do
+    if c.tag == "STRM" and c.version == 1 then
+      local id = unpack("<s4", c.payload)
+      if #id ~= 36 or id:sub(1, 4) ~= "hs1-"
+         or not id:sub(5):match("^%x+$") then
+        error("invalid history stream id", 0)
+      end
+      return id
+    end
+  end
+  error("history stream marker has no supported STRM chunk", 0)
+end
+
+local function stream_read(project)
+  local blob = pal.read_file(hist_stream_path(hist_dir_for(project)))
+  if not blob then return nil end
+  local ok, id = pcall(stream_decode, blob)
+  if ok then return id end
+  pal.log("[trace] history stream marker unreadable: " .. tostring(id))
+  return nil
+end
+
+local function stream_new(project)
+  -- Observer/dev identity only: never enters named buffers, snapshots, or
+  -- verification. Two independent 64-bit hashes make accidental reuse across
+  -- rapid rebuilds negligible; the persisted marker, not this recipe, is the
+  -- compatibility contract.
+  M._stream_nonce = (M._stream_nonce or 0) + 1
+  local seed = table.concat({ project, tostring(os.time()),
+                              tostring(pal.time_ns()),
+                              tostring(M._stream_nonce), tostring({}) }, "\0")
+  return ("hs1-%016x%016x"):format(pal.hash("a\0" .. seed),
+                                    pal.hash("b\0" .. seed))
+end
+
+local function stream_prepare(R, adopted)
+  if not M.ring.spill or R.project == "" then
+    R.stream_id = ""
+    return
+  end
+  local id = adopted and stream_read(R.project) or nil
+  if not id then
+    id = stream_new(R.project)
+    local dir = hist_dir(R)
+    pal.mkdir(dir)
+    local ok, err = pal.write_file_atomic(hist_stream_path(dir),
+                                           stream_encode(id),
+                         M._write_fail and M._write_fail.stream)
+    if not ok then
+      pal.log(("[trace] history stream identity failed (%s): %s; spill off")
+              :format(hist_stream_path(dir), tostring(err)))
+      M.ring.spill = false
+      R.stream_id = ""
+      return
+    end
+  end
+  R.stream_id = id
 end
 
 -- the manifest (R6.5): one line per spilled segment ("id first frames
@@ -298,7 +377,7 @@ end
 -- bundle (their sessions' code was never spilled): browsing/parking is
 -- exact; a RESUME into one keeps the current code (logged in rewind).
 local function hist_adopt(R)
-  if not M.ring.spill or R.project == "" then return end
+  if not M.ring.spill or R.project == "" then return false end
   local dir = hist_dir(R)
   local ent = hist_scan(R.project)
   local chain, expect = {}, state.frame()
@@ -313,12 +392,16 @@ local function hist_adopt(R)
   end
   local keep = {}
   for _, e in ipairs(chain) do keep[e.file] = true end
+  -- A non-empty adopted chain keeps its exact identity. With no matching
+  -- chain, the marker is deleted with the abandoned files and ring_init
+  -- creates a fresh generation below.
+  if #chain > 0 then keep[hist_stream_path(dir)] = true end
   local names = pal.list_dir(dir)
   for _, n in ipairs(names or {}) do
     local path = dir .. "/" .. n
     if not keep[path] then pal.x_remove(path) end
   end
-  if #chain == 0 then return end
+  if #chain == 0 then return false end
   local lines = {}
   for i = #chain, 1, -1 do -- chain is newest-first; adopt oldest-first
     local e = chain[i]
@@ -340,6 +423,7 @@ local function hist_adopt(R)
   end
   pal.log(("[trace] adopted %d history segments (frames %d..%d)")
           :format(#chain, R.segs[1].first, state.frame()))
+  return true
 end
 
 -- Eviction. Spill OFF = the pre-R6 rule verbatim: drop whole oldest
@@ -383,8 +467,9 @@ end
 local function ring_init(R)
   R.segs = {}
   R.loaded = nil
-  hist_adopt(R) -- R6.5: the continuous cross-session stream — adopt the
-                -- on-disk chain ending at the present frame, wipe the rest
+  local adopted = hist_adopt(R) -- R6.5: continuous cross-session stream;
+                                -- adopt the chain ending at the present
+  stream_prepare(R, adopted)    -- D065: exact generation identity
   -- One capture boundary for every engine-owned Lua handle. Participants
   -- flush into ordinary named buffers/doc, so the ring needs no module-
   -- specific chunks or restore calls (cm.state owns both halves).
@@ -425,6 +510,29 @@ function M.ring_range()
   local sn = R.segs[#R.segs]
   local newest = sn.frames > 0 and (sn.first + sn.frames - 1) or (sn.first - 1)
   return R.segs[1].first - 1, newest
+end
+
+-- Stable crash/replay locator for the active live source. `frame` is the last
+-- fully captured state, never a partially-mutated throwing step. Empty stream
+-- means there is no durable local history to resolve (headless/cache refusal).
+function M.ring_locator()
+  local R = M._R
+  if not R then return nil end
+  local _, hi = M.ring_range()
+  return { project = R.project, stream = R.stream_id or "", frame = hi }
+end
+
+-- Read-only resolver used by the future crash-focus source: both fields must
+-- match the report. A missing/corrupt/cleared stream returns nil rather than
+-- guessing from a timestamp or whichever project happened to launch last.
+function M.hist_locator(project)
+  local id = stream_read(project)
+  if not id then return nil end
+  local ent = hist_scan(project)
+  local e = ent[#ent]
+  if not e then return nil end
+  return { project = project, stream = id,
+           frame = e.first + e.frames - 1 }
 end
 
 function M.ring_stats()
@@ -484,6 +592,10 @@ function M.record_frame(input_record, evals)
   end
   state.capture_runtime()
   local seg = R.segs[#R.segs]
+  -- ring_flush may have checkpointed this still-open segment for a contained
+  -- error. A successful hot-reload resume appends to the same in-memory
+  -- generation and atomically replaces that checkpoint when it closes.
+  if seg.spilled then seg.spilled = nil end
   if evals and #evals > 0 then
     local ep = { pack("<I4", #evals) }
     for _, cmd in ipairs(evals) do ep[#ep + 1] = pack("<s4", cmd) end
@@ -632,13 +744,19 @@ function M.ring_export(path)
   return write_trace(path, R.project, ring_kf(), first_i)
 end
 
--- quit path (R6.5): spill the open segment so the session tail joins
--- the cross-session stream (closed segments already spilled)
+-- Quit/crash durability boundary (R6.5/D067): spill the open segment so the
+-- session tail joins the cross-session stream (closed segments already
+-- spilled). The boolean proves that the active stream's exact tail is now
+-- readable from disk; crash reports omit the locator when it is false.
 function M.ring_flush()
   local R = M._R
-  if not R then return end
+  if not R then return false end
   local seg = R.segs[#R.segs]
   if seg and not seg.spilled and seg.frames > 0 then spill_seg(R, seg) end
+  if not R.stream_id or R.stream_id == "" then return false end
+  local _, hi = M.ring_range()
+  local disk = M.hist_locator(R.project)
+  return disk ~= nil and disk.stream == R.stream_id and disk.frame == hi
 end
 
 -- load a .ctrace as the ring (replay playback, M5): the live ring is
@@ -718,6 +836,7 @@ function M.ring_load(path)
   state.restore(snap_blob) -- buffers/doc/counter + bundle code
   local R = M._R or { project = "" }
   R.segs = segs
+  R.stream_id = "" -- a foreign/destructive v1 replay is not live history
   R.next_id = #segs + 1
   R.last_frame = f0 + frames -- the loaded newest; exits rewind to rebase
   R.prev, R.prev_doc, R.prev_doc_hash = {}, nil, nil

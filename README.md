@@ -42,6 +42,14 @@ not create a second console window. For diagnostics, automation, and headless
 runs, use `bin/cosmic-console.exe`; it is the same engine with stdout/stderr
 attached to the calling terminal.
 
+Live runs also keep a flushed process log outside the extracted engine folder,
+so diagnostics still work from a read-only install and from GUI launchers. The
+platform-selected folder is `%APPDATA%\cosmic2d\engine\diagnostics\` on
+Windows and `$XDG_DATA_HOME/cosmic2d/engine/diagnostics/` on Linux (falling
+back to `~/.local/share/cosmic2d/engine/diagnostics/`). Contained errors add an
+atomic `.ccrash` report there; it includes the traceback and exact retained-
+history locator. Capped captures and verification runs do not create logs.
+
 ## Make a game
 
 Everything is authored in the editor (`--edit`, or via the picker): an

@@ -172,6 +172,11 @@ What this buys:
   the ring IS the recorder (D032, cm.trace), F4 opens the scrubber
   (cm.scrub) over it, and a loaded .ctrace replays through the same panel
   (state-per-frame playback; exiting adopts the trace's timeline).
+- **Durable history identity** (A2/D067): `<project>/.ed/history/stream` is a
+  `CHST` container whose `STRM v1` payload is an opaque `hs1-…` ID. It survives
+  contiguous cross-session adoption and rotates when derived history is
+  cleared or a fork cannot rejoin. Crash lookup matches project + stream +
+  committed frame exactly; timestamps are display metadata only.
 
 Cosmetic state (particles, camera shake) is still deterministic sim state —
 pixel goldens depend on it. "Cosmetic" only means the game rules don't read it.
@@ -549,7 +554,7 @@ binary incompatible, in either direction (D015).
 | --- | --- | --- |
 | `pal.argv`, `pal.platform` | dev | argv after binary name; "linux"/"windows" |
 | `pal.version` | — | `{major, api}`; see stability contract rule 7 |
-| `pal.log(s)` | dev | timestamped stderr + ring buffer for console |
+| `pal.log(s)` | dev | timestamped stderr + ring buffer for console; live interactive processes also flush to `pal.log_path` |
 | `pal.time_ns()` | render-only | monotonic; **never** in sim logic |
 | `pal.sleep_ms(n)` | dev | paces interactive headless sessions |
 | `pal.quit([code])` | — | request loop exit; `code` = process exit code (default 0) |
@@ -569,6 +574,7 @@ binary incompatible, in either direction (D015).
 | buf views: `:u8/:i8/:u16/:i16/:u32/:i32/:i64/:f32/:f64(off [,v])`, `:fill`, `:copy`, `:hash`, `:size`, `:str(off,len)`, `:setstr(off,s)` | sim | bounds-checked, error on OOB (i8/i16 added in v2) |
 | `pal.read_file(p)` / `pal.write_file(p,s)` / `pal.list_dir(p)` / `pal.mtime(p)` / `pal.mkdir(p)` | dev/io | engine enforces project-relative paths |
 | `pal.write_file_atomic(p,s)` → `true` or `nil,error` | dev/io | API v9: unique same-directory temp → complete write → stream flush → OS file sync → close → atomic replace; a pre-replace failure removes the temp and preserves an existing destination |
+| `pal.user_path()` → path or `nil,error` | dev/io | API v11: SDL-selected absolute per-user writable root for the fixed `cosmic2d/engine` identity; created on demand, platform separator retained |
 | `pal.poll_events()` | input | array of event tables, drained each tick |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |
 
@@ -701,6 +707,17 @@ R3/R4 re-host it), `x_compose{scale=0}`, game FOV stays the project's fixed
 size. The classic ladder/two-target model is unchanged for play mode and
 shipped games (960×540 default window, fullscreen = upscale — the blessed
 launcher shape).
+
+### PAL API v11 additions (A2 diagnostics — D067)
+
+`pal.user_path()` is the one engine-wide per-user writable root. Its fixed SDL
+organization/application pair is compatibility state and must not change;
+engine modules namespace beneath it. Live interactive processes expose
+`pal.diagnostics_dir` and `pal.log_path` and flush every PAL log line to a
+unique UTC/PID file. `--frames` and `--verify` do not create diagnostic files.
+This is observer/dev state only and never enters snapshots, traces, or sim
+logic. `cm.crash` builds the versioned `CCRP` report codec and atomic publisher
+above this primitive; `docs/REWIND.md` §16 freezes its A7 locator envelope.
 
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.

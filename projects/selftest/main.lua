@@ -2734,6 +2734,74 @@ local function t_atomic_write()
   recent.path = old_recent
 end
 
+-- ---- A2 diagnostics + D065 crash locator envelope ----
+
+local function t_crash()
+  check(pal.version.api >= 11 and type(pal.user_path) == "function",
+        "diagnostics: PAL api11 exposes the per-user path")
+  local user, uerr = pal.user_path()
+  local absolute = type(user) == "string" and
+    ((pal.platform == "windows" and user:match("^%a:[/\\]"))
+      or (pal.platform ~= "windows" and user:sub(1, 1) == "/"))
+  check(absolute and uerr == nil,
+        "diagnostics: per-user path is absolute + available")
+  check(pal.diagnostics_dir == nil and pal.log_path == nil,
+        "diagnostics: capped selftests do not create process logs")
+
+  local crash = cm.require("cm.crash")
+  local sample = {
+    report_id = "cr1-kat", project_path = "projects/space é",
+    project_name = "Display Name",
+    history_stream = "hs1-0123456789abcdef0123456789abcdef",
+    committed_frame = 123, attempted_frame = 124, code_epoch = 7,
+    error_kind = "sim.step", log_path = "/logs/process.log",
+    utc = "20260716T120000Z", engine_version = "0.1-alpha",
+    platform = "linux", pal_major = 0, pal_api = 11, exe = "cosmic",
+    traceback = "boom\nstack", input_record = "\0\1binary",
+    evals = { "doc.x = 1", "error('oops')" }, logs = "line one\nline two",
+  }
+  local blob = crash.encode(sample)
+  -- Additive readers ignore future chunks/versions instead of rejecting the
+  -- whole report (same compatibility rule as snapshots/traces).
+  blob = blob .. "FUTR" .. string.pack("<I4I4", 99, 3) .. "new"
+  local got = crash.decode(blob)
+  check(got.report_id == sample.report_id
+        and got.project_path == sample.project_path
+        and got.project_name == sample.project_name
+        and got.history_stream == sample.history_stream,
+        "crash: project/history identity round-trips")
+  check(got.committed_frame == 123 and got.attempted_frame == 124
+        and got.code_epoch == 7 and got.error_kind == "sim.step",
+        "crash: committed/attempted boundary round-trips")
+  check(got.input_record == sample.input_record and #got.evals == 2
+        and got.evals[2] == sample.evals[2]
+        and got.traceback == sample.traceback and got.logs == sample.logs
+        and got.pal_api == 11,
+        "crash: attempted work + diagnostics round-trip")
+
+  local dir = tmproot() .. "/cosmic_selftest_diagnostics"
+  for _, n in ipairs(pal.list_dir(dir) or {}) do pal.x_remove(dir .. "/" .. n) end
+  pal.x_remove(dir)
+  local path, err = crash.publish(sample, {
+    _dir = dir, _stamp = "20260716T120000Z", _fail = { _fail = "rename" },
+  })
+  check(path == nil and err:find("rename", 1, true),
+        "crash: interrupted publication reports its atomic boundary")
+  check(#(pal.list_dir(dir) or {}) == 0,
+        "crash: interrupted publication leaves no report/temp")
+  path = crash.publish(sample, { _dir = dir, _stamp = "20260716T120000Z" })
+  local path2 = crash.publish(sample, {
+    _dir = dir, _stamp = "20260716T120000Z",
+  })
+  local disk = path and crash.read(path)
+  check(path and path2 and path ~= path2 and disk
+        and disk.history_stream == sample.history_stream
+        and disk.committed_frame == 123,
+        "crash: atomic reports are unique + independently decodable")
+  for _, n in ipairs(pal.list_dir(dir) or {}) do pal.x_remove(dir .. "/" .. n) end
+  pal.x_remove(dir)
+end
+
 local function t_ring_spill()
   -- R6b (REWIND.md §3/D053): closed segments spill to .ed/history, the
   -- seconds window becomes RAM residency (demotion), the budget evicts
@@ -2756,6 +2824,11 @@ local function t_ring_spill()
   local b = pal.buf("st.spill", 8)
   b:i32(0, 0)
   trace.ring_start({ project = root })
+  local first_loc = trace.ring_locator()
+  check(first_loc and first_loc.project == root and first_loc.frame == f0
+        and #first_loc.stream == 36
+        and first_loc.stream:match("^hs1%-%x+$"),
+        "ring stream: fresh history gets an exact identity")
   local irec = ("\0"):rep(10)
   local snaps = {}
   local function drive(from, to)
@@ -2818,7 +2891,14 @@ local function t_ring_spill()
   -- counter adopts the chain — the stream spans the old session
   check(trace.hist_peek(root) == f0 + 40,
         "ring adopt: hist_peek finds the tail")
+  local disk_loc = trace.hist_locator(root)
+  check(disk_loc and disk_loc.project == root
+        and disk_loc.stream == first_loc.stream
+        and disk_loc.frame == f0 + 40,
+        "ring stream: durable locator names stream + committed tail")
   trace.ring_start({ project = root })
+  check(trace.ring_locator().stream == first_loc.stream,
+        "ring stream: normal adoption preserves identity")
   local lo5, hi5 = trace.ring_range()
   check(hi5 == f0 + 40 and lo5 == f0 + 28,
         "ring adopt: the stream spans the old session")
@@ -2840,8 +2920,7 @@ local function t_ring_spill()
 
   -- the quit flush spills the open tail so it joins the stream
   drive(31, 33) -- 31..32 close the truncated segment; 33 sits open
-  trace.ring_flush()
-  check(trace.hist_peek(root) == f0 + 33,
+  check(trace.ring_flush() and trace.hist_peek(root) == f0 + 33,
         "ring flush: the open tail joins the stream")
 
   -- resume onto a FULL segment's last frame: it re-spills — no chain
@@ -2854,8 +2933,19 @@ local function t_ring_spill()
   sim:i64(0, f0 + 999)
   trace.ring_start({ project = root })
   local left = pal.list_dir(root .. "/.ed/history")
-  check(left == nil or #left == 0,
-        "ring adopt: a forked timeline wipes clean")
+  local fork_loc = trace.ring_locator()
+  check(left and #left == 1 and left[1] == "stream"
+        and fork_loc.stream ~= first_loc.stream,
+        "ring adopt: a fork wipes segments and rotates stream identity")
+
+  -- History without a durable generation ID would make crash lookup guess.
+  -- Fail closed before any segment can spill.
+  trace._write_fail = { stream = { _fail = "rename" } }
+  trace.ring.spill = true
+  trace.ring_start({ project = root })
+  check(trace.ring_locator().stream == "" and not trace.ring.spill
+        and not pal.read_file(root .. "/.ed/history/stream"),
+        "ring stream: identity publication failure disables spill")
 
   -- Segment and manifest publication fail closed. A segment never becomes
   -- authoritative before both its container and index entry are durable.
@@ -2866,7 +2956,7 @@ local function t_ring_spill()
     trace.record_frame(irec, nil)
   end
   check(not pal.read_file(root .. "/.ed/history/seg_000001")
-        and not trace.ring.spill,
+        and not trace.ring.spill and not trace.ring_flush(),
         "ring spill: interrupted segment publishes no partial history")
 
   for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
@@ -5489,6 +5579,7 @@ function game.init()
   t_ed_wm()
   t_ed_game()
   t_atomic_write()
+  t_crash()
   t_ed_text_save()
   t_ed_session()
   t_ed_cache()

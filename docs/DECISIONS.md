@@ -2547,3 +2547,51 @@ bundled pre-D066 map code and remain readable.
 **Revisit.** If participant traversal or a large map's change detection appears
 in profiles, add explicit revisioned proxy handles or move the runtime codec to
 a PAL helper; do not add subsystem-specific trace chunks or restore calls.
+
+## D067 — per-user diagnostics and exact crash-to-history identity (A2, 2026-07-16)
+
+**Context.** Windows GUI launchers intentionally have no console, extracted
+artifacts may be read-only, and the R6 history store had only a project path
+plus monotonically continued frames. D065's crash-focused timeline cannot
+safely choose “the newest thing around that time”: history may have been
+cleared, forked, moved, or replaced. The A2 distribution gate also needs a
+useful failure artifact before the full A7 viewer exists.
+
+**Decision.** PAL API v11 adds `pal.user_path()`, backed by SDL's native
+per-user writable directory for the fixed organization/application identity
+`cosmic2d/engine`. Live interactive processes create `diagnostics/` below it
+and flush the C-owned log ring to a unique UTC/PID process log; capped captures
+and verification do not create files. The live PAL table exposes the resolved
+diagnostics and log paths, so Lua never reconstructs OS policy.
+
+Every durable rewind generation atomically owns
+`<project>/.ed/history/stream`, a `CHST` container with an opaque `STRM v1`
+`hs1-…` identifier. Contiguous cross-session adoption preserves it. Clearing
+derived history or failing the contiguity rule removes it and creates a new
+identity; inability to publish the marker disables spill rather than writing
+unlocatable history. `cm.trace.ring_locator()` and `hist_locator(project)`
+return project, stream, and last fully committed frame. Project path and
+display name remain human/discovery hints for now; stream + frame is the exact
+local key. A future permanent project UUID can be an additive report field.
+
+`cm.crash` publishes an atomic skip-tolerant `CCRP` container beside the log.
+`HEAD v1` freezes report ID, project path/name, history stream, committed and
+attempted frames, code epoch, error kind, and log path. Additive chunks carry
+UTC/runtime metadata, traceback, attempted input/evals, and recent log text.
+Empty stream and frame `-1` explicitly mean unavailable. A contained throwing
+step retains its attempted work only as metadata, flushes the open history
+segment, and never records its partially mutated state. Engine Lua errors that
+escape containment use the same handoff from the C parachute; hard native
+failures still leave the line-flushed process log.
+
+**Consequences.** Diagnostics work from GUI and read-only installs and the A7
+viewer now has a stable locator/codec to consume without guessing by time.
+Reports and logs can contain local paths, code/eval text, and tracebacks, so a
+sharing UI must ask before upload. The one-minute pin/embed policy, native-
+failure report synthesis on next launch, immutable crash source, drop/view UI,
+and log retention controls remain A7 work rather than being hidden in A2.
+
+**Proof.** KATs cover the PAL path, stream creation/adoption/rotation, durable
+locator, additive crash decode, binary input/eval metadata, atomic failure
+cleanup, unique publication, and disk decode. A live contained-error probe
+produces both a flushed process log and `.ccrash` outside the engine tree.

@@ -15,6 +15,7 @@
 
 #ifdef _WIN32
 #include <direct.h>
+#include <windows.h>
 #define pal_chdir _chdir
 #else
 #include <unistd.h>
@@ -33,12 +34,100 @@ void pal_log(const char *fmt, ...) {
   line->seq = ++G.log_seq;
   line->t = t;
   fprintf(stderr, "[pal %8.3f] %s\n", t, line->text);
+  if (G.log_io) {
+    char disk[PAL_LOG_LINE_MAX + 64];
+    int n = SDL_snprintf(disk, sizeof disk, "[pal %8.3f] %s\n", t,
+                         line->text);
+    if (n > 0) {
+      size_t len = (size_t)n < sizeof disk ? (size_t)n : sizeof disk - 1;
+      SDL_WriteIO(G.log_io, disk, len);
+      /* A native failure cannot ask Lua to publish a report. Flush every
+       * line so its process log remains useful at the next launch. */
+      SDL_FlushIO(G.log_io);
+    }
+  }
+}
+
+/* Capped captures and verification are deterministic automation, not user
+ * sessions. Keep them from filling the user's diagnostics directory while
+ * retaining logs for live windowed and uncapped-headless development. */
+static bool diagnostics_wanted(int argc, char **argv) {
+  for (int i = 1; i < argc; i++)
+    if (strcmp(argv[i], "--frames") == 0 || strcmp(argv[i], "--verify") == 0)
+      return false;
+  return true;
+}
+
+static void diagnostics_init(void) {
+  char *pref = SDL_GetPrefPath(PAL_PREF_ORG, PAL_PREF_APP);
+  if (!pref) {
+    fprintf(stderr, "cosmic2d: diagnostics path unavailable: %s\n",
+            SDL_GetError());
+    return;
+  }
+  size_t dcap = strlen(pref) + 32;
+  G.diagnostics_dir = SDL_malloc(dcap);
+  if (!G.diagnostics_dir) {
+    SDL_free(pref);
+    return;
+  }
+  SDL_snprintf(G.diagnostics_dir, dcap, "%sdiagnostics", pref);
+  SDL_free(pref);
+  if (!SDL_CreateDirectory(G.diagnostics_dir)) {
+    fprintf(stderr, "cosmic2d: cannot create diagnostics directory %s: %s\n",
+            G.diagnostics_dir, SDL_GetError());
+    SDL_free(G.diagnostics_dir);
+    G.diagnostics_dir = NULL;
+    return;
+  }
+
+  SDL_Time now = 0;
+  SDL_DateTime dt = {0};
+  SDL_GetCurrentTime(&now);
+  SDL_TimeToDateTime(now, &dt, false); /* UTC makes names locale-independent */
+  unsigned long pid =
+#ifdef _WIN32
+      (unsigned long)GetCurrentProcessId();
+#else
+      (unsigned long)getpid();
+#endif
+  size_t pcap = strlen(G.diagnostics_dir) + 96;
+  G.log_path = SDL_malloc(pcap);
+  if (!G.log_path) return;
+  SDL_snprintf(G.log_path, pcap,
+               "%s/process-%04d%02d%02dT%02d%02d%02dZ-%lu.log",
+               G.diagnostics_dir, dt.year, dt.month, dt.day, dt.hour,
+               dt.minute, dt.second, pid);
+  /* Append protects the previous bytes in the vanishingly rare same-second
+   * PID-reuse collision; normal launches still get one path each. */
+  G.log_io = SDL_IOFromFile(G.log_path, "ab");
+  if (!G.log_io) {
+    fprintf(stderr, "cosmic2d: cannot open diagnostic log %s: %s\n",
+            G.log_path, SDL_GetError());
+    SDL_free(G.log_path);
+    G.log_path = NULL;
+  }
 }
 
 static int msgh(lua_State *L) {
   const char *msg = lua_tostring(L, 1);
   luaL_traceback(L, L, msg ? msg : "(non-string error)", 1);
   return 1;
+}
+
+/* Best-effort structured handoff into cm.crash. The plain process log is
+ * already durable, so failure here must never obscure the original error. */
+static void report_lua_crash(const char *kind, const char *msg) {
+  if (!G.L) return;
+  int top = lua_gettop(G.L);
+  lua_getglobal(G.L, "cm_report_crash");
+  if (lua_isfunction(G.L, -1)) {
+    lua_pushstring(G.L, kind ? kind : "engine.lua");
+    lua_pushstring(G.L, msg ? msg : "(unknown)");
+    if (lua_pcall(G.L, 2, 0, 0) != LUA_OK)
+      pal_log("structured crash handoff failed: %s", lua_tostring(G.L, -1));
+  }
+  lua_settop(G.L, top);
 }
 
 static bool boot_lua(void) {
@@ -49,7 +138,9 @@ static bool boot_lua(void) {
   lua_pushcfunction(G.L, msgh);
   if (luaL_loadfile(G.L, "engine/boot.lua") != LUA_OK ||
       lua_pcall(G.L, 0, 0, -2) != LUA_OK) {
-    pal_log("boot error: %s", lua_tostring(G.L, -1));
+    const char *msg = lua_tostring(G.L, -1);
+    pal_log("boot error: %s", msg);
+    if (!G.exit_on_error) report_lua_crash("engine.boot", msg);
     lua_settop(G.L, 0);
     return false;
   }
@@ -65,6 +156,7 @@ static void enter_error_state(const char *msg) {
     G.quit = true;
     return;
   }
+  report_lua_crash("engine.lua", msg);
   pal_log("=== edit a watched file to reload ===");
   G.error_state = true;
 }
@@ -276,6 +368,7 @@ int main(int argc, char **argv) {
   G.argc = argc;
   G.argv = argv;
   SDL_SetAppMetadata("cosmic2d", "0.0", "dev.cosmic2d");
+  if (diagnostics_wanted(argc, argv)) diagnostics_init();
 
   if (!SDL_Init(SDL_INIT_VIDEO)) {
     /* no display (CI/headless box): the offscreen driver still gives us
@@ -323,6 +416,10 @@ int main(int argc, char **argv) {
   }
 
   if (G.L) lua_close(G.L);
+  if (G.log_io) {
+    SDL_CloseIO(G.log_io);
+    G.log_io = NULL;
+  }
   /* deliberately skip GPU/buffer teardown: the OS reclaims faster than we
    * can, and exit paths stay trivially correct */
   return G.exit_code;

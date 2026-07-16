@@ -210,4 +210,10 @@ function cm_tick()
   return main.tick()
 end
 
+-- C-parachute handoff. Defined before main.boot so even a partially failed
+-- boot can publish whatever project/history locator it managed to establish.
+function cm_report_crash(kind, traceback)
+  return main.report_crash(kind, traceback)
+end
+
 main.boot()

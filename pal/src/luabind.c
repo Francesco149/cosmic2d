@@ -1021,6 +1021,22 @@ static int l_write_file(lua_State *L) {
   return 1;
 }
 
+/* pal.user_path() -> absolute per-user writable application-data root.
+ * SDL owns the OS policy and creates the directory. The fixed identity is a
+ * compatibility promise: callers namespace below it, never choose a second
+ * org/app pair. */
+static int l_user_path(lua_State *L) {
+  char *path = SDL_GetPrefPath(PAL_PREF_ORG, PAL_PREF_APP);
+  if (!path) {
+    lua_pushnil(L);
+    lua_pushstring(L, SDL_GetError());
+    return 2;
+  }
+  lua_pushstring(L, path);
+  SDL_free(path);
+  return 1;
+}
+
 /* Flush an SDL file stream through the OS durability boundary. SDL_FlushIO
  * empties user-space buffering; fsync/FlushFileBuffers asks the filesystem to
  * persist it before the atomic rename. SDL_IOFromFile publishes its native
@@ -1342,6 +1358,7 @@ static const luaL_Reg pal_funcs[] = {
     {"read_file", l_read_file},
     {"write_file", l_write_file},
     {"write_file_atomic", l_write_file_atomic},
+    {"user_path", l_user_path},
     {"x_file_append", l_x_file_append},
     {"list_dir", l_list_dir},
     {"mtime", l_mtime},
@@ -1384,5 +1401,13 @@ void pal_lua_register(lua_State *L) {
    * with its own name; the decision lives in Lua (cm.main) */
   lua_pushstring(L, G.argc > 0 ? G.argv[0] : "cosmic");
   lua_setfield(L, -2, "exe");
+  if (G.diagnostics_dir) {
+    lua_pushstring(L, G.diagnostics_dir);
+    lua_setfield(L, -2, "diagnostics_dir");
+  }
+  if (G.log_path) {
+    lua_pushstring(L, G.log_path);
+    lua_setfield(L, -2, "log_path");
+  }
   lua_setglobal(L, "pal");
 }

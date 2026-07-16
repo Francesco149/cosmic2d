@@ -91,25 +91,77 @@ end
 
 -- ---- error containment (D023) ----
 
-local function enter_error(traceback)
+local function publish_crash(kind, traceback, attempt, no_locator)
+  local ok, crash = pcall(cm.require, "cm.crash")
+  if not ok then
+    pal.log("[crash] report module unavailable: " .. tostring(crash))
+    return nil
+  end
+  local wrote, path, err = pcall(crash.capture, kind, traceback,
+                                  { attempt = attempt,
+                                    no_locator = no_locator })
+  if not wrote then
+    pal.log("[crash] report failed: " .. tostring(path))
+    return nil
+  end
+  if not path then
+    pal.log("[crash] report failed: " .. tostring(err))
+    return nil
+  end
+  M.last_crash_path = path
+  pal.log("[crash] report: " .. path)
+  return path
+end
+
+-- Called by the C parachute for an engine/Lua failure that escaped the normal
+-- contained-game boundary. Must tolerate a partially completed M.boot().
+function M.report_crash(kind, traceback)
+  local exact = false
+  if M.trace and M.trace.ring_flush then
+    local ok, durable = pcall(M.trace.ring_flush)
+    if ok then
+      exact = durable == true
+    else
+      pal.log("[crash] history flush failed: " .. tostring(durable))
+    end
+  end
+  return publish_crash(kind or "engine.lua", traceback, M.attempt, not exact)
+end
+
+local function enter_error(traceback, kind, attempt)
   pal.log("=== game error ===\n" .. tostring(traceback))
   M.game_err = tostring(traceback):match("[^\n]*") or "error"
   if M.trace and M.trace.recording() then
     M.trace.record_stop() -- trace stays valid up to the last good frame
     pal.log("[trace] recording stopped by the error")
   end
+  if M.trace then
+    -- The throwing step never reached record_frame, so flushing publishes only
+    -- the last fully committed frame. The partial live state is not blessed.
+    local ok, exact = pcall(M.trace.ring_flush)
+    if not ok then
+      pal.log("[crash] history flush failed: " .. tostring(exact))
+      exact = false
+    end
+    publish_crash(kind or "game", traceback, attempt, exact ~= true)
+  else
+    -- Game entry/init happens before the ring starts. Defer publication until
+    -- ring_start has captured its safe initial keyframe and stream identity.
+    M.pending_crash = { kind = kind or "game", traceback = traceback,
+                        attempt = attempt }
+  end
   M.console.notify_error(M.game_err)
 end
 
 -- run a game callback; in contained sessions an error pauses the sim
 -- instead of propagating. Returns true when fn completed.
-local function guarded(fn, ...)
+local function guarded(kind, fn, ...)
   if not M.contain then
     fn(...)
     return true
   end
   local ok, err = xpcall(fn, debug.traceback, ...)
-  if not ok then enter_error(err) end
+  if not ok then enter_error(err, kind) end
   return ok
 end
 
@@ -137,7 +189,7 @@ function M.reset_game()
   -- restarted game re-uploads its song's track patches into the fresh bank
   -- (else the music plays silent voices — the restart-goes-quiet bug).
   cm.require("cm.snd").seq.reset()
-  if M.game then guarded(M.game.init) end
+  if M.game then guarded("game.init", M.game.init) end
   pal.log(("[main] game restarted (frame %d)"):format(f))
 end
 
@@ -155,7 +207,7 @@ end
 
 function M.request_quit()
   if M.game and M.game.on_quit and not M.game_err then
-    guarded(M.game.on_quit)
+    guarded("game.on_quit", M.game.on_quit)
   else
     pal.quit()
   end
@@ -344,10 +396,10 @@ function M.boot()
     local ok, game = xpcall(cm.require, debug.traceback, M.entry)
     if ok then
       M.game = game
-      guarded(M.game.init)
+      guarded("game.init", M.game.init)
     else
       M.game = nil
-      enter_error(game)
+      enter_error(game, "game.require")
     end
   else
     M.game = cm.require(M.entry)
@@ -392,17 +444,26 @@ function M.boot()
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
   M.trace.ring_start({ project = M.ed_cache_ok == false and "" or args.project })
+  if M.pending_crash then
+    local p = M.pending_crash
+    M.pending_crash = nil
+    M.trace.ring_flush()
+    -- Entry/init failed before there was a committed ring boundary. ring_start
+    -- exists now only to establish the session; do not label partial boot state
+    -- as a safe crash frame.
+    publish_crash(p.kind, p.traceback, p.attempt, true)
+  end
   -- the editor resumes where the stream left off (D056): when the
   -- adopted history reaches the present, restore its last frame so the
   -- sim continues exactly where the previous session quit (the code
   -- stays current — adopted segments carry no bundle, D055). Editor
   -- sessions only; play/headless boots stay fresh.
-  if args.edit and not args.headless then
+  if M.game and args.edit and not args.headless then
     local _, hi = M.trace.ring_range()
     if hi and hi > 0 and hi == M.state.frame() then
       local ok, err = pcall(M.trace.rewind, hi)
       if ok then
-        guarded(M.game.init)
+        guarded("game.init", M.game.init)
         pal.log(("[main] resumed the session at frame %d"):format(hi))
       else
         pal.log("[main] resume failed (" .. tostring(err) .. "); fresh boot")
@@ -433,7 +494,7 @@ local function poll_reload(now)
       M.game_err = nil
       M.console.clear_error()
       pal.log("[resume] entry loaded")
-      guarded(M.game.init)
+      guarded("game.init", M.game.init)
     else
       local first = tostring(game):match("[^\n]*")
       if first ~= M.last_boot_err then -- don't spam the ring at 4 Hz
@@ -451,11 +512,11 @@ local function poll_reload(now)
     M.game_err = nil
     M.console.clear_error()
     pal.log("[resume] code reloaded; resuming sim")
-    guarded(M.game.init) -- reload-idempotent by contract
+    guarded("game.init", M.game.init) -- reload-idempotent by contract
   else
     for _, name in ipairs(changed) do
       if name == M.entry then
-        guarded(M.game.init) -- must be reload-idempotent: buffers persist
+        guarded("game.init", M.game.init) -- must be reload-idempotent: buffers persist
       end
     end
   end
@@ -468,6 +529,7 @@ end
 local function sim_step()
   local evals = M.repl.drain()
   local rec = M.input.sample()
+  M.attempt = { frame = M.state.frame() + 1, input = rec, evals = evals }
   M.input.apply(rec)
   M.game.step()
   cm.require("cm.snd").step() -- the music sequencer (R9d): doc.snd-
@@ -478,6 +540,7 @@ local function sim_step()
                    -- inside the step so the recorder sees bank deltas
   M.state.advance_frame()
   if M.trace then M.trace.record_frame(rec, evals) end
+  M.attempt = nil
   return rec
 end
 
@@ -489,7 +552,7 @@ function M.after_restore()
     M.console.clear_error()
     pal.log("[resume] rewound out of the error")
   end
-  if M.game then guarded(M.game.init) end
+  if M.game then guarded("game.init", M.game.init) end
 end
 
 local function step_guarded()
@@ -498,7 +561,11 @@ local function step_guarded()
     return true
   end
   local ok, err = xpcall(sim_step, debug.traceback)
-  if not ok then enter_error(err) end
+  if not ok then
+    local attempt = M.attempt
+    M.attempt = nil
+    enter_error(err, "sim.step", attempt)
+  end
   return ok
 end
 
@@ -547,7 +614,7 @@ function M.tick()
   M.view.update()
   local draw_t0 = pal.time_ns()
 
-  if M.game_err or not guarded(M.game.draw) then
+  if M.game_err or not guarded("game.draw", M.game.draw) then
     -- no game frame to show: dark backdrop (also resets a half-built batch)
     pal.begin_frame(0.09, 0.03, 0.07, 1)
   end
