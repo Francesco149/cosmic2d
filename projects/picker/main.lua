@@ -11,6 +11,14 @@
 -- its tile go. A tile opens the project IN THE EDITOR (the picker is the
 -- editor's front door); the ▶ zone boots play mode.
 --
+-- Navigation and scale (D080): the grid scrolls (wheel, draggable bar,
+-- PgUp/PgDn), a search field + sort toggle reorder it through cm.pick's
+-- pure list model, and the whole surface works without a mouse — arrows
+-- move the cursor ring, Enter opens (Shift+Enter plays, or repairs a
+-- broken recent), '.' opens the folder menu, Del opens the delete door,
+-- '/' or Ctrl+F focuses search, and every modal button row cycles with
+-- arrows/Tab + Enter. All of it is ephemeral render/dev state.
+--
 -- The switch mechanism (D052): write "<path>\n<mode>" into the `boot.next`
 -- named buffer (named buffers survive VM reboots by contract) and call
 -- pal.x_reboot() — the next boot adopts the carrier, sweeps the old
@@ -26,11 +34,20 @@ local chrome = cm.require("cm.ed.chrome")
 local project = cm.require("cm.project")
 local location = cm.require("cm.project_location")
 local recent = cm.require("cm.recent")
+local pick = cm.require("cm.pick")
 
 M.scan = M.scan or nil -- ephemeral tile cache (render/dev)
 M.folder = M.folder or nil -- active native chooser (open / repair / move-to)
 M.notice = M.notice or nil -- latest actionable lifecycle result
 M.action = M.action or nil -- ready-tile project-folder overlay
+
+-- Grid navigation state (D080): ephemeral like everything else here — the
+-- picker deliberately owns no persistent state beyond recents/editor.dat.
+M.nav = M.nav or {}
+M.nav.query = M.nav.query or ""
+M.nav.sort = M.nav.sort or "recent"
+M.nav.cursor = M.nav.cursor or 1
+M.nav.scroll = M.nav.scroll or 0
 
 local C = {
   bg = 0x141220ff, text = 0xE8E4FFff, dim = 0x8a84b0ff,
@@ -356,61 +373,229 @@ function M.draw()
 
   pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
   if poll_folder() then return end -- selected folder queued a VM reboot
-  pal.x_ig_text(28, 22, 26, C.text, "cosmic2d", 0)
-  pal.x_ig_text(28 + pal.x_ig_text_size("cosmic2d", 26, 0) + 14, 31, 13,
-                C.dim, "pick a project — click opens the editor; play boots the game", 0)
 
-  local function button(x, y, w, h, label, enabled)
-    local hov = enabled and i.wx >= x and i.wx < x + w
-                and i.wy >= y and i.wy < y + h
+  local nav = M.nav
+  for _, e in ipairs(i.keys) do -- modifier tracking (Shift+Enter, Ctrl+F)
+    local sc = e.scancode
+    if sc == 224 or sc == 228 then nav.ctrl = e.down
+    elseif sc == 225 or sc == 229 then nav.shift = e.down end
+  end
+
+  local function button(x, y, w, h, label, enabled, sel, inp)
+    local ii = inp or i
+    local hov = enabled and ii.wx >= x and ii.wx < x + w
+                and ii.wy >= y and ii.wy < y + h
     pal.x_ig_rect_fill(x, y, w, h, hov and C.tile_hot or C.tile, 6)
-    pal.x_ig_rect(x, y, w, h, hov and C.accent or C.tile_edge, 1, 6)
+    pal.x_ig_rect(x, y, w, h, (hov or sel) and C.accent or C.tile_edge,
+                  sel and 1.5 or 1, 6)
     local tw = pal.x_ig_text_size(label, 11, 0)
     pal.x_ig_text(x + (w - tw) * 0.5, y + 6, 11,
-                  enabled and (hov and C.text or C.dim) or C.missing, label, 0)
-    return hov and i.clicked[1]
+                  enabled and ((hov or sel) and C.text or C.dim) or C.missing,
+                  label, 0)
+    return hov and ii.clicked[1]
   end
 
   local open_w, refresh_w = 104, 72
   local refresh_x = ig.w - 28 - refresh_w
   local open_x = refresh_x - 8 - open_w
-  if button(open_x, 18, open_w, 28,
+  pal.x_ig_text(28, 16, 26, C.text, "cosmic2d", 0)
+  local tag_x = 28 + pal.x_ig_text_size("cosmic2d", 26, 0) + 14
+  pal.x_ig_clip_push(tag_x, 25, math.max(0, open_x - 8 - tag_x), 16)
+  pal.x_ig_text(tag_x, 25, 13, C.dim,
+                "pick a project — click opens the editor; play boots the game", 0)
+  pal.x_ig_clip_pop()
+  if button(open_x, 14, open_w, 28,
             M.folder and "choosing…" or "open folder",
             not M.folder and not modal_at_start) then
     begin_folder()
   end
-  if button(refresh_x, 18, refresh_w, 28, "refresh",
+  if button(refresh_x, 14, refresh_w, 28, "refresh",
             not M.folder and not modal_at_start) then refresh() end
-  if M.notice then
-    pal.x_ig_clip_push(28, 55, math.max(40, ig.w - 56), 18)
-    pal.x_ig_text(28, 55, 11, M.notice.bad and C.bad or C.dim,
-                  M.notice.text, 0)
-    pal.x_ig_clip_pop()
+
+  -- search + sort (D080): filter and reorder the grid, mouse optional.
+  -- The mirrored-glyph x_ig_edit idiom matches the modal's name field.
+  local sort_w = 96
+  local sx, sy, sh = 28, 50, 26
+  local sw = math.max(120, math.min(320, ig.w - 28 * 2 - sort_w - 8))
+  pal.x_ig_rect_fill(sx, sy, sw, sh, 0x141220ff, 5)
+  local qtext, qchanged, qactive, qst = nav.query or "", false, false, nil
+  if not modal_at_start then -- a modal owns the keys; show the query inert
+    qtext, qchanged, qactive, qst = pal.x_ig_edit {
+      id = "picker_search", x = sx + 7, y = sy + 4, w = sw - 14, h = sh - 8,
+      text = nav.query or "", px = 12, font = 1, multiline = false,
+      enter = true, ghost = true, focus = nav.focus_search or nil,
+    }
+    nav.focus_search = nil
+  end
+  if qchanged then
+    nav.query = qtext:gsub("[\r\n\t]", "")
+    nav.cursor, nav.scroll = 1, 0
+  end
+  pal.x_ig_rect(sx, sy, sw, sh, qactive and C.accent or C.tile_edge, 1, 5)
+  local qshown = qchanged and nav.query or qtext
+  pal.x_ig_clip_push(sx + 2, sy + 2, sw - 4, sh - 4)
+  local qtx = sx + 7 - (qst and qst.sx or 0)
+  if qactive and qst and qst.sa and qst.sb and qst.sb > qst.sa then
+    local bx = pal.x_ig_text_size(qshown:sub(1, qst.sa), 12, 1)
+    local swid = pal.x_ig_text_size(qshown:sub(qst.sa + 1, qst.sb), 12, 1)
+    pal.x_ig_rect_fill(qtx + bx, sy + 5, math.max(1, swid), 16, 0x5a548099, 2)
+  end
+  if qshown == "" and not qactive then
+    pal.x_ig_text(sx + 7, sy + 6, 12, C.missing, "search   ( / )", 1)
   else
-    pal.x_ig_text(28, 55, 11, C.dim,
-                  "Open keeps an external project in place · ... manages its folder.", 0)
+    pal.x_ig_text(qtx, sy + 6, 12, C.text, qshown, 1)
+  end
+  if qactive and qst and qst.caret then
+    local cx = pal.x_ig_text_size(qshown:sub(1, qst.caret), 12, 1)
+    pal.x_ig_line(qtx + cx, sy + 5, qtx + cx, sy + sh - 5, C.accent, 1)
+  end
+  pal.x_ig_clip_pop()
+  -- Esc/Enter deactivate the field within the edit machine; the same key
+  -- event must not also drive the grid below, so remember both frames.
+  local was_search = nav.search_active
+  nav.search_active = qactive
+  if qst and qst.submit then nav.cursor = 1 end
+  if button(sx + sw + 8, sy, sort_w, sh, "sort: " .. nav.sort,
+            not modal_at_start) then
+    nav.sort = nav.sort == "recent" and "name" or "recent"
+    nav.cursor, nav.scroll = 1, 0
   end
 
   local tiles = scan()
+  local list = pick.view(tiles, nav.query, nav.sort)
+  local count = (#list ~= #tiles and (#list .. " of " .. #tiles .. " projects"))
+                or nil
+  local count_w = count and pal.x_ig_text_size(count, 11, 0) or 0
+  if count then
+    pal.x_ig_text(ig.w - 28 - count_w, 84, 11, C.dim, count, 0)
+  end
+  pal.x_ig_clip_push(28, 84, math.max(40, ig.w - 60 - count_w), 16)
+  if M.notice then
+    pal.x_ig_text(28, 84, 11, M.notice.bad and C.bad or C.dim,
+                  M.notice.text, 0)
+  else
+    pal.x_ig_text(28, 84, 11, C.dim,
+                  "arrows + Enter open · Shift+Enter plays · . manages the "
+                  .. "folder · Del deletes · / searches", 0)
+  end
+  pal.x_ig_clip_pop()
+
+  -- ---- the scrolled grid (D080) ----
+
   local pad, tw, th = 20, 240, 112
-  local cols = math.max(1, math.floor((ig.w - 2 * pad) / (tw + pad)))
-  local x0, y0 = 28, 82
-  for idx, t in ipairs(tiles) do
+  local stride = th + pad
+  local x0, gy0 = 28, 108
+  local view_h = ig.h - gy0
+  local cols = math.max(1, math.floor((ig.w - 2 * pad - 12) / (tw + pad)))
+  local cells = #list + 1 -- the last cell is "+ New project"
+  local rows = (cells + cols - 1) // cols
+  local content_h = rows * stride
+  nav.cursor = math.max(1, math.min(cells, nav.cursor))
+  nav.scroll = pick.clamp(nav.scroll, content_h, view_h)
+
+  -- keyboard: the grid owns keys whenever no modal, chooser, or search
+  -- field does. Arrows repeat; actions fire on the initial press only.
+  local KDIR = { [79] = "right", [80] = "left", [81] = "down", [82] = "up",
+                 [74] = "home", [77] = "end", [75] = "pgup", [78] = "pgdn" }
+  if not modal_at_start and not M.folder and not qactive and not was_search then
+    local page_rows = math.max(1, math.floor(view_h / stride))
+    for _, e in ipairs(i.keys) do
+      if e.down then
+        local sc = e.scancode
+        if KDIR[sc] then
+          nav.cursor = pick.nav(nav.cursor, KDIR[sc], cells, cols, page_rows)
+          nav.scroll = pick.ensure_visible(nav.scroll,
+                                           (nav.cursor - 1) // cols * stride,
+                                           th, content_h, view_h)
+        elseif sc == 56 or (sc == 9 and nav.ctrl) then -- '/' or Ctrl+F
+          nav.focus_search = true
+        elseif sc == 40 and not e.rep then -- Enter: open / play / repair
+          local t = list[nav.cursor]
+          if not t then
+            scaffold()
+          elseif t.ok then
+            launch(t.path, nav.shift and "play" or "edit")
+          elseif t.recent then
+            begin_folder(t) -- the repair chooser, same as its button
+          end
+        elseif sc == 55 and not e.rep then -- '.': the ... folder menu
+          local t = list[nav.cursor]
+          if t and t.ok and t.recent then open_actions(t) end
+        elseif sc == 76 and not e.rep then -- Del: the confirmed delete door
+          local t = list[nav.cursor]
+          if t and t.recent and (t.ok or t.present) then
+            open_actions(t.path, "delete")
+          end
+        elseif sc == 41 and not e.rep and (nav.query or "") ~= "" then
+          nav.query, nav.cursor, nav.scroll = "", 1, 0 -- Esc clears the filter
+        end
+      end
+    end
+  end
+
+  if not modal_at_start and i.wheel ~= 0 then
+    nav.scroll = pick.clamp(nav.scroll - i.wheel * 66, content_h, view_h)
+  end
+
+  -- scrollbar: wheel's visible twin — a draggable thumb plus page jumps
+  if content_h > view_h then
+    local trx, try, trw, trh = ig.w - 14, gy0, 6, view_h - 8
+    local max_scroll = content_h - view_h
+    local thumb_h = math.max(24, trh * view_h / content_h)
+    pal.x_ig_rect_fill(trx, try, trw, trh, 0x1e1b2eff, 3)
+    if nav.sdrag then
+      if i.buttons[1] then
+        local r = (i.wy - try - nav.sdrag) / math.max(1, trh - thumb_h)
+        nav.scroll = pick.clamp(r * max_scroll, content_h, view_h)
+      else
+        nav.sdrag = nil
+      end
+    end
+    local thumb_y = try + (trh - thumb_h) * (nav.scroll / max_scroll)
+    if not nav.sdrag and i.clicked[1] and not modal_at_start
+        and i.wx >= trx - 4 and i.wx < trx + trw + 4
+        and i.wy >= try and i.wy < try + trh then
+      if i.wy >= thumb_y and i.wy < thumb_y + thumb_h then
+        nav.sdrag = i.wy - thumb_y
+      else
+        nav.scroll = pick.clamp(nav.scroll
+                                + (i.wy < thumb_y and -1 or 1) * view_h * 0.9,
+                                content_h, view_h)
+        thumb_y = try + (trh - thumb_h) * (nav.scroll / max_scroll)
+      end
+    end
+    pal.x_ig_rect_fill(trx, thumb_y, trw, thumb_h, 0x4a4370ff, 3)
+  else
+    nav.sdrag = nil
+  end
+
+  -- tiles under the header row can be scrolled partly out; a shadow input
+  -- keeps their hit zones dead when the pointer is over the header/search.
+  local gi = i
+  if i.wy < gy0 or nav.sdrag then
+    gi = setmetatable({ wx = -1e9, wy = -1e9, clicked = {} }, { __index = i })
+  end
+
+  pal.x_ig_clip_push(0, gy0, ig.w, view_h)
+  for idx, t in ipairs(list) do
     local col, row = (idx - 1) % cols, (idx - 1) // cols
     local x = x0 + col * (tw + pad)
-    local y = y0 + row * (th + pad)
-    if y > ig.h then break end
-    local hov = i.wx >= x and i.wx < x + tw and i.wy >= y and i.wy < y + th
+    local y = gy0 + row * stride - nav.scroll
+    if y + th >= gy0 and y <= ig.h then
+    local hov = gi.wx >= x and gi.wx < x + tw and gi.wy >= y and gi.wy < y + th
     -- the play zone, bottom-right of the tile
     local pzx, pzy, pzw, pzh = x + tw - 50, y + th - 34, 44, 26
-    local phov = hov and i.wx >= pzx and i.wx < pzx + pzw
-                 and i.wy >= pzy and i.wy < pzy + pzh
+    local phov = hov and gi.wx >= pzx and gi.wx < pzx + pzw
+                 and gi.wy >= pzy and gi.wy < pzy + pzh
     local azx, azy, azw, azh = x + tw - 36, y + 8, 28, 22
-    local ahov = t.recent and t.ok and i.wx >= azx and i.wx < azx + azw
-                 and i.wy >= azy and i.wy < azy + azh
+    local ahov = t.recent and t.ok and gi.wx >= azx and gi.wx < azx + azw
+                 and gi.wy >= azy and gi.wy < azy + azh
     pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
     pal.x_ig_rect(x, y, tw, th, (hov and not phov and not ahov) and C.accent
                   or C.tile_edge, hov and 1.5 or 1, 8)
+    if idx == nav.cursor then -- the keyboard cursor ring
+      pal.x_ig_rect(x - 3, y - 3, tw + 6, th + 6, C.accent, 1.5, 10)
+    end
     -- two subtitle rows under the name: a byline (author · version) then
     -- the description; the path stands in for whichever the metadata omits
     -- so metadata-less / sibling-repo projects still show where they live.
@@ -438,11 +623,11 @@ function M.draw()
         pal.x_ig_clip_pop()
       end
       if t.recent and button(x + 14, y + th - 52, 70, 24, "repair",
-                             not M.folder and not modal_at_start) then
+                             not M.folder and not modal_at_start, nil, gi) then
         begin_folder(t)
       end
       if t.recent and button(x + 92, y + th - 52, 70, 24, "remove",
-                             not M.folder and not modal_at_start) then
+                             not M.folder and not modal_at_start, nil, gi) then
         local ok, err = recent.remove(t.path)
         if ok then
           M.scan = nil
@@ -455,14 +640,14 @@ function M.draw()
       -- keeps the confirmed-delete door so leftovers never strand.
       if t.recent and t.present
           and button(x + 170, y + th - 52, 56, 24, "delete",
-                     not M.folder and not modal_at_start) then
+                     not M.folder and not modal_at_start, nil, gi) then
         open_actions(t.path, "delete")
       end
     end
     if t.ok then
       local action_clicked = false
       if t.recent and button(azx, azy, azw, azh, "...",
-                             not M.folder and not modal_at_start) then
+                             not M.folder and not modal_at_start, nil, gi) then
         open_actions(t)
         action_clicked = true
       end
@@ -470,36 +655,45 @@ function M.draw()
                          phov and 0x3a3560ff or 0x26223855, 6)
       pal.x_ig_text(pzx + 8, pzy + 6, 12, phov and C.play or C.dim,
                     "play", 0)
-      if hov and i.clicked[1] and not action_clicked and not ahov
+      if hov and gi.clicked[1] and not action_clicked and not ahov
           and not modal_at_start then
+        nav.cursor = idx
         launch(t.path, phov and "play" or "edit")
       end
+    end
     end
   end
 
   -- the "+ New project" tile, at the end of the grid (G5): scaffolds a
   -- 3-random-words project from the template and opens it in the editor
   do
-    local idx = #tiles + 1
+    local idx = cells
     local col, row = (idx - 1) % cols, (idx - 1) // cols
     local x = x0 + col * (tw + pad)
-    local y = y0 + row * (th + pad)
-    if y <= ig.h then
-      local hov = i.wx >= x and i.wx < x + tw and i.wy >= y and i.wy < y + th
+    local y = gy0 + row * stride - nav.scroll
+    if y + th >= gy0 and y <= ig.h then
+      local hov = gi.wx >= x and gi.wx < x + tw
+                  and gi.wy >= y and gi.wy < y + th
       pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
       pal.x_ig_rect(x, y, tw, th, hov and C.accent or C.tile_edge,
                     hov and 1.5 or 1, 8)
+      if idx == nav.cursor then
+        pal.x_ig_rect(x - 3, y - 3, tw + 6, th + 6, C.accent, 1.5, 10)
+      end
       pal.x_ig_text(x + 14, y + 14, 18, hov and C.text or C.accent,
                     "+ New project", 0)
       pal.x_ig_text(x + 14, y + 42, 11, C.dim,
                     "3 random words · opens in the editor", 1)
-      if hov and i.clicked[1] and not modal_at_start then scaffold() end
+      if hov and gi.clicked[1] and not modal_at_start then scaffold() end
     end
   end
+  pal.x_ig_clip_pop()
 
-  if #tiles == 0 then
-    pal.x_ig_text(x0, y0 + 96, 15, C.dim,
-                  "no projects yet — click + New project", 0)
+  if #list == 0 then
+    pal.x_ig_text(x0, gy0 + stride + 8 - nav.scroll, 15, C.dim,
+                  #tiles == 0 and "no projects yet — click + New project"
+                  or ('nothing matches "' .. tostring(nav.query)
+                      .. '" — Esc clears the search'), 0)
   end
 
   -- Ready recent-tile actions live in one modal so ordinary tile click/play
@@ -538,6 +732,7 @@ function M.draw()
       -- Terminal handling runs exactly once: the handle is cleared here.
       local job = a.job
       a.job = nil
+      a.kcursor = nil -- each result state re-picks its safe default button
       if a.mode == "duplicate" then
         if job.complete then
           M.scan = nil
@@ -648,12 +843,33 @@ function M.draw()
       end
       pal.x_ig_clip_pop()
       local valid, name_error = location.validate_name(a.rename)
-      return valid, name_error, st and st.submit
+      return valid, name_error, st and st.submit, active
+    end
+
+    -- Keyboard grammar for the modal's button rows (D080): arrows/Tab cycle
+    -- the selected button, Enter activates it. Callers skip this while a
+    -- text field owns the keys (or just submitted on this same Enter).
+    local function kb_row(n, def)
+      local act = false
+      for _, key in ipairs(i.keys) do
+        if key.down then
+          local sc = key.scancode
+          if sc == 79 or sc == 81 or (sc == 43 and not nav.shift) then
+            a.kcursor = (a.kcursor or def or 1) % n + 1
+          elseif sc == 80 or sc == 82 or (sc == 43 and nav.shift) then
+            a.kcursor = ((a.kcursor or def or 1) - 2) % n + 1
+          elseif sc == 40 and not key.rep then
+            act = true
+          end
+        end
+      end
+      a.kcursor = math.max(1, math.min(n, a.kcursor or def or 1))
+      return act
     end
 
     if a.mode == "rename" then
       local fy, fh = py + 92, 32
-      local valid, name_error, submit =
+      local valid, name_error, submit, factive =
         name_field("picker_project_folder_rename", fy, fh, true)
       local status = a.error or name_error
       if status then
@@ -665,8 +881,10 @@ function M.draw()
                       "Only the folder changes; project name stays in settings.", 0)
       end
       local by = py + ph - 44
-      if button(px + 18, by, 104, 28, "rename folder", valid ~= nil)
-          or (submit and valid) then
+      local act = not factive and not submit and kb_row(2, 1)
+      if button(px + 18, by, 104, 28, "rename folder", valid ~= nil,
+                a.kcursor == 1)
+          or (submit and valid) or (act and a.kcursor == 1 and valid) then
         local ok, result, outcome = location.rename(a.path, a.rename)
         M.scan = nil
         if ok then
@@ -678,12 +896,13 @@ function M.draw()
           if outcome and outcome.moved then M.action = nil end
         end
       end
-      if M.action and button(px + 132, by, 72, 28, "cancel", true) then
+      if M.action and (button(px + 132, by, 72, 28, "cancel", true,
+                              a.kcursor == 2) or (act and a.kcursor == 2)) then
         M.action = nil
       end
     elseif a.mode == "duplicate" then
       local fy, fh = py + 84, 32
-      local valid, name_error, submit =
+      local valid, name_error, submit, factive =
         name_field("picker_project_folder_duplicate", fy, fh, not busy)
       local status = a.error or name_error
       if status then
@@ -710,15 +929,19 @@ function M.draw()
       end
       local by = py + ph - 44
       if busy then
-        if button(px + 18, by, 104, 28, "cancel copy", true) then
+        if button(px + 18, by, 104, 28, "cancel copy", true, a.kcursor == 1)
+            or kb_row(1, 1) then
           location.job_cancel(a.job)
         end
       else
-        if button(px + 18, by, 104, 28, "duplicate", valid ~= nil)
-            or (submit and valid) then
+        local act = not factive and not submit and kb_row(2, 1)
+        if button(px + 18, by, 104, 28, "duplicate", valid ~= nil,
+                  a.kcursor == 1)
+            or (submit and valid) or (act and a.kcursor == 1 and valid) then
           M.start_duplicate()
         end
-        if M.action and button(px + 132, by, 72, 28, "cancel", true) then
+        if M.action and (button(px + 132, by, 72, 28, "cancel", true,
+                                a.kcursor == 2) or (act and a.kcursor == 2)) then
           M.action = nil
         end
       end
@@ -737,7 +960,8 @@ function M.draw()
         pal.x_ig_text(px + 18, py + 126, 10, C.dim,
                       tostring(job.detail or ""), 1)
         pal.x_ig_clip_pop()
-        if button(px + 18, by, 118, 28, "cancel archive", true) then
+        if button(px + 18, by, 118, 28, "cancel archive", true, a.kcursor == 1)
+            or kb_row(1, 1) then
           location.job_cancel(a.job)
         end
       elseif a.archived then
@@ -750,12 +974,16 @@ function M.draw()
         pal.x_ig_text(px + 18, py + 132, 10, C.dim,
                       "The folder is unchanged. Deleting now keeps this "
                       .. "archive as the safety net.", 0)
-        if button(px + 18, by, 128, 28, "delete folder…", true) then
+        local act = kb_row(2, 2) -- Enter defaults to the safe close
+        if button(px + 18, by, 128, 28, "delete folder…", true, a.kcursor == 1)
+            or (act and a.kcursor == 1) then
           -- Two-step confirmation: this click arms it, the delete screen's
           -- explicit red button (naming the folder) is the second step.
-          a.mode, a.error, a.rename = "delete", nil, a.folder
+          a.mode, a.error, a.rename, a.kcursor = "delete", nil, a.folder, nil
         end
-        if M.action and button(px + 156, by, 72, 28, "close", true) then
+        if M.action and a.mode == "archive"
+            and (button(px + 156, by, 72, 28, "close", true, a.kcursor == 2)
+                 or (act and a.kcursor == 2)) then
           M.action = nil
         end
       else
@@ -764,7 +992,8 @@ function M.draw()
           pal.x_ig_text(px + 18, py + 96, 10, C.bad, a.error, 1)
           pal.x_ig_clip_pop()
         end
-        if button(px + 18, by, 72, 28, "close", true) then
+        if button(px + 18, by, 72, 28, "close", true, a.kcursor == 1)
+            or kb_row(1, 1) then
           M.action = nil
         end
       end
@@ -786,11 +1015,12 @@ function M.draw()
         pal.x_ig_text(px + 18, py + 140, 10, C.dim,
                       tostring(job.detail or ""), 1)
         pal.x_ig_clip_pop()
-        if button(px + 18, by, 112, 28, "cancel delete", true) then
+        if button(px + 18, by, 112, 28, "cancel delete", true, a.kcursor == 1)
+            or kb_row(1, 1) then
           location.job_cancel(a.job)
         end
       else
-        local armed
+        local armed, act, dsubmit
         if a.archived then
           -- The just-made archive is the safety net; no retyping.
           armed = a.rename == a.folder
@@ -804,10 +1034,16 @@ function M.draw()
             pal.x_ig_text(px + 18, py + 146, 10, C.bad, a.error, 0)
             pal.x_ig_clip_pop()
           end
+          act = kb_row(2, 2) -- Enter defaults to the safe cancel
         else
+          local dactive
           local fy, fh = py + 106, 32
-          name_field("picker_project_folder_delete", fy, fh, true)
+          _, _, dsubmit, dactive =
+            name_field("picker_project_folder_delete", fy, fh, true)
           armed = a.rename == a.folder
+          -- Enter inside the field is the typed confirmation itself; the
+          -- button row only takes over once the field lets go.
+          act = not dactive and not dsubmit and kb_row(2, 2)
           local status = a.error
           if status then
             pal.x_ig_clip_push(px + 18, fy + 39, pw - 36, 18)
@@ -819,10 +1055,13 @@ function M.draw()
                           .. '" to confirm.', 0)
           end
         end
-        if button(px + 18, by, 122, 28, "delete forever", armed) and armed then
+        if (button(px + 18, by, 122, 28, "delete forever", armed,
+                   a.kcursor == 1)
+            or (act and a.kcursor == 1) or dsubmit) and armed then
           M.start_delete()
         end
-        if M.action and button(px + 150, by, 72, 28, "cancel", true) then
+        if M.action and (button(px + 150, by, 72, 28, "cancel", true,
+                                a.kcursor == 2) or (act and a.kcursor == 2)) then
           M.action = nil
         end
       end
@@ -839,35 +1078,48 @@ function M.draw()
       if button(px + pw - 48, py + 12, 30, 24, "x", true) then
         M.action = nil
       end
-      if M.action and button(px + 18, by1, 88, 28, "reveal", true) then
-        local ok, result = location.reveal(a.path)
-        if ok then
-          say("revealed project folder · " .. result)
-          M.action = nil
-        else
-          say(result, true)
-          a.error = result
+      local act = kb_row(6, 1)
+      local items = {
+        { x = px + 18, y = by1, w = 88, label = "reveal", fn = function()
+            local ok, result = location.reveal(a.path)
+            if ok then
+              say("revealed project folder · " .. result)
+              M.action = nil
+            else
+              say(result, true)
+              a.error = result
+            end
+          end },
+        { x = px + 116, y = by1, w = 112, label = "rename folder",
+          fn = function()
+            a.mode, a.focus, a.error, a.kcursor = "rename", true, nil, nil
+          end },
+        { x = px + 238, y = by1, w = 102, label = "move folder",
+          fn = function()
+            local ok, err = begin_folder { kind = "move", source = a.path }
+            if ok then M.action = nil else a.error = err end
+          end },
+        { x = px + 18, y = by2, w = 96, label = "duplicate", fn = function()
+            local ok, err = begin_folder { kind = "duplicate", source = a.path,
+                                           name = a.name }
+            if ok then M.action = nil else a.error = err end
+          end },
+        { x = px + 124, y = by2, w = 96, label = "archive", fn = function()
+            local ok, err = begin_folder { kind = "archive", source = a.path,
+                                           name = a.name }
+            if ok then M.action = nil else a.error = err end
+          end },
+        { x = px + 230, y = by2, w = 96, label = "delete…", fn = function()
+            a.mode, a.focus, a.error, a.rename, a.kcursor =
+              "delete", true, nil, "", nil
+          end },
+      }
+      for k, item in ipairs(items) do
+        if not M.action or a.mode ~= "menu" then break end
+        if button(item.x, item.y, item.w, 28, item.label, true,
+                  a.kcursor == k) or (act and a.kcursor == k) then
+          item.fn()
         end
-      end
-      if M.action and button(px + 116, by1, 112, 28, "rename folder", true) then
-        a.mode, a.focus, a.error = "rename", true, nil
-      end
-      if M.action and button(px + 238, by1, 102, 28, "move folder", true) then
-        local ok, err = begin_folder { kind = "move", source = a.path }
-        if ok then M.action = nil else a.error = err end
-      end
-      if M.action and button(px + 18, by2, 96, 28, "duplicate", true) then
-        local ok, err = begin_folder { kind = "duplicate", source = a.path,
-                                       name = a.name }
-        if ok then M.action = nil else a.error = err end
-      end
-      if M.action and button(px + 124, by2, 96, 28, "archive", true) then
-        local ok, err = begin_folder { kind = "archive", source = a.path,
-                                       name = a.name }
-        if ok then M.action = nil else a.error = err end
-      end
-      if M.action and button(px + 230, by2, 96, 28, "delete…", true) then
-        a.mode, a.focus, a.error, a.rename = "delete", true, nil, ""
       end
     end
     pal.x_ig_overlay(false)
