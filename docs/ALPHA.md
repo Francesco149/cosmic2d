@@ -147,10 +147,12 @@ The project window edits identity, window defaults, and release files, then its
 **Build/Export** tab streams the saved external project with the matching
 carried Linux/Windows runtime. Target/output choice, progress, cancellation,
 checksums, explicit atomic replacement, and actionable preflight errors require
-neither a terminal nor a Nix source-tree project. Picker scale/navigation and
-starter-template breadth keep the full A3 gate open.
+neither a terminal nor a Nix source-tree project. The picker grid now scrolls
+past any window, filters by search, sorts by recency or name, shows declared
+project icons, and is fully drivable without a mouse — the modal button rows
+included. Starter-template breadth is the last line keeping A3 open.
 
-- [ ] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
+- [x] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
   thumbnails, missing-project repair, and large-list scrolling.
 - [x] Project actions: settings, same-filesystem rename/move, reveal in the
   file manager, and recovery-safe return to picker.

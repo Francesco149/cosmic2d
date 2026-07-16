@@ -3,17 +3,53 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — project actions complete; picker navigation next (2026-07-16)
+## Current handoff — picker navigation/scale complete; starter templates next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
 A0–A2 are complete and A3 is in progress: the whole project-actions line
-(settings, export, entry, location, duplicate, archive, delete) is done.
-Picker navigation/scale, starter templates, gamepad/player settings, shared
-genre-neutral runtime slices and demos, complete rewind product UI, and the
-release-candidate pass remain explicit alpha gates.
+(settings, export, entry, location, duplicate, archive, delete) is done and
+the picker line (scrolling, search/sort, keyboard navigation, thumbnails,
+repair) is now closed by D080. Starter templates, gamepad/player settings,
+shared genre-neutral runtime slices and demos, complete rewind product UI,
+and the release-candidate pass remain explicit alpha gates.
+
+**D080 closes the picker navigation/scale packet.** The list model and grid
+math live in the pure module `cm.pick` (plain-text case-insensitive search
+over name/path/author, stable name sort beside recents-first order, clamped
+column-preserving grid cursor movement, scroll clamp + smallest-change
+ensure-visible). The picker consumes it: the tile grid clips under a
+two-row header (search field, recent/name sort toggle, an honest "N of M
+projects" count) and scrolls by wheel, draggable scrollbar with page jumps,
+and PgUp/PgDn. Arrows move a cursor ring with "+ New project" as the last
+grid cell, Enter opens the editor (Shift+Enter plays; on a broken recent
+tile Enter opens the repair chooser), `.` opens the `...` folder menu, Del
+opens the confirmed delete door, `/` or Ctrl+F focuses search, and Esc
+clears the filter. Every modal button row cycles with arrows/Tab + Enter on
+a safe default, text fields keep Enter as their own submit without
+double-firing a button, and the search field goes inert while a modal owns
+the keys. Declared project icons draw as tile thumbnails through
+`cm.gfx`'s memoized texture cache with per-path failure memoization;
+refresh forces one re-read. Everything stays ephemeral render/dev state —
+no new persistent state beyond what recents/`editor.dat` already own — and
+the whole surface works at 100–300% fixed chrome.
+
+**D080 proof:** Linux selftest passes **23,496 checks** and the staged
+native Windows executable **23,498** on PAL API 17; `nix run .#test` is
+ALL GREEN across release manifests, every historical trace, and all
+pixel/audio goldens. Selftest KATs pin the filter (case folding, plain
+text never patterns, exact UTF-8 bytes, order preservation, empty
+results), the name sort's path tiebreak and non-mutation, every cursor
+clamp/landing rule including degenerate grids, scroll clamping, and
+ensure-visible. Inspected 1280×800 captures on llm-feed show the
+39-project scrolled grid with clipped tiles and scrollbar, live search
+with the count line, 300% fixed chrome as a single scrollable column with
+the complete header, the folder menu and delete modals with their keyboard
+selection rings, mixed thumbnail/plain tiles, and the staged native
+Windows picker. `tools/build-windows.sh` refreshed the full Windows stage
+(3 durable state entries preserved) and Start Menu shortcut.
 
 **D079 closes the archive/delete packet, completing the A3 project-actions
 line.** Every ready recent tile's `...` menu now offers **archive** and
@@ -287,18 +323,19 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** picker **navigation and scale** — the remaining
-unchecked picker line in A3 besides templates. The tile grid currently draws
-only what fits the window: give it scrolling for large lists first (the
-recents CAP is 12 but bundled projects extend the grid), then name
-sort/search filtering and keyboard navigation (arrows + Enter open, with the
-existing `...` grammar reachable without a mouse), staying at 100–300% fixed
-chrome. Thumbnails may ride along only if cheap (project icon bytes already
-validate through `cm.project`); do not add new persistent state beyond what
-`editor.dat`/recents already own. Exit when a picker holding several dozen
-projects can reach, filter, and open any of them without a mouse in fresh
-Linux and Windows editor archives. Leave Blank/Platformer/Top-down/Arcade
-starter templates as the packet after; they gate A4's binding-display work.
+**Exact next packet:** **starter templates** — the last unchecked A3 line.
+Offer Blank, Platformer, Top-down, and Arcade templates at project
+creation; random three-word names stay the instant default and remain
+editable immediately (D077's folder grammar already covers renames). The
+"+ New project" tile should open a small chooser (keyboard-reachable under
+D080's modal grammar) rather than growing the grid; templates scaffold
+through the existing atomic `cm.project.scaffold` rollback contract so a
+failed scaffold never leaves a partial project. Template content should
+lean on the shared genre-neutral runtime slices A5/A6 want — keep each
+template minimal, deterministic, and covered by at least a boot smoke in
+the suite. Exit when a fresh archive can create each template without a
+terminal and each boots to something playable/editable. This closes A3 and
+gates A4's binding-display work.
 
 There is no known blocker or human-only verification required.
 

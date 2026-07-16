@@ -3196,3 +3196,54 @@ listing contract. Fresh public Linux (stock Debian 13, incl. a read-only
 install) and native Windows archives ran the full external spaced/π
 archive → re-import → injected-partial-delete → retry → delete matrix.
 Inspected captures are on llm-feed; platform/release proof is in `STATUS.md`.
+
+## D080 — the picker scales: scrolling, search/sort, thumbnails, and a mouse-free grammar (A3, 2026-07-16)
+
+**Context.** The picker drew only the tiles that fit the window, so a
+library larger than one screen was simply unreachable, and every action —
+opening, the `...` folder menu, repair, delete — required a mouse. The
+remaining unchecked A3 picker line asked for large-list scrolling, sort and
+search, keyboard navigation, and thumbnails, all inside the 100–300%
+fixed-chrome contract and without any new persistent state.
+
+**Decision.** The list model and navigation math live in a new pure module,
+**`cm.pick`**: ASCII-case-insensitive plain-text filtering over name, path,
+and author (non-ASCII bytes compare exactly; queries are never patterns), a
+stable name sort with a path tiebreak beside the default recents-first
+order, row-major grid cursor movement (clamped, column-preserving `up`,
+`down` off a full bottom row lands on the last cell, `pgdn` always reaches
+the end), and scroll clamp / smallest-change ensure-visible. The picker UI
+consumes it: the tile grid clips under a two-row header (title/actions,
+then search + sort toggle + an honest "N of M projects" count) and scrolls
+by wheel, draggable scrollbar with page jumps, and PgUp/PgDn. Arrows move a
+cursor ring ("+ New project" is the grid's last cell), Enter opens the
+editor (Shift+Enter plays; on a broken recent tile Enter opens the repair
+chooser), `.` opens the `...` folder menu, Del opens the confirmed delete
+door, `/` or Ctrl+F focuses search, and Esc clears the filter. Every modal
+button row cycles with arrows/Tab + Enter on a safe default (close/cancel
+for archive-success and delete); text fields keep Enter as their own
+submit, a just-submitted Enter never double-fires a button, and the search
+field goes inert while a modal owns the keys. Thumbnails turned out cheap
+after all: the declared `icon` rides `cm.gfx`'s memoized texture cache with
+per-path failure memoization, and refresh forces one re-read. All of it is
+ephemeral render/dev state.
+
+**Consequences.** A picker holding dozens of projects can reach, filter,
+and open any of them without a mouse at any chrome scale, which also
+unblocks A4's binding-display work from assuming pointer-only surfaces.
+The keyboard grammar reuses the existing scancode conventions (kit's SC
+table) rather than inventing a hotkey layer for one cartridge. `cm.pick`
+stays host-agnostic pure Lua, so future surfaces (launcher lists, asset
+choosers) may adopt the same nav math. Starter templates are now the only
+open A3 line.
+
+**Proof.** Selftest KATs pin filtering (case folding, plain-text-not-
+pattern, UTF-8 bytes, order preservation, empty results), the name sort's
+tiebreak and non-mutation, every cursor clamp/landing rule, degenerate
+grids, scroll clamping, and smallest-change ensure-visible. `nix run
+.#test` is ALL GREEN with every historical trace and pixel/audio golden
+unchanged. Inspected 1280×800 captures on llm-feed cover the 39-project
+scrolled grid with clipped tiles and scrollbar, the live search with count,
+300% fixed chrome (single scrollable column, complete header), the folder
+menu and delete modals with their keyboard rings, and mixed
+thumbnail/plain tiles; platform/release proof is recorded in `STATUS.md`.
