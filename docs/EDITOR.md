@@ -766,10 +766,28 @@ one structured replacement, and takes the existing atomic text-save path.
 Source-side and form-side edits therefore merge deliberately; an interrupted
 write leaves both the saved generation and complete dirty replacement intact.
 
-The first surface owns name/author/version/description, internal width/height,
+The general surface owns name/author/version/description, internal width/height,
 initial integer scale, and start-maximized. It shows draft validation and the
-D070 release-schema result separately because a draft description may be empty
-while export may not. Render-target/window changes apply next launch rather
-than mutating the running sim/render contract. The form is editor-domain state
-and project-file bytes, never deterministic simulation state; both already ride
-the established session/rewind capture boundaries.
+D070 release result separately because a draft description may be empty while
+export may not. Render-target/window changes apply next launch rather than
+mutating the running sim/render contract. The form is editor-domain state and
+project-file bytes, never deterministic simulation state; both already ride the
+established session/rewind capture boundaries.
+
+### 13.6 Release references are selected and validated in place (A3/D072)
+
+The **player files** tab edits `icon`, `controls`, `credits`, and the ordered
+`licenses` array through path fields plus fuzzy project-local choosers. The
+candidate list includes conventional extensionless `LICENSE`/`COPYING`/`NOTICE`
+files; OS drops still use the assets import path and immediately invalidate the
+chooser. Picker/filter/license-page state is captured with the window, while
+mtime-keyed byte probes are ephemeral.
+
+An entirely empty release packet remains a saveable draft. Setting any one
+reference switches to the complete D070 contract: description, square 32–1024
+px PNG icon, bounded non-empty controls/credits text, and at least one bounded
+non-empty license must all validate from saved project-local files before
+Ctrl+S can publish `project.lua`. Per-row errors identify unsafe, missing,
+empty, oversized, and wrong-type choices. `cm.project` owns those byte rules
+behind an injected reader, so the live editor and host packager make the same
+decision rather than maintaining parallel validators.

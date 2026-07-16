@@ -2781,3 +2781,47 @@ Icon/legal pickers and export configuration remain later A3 packets.
 D070 path validation, extension preservation, typed field validation, atomic
 failure/retry, shared source/form merge, and visible invalid-form refusal. A
 1280x800 editor capture verifies the complete window at 100% canvas zoom.
+
+## D072 — release references are one validated project-local settings packet (A3, 2026-07-16)
+
+**Context.** D071 deliberately left `icon`, `controls`, `credits`, and
+`licenses` as source-only fields. Merely adding four path text boxes would still
+force authors to know project layout, let the editor and D070 packager disagree
+about file contents, and allow a half-configured table to look intentional.
+The editor has no native filesystem dialog, but its asset-import path and flat
+project walk already provide the right project-local boundary.
+
+**Decision.** Project settings now has **general** and **player files** tabs.
+The latter provides editable relative paths plus fuzzy choosers for a PNG icon,
+controls/credits text, and an ordered add/remove/pageable license list. The
+candidate walk includes conventional extensionless `LICENSE`, `COPYING`,
+`NOTICE`, and `COPYRIGHT` names; OS drops remain the one import path and
+invalidate both candidates and validation caches.
+
+`cm.project` owns the referenced-byte contract behind an injected reader, so
+both PAL-backed editor code and ordinary host Lua call the same checks. Icons
+are bounded PNGs with a square 32–1024 px IHDR. Controls, credits, and licenses
+are bounded, non-empty, NUL-free text normalized for generated README use.
+Paths still use D070's safe project-relative grammar. Per-row editor probes are
+mtime-cached ephemera; Ctrl+S and packaging always perform a fresh full check.
+
+An entirely absent release packet remains a saveable draft for compatibility
+and incremental game work. Once any release reference is present, settings
+require the complete schema and valid saved contents before atomically
+publishing `project.lua`. **clear release** is the explicit return to draft.
+This makes incomplete intent visible without blocking unrelated draft saves and
+prevents a started release configuration from being saved as falsely ready.
+
+**Consequences.** A fresh project can import and select all player metadata
+without editing Lua. Invalid/unsafe/missing/wrong-type files stay actionable in
+the form and cannot cross its save boundary. Source-side extension keys still
+merge through the shared text citizen; release keys are now deliberately owned
+by the structured form. Build targets, output choice, arbitrary-root packaging,
+progress, cancellation, and artifact publication remain the next A3 packet.
+
+**Proof.** Focused KATs cover draft/partial policy, normalized valid content,
+missing files, binary text, wrong icon type/shape, picker mutation, live window
+validation, and save refusal without disk mutation. Host release fixtures prove
+the same canonical module rejects wrong-type icon and controls selections.
+`nix run .#test` is ALL GREEN at 23,330 checks with every committed trace and
+pixel/audio golden matching; fresh Linux and Windows demo exports both build.

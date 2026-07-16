@@ -51,8 +51,16 @@ to revisit; this file describes *what is*. Keep it current when code changes.
    `pal.gfx_init{…}`, applies the project PNG through
    `pal.x_window_icon`, requires the project entry module, and dispatches
    `--record`/`--verify` modes.
+
 4. C loop: each iteration calls the global `cm_tick()` under `pcall`.
    Lua decides everything inside the tick (sim steps, drawing, reload polls).
+
+`cm.project` also owns D070's referenced-byte contract: injected file I/O lets
+the editor and host packager apply the same size/type/content checks to the
+square 32–1024 px PNG icon and bounded non-empty controls, credits, and license
+texts. A metadata table with no release references is an ordinary draft; once
+one reference is configured, settings require the complete packet and refuse
+publication until every saved project-local file validates (D072).
 
 ### The module system (cm.require)
 

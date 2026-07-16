@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A3 settings foundation complete; release references next (2026-07-16)
+## Current handoff — A3 release references complete; export job next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -13,22 +13,24 @@ A0–A2 are complete and A3 is in progress. Project/export UX, gamepad/player
 settings, shared genre-neutral runtime slices and demos, complete rewind
 product UI, and the release-candidate pass remain explicit alpha gates.
 
-**A3 settings packet 1 is complete (D071).** `cm.project` is now the one
-declarative project authority for engine boot, picker metadata, player
-packaging, and editor settings. Its empty-environment/plain-data codec,
-runtime/settings/D070 validators, canonical inspectable-Lua encoder, and
-field merge preserve project-specific extension keys while rejecting ambient
-code and invalid runtime values consistently.
+**A3 settings packets 1–2 are complete (D071/D072).** `cm.project` is the one
+declarative authority for boot, picker metadata, player packaging, and editor
+settings. Its empty-environment/plain-data codec, runtime/settings/D070
+validators, deterministic encoder, and field merge preserve extension keys.
+The referenced-byte contract now also lives there behind injected file I/O, so
+the PAL-backed editor and host packager apply the same icon/text rules.
 
-The new project-settings canvas window is available from the right-click menu
-and Ctrl+Space. It edits name/author/version/description, internal width/height,
-initial integer scale, and start-maximized; shows draft and export validation;
-and documents that render/window changes apply next launch. It shares the text
-window's `project.lua` working copy and journal, so simultaneous source/form
-edits merge. Ctrl+S uses the existing atomic text-save path: an injected failure
-preserves disk, retains complete dirty canonical bytes, summons the console,
-and retries cleanly. Invalid temporary form strings remain visible but never
-reach project authority.
+The project-settings canvas window has **general** and **player files** tabs.
+The new tab edits project-local icon, controls, credits, and an ordered license
+list through typed paths plus fuzzy choosers (including extensionless legal
+names). Every row reports live mtime-cached file/content validation; chooser
+candidates with invalid dimensions/content remain visible and disabled. An
+entirely empty packet stays a saveable draft, but once one reference is present
+the complete D070 schema and all saved bytes must validate before Ctrl+S can
+atomically publish `project.lua`. **clear release** explicitly returns to draft.
+Fresh projects can therefore become export-metadata-complete without editing
+Lua, while missing/unsafe/empty/wrong-type selections cannot cross the settings
+save boundary.
 
 **A7's foundation remains complete (D065/D066).** The persistent four-lane
 rewind tray owns the live camera, zoom/pan, click seek, inclusive A/B loop, and
@@ -38,19 +40,20 @@ collision, and active selection rewind coherently. Persisted activity/event
 indexes, minute thumbnails, project-file epochs, standalone clip packages, and
 immutable replay/crash sources remain later A7 packets.
 
-**Proof:** focused KATs cover the codec fixpoint, plain-data rejection,
-extension preservation, shared D070 paths, typed fields, source/form merge,
-invalid-form refusal, and atomic failure/retry. `nix run .#test` is ALL GREEN at
-23,320 checks with every trace and pixel/audio golden matching; release metadata
-fixtures pass and both final Linux/Windows editor archives build. The inspected
-1280×800 capture shows the complete window at 100% canvas zoom.
+**Proof:** focused KATs cover draft/partial policy, normalized content, missing
+files, binary text, bad icon type/shape, extensionless legal candidates, picker
+mutation, live validation, and save refusal without disk mutation. Host release
+fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
+23,330 checks with every trace and pixel/audio golden matching; fresh Linux and
+Windows demo exports both build. Inspected 1280×800 captures show the complete
+release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** extend the same settings surface with project-local icon,
-controls, credits, and license selection plus live D070 file/content validation.
-Exit when a fresh project can become export-metadata-complete without editing
-Lua, while unsafe/missing/wrong-type selections remain actionable and cannot be
-saved as a false-valid release configuration. Leave export target/output/
-progress UI for the following packet.
+**Exact next packet:** add an in-editor Build/Export job for the currently open
+project: Linux/Windows target, output location, preflight validation, visible
+progress, atomic artifact publication, and actionable failure/cancel behavior.
+Exit when a writable copy outside the Nix source tree can export through the UI;
+leave rename/move/duplicate/archive and starter-template expansion for later A3
+packets.
 
 There is no known blocker or human-only verification required.
 

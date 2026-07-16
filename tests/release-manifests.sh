@@ -101,6 +101,20 @@ if lua "$repo/tools/player-bundle.lua" "$bad" "$bad_out" bad linux \
   echo "player metadata accepted a missing controls file" >&2
   exit 1
 fi
+sed -i 's|controls="MISSING.md"|controls="CONTROLS.md"|; s|icon="icon.png"|icon="CONTROLS.md"|' \
+  "$bad/project.lua"
+if lua "$repo/tools/player-bundle.lua" "$bad" "$bad_out" bad linux \
+     >/dev/null 2>&1; then
+  echo "player metadata accepted text as its icon" >&2
+  exit 1
+fi
+sed -i 's|icon="CONTROLS.md"|icon="icon.png"|; s|controls="CONTROLS.md"|controls="icon.png"|' \
+  "$bad/project.lua"
+if lua "$repo/tools/player-bundle.lua" "$bad" "$bad_out" bad linux \
+     >/dev/null 2>&1; then
+  echo "player metadata accepted binary controls content" >&2
+  exit 1
+fi
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/dev.txt" "$stage/dev"

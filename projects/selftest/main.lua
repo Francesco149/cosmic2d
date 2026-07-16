@@ -2792,12 +2792,60 @@ return {
   check(not project.validate_settings(form),
         "project: invalid temporary numeric settings are rejected")
   form.internal_w = "640"
+  local draft = project.settings(meta)
+  draft.icon, draft.controls, draft.credits, draft.licenses = "", "", "", {}
+  local draft_meta = project.apply_settings(meta, draft)
+  check(draft_meta and not project.release_configured(draft_meta)
+        and draft_meta.icon == nil and draft_meta.licenses == nil,
+        "project: an entirely unconfigured release packet remains a saveable draft")
+  draft.icon = "icon.png"
+  local partial, partial_err = project.validate_settings(draft)
+  check(not partial and partial_err:find("controls", 1, true),
+        "project: a started release packet is all-or-nothing")
 
   -- The canonical model's direct persistence seam is atomic too.
   local root = tmproot() .. "/cosmic_selftest_project_settings"
   pal.mkdir(root)
   local path = root .. "/project.lua"
+  local icon = pal.png_encode(string.rep("\x46\x82\xb4\xff", 32 * 32), 32, 32)
+  pal.write_file(root .. "/icon.png", icon)
+  pal.write_file(root .. "/CONTROLS.md", "\239\187\191jump\r\nmove\r\n")
+  pal.write_file(root .. "/CREDITS.md", "made by the selftest\n")
+  pal.write_file(root .. "/LICENSE.md", "fixture license\n")
+  pal.write_file(root .. "/NOTICE.txt", "fixture notice\n")
   pal.write_file(path, src)
+  local function read_ref(rel) return pal.read_file(root .. "/" .. rel) end
+  local checked
+  checked, err = project.validate_release_files(merged, read_ref)
+  check(checked and checked.icon.w == 32 and checked.icon.h == 32
+        and checked.controls.text == "jump\nmove\n"
+        and #checked.licenses == 2,
+        "project: D070 schema and referenced bytes validate through one contract")
+  local bad_content = project.decode(project.encode(merged), "@bad-content")
+  bad_content.controls = "MISSING.md"
+  checked, err = project.validate_release_files(bad_content, read_ref)
+  check(not checked and err:find("controls MISSING.md", 1, true),
+        "project: missing player text is actionable")
+  checked, err = project.validate_release_files(merged, function(rel)
+    if rel == "CONTROLS.md" then return icon end
+    return read_ref(rel)
+  end)
+  check(not checked and err:find("controls must be a text file", 1, true),
+        "project: a binary controls selection is rejected")
+  checked, err = project.validate_release_files(merged, function(rel)
+    if rel == "icon.png" then return "not a png" end
+    return read_ref(rel)
+  end)
+  check(not checked and err:find("icon must be a PNG", 1, true),
+        "project: a wrong-type icon selection is rejected")
+  local wide_icon = pal.png_encode(
+    string.rep("\x46\x82\xb4\xff", 64 * 32), 64, 32)
+  checked, err = project.validate_release_files(merged, function(rel)
+    if rel == "icon.png" then return wide_icon end
+    return read_ref(rel)
+  end)
+  check(not checked and err:find("square", 1, true),
+        "project: a non-square PNG cannot claim release readiness")
   local ok
   ok, err = project.save(root, merged, { _fail = "rename" })
   check(not ok and err:find(path, 1, true) and pal.read_file(path) == src,
@@ -2839,6 +2887,15 @@ return {
         "project window: retry merges form edits without losing source extensions")
   check(not W.dirty(win, ed),
         "project window: successful save clears form and source dirty state")
+  W.select_reference(win, ed, "controls", "icon.png")
+  before = pal.read_file(path)
+  ok, err = W.save(win, ed)
+  check(not ok and win.error:find("controls must be a text file", 1, true)
+        and pal.read_file(path) == before,
+        "project window: a wrong-type picked file cannot reach project.lua")
+  W.select_reference(win, ed, "controls", "CONTROLS.md")
+  check(W.validate(win, ed) ~= nil,
+        "project window: selecting valid project files completes live validation")
   win.form.internal_h = "nope"
   before = pal.read_file(path)
   ok, err = W.save(win, ed)
@@ -4542,8 +4599,19 @@ local function t_ed_assets()
         "ed.assets: interrupted converted drop publishes no partial asset")
   check(drop_summoned, "ed.assets: failed drop summons the console")
   ed.g._drop_fail = nil
+  pal.write_file(root .. "/LICENSE", "fixture terms\n")
+  pal.write_file(root .. "/CONTROLS.md", "fixture controls\n")
+  A.invalidate(ed)
+  local release_files = A.release_files(ed)
+  local release_set = {}
+  for _, path in ipairs(release_files) do release_set[path] = true end
+  check(release_set.LICENSE and release_set["CONTROLS.md"]
+        and release_set[rel],
+        "ed.assets: release chooser includes PNG/text and extensionless legal files")
   pal.x_remove(root .. "/" .. rel)
   pal.x_remove(root .. "/" .. rel2)
+  pal.x_remove(root .. "/LICENSE")
+  pal.x_remove(root .. "/CONTROLS.md")
   pal.x_remove(src)
 
   -- a .spr's baked build products hide under their source (R8d round 2)

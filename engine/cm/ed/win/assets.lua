@@ -147,9 +147,42 @@ end
 
 M.all_files = all_files -- the launcher (Ctrl+Space) shares this cached list
 
+-- The project-settings release picker needs only plausible small metadata
+-- files, including conventional extensionless legal names that the ordinary
+-- asset grid intentionally omits. Content/type validation still happens in
+-- cm.project after selection; this is merely a useful, bounded candidate list.
+local function release_files(ed)
+  local g = ed.g
+  if not g.arelease then
+    local names = pal.list_dir(ed.root) or {}
+    table.sort(names)
+    g.arelease = {}
+    for _, n in ipairs(names) do
+      if #g.arelease >= 1000 then break end
+      local lower = n:lower()
+      local base = lower:match("([^/]*)$") or lower
+      local legal = base == "license" or base == "licence"
+                    or base == "copying" or base == "notice"
+                    or base == "copyright"
+                    or base:match("^licen[cs]e[%._%-]")
+                    or base:match("^copying[%._%-]")
+                    or base:match("^notice[%._%-]")
+                    or base:match("^copyright[%._%-]")
+      local likely = lower:match("%.png$") or lower:match("%.md$")
+                     or lower:match("%.txt$") or lower:match("%.license$")
+                     or legal
+      if likely then g.arelease[#g.arelease + 1] = n end
+    end
+  end
+  return g.arelease
+end
+M.release_files = release_files
+
 function M.invalidate(ed)
   ed.g.afiles = nil
   ed.g.files = nil -- the text picker's list too
+  ed.g.arelease = nil -- project-settings icon/text/legal candidates
+  ed.g.project_ref_checks = nil
 end
 
 -- a cached preview object for a path (nil = fall back to a glyph). An image

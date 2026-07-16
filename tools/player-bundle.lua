@@ -66,40 +66,27 @@ local meta_path = project_dir .. "/project.lua"
 local meta_bytes = read_all(meta_path, "project metadata", 512 * 1024)
 local meta, decode_err = project.decode(meta_bytes, "@" .. meta_path)
 if not meta then die(decode_err) end
-local release, release_err = project.validate_release(meta)
-if not release then die(release_err) end
+
+local function read_project(path)
+  local full = project_dir .. "/" .. path
+  local file, err = io.open(full, "rb")
+  if not file then return nil, err end
+  local bytes, rerr = file:read("*a")
+  local ok, cerr = file:close()
+  if not bytes then return nil, rerr end
+  if not ok then return nil, cerr end
+  return bytes
+end
+
+local checked, release_err = project.validate_release_files(meta, read_project)
+if not checked then die(release_err) end
+local release = checked.release
 
 local title, version = release.name, release.version
 local author, description = release.author, release.description
-local icon_path, controls_path, credits_path =
-  release.icon, release.controls, release.credits
 local licenses = release.licenses
-
-local function release_text(field, path)
-  local bytes = read_all(project_dir .. "/" .. path, field, 512 * 1024)
-  if bytes:find("\0", 1, true) then die(field .. " must be a text file: " .. path) end
-  bytes = bytes:gsub("^\239\187\191", "")
-               :gsub("\r\n", "\n"):gsub("\r", "\n")
-               :gsub("%s+$", "")
-  if bytes == "" then die(field .. " must not be empty: " .. path) end
-  return bytes .. "\n"
-end
-
-local controls = release_text("controls", controls_path)
-local credits = release_text("credits", credits_path)
-for i, path in ipairs(licenses) do
-  release_text("licenses[" .. i .. "]", path) -- validate; originals stay inspectable
-end
-
-local icon = read_all(project_dir .. "/" .. icon_path, "icon", 8 * 1024 * 1024)
-if #icon < 24 or icon:sub(1, 8) ~= "\137PNG\r\n\26\n" then
-  die("icon must be a PNG file: " .. icon_path)
-end
-local ihdr_len, ihdr, icon_w, icon_h = string.unpack(">I4c4I4I4", icon, 9)
-if ihdr_len ~= 13 or ihdr ~= "IHDR" or icon_w ~= icon_h
-    or icon_w < 32 or icon_w > 1024 then
-  die("icon PNG must be square and 32..1024 pixels: " .. icon_path)
-end
+local controls, credits = checked.controls.text, checked.credits.text
+local icon = checked.icon.bytes
 
 -- Escape metadata as Markdown text. Author-owned controls and credits are
 -- intentionally Markdown and are embedded verbatim below their fixed headings.

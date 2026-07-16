@@ -19,7 +19,10 @@ back/forward buttons — walk your history. `src` opens the raw markdown.
   three random words) and opens it in the editor.
 - In the editor, open **project settings** from the right-click menu or
   **Ctrl+Space**. Give the project its real name, author/version/description,
-  internal resolution, and initial window defaults; Ctrl+S saves them.
+  internal resolution, and initial window defaults. On **player files**, choose
+  a project icon, controls, credits, and at least one license/notice. Drop files
+  into the editor to import them first; every reference validates live and
+  Ctrl+S saves the complete settings atomically.
 
 From a shell you can also run a project straight:
 

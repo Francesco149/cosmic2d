@@ -131,11 +131,13 @@ developer toolchain; the first picker shows only intentional content.
 
 Goal: project work never requires filesystem or Nix knowledge for normal use.
 
-Progress: the first settings packet is complete. Boot, picker, packaging, and
-the editor now share one declarative `cm.project` codec/validator; the in-editor
-window atomically edits identity, internal resolution, and initial window
-defaults while preserving all unedited project keys. Icon/file references and
-export configuration keep the full settings checklist open.
+Progress: the first two settings packets are complete. Boot, picker, packaging,
+and the editor share one declarative `cm.project` codec plus release byte
+validator. The in-editor window atomically edits identity, internal resolution,
+initial window defaults, icon, controls, credits, and project licenses while
+preserving extension keys. Project-local choosers and live file/content errors
+can take a fresh draft to export-metadata-complete without editing Lua. Export
+configuration keeps the full settings checklist open.
 
 - [ ] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
   thumbnails, missing-project repair, and large-list scrolling.

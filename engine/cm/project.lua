@@ -148,6 +148,83 @@ function M.validate_release(meta)
   return out
 end
 
+M.RELEASE_TEXT_LIMIT = 512 * 1024
+M.RELEASE_ICON_LIMIT = 8 * 1024 * 1024
+
+-- Validate one project-local release reference. `read` is deliberately a
+-- tiny injected boundary: the engine supplies pal.read_file while the host
+-- packager supplies ordinary Lua file I/O. Keeping the byte/type rules here
+-- means the settings window cannot call a file "ready" only for packaging to
+-- interpret it differently later.
+function M.validate_release_reference(kind, field, value, read)
+  local path, err = M.project_path(field, value)
+  if not path then return nil, err end
+  if kind ~= "icon" and kind ~= "text" then
+    return nil, "unknown release reference kind: " .. tostring(kind)
+  end
+  if type(read) ~= "function" then
+    return nil, "release reference reader is unavailable"
+  end
+  local bytes
+  bytes, err = read(path)
+  if type(bytes) ~= "string" then
+    return nil, "cannot read " .. field .. " " .. path .. ": "
+      .. tostring(err or "not found")
+  end
+  local limit = kind == "icon" and M.RELEASE_ICON_LIMIT or M.RELEASE_TEXT_LIMIT
+  if #bytes > limit then
+    return nil, field .. " is larger than " .. limit .. " bytes: " .. path
+  end
+
+  if kind == "icon" then
+    if #bytes < 24 or bytes:sub(1, 8) ~= "\137PNG\r\n\26\n" then
+      return nil, "icon must be a PNG file: " .. path
+    end
+    local ihdr_len, ihdr, w, h = string.unpack(">I4c4I4I4", bytes, 9)
+    if ihdr_len ~= 13 or ihdr ~= "IHDR" or w ~= h or w < 32 or w > 1024 then
+      return nil, "icon PNG must be square and 32..1024 pixels: " .. path
+    end
+    return { path = path, bytes = bytes, w = w, h = h }
+  end
+
+  if bytes:find("\0", 1, true) then
+    return nil, field .. " must be a text file: " .. path
+  end
+  local normalized = bytes:gsub("^\239\187\191", "")
+                          :gsub("\r\n", "\n"):gsub("\r", "\n")
+                          :gsub("%s+$", "")
+  if normalized == "" then
+    return nil, field .. " must not be empty: " .. path
+  end
+  return { path = path, bytes = bytes, text = normalized .. "\n" }
+end
+
+-- Schema + referenced bytes for one publishable project. The returned
+-- normalized texts are what the player README embeds; original license files
+-- remain untouched and inspectable in the project.
+function M.validate_release_files(meta, read)
+  local release, err = M.validate_release(meta)
+  if not release then return nil, err end
+  local out = { release = release, licenses = {} }
+  out.icon, err = M.validate_release_reference(
+    "icon", "icon", release.icon, read)
+  if not out.icon then return nil, err end
+  out.controls, err = M.validate_release_reference(
+    "text", "controls", release.controls, read)
+  if not out.controls then return nil, err end
+  out.credits, err = M.validate_release_reference(
+    "text", "credits", release.credits, read)
+  if not out.credits then return nil, err end
+  for i, path in ipairs(release.licenses) do
+    local ref
+    ref, err = M.validate_release_reference(
+      "text", "licenses[" .. i .. "]", path, read)
+    if not ref then return nil, err end
+    out.licenses[i] = ref
+  end
+  return out
+end
+
 local function plain(value, path, stack)
   local kind = type(value)
   if kind == "nil" or kind == "string" or kind == "boolean" then return true end
@@ -225,7 +302,7 @@ end
 -- temporarily empty/invalid field without corrupting the underlying model.
 function M.settings(meta)
   meta = meta or {}
-  return {
+  local out = {
     name = type(meta.name) == "string" and meta.name or "",
     author = type(meta.author) == "string" and meta.author or "",
     version = type(meta.version) == "string" and meta.version or "0.1",
@@ -234,7 +311,38 @@ function M.settings(meta)
     internal_h = tostring(meta.internal_h or 270),
     window_scale = tostring(meta.window_scale or 2),
     maximized = meta.maximized == true,
+    icon = type(meta.icon) == "string" and meta.icon or "",
+    controls = type(meta.controls) == "string" and meta.controls or "",
+    credits = type(meta.credits) == "string" and meta.credits or "",
+    licenses = {},
   }
+  if type(meta.licenses) == "table" then
+    for i = 1, #meta.licenses do
+      out.licenses[i] = type(meta.licenses[i]) == "string" and meta.licenses[i] or ""
+    end
+  elseif meta.licenses ~= nil then
+    -- Preserve the fact that malformed release metadata needs attention rather
+    -- than silently presenting it as an intentionally unconfigured draft.
+    out.licenses[1] = ""
+  end
+  return out
+end
+
+-- A project with no release references at all is an ordinary editable draft.
+-- Once any reference is present, the settings form treats the D070 packet as
+-- all-or-nothing so a partial configuration cannot be mistaken for one that
+-- was deliberately made export-ready.
+function M.release_configured(value)
+  if type(value) ~= "table" then return false end
+  for _, field in ipairs({ "icon", "controls", "credits" }) do
+    local v = value[field]
+    if v ~= nil and v ~= "" then return true end
+  end
+  if value.licenses ~= nil then
+    if type(value.licenses) ~= "table" then return true end
+    if next(value.licenses) ~= nil then return true end
+  end
+  return false
 end
 
 local function form_integer(form, field, lo, hi)
@@ -266,6 +374,20 @@ function M.validate_settings(form)
   if not out.window_scale then return nil, err end
   if type(form.maximized) ~= "boolean" then return nil, "maximized must be true or false" end
   out.maximized = form.maximized
+  out.release = M.release_configured(form)
+  out.icon, out.controls, out.credits, out.licenses = nil, nil, nil, {}
+  if out.release then
+    local release
+    release, err = M.validate_release {
+      name = out.name, author = out.author or "", version = out.version,
+      description = out.description, icon = form.icon, controls = form.controls,
+      credits = form.credits, licenses = form.licenses,
+    }
+    if not release then return nil, err end
+    out.icon, out.controls, out.credits =
+      release.icon, release.controls, release.credits
+    out.licenses = release.licenses
+  end
   return out
 end
 
@@ -291,6 +413,10 @@ function M.apply_settings(meta, form)
   out.internal_h = settings.internal_h
   out.window_scale = settings.window_scale
   out.maximized = settings.maximized and true or nil
+  out.icon = settings.release and settings.icon or nil
+  out.controls = settings.release and settings.controls or nil
+  out.credits = settings.release and settings.credits or nil
+  out.licenses = settings.release and clone(settings.licenses) or nil
   local ok
   ok, err = M.validate_runtime(out)
   if not ok then return nil, err end
