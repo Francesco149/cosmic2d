@@ -4,7 +4,8 @@
 -- value is a live knob (doc.knobs.move/feel, main.lua).
 --
 -- Determinism: all sim state in the named buffer bounce.player; cm.math
--- trig; fixed dt; collisions are pure-IEEE AABB sweeps vs level.colliders.
+-- trig; fixed dt; collisions are pure-IEEE AABB sweeps vs level.colliders
+-- plus the movers' frame boxes (movers.lua — riders get carried).
 -- draw() only reads sim state and emits render-class vertex bytes.
 
 local m = cm.require("cm.math")
@@ -12,6 +13,7 @@ local state = cm.require("cm.state")
 local gb = cm.require("gb")
 local m4 = cm.require("cm.m4")
 local level = cm.require("level")
+local movers = cm.require("movers")
 local audio = cm.require("audio")
 
 local M = select(2, ...) or {}
@@ -89,6 +91,30 @@ function M.step(ctl)
   local squash_amt = buf:f32(O.squash_amt)
   local lean = buf:f32(O.lean)
 
+  local EPS = 1e-3
+
+  -- moving platforms: this step collides against the post-step boxes
+  -- (frame+1 = what draw shows); a grounded player whose feet sit on a
+  -- mover's pre-step top is RIDING and gets carried by the frame delta
+  -- before their own move (x/z add, y tracks the top exactly — glued both
+  -- up and down, faster than gravity could follow)
+  local F = state.frame()
+  local mold = movers.boxes(F)
+  local mnew = movers.boxes(F + 1)
+  if grounded then
+    for i, b in ipairs(mold) do
+      if m.abs(y - b[5]) <= EPS
+         and x + hw > b[1] and x - hw < b[4]
+         and z + hw > b[3] and z - hw < b[6] then
+        local nb = mnew[i]
+        x = x + (nb[1] - b[1])
+        z = z + (nb[3] - b[3])
+        y = nb[5]
+        break
+      end
+    end
+  end
+
   -- horizontal: accelerate toward the wish direction, brake to a stop
   local wx, wz = ctl.wishx, ctl.wishz
   local moving = wx ~= 0 or wz ~= 0
@@ -136,8 +162,14 @@ function M.step(ctl)
   -- an exact test then reads the flush player as "squeezed" — one frame
   -- later it is sliding INTO the box (the stair phase-through / one-axis
   -- pillar bug). 1e-3 is far above f32 noise, far below a frame of motion.
-  local EPS = 1e-3
-  local C = level.colliders
+  -- (EPS is defined above the mover carry.)
+  --
+  -- C = static level boxes + the movers' post-step boxes: movers land,
+  -- clamp, and mantle exactly like level geometry (walking into a docked
+  -- lift mantles you onto it).
+  local C = {}
+  for i, b in ipairs(level.colliders) do C[i] = b end
+  for _, b in ipairs(mnew) do C[#C + 1] = b end
 
   -- mantle: a blocked step whose top is within step_h of the feet lifts
   -- the player instead (stairs are WALKED, jumps are for gaps) — if the
@@ -279,7 +311,9 @@ end
 -- opaque); fades with fall height. Returns tri count.
 function M.emit_shadow(out)
   local x, y, z = buf:f32(O.x), buf:f32(O.y), buf:f32(O.z)
-  local gy = level.ground_below(x, z, y) + 0.03
+  -- movers count as shadow anchors too (riding the lift keeps the blob
+  -- underfoot); draw-frame boxes = what is on screen
+  local gy = level.ground_below(x, z, y, movers.boxes(state.frame())) + 0.03
   -- gentle height fade only: the blob is the landing-target cue, most
   -- needed high up (proto uses a constant 0.5)
   local a = (127 * m.clamp(1 - (y - gy) / 16, 0.4, 1)) // 1

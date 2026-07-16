@@ -80,6 +80,21 @@ local DECO = {
   { "accent", 1.2, 2.6, 0.5, 19.9, 8.3, 0, 1.2 },
 }
 
+-- { mat, sx, sy, sz, x0, top0, z0, x1, top1, z1, period } — moving
+-- platforms (movers.lua): the box shuttles its TOP surface between the two
+-- endpoints, cosine-eased ping-pong over period frames. Colliders move and
+-- CARRY riders (player.lua); appended after the static colliders.
+local MOVERS = {
+  -- the tower lift: docks at 0.4 (walk-on mantle height) on the round
+  -- tower's south face, rises flush with the tower top — the alternate
+  -- route to the dome shoulder/cap and the goal-star leap
+  { "metal", 2.6, 0.5, 2.6, 30, 0.4, 11.23, 30, 5.5, 11.23, 480 },
+  -- the wall ferry: keep roof NW corner (flush tops, walk straight on)
+  -- across to the curtain wall's east end (docks flush with the wall face)
+  { "wood", 2.4, 0.5, 2.4, 15, 2.75, 23.2, 2.5, 2.75, 24.35, 600 },
+}
+L.movers = MOVERS
+
 -- the goal loop (pickups.lua): gem hover centers {x,y,z}, laid along the
 -- course ~0.7u above their walk surface, plus one mid-jump reward off the
 -- keep roof toward the first float platform
@@ -93,6 +108,9 @@ L.gems = {
   { 14.5, 5.6, 8.5 },   -- float platform 2 (top 4.9)
   { 18.5, 6.5, 4.5 },   -- float platform 3 (top 5.8)
   { -7, 1.8, 12 },      -- wood deck (top 1.1), the off-course stray
+  -- mover rewards (append-only: gem indices are pickup sim state)
+  { 31.5, 3.9, 11.23 }, -- the lift shaft: ride the tower lift, edge over
+  { 0, 3.3, 26 },       -- the curtain-wall walk (ferry from the keep roof)
 }
 -- the goal star atop the accent tower (top 6.4)
 L.goal = { 23.5, 7.4, 4.5 }
@@ -102,15 +120,20 @@ L.segs = nil -- { {tex,count,off}... } into bounce.verts
 L.colliders = nil -- { {x0,y0,z0,x1,y1,z1}... }
 
 -- highest collider top at (x,z) that is at or below y (blob shadow anchor,
--- ledge-aware). The ground plane guarantees a hit.
-function L.ground_below(x, z, y)
+-- ledge-aware). extra = additional AABBs (the movers at the draw frame).
+-- The ground plane guarantees a hit.
+function L.ground_below(x, z, y, extra)
   local best = 0
-  for _, b in ipairs(L.colliders) do
-    if x > b[1] and x < b[4] and z > b[3] and z < b[6]
-       and b[5] <= y + 0.1 and b[5] > best then
-      best = b[5]
+  local function scan(list)
+    for _, b in ipairs(list) do
+      if x > b[1] and x < b[4] and z > b[3] and z < b[6]
+         and b[5] <= y + 0.1 and b[5] > best then
+        best = b[5]
+      end
     end
   end
+  scan(L.colliders)
+  if extra then scan(extra) end
   return best
 end
 

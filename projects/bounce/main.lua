@@ -6,7 +6,8 @@
 -- jump · arrows = camera yaw/pitch · mouse drag = look · wheel = zoom ·
 -- c recenter · ` console (game.demo(1) = autoplay loop, game.demo(2) =
 -- walk, game.demo(3) = the full lap route: stairs -> keep -> platforms ->
--- goal star -> home, forever).
+-- goal star -> home, forever; game.demo(4) = the mover tour: tower lift ->
+-- dome -> goal star -> keep roof -> wall ferry -> wall walk, forever).
 --
 -- The camera is the FollowCamera model from the human's godot cosmic
 -- project (F:\Documents\cosmic src/camera): explicit orbit yaw/pitch/dist,
@@ -32,6 +33,7 @@ local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("gb")
 local level = cm.require("level")
+local movers = cm.require("movers")
 local player = cm.require("player")
 local pickups = cm.require("pickups")
 local audio = cm.require("audio")
@@ -124,6 +126,7 @@ function game.init()
   if d.demo == nil then d.demo = 0 end
   if d.demo_t0 == nil then d.demo_t0 = 0 end
   if d.demo_wp == nil then d.demo_wp = 1 end
+  if d.demo_hold == nil then d.demo_hold = 0 end
   d.score = d.score or 0   -- gems collected, all time
   d.laps = d.laps or 0     -- goal stars touched
   d.clear_t = d.clear_t or 0
@@ -134,9 +137,9 @@ function game.init()
   pickups.init()
   build_sky()
 
-  -- dyn: per-frame cube + shadow + pickup verts (render-class scratch,
-  -- rebuilt in draw; a named buffer only so the PAL can read it)
-  local dyn_size = (74 + pickups.max_tris()) * 72
+  -- dyn: per-frame movers + cube + shadow + pickup verts (render-class
+  -- scratch, rebuilt in draw; a named buffer only so the PAL can read it)
+  local dyn_size = (74 + movers.max_tris() + pickups.max_tris()) * 72
   local ok, db = pcall(pal.buf, "rc.bounce.dyn", dyn_size)
   if not ok then -- worst case grew across a hot reload
     pal.buf_free("rc.bounce.dyn")
@@ -176,7 +179,10 @@ function game.demo(on)
   if on and on ~= 0 then
     d.demo = on
     d.demo_t0 = state.frame()
-    if on == 3 then d.demo_wp = 1 end
+    if on >= 3 then
+      d.demo_wp = 1
+      d.demo_hold = 0
+    end
   else
     d.demo = 0
   end
@@ -184,13 +190,15 @@ end
 
 local ACTIONS = { "left", "right", "up", "down", "jump" }
 
--- demo(3): the lap route as waypoints { x, z, jump? } — steer straight at
--- the current one (world-space wish, no camera in the loop), advance
--- within 0.5u, press jump when LEAVING a jump-flagged point (platform
--- hops; air steering carries to the next point). The index is sim state
--- (doc.demo_wp) so snapshots/traces replay exactly. Mantle walks the
--- stairs; the final leg walks off the tower and falls home.
-local ROUTE = {
+-- demo(3)/(4): scripted routes as waypoints { x, z, jump?, wait? } — steer
+-- straight at the current one (world-space wish, no camera in the loop),
+-- advance within 0.5u, press jump when LEAVING a jump-flagged point
+-- (platform hops; air steering carries to the next point). wait = a pure
+-- predicate: on reaching the point the demo STANDS (doc.demo_hold, so a
+-- mover can carry it anywhere meanwhile) until it passes, then advances.
+-- Indices/hold are sim state (doc.demo_wp/demo_hold) so snapshots/traces
+-- replay exactly. Mantle walks the stairs; walk-offs fall home.
+local ROUTE3 = {
   { 12.65, 18 },         -- up the stair run (mantle does the climbing)
   { 16.0, 17.0 },        -- onto the keep roof, angling for the edge
   { 17.5, 14.6, true },  -- roof edge: hop to platform 1
@@ -205,17 +213,63 @@ local ROUTE = {
   { 4, 18 },             -- the spawn plaza; wraps to 1
 }
 
-local function route_ctl()
+-- demo(4) wait predicates read the same mover positions the step collides
+-- with (frame+1 = player.step's post-step boxes)
+local function lift_docked()
+  return movers.box(1, state.frame() + 1)[5] <= 0.6
+end
+local function lift_risen()
+  return movers.box(1, state.frame() + 1)[5] >= 5.4
+end
+local function ferry_at_keep() -- flush with the keep north face (z 22)
+  return movers.box(2, state.frame() + 1)[3] <= 22.06
+end
+local function ferry_at_wall() -- flush with the curtain wall (z 25.55)
+  return movers.box(2, state.frame() + 1)[6] >= 25.49
+end
+
+-- demo(4): the mover tour — ride the tower lift to the dome, leap to the
+-- goal star, then ferry from the keep roof to the curtain-wall walk
+local ROUTE4 = {
+  { 10, 12 },                          -- south of the stair run
+  { 24, 12 },                          -- past the keep, toward the tower
+  { 30, 13.8, wait = lift_docked },    -- shaft side: wait for the lift
+  { 30.8, 11.25, true, wait = lift_risen }, -- board (mantle), edge toward
+                                       -- the shaft gem, ride to the top
+  { 30.6, 9.2 },                       -- flight guide: land on the shoulder
+  { 28.6, 9.8 },                       -- west along the shoulder north rim
+  { 28.2, 6.2, true },                 -- SW rim: the short leap to the tower
+  { 23.5, 4.5 },                       -- the goal star (lap!)
+  { 26.5, 11 },                        -- off the tower, fall home
+  { 10, 12 },                          -- back along the keep's south side
+  { 4, 18 },                           -- the spawn plaza, west of the stairs
+  { 12.65, 18 },                       -- up the stairs (mantle)
+  { 15, 20.8, wait = ferry_at_keep },  -- keep roof NW: wait for the ferry
+  { 15, 23.2, wait = ferry_at_wall },  -- walk on (flush tops), ride across
+  { 1.5, 26 },                         -- step off onto the wall top
+  { -0.5, 26 },                        -- the wall-walk gem
+  { -2, 24 },                          -- hop down off the wall
+  { 2, 18 },                           -- home; wraps to 1
+}
+
+local function route_ctl(route)
   local d = state.doc
-  local px, _, pz = player.pos()
-  local wp = ROUTE[d.demo_wp]
+  local px, py, pz = player.pos()
+  local wp = route[d.demo_wp]
   local dx, dz = wp[1] - px, wp[2] - pz
   local dist = m.sqrt(dx * dx + dz * dz)
   local jump = false
-  if dist < 0.5 then
+  -- reaching a wait waypoint holds (doc.demo_hold): stand — a mover may
+  -- carry us anywhere meanwhile — until the predicate passes, then advance
+  if d.demo_hold == 1 or dist < 0.5 then
+    if wp.wait and not wp.wait(px, py, pz) then
+      d.demo_hold = 1
+      return { wishx = 0, wishz = 0, jump_pressed = false }
+    end
+    d.demo_hold = 0
     jump = wp[3] or false
-    d.demo_wp = d.demo_wp % #ROUTE + 1
-    wp = ROUTE[d.demo_wp]
+    d.demo_wp = d.demo_wp % #route + 1
+    wp = route[d.demo_wp]
     dx, dz = wp[1] - px, wp[2] - pz
     dist = m.sqrt(dx * dx + dz * dz)
   end
@@ -234,7 +288,9 @@ local function build_ctl()
       end
     end
   end
-  if d.demo == 3 then return route_ctl() end -- world-space, no camera
+  if d.demo >= 3 then -- world-space waypoint routes, no camera
+    return route_ctl(d.demo == 3 and ROUTE3 or ROUTE4)
+  end
   local fwd, side, jump_pressed
   if d.demo == 2 then -- pure forward walk (collision soak tests)
     fwd, side, jump_pressed = 1, 0, false
@@ -391,16 +447,22 @@ function game.draw()
     pal.x_tris(s.tex, level.vbuf, s.count, s.off, 0)
   end
 
-  -- the cube + pickups (opaque), then the blend pass: blob shadow +
-  -- pickup pop ghosts (no depth write, after all opaque)
+  -- movers + the cube + pickups (opaque), then the blend pass: blob
+  -- shadow + pickup pop ghosts (no depth write, after all opaque).
+  -- Movers emit at the advanced frame counter — the exact boxes the step
+  -- just collided with, so a rider sits flush on what is on screen.
   local frame = state.frame()
   local out = {}
+  local msegs = movers.emit(out, frame)
   local ncube = player.emit(out)
   local ngem = pickups.emit(out, frame)
   local nsh = player.emit_shadow(out)
   local nfx = pickups.emit_fx(out, frame)
   dyn:setstr(0, table.concat(out))
   local off = 0
+  for _, s in ipairs(msegs) do
+    pal.x_tris(level.tex[s.mat], dyn, s.n, off, 0); off = off + s.n * 72
+  end
   pal.x_tris(0, dyn, ncube, off, 0); off = off + ncube * 72
   if ngem > 0 then pal.x_tris(0, dyn, ngem, off, 0) end
   off = off + ngem * 72
