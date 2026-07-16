@@ -39,7 +39,7 @@ local BOXES = {
   -- deco: curtain wall, wood deck, pillars
   { "stone", 10, 2.6, 0.9, 0, 26, 0 },
   { "wood", 5, 1.1, 5, -7, 12, 0 },
-  { "metal", 1.6, 4.5, 1.6, -5, 28, 0 },
+  { "metal", 1.6, 4.5, 1.6, -5, 28.5, 0 }, -- 1.25u off the wall (> cw)
   { "metal", 2, 3, 2, 30, 8, 0 },
 }
 

@@ -128,16 +128,42 @@ function M.step(ctl)
   -- narrower-than-the-player pocket teleported across the far box.
   -- A pre-move overlap on the same axis (squeezed) clamps nothing here;
   -- another axis or the next frame resolves it.
+  --
+  -- EPS: the side tests MUST tolerate float noise. A clamp stores
+  -- face-hw in the f32 buffer; (face-hw)+hw can round PAST the face, and
+  -- an exact test then reads the flush player as "squeezed" — one frame
+  -- later it is sliding INTO the box (the stair phase-through / one-axis
+  -- pillar bug). 1e-3 is far above f32 noise, far below a frame of motion.
+  local EPS = 1e-3
   local C = level.colliders
+
+  -- mantle: a blocked step whose top is within step_h of the feet lifts
+  -- the player instead (stairs are WALKED, jumps are for gaps) — if the
+  -- body fits standing there. Grounded only: no mid-air wall-climbing.
+  local function mantle_top(b, px_, pz_)
+    if not grounded then return nil end
+    local lift = b[5] - y
+    if lift <= 0 or lift > k.step_h then return nil end
+    for _, o in ipairs(C) do
+      if overlaps(o, px_, b[5] + EPS, pz_, hw, hh) then return nil end
+    end
+    return b[5]
+  end
+
   local nx = x + vx * DT
   for _, b in ipairs(C) do
     if overlaps(b, nx, y, z, hw, hh) then
-      if x + hw <= b[1] then
-        nx = b[1] - hw
-        vx = 0
-      elseif x - hw >= b[4] then
-        nx = b[4] + hw
-        vx = 0
+      if x + hw <= b[1] + EPS or x - hw >= b[4] - EPS then
+        local top = mantle_top(b, nx, z)
+        if top then
+          y = top -- step up, keep the run
+        elseif x + hw <= b[1] + EPS then
+          nx = b[1] - hw
+          vx = 0
+        else
+          nx = b[4] + hw
+          vx = 0
+        end
       end
     end
   end
@@ -145,12 +171,17 @@ function M.step(ctl)
   local nz = z + vz * DT
   for _, b in ipairs(C) do
     if overlaps(b, x, y, nz, hw, hh) then
-      if z + hw <= b[3] then
-        nz = b[3] - hw
-        vz = 0
-      elseif z - hw >= b[6] then
-        nz = b[6] + hw
-        vz = 0
+      if z + hw <= b[3] + EPS or z - hw >= b[6] - EPS then
+        local top = mantle_top(b, x, nz)
+        if top then
+          y = top
+        elseif z + hw <= b[3] + EPS then
+          nz = b[3] - hw
+          vz = 0
+        else
+          nz = b[6] + hw
+          vz = 0
+        end
       end
     end
   end
@@ -159,7 +190,7 @@ function M.step(ctl)
   local landed = false
   for _, b in ipairs(C) do
     if overlaps(b, x, ny, z, hw, hh) then
-      if vy <= 0 and y >= b[5] then -- feet were at/above this top: land
+      if vy <= 0 and y >= b[5] - EPS then -- feet were at/above: land
         ny = b[5]
         landed = true
         -- a real landing (not the grounded re-collide, ~0.7/frame) squashes
@@ -168,7 +199,7 @@ function M.step(ctl)
           squash_t = feel.squash_frames
         end
         vy = 0
-      elseif vy > 0 and y + hh <= b[2] then -- head was below: bonk
+      elseif vy > 0 and y + hh <= b[2] + EPS then -- head was below: bonk
         ny = b[2] - hh
         vy = 0
       end

@@ -2,9 +2,9 @@
 -- jumping around an axis-aligned graybox playground, orbit-follow camera,
 -- every feel value a live knob (the smoke KNOBS pattern, D028).
 --
--- Controls: arrows move (camera-relative: up = away from camera) · space
--- jump · mouse drag = look (yaw/pitch) · wheel = zoom · z/x orbit ·
--- c recenter · ` console (game.demo(1) = autoplay loop).
+-- Controls: wasd move (camera-relative: w = away from camera) · space
+-- jump · arrows = camera yaw/pitch · mouse drag = look · wheel = zoom ·
+-- c recenter · ` console (game.demo(1) = autoplay, game.demo(2) = walk).
 --
 -- The camera is the FollowCamera model from the human's godot cosmic
 -- project (F:\Documents\cosmic src/camera): explicit orbit yaw/pitch/dist,
@@ -46,6 +46,7 @@ local KNOBS = {
     speed = 6.5, accel = 40, fric = 30, air_accel = 20, air_fric = 4,
     jump_h = 1.9, jump_apex_t = 22, fall_mul = 1.5, fall_max = 22,
     coyote = 6, buffer = 5, turn = 0.25,
+    step_h = 0.6, -- mantle: blocked steps up to this lift are walked up
   },
   cam = { -- the godot FollowCamera/CameraTuning knob set, per-frame units
     dist = 7.5, height = 3.2, look_h = 1.0,
@@ -56,6 +57,7 @@ local KNOBS = {
     min_speed = 1.5,             -- below this hspeed the orbit holds still
     orbit = 0.045,               -- z/x yaw rate, rad/frame
     mouse_yaw = 0.012, mouse_pitch = 0.010, -- rad per internal pixel
+    key_pitch = 0.025,                      -- up/down arrow pitch, rad/frame
     pitch_min = -0.6, pitch_max = 0.95,     -- rad around the ref elevation
     recenter_lerp = 0.25, hold_frames = 42, -- manual pause of yaw-follow
   },
@@ -133,10 +135,11 @@ function game.init()
   end
 
   input.map({
-    { "left", input.key.left }, { "right", input.key.right },
-    { "up", input.key.up }, { "down", input.key.down },
+    { "left", input.key.a }, { "right", input.key.d },
+    { "up", input.key.w }, { "down", input.key.s },
     { "jump", input.key.space },
-    { "orbit_l", input.key.z }, { "orbit_r", input.key.x },
+    { "cam_l", input.key.left }, { "cam_r", input.key.right },
+    { "cam_u", input.key.up }, { "cam_d", input.key.down },
     { "recenter", input.key.c },
   })
 end
@@ -167,7 +170,9 @@ local function build_ctl()
     end
   end
   local fwd, side, jump_pressed
-  if d.demo ~= 0 then
+  if d.demo == 2 then -- pure forward walk (collision soak tests)
+    fwd, side, jump_pressed = 1, 0, false
+  elseif d.demo ~= 0 then
     local rel = state.frame() - d.demo_t0
     fwd = 1
     side = (rel % 270 >= 90 and rel % 270 < 180) and -1 or 0
@@ -226,10 +231,14 @@ local function cam_step()
   end
   cam:f32(28, mx); cam:f32(32, my)
 
-  local kyaw = (input.down("orbit_l") and -kc.orbit or 0)
-             + (input.down("orbit_r") and kc.orbit or 0)
-  if kyaw ~= 0 then
+  -- arrow keys: left/right yaw, up/down pitch (the godot Q/E R/F drive)
+  local kyaw = (input.down("cam_l") and -kc.orbit or 0)
+             + (input.down("cam_r") and kc.orbit or 0)
+  local kpitch = (input.down("cam_u") and -kc.key_pitch or 0)
+              + (input.down("cam_d") and kc.key_pitch or 0)
+  if kyaw ~= 0 or kpitch ~= 0 then
     yaw = yaw + kyaw
+    pitch = m.clamp(pitch + kpitch, kc.pitch_min, kc.pitch_max)
     manual = true
   end
 
@@ -271,6 +280,14 @@ end
 function game.step()
   player.step(build_ctl())
   cam_step()
+  -- collision/feel telemetry: --eval "_G.DBG=10" prints the track every N
+  -- frames; reads + prints only (the smoke DEMO_DBG pattern)
+  if DBG and state.frame() % (tonumber(DBG) or 10) == 0 then
+    local px, py, pz = player.pos()
+    local vx, vy, vz = player.vel()
+    print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f yaw=%.2f"):format(
+      state.frame(), px, py, pz, vx, vy, vz, cam:f32(0)))
+  end
 end
 
 function game.draw()
@@ -321,7 +338,7 @@ function game.draw()
     text.draw((W - text.measure(msg)) // 2, 14, msg,
               { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
-  text.draw(3, H - 11, "arrows move . space jump . drag look . wheel zoom . c recenter")
+  text.draw(3, H - 11, "wasd move . space jump . arrows/drag camera . wheel zoom . c recenter")
 end
 
 return game
