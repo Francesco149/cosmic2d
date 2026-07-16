@@ -9,9 +9,11 @@
 
 local M = select(2, ...) or {}
 
+local archive = cm.require("cm.archive")
+
 M.API = 14
-M.MAX_FILE = 0xffffffff
-M.MAX_ZIP_ENTRIES = 65535
+M.MAX_FILE = archive.MAX_FILE
+M.MAX_ZIP_ENTRIES = archive.MAX_ZIP_ENTRIES
 
 local function trim(s)
   return (tostring(s or ""):gsub("^%s+", ""):gsub("%s+$", ""))
@@ -106,20 +108,8 @@ end
 
 local function fail(message) error(tostring(message), 0) end
 
-local function check_rel(path)
-  if path == "" or path:sub(1, 1) == "/" or path:find("\\", 1, true)
-      or path:find("%z") or path:find("//", 1, true) then
-    fail("unsafe archive path: " .. path)
-  end
-  for part in (path .. "/"):gmatch("(.-)/") do
-    if part == "" or part == "." or part == ".." then
-      fail("unsafe archive path: " .. path)
-    end
-  end
-end
-
 local function add_entry(ctx, entry)
-  check_rel(entry.name)
+  archive.check_rel(entry.name)
   if ctx.names[entry.name] then fail("duplicate archive path: " .. entry.name) end
   ctx.names[entry.name] = true
   entry.mode = entry.mode or 420 -- 0644
@@ -280,100 +270,6 @@ local function bytes_for(ctx, entry)
   return bytes
 end
 
-local function append(ctx, bytes)
-  if bytes == "" then return end
-  if ctx.target == "windows" and ctx.out_bytes + #bytes > M.MAX_FILE then
-    fail("ZIP32 export exceeds 4 GiB")
-  end
-  if not ctx.fs.append(ctx.temp, bytes) then fail("write temporary archive failed") end
-  ctx.out_bytes = ctx.out_bytes + #bytes
-end
-
-local function zip_member(ctx, entry, bytes)
-  local name = ctx.slug .. "/" .. entry.name
-  if #name > 65535 then fail("ZIP path is too long: " .. entry.name) end
-  local size = #bytes
-  if size > M.MAX_FILE or ctx.out_bytes > M.MAX_FILE then
-    fail("ZIP32 export exceeds 4 GiB")
-  end
-  local crc = ctx.fs.crc(bytes)
-  local offset = ctx.out_bytes
-  local flags, date = 0x0800, 33 -- UTF-8; deterministic 1980-01-01
-  append(ctx, string.pack("<I4I2I2I2I2I2I4I4I4I2I2",
-    0x04034b50, 20, flags, 0, 0, date, crc, size, size, #name, 0) .. name)
-  append(ctx, bytes)
-  ctx.central[#ctx.central + 1] = string.pack(
-    "<I4I2I2I2I2I2I2I4I4I4I2I2I2I2I2I4I4",
-    0x02014b50, 0x0314, 20, flags, 0, 0, date, crc, size, size,
-    #name, 0, 0, 0, 0, (entry.mode or 420) << 16, offset) .. name
-end
-
-local function tar_split(path)
-  if #path <= 100 then return path, "" end
-  for cut = #path, 1, -1 do
-    if path:sub(cut, cut) == "/" then
-      local prefix, name = path:sub(1, cut - 1), path:sub(cut + 1)
-      if #prefix <= 155 and #name <= 100 then return name, prefix end
-    end
-  end
-  fail("tar path exceeds the portable 255-byte limit: " .. path)
-end
-
-local function field(value, width)
-  local s = tostring(value or "")
-  if #s > width then fail("tar header field is too long: " .. s) end
-  return s .. string.rep("\0", width - #s)
-end
-
-local function octal(value, width)
-  local s = string.format("%o", value)
-  if #s > width - 1 then fail("tar numeric field overflow") end
-  return string.rep("0", width - 1 - #s) .. s .. "\0"
-end
-
-local function tar_header(path, size, mode)
-  local name, prefix = tar_split(path)
-  local h = field(name, 100) .. octal(mode or 420, 8) .. octal(0, 8)
-    .. octal(0, 8) .. octal(size, 12) .. octal(0, 12) .. string.rep(" ", 8)
-    .. "0" .. field("", 100) .. "ustar\0" .. "00"
-    .. field("cosmic2d", 32) .. field("cosmic2d", 32)
-    .. octal(0, 8) .. octal(0, 8) .. field(prefix, 155) .. string.rep("\0", 12)
-  if #h ~= 512 then fail("internal tar header size") end
-  local sum = 0
-  for i = 1, #h do sum = sum + h:byte(i) end
-  local check = string.format("%06o\0 ", sum)
-  return h:sub(1, 148) .. check .. h:sub(157)
-end
-
-local function gzip_block(ctx, bytes, final)
-  local at = 1
-  if #bytes == 0 and final then
-    append(ctx, "\1\0\0\255\255")
-    return
-  end
-  while at <= #bytes do
-    local n = math.min(65535, #bytes - at + 1)
-    local last = final and at + n > #bytes
-    append(ctx, string.char(last and 1 or 0)
-      .. string.pack("<I2I2", n, (~n) & 0xffff)
-      .. bytes:sub(at, at + n - 1))
-    at = at + n
-  end
-end
-
-local function tar_emit(ctx, bytes)
-  ctx.tar_crc = ctx.fs.crc(bytes, ctx.tar_crc)
-  ctx.tar_size = (ctx.tar_size + #bytes) & 0xffffffff
-  gzip_block(ctx, bytes, false)
-end
-
-local function tar_member(ctx, entry, bytes)
-  tar_emit(ctx, tar_header(ctx.slug .. "/" .. entry.name, #bytes, entry.mode))
-  tar_emit(ctx, bytes)
-  local pad = (-#bytes) % 512
-  if pad > 0 then tar_emit(ctx, string.rep("\0", pad)) end
-end
-
 local function checksums(ctx)
   local paths = {}
   for path in pairs(ctx.hashes) do paths[#paths + 1] = path end
@@ -383,20 +279,6 @@ local function checksums(ctx)
     lines[#lines + 1] = ctx.hashes[path] .. "  " .. path .. "\n"
   end
   return table.concat(lines)
-end
-
-local function finish_zip(ctx)
-  local start = ctx.out_bytes
-  local central = table.concat(ctx.central)
-  append(ctx, central)
-  append(ctx, string.pack("<I4I2I2I2I2I4I4I2", 0x06054b50, 0, 0,
-    #ctx.central, #ctx.central, #central, start, 0))
-end
-
-local function finish_tar(ctx)
-  tar_emit(ctx, string.rep("\0", 1024))
-  gzip_block(ctx, "", true)
-  append(ctx, string.pack("<I4I4", ctx.tar_crc, ctx.tar_size))
 end
 
 local function job_yield(job, phase, detail, done, total)
@@ -412,8 +294,7 @@ local function run(job, opts)
   job.fs = fs
   local ctx = {
     fs = fs, runtime = opts.runtime_root or ".", project_root = opts.project_root,
-    target = opts.target, names = {}, entries = {}, hashes = {}, central = {},
-    out_bytes = 0, tar_crc = 0, tar_size = 0,
+    target = opts.target, names = {}, entries = {}, hashes = {},
     skip_windows_identity = opts.skip_windows_identity,
   }
   job_yield(job, "preflight", "validating saved project and player files", 0, 1)
@@ -478,25 +359,27 @@ local function run(job, opts)
   job_yield(job, "collecting", "walking portable runtime and project", 0, 1)
   collect(ctx, checked)
   job.total = #ctx.entries + 1
-  if ctx.target == "linux" then
-    append(ctx, "\31\139\8\0\0\0\0\0\0\255") -- gzip, no timestamp, OS unknown
-  end
+  local writer = archive.writer {
+    format = ctx.target == "windows" and "zip" or "tar.gz",
+    crc = fs.crc,
+    sink = function(bytes)
+      if not fs.append(ctx.temp, bytes) then
+        fail("write temporary archive failed")
+      end
+    end,
+  }
 
   for index, entry in ipairs(ctx.entries) do
     job_yield(job, "building", entry.name, index - 1, #ctx.entries + 1)
     local bytes = bytes_for(ctx, entry)
     ctx.hashes[entry.name] = fs.sha(bytes)
-    if ctx.target == "windows" then zip_member(ctx, entry, bytes)
-    else tar_member(ctx, entry, bytes) end
+    writer:member(ctx.slug .. "/" .. entry.name, bytes, entry.mode)
   end
   local sum = checksums(ctx)
-  local sum_entry = { name = "SHA256SUMS", bytes = sum, mode = 420 }
   job_yield(job, "building", "SHA256SUMS", #ctx.entries, #ctx.entries + 1)
-  if ctx.target == "windows" then
-    zip_member(ctx, sum_entry, sum); finish_zip(ctx)
-  else
-    tar_member(ctx, sum_entry, sum); finish_tar(ctx)
-  end
+  writer:member(ctx.slug .. "/SHA256SUMS", sum, 420)
+  writer:finish()
+  ctx.out_bytes = writer.out_bytes
 
   job_yield(job, "publishing", "syncing complete artifact", job.total, job.total)
   local publish_opts = {}
