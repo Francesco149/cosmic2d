@@ -3,16 +3,70 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — project duplicate complete; archive/delete next (2026-07-16)
+## Current handoff — project actions complete; picker navigation next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-A0–A2 are complete and A3 is in progress. Broader project lifecycle,
-gamepad/player settings, shared genre-neutral runtime slices and demos,
-complete rewind product UI, and the release-candidate pass remain explicit
-alpha gates.
+A0–A2 are complete and A3 is in progress: the whole project-actions line
+(settings, export, entry, location, duplicate, archive, delete) is done.
+Picker navigation/scale, starter templates, gamepad/player settings, shared
+genre-neutral runtime slices and demos, complete rewind product UI, and the
+release-candidate pass remain explicit alpha gates.
+
+**D079 closes the archive/delete packet, completing the A3 project-actions
+line.** Every ready recent tile's `...` menu now offers **archive** and
+**delete** beside reveal/rename/move/duplicate. Archive streams the saved
+project — the same `.ed`/dot-state and `video.dat` omission and link refusal
+as duplicate — through the shared `cm.archive` stored-block writer (extracted
+byte-identically from `cm.export`, plus explicit directory members) into a
+dot-prefixed temp beside a user-chosen parent, published by one atomic
+no-replace rename under the derived name `<folder> <date>[ (n)]`; same-day
+backups take the first free suffix and a race cannot overwrite one. Every
+failure or cancel removes the temp and the source is never written. The
+success state stays open and offers delete with that archive named as the
+safety net.
+
+Delete is triple-anchored: the exact folder name must be typed (or arrives
+pre-armed from the just-made archive as the two-step path), the source must
+hold a recent tile — which remains visible as the recovery handle until the
+whole tree is gone — and the active editor root, aliases, and links anywhere
+in the tree are refused before the first removal. PAL API 17's
+`x_list_dir_all` (the unpruned `list_dir` twin, sanctioned only for
+read-to-delete) enumerates `.ed` journals and dot tool state. `project.lua`
+is removed first so no interrupted delete leaves a bootable half-project;
+validity is deliberately not required and broken-but-present recent tiles
+keep a delete door, so a partial delete is always finishable from the picker.
+The root removal and atomic recents removal share the final unyielding step;
+a recents failure afterwards names the honest missing tile. Esc/outside
+clicks on a running job can only request cancellation, and a cancelled delete
+reports that already-removed files are gone. All modals stay usable at 300%
+fixed chrome.
+
+**D079 proof:** Linux selftest passes **23,478 checks** and the staged native
+Windows executable **23,480** on PAL API 17; `nix run .#test` is ALL GREEN
+across release manifests, every historical trace, and all pixel/audio
+goldens. Fake-fs KATs pin every refusal, dated unique naming, machine-state
+omission, injected append/publish/remove/recents failures, cancel,
+project.lua-first ordering, and half-tree retry; real-PAL runs decode the
+published tar.gz/ZIP containers byte-exactly and prove partial-delete honesty
+plus the pruned/unpruned listing contract, and a selftest pin keeps
+`cm.export` (still host-loadable without the `cm` global) mirroring the
+shared ZIP32 limits. A checksum-verified fresh public Linux archive in stock
+Debian 13 archived the external `projet π original` from a spaced source area
+into `destination était ici`, proved machine state stayed out, re-imported
+the extracted archive through open folder, survived an injected publish
+failure with nothing published, kept an honest repairable tile through an
+injected partial delete, finished that delete through the broken-tile door on
+retry, deleted the original through the typed door with the archive
+surviving, and — from a read-only install — still archived while delete
+refused honestly without a recents tile. The fresh public Windows ZIP
+repeated the matrix natively over spaced/π `C:` paths with a legacy backslash
+recents spelling. Inspected captures on llm-feed: the six-action menu, typed
+delete confirmation, 3,000-file mid-archive progress with cancel, the
+success/safety-net and armed-delete states, the 300% delete modal, and the
+native Windows public-build menu.
 
 **D078 closes the duplicate packet.** Every ready recent tile's `...` menu now
 offers **duplicate**: the native folder dialog chooses an existing destination
@@ -233,23 +287,18 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** add confirmed **archive/delete** from a ready picker
-tile, completing the A3 project-actions line. Archive streams the saved
-project (same `.ed`/`video.dat` omission and link refusal as D078) into a
-dated `.tar.gz`/`.zip` beside a user-chosen destination through the existing
-temp-then-publish exporter shape, with progress, cancel, and an explicit
-no-replace collision stance. Delete requires an explicit typed or two-step
-confirmation naming the folder, refuses the active editor root and aliases,
-and only then removes the tree and its recent tile; a delete offered directly
-from the archive-success state may reuse that archive as its safety net.
-Inject archive-write, publish, and partial-delete failures and prove a
-readable source or an explicit actionable error always survives — a
-half-deleted project must still show a repairable tile, never silently vanish.
-Exit when fresh Linux and Windows archives can archive and then delete an
-external spaced/non-ASCII project, the archive re-imports through open folder
-after extraction, and an injected failure leaves an honest recoverable state.
-Leave richer picker sort/search/keyboard/scrolling/thumbnails and
-starter-template expansion for later A3 packets.
+**Exact next packet:** picker **navigation and scale** — the remaining
+unchecked picker line in A3 besides templates. The tile grid currently draws
+only what fits the window: give it scrolling for large lists first (the
+recents CAP is 12 but bundled projects extend the grid), then name
+sort/search filtering and keyboard navigation (arrows + Enter open, with the
+existing `...` grammar reachable without a mouse), staying at 100–300% fixed
+chrome. Thumbnails may ride along only if cheap (project icon bytes already
+validate through `cm.project`); do not add new persistent state beyond what
+`editor.dat`/recents already own. Exit when a picker holding several dozen
+projects can reach, filter, and open any of them without a mouse in fresh
+Linux and Windows editor archives. Leave Blank/Platformer/Top-down/Arcade
+starter templates as the packet after; they gate A4's binding-display work.
 
 There is no known blocker or human-only verification required.
 

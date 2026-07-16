@@ -131,21 +131,24 @@ developer toolchain; the first picker shows only intentional content.
 
 Goal: project work never requires filesystem or Nix knowledge for normal use.
 
-Progress: the settings, export, external-project entry, location, and
-duplicate packets are complete. Boot, picker, packaging, and the editor share
-one declarative `cm.project` codec plus release byte validator. The picker
-opens arbitrary folders in place, refreshes and atomically maintains recents,
-repairs/removes stale roots, reveals ready recent folders, collision-safely
-renames/moves them on one filesystem after the active editor has released
-ownership, and duplicates them through a staged, cancellable copy published by
-one no-replace rename that omits machine/editor state. It is reachable through
-an explicit recovery-safe editor action.
+Progress: the settings, export, external-project entry, location, duplicate,
+and archive/delete packets are complete. Boot, picker, packaging, and the
+editor share one declarative `cm.project` codec plus release byte validator.
+The picker opens arbitrary folders in place, refreshes and atomically
+maintains recents, repairs/removes stale roots, reveals ready recent folders,
+collision-safely renames/moves them on one filesystem after the active editor
+has released ownership, duplicates them through a staged, cancellable copy
+published by one no-replace rename that omits machine/editor state, archives
+them as dated no-replace backups that re-import through open folder, and
+deletes them behind a typed (or archive-armed) confirmation that keeps the
+recent tile as the recovery handle until the tree is gone. It is reachable
+through an explicit recovery-safe editor action.
 The project window edits identity, window defaults, and release files, then its
 **Build/Export** tab streams the saved external project with the matching
 carried Linux/Windows runtime. Target/output choice, progress, cancellation,
 checksums, explicit atomic replacement, and actionable preflight errors require
-neither a terminal nor a Nix source-tree project. Archive/delete, picker
-scale/navigation, and starter-template breadth keep the full A3 gate open.
+neither a terminal nor a Nix source-tree project. Picker scale/navigation and
+starter-template breadth keep the full A3 gate open.
 
 - [ ] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
   thumbnails, missing-project repair, and large-list scrolling.
@@ -153,7 +156,8 @@ scale/navigation, and starter-template breadth keep the full A3 gate open.
   file manager, and recovery-safe return to picker.
 - [x] Project actions: duplicate from a ready tile (staged cancellable copy,
   progress, no-replace publication, machine/editor state omitted).
-- [ ] Project actions: archive/delete with confirmation.
+- [x] Project actions: archive/delete with confirmation (dated no-replace
+  backup; typed or archive-armed confirm, tile-anchored, always finishable).
 - [x] Project settings edit name, author, version, description, resolution,
   window defaults, icon, controls/credits files, and export configuration.
 - [x] Add Build/Export to the launcher/project surface with target, output

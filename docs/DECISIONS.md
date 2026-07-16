@@ -3141,3 +3141,58 @@ failures against real staged files, and `.ed`/`video.dat` omission. Inspected
 100% and 300% captures cover the menu, ready modal, mid-copy progress on a
 3,000-file fixture, and the published newest-first tile; platform/release
 proof is recorded in `STATUS.md`.
+
+## D079 — archive is a dated no-replace backup; delete is confirmed, tile-anchored, and always finishable (A3, 2026-07-16)
+
+**Context.** D078 completed copy-shaped project actions, but backing a
+project up or removing it still required a file manager. A backup that
+silently replaced an earlier one, or a delete that could vanish a folder on a
+misclick — or strand an interrupted half-tree with no in-picker recovery —
+would violate the failure-safety line the location packets established.
+Deletion also has to remove `.ed` journals and other dot tool state that
+`pal.list_dir` deliberately prunes from every ordinary caller.
+
+**Decision.** Both actions are picker-only coroutine jobs in
+`cm.project_location` sharing one job harness with duplicate. **Archive**
+streams the saved-project walk (identical `.ed`/dot-state and `video.dat`
+omission and link refusal as duplicate) through the shared `cm.archive`
+writer — the stored-block tar.gz/ZIP32 encoders extracted from `cm.export`,
+now with explicit directory members — into a dot-prefixed temp beside a
+user-chosen destination parent, published by one atomic no-replace
+`x_file_publish`. The name is derived, `<folder> <yyyy-mm-dd>[ (n)]` with the
+first free suffix, so same-day backups accumulate and a race still cannot
+overwrite one. Every failure or cancel removes the temp; the source is never
+written.
+
+**Delete** is the one deliberately destructive job and is triple-anchored:
+the exact folder name must arrive as `opts.confirm` (typed in the modal, or
+armed by a just-made archive in the same modal session as the two-step
+safety-net path); the source must hold a recent tile, which stays in place as
+the recovery handle until the whole tree is gone; and the active editor root,
+aliases, and links anywhere in the tree are refused before the first removal
+(a walk behind a directory link reaches files outside the project). PAL API
+17's `x_list_dir_all` — the unpruned twin of `list_dir`, sanctioned only for
+read-to-delete — enumerates dot state. `project.lua` is removed first, so an
+interrupted delete can never leave a bootable half-project; project validity
+is deliberately NOT required, and broken-but-present recent tiles keep a
+delete door, so a partial delete always remains finishable from the picker.
+The root removal and the atomic recents removal share the final unyielding
+step; a recents failure afterwards names the honest missing tile.
+
+**Consequences.** Users can back up and destroy projects from the picker
+with no terminal, across spaced/non-ASCII paths. A dated archive extracted
+anywhere re-imports through **open folder**. Deleting removes unsaved
+editor recovery state by design — the typed confirmation and the
+archive-first path in the same modal are the counterweight. `cm.export`
+stays host-loadable (no `cm` at module scope) and mirrors the ZIP32 limits
+under a selftest pin. Cross-filesystem move can now compose duplicate's
+staged copy with delete's confirmed removal.
+
+**Proof.** Fake-fs KATs pin refusals, dated unique naming, omission,
+injected append/publish/remove/recents failures, cancel, project.lua-first
+ordering, and half-tree retry; real-PAL runs decode the published containers
+byte-exactly and prove partial-delete honesty plus the pruned/unpruned
+listing contract. Fresh public Linux (stock Debian 13, incl. a read-only
+install) and native Windows archives ran the full external spaced/π
+archive → re-import → injected-partial-delete → retry → delete matrix.
+Inspected captures are on llm-feed; platform/release proof is in `STATUS.md`.
