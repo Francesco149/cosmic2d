@@ -55,8 +55,9 @@ local function load_scene(path)
   sky_top, sky_bot, p = string.unpack("<I4I4", data, p)
 
   -- textures: free the previous generation first (hot-reload/reboot safe:
-  -- ids persist in p3d.texids, PAL textures survive VM reboots)
-  local idbuf = pal.buf("p3d.texids", 4 * 33)
+  -- ids persist in rc.p3d.texids, PAL textures survive VM reboots). texids
+  -- are session-dependent PAL resources — render-class domain (D3D-012).
+  local idbuf = pal.buf("rc.p3d.texids", 4 * 33)
   local nold = idbuf:u32(0)
   for i = 1, nold do pal.tex_free(idbuf:u32(4 * i)) end
   local ntex
@@ -97,7 +98,7 @@ local function load_scene(path)
 
   -- sky: full-screen NDC quad at far depth, gradient via vertex colors,
   -- drawn first under an identity view with fog off (proto sky pass)
-  skybuf = pal.buf("p3d.sky", 6 * 24)
+  skybuf = pal.buf("rc.p3d.sky", 6 * 24)
   local tr, tg, tb = unpack_rgb(sky_top)
   local br, bg, bb = unpack_rgb(sky_bot)
   local function sv(x, y, r, g, b)
