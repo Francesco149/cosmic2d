@@ -234,6 +234,9 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   selects an inclusive A/B range and loops it; Esc clears the loop/clip mode;
   Esc again closes rewind immediately. Active clips cannot disappear through
   hover timeout, F4, or outside clicks.
+- [x] Clock replay/A-B transport to wall time: default 1× replays the recorded
+  60 Hz moment in real time, 2×/4×/8× are explicit, and a late renderer drops
+  intermediate presentation frames instead of slowing the transport clock.
 - [ ] Extend that dismissal guard to export progress and dropped-replay modes
   when those modes exist.
 - [ ] Give live history, replay files, and crash-focused views immutable
@@ -271,6 +274,10 @@ Goal: validate the whole promise, not isolated subsystems.
 - [ ] Accessibility pass: scalable legible UI, keyboard-reachable core flows,
   visible focus, non-color-only states, reduced flash/shake options, and
   controller navigation where player-facing.
+- [x] Add independent machine-local sizing for canvas-window text/content and
+  fixed chrome (including rewind), with 1080p-compatible defaults and automatic
+  SDL-DPI/4K scaling. The broader keyboard/focus/player accessibility gate above
+  remains open.
 - [ ] Fresh-user usability pass on both platforms; record time-to-first-change
   and every point where external knowledge was required.
 - [ ] Clean-machine artifact matrix, upgrade/open-old-project tests, corrupt

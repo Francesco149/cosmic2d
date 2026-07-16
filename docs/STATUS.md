@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A3 release references complete; stability fixed; export job next (2026-07-16)
+## Current handoff — rewind clock + accessible editor sizing complete; export job next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -12,6 +12,35 @@ two-room platformer demo, and clean Windows/Linux distributions are working.
 A0–A2 are complete and A3 is in progress. Project/export UX, gamepad/player
 settings, shared genre-neutral runtime slices and demos, complete rewind
 product UI, and the release-candidate pass remain explicit alpha gates.
+
+**D074 closes the rewind-rate and editor-legibility packet.** Rewind playback
+is now presentation-clocked against the fixed 60 Hz trace period: 1× consumes
+the original wall time regardless of render refresh, while explicit 2×/4×/8×
+rates advance faster. Late draws drop intermediate presented states and restore
+the newest due frame, so transport time does not drift; A/B still holds A for a
+complete first draw and presents inclusive B before wrapping.
+
+The editor's adjacent **Aa** control independently sizes **canvas windows**
+(content and fonts) and **fixed chrome** (HUD, menus, launcher, drag ghost, and
+rewind tray) from 75–300%. Auto keeps ordinary 1080p at 100% and follows SDL
+display scale or high-resolution window density for DPI/4K defaults. Both are
+machine-local, per-user `editor.dat` policy shared by the picker and every
+project, and the picker consumes the fixed-chrome value too. The captured
+logical camera, editor session, history, traces, verification, and project
+output are untouched. Missing/old settings enter auto mode safely.
+
+**D074 proof:** clock-injected KATs pin no early advance, exact 1× steps,
+inclusive A/B wrap, and deliberate faster-rate skipping; camera/chrome KATs pin
+scaled transforms, fit, and matching pointer coordinates; viewport KATs pin
+1080p/DPI/4K policy, persistence, and invalid-data rejection. Linux selftest
+and the native Windows `.exe` pass at **23,351 checks** on PAL API 13, and `nix
+run .#test` is ALL GREEN with every historical trace and pixel/audio golden
+unchanged. Inspected 100%/150% editor and 4K picker captures cover the canvas,
+Aa panel, launcher, scaled rewind tray, and first-run project tiles. The
+refreshed Windows stage contains no `.ed/history` or project `video.dat`, and
+the per-user root has no pre-existing `editor.dat`,
+while valid sessions/journals remain preserved; its Start Menu shortcut targets
+the new `cosmic2d-editor.exe`.
 
 **D073 closes the native live-history stability report.** Closed rewind
 segments no longer serialize or durably write from `record_frame`: render/dev
@@ -52,13 +81,14 @@ Fresh projects can therefore become export-metadata-complete without editing
 Lua, while missing/unsafe/empty/wrong-type selections cannot cross the settings
 save boundary.
 
-**A7's foundation remains complete (D065/D066).** The persistent four-lane
-rewind tray owns the live camera, zoom/pan, click seek, inclusive A/B loop, and
-two-step Esc grammar. Generic state participants flush/rebuild runtime facades
-at every capture/restore boundary; `cm.map` proves maps, placements, markers,
-collision, and active selection rewind coherently. Persisted activity/event
-indexes, minute thumbnails, project-file epochs, standalone clip packages, and
-immutable replay/crash sources remain later A7 packets.
+**A7's foundation remains complete (D065/D066/D074).** The persistent four-lane
+rewind tray owns the live camera, zoom/pan, click seek, wall-clocked
+1×/2×/4×/8× inclusive A/B playback, and two-step Esc grammar. Generic state
+participants flush/rebuild runtime facades at every capture/restore boundary;
+`cm.map` proves maps, placements, markers, collision, and active selection
+rewind coherently. Persisted activity/event indexes, minute thumbnails,
+project-file epochs, standalone clip packages, and immutable replay/crash
+sources remain later A7 packets.
 
 **Proof:** focused KATs cover draft/partial policy, normalized content, missing
 files, binary text, bad icon type/shape, extensionless legal candidates, picker

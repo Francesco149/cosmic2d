@@ -432,6 +432,19 @@ from files, then falls back to the procedural build / code defaults
 knobs defaults merge fills keys the file predates). File reads are
 boot-time-only by rule: file bytes are not sim input.
 
+The current native infinite-canvas shell (`cm.ed`, D050+) has two additional
+machine-local accessibility multipliers. `editor_scale` composes with the
+captured logical camera zoom at every world/screen transform, so canvas-window
+geometry and text grow together without mutating or recording the camera.
+`chrome_scale` gives the project picker and fixed HUD/menu/launcher/rewind
+surfaces a virtual coordinate space through `cm.ed.chrome`: coordinates and
+glyph sizes multiply at the PAL boundary while pointer coordinates divide by
+the same value. Auto policy is resolved from `x_ig_frame().dpi` plus window
+pixel density; manual values and the auto flag persist in per-user `editor.dat`
+below `pal.user_path()`, shared by the picker and every project. They are
+render/dev state, never simulation, editor-document, trace, or packaged-project
+state (D074).
+
 ## Audio (R9b, D058 — the M6/M9 sketch, landed)
 
 PAL owns the audio device and the voice inner loop (C, fixed-point,

@@ -10,6 +10,8 @@ local M = select(2, ...) or {}
 local trace = cm.require("cm.trace")
 local scrub = cm.require("cm.scrub")
 local wm = cm.require("cm.ed.wm")
+local chrome = cm.require("cm.ed.chrome")
+local pal = chrome.pal
 
 M.DEFAULT_SPAN = 10 * 60 * 60 -- ten minutes at the fixed 60 Hz
 M.MIN_SPAN = 60               -- the near zoom shows individual frames
@@ -229,7 +231,9 @@ end
 
 function M.owns_pointer(ed, i)
   local r = state(ed)
-  return r.gesture ~= nil or rect_has(r.rect, i) or rect_has(r.pill, i)
+  local scale = cm.require("cm.view").cfg.chrome_scale or 1
+  local vi = chrome.virtual_input(i, scale)
+  return r.gesture ~= nil or rect_has(r.rect, vi) or rect_has(r.pill, vi)
 end
 
 local function nice_step(span, width)
@@ -632,6 +636,11 @@ function M.draw(ed, ig, i)
     scrub.toggle_play()
   end
   x = x + 53
+  if button(i, x, foot_y, 38, foot_h, (scrub.speed or 1) .. "x",
+            { accent = (scrub.speed or 1) > 1 }) then
+    scrub.cycle_speed()
+  end
+  x = x + 43
   if button(i, x, foot_y, 30, foot_h, ">") then
     park_at(clamp(at + 1, lo, hi))
   end

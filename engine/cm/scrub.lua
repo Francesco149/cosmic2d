@@ -31,6 +31,41 @@ local input = cm.require("cm.input")
 local KEY_F4 = 61
 local KEY_RIGHT, KEY_LEFT = 79, 80
 
+M.SPEEDS = { 1, 2, 4, 8 }
+M.FRAME_NS = 1e9 / 60
+
+local function clock_ns()
+  return M._clock_ns and M._clock_ns() or pal.time_ns()
+end
+
+local function reset_play_clock(now)
+  M.play_clock = now or clock_ns()
+  M.play_acc = 0
+end
+
+local function clear_play_clock()
+  M.play_clock, M.play_acc = nil, nil
+end
+
+function M.set_speed(speed)
+  for _, allowed in ipairs(M.SPEEDS) do
+    if speed == allowed then
+      M.speed = allowed
+      reset_play_clock()
+      return allowed
+    end
+  end
+  return nil, "rewind speed must be 1x, 2x, 4x, or 8x"
+end
+
+function M.cycle_speed()
+  local at = 1
+  for i, speed in ipairs(M.SPEEDS) do
+    if speed == (M.speed or 1) then at = i; break end
+  end
+  return M.set_speed(M.SPEEDS[at % #M.SPEEDS + 1])
+end
+
 function M.paused()
   return M.on == true
 end
@@ -64,8 +99,9 @@ function M.open()
   M.on = true
   M.lo, M.hi = lo, hi
   M.at, M.shown = hi, hi -- the present is already in the buffers
-  M.play = false
+  M.play, M.speed = false, 1
   M.play_hold, M.loop_a, M.loop_b = nil, nil, nil
+  clear_play_clock()
   M.irec = trace.ring_state_at(hi).input
 end
 
@@ -76,6 +112,7 @@ end
 function M.seek(f)
   if not M.on then return end
   M.play, M.play_hold = false, nil
+  clear_play_clock()
   M.at = math.min(math.max(math.floor(f + 0.5), M.lo), M.hi)
 end
 
@@ -86,17 +123,20 @@ function M.set_loop(a, b)
   if b < a then a, b = b, a end
   M.loop_a, M.loop_b = a, b
   M.at, M.play, M.play_hold = a, true, true
+  reset_play_clock()
 end
 
 function M.clear_loop()
   M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
   M.play = false
+  clear_play_clock()
 end
 
 function M.toggle_play()
   if not M.on then return end
   if M.play then
     M.play, M.play_hold = false, nil
+    clear_play_clock()
     return
   end
   if M.loop_a and (M.at < M.loop_a or M.at >= M.loop_b) then
@@ -105,6 +145,7 @@ function M.toggle_play()
     M.at, M.play_hold = M.lo, true
   end
   M.play = true
+  reset_play_clock()
 end
 
 -- back to the present, timeline intact (recording resumes seamlessly);
@@ -119,6 +160,7 @@ function M.close()
   cm.require("cm.ed").unpark(false) -- the stashed present comes back
   M.on, M.play = false, false
   M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
+  clear_play_clock()
 end
 
 -- the playhead becomes the new present; the future is discarded (for a
@@ -132,6 +174,7 @@ function M.rewind_here()
   M.shown = M.at
   M.on, M.play, M.replay = false, false, false
   M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
+  clear_play_clock()
   if cm.main and cm.main.after_restore then cm.main.after_restore() end
 end
 
@@ -155,8 +198,9 @@ local function do_load(path)
   M.on, M.replay = true, true
   M.lo, M.hi = rlo, rhi
   M.at, M.shown = rlo, rlo
-  M.play = rhi > rlo -- it's a showcase: roll it
+  M.play, M.speed = rhi > rlo, 1 -- it's a showcase: roll it in real time
   M.play_hold, M.loop_a, M.loop_b = true, nil, nil
+  reset_play_clock()
   M.irec = nil
 end
 
@@ -178,6 +222,41 @@ end
 
 -- ---- the per-tick frame (cm.main: after editor, before perf/console) ----
 
+local function advance_playback(steps)
+  if steps <= 0 then return end
+  if M.loop_a then
+    local n = M.loop_b - M.loop_a + 1
+    M.at = M.loop_a + ((M.at - M.loop_a + steps) % n)
+  else
+    M.at = M.at + steps
+    if M.at >= M.hi then
+      M.at, M.play = M.hi, false
+      clear_play_clock()
+    end
+  end
+end
+
+local function clock_playback()
+  local now = clock_ns()
+  if M.play_hold then
+    -- A newly selected A/B range and an opened replay both show their first
+    -- frame for one complete draw before the real-time clock starts.
+    M.play_hold = nil
+    reset_play_clock(now)
+    return
+  end
+  if not M.play_clock then reset_play_clock(now); return end
+  local elapsed = math.max(0, now - M.play_clock)
+  M.play_clock = now
+  local due = (M.play_acc or 0)
+              + elapsed / M.FRAME_NS * (M.speed or 1)
+  local steps = math.floor(due)
+  M.play_acc = due - steps
+  -- One restore per presented frame. If rendering fell behind, intermediate
+  -- recorded frames are deliberately dropped so 1x remains real time.
+  advance_playback(steps)
+end
+
 function M.frame()
   if M.pending then
     local path = M.pending
@@ -198,16 +277,7 @@ function M.frame()
   end
   if not M.on then return end
 
-  if M.play then
-    if M.play_hold then
-      M.play_hold = nil
-    elseif M.loop_a then
-      if M.at >= M.loop_b then M.at = M.loop_a else M.at = M.at + 1 end
-    else
-      M.at = M.at + 1
-      if M.at >= M.hi then M.at, M.play = M.hi, false end
-    end
-  end
+  if M.play then clock_playback() end
   apply(M.at)
 
   -- Editor sessions render the persistent A7 tray on the native imgui
@@ -229,12 +299,15 @@ function M.frame()
                       { id = "timeline", label_w = 0, fmt = "%d" })
   if v ~= M.at then M.seek(v) end
 
-  ui.row({ 1, 1.2, 1, 1.2, 1.2, 1, 1.2, 2.2, 1.6, 1.4 })
+  ui.row({ 1, 1.2, 1, 1.2, 0.9, 1.2, 1, 1.2, 2.2, 1.6, 1.4 })
   if ui.button("|<") then M.seek(M.lo) end
   if ui.button("-60") then M.seek(M.at - 60) end
   if ui.button("<") then M.seek(M.at - 1) end
   if ui.button(M.play and "stop" or "play") then
     M.toggle_play()
+  end
+  if ui.button((M.speed or 1) .. "x", { id = "speed" }) then
+    M.cycle_speed()
   end
   if ui.button(">") then M.seek(M.at + 1) end
   if ui.button("+60") then M.seek(M.at + 60) end

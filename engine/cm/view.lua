@@ -17,8 +17,93 @@ M.cfg = {
   base_scale = 2, -- default art zoom: a 960x540 window = a 480x270 FOV at 2x
   ref_w = 480,    -- target FOV / art reference; the ladder fills around it (D036)
   ref_h = 270,
-  ui_scale = 2,   -- editor chrome scale, independent of the game's (D036)
+  ui_scale = 2,   -- legacy cm.ui chrome scale, independent of game's (D036)
+  editor_scale = 1, -- native editor canvas windows/content (machine-local)
+  chrome_scale = 1, -- fixed native chrome: HUD, launcher, rewind tray
+  access_auto = true,
 }
+
+M.ACCESS_SCALES = {
+  0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3,
+}
+M.access_resolved = false
+
+local function access_scale(s)
+  if type(s) ~= "number" or s ~= s or s < 0.75 or s > 3 then return nil end
+  local best, dist
+  for _, candidate in ipairs(M.ACCESS_SCALES) do
+    local d = math.abs(candidate - s)
+    if not dist or d < dist then best, dist = candidate, d end
+  end
+  return best
+end
+
+-- Native imgui pixels need an accessibility default of their own: the game
+-- ladder/ui canvas does not scale the editor overlay. SDL's display scale is
+-- authoritative when configured; physical resolution is a conservative
+-- fallback for unscaled 1440p/4K desktops (common on Linux).
+function M.accessibility_default(dpi, w, h)
+  dpi = type(dpi) == "number" and dpi > 0 and dpi or 1
+  w, h = tonumber(w) or 1920, tonumber(h) or 1080
+  local resolution = math.min(w / 1920, h / 1080)
+  local wanted = math.max(1, dpi, resolution)
+  wanted = math.floor(wanted * 4 + 0.5) / 4
+  return math.max(1, math.min(3, wanted))
+end
+
+function M.resolve_accessibility(dpi, w, h, force)
+  M.access_dpi, M.access_w, M.access_h = dpi, w, h
+  if M.cfg.access_auto and (force or not M.access_resolved) then
+    local s = M.accessibility_default(dpi, w, h)
+    M.cfg.editor_scale, M.cfg.chrome_scale = s, s
+    M.access_resolved = true
+  end
+  return M.cfg.editor_scale, M.cfg.chrome_scale
+end
+
+function M.set_editor_scale(s)
+  s = access_scale(s)
+  if not s then return nil, "invalid editor content scale" end
+  M.cfg.editor_scale, M.cfg.access_auto = s, false
+  M.access_resolved = true
+  M.save_accessibility()
+  return s
+end
+
+function M.set_chrome_scale(s)
+  s = access_scale(s)
+  if not s then return nil, "invalid fixed chrome scale" end
+  M.cfg.chrome_scale, M.cfg.access_auto = s, false
+  M.access_resolved = true
+  M.save_accessibility()
+  return s
+end
+
+local function step_scale(current, direction)
+  current = access_scale(current) or 1
+  local at = 1
+  for i, s in ipairs(M.ACCESS_SCALES) do if s == current then at = i; break end end
+  at = math.max(1, math.min(#M.ACCESS_SCALES, at + direction))
+  return M.ACCESS_SCALES[at]
+end
+
+function M.step_editor_scale(direction)
+  return M.set_editor_scale(step_scale(M.cfg.editor_scale, direction))
+end
+
+function M.step_chrome_scale(direction)
+  return M.set_chrome_scale(step_scale(M.cfg.chrome_scale, direction))
+end
+
+function M.set_access_auto(on)
+  M.cfg.access_auto = on ~= false
+  M.access_resolved = false
+  if M.cfg.access_auto then
+    M.resolve_accessibility(M.access_dpi, M.access_w, M.access_h, true)
+  end
+  M.save_accessibility()
+  return M.cfg.access_auto
+end
 
 M.enabled = false -- true only for live windowed sessions
 -- nil = the classic play/editor-chrome model (the ladder below). "canvas" =
@@ -59,18 +144,73 @@ function M.toggle_fullscreen(on)
 end
 
 -- ---- the options menu's persisted choices (M8.6 follow-up) ----
--- Window size / fullscreen / ui scale persist across launches in
+-- Per-project window size / fullscreen / legacy ui scale persist in
 -- <project>/video.dat (canonical bytes via cm.state, like the sandbox's
 -- knobs.dat). Machine-local + render/dev ONLY: it is NOT doc-tree state (never a
 -- sim input — D028/D036), so it is read only in interactive windowed sessions
 -- and written only on a user change; headless / --frames / --verify / --win keep
 -- the project's fixed FOV and never touch it (goldens, captures + determinism
 -- stay byte-stable). Gitignored. The options menu (cm.options) routes all three
--- changes through here, so the mutation and the save live in one place.
+-- changes through here, so the mutation and the save live in one place. Native
+-- editor accessibility is user-wide and has its separate store below.
 
 local function video_path()
   local a = cm.main and cm.main.args
   return (a and a.project) and (a.project .. "/video.dat") or nil
+end
+
+-- Editor legibility is a user preference, not a project setting. Keep it in
+-- the one PAL-provided per-user root so the picker and every project share it.
+-- `_access_path` is a selftest seam; production always uses pal.user_path().
+local function accessibility_path()
+  if M._access_path then return M._access_path end
+  if not pal.user_path then return nil, "PAL lacks per-user path support" end
+  local root, err = pal.user_path()
+  if not root then return nil, err end
+  return root .. "editor.dat"
+end
+
+function M.save_accessibility()
+  local path, path_err = accessibility_path()
+  if not path then
+    if path_err then pal.log("[display] save FAILED: " .. tostring(path_err)) end
+    return nil, path_err
+  end
+  local t = { editor_scale = M.cfg.editor_scale,
+              chrome_scale = M.cfg.chrome_scale,
+              access_auto = M.cfg.access_auto }
+  local ok, err = pal.write_file_atomic(path, cm.require("cm.state").canon(t),
+                                        M._access_save_fail)
+  if not ok then
+    pal.log(("[display] save FAILED %s: %s"):format(path, tostring(err)))
+  end
+  return ok, err
+end
+
+function M.load_accessibility()
+  M.access_resolved = false
+  M.cfg.access_auto = true -- missing/old generations opt into safe auto
+  M.cfg.editor_scale, M.cfg.chrome_scale = 1, 1
+  local path, path_err = accessibility_path()
+  if not path then
+    if path_err then pal.log("[display] load FAILED: " .. tostring(path_err)) end
+    return
+  end
+  local bytes = pal.read_file(path)
+  if not bytes then return end
+  local ok, t = pcall(cm.require("cm.state").parse, bytes)
+  if not ok or type(t) ~= "table" then
+    pal.log("[display] " .. tostring(path) .. " unreadable; using defaults")
+    return
+  end
+  local editor_scale = access_scale(t.editor_scale)
+  local chrome_scale = access_scale(t.chrome_scale)
+  if editor_scale then M.cfg.editor_scale = editor_scale end
+  if chrome_scale then M.cfg.chrome_scale = chrome_scale end
+  if t.access_auto == false then
+    M.cfg.access_auto = false
+    M.access_resolved = true
+  end
 end
 
 function M.save_video()
@@ -107,6 +247,7 @@ end
 -- first frame. Seeds the windowed-size baseline from the live window, then lays
 -- the file over it. Unreadable / absent file → silently keep the defaults.
 function M.load_video()
+  M.load_accessibility()
   local cw, ch = pal.x_window_size()
   if cw and cw > 0 then M.win_w, M.win_h = cw, ch end
   local path = video_path()

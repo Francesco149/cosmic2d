@@ -260,6 +260,15 @@ The tray has four aligned lanes over one time axis:
    export live here. Panning away from the present exposes a clear “back to
    live” affordance rather than silently snapping the view.
 
+Playback is presentation-clocked against the trace's fixed 60 Hz frame period,
+not advanced once per render call. It starts at **1×**, so rewatching a moment
+takes the same wall time as the original event; extra render ticks repeat the
+current frame. The speed control cycles **1× / 2× / 4× / 8×**. When a draw is
+late, the playhead advances by all frames due but restores only the newest one,
+deliberately dropping intermediate presentation frames instead of making time
+run slow. A newly opened replay or A/B selection still holds its first frame
+for one complete draw, and inclusive B is still presented before wrapping.
+
 Timeline navigation follows the editor grammar: **wheel zooms at the cursor**,
 **middle-drag pans**, and the initial camera ends at live while showing roughly
 ten minutes (or all retained history when shorter). Zoom reaches frame-level
@@ -267,15 +276,16 @@ inspection at the near end and the full retained stream at the far end.
 Seeking remains bounded by the existing one-second segment keyframes and decode
 LRU; preview/activity queries use indexes and must not decode frame state.
 
-**Implementation status (2026-07-16).** The editor tray, camera, transport,
-live-ring click seeking, inclusive A/B playback, and layered Esc/F4 persistence
-are built. Until the segment indexes in §12 land, the activity/event lanes use
-a read-only summary of already-resident FRAM/EDOC streams; they never reconstruct
-state or load a demoted disk skeleton just to paint chrome, and uncovered older
-history is labelled as missing. The preview lane explicitly reports that no
-presented-frame samples exist. Persistent multi-resolution summaries, `THMB`
-records, project-file epochs, full event coverage, immutable foreign/crash
-sources, standalone packaging, and export remain later A7 packets.
+**Implementation status (2026-07-16).** The editor tray, camera, wall-clocked
+1×/2×/4×/8× transport, live-ring click seeking, inclusive A/B playback, and
+layered Esc/F4 persistence are built. Until the segment indexes in §12 land,
+the activity/event lanes use a read-only summary of already-resident FRAM/EDOC
+streams; they never reconstruct state or load a demoted disk skeleton just to
+paint chrome, and uncovered older history is labelled as missing. The preview
+lane explicitly reports that no presented-frame samples exist. Persistent
+multi-resolution summaries, `THMB` records, project-file epochs, full event
+coverage, immutable foreign/crash sources, standalone packaging, and export
+remain later A7 packets.
 
 ## 11. Exact pointer grammar and persistence
 

@@ -25,6 +25,7 @@ local wm = cm.require("cm.ed.wm")
 local session = cm.require("cm.ed.session")
 local cache = cm.require("cm.ed.cache")
 local ease = cm.require("cm.ease")
+local chrome = cm.require("cm.ed.chrome")
 
 M.on = M.on or false
 M.root = M.root or nil
@@ -464,8 +465,9 @@ local function summon_console()
   local cx, cy = doc.cam.x, doc.cam.y
   local sw = ig and ig.w or 1280
   local sh = ig and ig.h or 800
-  wm.spawn(doc, "console", cx + (sw / doc.cam.zoom - w) * 0.5,
-           cy + (sh / doc.cam.zoom - h) * 0.6, w, h, kind.defaults())
+  local z = cam.screen_zoom(doc.cam)
+  wm.spawn(doc, "console", cx + (sw / z - w) * 0.5,
+           cy + (sh / z - h) * 0.6, w, h, kind.defaults())
   M.touch()
 end
 M.summon_console = summon_console -- persistence paths surface actionable errors
@@ -498,8 +500,9 @@ function M.spawn_kind(kindname, ig)
   dh = dh or kind.DEF_H or 180
   if kindname == "text" then dw, dh = M.text_spawn_size() end
   local c = M.doc.cam
-  local cx = c.x + ((ig and ig.w or 1280) / c.zoom - dw) * 0.5
-  local cy = c.y + ((ig and ig.h or 800) / c.zoom - dh) * 0.5
+  local z = cam.screen_zoom(c)
+  local cx = c.x + ((ig and ig.w or 1280) / z - dw) * 0.5
+  local cy = c.y + ((ig and ig.h or 800) / z - dh) * 0.5
   local win = wm.spawn(M.doc, kindname, cx, cy, dw, dh, extra)
   M.doc.focus = win.id
   M.touch()
@@ -524,8 +527,9 @@ function M.pan_to_window(win, ig)
   local c = M.doc.cam
   local fit = cam.fit(win.x, win.y, win.w, win.h, ig.w, ig.h)
   local z = math.min(c.zoom, fit.zoom)
-  anim_to({ x = win.x + win.w * 0.5 - ig.w * 0.5 / z,
-            y = win.y + win.h * 0.5 - ig.h * 0.5 / z, zoom = z })
+  local screen_z = cam.scaled_zoom(z)
+  anim_to({ x = win.x + win.w * 0.5 - ig.w * 0.5 / screen_z,
+            y = win.y + win.h * 0.5 - ig.h * 0.5 / screen_z, zoom = z })
   M.doc.focus = win.id
   wm.to_front(M.doc, win.id)
   M.touch()
@@ -671,12 +675,19 @@ local function interact(ig)
   hotkeys(ig, i)
   consume_legacy_keys(i.keys)
   local rw_owns = cm.require("cm.ed.rewind").owns_pointer(M, i)
+  local ci = chrome.virtual_input(i, cm.require("cm.view").cfg.chrome_scale)
+  local function in_chrome(r)
+    return r and ci.wx >= r.x and ci.wx < r.x + r.w
+      and ci.wy >= r.y and ci.wy < r.y + r.h
+  end
+  local display_owns = in_chrome(g.display_pill) or in_chrome(g.display_rect)
+    or (g.display and i.clicked[1])
   -- the ALT layer owns the pointer: gate mouse off imgui in C (widgets
   -- render unchanged — no shimmer — but can never take the A-click).
   -- CTRL gates it too (UX round 4b): ctrl+wheel is the kinds' size dial
   -- and imgui must not also scroll its child on it (bonus: a ctrl+click
   -- link-open no longer moves the widget caret)
-  pal.x_ig_mouse(not (g.alt or g.ctrl or rw_owns))
+  pal.x_ig_mouse(not (g.alt or g.ctrl or rw_owns or display_owns))
   step_anim()
 
   g.ig_kb = ig.kb -- filter_events (next tick) must not feed the game while
@@ -689,7 +700,7 @@ local function interact(ig)
   -- Rewind owns the complete pointer sequence (including drags that leave
   -- the tray). Its draw pass below advances the gesture after the canvas and
   -- all window widgets have been held inert.
-  if rw_owns then return end
+  if rw_owns or display_owns then return end
 
   -- the wheel (EDITOR.md §12.7): ALT → canvas zoom, always. CTRL → the
   -- hovered kind's size dial (code-ed font, assets preview) when it has
@@ -783,8 +794,9 @@ local function interact(ig)
   -- pan gestures continue regardless of what's under the cursor
   if g.pan then
     if i.buttons[g.pan.b] then
-      doc.cam.x = g.pan.cx - (i.wx - g.pan.sx) / doc.cam.zoom
-      doc.cam.y = g.pan.cy - (i.wy - g.pan.sy) / doc.cam.zoom
+      local z = cam.screen_zoom(doc.cam)
+      doc.cam.x = g.pan.cx - (i.wx - g.pan.sx) / z
+      doc.cam.y = g.pan.cy - (i.wy - g.pan.sy) / z
       M.touch()
     else
       g.pan = nil
@@ -834,8 +846,9 @@ local function interact(ig)
   if i.clicked[1] and not g.alt then
     local pkwin = M.pick_armed()
     if pkwin then
-      local over = wm.hit(doc, wwx, wwy, wm.EDGE_OUT / doc.cam.zoom,
-                          wm.EDGE_IN / doc.cam.zoom)
+      local z = cam.screen_zoom(doc.cam)
+      local over = wm.hit(doc, wwx, wwy, wm.EDGE_OUT / z,
+                          wm.EDGE_IN / z)
       if over ~= pkwin.id then
         local c = M.pick_screen(i.wx, i.wy)
         if c then
@@ -855,8 +868,9 @@ local function interact(ig)
   if i.clicked[1] and not g.alt then
     local fwin = M.view_locked()
     if fwin then
-      local id = wm.hit(doc, wwx, wwy, wm.EDGE_OUT / doc.cam.zoom,
-                        wm.EDGE_IN / doc.cam.zoom)
+      local z = cam.screen_zoom(doc.cam)
+      local id = wm.hit(doc, wwx, wwy, wm.EDGE_OUT / z,
+                        wm.EDGE_IN / z)
       if id ~= fwin.id then
         doc.focus = 0
         M.touch()
@@ -883,7 +897,8 @@ local function interact(ig)
   -- true = wm owns the mouse
   local inp = {
     wx = wwx, wy = wwy, sx = i.wx, sy = i.wy,
-    bo = wm.EDGE_OUT / doc.cam.zoom, bi = wm.EDGE_IN / doc.cam.zoom,
+    bo = wm.EDGE_OUT / cam.screen_zoom(doc.cam),
+    bi = wm.EDGE_IN / cam.screen_zoom(doc.cam),
     alt = g.alt or false, ctrl = g.ctrl or false, hdrid = hdrid,
     constrain = kind_constrain,
     down1 = i.buttons[1] or false, down3 = i.buttons[3] or false,
@@ -937,7 +952,7 @@ end
 
 local function grid(ig)
   local doc = M.doc
-  local z = doc.cam.zoom
+  local z = cam.screen_zoom(doc.cam)
   local step, alpha = cam.grid(z)
   local col = (C.grid << 8) | math.floor(alpha * 255 + 0.5)
   local x0, y0 = cam.s2w(doc.cam, 0, 0)
@@ -1000,7 +1015,14 @@ function M.hot_id()
   if cm.require("cm.ed.rewind").owns_pointer(M, i) then
     return nil
   end
-  local z = doc.cam.zoom
+  local ci = chrome.virtual_input(i, cm.require("cm.view").cfg.chrome_scale)
+  local function inside(r)
+    return r and ci.wx >= r.x and ci.wx < r.x + r.w
+      and ci.wy >= r.y and ci.wy < r.y + r.h
+  end
+  if inside(g.display_pill) or inside(g.display_rect)
+     or (g.display and i.clicked[1]) then return nil end
+  local z = cam.screen_zoom(doc.cam)
   local id, part = wm.hit(doc, g.cursor.wx, g.cursor.wy,
                           wm.EDGE_OUT / z, wm.EDGE_IN / z)
   if id and part == "content" then
@@ -1032,7 +1054,7 @@ end
 
 local function draw_win(ig, win, zi)
   local doc, g = M.doc, M.g
-  local z = doc.cam.zoom
+  local z = cam.screen_zoom(doc.cam)
   local x, y = cam.w2s(doc.cam, win.x, win.y)
   local w, h = win.w * z, win.h * z
   local hdr = HDR * z
@@ -1166,13 +1188,14 @@ end
 -- MENU_ITEMS derives from the roster (kind.menu labels, §13)
 
 local function draw_menu(ig, i)
+  local pal = chrome.pal
   local g = M.g
   local m = g.menu
   if not m then return end
   local iw, ih, pad = 150, 26, 6
   local mh = #MENU_ITEMS * ih + pad * 2
-  local mx = math.min(m.sx, ig.w - iw - 8)
-  local my = math.min(m.sy, ig.h - mh - 8)
+  local mx = math.min(m.sx / chrome.scale(), ig.w - iw - 8)
+  local my = math.min(m.sy / chrome.scale(), ig.h - mh - 8)
   pal.x_ig_overlay(true)
   pal.x_ig_rect_fill(mx, my, iw, mh, C.menu, 8)
   pal.x_ig_rect(mx, my, iw, mh, C.win_edge, 1, 8)
@@ -1198,19 +1221,83 @@ local function draw_menu(ig, i)
   if i.clicked[1] and not clicked_inside then g.menu = nil end
 end
 
-local function draw_hud(ig)
-  local doc = M.doc
+local function draw_hud(ig, i)
+  local pal = chrome.pal
+  local doc, g = M.doc, M.g
+  local view = cm.require("cm.view")
+  local function inside(r)
+    return r and i.wx >= r.x and i.wx < r.x + r.w
+      and i.wy >= r.y and i.wy < r.y + r.h
+  end
+  local function chip(x, y, w, h, label, accent)
+    local r = { x = x, y = y, w = w, h = h }
+    local hov = inside(r)
+    pal.x_ig_rect_fill(x, y, w, h, hov and C.menu_hot or C.pill, 6)
+    if accent then pal.x_ig_rect(x, y, w, h, C.sel, 1, 6) end
+    local tw = pal.x_ig_text_size(label, 12, 0)
+    pal.x_ig_text(x + (w - tw) * 0.5, y + 5, 12,
+                  accent and C.sel or (hov and C.hud or C.hud_dim), label, 0)
+    return hov and i.clicked[1]
+  end
+
   pal.x_ig_overlay(true)
   -- project pill, top-left
   local label = ("ed — %s"):format(M.root or "?")
   local lw = pal.x_ig_text_size(label, 15, 0)
   pal.x_ig_rect_fill(10, 8, lw + 24, 28, C.pill, 8)
   pal.x_ig_text(22, 13, 15, C.hud, label, 0)
-  -- zoom pill, top-right -- offset left for the persistent rewind entrance.
+
+  -- Logical canvas zoom remains captured/rewindable; the adjacent Aa control
+  -- owns machine-local content + fixed-chrome accessibility multipliers.
   local zs = ("%d%%"):format(math.floor(doc.cam.zoom * 100 + 0.5))
   local zw = pal.x_ig_text_size(zs, 15, 1)
-  pal.x_ig_rect_fill(ig.w - zw - 24 - 110, 8, zw + 24, 26, C.pill, 8)
-  pal.x_ig_text(ig.w - zw - 12 - 110, 12, 15, C.hud, zs, 1)
+  local zx = ig.w - zw - 24 - 110
+  pal.x_ig_rect_fill(zx, 8, zw + 24, 26, C.pill, 8)
+  pal.x_ig_text(zx + 12, 12, 15, C.hud, zs, 1)
+  local aa = { x = zx - 44, y = 8, w = 38, h = 26 }
+  g.display_pill = aa
+  local aa_hov = inside(aa)
+  pal.x_ig_rect_fill(aa.x, aa.y, aa.w, aa.h,
+                     (aa_hov or g.display) and C.menu_hot or C.pill, 8)
+  pal.x_ig_text(aa.x + 9, aa.y + 5, 13, C.hud, "Aa", 0)
+  if aa_hov and i.clicked[1] then g.display = not g.display or nil end
+
+  if g.display then
+    local pw, ph = 286, 142
+    local px = math.max(8, math.min(aa.x + aa.w - pw, ig.w - pw - 8))
+    local py = 42
+    local panel = { x = px, y = py, w = pw, h = ph }
+    g.display_rect = panel
+    pal.x_ig_rect_fill(px, py, pw, ph, 0x1e1b2ef8, 9)
+    pal.x_ig_rect(px, py, pw, ph, C.win_edge, 1, 9)
+    pal.x_ig_text(px + 14, py + 11, 13, C.hud, "TEXT & UI SIZE", 0)
+    if chip(px + pw - 70, py + 7, 56, 24, "auto", view.cfg.access_auto) then
+      view.set_access_auto(true)
+    end
+
+    local function scale_row(y, label_text, value, down, up)
+      pal.x_ig_text(px + 14, y + 6, 12, C.hud_dim, label_text, 0)
+      if chip(px + 162, y, 28, 25, "-", false) then down() end
+      local value_text = ("%d%%"):format(math.floor(value() * 100 + 0.5))
+      local tw = pal.x_ig_text_size(value_text, 12, 1)
+      pal.x_ig_text(px + 218 - tw * 0.5, y + 6, 12, C.hud, value_text, 1)
+      if chip(px + 244, y, 28, 25, "+", false) then up() end
+    end
+    scale_row(py + 41, "canvas windows", function() return view.cfg.editor_scale end,
+      function() view.step_editor_scale(-1) end,
+      function() view.step_editor_scale(1) end)
+    scale_row(py + 73, "fixed chrome", function() return view.cfg.chrome_scale end,
+      function() view.step_chrome_scale(-1) end,
+      function() view.step_chrome_scale(1) end)
+    pal.x_ig_text(px + 14, py + 111, 10, C.hud_dim,
+                  "auto follows display DPI / 4K resolution", 0)
+    if i.clicked[1] and not inside(panel) and not inside(aa) then
+      g.display, g.display_rect = nil, nil
+    end
+  else
+    g.display_rect = nil
+  end
+
   -- hint pill, bottom-left
   local hint = "drag title move · drag canvas select · alt+drag move · " ..
                "alt+rclick close · alt+v select mode · edges resize · " ..
@@ -1219,7 +1306,7 @@ local function draw_hud(ig)
   pal.x_ig_rect_fill(10, ig.h - 32, hw + 20, 24, C.pill, 8)
   pal.x_ig_text(20, ig.h - 27, 11, C.hud_dim, hint, 0)
   -- selection mode: unmissable chip, top-center
-  if M.g.selmode then
+  if g.selmode then
     local s = "SELECT — click or drag selects · esc/alt+v exits"
     local sw = pal.x_ig_text_size(s, 12, 0)
     pal.x_ig_rect_fill((ig.w - sw) * 0.5 - 12, 8, sw + 24, 26, 0x2c4438f0, 8)
@@ -1244,20 +1331,23 @@ local function draw(ig)
     pal.x_ig_rect_fill(x0, y0, x1 - x0, y1 - y0, 0x7fd8a818)
     pal.x_ig_rect(x0, y0, x1 - x0, y1 - y0, C.marquee, 1)
   end
+  local cig, ci = chrome.frame(ig, i,
+    cm.require("cm.view").cfg.chrome_scale or 1)
   -- the asset-drag ghost rides the overlay above everything
   if g.adrag and g.adrag.moved then
+    local pal = chrome.pal
     pal.x_ig_overlay(true)
     local label = g.adrag.path:match("([^/]+)$") or g.adrag.path
     local lw = pal.x_ig_text_size(label, 12, 0)
-    pal.x_ig_rect_fill(i.wx + 12, i.wy + 8, lw + 16, 22, 0x262238ee, 6)
-    pal.x_ig_rect(i.wx + 12, i.wy + 8, lw + 16, 22, C.sel, 1, 6)
-    pal.x_ig_text(i.wx + 20, i.wy + 12, 12, C.hud, label, 0)
+    pal.x_ig_rect_fill(ci.wx + 12, ci.wy + 8, lw + 16, 22, 0x262238ee, 6)
+    pal.x_ig_rect(ci.wx + 12, ci.wy + 8, lw + 16, 22, C.sel, 1, 6)
+    pal.x_ig_text(ci.wx + 20, ci.wy + 12, 12, C.hud, label, 0)
     pal.x_ig_overlay(false)
   end
-  draw_menu(ig, i)
-  cm.require("cm.ed.launcher").draw(M, ig, i)
-  draw_hud(ig)
-  cm.require("cm.ed.rewind").draw(M, ig, i)
+  draw_menu(cig, ci)
+  cm.require("cm.ed.launcher").draw(M, cig, ci)
+  draw_hud(cig, ci)
+  cm.require("cm.ed.rewind").draw(M, cig, ci)
 end
 
 -- ---- the frame (called from cm.main after game.draw) ----
@@ -1275,6 +1365,9 @@ function M.frame()
   end
   local ig = pal.x_ig_frame()
   if not ig then return end
+  local view = cm.require("cm.view")
+  view.resolve_accessibility(ig.dpi, ig.w, ig.h)
+  cam.set_display_scale(view.cfg.editor_scale)
   -- global-eyedropper plumbing: a LIVE session arms the capture mirror
   -- at window size while picking, frees it after (a --win capture
   -- session already presents into the capture target — leave it be)

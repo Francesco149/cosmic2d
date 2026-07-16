@@ -35,9 +35,27 @@ only if it overflows). The highlighted result shows a live **preview** — an
 image thumbnail, a map schematic, or a code/doc excerpt. **↑↓** move · **enter**
 opens · **esc** closes.
 
+## Text and UI size
+
+Click the **Aa** pill beside the canvas zoom percentage. **Canvas windows**
+scales editor windows and their text without changing the saved logical zoom;
+**fixed chrome** separately scales the HUD, menus, launcher, and rewind tray.
+The default **auto** mode stays at 100% on a normal 1080p display and chooses a
+larger size from display DPI or 4K pixel density. `−` or `+` selects a manual
+size for this machine; click **auto** to follow the display again.
+
+## Rewind playback
+
+Open rewind from its top-right pill or with **F4**. Play starts at **1×** real
+time. Click the speed chip to cycle **1× / 2× / 4× / 8×**; slow rendering may
+drop intermediate displayed frames so the transport remains on time. A/B
+selection stays inclusive and loops until Esc clears it; Esc again returns to
+the live present.
+
 ## Keys that matter
 
 - **Ctrl+Space** — the launcher (find/open anything, pan to a window).
+- **F4** — open/close rewind (an active A/B clip requires Esc first).
 - **Right-click** — spawn menu. **Middle-drag** / **wheel** — pan and zoom.
 - **Ctrl+S** — save the focused window's file.
 - **Ctrl+Z / Ctrl+Y** — undo / redo (per asset; journals normally survive a

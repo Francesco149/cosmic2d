@@ -12,17 +12,33 @@ M.ZMIN, M.ZMAX = 0.02, 64.0
 M.EASE_MS = 280
 M.GRID_BASE = 32 -- world units
 M.GRID_LO, M.GRID_HI = 18, 44 -- comfy screen-px pitch band
+M.display_scale = 1 -- machine-local accessibility scale; never captured
+
+function M.set_display_scale(s)
+  M.display_scale = math.max(0.5, math.min(4, tonumber(s) or 1))
+  return M.display_scale
+end
+
+function M.screen_zoom(c)
+  return c.zoom * M.display_scale
+end
+
+function M.scaled_zoom(z)
+  return z * M.display_scale
+end
 
 function M.new()
   return { x = 0.0, y = 0.0, zoom = 1.0 }
 end
 
 function M.w2s(c, x, y)
-  return (x - c.x) * c.zoom, (y - c.y) * c.zoom
+  local z = M.screen_zoom(c)
+  return (x - c.x) * z, (y - c.y) * z
 end
 
 function M.s2w(c, x, y)
-  return x / c.zoom + c.x, y / c.zoom + c.y
+  local z = M.screen_zoom(c)
+  return x / z + c.x, y / z + c.y
 end
 
 -- zoom by factor keeping the world point under screen (sx,sy) fixed
@@ -31,8 +47,9 @@ function M.zoom_at(c, sx, sy, factor)
   if z < M.ZMIN then z = M.ZMIN elseif z > M.ZMAX then z = M.ZMAX end
   local wx, wy = M.s2w(c, sx, sy)
   c.zoom = z
-  c.x = wx - sx / z
-  c.y = wy - sy / z
+  local screen_z = M.screen_zoom(c)
+  c.x = wx - sx / screen_z
+  c.y = wy - sy / screen_z
 end
 
 -- wheel notches -> zoom factor (1.16 per notch, either direction)
@@ -47,17 +64,19 @@ function M.fit(x, y, w, h, vw, vh, margin)
   local avw, avh = vw - 2 * margin, vh - 2 * margin
   local z = 1.0
   if w > 0 and h > 0 and avw > 0 and avh > 0 then
-    z = math.min(avw / w, avh / h)
+    z = math.min(avw / w, avh / h) / M.display_scale
     if z < M.ZMIN then z = M.ZMIN elseif z > M.ZMAX then z = M.ZMAX end
   end
-  return { x = x + w * 0.5 - vw * 0.5 / z,
-           y = y + h * 0.5 - vh * 0.5 / z, zoom = z }
+  local screen_z = M.scaled_zoom(z)
+  return { x = x + w * 0.5 - vw * 0.5 / screen_z,
+           y = y + h * 0.5 - vh * 0.5 / screen_z, zoom = z }
 end
 
 -- a camera at 100% centered on the same world point the current cam centers
 function M.at_100(c, vw, vh)
   local cx, cy = M.s2w(c, vw * 0.5, vh * 0.5)
-  return { x = cx - vw * 0.5, y = cy - vh * 0.5, zoom = 1.0 }
+  return { x = cx - vw * 0.5 / M.display_scale,
+           y = cy - vh * 0.5 / M.display_scale, zoom = 1.0 }
 end
 
 -- linear interp between two cams (the 280 ms ease samples this with an

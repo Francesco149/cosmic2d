@@ -107,7 +107,8 @@ Straight from igcanvas + teidraw's tuning (constants lifted from
 teidraw's source; they are taste-approved by construction):
 
 - **Coordinates**: world = canvas space, screen = window px.
-  `screen = (world - cam) * zoom` (igcanvas's w2s/s2w stay).
+  `screen = (world - cam) * zoom * editor_scale`. Logical `zoom` remains
+  captured editor state; `editor_scale` is machine-local display policy.
 - **Zoom**: wheel, **1.16× per notch**, clamped **0.02–64**, always
   anchored at the cursor (the world point under the cursor stays put).
 - **Pan**: **middle-drag only** (live round 3, D054 — a left-drag on
@@ -120,10 +121,16 @@ teidraw's source; they are taste-approved by construction):
 - **Grid**: teidraw's adaptive dot grid — base 32 world units, pitch
   doubled/halved to stay in the 18–44 screen-px comfort band, alpha
   fading in across the band. (igcanvas's grid upgrades to this.)
-- **HUD** (screen-space, `x_ig_overlay`): top-left project pill,
-  top-right zoom pill. The top-right *corner* is reserved for the R6
-  rewind pill (the zoom pill sits left of it from day one so R6 doesn't
-  reshuffle the HUD).
+- **HUD** (screen-space, `x_ig_overlay`): top-left project pill, top-right
+  logical-zoom pill, adjacent **Aa** display-size control, and the persistent
+  rewind pill in the reserved corner.
+- **Accessible display size**: **Aa** independently adjusts **canvas windows**
+  (including their fonts) and **fixed chrome** (HUD, launcher, menus, and the
+  rewind tray) from 75–300%. Auto mode keeps the existing 100% default on a
+  normal 1080p display and follows SDL display scale or physical pixel density
+  on high-DPI/1440p/4K displays. These settings persist in per-user
+  `editor.dat` and therefore follow the user across the picker and all projects;
+  they never enter `cm.ed.doc`, traces, or project output.
 
 ## 4. Windows
 

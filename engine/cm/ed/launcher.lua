@@ -9,6 +9,8 @@
 local M = {}
 local assets = cm.require("cm.ed.win.assets")
 local preview = cm.require("cm.ed.preview")
+local chrome = cm.require("cm.ed.chrome")
+local pal = chrome.pal
 
 -- the top-level guides (win-*.md are per-window help off the ? button; these
 -- three are the readable walkthroughs a newcomer wants from the palette)
@@ -82,13 +84,15 @@ end
 -- ---- activation ----
 local function activate(ed, e, ig)
   M.close(ed)
-  if e.cat == "win" then ed.pan_to_window(e.win, ig)
-  elseif e.cat == "spawn" then ed.spawn_kind(e.name, ig)
+  local raw_ig = ed.g.last_ig or ig
+  if e.cat == "win" then ed.pan_to_window(e.win, raw_ig)
+  elseif e.cat == "spawn" then ed.spawn_kind(e.name, raw_ig)
   elseif e.cat == "doc" then ed.open_doc(e.doc)
   elseif e.cat == "asset" then
     local c = ed.doc.cam
-    ed.open_asset_window(e.path, c.x + (ig.w / c.zoom) * 0.28,
-                         c.y + (ig.h / c.zoom) * 0.18)
+    local z = cm.require("cm.ed.cam").screen_zoom(c)
+    ed.open_asset_window(e.path, c.x + (raw_ig.w / z) * 0.28,
+                         c.y + (raw_ig.h / z) * 0.18)
   end
 end
 
@@ -139,11 +143,11 @@ local function draw_preview(ed, pv, px, py, pw, ph)
     local dw, dh = pv.tex.w * sc, pv.tex.h * sc
     pal.x_ig_image(pv.tex.id, px + (pw - dw) * 0.5, py + (ph - dh) * 0.5, dw, dh)
   elseif pv.map then
-    preview.draw_map(pv.map, px + 4, py + 4, pw - 8, ph - 8, COL)
+    preview.draw_map(pv.map, px + 4, py + 4, pw - 8, ph - 8, COL, pal)
   elseif pv.tm then
-    preview.draw_tm(pv.tm, px + 4, py + 4, pw - 8, ph - 8, COL.plc)
+    preview.draw_tm(pv.tm, px + 4, py + 4, pw - 8, ph - 8, COL.plc, pal)
   elseif pv.lines then
-    preview.draw_lines(pv.lines, px, py, pw, ph, 11, COL.code)
+    preview.draw_lines(pv.lines, px, py, pw, ph, 11, COL.code, pal)
   elseif pv.blurb then
     pal.x_ig_clip_push(px, py, pw, ph)
     local y = py + 8

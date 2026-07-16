@@ -552,7 +552,8 @@ end
 -- content wheel: scroll the grid (§12.7). win.sy holds WORLD units
 -- (cm.ed.winview) so the top row stays put under canvas zoom.
 function M.wheel(win, ed, dy)
-  cm.require("cm.ed.winview").scroll_by(win, "sy", ed.doc.cam.zoom,
+  local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
+  cm.require("cm.ed.winview").scroll_by(win, "sy", z,
                                         -dy * 40)
   ed.touch()
 end

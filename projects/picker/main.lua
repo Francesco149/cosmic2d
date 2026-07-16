@@ -17,6 +17,7 @@
 local M = select(2, ...) or {}
 
 local view
+local chrome = cm.require("cm.ed.chrome")
 
 M.scan = M.scan or nil -- ephemeral tile cache (render/dev)
 
@@ -131,7 +132,11 @@ function M.draw()
   pal.begin_frame(0.078, 0.07, 0.125, 1) -- the target is never shown
   local ig = pal.x_ig_frame()
   if not ig then return end
-  local i = cm.require("cm.ui").inp
+  view.resolve_accessibility(ig.dpi, ig.w, ig.h)
+  local i
+  ig, i = chrome.frame(ig, cm.require("cm.ui").inp,
+                       view.cfg.chrome_scale or 1)
+  local pal = chrome.pal
 
   pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
   pal.x_ig_text(28, 22, 26, C.text, "cosmic2d", 0)

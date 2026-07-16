@@ -1284,7 +1284,7 @@ function M.wheel(win, ed, dy)
   local p = ed.g.muw and ed.g.muw[win.path]
   if not (p and p.doc) then return false end
   local i = cm.require("cm.ui").inp
-  local z = ed.doc.cam.zoom
+  local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
   -- over the arrangement? zoom ITS time axis (its own view), pinning the tick
   local ar = p.arr
   if ar and i.wx >= ar.x and i.wx < ar.x + ar.w and i.wy >= ar.y
@@ -1308,7 +1308,7 @@ function M.wheel(win, ed, dy)
   if new ~= old then
     -- pin the tick under the cursor (screen-space tpp carries the
     -- canvas zoom; win.tpp is the captured world value)
-    local z = ed.doc.cam.zoom
+    local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
     local at = (win.tick0 or 0) + (ax - r.rx) / (old * z)
     win.tick0 = math.max(0, at - (ax - r.rx) / (new * z))
     win.tpp = new

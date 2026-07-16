@@ -2875,3 +2875,47 @@ background drain/adoption/rewind/budget semantics, and injected segment/index
 failure behavior. Editor parking KATs prove sprite and animation texture owners
 are called on park and unpark. The complete deterministic and native Windows
 proofs are recorded in `STATUS.md`.
+
+## D074 — rewind playback follows wall time; editor accessibility has two machine-local scales (2026-07-16)
+
+**Context.** Rewind playback advanced one recorded frame every render call.
+That happened to resemble 1× only when presentation was exactly 60 Hz; an
+uncapped or high-refresh editor replayed the moment too quickly. Separately,
+canvas zoom could enlarge canvas-window text, but fixed native surfaces such as
+the HUD, launcher, and rewind tray stayed in tiny physical pixels. One global
+scale would either change the captured camera or leave one of those surfaces
+unusable, especially on an unscaled 4K display.
+
+**Decision.** Rewind transport uses a wall-clock accumulator against the fixed
+60 Hz trace frame period. A newly selected A/B loop or replay presents its first
+frame for a complete draw. Thereafter the default 1× rate advances only when a
+recorded frame period is due; 2×, 4×, and 8× are explicit transport choices. If
+multiple frames become due before a draw, the playhead advances across all of
+them but restores only the resulting frame. Inclusive loop arithmetic still
+presents B before wrapping to A.
+
+The native editor has two independent render/dev multipliers. `editor_scale`
+composes with the captured logical camera zoom for canvas windows and text;
+`chrome_scale` creates a matching virtual draw/input space for the project
+picker and fixed HUD, menu, launcher, drag-ghost, and rewind surfaces. Both
+offer 75–300% manual steps. Auto mode keeps ordinary 1080p at 100% and chooses
+the larger of SDL display
+scale and conservative window-pixel density, including a 200% unscaled-4K
+default. The values and auto flag persist in machine-local `editor.dat` under
+the existing `pal.user_path()` root, so one choice covers the picker and every
+project. A missing/old file enters auto mode. No PAL API addition is needed.
+
+**Consequences.** Rewatching at 1× now consumes the original wall time on any
+render refresh; a slow renderer drops intermediate presentation frames rather
+than stretching the transport, while state truth remains the exact recorded
+frame at the playhead. Logical camera state, editor sessions, histories,
+traces, verification, and packaged projects never contain display preference.
+Canvas content and fixed chrome can be made legible independently, and changing
+one cannot desynchronize its pointer hit testing.
+
+**Proof.** Clock-injected rewind KATs pin the initial hold, no-early-advance,
+exact 1× steps, inclusive B/wrap, and deliberate 2× skipping. Camera KATs pin
+scaled world/screen inversion and fit; chrome KATs pin equal draw/input virtual
+coordinates; viewport KATs pin 1080p, DPI, 4K, persistence, and corrupt-scale
+rejection. The complete Linux/native-Windows run and visual evidence are
+recorded in `STATUS.md`.

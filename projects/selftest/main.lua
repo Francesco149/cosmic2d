@@ -1721,11 +1721,24 @@ local function t_viewport()
   -- Machine-local video/options state is atomic and reports failure while
   -- retaining the last valid settings generation.
   local view = cm.require("cm.view")
+  check(view.accessibility_default(1, 1920, 1080) == 1
+        and view.accessibility_default(1, 3840, 2160) == 2,
+        "display scale: 1080p stays 1x and unscaled 4K defaults to 2x")
+  check(view.accessibility_default(1.5, 1920, 1080) == 1.5,
+        "display scale: SDL DPI is authoritative when larger")
   local old_project = cm.main.args.project
+  local old_editor_scale, old_chrome_scale, old_access_auto, old_access_resolved =
+    view.cfg.editor_scale, view.cfg.chrome_scale, view.cfg.access_auto,
+    view.access_resolved
+  local old_access_path, old_access_save_fail =
+    view._access_path, view._access_save_fail
   local root = "/tmp/cosmic_selftest_video"
   pal.mkdir(root)
   cm.main.args.project = root
   local path = root .. "/video.dat"
+  local access_path = root .. "/editor.dat"
+  view._access_path = access_path
+  view.cfg.editor_scale, view.cfg.chrome_scale, view.cfg.access_auto = 1.5, 2, false
   pal.write_file(path, "known-good-video")
   view._save_fail = { _fail = "rename" }
   local vok, verr = view.save_video()
@@ -1735,6 +1748,27 @@ local function t_viewport()
   view._save_fail = nil
   check(view.save_video() and pal.read_file(path) ~= "known-good-video",
         "video: retry publishes complete options")
+  pal.write_file(access_path, "known-good-display")
+  view._access_save_fail = { _fail = "rename" }
+  local aok, aerr = view.save_accessibility()
+  check(not aok and type(aerr) == "string"
+        and pal.read_file(access_path) == "known-good-display",
+        "display: interrupted accessibility save preserves previous file")
+  view._access_save_fail = nil
+  check(view.save_accessibility()
+        and pal.read_file(access_path) ~= "known-good-display",
+        "display: retry publishes complete accessibility options")
+  local access = cm.require("cm.state").parse(pal.read_file(access_path))
+  check(access.editor_scale == 1.5 and access.chrome_scale == 2
+        and access.access_auto == false,
+        "display: accessibility scales persist as per-user options")
+  local bad_scale = view.set_editor_scale(99)
+  check(bad_scale == nil and view.cfg.editor_scale == 1.5,
+        "display: invalid accessibility scale cannot poison saved settings")
+  view.cfg.editor_scale, view.cfg.chrome_scale, view.cfg.access_auto =
+    old_editor_scale, old_chrome_scale, old_access_auto
+  view.access_resolved, view._access_path, view._access_save_fail =
+    old_access_resolved, old_access_path, old_access_save_fail
   cm.main.args.project = old_project
 end
 
@@ -3228,6 +3262,8 @@ end
 
 local function t_ed_cam()
   local cam = cm.require("cm.ed.cam")
+  local old_display_scale = cam.display_scale
+  cam.set_display_scale(1)
   local c = cam.new()
   c.x, c.y, c.zoom = 13.5, -7.25, 2.5
 
@@ -3273,6 +3309,32 @@ local function t_ed_cam()
   local l1 = cam.lerp({ x = 1, y = 2, zoom = 1 }, { x = 5, y = 6, zoom = 3 }, 1)
   check(l0.x == 1 and l0.zoom == 1 and l1.x == 5 and l1.zoom == 3,
         "ed.cam: lerp endpoints")
+
+  -- Machine-local editor scaling composes with captured logical zoom without
+  -- entering the camera doc, and all pointer/world math stays invertible.
+  cam.set_display_scale(2)
+  local ac = { x = 10, y = 20, zoom = 1.5 }
+  local asx, asy = cam.w2s(ac, 30, 50)
+  local awx, awy = cam.s2w(ac, asx, asy)
+  check(asx == 60 and asy == 90 and cam.screen_zoom(ac) == 3,
+        "ed.cam: accessibility multiplier scales canvas content")
+  check(awx == 30 and awy == 50,
+        "ed.cam: scaled pointer/world transform round-trips")
+  local af = cam.fit(100, 200, 400, 200, 1280, 800, 40)
+  local afx, afy = cam.s2w(af, 640, 400)
+  check(math.abs(af.zoom - 1.5) < 1e-9
+        and math.abs(afx - 300) < 1e-9 and math.abs(afy - 300) < 1e-9,
+        "ed.cam: fit accounts for machine-local content scaling")
+  cam.set_display_scale(old_display_scale)
+
+  local chrome = cm.require("cm.ed.chrome")
+  local old_chrome = chrome.scale()
+  local vig, vin = chrome.frame({ w = 3840, h = 2160, dpi = 2 },
+                                  { wx = 600, wy = 300 }, 2)
+  check(vig.w == 1920 and vig.h == 1080 and vig.dpi == 2
+        and vin.wx == 300 and vin.wy == 150,
+        "ed.chrome: fixed UI uses matching virtual draw/input coordinates")
+  chrome.set_scale(old_chrome)
 end
 
 local function t_ed_wm()
@@ -5639,22 +5701,36 @@ local function t_ed_park()
   local rewind = cm.require("cm.ed.rewind")
   rewind.open(ed)
   scrub.open()
+  local clock = 0
+  scrub._clock_ns = function() return clock end
   scrub.set_loop(f0 + 2, f0 + 4)
   check(not rewind.toggle(ed) and rewind.opened(ed) and scrub.has_loop(),
         "rewind loop: F4 cannot dismiss active clip mode")
   scrub.frame()
   check(scrub.at == f0 + 2, "rewind loop: A gets a complete first tick")
   scrub.frame()
+  check(scrub.at == f0 + 2,
+        "rewind clock: render ticks cannot run 1x playback too fast")
+  clock = clock + math.ceil(scrub.FRAME_NS)
+  scrub.frame()
   check(scrub.at == f0 + 3, "rewind loop: advances inside range")
+  clock = clock + math.ceil(scrub.FRAME_NS)
   scrub.frame()
   check(scrub.at == f0 + 4, "rewind loop: inclusive B is shown")
+  clock = clock + math.ceil(scrub.FRAME_NS)
   scrub.frame()
   check(scrub.at == f0 + 2, "rewind loop: wraps B to A")
+  check(scrub.set_speed(2) == 2, "rewind clock: transport selects 2x")
+  clock = clock + math.ceil(scrub.FRAME_NS)
+  scrub.frame()
+  check(scrub.at == f0 + 4,
+        "rewind clock: faster transport may drop intermediate frames")
   check(rewind.escape(ed) and scrub.paused() and not scrub.play
         and not scrub.has_loop() and rewind.opened(ed),
         "rewind loop: first Esc clears clip but stays parked")
   check(rewind.escape(ed) and not scrub.paused() and not rewind.opened(ed),
         "rewind loop: second Esc closes and restores live")
+  scrub._clock_ns = nil
 
   ed.g.mw = { stale = true } -- the map window's decoded-doc plumbing
   ed.g.tmw = { stale = true } -- the tilemap window's too (R8d)

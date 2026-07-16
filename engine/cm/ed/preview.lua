@@ -21,7 +21,8 @@ function M.head_lines(bytes, n)
   return out
 end
 
-function M.draw_lines(lines, px, py, pw, ph, size, col)
+function M.draw_lines(lines, px, py, pw, ph, size, col, draw)
+  local pal = draw or pal
   size = size or 11
   col = col or DEF.code
   pal.x_ig_clip_push(px, py, pw, ph)
@@ -35,7 +36,8 @@ end
 
 -- a map schematic scaled to fit (px,py,pw,ph): colliders as lines, placements
 -- + markers as rects. col optional overrides.
-function M.draw_map(doc, px, py, pw, ph, col)
+function M.draw_map(doc, px, py, pw, ph, col, draw)
+  local pal = draw or pal
   col = col or DEF
   local minx, miny, maxx, maxy = 1e9, 1e9, -1e9, -1e9
   local function ext(x, y)
@@ -86,7 +88,8 @@ function M.draw_map(doc, px, py, pw, ph, col)
 end
 
 -- a .tm schematic: a filled cell per non-empty tile
-function M.draw_tm(doc, px, py, pw, ph, color)
+function M.draw_tm(doc, px, py, pw, ph, color, draw)
+  local pal = draw or pal
   local tmap = cm.require("cm.tmap")
   local s = math.min(pw / doc.w, ph / doc.h) * 0.92
   local ox = px + (pw - doc.w * s) * 0.5
