@@ -244,3 +244,65 @@ rule stands: anything the SIM reads stays in verified buffers
 (bounce.player/cam/pickups); "rc." is for what only the renderer reads.
 (proto3d.texids has the same latent issue; rename when that cartridge
 next gets touched — it has no trace golden.)
+
+## D3D-013 — movers: kinematic platforms as pure frame functions (2026-07-17)
+
+The course's first moving colliders (movers.lua): level.MOVERS boxes
+shuttle their TOP surface between two endpoints, cosine-eased ping-pong
+over a period in frames. Positions are **pure functions of the sim
+frame** (phase = frame % period, cm.math trig) — no state buffer at
+all, so snapshots/traces/rewind replay them for free and the sim/draw
+split is one function called with two frame values: player.step
+collides against the post-step boxes (frame+1 — exactly what draw
+emits, so a rider sits flush with what's on screen), and a grounded
+player whose feet sit on a mover's pre-step top is RIDING: carried by
+the frame delta before its own move (x/z add; y tracks the top, glued
+both directions — faster than gravity could follow). Movers join the
+static collider list for the axis sweeps, so they land/clamp/mantle
+like level geometry: a lift docked at 0.4 (< step_h) is boarded by
+just walking into it.
+
+Rules that fall out:
+- **A moving box breaks the static gap rule by construction** (it
+  transiently forms narrower-than-the-player pockets against statics).
+  That is safe since D3D-009/010 — squeezed overlaps clamp nothing and
+  never teleport — but course design still keeps RIDERS clear of walls
+  (flush docks are fine; carrying a rider INTO a wall is not resolved).
+- Standing under a descending mover squeeze-phases (benign, resolves
+  when it leaves); a mover never scoops a player standing inside its
+  path — you board from outside (mantle/land), by design.
+- Blob shadow anchors on movers too (ground_below takes an extra box
+  list at the draw frame).
+
+demo(4), the mover tour, drives everything: waypoint routes grew
+**wait predicates** (reach the point -> stand, doc.demo_hold, letting
+the mover carry the demo anywhere meanwhile -> advance when the
+predicate passes). Lift -> dome shoulder -> the goal-star leap laps at
+~f840; the wall ferry crosses at ~f1800. Goldens: bounce_tour.ctrace
+(1000f, vertical carry + the lap) and bounce_tour.png (f1920, the
+ferry mid-crossing — pixel-pins horizontal carry).
+
+## D3D-014 — cartridge modules MUST use the reload table pattern (2026-07-17)
+
+Found recording the movers round: ANY drift between working sources
+and a trace's bundled code crashed --verify ("attempt to index a nil
+value" in player.step — level.colliders nil after the bundle restore).
+Root cause: bounce modules opened with `local L = {}`, violating the
+boot.lua module convention. On restore_bundle/hot-reload, run_chunk
+re-runs the chunk, which builds a FRESH table; the loader copies its
+contents into the original shared table (identity preserved for
+everyone holding a reference) — but the re-run chunk's CLOSURES keep
+writing the fresh local, so level.build() populated a table no other
+module could see. Engine modules and upstream cartridges all use the
+documented pattern; the fork's cartridges now do too:
+
+    local M = select(2, ...) or {}   -- reuse the module table on reload
+
+**Rule: every cartridge module whose table carries state written after
+load starts with the select(2, ...) pattern — in practice, just use it
+everywhere.** Both bounce traces were re-recorded so their bundles
+carry compliant sources; verified that traces now survive deliberate
+source drift (the exact case that crashed). Also reaffirmed the hard
+way: pixel goldens are shot on PINNED LAVAPIPE only (VK_DRIVER_FILES=
+$COSMIC_LVP_ICD, the dev-shell export) — a dzn/WSL shot looks right
+and byte-mismatches.

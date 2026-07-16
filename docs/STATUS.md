@@ -4,7 +4,54 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
-## 2026-07-16 (round 6) — playtest fixes + the lap demo
+## 2026-07-17 (round 7) — moving platforms + the reload-pattern bug
+
+Autonomous round (playtest verdicts still pending): first the flagged
+proto3d latent issue (texids/sky → rc., money shot re-verified), then
+**movers** — the course's first kinematic colliders (D3D-013).
+movers.lua platforms shuttle between endpoints as PURE FUNCTIONS of the
+sim frame (no state buffer; step collides frame+1 = what draw emits);
+riders are carried by the frame delta (glued both directions), movers
+land/clamp/mantle like level boxes. Course: the **tower lift** (docks
+at mantle height, rises flush with the round-tower top — the alternate
+lap: lift → dome shoulder → SW-rim leap → goal star) and the **wall
+ferry** (keep roof NW ↔ curtain wall east, flush docks). Two new gems
+reward the rides. demo(4) = the mover tour driving all of it (waypoint
+routes grew wait predicates + doc.demo_hold so a mover can carry the
+standing demo); it laps ~f840, ferries ~f1800, walks the wall, wraps.
+
+En route, **a real engine-discipline bug (D3D-014)**: bounce modules
+opened with `local L = {}` instead of the boot.lua reload pattern
+`select(2, ...) or {}` — on any bundle restore (trace verify after
+source drift!) re-run closures write a fresh table nobody else holds;
+verify crashed on a comment-only change. All bounce + proto3d modules
+now comply; both old traces re-recorded with compliant bundles and
+PROVEN to survive deliberate drift. Reminder that bit: pixel goldens
+shoot on pinned lavapipe (VK_DRIVER_FILES=$COSMIC_LVP_ICD), never the
+WSL default driver.
+
+New goldens: bounce_tour.ctrace (1000f — lift wait, vertical carry,
+shaft gem, dome hops, star lap) + bounce_tour.png (f1920 ferry
+mid-crossing, pinning horizontal carry). bounce_demo/lap pixels re-shot
+look-equivalent (+88 tris; routes and HUD byte-identical at the golden
+frames). Verified: full suite ALL GREEN; 4 shots on llm-feed.
+
+## Exact next step
+
+1. **Human feel-check on the feed** (all open): the mover round — lift
+   speed/size, ferry speed + dock wait, dome-rim walk difficulty, wall
+   balance-beam fun — plus the still-open round-4/5/6 questions
+   (dome-stand embed depth, star touch timing, round collision
+   fairness, monolith bounds, gem radius/spin/bob, goal-star
+   readability).
+2. Then (human directive order, gameplay first): more course / feel
+   polish per verdicts; editor distillation stays parked.
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
+bilinear presentation + 5551/dither grade.
+
+## 2026-07-16 (round 6) — playtest fixes + the lap demo (superseded — see above)
 
 Human playtest verdicts landed: gem timed-respawn read as a bug and the
 round-tower dome could be jumped INTO from the goal tower. Fixed both:
@@ -24,18 +71,7 @@ bounce_demo.ctrace re-recorded (it covered the old timed respawn —
 deliberate change). Verified: full suite ALL GREEN from the committed
 tree; 3 shots on llm-feed (dome cap/shoulder stands, lap banner).
 
-## Exact next step
-
-1. **Human feel-check on the feed** (all open): dome-stand embed depth
-   (cap/shoulder shots), star touch mid-jump timing (lap shot), plus the
-   round-4/5 questions — round collision fairness, monolith bounds, gem
-   radius/spin/bob, goal-star readability from platform 3.
-2. Then (human directive order, gameplay first): more course / feel
-   polish per playtest verdicts; editor distillation stays parked.
-
-Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
-record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
-bilinear presentation + 5551/dither grade.
+## Exact next step (rolled into round 7's list above)
 
 ## 2026-07-16 (round 5) — the goal loop + first bounce goldens
 
