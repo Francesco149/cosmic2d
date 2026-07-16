@@ -3,11 +3,13 @@
 -- Scans projects/* for project.lua and merges the engine-root .recent.dat.
 -- Open folder registers an arbitrary project in place (no copy), while stale
 -- recent tiles can be repaired through the same native chooser. Ready recent
--- tiles expose reveal/rename/move/duplicate; relocation is a collision-safe
--- directory rename followed by an atomic recents update, and duplicate is a
--- staged cancellable copy published by one no-replace rename. A tile opens
--- the project IN THE EDITOR (the picker is the editor's front door); the ▶
--- zone boots play mode.
+-- tiles expose reveal/rename/move/duplicate/archive/delete; relocation is a
+-- collision-safe directory rename followed by an atomic recents update,
+-- duplicate is a staged cancellable copy published by one no-replace rename,
+-- archive streams a dated no-replace backup, and delete demands the exact
+-- folder name (or a just-made archive as its safety net) before the tree and
+-- its tile go. A tile opens the project IN THE EDITOR (the picker is the
+-- editor's front door); the ▶ zone boots play mode.
 --
 -- The switch mechanism (D052): write "<path>\n<mode>" into the `boot.next`
 -- named buffer (named buffers survive VM reboots by contract) and call
@@ -67,7 +69,16 @@ local function tile(path, meta, state, is_recent, issue)
   meta = meta or {}
   local name = meta.name
   if not name or name == "" then name = path:match("([^/]+)$") end
-  return { path = path, ok = state == "ready", state = state,
+  local ok = state == "ready"
+  -- A broken recent tile whose folder still exists (e.g. a half-deleted
+  -- tree) keeps the confirmed-delete door; a fully missing folder only
+  -- needs its tile removed.
+  local present = ok
+  if not ok and is_recent then
+    local info = pal.x_path_info(path)
+    present = (info and info.type == "directory") or false
+  end
+  return { path = path, ok = ok, state = state, present = present,
            recent = is_recent, issue = issue, name = name or path,
            author = meta.author, version = meta.version,
            desc = meta.description }
@@ -115,17 +126,22 @@ local function open_actions(value, mode)
   for _, item in ipairs(scan()) do
     if item.path == root then found = item; break end
   end
-  if not found or not found.ok then return nil, "project tile is not ready" end
+  if not found then return nil, "project tile is not ready" end
+  if not found.ok and not (mode == "delete" and found.present) then
+    return nil, "project tile is not ready"
+  end
   if not found.recent then
     return nil, "open the project once before changing its folder"
   end
-  if mode == "duplicate" then
-    return M.begin_folder { kind = "duplicate", source = root, name = found.name }
+  if mode == "duplicate" or mode == "archive" then
+    return M.begin_folder { kind = mode, source = root, name = found.name }
   end
   local _, folder_name = location.parts(root)
   M.action = {
     path = root, name = found.name, mode = mode or "menu",
-    rename = folder_name or found.name, focus = mode == "rename" and true or nil,
+    folder = folder_name or found.name,
+    rename = mode == "delete" and "" or folder_name or found.name,
+    focus = (mode == "rename" or mode == "delete") and true or nil,
   }
   return true
 end
@@ -162,7 +178,8 @@ local function begin_folder(intent)
     return nil, err
   end
   local start
-  if intent.kind == "move" or intent.kind == "duplicate" then
+  if intent.kind == "move" or intent.kind == "duplicate"
+      or intent.kind == "archive" then
     start = location.parts(intent.source)
   end
   local ok, err = pal.x_folder_dialog(start)
@@ -174,6 +191,8 @@ local function begin_folder(intent)
     say("choose the destination parent for " .. intent.source)
   elseif intent.kind == "duplicate" then
     say("choose the destination parent for a duplicate of " .. intent.source)
+  elseif intent.kind == "archive" then
+    say("choose the destination folder for an archive of " .. intent.source)
   else
     say("choose a cosmic2d project folder")
   end
@@ -201,6 +220,21 @@ local function accept_folder(raw)
       focus = true,
     }
     say("name the duplicate of " .. intent.source)
+    return true, parent, false
+  end
+  if intent and intent.kind == "archive" then
+    -- The dated archive name is derived, so the job starts as soon as the
+    -- destination is chosen; the modal owns progress, cancel, and the
+    -- delete-with-a-safety-net follow-up.
+    local parent, perr = project.normalize_root(raw)
+    if not parent then say(perr, true); return nil, perr end
+    local _, source_name = location.parts(intent.source)
+    M.action = {
+      path = intent.source, name = intent.name, mode = "archive",
+      parent = parent, folder = source_name or "project",
+      job = location.archive_start(intent.source, parent),
+    }
+    say("archiving " .. intent.source)
     return true, parent, false
   end
   if intent and intent.kind == "move" then
@@ -242,6 +276,20 @@ function M.start_duplicate(opts)
   if a.job and not a.job.terminal then return nil, "a duplicate is already running" end
   a.error = nil
   a.job = location.duplicate_start(a.path, a.parent, a.rename, opts)
+  return a.job
+end
+
+-- Start the prepared delete (UI button + scripted proof door). The typed (or
+-- archive-armed) confirmation travels as opts.confirm so the policy layer
+-- re-verifies it against the exact folder name.
+function M.start_delete(opts)
+  local a = M.action
+  if not a or a.mode ~= "delete" then return nil, "no delete is prepared" end
+  if a.job and not a.job.terminal then return nil, "a delete is already running" end
+  a.error = nil
+  opts = opts or {}
+  if opts.confirm == nil then opts.confirm = a.rename end
+  a.job = location.delete_start(a.path, opts)
   return a.job
 end
 
@@ -403,6 +451,13 @@ function M.draw()
           say("cannot remove recent: " .. tostring(err), true)
         end
       end
+      -- A broken folder that still exists (e.g. an interrupted delete)
+      -- keeps the confirmed-delete door so leftovers never strand.
+      if t.recent and t.present
+          and button(x + 170, y + th - 52, 56, 24, "delete",
+                     not M.folder and not modal_at_start) then
+        open_actions(t.path, "delete")
+      end
     end
     if t.ok then
       local action_clicked = false
@@ -453,18 +508,20 @@ function M.draw()
   if M.action then
     local a = M.action
     local pw = math.min(560, ig.w - 48)
-    -- The duplicate layout is the tallest; 226 keeps its buttons on screen at
+    -- The delete layout is the tallest; 240 keeps its buttons on screen at
     -- 300% fixed chrome on an ordinary 1280x800 window (D074's logical 266).
-    local ph = a.mode == "rename" and 224
-               or a.mode == "duplicate" and 226 or 190
+    local ph = (a.mode == "rename" or a.mode == "menu") and 224
+               or a.mode == "duplicate" and 226
+               or a.mode == "archive" and 226
+               or a.mode == "delete" and 240 or 224
     local px, py = (ig.w - pw) * 0.5, math.max(24, (ig.h - ph) * 0.38)
     local busy = (a.job and not a.job.terminal) or false
     for _, key in ipairs(i.keys) do
       if key.down and not key.rep and key.scancode == 41 then
-        -- Esc can never abandon a running copy silently; it asks the job to
-        -- cancel and the job cleans its own staging before the modal closes.
+        -- Esc can never abandon a running job silently; it asks the job to
+        -- cancel and the job settles its own state before the modal closes.
         if busy then
-          location.duplicate_cancel(a.job)
+          location.job_cancel(a.job)
         else
           M.action = nil
           return
@@ -473,7 +530,7 @@ function M.draw()
     end
     if busy then
       for _ = 1, 12 do -- a few files per frame keeps large trees responsive
-        location.duplicate_step(a.job)
+        location.job_step(a.job)
         if a.job.terminal then break end
       end
     end
@@ -481,17 +538,49 @@ function M.draw()
       -- Terminal handling runs exactly once: the handle is cleared here.
       local job = a.job
       a.job = nil
-      if job.complete then
-        M.scan = nil
-        say("duplicated project folder · " .. tostring(job.published))
-        M.action = nil
-        return
-      elseif job.cancelled then
-        say("duplicate cancelled")
-      else
-        if job.published then M.scan = nil end
-        say(job.error or "duplicate failed", true)
-        a.error = job.error or "duplicate failed"
+      if a.mode == "duplicate" then
+        if job.complete then
+          M.scan = nil
+          say("duplicated project folder · " .. tostring(job.published))
+          M.action = nil
+          return
+        elseif job.cancelled then
+          say("duplicate cancelled")
+        else
+          if job.published then M.scan = nil end
+          say(job.error or "duplicate failed", true)
+          a.error = job.error or "duplicate failed"
+        end
+      elseif a.mode == "archive" then
+        -- Success keeps the modal open: the fresh archive is the safety net
+        -- for the delete offered right here.
+        if job.complete then
+          say("archived project folder · " .. tostring(job.published))
+          a.archived = job.published
+        elseif job.cancelled then
+          say("archive cancelled")
+          M.action = nil
+          return
+        else
+          say(job.error or "archive failed", true)
+          a.error = job.error or "archive failed"
+        end
+      elseif a.mode == "delete" then
+        M.scan = nil -- any removal already changed what the tile means
+        if job.complete then
+          say("deleted project folder · " .. tostring(a.path))
+          M.action = nil
+          return
+        elseif job.cancelled and (job.removed or 0) > 0 then
+          local msg = "delete cancelled; already-removed files are gone"
+          say(msg, true)
+          a.error = msg
+        elseif job.cancelled then
+          say("delete cancelled")
+        else
+          say(job.error or "delete failed", true)
+          a.error = job.error or "delete failed"
+        end
       end
     end
     busy = (a.job and not a.job.terminal) or false
@@ -499,16 +588,20 @@ function M.draw()
     pal.x_ig_rect_fill(0, 0, ig.w, ig.h, 0x080611cc)
     pal.x_ig_rect_fill(px, py, pw, ph, C.tile, 10)
     pal.x_ig_rect(px, py, pw, ph, C.tile_edge, 1, 10)
-    pal.x_ig_text(px + 18, py + 16, 17, C.text,
+    pal.x_ig_text(px + 18, py + 16, 17,
+                  a.mode == "delete" and C.bad or C.text,
                   a.mode == "rename" and "rename project folder"
                     or a.mode == "duplicate" and "duplicate project"
+                    or a.mode == "archive" and "archive project"
+                    or a.mode == "delete" and "delete project folder"
                     or "project folder", 0)
     pal.x_ig_text(px + 18, py + 42, 12, C.accent, a.name or "project", 0)
     pal.x_ig_clip_push(px + 18, py + 61, pw - 36, 18)
-    -- Duplicate trades the source-path row (already on the tile and menu) for
-    -- the destination parent so the whole flow fits 300% fixed chrome.
+    -- Duplicate/archive trade the source-path row (already on the tile and
+    -- menu) for the destination parent so the flow fits 300% fixed chrome.
     pal.x_ig_text(px + 18, py + 61, 10, C.dim,
-                  a.mode == "duplicate" and ("into  " .. tostring(a.parent))
+                  (a.mode == "duplicate" or a.mode == "archive")
+                    and ("into  " .. tostring(a.parent))
                     or a.path, 1)
     pal.x_ig_clip_pop()
 
@@ -618,7 +711,7 @@ function M.draw()
       local by = py + ph - 44
       if busy then
         if button(px + 18, by, 104, 28, "cancel copy", true) then
-          location.duplicate_cancel(a.job)
+          location.job_cancel(a.job)
         end
       else
         if button(px + 18, by, 104, 28, "duplicate", valid ~= nil)
@@ -629,19 +722,121 @@ function M.draw()
           M.action = nil
         end
       end
+    elseif a.mode == "archive" then
+      local by = py + ph - 44
+      if busy then
+        local job = a.job
+        local ratio = (job.total and job.total > 0)
+                      and math.min(1, (job.done or 0) / job.total) or 0
+        pal.x_ig_text(px + 18, py + 96, 11, C.accent,
+                      tostring(job.phase or "archiving"), 0)
+        pal.x_ig_rect_fill(px + 18, py + 112, pw - 36, 8, 0x141220ff, 3)
+        pal.x_ig_rect_fill(px + 18, py + 112,
+                           math.max(2, (pw - 36) * ratio), 8, C.accent, 3)
+        pal.x_ig_clip_push(px + 18, py + 126, pw - 36, 14)
+        pal.x_ig_text(px + 18, py + 126, 10, C.dim,
+                      tostring(job.detail or ""), 1)
+        pal.x_ig_clip_pop()
+        if button(px + 18, by, 118, 28, "cancel archive", true) then
+          location.job_cancel(a.job)
+        end
+      elseif a.archived then
+        pal.x_ig_text(px + 18, py + 90, 10, C.dim, "archived to", 0)
+        pal.x_ig_clip_push(px + 18, py + 106, pw - 36, 16)
+        pal.x_ig_text(px + 18, py + 106, 11, C.accent, a.archived, 1)
+        pal.x_ig_clip_pop()
+        pal.x_ig_text(px + 18, py + 132, 10, C.dim,
+                      "The folder is unchanged. Deleting now keeps this "
+                      .. "archive as the safety net.", 0)
+        if button(px + 18, by, 128, 28, "delete folder…", true) then
+          -- Two-step confirmation: this click arms it, the delete screen's
+          -- explicit red button (naming the folder) is the second step.
+          a.mode, a.error, a.rename = "delete", nil, a.folder
+        end
+        if M.action and button(px + 156, by, 72, 28, "close", true) then
+          M.action = nil
+        end
+      else
+        if a.error then
+          pal.x_ig_clip_push(px + 18, py + 96, pw - 36, 34)
+          pal.x_ig_text(px + 18, py + 96, 10, C.bad, a.error, 1)
+          pal.x_ig_clip_pop()
+        end
+        if button(px + 18, by, 72, 28, "close", true) then
+          M.action = nil
+        end
+      end
+    elseif a.mode == "delete" then
+      pal.x_ig_text(px + 18, py + 84, 10, C.bad,
+                    "Permanently removes this folder — including editor "
+                    .. "history and any unsaved work.", 0)
+      local by = py + ph - 44
+      if busy then
+        local job = a.job
+        local ratio = (job.total and job.total > 0)
+                      and math.min(1, (job.done or 0) / job.total) or 0
+        pal.x_ig_text(px + 18, py + 110, 11, C.bad,
+                      tostring(job.phase or "deleting"), 0)
+        pal.x_ig_rect_fill(px + 18, py + 126, pw - 36, 8, 0x141220ff, 3)
+        pal.x_ig_rect_fill(px + 18, py + 126,
+                           math.max(2, (pw - 36) * ratio), 8, C.bad, 3)
+        pal.x_ig_clip_push(px + 18, py + 140, pw - 36, 14)
+        pal.x_ig_text(px + 18, py + 140, 10, C.dim,
+                      tostring(job.detail or ""), 1)
+        pal.x_ig_clip_pop()
+        if button(px + 18, by, 112, 28, "cancel delete", true) then
+          location.job_cancel(a.job)
+        end
+      else
+        local armed
+        if a.archived then
+          -- The just-made archive is the safety net; no retyping.
+          armed = a.rename == a.folder
+          pal.x_ig_text(px + 18, py + 106, 10, C.dim, "safety net", 0)
+          pal.x_ig_clip_push(px + 18, py + 122, pw - 36, 16)
+          pal.x_ig_text(px + 18, py + 122, 11, C.accent, a.archived, 1)
+          pal.x_ig_clip_pop()
+          if a.error then
+            pal.x_ig_clip_push(px + 18, py + 146, pw - 36, 18)
+            pal.x_ig_text(px + 18, py + 146, 10, C.bad, a.error, 0)
+            pal.x_ig_clip_pop()
+          end
+        else
+          local fy, fh = py + 106, 32
+          name_field("picker_project_folder_delete", fy, fh, true)
+          armed = a.rename == a.folder
+          local status = a.error
+          if status then
+            pal.x_ig_clip_push(px + 18, fy + 39, pw - 36, 18)
+            pal.x_ig_text(px + 18, fy + 39, 10, C.bad, status, 0)
+            pal.x_ig_clip_pop()
+          else
+            pal.x_ig_text(px + 18, fy + 39, 10, C.dim,
+                          'Type the folder name "' .. tostring(a.folder)
+                          .. '" to confirm.', 0)
+          end
+        end
+        if button(px + 18, by, 122, 28, "delete forever", armed) and armed then
+          M.start_delete()
+        end
+        if M.action and button(px + 150, by, 72, 28, "cancel", true) then
+          M.action = nil
+        end
+      end
     else
       pal.x_ig_text(px + 18, py + 91, 11, C.dim,
-                    "Reveal, rename, move, or duplicate this project's folder.", 0)
+                    "Reveal, rename, move, duplicate, archive, or delete "
+                    .. "this project's folder.", 0)
       if a.error then
         pal.x_ig_clip_push(px + 18, py + 112, pw - 36, 18)
         pal.x_ig_text(px + 18, py + 112, 10, C.bad, a.error, 0)
         pal.x_ig_clip_pop()
       end
-      local by = py + ph - 44
+      local by1, by2 = py + ph - 80, py + ph - 44
       if button(px + pw - 48, py + 12, 30, 24, "x", true) then
         M.action = nil
       end
-      if M.action and button(px + 18, by, 88, 28, "reveal", true) then
+      if M.action and button(px + 18, by1, 88, 28, "reveal", true) then
         local ok, result = location.reveal(a.path)
         if ok then
           say("revealed project folder · " .. result)
@@ -651,17 +846,25 @@ function M.draw()
           a.error = result
         end
       end
-      if M.action and button(px + 116, by, 112, 28, "rename folder", true) then
+      if M.action and button(px + 116, by1, 112, 28, "rename folder", true) then
         a.mode, a.focus, a.error = "rename", true, nil
       end
-      if M.action and button(px + 238, by, 102, 28, "move folder", true) then
+      if M.action and button(px + 238, by1, 102, 28, "move folder", true) then
         local ok, err = begin_folder { kind = "move", source = a.path }
         if ok then M.action = nil else a.error = err end
       end
-      if M.action and button(px + 350, by, 96, 28, "duplicate", true) then
+      if M.action and button(px + 18, by2, 96, 28, "duplicate", true) then
         local ok, err = begin_folder { kind = "duplicate", source = a.path,
                                        name = a.name }
         if ok then M.action = nil else a.error = err end
+      end
+      if M.action and button(px + 124, by2, 96, 28, "archive", true) then
+        local ok, err = begin_folder { kind = "archive", source = a.path,
+                                       name = a.name }
+        if ok then M.action = nil else a.error = err end
+      end
+      if M.action and button(px + 230, by2, 96, 28, "delete…", true) then
+        a.mode, a.focus, a.error, a.rename = "delete", true, nil, ""
       end
     end
     pal.x_ig_overlay(false)

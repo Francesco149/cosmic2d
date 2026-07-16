@@ -1,5 +1,5 @@
 -- cm.project_location -- failure-safe project-folder reveal/rename/move/
--- duplicate.
+-- duplicate/archive/delete.
 --
 -- This is picker policy, never sim state. A relocation is one collision-safe
 -- native directory rename followed by one atomic recents replacement. The
@@ -15,12 +15,21 @@
 -- only authoritative transition is one atomic no-replace rename. Every earlier
 -- failure or a cancel cleans the staging tree and publishes nothing; the
 -- source is never written.
+--
+-- Archive (D079) streams the same saved-project walk into a dated, uniquely
+-- named .tar.gz/.zip beside a user-chosen parent through the exporter's
+-- temp-then-publish shape; every failure or cancel removes the temp and the
+-- source is never written. Delete (D079) is the one deliberately destructive
+-- job: it demands the exact folder name as confirmation, un-boots the tree by
+-- removing project.lua first, keeps the recent tile as the recovery handle
+-- until the whole tree is gone, and reports any partial removal honestly.
 
 local M = select(2, ...) or {}
 
-M.API = 16
+M.API = 17
 
 local project = cm.require("cm.project")
+local archive = cm.require("cm.archive")
 
 local function join(parent, name)
   return parent .. (parent:sub(-1) == "/" and "" or "/") .. name
@@ -99,9 +108,13 @@ local function default_fs()
     move = pal.x_path_move,
     reveal = pal.x_path_reveal,
     list = pal.list_dir,
+    list_all = pal.x_list_dir_all,
     mkdir = pal.mkdir,
     remove = pal.x_remove,
     write_atomic = pal.write_file_atomic,
+    append = pal.x_file_append,
+    publish = pal.x_file_publish,
+    crc = pal.crc32,
   }
   function fs.probe(parent, nonce)
     -- A same-parent empty directory proves create/delete authority without
@@ -318,9 +331,9 @@ end
 
 -- Enumerate the saved project exactly as it will be published. pal.list_dir
 -- prunes dot-directories, so `.ed` (and other tool state like `.git`) never
--- enters a duplicate; machine-local `video.dat` is excluded by name (D036/
--- D074). Links are refused rather than followed or silently flattened.
-local function collect_tree(fs, source)
+-- enters a duplicate or archive; machine-local `video.dat` is excluded by
+-- name (D036/D074). Links are refused rather than followed or flattened.
+local function collect_tree(fs, source, verb)
   local names, err = fs.list(source)
   if not names then
     fail("cannot list project folder " .. source .. ": " .. tostring(err))
@@ -332,11 +345,12 @@ local function collect_tree(fs, source)
       local full = join(source, rel)
       local info, ierr = fs.info(full)
       if not info then
-        fail("project changed during duplicate; retry: " .. full
+        fail("project changed during " .. verb .. "; retry: " .. full
           .. ": " .. tostring(ierr))
       end
       if info.link then
-        fail("project contains a link; duplicate refuses to copy it: " .. full)
+        fail("project contains a link; " .. verb
+          .. " refuses to copy it: " .. full)
       end
       if info.type == "directory" then dirs[#dirs + 1] = rel
       elseif info.type == "file" then files[#files + 1] = rel
@@ -397,7 +411,7 @@ local function duplicate_run(job, source, parent, name, opts)
   job.source, job.destination = src, dest
 
   job_yield(job, "collecting", "walking saved project files", 0, 1)
-  local dirs, files = collect_tree(fs, src)
+  local dirs, files = collect_tree(fs, src, "duplicate")
   job.total = #files + 3 -- copy steps + validate + publish + recents
 
   -- The staging root is dot-prefixed: pal.list_dir prunes it, so the picker
@@ -456,48 +470,369 @@ local function duplicate_run(job, source, parent, name, opts)
   job.done, job.name = job.total, meta and meta.name or dest_name
 end
 
-function M.duplicate_start(source, parent, name, opts)
-  opts = opts or {}
-  local job = { phase = "starting", detail = "preparing duplicate",
-                done = 0, total = 1 }
-  job.co = coroutine.create(function()
-    duplicate_run(job, source, parent, name, opts)
-  end)
-  return job
-end
+-- ---- the shared job harness (duplicate / archive / delete) ----
 
-function M.duplicate_step(job)
+-- One step of any location job. Terminal transitions run exactly once; a
+-- failed or cancelled job first runs its own cleanup hook (staging tree,
+-- temporary archive) and appends an explicit note when even cleanup fails.
+local function job_step(job)
   if not job or job.terminal then return job end
   local ok, err = coroutine.resume(job.co)
   if not ok then
     if type(err) == "table" and err.cancel then
       job.phase, job.detail, job.cancelled =
-        "cancelled", "duplicate cancelled", true
+        "cancelled", job.cancel_detail or "cancelled", true
     else
       job.phase, job.detail, job.error = "failed", tostring(err), tostring(err)
     end
-    if job.staging then
-      local cleaned, clean_err = remove_tree(job.fs or default_fs(), job.staging)
+    if job.cleanup then
+      local cleaned, clean_err = job.cleanup(job)
       if not cleaned and job.error then
         job.error = job.error .. "; " .. tostring(clean_err)
         job.detail = job.error
       elseif not cleaned then
         job.detail = job.detail .. "; " .. tostring(clean_err)
       end
-      job.staging = nil
     end
     job.terminal = true
   elseif coroutine.status(job.co) == "dead" then
     job.phase, job.detail, job.complete, job.terminal =
-      "complete", "duplicate published", true, true
+      "complete", job.complete_detail or "complete", true, true
   end
   return job
 end
 
-function M.duplicate_cancel(job)
+local function job_cancel(job)
   if not job or job.terminal then return false end
   job.cancel_requested = true
   return true
 end
+
+local function job_start(run, words)
+  local job = { phase = "starting", detail = words.starting, done = 0,
+                total = 1, cancel_detail = words.cancelled,
+                complete_detail = words.complete }
+  job.co = coroutine.create(function() run(job) end)
+  return job
+end
+
+local function cleanup_staging(job)
+  if not job.staging then return true end
+  local cleaned, clean_err = remove_tree(job.fs or default_fs(), job.staging)
+  job.staging = nil
+  return cleaned, clean_err
+end
+
+local function cleanup_temp(job)
+  local fs = job.fs or default_fs()
+  if not job.temp or not fs.info(job.temp) then
+    job.temp = nil
+    return true
+  end
+  local temp = job.temp
+  job.temp = nil
+  if not fs.remove(temp) then
+    return nil, "could not clean temporary archive " .. temp
+  end
+  return true
+end
+
+function M.duplicate_start(source, parent, name, opts)
+  opts = opts or {}
+  local job = job_start(function(job)
+    duplicate_run(job, source, parent, name, opts)
+  end, { starting = "preparing duplicate", cancelled = "duplicate cancelled",
+         complete = "duplicate published" })
+  job.cleanup = cleanup_staging
+  return job
+end
+
+M.duplicate_step = job_step
+M.duplicate_cancel = job_cancel
+
+-- ---- archive: the dated no-replace project backup job ----
+
+local function need_archive_fs(fs)
+  return type(fs.read) == "function" and type(fs.info) == "function"
+    and type(fs.list) == "function" and type(fs.probe) == "function"
+    and type(fs.remove) == "function" and type(fs.append) == "function"
+    and type(fs.publish) == "function" and type(fs.crc) == "function"
+end
+
+local function archive_run(job, source, parent, opts)
+  local fs = opts.fs or default_fs()
+  if not opts.fs and (not pal.version or pal.version.api < M.API
+      or type(pal.x_file_publish) ~= "function") then
+    fail("archiving a project needs PAL api " .. M.API .. " or newer")
+  end
+  if not need_archive_fs(fs) then fail("project archive filesystem is unavailable") end
+  job.fs = fs
+  local platform = opts.platform or pal.platform
+  local ofail = opts.fail or {}
+
+  job_yield(job, "preflight", "validating source and destination", 0, 1)
+  local src, err = project.normalize_root(source)
+  if not src then fail(err) end
+  local active = active_root(opts)
+  if active and same_path(src, active, platform) then
+    fail("return to the project picker before archiving the open project")
+  end
+  local dest_parent
+  dest_parent, err = project.normalize_root(parent)
+  if not dest_parent then fail("archive destination must be a folder path") end
+
+  local si, serr = fs.info(src)
+  if not si then fail("source project folder is unavailable: " .. tostring(serr)) end
+  if si.type ~= "directory" then fail("source project path is not a folder") end
+  if si.link then
+    fail("a project-folder alias cannot archive; open its real folder first")
+  end
+  local meta
+  src, meta = project.inspect_root(src, fs.read)
+  if not src then fail(meta) end
+  if same_path(src, dest_parent, platform)
+      or inside_path(dest_parent, src, platform) then
+    fail("a project cannot be archived into itself")
+  end
+  local pi, perr = fs.info(dest_parent)
+  if not pi then fail("archive destination is unavailable: " .. tostring(perr)) end
+  if pi.type ~= "directory" then fail("archive destination is not a folder") end
+  local nonce = tostring(opts.nonce or (pal.time_ns and pal.time_ns()) or 0)
+  local ok
+  ok, err = fs.probe(dest_parent, nonce .. ".archive")
+  if not ok then fail("archive destination is not writable: " .. tostring(err)) end
+
+  -- One dated backup per name: the first free " (n)" suffix keeps every
+  -- earlier archive, and the final rename below stays no-replace so even a
+  -- race cannot overwrite one.
+  local _, source_name = M.parts(src)
+  local format = opts.format or (platform == "windows" and "zip" or "tar.gz")
+  local ext = format == "zip" and ".zip" or ".tar.gz"
+  local stamp = opts.stamp or os.date("%Y-%m-%d")
+  local final
+  for attempt = 1, 100 do
+    local name = source_name .. " " .. stamp
+      .. (attempt > 1 and (" (" .. attempt .. ")") or "") .. ext
+    local candidate = join(dest_parent, name)
+    if not fs.info(candidate) then final = candidate break end
+  end
+  if not final then
+    fail("too many archives of " .. source_name .. " dated " .. stamp
+      .. " already exist in " .. dest_parent)
+  end
+  job.source, job.destination = src, final
+
+  job_yield(job, "collecting", "walking saved project files", 0, 1)
+  local dirs, files = collect_tree(fs, src, "archive")
+  job.total = #files + 2 -- member steps + close + publish
+
+  -- The temp is dot-prefixed in the destination parent; only the atomic
+  -- no-replace publish below makes the archive real.
+  local temp = join(dest_parent,
+    "." .. final:match("([^/]+)$") .. ".tmp." .. nonce)
+  fs.remove(temp)
+  job.temp = temp
+  local writer = archive.writer {
+    format = format, crc = fs.crc,
+    sink = function(bytes)
+      if ofail.append or not fs.append(temp, bytes) then
+        fail("cannot write " .. temp
+          .. (ofail.append and ": injected append failure" or ""))
+      end
+    end,
+  }
+  for _, rel in ipairs(dirs) do writer:dir(source_name .. "/" .. rel) end
+  for index, rel in ipairs(files) do
+    job_yield(job, "archiving", rel, index - 1, job.total)
+    local bytes, rerr = fs.read(join(src, rel))
+    if not bytes then
+      fail("cannot read " .. join(src, rel) .. ": " .. tostring(rerr))
+    end
+    writer:member(source_name .. "/" .. rel, bytes)
+  end
+  job_yield(job, "finishing", "closing the archive", #files, job.total)
+  writer:finish()
+  job.bytes = writer.out_bytes
+
+  job_yield(job, "publishing", final, #files + 1, job.total)
+  local popts = {}
+  if type(ofail.publish) == "table" then
+    for key, value in pairs(ofail.publish) do popts[key] = value end
+  elseif ofail.publish then
+    popts._fail = "rename"
+  end
+  popts._replace = false
+  ok, err = fs.publish(temp, final, popts)
+  if not ok then fail("archive was not published: " .. tostring(err)) end
+  job.temp = nil
+  job.published = final
+  job.done, job.name = job.total, meta and meta.name or source_name
+end
+
+function M.archive_start(source, parent, opts)
+  opts = opts or {}
+  local job = job_start(function(job)
+    archive_run(job, source, parent, opts)
+  end, { starting = "preparing archive", cancelled = "archive cancelled",
+         complete = "archive published" })
+  job.cleanup = cleanup_temp
+  return job
+end
+
+M.archive_step = job_step
+M.archive_cancel = job_cancel
+
+-- ---- delete: the confirmed destructive job ----
+
+local function need_delete_fs(fs)
+  return type(fs.read) == "function" and type(fs.info) == "function"
+    and type(fs.list_all) == "function" and type(fs.probe) == "function"
+    and type(fs.remove) == "function"
+end
+
+local function delete_run(job, source, opts)
+  local fs = opts.fs or default_fs()
+  if not opts.fs and (not pal.version or pal.version.api < M.API
+      or type(pal.x_list_dir_all) ~= "function") then
+    fail("deleting a project needs PAL api " .. M.API .. " or newer")
+  end
+  if not need_delete_fs(fs) then fail("project delete filesystem is unavailable") end
+  job.fs = fs
+  local platform = opts.platform or pal.platform
+  local ofail = opts.fail or {}
+
+  job_yield(job, "preflight", "validating the folder to delete", 0, 1)
+  local src, err = project.normalize_root(source)
+  if not src then fail(err) end
+  local active = active_root(opts)
+  if active and same_path(src, active, platform) then
+    fail("return to the project picker before deleting the open project")
+  end
+  -- The recent tile is the recovery handle: it stays visible (turning
+  -- honestly "missing") until the whole tree is gone, so an interrupted
+  -- delete can never silently vanish a half-removed project.
+  local recent = opts.recent or cm.require("cm.recent")
+  if type(recent.contains) ~= "function" or not recent.contains(src) then
+    fail("project must have a recent tile before its folder can be deleted")
+  end
+  local si, serr = fs.info(src)
+  if not si then fail("project folder is unavailable: " .. tostring(serr)) end
+  if si.type ~= "directory" then fail("project path is not a folder") end
+  if si.link then
+    fail("a project-folder alias cannot be deleted; open its real folder first")
+  end
+  -- A valid project yields its display name, but validity is deliberately NOT
+  -- required: this job removes project.lua first, so a failed delete leaves a
+  -- half tree that must stay deletable through this same confirmed door.
+  local meta
+  local valid_root, valid_meta = project.inspect_root(src, fs.read)
+  if valid_root then src, meta = valid_root, valid_meta end
+  local _, source_name = M.parts(src)
+  if opts.confirm ~= source_name then
+    fail('deleting "' .. source_name
+      .. '" needs its exact folder name as confirmation')
+  end
+  local nonce = tostring(opts.nonce or (pal.time_ns and pal.time_ns()) or 0)
+  local ok
+  ok, err = fs.probe(src, nonce .. ".delete")
+  if not ok then fail("project folder is not writable: " .. tostring(err)) end
+
+  -- Unlike copy walks, delete enumerates EVERYTHING (x_list_dir_all): `.ed`
+  -- journals and dot tool state must go too. Links anywhere in the tree are
+  -- refused before the first removal — the walk behind a directory link
+  -- reaches files outside the project.
+  job_yield(job, "collecting", "walking every project file", 0, 1)
+  local names, lerr = fs.list_all(src)
+  if not names then
+    fail("cannot list project folder " .. src .. ": " .. tostring(lerr))
+  end
+  table.sort(names)
+  local dirs, files = {}, {}
+  for _, rel in ipairs(names) do
+    local full = join(src, rel)
+    local info, ierr = fs.info(full)
+    if not info then
+      fail("project changed during delete; retry: " .. full
+        .. ": " .. tostring(ierr))
+    end
+    if info.link then
+      fail("project contains a link; delete refuses to follow it: " .. full)
+    end
+    if info.type == "directory" then dirs[#dirs + 1] = rel
+    elseif info.type == "file" then files[#files + 1] = rel
+    else fail("project contains an unsupported file type: " .. full) end
+  end
+  -- project.lua goes first: the tree stops being a bootable half-project the
+  -- moment deletion begins. Children sort after parents by length, so the
+  -- deepest directories empty out first.
+  for index, rel in ipairs(files) do
+    if rel == "project.lua" then
+      table.remove(files, index)
+      table.insert(files, 1, rel)
+      break
+    end
+  end
+  table.sort(dirs, function(a, b) return #a > #b end)
+  job.total = #files + #dirs + 2 -- entries + the root + the recent tile
+  job.removed = 0
+
+  local function remove_one(full, injected)
+    local rok, rerr
+    if not injected then rok, rerr = fs.remove(full) end
+    if not rok then
+      fail("cannot remove " .. full .. ": "
+        .. (injected and "injected remove failure"
+            or tostring(rerr or "removal failed"))
+        .. "; the remaining project files were kept")
+    end
+    job.removed = job.removed + 1
+  end
+
+  local function injected_at(rel)
+    return ofail.remove and (ofail.remove == true or ofail.remove == rel)
+  end
+  for index, rel in ipairs(files) do
+    job_yield(job, "deleting", rel, index - 1, job.total)
+    remove_one(join(src, rel), injected_at(rel))
+  end
+  for index, rel in ipairs(dirs) do
+    job_yield(job, "deleting", rel, #files + index - 1, job.total)
+    remove_one(join(src, rel), injected_at(rel))
+  end
+
+  -- The folder itself and its recent tile change together without another
+  -- yield: a late cancel must not leave a fully deleted project pretending
+  -- it still exists.
+  job.phase, job.detail, job.done =
+    "deleting", source_name, #files + #dirs
+  remove_one(src, ofail.root)
+  job.deleted = true
+  job.phase, job.detail, job.done =
+    "recents", "removing the recent tile", job.total - 1
+  ok, err = recent.remove(src, ofail.recent)
+  if not ok then
+    fail("project folder was deleted, but its recent tile could not be "
+      .. "removed: " .. tostring(err) .. "; use remove on the tile")
+  end
+  job.done, job.name = job.total, meta and meta.name or source_name
+end
+
+function M.delete_start(source, opts)
+  opts = opts or {}
+  local job = job_start(function(job)
+    delete_run(job, source, opts)
+  end, { starting = "preparing delete",
+         cancelled = "delete cancelled; already-removed files are gone",
+         complete = "project folder deleted" })
+  return job
+end
+
+M.delete_step = job_step
+M.delete_cancel = job_cancel
+
+-- Every location job shares one harness; the picker drives whichever job its
+-- modal holds through these neutral names.
+M.job_step = job_step
+M.job_cancel = job_cancel
 
 return M
