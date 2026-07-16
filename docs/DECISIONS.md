@@ -3062,8 +3062,9 @@ at the native boundary, then performs an atomic no-replace directory rename:
 Linux uses `renameat2(RENAME_NOREPLACE)` and Windows uses UTF-16
 `MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`. Different filesystems,
 drives, or volumes fail explicitly; they do not fall back to a partial copy.
-Reveal percent-encodes the absolute UTF-8 path into a `file:` URI and delegates
-to SDL's host opener (Explorer or the desktop file manager).
+Reveal delegates to the native host opener: Windows converts the original
+UTF-8 path to UTF-16 for `ShellExecuteW`, while Linux percent-encodes it into
+a UTF-8 `file:` URI for SDL's desktop-file-manager handoff.
 
 The filesystem transition happens first. Only its success permits one atomic
 `recent.replace(old,new)`. A native failure leaves the working source and old

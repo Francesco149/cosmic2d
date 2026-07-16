@@ -42,6 +42,7 @@ IMGUI_SRC := vendor/imgui/imgui.cpp vendor/imgui/imgui_draw.cpp \
 WIN_OBJ :=
 ifeq ($(EXE),.exe)
 WIN_OBJ := $(BUILD)/windows_res.o
+LDLIBS += -lshell32
 endif
 PAL_OBJ := $(PAL_SRC:src/%.c=$(BUILD)/%.o) $(PAL_CXX:src/%.cpp=$(BUILD)/%_cxx.o) \
            $(WIN_OBJ)

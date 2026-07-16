@@ -12,6 +12,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <shellapi.h>
 #else
 #include <sys/stat.h>
 #ifdef __linux__
@@ -1831,6 +1832,7 @@ static int l_x_path_move(lua_State *L) {
   return 1;
 }
 
+#ifndef _WIN32
 static bool uri_plain(unsigned char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
          || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.'
@@ -1842,12 +1844,6 @@ static bool uri_plain(unsigned char c) {
  * keeps spaces, #, %, ?, and non-ASCII project names unambiguous. */
 static char *path_file_uri(const char *path) {
   bool absolute = path[0] == '/';
-#ifdef _WIN32
-  absolute = absolute || ((path[0] >= 'A' && path[0] <= 'Z')
-                          || (path[0] >= 'a' && path[0] <= 'z'))
-                         && path[1] == ':';
-  absolute = absolute || (path[0] == '\\' && path[1] == '\\');
-#endif
   char *cwd = NULL;
   char *full = NULL;
   if (absolute) {
@@ -1872,11 +1868,6 @@ static char *path_file_uri(const char *path) {
 
   const char *prefix = "file://"; /* POSIX /x -> file:///x */
   if (full[0] == '/' && full[1] == '/') prefix = "file:"; /* UNC */
-#ifdef _WIN32
-  else if (((full[0] >= 'A' && full[0] <= 'Z')
-            || (full[0] >= 'a' && full[0] <= 'z')) && full[1] == ':')
-    prefix = "file:///";
-#endif
   size_t fn = strlen(full), pre = strlen(prefix);
   char *uri = SDL_malloc(pre + fn * 3 + 1);
   if (!uri) {
@@ -1900,10 +1891,13 @@ static char *path_file_uri(const char *path) {
   SDL_free(full);
   return uri;
 }
+#endif
 
 /* pal.x_path_reveal(path[, {_fail="open"}]) -> true | nil,error. Opening a
- * directory URI asks the host's native handler (Explorer / desktop file
- * manager) to show that project root. */
+ * project folder asks Explorer / the desktop file manager to show that root.
+ * Windows receives the original path as UTF-16: ShellExecute does not
+ * consistently decode percent-encoded UTF-8 file URIs. POSIX uses the URI
+ * spelling expected by SDL's host opener. */
 static int l_x_path_reveal(lua_State *L) {
   const char *path = luaL_checkstring(L, 1);
   SDL_PathInfo info;
@@ -1912,15 +1906,50 @@ static int l_x_path_reveal(lua_State *L) {
     lua_pushfstring(L, "project folder is unavailable: %s", SDL_GetError());
     return 2;
   }
-  if (fail_stage_is(fail_stage_at(L, 2), "open")) {
+  bool inject = fail_stage_is(fail_stage_at(L, 2), "open");
+#ifdef _WIN32
+  int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
+                                  NULL, 0);
+  if (count <= 0) {
+    lua_pushnil(L);
+    lua_pushstring(L, "reveal project folder: project path is not valid UTF-8");
+    return 2;
+  }
+  WCHAR *wide = SDL_malloc((size_t)count * sizeof *wide);
+  if (!wide || MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
+                                   wide, count) <= 0) {
+    SDL_free(wide);
+    lua_pushnil(L);
+    lua_pushstring(L, "reveal project folder: cannot convert project path");
+    return 2;
+  }
+  for (WCHAR *p = wide; *p; p++) if (*p == L'/') *p = L'\\';
+  if (inject) {
+    SDL_free(wide);
     lua_pushnil(L);
     lua_pushstring(L, "reveal project folder: injected open failure");
     return 2;
   }
+  INT_PTR opened = (INT_PTR)ShellExecuteW(NULL, L"open", wide, NULL, NULL,
+                                          SW_SHOWNORMAL);
+  SDL_free(wide);
+  if (opened <= 32) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "reveal project folder: Explorer could not open path "
+                       "(code %d)", (int)opened);
+    return 2;
+  }
+#else
   char *uri = path_file_uri(path);
   if (!uri) {
     lua_pushnil(L);
     lua_pushfstring(L, "reveal project folder: %s", SDL_GetError());
+    return 2;
+  }
+  if (inject) {
+    SDL_free(uri);
+    lua_pushnil(L);
+    lua_pushstring(L, "reveal project folder: injected open failure");
     return 2;
   }
   bool ok = SDL_OpenURL(uri);
@@ -1930,6 +1959,7 @@ static int l_x_path_reveal(lua_State *L) {
     lua_pushfstring(L, "reveal project folder: %s", SDL_GetError());
     return 2;
   }
+#endif
   lua_pushboolean(L, true);
   return 1;
 }
