@@ -3,15 +3,47 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — rewind clock + accessible editor sizing complete; export job next (2026-07-16)
+## Current handoff — arbitrary-project Build/Export complete; picker lifecycle next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-A0–A2 are complete and A3 is in progress. Project/export UX, gamepad/player
-settings, shared genre-neutral runtime slices and demos, complete rewind
-product UI, and the release-candidate pass remain explicit alpha gates.
+A0–A2 are complete and A3 is in progress. Broader project lifecycle,
+gamepad/player settings, shared genre-neutral runtime slices and demos,
+complete rewind product UI, and the release-candidate pass remain explicit
+alpha gates.
+
+**D075 closes the in-editor player-export packet.** PAL API 14 adds exact
+SHA-256/rolling CRC-32, link-aware path inspection, atomic new/explicit-replace
+publication, and Windows player-launcher identity. `cm.export` uses those
+primitives to stream the saved currently-open project with the matching runtime
+already in the public editor: Linux emits `.tar.gz`, Windows emits `.zip`, and
+selecting the other host explains which download is required. It needs no Nix,
+shell archive tool, compiler, or source-tree project. Both formats carry the
+canonical player README/icon/launcher, runtime notices, extracted-tree
+`SHA256SUMS`, and a sibling archive `.sha256`; `.ed`, `video.dat`, links, unsafe
+paths, and unsupported ZIP32 sizes/counts cannot enter.
+
+Project settings now has a third **build/export** tab with target, output
+folder, explicit atomic replacement, saved-state preflight, per-file progress,
+cancel, result path/hash, and in-window/console failure. Unsaved settings, code,
+sprite, map, tilemap, palette, instrument, or song bytes name the file to save
+and block the build. Job state is ephemeral. Tab switches preserve progress;
+Alt+right-click close, Esc, and F4 rewind cannot discard an active job; cancel
+removes its sibling temp and publishes nothing.
+
+**D075 proof:** Linux selftest passes **23,401 checks** and native Windows
+passes **23,403** on PAL API 14. A writable copy of the public Linux tree opened
+`/tmp/cosmic A3 external project` and completed the UI job in 3.6 seconds,
+publishing a verified 30.5 MiB archive. The freshly staged native Windows editor
+opened an external `C:/Users/...` project and published a project-branded,
+verified 38.9 MiB ZIP through the same surface. Both sibling hashes and every
+extracted `SHA256SUMS` entry pass; completed UI captures are on llm-feed. The
+full `nix run .#test` matrix is ALL GREEN: release manifests, every historical
+trace verification, and all pixel/audio goldens are unchanged. Fresh editor and
+demo archives also pass the complete Debian 13 and native-Windows read-only,
+spaced/non-ASCII-path clean-machine matrices.
 
 **D074 closes the rewind-rate and editor-legibility packet.** Rewind playback
 is now presentation-clocked against the fixed 60 Hz trace period: 1× consumes
@@ -98,11 +130,12 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** add an in-editor Build/Export job for the currently open
-project: Linux/Windows target, output location, preflight validation, visible
-progress, atomic artifact publication, and actionable failure/cancel behavior.
-Exit when a writable copy outside the Nix source tree can export through the UI;
-leave rename/move/duplicate/archive and starter-template expansion for later A3
+**Exact next packet:** make external-project entry a normal picker lifecycle:
+import/open a folder, refresh recents immediately, repair or remove a missing
+project path, and provide an explicit return-to-picker action from an editor.
+Exit when a fresh public archive can open an external project and revisit it
+after restart without a terminal. Leave rename/move/duplicate/archive, richer
+sort/search/keyboard navigation, and starter-template expansion for later A3
 packets.
 
 There is no known blocker or human-only verification required.

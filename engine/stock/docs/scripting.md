@@ -29,7 +29,10 @@ resolution, initial window fields, icon, controls, credits, and licenses above.
 It shares the code editor's working `project.lua` bytes and journal, preserves
 unedited declarative keys, validates referenced project files through the same
 contract as packaging, and atomically publishes canonical inspectable Lua on
-Ctrl+S. Export target/output configuration remains follow-up A3 work.
+Ctrl+S. Its **build/export** tab packages the saved project from any opened
+folder with the matching carried Linux or Windows runtime, shows progress and
+actionable failures, and publishes the archive plus integrity hashes without a
+shell toolchain. Unsaved editor assets must be saved first.
 
 Paths passed to `pal.read_file` are relative to the engine working directory.
 For project assets, prefix them with `cm.main.args.project .. "/"`.

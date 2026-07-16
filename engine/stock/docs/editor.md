@@ -11,7 +11,8 @@ windows around, and lay out a workspace that suits the task.
 - **project settings** — edit name/author/version/description, internal
   resolution, initial window defaults, and the icon/controls/credits/licenses
   needed by player builds. Project-file validation is live; Ctrl+S merges into
-  the shared `project.lua` working copy and saves it atomically.
+  the shared `project.lua` working copy and saves it atomically. **build/export**
+  makes the matching Linux/Windows player archive with progress and cancellation.
 - **code editor** — a project file in a syntax-lit editor. `.md` docs (like
   this one) get headings, links, and code spans; Ctrl+click a link to follow
   it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and redo. Journals normally preserve

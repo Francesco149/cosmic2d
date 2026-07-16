@@ -798,3 +798,32 @@ Ctrl+S can publish `project.lua`. Per-row errors identify unsafe, missing,
 empty, oversized, and wrong-type choices. `cm.project` owns those byte rules
 behind an injected reader, so the live editor and host packager make the same
 decision rather than maintaining parallel validators.
+
+### 13.7 Build/Export is an ephemeral, guarded external job (A3/D075)
+
+The third project tab owns no captured fields. Target, output directory,
+replace intent, coroutine, progress, and result live under
+`cm.ed.g.project_exports[win.id]`; session and rewind state therefore never
+serialize a machine path or half-built artifact. `cm.export` advances one file
+per draw and accepts cancellation only at those boundaries. Switching tabs is
+safe, while Esc explains the cancel door and the window manager refuses the
+project window's Alt+right-click close until the job is terminal. F4 likewise
+cannot park/drop the exporter through rewind. Quit explicitly removes any
+non-authoritative sibling temp.
+
+The UI preflight compares every kit-owned working-byte generation with its
+saved disk baseline and names unsaved project settings, code, sprite, map,
+tilemap, palette, instrument, or song assets. A click then freshly validates
+the saved `project.lua` and release files before starting; the coroutine repeats
+that check and verifies the output directory/runtime. The Linux editor carries
+only a Linux player runtime and emits `.tar.gz`; Windows carries only Windows
+and emits `.zip`. Selecting the other target gives the matching-download action
+instead of pretending a cross toolchain exists.
+
+Archive construction is shell-free and bounded in memory to one input file plus
+central-directory metadata. A complete sibling temp is the only publication
+candidate. Cancel/failure removes it; success syncs and atomically renames it,
+with replacement allowed only by the explicit checkbox. The terminal panel
+shows output path, byte size, and SHA-256; failures remain visible and summon
+the console. `SHA256SUMS` authenticates the extracted tree relative to a trusted
+sibling archive checksum.

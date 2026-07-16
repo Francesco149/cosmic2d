@@ -62,6 +62,16 @@ texts. A metadata table with no release references is an ordinary draft; once
 one reference is configured, settings require the complete packet and refuse
 publication until every saved project-local file validates (D072).
 
+`cm.export` is the D075 self-contained player builder. It combines any open
+project root with the host-matching runtime already carried by a public editor,
+then streams deterministic stored ZIP (Windows) or tar inside uncompressed
+deflate/gzip (Linux) entries through PAL file primitives. It adds the canonical
+player README/quick-start/icon, complete extracted-tree `SHA256SUMS`, and
+runtime inventory. One coroutine step owns one file; cancellation and failure
+remove the sibling temp, while `pal.x_file_publish` is the sole authoritative
+archive transition. The project-window operation state is ephemeral render/dev
+state and its preflight requires every editor working asset to match disk.
+
 ### The module system (cm.require)
 
 - `cm.*` names map to `engine/cm/` (`cm.math` → `engine/cm/math.lua`) and
@@ -476,7 +486,7 @@ cosmic2d/
     boot.lua           thin shim: module system + handoff to cm.main
     cm/                engine modules (main, state, input, rand, math,
                        ease, gfx, text, trace, chunk, ui, console, repl,
-                       perf, tilemap, editor, inspect, scrub; assets/ =
+                       perf, tilemap, export, editor, inspect, scrub; assets/ =
                        baked fonts)
   projects/
     smoke/             the minimal test cartridge (R0/D046: one room + the
@@ -496,8 +506,9 @@ cosmic2d/
 The repo root is the development form of the console and `projects/` holds its
 cartridges. Release bundles preserve that one-folder model. Download-shaped
 Windows and Linux editor archives plus developer-built play exports pass the
-clean-machine matrix in D069; arbitrary-project, in-editor export remains A3.
-D070 makes the current play archive itself player-facing: project metadata
+clean-machine matrix in D069. D075 adds the same player-facing construction as
+a shell-free, arbitrary-opened-project editor job on both native hosts. D070
+makes the play archive itself player-facing: project metadata
 generates its root README/quick-start/icon, a root launcher boots the selected
 project locked to play, and the deliberate editor entrance stays under `bin/`.
 Linux retargets the root ELF to `$ORIGIN/lib`; Windows uses a project-resourced

@@ -1,9 +1,9 @@
 # Getting started
 
 Welcome to **cosmic2d** — a tiny 2D pixel-art engine and fantasy console.
-Make a game with the built-in editor in this engine folder. General in-editor
-export is still under construction; the current developer packager can build
-the bundled demo.
+Make and export a game with the built-in editor in this engine folder. The
+remaining alpha work broadens project lifecycle, input/settings, starter
+genres, rewind product UI, and release validation.
 
 This is a rendered doc reader. Click a link to follow it in place
 (ctrl+click opens it in a new reader); the header arrows — or the mouse
@@ -22,7 +22,10 @@ back/forward buttons — walk your history. `src` opens the raw markdown.
   internal resolution, and initial window defaults. On **player files**, choose
   a project icon, controls, credits, and at least one license/notice. Drop files
   into the editor to import them first; every reference validates live and
-  Ctrl+S saves the complete settings atomically.
+  Ctrl+S saves the complete settings atomically. Then open **build/export**,
+  choose this download's matching Linux or Windows target and an output folder,
+  and press **build export**. Progress, cancellation, archive integrity, and
+  retryable errors stay in that window.
 
 From a shell you can also run a project straight:
 

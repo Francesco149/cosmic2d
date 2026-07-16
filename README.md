@@ -3,12 +3,13 @@
 A tiny 2D pixel-art engine / fantasy console. The intended distribution is one
 folder containing the engine, editor, tools, and game projects. The source
 checkout is built with Nix and the extract-and-run archives are clean-machine
-tested; in-editor export is still an alpha release gate.
+tested; the editor can export any opened project with its carried runtime.
 
 **Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
 and an out-of-the-box demo game are here. The deterministic suite is green,
-but gamepad/player settings, general project/export UX, broader genre demos,
-and release-candidate validation are still gates; see `docs/ALPHA.md`.
+but broader project lifecycle, gamepad/player settings, genre demos, rewind
+product UI, and release-candidate validation are still gates; see
+`docs/ALPHA.md`.
 
 ## Try it
 
@@ -73,7 +74,14 @@ sound effects, and two 30-second BGMs.
 
 ## Ship a game
 
-The developer packager can make the bundled demo into a play-only artifact:
+From the editor, open **project settings → build/export**. Choose the output
+folder and this download's matching target (Linux `.tar.gz` from Linux,
+Windows `.zip` from Windows), then press **build export**. The job refuses
+unsaved editor assets or incomplete player metadata, shows per-file progress,
+cancels without publication, and atomically publishes a completed archive plus
+its sibling `.sha256`. Use the matching editor download for the other platform.
+
+The Nix developer packager remains useful for release automation:
 
 ```sh
 nix run .#package -- demo          # -> demo-windows.zip + .sha256
@@ -102,9 +110,9 @@ fails before publication if metadata or a referenced file is invalid. The
 bundle also contains the engine/runtime notices, a complete extracted-tree
 `SHA256SUMS`, and the exact carried runtime-library inventory. Verify the
 archive's sibling checksum before extraction and run `sha256sum --check
-SHA256SUMS` from inside the extracted folder afterward. The current command is
-still a developer packager for projects present in the Nix build tree; arbitrary
-opened-project and in-editor export are A3 work.
+SHA256SUMS` from inside the extracted folder afterward. The Nix command builds
+projects captured in the source tree; the in-editor path packages the currently
+open project from any folder without Nix, `tar`, or `zip`.
 
 Alpha artifacts are deliberately unsigned: checksums detect changed bytes but
 do not prove publisher identity. Windows may report an unknown publisher. Do

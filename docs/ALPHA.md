@@ -131,23 +131,24 @@ developer toolchain; the first picker shows only intentional content.
 
 Goal: project work never requires filesystem or Nix knowledge for normal use.
 
-Progress: the first two settings packets are complete. Boot, picker, packaging,
-and the editor share one declarative `cm.project` codec plus release byte
-validator. The in-editor window atomically edits identity, internal resolution,
-initial window defaults, icon, controls, credits, and project licenses while
-preserving extension keys. Project-local choosers and live file/content errors
-can take a fresh draft to export-metadata-complete without editing Lua. Export
-configuration keeps the full settings checklist open.
+Progress: the settings and export packets are complete. Boot, picker,
+packaging, and the editor share one declarative `cm.project` codec plus release
+byte validator. The project window edits identity, window defaults, and release
+files, then its **Build/Export** tab streams the saved external project with the
+matching carried Linux/Windows runtime. Target/output choice, progress,
+cancellation, checksums, explicit atomic replacement, and actionable preflight
+errors require neither a terminal nor a Nix source-tree project. Picker and
+project-lifecycle breadth keep the full A3 gate open.
 
 - [ ] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
   thumbnails, missing-project repair, and large-list scrolling.
 - [ ] Project actions: settings, rename/move, duplicate, archive/delete with
   confirmation, reveal in file manager, and return to picker.
-- [ ] Project settings edit name, author, version, description, resolution,
+- [x] Project settings edit name, author, version, description, resolution,
   window defaults, icon, controls/credits files, and export configuration.
-- [ ] Add Build/Export to the launcher/project surface with target, output
+- [x] Add Build/Export to the launcher/project surface with target, output
   location, progress, validation, and actionable failures.
-- [ ] Export arbitrary opened projects, not only names captured in the Nix
+- [x] Export arbitrary opened projects, not only names captured in the Nix
   source tree.
 - [ ] Offer Blank, Platformer, Top-down, and Arcade starter templates. Random
   three-word names remain the instant default but are editable immediately.
@@ -238,7 +239,8 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   60 Hz moment in real time, 2×/4×/8× are explicit, and a late renderer drops
   intermediate presentation frames instead of slowing the transport clock.
 - [ ] Extend that dismissal guard to export progress and dropped-replay modes
-  when those modes exist.
+  when those modes exist. Export progress is guarded now; dropped replay awaits
+  its mode.
 - [ ] Give live history, replay files, and crash-focused views immutable
   timeline sources. Dragging a replay into any editor view opens/fits/loops it;
   dismissing it restores the untouched live ring and present rather than

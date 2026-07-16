@@ -2919,3 +2919,72 @@ scaled world/screen inversion and fit; chrome KATs pin equal draw/input virtual
 coordinates; viewport KATs pin 1080p, DPI, 4K, persistence, and corrupt-scale
 rejection. The complete Linux/native-Windows run and visual evidence are
 recorded in `STATUS.md`.
+
+## D075 — in-editor export streams the saved project with its carried host runtime (A3, 2026-07-16)
+
+**Context.** D070–D072 made player metadata canonical and editable, while the
+Nix packager proved the desired player archive. It still captured only projects
+named in the source tree and required a developer shell. A public editor already
+contains one tested portable runtime, but it does not contain the other OS's
+runtime or toolchain. Copying a live editor document would also make an export
+silently disagree with Ctrl+S, recovery, and the files another process sees.
+Shelling out to `tar`, `zip`, or a compiler would reintroduce exactly the host
+knowledge A3 removes.
+
+**Decision.** `cm.export` packages an arbitrary project root with the runtime
+carried by the running editor. Linux emits `.tar.gz`; Windows emits `.zip`.
+The other visible target is refused with a direct instruction to use that
+platform's editor download. This is honest host matching, not a cross-build
+claim. Archive writers are small Lua implementations: deterministic ustar in
+gzip stored-deflate blocks and ZIP32 stored members. They stream through PAL
+append calls, hold at most one input file plus ZIP directory metadata, sort the
+walk, reject links/reparse points and unsafe names, and cap unsupported ZIP32
+sizes/counts. Project `.ed` recovery state and `video.dat` machine policy never
+ship.
+
+The exporter reuses `cm.project` validation and the D070 canonical
+README/PLAY/icon surface. It adds every extracted file's exact hash to
+`SHA256SUMS`, hashes the finished archive into a sibling `.sha256`, and includes
+the runtime-library inventory/notices. Windows public editors carry a dedicated
+stripped `cosmic-player.exe` delegating template. PAL's Windows-only resource
+seam writes the validated project icon, title, version, author, and internal
+slug into a private copy before that root launcher enters the ZIP; the engine
+binaries retain cosmic2d identity.
+
+PAL API v14 supplies platform-identical SHA-256/rolling CRC-32, link-aware path
+inspection, Windows launcher identity, and `x_file_publish`. Publication first
+syncs a complete sibling temp and then performs the one authoritative rename.
+An existing name is refused unless the user checks explicit replacement; a
+failed replacement preserves the earlier artifact. Cancellation is observed at
+file boundaries and removes the temp. The output archive is never exposed as a
+partially written file.
+
+The project window's third tab owns target, output location, explicit replace,
+preflight, progress, cancellation, terminal path/hash, and retryable errors.
+Operation state lives only in `cm.ed.g`, never the captured window or project.
+Preflight refuses rewind-past state and any settings/code/sprite/map/tilemap/
+palette/instrument/song working bytes that differ from disk, naming the first
+asset to save. The build re-reads all authority from disk. Switching tabs does
+not stop progress; Alt+right-click close, Esc dismissal, and F4 rewind are
+guarded until explicit cancellation or completion. Quit removes a remaining
+temp.
+
+**Consequences.** A downloaded editor can export the currently open project
+without Nix or filesystem layout knowledge, including a project outside the
+engine tree. It cannot export unsaved experiments by accident and cannot claim
+cross-platform output it does not carry. Stored compression favors a compact,
+auditable implementation over smallest archives; revisit ZIP64 or compressed
+deflate only when real projects exceed the current limits or size becomes a
+measured release problem. Alpha checksums detect changed bytes but remain
+integrity, not publisher authentication or signing.
+
+**Proof.** PAL/export KATs cover hash vectors, rolling CRC, link/type probes,
+implicit overwrite refusal, explicit replacement success/failure, matching-host
+construction, wrong-host refusal, exact archive/sibling hashes, cancel, and
+failed publication. UI KATs cover dirty-asset preflight and close/Esc/rewind
+guards. Linux passes 23,401 checks and native Windows 23,403 on API 14. A
+writable public Linux bundle exported an external spaced-path project through
+the UI to a 30.5 MiB archive; the freshly staged native Windows editor did the
+same to a project-branded 38.9 MiB ZIP. Both outer hashes and every extracted
+`SHA256SUMS` entry verify. Visual evidence and the complete release matrix are
+recorded in `STATUS.md`.
