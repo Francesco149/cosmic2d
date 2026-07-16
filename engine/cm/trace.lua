@@ -1027,9 +1027,31 @@ local function timeline_fram(p)
     changed = changed + #doc
   end
   -- Mouse motion is intentionally not an "input transition" marker. Action
-  -- bits + mouse buttons are discrete user decisions; wheel already produces
-  -- visible state activity when a game consumes it.
-  local input_key = #irec >= 9 and (irec:sub(1, 4) .. irec:sub(9, 9)) or irec
+  -- bits + mouse/pad buttons (and pad connects) are discrete user decisions;
+  -- wheel and analog axes already produce visible state activity when a game
+  -- consumes them, and quantized stick drift must not saturate the lane.
+  local input_key
+  if #irec >= 10 then
+    local keyparts = { irec:sub(1, 4), irec:sub(9, 9) }
+    local kpos = 11
+    while kpos + 1 <= #irec do -- v2 extensions (D082); malformed = stop
+      local tag, len = irec:byte(kpos), irec:byte(kpos + 1)
+      local fin = kpos + 1 + len
+      if fin > #irec then break end
+      if tag == 1 and len >= 1 then
+        local n, q = irec:byte(kpos + 2), kpos + 3
+        for _ = 1, math.min(n, 4) do
+          if q + 4 > fin then break end
+          keyparts[#keyparts + 1] = irec:sub(q, q + 4) -- slot + buttons
+          q = q + 11
+        end
+      end
+      kpos = fin + 1
+    end
+    input_key = table.concat(keyparts)
+  else
+    input_key = irec
+  end
   return changed, input_key
 end
 

@@ -387,6 +387,191 @@ local function t_input()
   input.apply(input.collect({ key(79, false) }))
 end
 
+-- ---- cm.input record v2 (D082): pad extension codec, quantization ----
+
+local function t_input_pad()
+  local input = cm.require("cm.input")
+  local v1z = string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+
+  -- axis quantization: integer-exact, deadzone-inclusive, full-range ends
+  check(input.quantize_axis(0) == 0 and input.quantize_axis(8000) == 0
+        and input.quantize_axis(-8000) == 0 and input.quantize_axis(8001) == 0,
+        "pad: deadzone collapses to zero inclusively")
+  check(input.quantize_axis(32767) == 127 and input.quantize_axis(-32767) == -127
+        and input.quantize_axis(-32768) == -127,
+        "pad: extremes reach exactly +-127")
+  check(input.quantize_axis(20000) == 61, "pad: quantize interior vector")
+  check(input.quantize_axis(16384, 0) == 63 and input.quantize_axis(100, 0) == 0
+        and input.quantize_axis(32767, 0) == 127,
+        "pad: explicit deadzone override")
+  local prev = 0
+  local mono = true
+  for v = 0, 32767, 37 do
+    local q = input.quantize_axis(v)
+    if q < prev or q < 0 or q > 127 or input.quantize_axis(-v) ~= -q then
+      mono = false
+      break
+    end
+    prev = q
+  end
+  check(mono, "pad: quantization is monotonic and symmetric")
+
+  -- before any pad activity the sampler is pure v1 (10 bytes exactly)
+  check(#input.sample() == 10, "pad: dormant domain samples bare v1 records")
+
+  -- virgin readers are neutral and never error; reading latches the domain
+  check(not input.pad_connected(1) and not input.pad_down(1, "south")
+        and not input.pad_pressed(2, input.pad_btn.start)
+        and input.pad_axis(1, "lx") == 0 and input.pad_axis(4, 5) == 0,
+        "pad: virgin readers answer neutral")
+  local rec = input.sample()
+  check(rec:sub(11) == string.pack("<I1I1I1", 1, 1, 0),
+        "pad: latched empty domain emits the n=0 extension")
+  input.apply(rec) -- an n=0 chunk applies cleanly
+
+  -- connect pad 1: canonical single-entry record
+  input.feed({ { type = "pad", pad = 1, connected = true } })
+  rec = input.sample()
+  check(rec:sub(11) == string.pack("<I1I1I1I1I4i1i1i1i1i1i1",
+                                   1, 12, 1, 0, 0, 0, 0, 0, 0, 0, 0),
+        "pad: connected idle pad encodes canonically")
+  input.apply(rec)
+  check(input.pad_connected(1) and not input.pad_connected(2),
+        "pad: entry presence is the connected flag")
+
+  -- button edges through feed/sample/apply
+  input.feed({ { type = "padbtn", pad = 1, button = input.pad_btn.south,
+                 down = true } })
+  input.apply(input.sample())
+  check(input.pad_down(1, "south") and input.pad_pressed(1, "south"),
+        "pad: press edge")
+  input.apply(input.sample())
+  check(input.pad_down(1, "south") and not input.pad_pressed(1, "south"),
+        "pad: hold has no edge")
+  input.feed({ { type = "padbtn", pad = 1, button = 0, down = false } })
+  input.apply(input.sample())
+  check(not input.pad_down(1, "south") and input.pad_released(1, "south"),
+        "pad: release edge")
+
+  -- sticky tap: down+up inside one sample window lands exactly one record
+  input.feed({ { type = "padbtn", pad = 1, button = 1, down = true },
+               { type = "padbtn", pad = 1, button = 1, down = false } })
+  input.apply(input.sample())
+  check(input.pad_down(1, "east") and input.pad_pressed(1, "east"),
+        "pad: sub-frame tap caught")
+  input.apply(input.sample())
+  check(input.pad_released(1, "east"), "pad: tap releases next record")
+
+  -- axes: deadzone at sampling, name/number access agree
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = 32767 },
+               { type = "padaxis", pad = 1, axis = 1, value = -32768 },
+               { type = "padaxis", pad = 1, axis = 4, value = 4000 } })
+  input.apply(input.sample())
+  check(input.pad_axis(1, "lx") == 127 and input.pad_axis(1, 0) == 127,
+        "pad: full deflection reads 127 by name and number")
+  check(input.pad_axis(1, "ly") == -127, "pad: negative full deflection")
+  check(input.pad_axis(1, "lt") == 0, "pad: sub-deadzone trigger is zero")
+
+  -- second pad: ascending canonical slots, independent state
+  input.feed({ { type = "pad", pad = 3, connected = true },
+               { type = "padbtn", pad = 3, button = 6, down = true } })
+  rec = input.sample()
+  check(#rec == 10 + 2 + 1 + 22 and rec:byte(13) == 2
+        and rec:byte(14) == 0 and rec:byte(25) == 2,
+        "pad: two pads encode ascending by slot")
+  input.apply(rec)
+  check(input.pad_connected(1) and input.pad_connected(3)
+        and not input.pad_connected(2) and input.pad_down(3, "start")
+        and not input.pad_down(1, "start"),
+        "pad: slots carry independent state")
+
+  -- disconnect with a button held: the vanished entry releases everything
+  input.feed({ { type = "padbtn", pad = 1, button = 2, down = true } })
+  input.apply(input.sample())
+  check(input.pad_down(1, "west"), "pad: held before disconnect")
+  input.feed({ { type = "pad", pad = 1, connected = false } })
+  input.apply(input.sample())
+  check(not input.pad_connected(1) and input.pad_released(1, "west")
+        and input.pad_axis(1, "lx") == 0 and input.pad_connected(3),
+        "pad: disconnect neutralizes with release edges")
+
+  -- after the last disconnect the extension persists as n=0
+  input.feed({ { type = "pad", pad = 3, connected = false } })
+  input.apply(input.sample())
+  check(not input.pad_connected(3), "pad: last disconnect applies")
+  rec = input.sample()
+  check(rec:sub(11) == string.pack("<I1I1I1", 1, 1, 0),
+        "pad: extension keeps coming after the last disconnect")
+
+  -- v1 record purity: a bare 10-byte record leaves pad state untouched
+  input.feed({ { type = "pad", pad = 2, connected = true },
+               { type = "padbtn", pad = 2, button = 0, down = true } })
+  input.apply(input.sample())
+  check(input.pad_pressed(2, "south"), "pad: press before the v1 record")
+  input.apply(v1z)
+  check(input.pad_pressed(2, "south"),
+        "pad: a bare v1 record leaves pad state (and its edges) untouched")
+
+  -- unknown extension tags are skipped without touching pad state
+  input.apply(v1z .. string.pack("<I1I1", 7, 3) .. "abc")
+  check(input.pad_connected(2) and input.pad_down(2, "south"),
+        "pad: unknown-tag record applies and touches no pad state")
+
+  -- malformed records error loudly
+  check(not pcall(input.apply, "short"), "pad: short record rejected")
+  check(not pcall(input.apply, v1z .. "\1"),
+        "pad: truncated extension header rejected")
+  check(not pcall(input.apply, v1z .. string.pack("<I1I1", 1, 20) .. "xx"),
+        "pad: extension past the record end rejected")
+  local n0 = string.pack("<I1I1I1", 1, 1, 0)
+  check(not pcall(input.apply, v1z .. n0 .. n0),
+        "pad: duplicate pad extension rejected")
+  check(not pcall(input.apply, v1z .. string.pack("<I1I1I1", 1, 1, 5)),
+        "pad: pad count above four rejected")
+  check(not pcall(input.apply, v1z .. string.pack("<I1I1I1", 1, 12, 2)
+                  .. string.rep("\0", 11)),
+        "pad: count/length mismatch rejected")
+  local e_slot0 = string.pack("<I1I4i1i1i1i1i1i1", 0, 0, 0, 0, 0, 0, 0, 0)
+  local e_slot2 = string.pack("<I1I4i1i1i1i1i1i1", 2, 0, 0, 0, 0, 0, 0, 0)
+  local e_slot4 = string.pack("<I1I4i1i1i1i1i1i1", 4, 0, 0, 0, 0, 0, 0, 0)
+  check(not pcall(input.apply, v1z .. string.pack("<I1I1I1", 1, 23, 2)
+                  .. e_slot2 .. e_slot0),
+        "pad: unsorted slots rejected")
+  check(not pcall(input.apply, v1z .. string.pack("<I1I1I1", 1, 23, 2)
+                  .. e_slot0 .. e_slot0),
+        "pad: duplicate slot rejected")
+  check(not pcall(input.apply, v1z .. string.pack("<I1I1I1", 1, 12, 1)
+                  .. e_slot4),
+        "pad: out-of-range slot rejected")
+
+  -- snapshot consistency: edges replay identically after restore
+  input.feed({ { type = "padbtn", pad = 2, button = 10, down = true } })
+  input.apply(input.sample())
+  check(input.pad_pressed(2, "rshoulder"), "pad: pre-snapshot press edge")
+  local snap = state.snapshot()
+  input.apply(input.sample())
+  check(not input.pad_pressed(2, "rshoulder"), "pad: edge aged")
+  state.restore(snap)
+  cm.adopt_disk()
+  check(input.pad_pressed(2, "rshoulder"),
+        "pad: press edge restored from snapshot")
+
+  -- reader argument validation
+  check(not pcall(input.pad_down, 0, 0) and not pcall(input.pad_down, 5, 0),
+        "pad: pad number out of range rejected")
+  check(not pcall(input.pad_down, 1, "warp") and
+        not pcall(input.pad_down, 1, 32),
+        "pad: unknown button rejected")
+  check(not pcall(input.pad_axis, 1, "throttle")
+        and not pcall(input.pad_axis, 1, 6),
+        "pad: unknown axis rejected")
+
+  -- live reset: the domain unlatches and the sampler is v1-pure again,
+  -- leaving later tests (and a fresh project boot) byte-identical to v1
+  input.pad_reset()
+  check(#input.sample() == 10, "pad: reset returns the sampler to bare v1")
+end
+
 -- ---- cm.text: glyph pixels land exactly in their cell ----
 
 local function t_text()
@@ -7446,6 +7631,7 @@ function game.init()
   t_snapshot()
   t_buf_poke()
   t_input()
+  t_input_pad()
   t_text()
   t_repl()
   t_ui()
