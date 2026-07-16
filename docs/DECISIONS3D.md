@@ -89,3 +89,39 @@ sessions allocate nothing). Vertex layout (24B: pos f32x3, uv f32x2,
 pre-lit rgba u8x4) and PAL_TRI_* flags (1 alphatest, 2 nearest, 4 blend +
 no depth write) mirror the prototype dump exactly — proto/gpu_proto.c
 remains the twin, r3d.c the pixel reference.
+
+## D3D-008 — movement slice: sim camera, one box list, Lua emitters (2026-07-16)
+
+Three shape choices from demo 1's movement slice (projects/bounce):
+
+1. **The follow camera is SIM state.** Input is camera-relative (up = away
+   from camera), so the sim must know the camera — bounce.cam is a named
+   buffer stepped in game.step (pull-string model: manual z/x orbit rotates
+   the offset instantly, the position eases toward dist-behind). This is the
+   smoke.cam precedent, not a break of the render-class rule: view/proj
+   MATRICES are still built only in draw; the D036 corollary ("the sim never
+   reads pixels") holds. Gameplay cameras are gameplay; presentation stays
+   presentation.
+
+2. **One box list is the level.** level.lua's BOXES table emits the visuals
+   (gb.gbox, grouped per material into x_tris segments) AND derives the
+   collider AABBs. No dual bookkeeping; the axis-aligned start the STATUS
+   directive asked for. Rotated/prism/lathe structure joins when the
+   primitive vocabulary grows — colliders will then need a shape beyond the
+   AABB list (likely keep colliders axis-aligned + let deco rotate).
+
+3. **gb.lua ports proto pixel-math verbatim, in Lua.** Material checkers
+   (tx_gb fbm/value-noise, six materials), the shadow blob, gbox emission
+   with uv-scaled texel density, and light_vertex (ambient + sun·N, pre-lit
+   u8 colors) are straight ports of proto/main.c+r3d.c — the look reference
+   stays the source of truth, now without the baked .c3dd middleman. Player
+   verts (squash/stretch via T·R·S with normals lit rot-only) rebuild each
+   draw into a fixed-size scratch buffer (bounce.dyn) — render-class derived
+   data, never read by the sim.
+
+Movement itself reuses cosmic2d's D029 fixed-apex math in world units
+(g_rise = 2h·3600/t², v0 = 2h·60/t, fall_mul, coyote+buffer) — the 2D kit's
+feel discipline transplanted, every value a doc.knobs entry. Debug find
+along the way: an "invisible" blend blob shadow was actually correct
+behavior (its own alpha falloff hides the uncovered rim when grounded);
+PAL_DBG_3D now dumps seg3d state for the next such chase.
