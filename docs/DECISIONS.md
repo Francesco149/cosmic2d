@@ -3247,3 +3247,64 @@ scrolled grid with clipped tiles and scrollbar, the live search with count,
 300% fixed chrome (single scrollable column, complete header), the folder
 menu and delete modals with their keyboard rings, and mixed
 thumbnail/plain tiles; platform/release proof is recorded in `STATUS.md`.
+
+## D081 — starter templates: a chooser on + New project, scaffolded from stock sources (A3, 2026-07-17)
+
+**Context.** The last open A3 line: creation offered only the embedded
+blank scaffold, so a new user's first playable code was always the same
+eight-line hello. The roadmap asks for Blank, Platformer, Top-down, and
+Arcade starters with random three-word names staying the instant default,
+reachable from a fresh archive without a terminal, without growing the
+picker grid, and without weakening the atomic scaffold contract.
+
+**Decision.** **`cm.project.TEMPLATES`** is the one registry (key, label,
+chooser note, optional stock source path); `template()`/`template_main()`
+resolve it, with `nil` meaning blank so every existing `scaffold(dir,
+name)` caller keeps its exact behavior. Blank remains the embedded
+`MAIN_TMPL`; platformer, top-down, and arcade are real, readable one-file
+games under **`engine/stock/templates/`** — deliberately naive per the A5
+contract (write demos naively first): `state.doc` for every per-frame
+value, `cm.math` trig off the sim frame, `cm.rand` for the arcade spawn
+column so recorded runs replay bit-exactly, axis-separated AABB movement,
+and ASCII-only HUD text (the shipped pixel font has no em-dash; the blank
+template had the same latent defect and was fixed too). `scaffold()`
+resolves the template source **before** any filesystem effect, so an
+unreadable stock file can never leave a partial project, and the existing
+main-first/`project.lua`-last rollback is unchanged. Names are substituted
+through a gsub **table** (a `%` in a user name stays inert) with quotes and
+backslashes escaped, so a legal-but-hostile folder name cannot break out of
+the generated Lua string literals; non-blank projects note "started from
+the <label> starter template" in the draft description (A6's provenance
+line). The picker's "+ New project" tile opens a chooser modal under the
+D080 grammar instead of scaffolding blind: a focused, editable name field
+prefilled by `cm.words` (D077 validation plus a memoized existence check),
+one row of the four starters (chosen = filled, cursor = ring), the
+selection's note line, and create/cancel with create as the safe Enter
+default. `M.scaffold(template, name)` stays the scripted proof door.
+
+**Consequences.** A3 is complete: from a fresh archive a user can create,
+import, rename, relocate, duplicate, archive, delete, edit, play, and
+export projects entirely through the shipped UI. Each starter doubles as
+the seed of the matching A6 mini-demo and as A5's honest pain probe — the
+duplicated movement/collision boilerplate across the three games is
+exactly the evidence A5's shared slices need. A4's binding-display line
+("starter templates display the actual current bindings") now has real
+surfaces to bind to. The chooser row is the first modal with a
+chosen-vs-cursor distinction; if a third selection concept ever appears,
+promote the pattern into a shared widget instead of a third hand-rolling.
+
+**Proof.** Selftest pins the registry shape, blank identity, substitutable
+stock sources, stock-path-naming read failures, no-effect-before-mkdir,
+tricky-name round-trips (`%`, quotes, backslash on POSIX; `%` and spaces on
+Windows), per-template metadata boot validation with provenance, and a
+120-frame init/step boot smoke per template (input records zeroed, doc and
+action defs restored, arcade proven by spawn-clock accounting). Autopilot
+bots drove the real sim to completion: the platformer's four-jump staircase
+to the flag, all six top-down gems, and arcade score 100. A fresh
+checksum-verified public Linux archive in stock Debian 13 (spaced/π path,
+uid 65534) created all four starters through the picker door, booted each,
+and showed all four tiles in a fresh picker. Linux selftest passes 23,541
+checks, the staged native Windows executable 23,543; `nix run .#test` is
+ALL GREEN. Inspected captures on llm-feed: the chooser (default, arcade
+selected, 300% chrome, fresh-archive, native Windows) and the three
+completed/mid-run games.

@@ -131,8 +131,7 @@ developer toolchain; the first picker shows only intentional content.
 
 Goal: project work never requires filesystem or Nix knowledge for normal use.
 
-Progress: the settings, export, external-project entry, location, duplicate,
-and archive/delete packets are complete. Boot, picker, packaging, and the
+**Complete (D071–D081).** Boot, picker, packaging, and the
 editor share one declarative `cm.project` codec plus release byte validator.
 The picker opens arbitrary folders in place, refreshes and atomically
 maintains recents, repairs/removes stale roots, reveals ready recent folders,
@@ -150,7 +149,9 @@ checksums, explicit atomic replacement, and actionable preflight errors require
 neither a terminal nor a Nix source-tree project. The picker grid now scrolls
 past any window, filters by search, sorts by recency or name, shows declared
 project icons, and is fully drivable without a mouse — the modal button rows
-included. Starter-template breadth is the last line keeping A3 open.
+included. "+ New project" opens a starter chooser: an instantly editable
+random three-word name plus blank/platformer/top-down/arcade templates
+scaffolded from stock sources through the same atomic rollback contract.
 
 - [x] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
   thumbnails, missing-project repair, and large-list scrolling.
@@ -166,7 +167,7 @@ included. Starter-template breadth is the last line keeping A3 open.
   location, progress, validation, and actionable failures.
 - [x] Export arbitrary opened projects, not only names captured in the Nix
   source tree.
-- [ ] Offer Blank, Platformer, Top-down, and Arcade starter templates. Random
+- [x] Offer Blank, Platformer, Top-down, and Arcade starter templates. Random
   three-word names remain the instant default but are editable immediately.
 
 Exit: from a fresh archive, a user can create/import, rename, edit, play, and

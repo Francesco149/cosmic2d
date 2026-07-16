@@ -3,18 +3,61 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — picker navigation/scale complete; starter templates next (2026-07-16)
+## Current handoff — starter templates close A3; A4 input/gamepad design next (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-A0–A2 are complete and A3 is in progress: the whole project-actions line
-(settings, export, entry, location, duplicate, archive, delete) is done and
-the picker line (scrolling, search/sort, keyboard navigation, thumbnails,
-repair) is now closed by D080. Starter templates, gamepad/player settings,
-shared genre-neutral runtime slices and demos, complete rewind product UI,
-and the release-candidate pass remain explicit alpha gates.
+**A0–A3 are complete.** A3's full promise holds: from a fresh archive a
+user can create (from four starter templates), import, rename, relocate,
+duplicate, archive, delete, edit, play, and export projects entirely
+through the shipped UI. Gamepad/player settings (A4), shared genre-neutral
+runtime slices and demos (A5/A6), the complete rewind product UI (A7), and
+the release-candidate pass (A8) remain the open alpha gates.
+
+**D081 closes the starter-template packet and with it A3.**
+`cm.project.TEMPLATES` registers blank/platformer/top-down/arcade; blank
+stays the embedded `MAIN_TMPL` and the other three are readable one-file
+games under `engine/stock/templates/` — deliberately naive (A5 wants the
+pain visible), deterministic (`state.doc` only, `cm.math` trig off the sim
+frame, `cm.rand` arcade spawns, ASCII HUD), and resolution-relative. The
+scaffold resolves the template source before any filesystem effect and
+keeps the main-first/`project.lua`-last rollback; name substitution goes
+through a gsub table with quote/backslash escaping so `%` and hostile-but-
+legal folder names cannot corrupt the generated Lua. Non-blank projects
+carry "started from the <label> starter template" as their draft
+description. The picker's "+ New project" tile (click or Enter) opens a
+D080-grammar chooser: a focused editable name prefilled by `cm.words`
+(D077 validation plus a memoized existence check), one row of the four
+starters with chosen-fill vs cursor-ring, the selection's note, and
+create/cancel with create as the safe Enter default. `M.scaffold(template,
+name)` remains the scripted door. The top-down starter also fixed a
+spawn-inside-wall defect and every template's HUD dropped non-ASCII glyphs
+the shipped pixel font lacks (the blank template shared that latent bug).
+
+**D081 proof:** Linux selftest passes **23,541 checks** and the staged
+native Windows executable **23,543** on PAL API 17; `nix run .#test` is
+ALL GREEN across release manifests, every historical trace, and all
+pixel/audio goldens. Selftest pins the registry, blank identity,
+substitutable stock sources, read-failure-before-mkdir, tricky-name
+round-trips, provenance metadata that passes boot validation, and a
+120-frame per-template boot smoke (input records zeroed, doc/action state
+restored, arcade held to spawn-clock accounting). Autopilot bots completed
+each game through the real sim: the platformer's four-jump staircase to
+the flag, all six top-down gems, arcade score 100. A checksum-verified
+fresh public Linux archive in stock Debian 13 (spaced/π path, uid 65534)
+created all four starters through the picker door without a terminal,
+booted each, and showed all four provenance-labeled tiles in a fresh
+picker process. `tools/build-windows.sh` refreshed the full Windows stage
+(3 durable state entries preserved) and Start Menu shortcut. Inspected
+captures on llm-feed: the chooser (default, arcade-selected, 300% fixed
+chrome, fresh-archive, native Windows) and the three completed/mid-run
+starters. One dev-tree-only flake: a single local selftest run failed
+"atomic: flush preserves destination" once with stale
+`/tmp/cosmic_selftest_*` leftovers from an earlier aborted run present;
+it passed on every clean rerun and in the hermetic suite — if it recurs
+on a clean /tmp, investigate before trusting the flush KATs.
 
 **D080 closes the picker navigation/scale packet.** The list model and grid
 math live in the pure module `cm.pick` (plain-text case-insensitive search
@@ -323,19 +366,18 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **starter templates** — the last unchecked A3 line.
-Offer Blank, Platformer, Top-down, and Arcade templates at project
-creation; random three-word names stay the instant default and remain
-editable immediately (D077's folder grammar already covers renames). The
-"+ New project" tile should open a small chooser (keyboard-reachable under
-D080's modal grammar) rather than growing the grid; templates scaffold
-through the existing atomic `cm.project.scaffold` rollback contract so a
-failed scaffold never leaves a partial project. Template content should
-lean on the shared genre-neutral runtime slices A5/A6 want — keep each
-template minimal, deterministic, and covered by at least a boot smoke in
-the suite. Exit when a fresh archive can create each template without a
-terminal and each boots to something playable/editable. This closes A3 and
-gates A4's binding-display work.
+**Exact next packet:** **input record v2 design** — the first A4 line.
+Design the additive record chunks for gamepad buttons and quantized axes
+so v1 keyboard/mouse traces stay byte-valid and verifiable, and write the
+determinism decision down as an ADR before touching SDL: what is sampled
+(digital buttons, quantized axis values, deadzone policy), where it lives
+in the record layout, how per-frame sampling stays exact across replay
+and cross-platform verify, and how device identity/hot-plug interacts
+with recording. Exit with the documented decision, `cm.input` codec KATs
+for the extended record (round-trip, v1 compatibility, edge semantics),
+and every historical trace still verifying byte-exactly. SDL gamepad
+discovery/hot-plug and the rebind UI are the following packets; the
+starter templates now give A4's binding-display line real surfaces.
 
 There is no known blocker or human-only verification required.
 
