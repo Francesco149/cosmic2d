@@ -91,10 +91,17 @@ replaces F4 in editor sessions.
     never needed them, and `rewind` logs the fallback. (`ring_export`
     likewise starts after adopted segments — a CTRC needs a bundle.)
   - **The quit path spills the open segment** (`ring_flush`, cm.main)
-    so the session tail joins the stream.
-- Spill is an **observer of an observer**: writes happen at segment
-  close (every `ring.kf` frames), off the sim path, atomic file replacement
-  — a stall shows in perf as render time, never in sim state.
+    so the session tail joins the stream, then drains the native writer before
+    claiming an exact durable crash/history locator.
+- Spill is an **observer of an observer**. Segment close (every `ring.kf`
+  frames) only marks the decoded segment ready. The render/dev phase serializes
+  it and queues one PAL API 13 transaction that atomically publishes the
+  segment followed by its cumulative manifest on a bounded FIFO worker. The
+  worker performs flush + OS sync; neither serialization nor file I/O runs in
+  the measured sim interval. Pending segments remain authoritative in RAM and
+  cannot be demoted/evicted until completion. Quit/crash, rewind truncation,
+  replay replacement, explicit cache clear, and project/VM handoff are the
+  deliberate wait barriers.
 
 ## 4. Browsing (interactive but ephemeral, D046 §7b)
 

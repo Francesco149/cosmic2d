@@ -428,6 +428,7 @@ int main(int argc, char **argv) {
   }
 
   if (G.L) lua_close(G.L);
+  pal_async_write_shutdown();
   if (G.log_io) {
     SDL_CloseIO(G.log_io);
     G.log_io = NULL;

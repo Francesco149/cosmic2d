@@ -663,6 +663,11 @@ function M.tick()
   M.view.update()
   local draw_t0 = pal.time_ns()
 
+  -- Render/dev maintenance: collect completed durable-history transactions.
+  -- The worker performs file flush + OS sync; this poll never waits and stays
+  -- outside the measured simulation interval (PAL API 13 / D073).
+  if M.trace then M.trace.history_pump() end
+
   if M.game_err or not guarded("game.draw", M.game.draw) then
     -- no game frame to show: dark backdrop (also resets a half-built batch)
     pal.begin_frame(0.09, 0.03, 0.07, 1)

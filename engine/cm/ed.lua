@@ -172,12 +172,15 @@ end
 -- session.dat and journals: they may be the only copy of unsaved work.
 function M.clear_cache()
   if not M.root then return nil, "editor has no project" end
+  local trace = cm.require("cm.trace")
+  trace.history_drain() -- a worker must not republish after the explicit clear
   local ok, n = cache.clear(M.root)
   if not ok then
     pal.log("[ed] CACHE REBUILD FAILED: " .. tostring(n))
     cm.require("cm.console").open = true
     return nil, n
   end
+  trace.ring_reset() -- rotate the cleared stream identity from the live state
   pal.log("[ed] rebuilt derived cache; preserved session and journals; removed " ..
           tostring(n) .. " files")
   return true, n
@@ -202,6 +205,33 @@ end
 -- per-asset ephemeral plumbing drops wholesale (journals, disk caches,
 -- decoded sprites — they key by path and would disagree with the past;
 -- they rebuild lazily from whatever doc is current).
+local function drop_ephemeral()
+  -- Audio plumbing carries live editor-bank voices: silence them before the
+  -- tables drop (a parked past must not keep ringing — R9c). Use this same
+  -- teardown on unpark so a preview started while paused cannot leak forward.
+  for _, p in pairs(M.g.sndw or {}) do
+    if p.playing then pal.x_snd_ed_off(p.voice) end
+  end
+  for _, p in pairs(M.g.iw or {}) do
+    for _, v in pairs(p.held or {}) do pal.x_snd_ed_off(v) end
+  end
+  for _, p in pairs(M.g.muw or {}) do
+    for _, v in pairs(p.pheld or {}) do pal.x_snd_ed_off(v) end
+  end
+
+  -- Window kinds explicitly dispose non-GC resources before the owning cache
+  -- table is discarded. This is the critical distinction between dropping a
+  -- Lua cache and releasing a finite GPU/PAL handle.
+  for _, name in ipairs(ROSTER) do
+    local kind = M.kinds[name]
+    if kind.drop_ephemeral then kind.drop_ephemeral(M) end
+  end
+
+  M.g.tw, M.g.sw, M.g.aw, M.g.fr = nil, nil, nil, nil
+  M.g.wsy, M.g.conw, M.g.grect, M.g.hdrx, M.g.wpx = nil, nil, nil, nil, nil
+  M.g.mw, M.g.tmw, M.g.sndw, M.g.iw, M.g.muw = nil, nil, nil, nil, nil
+end
+
 function M.park(edoc_bytes)
   if not M.on then return end
   if not M.parked then
@@ -217,20 +247,7 @@ function M.park(edoc_bytes)
       pal.log("[ed] parked frame's editor doc unreadable; keeping shown")
     end
   end
-  -- audio plumbing carries live editor-bank voices: silence them before
-  -- the tables drop (a parked past must not keep ringing — R9c)
-  for _, p in pairs(M.g.sndw or {}) do
-    if p.playing then pal.x_snd_ed_off(p.voice) end
-  end
-  for _, p in pairs(M.g.iw or {}) do
-    for _, v in pairs(p.held or {}) do pal.x_snd_ed_off(v) end
-  end
-  for _, p in pairs(M.g.muw or {}) do
-    for _, v in pairs(p.pheld or {}) do pal.x_snd_ed_off(v) end
-  end
-  M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
-  M.g.hdrx, M.g.wpx, M.g.mw, M.g.tmw, M.g.sndw = nil, nil, nil, nil, nil
-  M.g.iw, M.g.muw = nil, nil
+  drop_ephemeral()
   M.doc_rev = (M.doc_rev or 0) + 1
 end
 
@@ -282,8 +299,7 @@ function M.unpark(adopt)
   end
   M.g.stash = nil
   M.parked = false
-  M.g.tw, M.g.sw, M.g.wsy, M.g.conw, M.g.grect = nil, nil, nil, nil, nil
-  M.g.hdrx, M.g.wpx, M.g.mw, M.g.tmw = nil, nil, nil, nil
+  drop_ephemeral()
   M.touch() -- re-arm the session debounce on the (possibly new) present
 end
 

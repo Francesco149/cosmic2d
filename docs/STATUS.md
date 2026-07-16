@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A3 release references complete; export job next (2026-07-16)
+## Current handoff — A3 release references complete; stability fixed; export job next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -12,6 +12,26 @@ two-room platformer demo, and clean Windows/Linux distributions are working.
 A0–A2 are complete and A3 is in progress. Project/export UX, gamepad/player
 settings, shared genre-neutral runtime slices and demos, complete rewind
 product UI, and the release-candidate pass remain explicit alpha gates.
+
+**D073 closes the native live-history stability report.** Closed rewind
+segments no longer serialize or durably write from `record_frame`: render/dev
+maintenance submits segment + cumulative-index transactions to PAL API 13's
+bounded background atomic writer, while quit/crash and structural timeline
+changes remain explicit durability barriers. Pending segments stay pinned in
+RAM and injected segment/index failures retain the prior authority. Editor
+park/unpark now invokes resource-owner teardown hooks before dropping caches;
+sprite and animation previews release their raw deferred GPU textures, so A/B
+playback cannot consume one finite texture slot per seek.
+
+**Stability proof:** the original disposable native-Windows repro fell from a
+92.6 ms frame-60 trace close (89.8 ms synchronous NTFS write) to **0.254 ms**;
+render-side serialization/enqueue took 0.266 ms and later closes were
+0.219–0.274 ms. A real sprite-window A/B stress completed **1,463 seeks** with
+textures flat at 5 (formerly failed near the 256-slot ceiling). Linux and
+native Windows selftests pass at **23,338 checks** on PAL API 13; `nix run
+.#test` is ALL GREEN with every historical trace and pixel/audio golden
+unchanged. The Windows tree is staged at `C:\Users\headpats\cosmic2d-win` and
+the per-user **cosmic2d editor** Start Menu shortcut is refreshed.
 
 **A3 settings packets 1–2 are complete (D071/D072).** `cm.project` is the one
 declarative authority for boot, picker metadata, player packaging, and editor

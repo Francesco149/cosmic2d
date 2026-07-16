@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 12 /* v12: pal.x_window_icon (project PNG icon) */
+#define PAL_VERSION_API 13 /* v13: ordered background atomic file pairs */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -204,6 +204,10 @@ extern Pal G;
 
 /* main.c */
 void pal_log(const char *fmt, ...);
+/* Finish the dev/io worker before process teardown. Normal engine quit/crash
+ * drains from Lua so it can consume completion status; this is the native
+ * last-resort barrier for an early or parachute exit. */
+void pal_async_write_shutdown(void);
 /* cached mtime of a watched path, refreshed off-thread; lazily spawns the
  * watcher thread on first call (live sessions only). Falls back to a direct
  * stat for unwatched paths. Dev-only — never sim state. */

@@ -1112,34 +1112,31 @@ static bool sync_file(SDL_IOStream *io, char *err, size_t errcap) {
   return true;
 }
 
-static bool fail_at(lua_State *L, const char *stage) {
-  if (!lua_istable(L, 3)) return false;
-  lua_getfield(L, 3, "_fail");
-  const char *got = lua_tostring(L, -1);
-  bool yes = got && strcmp(got, stage) == 0;
+static const char *fail_stage_at(lua_State *L, int index) {
+  if (!lua_istable(L, index)) return NULL;
+  lua_getfield(L, index, "_fail");
+  const char *stage = lua_tostring(L, -1);
   lua_pop(L, 1);
-  return yes;
+  return stage;
+}
+
+static bool fail_stage_is(const char *fail, const char *stage) {
+  return fail && strcmp(fail, stage) == 0;
 }
 
 static uint64_t atomic_temp_seq;
 
-/* pal.write_file_atomic(path, bytes [, {_fail=stage}]) -> true | nil,error
- *
- * Write a unique path.tmp.PID.SEQ in the destination directory, flush +
- * OS-sync it, close it, then atomically replace path. Any failure before the
- * rename removes the temp and leaves an existing destination untouched.
- * `_fail` is the explicit selftest seam (open/write/flush/sync/close/rename),
- * not application policy. */
-static int l_write_file_atomic(lua_State *L) {
-  const char *path = luaL_checkstring(L, 1);
-  size_t len;
-  const char *data = luaL_checklstring(L, 2, &len);
+/* Shared implementation for the ordinary Lua call and the background history
+ * writer below. `seq` is allocated on the Lua/main thread, so the worker never
+ * races the temp-name counter. `fail` is the optional selftest seam's stage. */
+static bool write_file_atomic_impl(const char *path, const void *data, size_t len,
+                                   const char *fail, uint64_t seq, char *err,
+                                   size_t errcap) {
   size_t plen = strlen(path);
   char *tmp = SDL_malloc(plen + 64);
   if (!tmp) {
-    lua_pushnil(L);
-    lua_pushliteral(L, "out of memory");
-    return 2;
+    SDL_snprintf(err, errcap, "out of memory");
+    return false;
   }
   unsigned long pid =
 #ifdef _WIN32
@@ -1148,22 +1145,21 @@ static int l_write_file_atomic(lua_State *L) {
       (unsigned long)getpid();
 #endif
   SDL_snprintf(tmp, plen + 64, "%s.tmp.%lu.%llu", path, pid,
-               (unsigned long long)++atomic_temp_seq);
+               (unsigned long long)seq);
 
   SDL_IOStream *io = NULL;
   char detail[256] = {0};
   const char *stage = "open";
   bool ok = false;
 
-  /* A stale temp is never authoritative. PID + monotonic process sequence
-   * keeps simultaneous writers off each other's temp; remove the exact name
-   * in the unlikely PID-reuse collision before opening it. */
+  /* A stale temp is never authoritative. PID + process sequence keeps
+   * simultaneous sync/async writers off each other's temp names. */
   SDL_PathInfo tmpinfo;
   if (SDL_GetPathInfo(tmp, &tmpinfo) && !SDL_RemovePath(tmp)) {
     SDL_snprintf(detail, sizeof detail, "%s", SDL_GetError());
     goto done;
   }
-  if (fail_at(L, "open")) {
+  if (fail_stage_is(fail, "open")) {
     SDL_snprintf(detail, sizeof detail, "injected failure");
     goto done;
   }
@@ -1174,7 +1170,7 @@ static int l_write_file_atomic(lua_State *L) {
   }
 
   stage = "write";
-  size_t want = fail_at(L, "write") && len ? len / 2 : len;
+  size_t want = fail_stage_is(fail, "write") && len ? len / 2 : len;
   size_t wrote = SDL_WriteIO(io, data, want);
   if (wrote != want || want != len) {
     SDL_snprintf(detail, sizeof detail, "%s",
@@ -1183,14 +1179,15 @@ static int l_write_file_atomic(lua_State *L) {
   }
 
   stage = "flush";
-  if (fail_at(L, "flush") || !SDL_FlushIO(io)) {
+  if (fail_stage_is(fail, "flush") || !SDL_FlushIO(io)) {
     SDL_snprintf(detail, sizeof detail, "%s",
-                 fail_at(L, "flush") ? "injected failure" : SDL_GetError());
+                 fail_stage_is(fail, "flush") ? "injected failure"
+                                                : SDL_GetError());
     goto done;
   }
 
   stage = "sync";
-  if (fail_at(L, "sync")) {
+  if (fail_stage_is(fail, "sync")) {
     SDL_snprintf(detail, sizeof detail, "injected failure");
     goto done;
   }
@@ -1203,15 +1200,16 @@ static int l_write_file_atomic(lua_State *L) {
     goto done;
   }
   io = NULL;
-  if (fail_at(L, "close")) {
+  if (fail_stage_is(fail, "close")) {
     SDL_snprintf(detail, sizeof detail, "injected failure");
     goto done;
   }
 
   stage = "rename";
-  if (fail_at(L, "rename") || !SDL_RenamePath(tmp, path)) {
+  if (fail_stage_is(fail, "rename") || !SDL_RenamePath(tmp, path)) {
     SDL_snprintf(detail, sizeof detail, "%s",
-                 fail_at(L, "rename") ? "injected failure" : SDL_GetError());
+                 fail_stage_is(fail, "rename") ? "injected failure"
+                                                 : SDL_GetError());
     goto done;
   }
   ok = true;
@@ -1221,14 +1219,267 @@ done:
     SDL_snprintf(detail, sizeof detail, "%s", SDL_GetError());
   if (!ok) SDL_RemovePath(tmp);
   SDL_free(tmp);
-  if (ok) {
+  if (!ok)
+    SDL_snprintf(err, errcap, "atomic write %s failed: %s", stage,
+                 detail[0] ? detail : "unknown error");
+  return ok;
+}
+
+/* pal.write_file_atomic(path, bytes [, {_fail=stage}]) -> true | nil,error
+ *
+ * Write a unique path.tmp.PID.SEQ in the destination directory, flush +
+ * OS-sync it, close it, then atomically replace path. Any failure before the
+ * rename removes the temp and leaves an existing destination untouched.
+ * `_fail` is the explicit selftest seam (open/write/flush/sync/close/rename),
+ * not application policy. */
+static int l_write_file_atomic(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+  size_t len;
+  const char *data = luaL_checklstring(L, 2, &len);
+  char err[384];
+  if (write_file_atomic_impl(path, data, len, fail_stage_at(L, 3),
+                             ++atomic_temp_seq, err, sizeof err)) {
     lua_pushboolean(L, 1);
     return 1;
   }
   lua_pushnil(L);
-  lua_pushfstring(L, "atomic write %s failed: %s", stage,
-                  detail[0] ? detail : "unknown error");
+  lua_pushstring(L, err);
   return 2;
+}
+
+/* Ordered background atomic pairs. History needs two publications in order:
+ * a segment first, then its cumulative manifest. The worker never calls Lua,
+ * and a second-write failure removes the first file so no orphan generation is
+ * advertised. Completion polling is nonblocking; drain is reserved for the
+ * quit/crash durability boundary and structural timeline operations. */
+#define ASYNC_WRITE_MAX_JOBS 16
+#define ASYNC_WRITE_MAX_BYTES (64u * 1024u * 1024u)
+
+typedef struct AsyncWriteJob {
+  uint64_t id, seq1, seq2;
+  char *path1, *path2;
+  uint8_t *data1, *data2;
+  size_t len1, len2;
+  char fail1[16], fail2[16];
+  bool ok;
+  char error[448];
+  struct AsyncWriteJob *next;
+} AsyncWriteJob;
+
+typedef struct {
+  SDL_Mutex *mutex;
+  SDL_Condition *cond;
+  SDL_Thread *thread;
+  AsyncWriteJob *head, *tail;
+  AsyncWriteJob *done_head, *done_tail;
+  uint64_t next_id;
+  size_t pending_bytes;
+  int pending;
+  bool stop;
+} AsyncWriteState;
+
+static AsyncWriteState AW;
+
+static void async_write_job_free(AsyncWriteJob *j) {
+  if (!j) return;
+  SDL_free(j->path1);
+  SDL_free(j->path2);
+  SDL_free(j->data1);
+  SDL_free(j->data2);
+  SDL_free(j);
+}
+
+static int async_write_thread(void *unused) {
+  (void)unused;
+  for (;;) {
+    SDL_LockMutex(AW.mutex);
+    while (!AW.stop && !AW.head) SDL_WaitCondition(AW.cond, AW.mutex);
+    if (AW.stop && !AW.head) {
+      SDL_UnlockMutex(AW.mutex);
+      return 0;
+    }
+    AsyncWriteJob *j = AW.head;
+    AW.head = j->next;
+    if (!AW.head) AW.tail = NULL;
+    j->next = NULL;
+    SDL_UnlockMutex(AW.mutex);
+
+    char err[384];
+    if (!write_file_atomic_impl(j->path1, j->data1, j->len1,
+                                j->fail1[0] ? j->fail1 : NULL, j->seq1,
+                                err, sizeof err)) {
+      SDL_snprintf(j->error, sizeof j->error, "first file: %s", err);
+    } else if (!write_file_atomic_impl(j->path2, j->data2, j->len2,
+                                       j->fail2[0] ? j->fail2 : NULL,
+                                       j->seq2, err, sizeof err)) {
+      SDL_RemovePath(j->path1);
+      SDL_snprintf(j->error, sizeof j->error, "second file: %s", err);
+    } else {
+      j->ok = true;
+    }
+
+    SDL_LockMutex(AW.mutex);
+    if (AW.done_tail)
+      AW.done_tail->next = j;
+    else
+      AW.done_head = j;
+    AW.done_tail = j;
+    AW.pending--;
+    AW.pending_bytes -= j->len1 + j->len2;
+    SDL_BroadcastCondition(AW.cond);
+    SDL_UnlockMutex(AW.mutex);
+  }
+}
+
+static bool async_write_start(char *err, size_t errcap) {
+  if (AW.thread) return true;
+  AW.mutex = SDL_CreateMutex();
+  AW.cond = SDL_CreateCondition();
+  if (!AW.mutex || !AW.cond) {
+    SDL_snprintf(err, errcap, "async writer synchronization: %s",
+                 SDL_GetError());
+    if (AW.cond) SDL_DestroyCondition(AW.cond);
+    if (AW.mutex) SDL_DestroyMutex(AW.mutex);
+    AW.cond = NULL;
+    AW.mutex = NULL;
+    return false;
+  }
+  AW.thread = SDL_CreateThread(async_write_thread, "cm-history-write", NULL);
+  if (!AW.thread) {
+    SDL_snprintf(err, errcap, "async writer thread: %s", SDL_GetError());
+    SDL_DestroyCondition(AW.cond);
+    SDL_DestroyMutex(AW.mutex);
+    AW.cond = NULL;
+    AW.mutex = NULL;
+    return false;
+  }
+  return true;
+}
+
+static uint8_t *async_write_copy(const void *src, size_t len) {
+  uint8_t *out = SDL_malloc(len ? len : 1);
+  if (out && len) SDL_memcpy(out, src, len);
+  return out;
+}
+
+/* pal.x_write_file_pair_atomic_async(path1, bytes1, path2, bytes2
+ *                                    [, fail1, fail2]) -> job | nil,error */
+static int l_x_write_file_pair_atomic_async(lua_State *L) {
+  const char *path1 = luaL_checkstring(L, 1);
+  size_t len1, len2;
+  const void *data1 = luaL_checklstring(L, 2, &len1);
+  const char *path2 = luaL_checkstring(L, 3);
+  const void *data2 = luaL_checklstring(L, 4, &len2);
+  char err[256];
+  if (!async_write_start(err, sizeof err)) {
+    lua_pushnil(L);
+    lua_pushstring(L, err);
+    return 2;
+  }
+  if (len1 > ASYNC_WRITE_MAX_BYTES ||
+      len2 > ASYNC_WRITE_MAX_BYTES - len1) {
+    lua_pushnil(L);
+    lua_pushliteral(L, "async write pair exceeds 64 MiB queue limit");
+    return 2;
+  }
+
+  AsyncWriteJob *j = SDL_calloc(1, sizeof *j);
+  if (j) {
+    j->path1 = SDL_strdup(path1);
+    j->path2 = SDL_strdup(path2);
+    j->data1 = async_write_copy(data1, len1);
+    j->data2 = async_write_copy(data2, len2);
+  }
+  if (!j || !j->path1 || !j->path2 || !j->data1 || !j->data2) {
+    async_write_job_free(j);
+    lua_pushnil(L);
+    lua_pushliteral(L, "out of memory queuing async write pair");
+    return 2;
+  }
+  j->len1 = len1;
+  j->len2 = len2;
+  const char *fail1 = fail_stage_at(L, 5);
+  const char *fail2 = fail_stage_at(L, 6);
+  if (fail1) SDL_strlcpy(j->fail1, fail1, sizeof j->fail1);
+  if (fail2) SDL_strlcpy(j->fail2, fail2, sizeof j->fail2);
+
+  SDL_LockMutex(AW.mutex);
+  if (AW.pending >= ASYNC_WRITE_MAX_JOBS ||
+      AW.pending_bytes + len1 + len2 > ASYNC_WRITE_MAX_BYTES) {
+    SDL_UnlockMutex(AW.mutex);
+    async_write_job_free(j);
+    lua_pushnil(L);
+    lua_pushliteral(L, "async write queue full");
+    return 2;
+  }
+  j->id = ++AW.next_id;
+  j->seq1 = ++atomic_temp_seq;
+  j->seq2 = ++atomic_temp_seq;
+  if (AW.tail)
+    AW.tail->next = j;
+  else
+    AW.head = j;
+  AW.tail = j;
+  AW.pending++;
+  AW.pending_bytes += len1 + len2;
+  SDL_SignalCondition(AW.cond);
+  SDL_UnlockMutex(AW.mutex);
+  lua_pushinteger(L, (lua_Integer)j->id);
+  return 1;
+}
+
+/* pal.x_write_file_atomic_poll() -> job,true | job,nil,error | no values */
+static int l_x_write_file_atomic_poll(lua_State *L) {
+  if (!AW.mutex) return 0;
+  SDL_LockMutex(AW.mutex);
+  AsyncWriteJob *j = AW.done_head;
+  if (j) {
+    AW.done_head = j->next;
+    if (!AW.done_head) AW.done_tail = NULL;
+  }
+  SDL_UnlockMutex(AW.mutex);
+  if (!j) return 0;
+  lua_pushinteger(L, (lua_Integer)j->id);
+  if (j->ok) {
+    lua_pushboolean(L, 1);
+    async_write_job_free(j);
+    return 2;
+  }
+  lua_pushnil(L);
+  lua_pushstring(L, j->error);
+  async_write_job_free(j);
+  return 3;
+}
+
+/* pal.x_write_file_atomic_drain() -> true. A deliberate durability barrier;
+ * never used from the live sim path. Completed results remain pollable. */
+static int l_x_write_file_atomic_drain(lua_State *L) {
+  if (AW.mutex) {
+    SDL_LockMutex(AW.mutex);
+    while (AW.pending > 0) SDL_WaitCondition(AW.cond, AW.mutex);
+    SDL_UnlockMutex(AW.mutex);
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
+void pal_async_write_shutdown(void) {
+  if (!AW.thread) return;
+  SDL_LockMutex(AW.mutex);
+  while (AW.pending > 0) SDL_WaitCondition(AW.cond, AW.mutex);
+  AW.stop = true;
+  SDL_SignalCondition(AW.cond);
+  SDL_UnlockMutex(AW.mutex);
+  SDL_WaitThread(AW.thread, NULL);
+  AsyncWriteJob *j = AW.done_head;
+  while (j) {
+    AsyncWriteJob *next = j->next;
+    async_write_job_free(j);
+    j = next;
+  }
+  SDL_DestroyCondition(AW.cond);
+  SDL_DestroyMutex(AW.mutex);
+  SDL_memset(&AW, 0, sizeof AW);
 }
 
 /* x_file_append(path, bytes) -> bool — append to a file, creating it if
@@ -1401,6 +1652,9 @@ static const luaL_Reg pal_funcs[] = {
     {"read_file", l_read_file},
     {"write_file", l_write_file},
     {"write_file_atomic", l_write_file_atomic},
+    {"x_write_file_pair_atomic_async", l_x_write_file_pair_atomic_async},
+    {"x_write_file_atomic_poll", l_x_write_file_atomic_poll},
+    {"x_write_file_atomic_drain", l_x_write_file_atomic_drain},
     {"user_path", l_user_path},
     {"x_file_append", l_x_file_append},
     {"list_dir", l_list_dir},

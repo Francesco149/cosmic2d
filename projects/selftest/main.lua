@@ -2670,6 +2670,41 @@ local function t_atomic_write()
   check(pal.write_file_atomic(path, "") == true and pal.read_file(path) == "",
         "atomic: empty file replace")
 
+  -- API 13's background pair preserves the same authority ordering without
+  -- making the caller wait: payload first, cumulative manifest second. The
+  -- explicit drain is the quit/crash test boundary, not the live frame path.
+  check(pal.version.api >= 13
+        and type(pal.x_write_file_pair_atomic_async) == "function"
+        and type(pal.x_write_file_atomic_poll) == "function"
+        and type(pal.x_write_file_atomic_drain) == "function",
+        "async atomic: PAL api13 exposes queue, poll, and drain")
+  local pair1 = tmproot() .. "/cosmic_selftest_async_segment"
+  local pair2 = tmproot() .. "/cosmic_selftest_async_index"
+  pal.x_remove(pair1)
+  pal.write_file(pair2, "old-index")
+  local job = pal.x_write_file_pair_atomic_async(
+    pair1, "segment", pair2, "new-index")
+  check(type(job) == "number", "async atomic: pair queues without waiting")
+  pal.x_write_file_atomic_drain()
+  local done, aok, aerr = pal.x_write_file_atomic_poll()
+  check(done == job and aok == true and aerr == nil
+        and pal.read_file(pair1) == "segment"
+        and pal.read_file(pair2) == "new-index",
+        "async atomic: ordered pair becomes completely durable")
+
+  pal.x_remove(pair1)
+  pal.write_file(pair2, "known-index")
+  job = pal.x_write_file_pair_atomic_async(
+    pair1, "orphan", pair2, "bad-index", nil, { _fail = "rename" })
+  pal.x_write_file_atomic_drain()
+  done, aok, aerr = pal.x_write_file_atomic_poll()
+  check(done == job and aok == nil and type(aerr) == "string"
+        and aerr:find("second file", 1, true)
+        and not pal.read_file(pair1) and pal.read_file(pair2) == "known-index",
+        "async atomic: manifest failure removes orphan + preserves authority")
+  pal.x_remove(pair1)
+  pal.x_remove(pair2)
+
   local ok, err = pal.write_file_atomic(
     tmproot() .. "/cosmic_selftest_missing/child.bin", "x")
   check(ok == nil and type(err) == "string" and err:find("open", 1, true),
@@ -3018,7 +3053,17 @@ local function t_ring_spill()
       trace.record_frame(irec, nil)
     end
   end
+  local sync_atomic, sync_calls = pal.write_file_atomic, 0
+  pal.write_file_atomic = function(...)
+    sync_calls = sync_calls + 1
+    return sync_atomic(...)
+  end
   drive(1, 20) -- segs 1..5 closed+spilled, seg 6 open; window demotes 1..3
+  pal.write_file_atomic = sync_atomic
+  check(sync_calls == 0,
+        "ring spill: segment close performs no synchronous file write")
+  check(trace.history_drain(),
+        "ring spill: background transactions drain successfully")
 
   local files = pal.list_dir(root .. "/.ed/history")
   check(files and #files >= 4,
@@ -3059,12 +3104,14 @@ local function t_ring_spill()
   -- a tiny budget drops the oldest files
   trace.ring.budget_mb = 0.00001
   drive(25, 28) -- one more close triggers evict
+  trace.history_drain()
   local lo3 = trace.ring_range()
   check(lo3 > lo, "ring spill: budget evicted the oldest")
 
   -- ---- R6.5 (D055): the continuous cross-session stream ----
   trace.ring.budget_mb = save_mb -- roomy again
   drive(29, 40) -- fresh spilled history: 29..32, 33..36, 37..40 closed
+  trace.history_drain()
 
   -- "reboot": hist_peek finds the retained tail; ring_start at the same
   -- counter adopts the chain — the stream spans the old session
@@ -3130,13 +3177,16 @@ local function t_ring_spill()
   -- authoritative before both its container and index entry are durable.
   trace.ring.spill = true
   trace._write_fail = { segment = { _fail = "rename" } }
-  for i = 1000, 1003 do
+  for i = 1000, 1007 do -- two ready segments: the failed head cancels its tail
     sim:i64(0, f0 + i)
     trace.record_frame(irec, nil)
   end
+  trace.history_drain()
   check(not pal.read_file(root .. "/.ed/history/seg_000001")
+        and not pal.read_file(root .. "/.ed/history/seg_000002")
+        and trace.ring_stats().pending == 0
         and not trace.ring.spill and not trace.ring_flush(),
-        "ring spill: interrupted segment publishes no partial history")
+        "ring spill: interrupted head publishes no partial/backlogged history")
 
   for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
     pal.x_remove(root .. "/.ed/history/" .. n)
@@ -3148,14 +3198,17 @@ local function t_ring_spill()
   local index_path = root .. "/.ed/history/index"
   pal.write_file(index_path, "known-good-index\n")
   trace._write_fail = { index = { _fail = "rename" } }
-  for i = 2000, 2003 do
+  for i = 2000, 2007 do -- exercise the dependent-manifest backlog too
     sim:i64(0, f0 + i)
     trace.record_frame(irec, nil)
   end
+  trace.history_drain()
   check(pal.read_file(index_path) == "known-good-index\n"
         and not pal.read_file(root .. "/.ed/history/seg_000001")
+        and not pal.read_file(root .. "/.ed/history/seg_000002")
+        and trace.ring_stats().pending == 0
         and not trace.ring.spill,
-        "ring spill: index failure preserves manifest and removes orphan")
+        "ring spill: index failure preserves manifest and cancels backlog")
 
   -- A corrupt indexed tail is rejected and removed rather than adopted.
   trace._write_fail = nil
@@ -5605,6 +5658,12 @@ local function t_ed_park()
 
   ed.g.mw = { stale = true } -- the map window's decoded-doc plumbing
   ed.g.tmw = { stale = true } -- the tilemap window's too (R8d)
+  local sprite_pipe, anim_pipe = { tex = 901 }, { tex = 902 }
+  ed.g.sw = { ["art/test.spr"] = sprite_pipe }
+  ed.g.aw = { ["art/test.spr"] = anim_pipe }
+  local freed = {}
+  local real_tex_free = pal.tex_free
+  pal.tex_free = function(id) freed[#freed + 1] = id; return true end
   scrub.open()
   check(scrub.paused(), "ed park: scrub open")
   scrub.at = f0 + 2
@@ -5613,6 +5672,11 @@ local function t_ed_park()
         "ed park: the past is shown")
   check(ed.g.mw == nil, "ed park: map plumbing drops (rebuilds from the past)")
   check(ed.g.tmw == nil, "ed park: tilemap plumbing drops too")
+  check(#freed == 2 and freed[1] == 902 and freed[2] == 901
+        and sprite_pipe.tex == nil and anim_pipe.tex == nil
+        and ed.g.sw == nil and ed.g.aw == nil,
+        "ed park: sprite + animation GPU handles release before cache drop")
+  pal.tex_free = real_tex_free
   ed.doc.poke = 1 -- interactive: poke the parked doc
   ed.touch()
   check(ed.g.save_due == nil, "ed park: autosave suspended")
@@ -5622,11 +5686,19 @@ local function t_ed_park()
         "ed park: pokes evaporate on seek")
   ed.g.mw = { stale = true }
   ed.g.tmw = { stale = true }
+  sprite_pipe, anim_pipe = { tex = 903 }, { tex = 904 }
+  ed.g.sw = { ["art/test.spr"] = sprite_pipe }
+  ed.g.aw = { ["art/test.spr"] = anim_pipe }
+  freed = {}
+  pal.tex_free = function(id) freed[#freed + 1] = id; return true end
   scrub.close()
+  pal.tex_free = real_tex_free
   check(not ed.parked and ed.doc == present,
         "ed park: close restores the present")
   check(ed.g.mw == nil, "ed park: map plumbing drops on unpark too")
   check(ed.g.tmw == nil, "ed park: tilemap plumbing drops on unpark too")
+  check(#freed == 2 and sprite_pipe.tex == nil and anim_pipe.tex == nil,
+        "ed park: unpark releases rebuilt GPU handles too")
   check(ed.g.save_due ~= nil, "ed park: autosave re-armed")
 
   scrub.open()

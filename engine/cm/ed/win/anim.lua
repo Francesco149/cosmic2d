@@ -68,6 +68,17 @@ local function plumb(ed, path)
   return p
 end
 
+-- Animation previews own independent raw textures on g.aw. Rewind parking
+-- invalidates that cache just like the sprite editor's g.sw cache.
+function M.drop_ephemeral(ed)
+  for _, p in pairs(ed.g.aw or {}) do
+    if p.tex then
+      pal.tex_free(p.tex)
+      p.tex = nil
+    end
+  end
+end
+
 local function checker(x, y, w, h, z)
   pal.x_ig_rect_fill(x, y, w, h, COL.checker_a, 3 * z)
   local step = 10 * z

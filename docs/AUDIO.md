@@ -48,8 +48,9 @@ and mixing decisions.
   the sim thread, in C (32 voices × 4 ops at 48 kHz is trivial). PCM is
   a **pure function of (voice state, this frame's commands)**; voice
   state lives in a named buffer and advances once per sim frame.
-- Rendered frames push into a small **output FIFO** (default depth 3
-  frames ≈ 50 ms; `proj.snd_latency` dials it). The SDL3 audio callback
+- Rendered frames push into an eight-frame-capacity **output FIFO**. The live
+  producer and consumer normally stay close rather than intentionally priming
+  all eight frames, keeping control-to-sound latency low. The SDL3 audio callback
   only memcpys from the FIFO — it never computes. Underrun (a stalled
   editor frame, an unfocused paused game) plays silence; state is never
   touched from the callback. No locks on the hot path: single-producer

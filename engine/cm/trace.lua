@@ -240,20 +240,16 @@ end
 
 local function index_append(R, seg)
   local path = hist_index(hist_dir(R))
-  local old = pal.read_file(path) or ""
   local line = ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
                                            seg.fbytes)
-  return pal.write_file_atomic(path, old .. line,
-                               M._write_fail and M._write_fail.index)
+  local bytes = (R.index_bytes or pal.read_file(path) or "") .. line
+  local ok, err = pal.write_file_atomic(path, bytes,
+                                        M._write_fail and M._write_fail.index)
+  if ok then R.index_bytes = bytes end
+  return ok, err
 end
 
--- write a closed segment to its history file (CSEG container: keyframe +
--- the chunk stream verbatim). The bundle stays a RAM reference — shared
--- between segments, cheap, and rewind needs it without a load. A failed
--- write logs once and turns spill off (read-only checkouts, full disks —
--- history is a convenience, never a session breaker).
-local function spill_seg(R, seg)
-  if not M.ring.spill or seg.spilled or R.project == "" then return end
+local function spill_blob(seg)
   local w = chunk.writer("CSEG")
   w.chunk("HEAD", 1, pack("<I4I4", seg.first, seg.frames))
   for _, b in ipairs(seg.kf_bufs) do
@@ -262,17 +258,113 @@ local function spill_seg(R, seg)
   w.chunk("KFDC", 1, pack("<s4", seg.kf_doct))
   w.chunk("KFED", 1, pack("<s4", seg.kf_edoc or ""))
   for _, c in ipairs(seg.chunks) do w.chunk(c.tag, 1, c.payload) end
-  local blob = w.result()
-  pal.mkdir(hist_dir(R))
-  local path = ("%s/seg_%06d"):format(hist_dir(R), seg.id)
+  return w.result()
+end
+
+local function abandon_ready(R)
+  for _, seg in ipairs((R and R.spill_ready) or {}) do
+    seg.spill_queued = nil
+  end
+  if R then R.spill_ready = {} end
+end
+
+local function spill_fail(R, path, err)
+  pal.log(("[trace] history spill failed (%s): %s; spill off")
+          :format(path, tostring(err)))
+  M.ring.spill = false
+  -- Once the durable chain fails, queued successors must not remain pinned or
+  -- publish manifests that depend on the missing segment.
+  abandon_ready(R)
+end
+
+local function async_writes()
+  return type(pal.x_write_file_pair_atomic_async) == "function"
+     and type(pal.x_write_file_atomic_poll) == "function"
+     and type(pal.x_write_file_atomic_drain) == "function"
+end
+
+M._async_jobs = M._async_jobs or {}
+local evict -- completion can make an old segment eligible for demotion
+local start_spill
+
+local function submit_ready(R)
+  local ready = R and R.spill_ready
+  local all_ok = true
+  -- A cumulative manifest makes jobs within one stream dependent. Keep only
+  -- one in flight so a failed segment cannot be named by a later manifest.
+  -- The native worker remains globally bounded/FIFO for other streams/users.
+  while ready and #ready > 0 and M.ring.spill
+        and (not async_writes() or not R.spill_inflight) do
+    local seg = table.remove(ready, 1)
+    seg.spill_queued = nil
+    if not start_spill(R, seg) then all_ok = false end
+  end
+  return all_ok
+end
+
+-- Consume completed worker transactions without ever waiting. This runs in
+-- the render/chrome phase; record_frame only marks closed segments ready. A segment is
+-- not demotable until both its container and cumulative manifest are durable.
+function M.history_pump()
+  if not async_writes() then
+    return not start_spill or submit_ready(M._R)
+  end
+  local all_ok = true
+  while true do
+    local id, ok, err = pal.x_write_file_atomic_poll()
+    if not id then break end
+    local p = M._async_jobs[id]
+    M._async_jobs[id] = nil
+    if p then
+      p.seg.spilling = nil
+      if p.R.spill_inflight == id then p.R.spill_inflight = nil end
+      if ok then
+        p.R.index_bytes = p.index_bytes
+        p.seg.file, p.seg.fbytes, p.seg.spilled = p.path, p.bytes, true
+        if evict and M.ring.spill then evict(p.R) end
+      else
+        spill_fail(p.R, p.path, err)
+        all_ok = false
+      end
+    elseif not ok then
+      -- A VM reboot can discard the Lua bookkeeping while the native worker
+      -- completes. The pair itself still failed closed; retain the evidence.
+      pal.log("[trace] orphaned background history write failed: " ..
+              tostring(err))
+      all_ok = false
+    end
+  end
+  -- Serialization and the native byte-copy also stay outside record_frame.
+  -- Ordinarily this is one just-closed segment; the list only grows when the
+  -- render loop itself was unable to run.
+  local submitted = not start_spill or submit_ready(M._R)
+  return submitted and all_ok
+end
+
+-- Explicit barrier for quit/crash and structural timeline changes. Never call
+-- this from the ordinary sim step: Windows FlushFileBuffers may take tens of
+-- milliseconds even for a small segment.
+function M.history_drain()
+  if not async_writes() then return M.history_pump() end
+  local all_ok = true
+  while true do
+    if not M.history_pump() then all_ok = false end
+    -- The barrier is global by design, so it also catches a completion whose
+    -- Lua bookkeeping was lost during an engine-VM reboot.
+    pal.x_write_file_atomic_drain()
+    if not M.history_pump() then all_ok = false end
+    -- A successful completion may have submitted the next dependent segment.
+    if not next(M._async_jobs) then return all_ok end
+  end
+end
+
+-- Compatibility path for an older PAL. Current API 13 builds always use the
+-- worker below; feature detection keeps engine scripts inspectable with an
+-- older binary while preserving the established failure semantics.
+local function spill_seg_sync(R, seg, blob, path)
   local ok, err = pal.write_file_atomic(path, blob,
                          M._write_fail and M._write_fail.segment)
-  if not ok then
-    pal.log(("[trace] history spill failed (%s): %s; spill off")
-            :format(path, tostring(err)))
-    M.ring.spill = false
-    return
-  end
+  if not ok then spill_fail(R, path, err); return false end
   seg.file, seg.fbytes, seg.spilled = path, #blob, true
   ok, err = index_append(R, seg)
   if not ok then
@@ -280,10 +372,53 @@ local function spill_seg(R, seg)
     -- session's RAM generation authoritative and remove the orphan.
     pal.x_remove(path)
     seg.file, seg.fbytes, seg.spilled = nil, nil, nil
-    pal.log(("[trace] history index failed (%s): %s; spill off")
-            :format(hist_index(hist_dir(R)), tostring(err)))
-    M.ring.spill = false
+    spill_fail(R, hist_index(hist_dir(R)), err)
+    return false
   end
+  return true
+end
+
+-- Queue a closed segment + cumulative manifest as one ordered native worker
+-- transaction. The copied byte strings may be collected immediately on the
+-- Lua side; the segment's decoded RAM stays authoritative until completion.
+start_spill = function(R, seg)
+  if not M.ring.spill or seg.spilled or seg.spilling or R.project == "" then
+    return true
+  end
+  local blob = spill_blob(seg)
+  pal.mkdir(hist_dir(R))
+  local path = ("%s/seg_%06d"):format(hist_dir(R), seg.id)
+  if not async_writes() then
+    return spill_seg_sync(R, seg, blob, path)
+  end
+
+  local index_path = hist_index(hist_dir(R))
+  local line = ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames, #blob)
+  local index_bytes = (R.index_bytes or pal.read_file(index_path) or "") .. line
+  local id, err = pal.x_write_file_pair_atomic_async(
+    path, blob, index_path, index_bytes,
+    M._write_fail and M._write_fail.segment,
+    M._write_fail and M._write_fail.index)
+  if not id then
+    spill_fail(R, path, err)
+    return false
+  end
+  R.spill_inflight = id
+  seg.spilling = id
+  M._async_jobs[id] = { R = R, seg = seg, path = path, bytes = #blob,
+                        index_bytes = index_bytes }
+  return true
+end
+
+-- Sim-side close is deliberately tiny: retain the decoded segment and hand a
+-- pointer to render/dev maintenance. No serialization, memcpy, filesystem
+-- call, flush, or sync occurs inside record_frame.
+local function spill_seg(R, seg)
+  if not M.ring.spill or seg.spilled or seg.spilling or seg.spill_queued
+     or R.project == "" then return end
+  R.spill_ready = R.spill_ready or {}
+  R.spill_ready[#R.spill_ready + 1] = seg
+  seg.spill_queued = true
 end
 
 -- drop a spilled segment's RAM copy (the skeleton keeps id/first/frames/
@@ -431,7 +566,7 @@ end
 -- the window is RAM residency (older spilled segments demote to
 -- skeletons); the disk budget bounds total retained bytes, oldest
 -- files first. Pinned segments never drop either way.
-local function evict(R)
+evict = function(R)
   local want = math.max(1, math.floor((M.ring.seconds or 30) * 60))
   local total = 0
   for _, s in ipairs(R.segs) do total = total + s.frames end
@@ -439,6 +574,7 @@ local function evict(R)
     while #R.segs > 1 do
       local s = R.segs[1]
       if M._rec and s.id >= M._rec.from_id then break end
+      if s.spilling or s.spill_queued then break end
       if total - s.frames < want then break end
       total = total - s.frames
       table.remove(R.segs, 1)
@@ -457,6 +593,7 @@ local function evict(R)
   while #R.segs > 1 and retained > budget do
     local s = R.segs[1]
     if M._rec and s.id >= M._rec.from_id then break end
+    if s.spilling or s.spill_queued then break end
     retained = retained - (s.fbytes or s.bytes)
     if s.file then pal.x_remove(s.file) end
     table.remove(R.segs, 1)
@@ -470,6 +607,8 @@ local function ring_init(R)
   local adopted = hist_adopt(R) -- R6.5: continuous cross-session stream;
                                 -- adopt the chain ending at the present
   stream_prepare(R, adopted)    -- D065: exact generation identity
+  R.index_bytes = R.project ~= "" and
+    (pal.read_file(hist_index(hist_dir(R))) or "") or ""
   -- One capture boundary for every engine-owned Lua handle. Participants
   -- flush into ordinary named buffers/doc, so the ring needs no module-
   -- specific chunks or restore calls (cm.state owns both halves).
@@ -488,6 +627,7 @@ local function ring_init(R)
 end
 
 function M.ring_start(opts)
+  M.history_drain() -- finish any native work surviving a VM/project handoff
   local R = { project = (opts and opts.project) or "", next_id = 1 }
   ring_init(R)
   M._R = R
@@ -497,6 +637,7 @@ end
 function M.ring_reset()
   local R = M._R
   if not R then return end
+  M.history_drain()
   if M._rec then
     pal.log("[trace] recording stopped by ring reset")
     M.record_stop()
@@ -539,7 +680,7 @@ function M.ring_stats()
   local R = M._R
   if not R then return nil end
   local frames, bytes, kfbytes = 0, 0, 0
-  local spilled, disk_bytes = 0, 0
+  local spilled, pending, disk_bytes = 0, 0, 0
   for _, s in ipairs(R.segs) do
     frames = frames + s.frames
     bytes = bytes + s.bytes
@@ -550,11 +691,12 @@ function M.ring_stats()
       spilled = spilled + 1
       disk_bytes = disk_bytes + (s.fbytes or 0)
     end
+    if s.spilling or s.spill_queued then pending = pending + 1 end
   end
   local lo, hi = M.ring_range()
   return { segs = #R.segs, frames = frames, chunk_bytes = bytes,
            keyframe_bytes = kfbytes, oldest = lo, newest = hi,
-           spilled = spilled, disk_bytes = disk_bytes,
+           spilled = spilled, pending = pending, disk_bytes = disk_bytes,
            pinned = M._rec ~= nil }
 end
 
@@ -595,6 +737,7 @@ function M.record_frame(input_record, evals)
   -- ring_flush may have checkpointed this still-open segment for a contained
   -- error. A successful hot-reload resume appends to the same in-memory
   -- generation and atomically replaces that checkpoint when it closes.
+  if seg.spilling then M.history_drain() end
   if seg.spilled then seg.spilled = nil end
   if evals and #evals > 0 then
     local ep = { pack("<I4", #evals) }
@@ -752,7 +895,10 @@ function M.ring_flush()
   local R = M._R
   if not R then return false end
   local seg = R.segs[#R.segs]
-  if seg and not seg.spilled and seg.frames > 0 then spill_seg(R, seg) end
+  if seg and not seg.spilled and not seg.spilling and seg.frames > 0 then
+    spill_seg(R, seg)
+  end
+  if not M.history_drain() then return false end
   if not R.stream_id or R.stream_id == "" then return false end
   local _, hi = M.ring_range()
   local disk = M.hist_locator(R.project)
@@ -768,6 +914,7 @@ end
 -- already inside the deltas; EPOC code is folded into each segment's
 -- bundle so rewind restores the right code at any frame.
 function M.ring_load(path)
+  M.history_drain()
   local blob, err = pal.read_file(path)
   if not blob then error("can't read trace " .. path .. ": " .. err, 0) end
   local chunks = chunk.read(blob, "CTRC")
@@ -1036,6 +1183,7 @@ end
 -- caller re-runs game.init() afterwards (the restore contract)
 function M.rewind(f)
   local R = M._R or error("ring not started", 2)
+  M.history_drain() -- no worker may republish a file after truncation
   if M._rec then
     pal.log("[trace] recording stopped by rewind")
     M.record_stop()
@@ -1128,6 +1276,7 @@ function M.rewind(f)
     open_segment(R, f + 1)
     spill_seg(R, seg) -- it re-closed full: back to disk — the chain must
                       -- stay gapless for the next boot's adoption (D055)
+    M.history_drain() -- structural rewind returns with that chain durable
   end
   pal.log(("[trace] rewound to frame %d"):format(f))
 end

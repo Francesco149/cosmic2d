@@ -168,6 +168,18 @@ M.commit_path = A.commit
 M.dirty, M.save, M.undo, M.redo, M.revert =
   A.dirty, A.save, A.undo, A.redo, A.revert
 
+-- The shell drops per-asset plumbing on every rewind seek. Raw PAL texture
+-- IDs are not GC-owned, so the owner must release them before g.sw disappears.
+-- tex_free is deferred by the PAL and is safe even when this frame sampled it.
+function M.drop_ephemeral(ed)
+  for _, p in pairs(ed.g.sw or {}) do
+    if p.tex then
+      pal.tex_free(p.tex)
+      p.tex = nil
+    end
+  end
+end
+
 -- ---- header: the edit toggle (the board's "obvious toggle") ----
 
 function M.header(win, ctx)

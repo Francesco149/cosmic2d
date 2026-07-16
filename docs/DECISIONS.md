@@ -2825,3 +2825,53 @@ validation, and save refusal without disk mutation. Host release fixtures prove
 the same canonical module rejects wrong-type icon and controls selections.
 `nix run .#test` is ALL GREEN at 23,330 checks with every committed trace and
 pixel/audio golden matching; fresh Linux and Windows demo exports both build.
+
+## D073 — durable history is an async ordered pair; ephemeral owners dispose handles (A7 stability, 2026-07-16)
+
+**Context.** Native Windows testing exposed two independent live-session
+failures. Closing each 60-frame rewind segment called the fully durable atomic
+writer and cumulative-index replacement directly from `record_frame`; an NTFS
+`FlushFileBuffers` took 89.8 ms in a measured 92.6 ms sim frame, which starved
+the low-latency audio producer. Separately, each A/B seek discarded the sprite
+window's `g.sw` Lua cache without freeing its raw PAL texture. The next editor
+draw allocated another slot until the fixed 256-slot table failed and the
+contained draw error showed the dark crash backdrop. Both failures were engine
+ownership bugs, not corrupt retained history.
+
+**Decision.** PAL API v13 adds a bounded, process-owned FIFO worker for ordered
+atomic file pairs. Submission copies both paths/payloads and returns a job ID;
+poll is nonblocking; drain is an explicit durability barrier. The worker fully
+writes, flushes, OS-syncs, closes, and atomically replaces file one before file
+two. It skips file two when file one fails and removes file one if file two
+fails, preserving the segment→manifest authority order. The queue is capped at
+16 jobs / 64 MiB and refuses overflow rather than blocking the caller or
+growing without bound.
+
+`cm.trace.record_frame` now only marks closed segments ready. Render/dev
+maintenance serializes them and submits segment + cumulative index pairs;
+completion makes a segment demotable. Queued/in-flight segments remain pinned
+in RAM. Ordinary frames only poll. Quit/crash, structural rewind/truncation,
+replay replacement, explicit cache clear, and VM/project handoff drain before
+relying on disk or deleting history. Failure keeps RAM authoritative and
+disables further spill.
+
+Editor window kinds that own non-GC resources now expose `drop_ephemeral`.
+Park and unpark invoke every owner hook before clearing decoded caches and
+audio preview plumbing. Sprite and animation owners call deferred
+`pal.tex_free` and nil their IDs, so repeated A/B seeks retain only the small
+in-flight deferred-delete set instead of leaking one texture per frame.
+
+**Consequences.** Periodic durable storage latency can no longer appear in sim
+timing or starve frame-locked audio; render-side serialization may still appear
+as ordinary draw work, while disk sync is entirely on the worker. Normal exit
+can wait for durability, intentionally. A failed/full worker queue loses only
+derived disk retention, never live rewind RAM or sim determinism. Future editor
+caches owning PAL handles must add the disposal hook rather than relying on Lua
+collection.
+
+**Proof.** PAL KATs cover successful pair ordering and second-publication
+rollback. Rewind KATs prove segment close invokes no synchronous atomic writer,
+background drain/adoption/rewind/budget semantics, and injected segment/index
+failure behavior. Editor parking KATs prove sprite and animation texture owners
+are called on park and unpark. The complete deterministic and native Windows
+proofs are recorded in `STATUS.md`.
