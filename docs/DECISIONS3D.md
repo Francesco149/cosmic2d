@@ -72,3 +72,20 @@ aligned slab props over a circular trampled blend, never terrain bakes.
 Real RO never runtime-blends tiles (hand-painted transitions); our bake is
 a deliberate ergonomic upgrade reproducing the same read
 (docs/research-3d/ro-render-recipe.md is the authoritative reference).
+
+## D3D-007 — x_view3d appends per-frame views; 3D pre-pass owns the clear (2026-07-16)
+
+Two implementation-shape choices made landing the pipeline (agent, within
+the COSMIC3D.md §2 spec). (1) `pal.x_view3d` APPENDS a camera/fog setup
+(cap 64/frame) instead of setting one global: segments bind the latest view
+at call time, so the sky NDC pass (no-arg = identity mvp + fog off), the
+scene view, and future editor viewports/split-screen coexist in one frame
+without PAL churn. (2) 3D renders in its own pre-pass with the D16 depth
+target attached, clearing color+depth; the 2D quad pass then LOADs over it.
+The 2D pipeline objects are untouched and a frame with no 3D keeps the
+exact cosmic2d pass structure — the inherited pixel goldens stayed green
+unregenerated. Everything 3D is lazily created on first use (pure-2D
+sessions allocate nothing). Vertex layout (24B: pos f32x3, uv f32x2,
+pre-lit rgba u8x4) and PAL_TRI_* flags (1 alphatest, 2 nearest, 4 blend +
+no depth write) mirror the prototype dump exactly — proto/gpu_proto.c
+remains the twin, r3d.c the pixel reference.
