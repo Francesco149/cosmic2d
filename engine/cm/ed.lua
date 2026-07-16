@@ -569,7 +569,11 @@ local function hotkeys(ig, i)
   for _, e in ipairs(i.keys) do
     if e.down and not e.rep then
       if e.scancode == K.f4 then
-        rewind.toggle(M)
+        local project_kind = M.kinds.project
+        if not (project_kind.guard_export
+                and project_kind.guard_export(M, "opening rewind")) then
+          rewind.toggle(M)
+        end
         rw_consumed = true
       elseif e.scancode == K.escape
              and (rewind.opened(M) or cm.require("cm.scrub").paused()) then
@@ -666,6 +670,12 @@ local function kind_constrain(win, part, r0, ww, wh, ctrl)
   if kind and kind.constrain then
     return kind.constrain(win, part, r0, ww, wh, ctrl)
   end
+end
+
+local function kind_can_close(id)
+  local win = wm.get(M.doc, id)
+  local kind = win and M.kinds[win.kind]
+  return not (kind and kind.can_close) or kind.can_close(win, M)
 end
 
 local function interact(ig)
@@ -900,7 +910,7 @@ local function interact(ig)
     bo = wm.EDGE_OUT / cam.screen_zoom(doc.cam),
     bi = wm.EDGE_IN / cam.screen_zoom(doc.cam),
     alt = g.alt or false, ctrl = g.ctrl or false, hdrid = hdrid,
-    constrain = kind_constrain,
+    constrain = kind_constrain, can_close = kind_can_close,
     down1 = i.buttons[1] or false, down3 = i.buttons[3] or false,
     clicked1 = i.clicked[1] or false, clicked3 = i.clicked[3] or false,
   }
@@ -1392,6 +1402,9 @@ end
 function M.quit_flush()
   if not M.on then return end
   if M.parked then M.unpark(false) end -- quit while parked: save the PRESENT
+  -- A quit is allowed to abandon an external operation, but no sibling temp
+  -- may outlive the process and look authoritative on the next launch.
+  M.kinds.project.drop_ephemeral(M)
   M.kinds.text.flush(M) -- pending edit gestures reach their journals
   save_now()
 end

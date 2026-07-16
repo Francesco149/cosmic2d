@@ -338,8 +338,13 @@ function M.update(doc, g, inp)
   elseif st == "alt_rpend" then
     if not inp.down3 then
       if dist2(inp.sx, inp.sy, g.px, g.py) <= M.DRAG_PX * M.DRAG_PX then
-        M.close(doc, g.target) -- A-rightclick: close (fearless by §6)
-        g.changed = true
+        -- Most windows close fearlessly because their working assets survive
+        -- (§6). A kind may guard a live external operation (player export):
+        -- the shell resolves that policy through this optional callback.
+        if not inp.can_close or inp.can_close(g.target) then
+          M.close(doc, g.target) -- A-rightclick: close
+          g.changed = true
+        end
       end
       g.state = nil
     end

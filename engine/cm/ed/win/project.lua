@@ -9,6 +9,7 @@
 
 local M = select(2, ...) or {}
 local project = cm.require("cm.project")
+local exporter = cm.require("cm.export")
 local textwin = cm.require("cm.ed.win.text")
 local assets = cm.require("cm.ed.win.assets")
 
@@ -40,6 +41,15 @@ local FIELD_ROWS = {
   { "window_scale", "initial scale" },
 }
 
+local ASSET_PLUMBING = {
+  { field = "text", gkey = "tw" }, { field = "spr", gkey = "sw" },
+  { field = "map", gkey = "mw" }, { field = "tm", gkey = "tmw" },
+  { field = "pal", gkey = "pw" }, { field = "ins", gkey = "iw" },
+  { field = "song", gkey = "muw" },
+}
+
+local project_reader
+
 local function copy_form(form)
   local out = {}
   for _, field in ipairs(FORM_FIELDS) do out[field] = form[field] end
@@ -62,6 +72,199 @@ end
 
 local function form_dirty(win)
   return win.form ~= nil and not same_form(win.form, win.base)
+end
+
+local function export_key(win)
+  -- Real canvas windows always have an id. The table fallback keeps the
+  -- public preflight helpers useful to focused tests and console tooling.
+  return win.id or win
+end
+
+local function find_export_state(win, ed)
+  return ed.g.project_exports and ed.g.project_exports[export_key(win)]
+end
+
+local function default_output_dir()
+  local root = pal.user_path()
+  if type(root) ~= "string" or root == "" then return "" end
+  return root .. (root:match("[\\/]$") and "" or "/") .. "exports"
+end
+
+-- Build choices and coroutine progress are machine-local operation state, not
+-- captured editor state. Rewind/session serialization must never retain a
+-- half-built artifact or a path from another computer.
+function M.export_state(win, ed)
+  ed.g.project_exports = ed.g.project_exports or {}
+  local key = export_key(win)
+  local state = ed.g.project_exports[key]
+  if not state then
+    state = {
+      target = pal.platform, output_dir = default_output_dir(), replace = false,
+    }
+    ed.g.project_exports[key] = state
+  end
+  return state
+end
+
+-- Return the first unsaved path and the total. Every editable project-asset
+-- kind uses kit.asset's working bytes + p.disk convention. If plumbing has
+-- not been rebuilt after session recovery, compare against disk directly.
+function M.export_unsaved(win, ed)
+  local first, count, seen
+  local function add(path)
+    seen = seen or {}
+    if seen[path] then return end
+    seen[path] = true
+    first, count = first or path, (count or 0) + 1
+  end
+  if form_dirty(win) then add("project.lua") end
+  for _, other in ipairs(ed.doc.wins or {}) do
+    if other.kind == "project" and form_dirty(other) then add("project.lua") end
+  end
+  local paths = {}
+  for path in pairs(ed.doc.assets or {}) do paths[#paths + 1] = path end
+  table.sort(paths)
+  for _, path in ipairs(paths) do
+    local a = ed.doc.assets[path]
+    for _, spec in ipairs(ASSET_PLUMBING) do
+      local working = a[spec.field]
+      if type(working) == "string" then
+        local table_for_kind = ed.g[spec.gkey]
+        local p = table_for_kind and table_for_kind[path]
+        local disk = p and p.disk
+        if disk == nil then disk = pal.read_file(ed.root .. "/" .. path) or "" end
+        if working ~= disk then add(path) end
+        break
+      end
+    end
+  end
+  return first, count or 0
+end
+
+local function runtime_error(target)
+  if target ~= pal.platform then
+    return (target == "windows" and "Windows" or "Linux")
+      .. " export needs the matching cosmic2d editor download"
+  end
+  local required = target == "windows"
+    and { { "bin/cosmic-player.exe", "file" } }
+    or { { "lib", "directory" }, { "cosmic2d-editor", "file" } }
+  for _, spec in ipairs(required) do
+    local info = pal.x_path_info(spec[1])
+    if not info or info.type ~= spec[2] or info.link then
+      return "portable " .. (target == "windows" and "Windows" or "Linux")
+        .. " runtime is missing " .. spec[1]
+        .. "; run this from the matching editor archive"
+    end
+  end
+end
+
+-- `summary` is the draw-time cached form/reference result. Without it this is
+-- the click-time authority: re-read the saved project and every release file
+-- before starting the coroutine. The exporter repeats this at its first yield
+-- so console callers receive the same contract.
+function M.export_preflight(win, ed, state, summary)
+  state = state or M.export_state(win, ed)
+  if ed.parked then return nil, "return to the present before exporting" end
+  if state.target ~= "linux" and state.target ~= "windows" then
+    return nil, "choose Linux or Windows"
+  end
+  local dirty, dirty_count = M.export_unsaved(win, ed)
+  if dirty then
+    local more = dirty_count > 1 and (" and " .. (dirty_count - 1) .. " more") or ""
+    return nil, "save " .. dirty .. more .. " before exporting"
+  end
+  if summary then
+    if summary.validation then return nil, summary.validation end
+    if not summary.configured then
+      return nil, "choose icon, controls, credits, and a project license"
+    end
+    if summary.release_error then return nil, summary.release_error end
+  else
+    local bytes, err = pal.read_file(ed.root .. "/project.lua")
+    if not bytes then return nil, "cannot read saved project.lua: " .. tostring(err) end
+    local meta
+    meta, err = project.decode(bytes, "@" .. ed.root .. "/project.lua")
+    if not meta then return nil, err end
+    local checked
+    checked, err = project.validate_release_files(meta, project_reader(ed))
+    if not checked then return nil, "player metadata: " .. tostring(err) end
+  end
+  if tostring(state.output_dir or ""):find("[%z\r\n]") then
+    return nil, "output folder contains unsafe characters"
+  end
+  local err = runtime_error(state.target)
+  if err then return nil, err end
+  return true
+end
+
+function M.begin_export(win, ed, state)
+  state = state or M.export_state(win, ed)
+  if state.job and not state.job.terminal then
+    state.notice = "an export is already running"
+    return nil, state.notice
+  end
+  local ok, err = M.export_preflight(win, ed, state)
+  if not ok then
+    state.job, state.result, state.notice = nil, nil, nil
+    state.error = tostring(err)
+    return nil, state.error
+  end
+  state.error, state.result, state.notice, state.logged = nil, nil, nil, nil
+  state.job = exporter.start {
+    runtime_root = ".", project_root = ed.root,
+    output_dir = state.output_dir, target = state.target,
+    replace = state.replace,
+  }
+  pal.log("[ed] EXPORT STARTED: " .. ed.root)
+  return state.job
+end
+
+local function tick_export(win, ed)
+  local state = find_export_state(win, ed)
+  local job = state and state.job
+  if not job or job.terminal then return end
+  exporter.step(job)
+  if not job.terminal or state.logged then return end
+  state.logged = true
+  if job.complete then
+    state.result, state.error, state.notice = job.output, nil, nil
+    pal.log("[ed] EXPORT COMPLETE: " .. tostring(job.output))
+  elseif job.cancelled then
+    state.result, state.error, state.notice = nil, nil, "export cancelled; nothing published"
+    pal.log("[ed] EXPORT CANCELLED: " .. ed.root)
+  else
+    state.result, state.error = nil, job.error or job.detail or "export failed"
+    pal.log("[ed] EXPORT FAILED: " .. tostring(state.error))
+    if ed.summon_console then ed.summon_console() end
+  end
+end
+
+function M.can_close(win, ed)
+  local state = find_export_state(win, ed)
+  if state and state.job and not state.job.terminal then
+    state.notice = "cancel the export before closing this window"
+    return false
+  end
+  return true
+end
+
+function M.guard_export(ed, action)
+  for _, state in pairs(ed.g.project_exports or {}) do
+    if state.job and not state.job.terminal then
+      state.notice = "finish or cancel the export before " .. tostring(action or "continuing")
+      pal.log("[ed] " .. state.notice)
+      return true
+    end
+  end
+  return false
+end
+
+function M.drop_ephemeral(ed)
+  for _, state in pairs(ed.g.project_exports or {}) do
+    exporter.cleanup(state.job)
+  end
+  ed.g.project_exports = nil
 end
 
 function M.defaults()
@@ -177,7 +380,7 @@ function M.remove_license(win, ed, index)
   return true
 end
 
-local function project_reader(ed)
+project_reader = function(ed)
   return function(path)
     return pal.read_file(ed.root .. "/" .. path)
   end
@@ -371,7 +574,9 @@ local function section_tabs(win, ctx, y)
   local z = ctx.z
   local h, w = 24 * z, 92 * z
   local x = ctx.cx + 10 * z
-  for _, tab in ipairs({ { "general", "general" }, { "release", "player files" } }) do
+  for _, tab in ipairs({ { "general", "general" },
+                         { "release", "player files" },
+                         { "build", "build/export" } }) do
     if button(ctx, x, y, w, h, tab[2], true) then
       win.section = tab[1]
       win.picking, win.pick_filter, win.editing = nil, nil, nil
@@ -609,6 +814,163 @@ local function draw_release(win, ctx, y)
   if not active then win.editing = nil end
 end
 
+local function human_bytes(n)
+  n = tonumber(n) or 0
+  if n >= 1024 * 1024 * 1024 then return ("%.1f GiB"):format(n / (1024 ^ 3)) end
+  if n >= 1024 * 1024 then return ("%.1f MiB"):format(n / (1024 ^ 2)) end
+  if n >= 1024 then return ("%.1f KiB"):format(n / 1024) end
+  return tostring(n) .. " B"
+end
+
+local function draw_clipped(ctx, x, y, w, px, color, value, font)
+  pal.x_ig_clip_push(x, y, w, px + 5 * ctx.z)
+  pal.x_ig_text(x, y, px, color, tostring(value or ""), font or 0)
+  pal.x_ig_clip_pop()
+end
+
+local function draw_export_checkbox(ctx, state, x, y, enabled)
+  local z = ctx.z
+  local size = 15 * z
+  local i = cm.require("cm.ui").inp
+  local hot = enabled and not ctx.occluded and ctx.hot
+    and i.wx >= x and i.wx < x + size
+    and i.wy >= y and i.wy < y + size
+  pal.x_ig_rect_fill(x, y, size, size, COL.well, 3 * z)
+  pal.x_ig_rect(x, y, size, size, hot and COL.hot or COL.edge, 1, 3 * z)
+  if state.replace then
+    pal.x_ig_line(x + 3 * z, y + 8 * z, x + 6 * z, y + 12 * z,
+                  COL.accent, math.max(1, 2 * z))
+    pal.x_ig_line(x + 6 * z, y + 12 * z, x + 13 * z, y + 3 * z,
+                  COL.accent, math.max(1, 2 * z))
+  end
+  pal.x_ig_text(x + 22 * z, y + 3 * z, math.max(4, 9.5 * z), COL.dim,
+                "atomically replace a matching existing export", 0)
+  if hot and i.clicked[1] then state.replace = not state.replace end
+end
+
+
+local function draw_build(win, ctx, y, summary)
+  local z = ctx.z
+  local x = ctx.cx + 10 * z
+  local w = ctx.cw - 20 * z
+  local px = math.max(4, 10.5 * z)
+  local small = math.max(4, 9.2 * z)
+  local state = M.export_state(win, ctx.ed)
+  local job = state.job
+  local editable = not job or job.terminal
+
+  pal.x_ig_text(x, y, math.max(4, 13 * z), COL.hot, "portable player archive", 0)
+  y = y + 20 * z
+  pal.x_ig_text(x, y, small, COL.dim,
+                "Packages the saved project with this editor's matching runtime.", 0)
+  y = y + 25 * z
+
+  pal.x_ig_text(x, y + 7 * z, px, COL.dim, "target", 0)
+  local bx = x + 86 * z
+  local bw, bh = 118 * z, 25 * z
+  for _, spec in ipairs({ { "linux", "Linux · .tar.gz" },
+                           { "windows", "Windows · .zip" } }) do
+    if button(ctx, bx, y, bw, bh, spec[2], editable) then
+      state.target, state.error, state.notice = spec[1], nil, nil
+    end
+    if state.target == spec[1] then
+      pal.x_ig_line(bx + 7 * z, y + bh - 2 * z, bx + bw - 7 * z,
+                    y + bh - 2 * z, COL.accent, math.max(1, 2 * z))
+    end
+    bx = bx + bw + 7 * z
+  end
+  y = y + 31 * z
+  local host = pal.platform == "windows" and "Windows" or "Linux"
+  pal.x_ig_text(x + 86 * z, y, small, COL.dim,
+                "This download carries the " .. host .. " player runtime.", 0)
+  y = y + 22 * z
+
+  pal.x_ig_text(x, y + 7 * z, px, COL.dim, "output folder", 0)
+  local fx, fh = x + 86 * z, 27 * z
+  local fw = w - 86 * z
+  pal.x_ig_rect_fill(fx, y, fw, fh, COL.well, 3 * z)
+  pal.x_ig_rect(fx, y, fw, fh, COL.edge, 1, 3 * z)
+  if ctx.occluded or not editable then
+    draw_clipped(ctx, fx + 5 * z, y + 7 * z, fw - 10 * z, small,
+                 COL.text, state.output_dir, 1)
+  else
+    local value, changed = pal.x_ig_edit {
+      id = "project_export_output_" .. tostring(win.id),
+      x = fx + 4 * z, y = y + 3 * z, w = fw - 8 * z, h = fh - 6 * z,
+      text = state.output_dir or "", px = small, font = 1, multiline = false,
+    }
+    if changed then
+      state.output_dir = value:gsub("[\r\n\t]", "")
+      state.error, state.notice = nil, nil
+    end
+  end
+  y = y + 34 * z
+  draw_export_checkbox(ctx, state, fx, y, editable)
+  y = y + 27 * z
+
+  local ready, preflight_error = M.export_preflight(win, ctx.ed, state, summary)
+  local state_color = ready and COL.accent or COL.bad
+  local state_text = ready and "preflight ready · saved bytes will be checked again"
+                     or preflight_error
+  pal.x_ig_text(x, y, small, state_color, "preflight", 0)
+  draw_clipped(ctx, x + 69 * z, y, w - 69 * z, small, state_color, state_text, 0)
+  y = y + 20 * z
+
+  if job then
+    local phase_color = job.error and COL.bad
+      or job.cancelled and COL.warn or job.complete and COL.accent or COL.text
+    pal.x_ig_text(x, y, px, phase_color, job.phase or "export", 0)
+    local progress = job.total and job.total > 0 and (job.done or 0) / job.total or 0
+    progress = math.max(0, math.min(1, progress))
+    local barx, bary, barw, barh = x + 86 * z, y + 1 * z,
+                                      w - 86 * z, 11 * z
+    pal.x_ig_rect_fill(barx, bary, barw, barh, COL.well, 3 * z)
+    pal.x_ig_rect_fill(barx, bary, barw * progress, barh,
+                       job.error and COL.bad or COL.accent, 3 * z)
+    pal.x_ig_rect(barx, bary, barw, barh, COL.edge, 1, 3 * z)
+    y = y + 18 * z
+    draw_clipped(ctx, x, y, w, small, phase_color, job.detail, 1)
+    y = y + 17 * z
+    if job.complete then
+      draw_clipped(ctx, x, y, w, small, COL.accent,
+                   human_bytes(job.bytes) .. " · " .. tostring(job.output), 1)
+      y = y + 16 * z
+      draw_clipped(ctx, x, y, w, small, COL.dim,
+                   "SHA-256  " .. tostring(job.checksum), 1)
+    elseif job.error then
+      draw_clipped(ctx, x, y, w, small, COL.bad, job.error, 0)
+    elseif job.cancelled then
+      pal.x_ig_text(x, y, small, COL.warn, "Nothing was published.", 0)
+    end
+  elseif state.error then
+    draw_clipped(ctx, x, y, w, small, COL.bad, state.error, 0)
+  else
+    pal.x_ig_text(x, y, small, COL.dim,
+                  "The archive and sibling .sha256 appear only after a complete build.", 0)
+  end
+
+  local action_y = ctx.cy + ctx.ch - 101 * z
+  if job and not job.terminal then
+    if button(ctx, x, action_y, 118 * z, 25 * z, "cancel export", true) then
+      exporter.cancel(job)
+      state.notice = "cancelling after the current file"
+    end
+  else
+    local label = job and job.error and "retry export"
+      or job and job.complete and "build again" or "build export"
+    if button(ctx, x, action_y, 118 * z, 25 * z, label, ready) then
+      M.begin_export(win, ctx.ed, state)
+    end
+  end
+  if state.notice then
+    draw_clipped(ctx, x + 128 * z, action_y + 7 * z, w - 128 * z,
+                 small, COL.warn, state.notice, 0)
+  elseif job and not job.terminal then
+    pal.x_ig_text(x + 128 * z, action_y + 7 * z, small, COL.dim,
+                  "You can change tabs; close and rewind stay guarded.", 0)
+  end
+end
+
 local function picker_accepts(field, path)
   local lower = path:lower()
   if field == "icon" then return lower:match("%.png$") ~= nil end
@@ -727,13 +1089,21 @@ local function draw_picker(win, ctx)
 end
 
 function M.escape(win, ed)
-  if not win.picking then return false end
-  win.picking, win.pick_filter = nil, nil
-  ed.touch()
-  return true
+  if win.picking then
+    win.picking, win.pick_filter = nil, nil
+    ed.touch()
+    return true
+  end
+  local state = find_export_state(win, ed)
+  if state and state.job and not state.job.terminal then
+    state.notice = "export is active; use Cancel Export to stop it safely"
+    return true
+  end
+  return false
 end
 
 function M.draw(win, ctx)
+  tick_export(win, ctx.ed)
   local a, meta = load_form(win, ctx.ed, false)
   if not a or not win.form then
     pal.x_ig_text(ctx.cx + 10 * ctx.z, ctx.cy + 10 * ctx.z,
@@ -744,14 +1114,6 @@ function M.draw(win, ctx)
   if a.text ~= win.source and form_dirty(win) then win.conflict = true end
   if win.picking then draw_picker(win, ctx); return end
 
-  local z = ctx.z
-  local y = section_tabs(win, ctx, ctx.cy + 8 * z)
-  if (win.section or "general") == "release" then
-    draw_release(win, ctx, y)
-  else
-    draw_general(win, ctx, y)
-  end
-
   local settings, validation = project.validate_settings(win.form)
   local merged
   if settings then merged, validation = project.apply_settings(meta, win.form) end
@@ -761,6 +1123,21 @@ function M.draw(win, ctx)
     if merged then _, release_error = release_check(ctx.ed, merged)
     else release_error = validation end
   end
+  local summary = {
+    validation = validation, configured = configured,
+    release_error = release_error,
+  }
+
+  local z = ctx.z
+  local y = section_tabs(win, ctx, ctx.cy + 8 * z)
+  if (win.section or "general") == "release" then
+    draw_release(win, ctx, y)
+  elseif win.section == "build" then
+    draw_build(win, ctx, y, summary)
+  else
+    draw_general(win, ctx, y)
+  end
+
   local status, color
   if validation then status, color = validation, COL.bad
   elseif win.error then status, color = win.error, COL.bad

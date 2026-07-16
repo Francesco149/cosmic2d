@@ -3040,6 +3040,29 @@ return {
   W.select_reference(win, ed, "controls", "CONTROLS.md")
   check(W.validate(win, ed) ~= nil,
         "project window: selecting valid project files completes live validation")
+
+  ed.doc.assets["unsaved.lua"] = { text = "working generation" }
+  ed.g.tw["unsaved.lua"] = { disk = "saved generation" }
+  local dirty_path, dirty_count = W.export_unsaved(win, ed)
+  check(dirty_path == "unsaved.lua" and dirty_count == 1,
+        "project export UI: preflight finds unsaved working assets")
+  ed.doc.assets["unsaved.lua"], ed.g.tw["unsaved.lua"] = nil, nil
+  local export_state = W.export_state(win, ed)
+  export_state.job = { phase = "building", terminal = false }
+  check(not W.can_close(win, ed)
+        and export_state.notice:find("cancel", 1, true),
+        "project export UI: active jobs guard window dismissal")
+  check(W.guard_export(ed, "opening rewind")
+        and export_state.notice:find("rewind", 1, true),
+        "project export UI: active jobs guard rewind entry")
+  check(W.escape(win, ed)
+        and export_state.notice:find("Cancel Export", 1, true),
+        "project export UI: Esc explains the safe cancellation door")
+  export_state.job.terminal = true
+  check(W.can_close(win, ed),
+        "project export UI: terminal jobs release the close guard")
+  W.drop_ephemeral(ed)
+
   win.form.internal_h = "nope"
   before = pal.read_file(path)
   ok, err = W.save(win, ed)
@@ -3660,7 +3683,18 @@ local function t_ed_wm()
         "ed.wm: selected-first move priority")
   wm.update(doc, g, inp({ wx = 200, wy = 60, sx = 200, sy = 60, alt = true }))
 
-  -- A-rightclick closes; asset state would survive by design (§6)
+  -- A-rightclick normally closes; an external-operation kind may hold the
+  -- window until its explicit safe cancel door completes.
+  g = {}
+  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
+                          down3 = true, clicked3 = true,
+                          can_close = function() return false end }))
+  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
+                          can_close = function() return false end }))
+  check(wm.get(doc, b.id) ~= nil and g.state == nil,
+        "ed.wm: a kind can guard A-rightclick dismissal")
+
+  -- Without a guard, asset state survives the fearless close by design (§6).
   g = {}
   wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
                           down3 = true, clicked3 = true }))
