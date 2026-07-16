@@ -59,13 +59,17 @@ re-confirmed as post-merge work (PAL relative-mouse API + record v2).
 
 ## Exact next step
 
-**Human re-check** (stairs walkable, pillar solid, wasd/arrow feel).
-Then **grow the primitive vocabulary**: prism/lathe emitters in gb.lua
+Playtest round 3 verdict: **"that feels good"** (after flipping arrow-cam
+yaw to the stick convention — godot HandleManualRotation signs; pitch and
+drag already matched). The movement slice is feel-approved.
+
+Next: **grow the primitive vocabulary**: prism/lathe emitters in gb.lua
 (ports of proto draw_prism/draw_lathe) so the playground escapes
 axis-aligned boxes — colliders stay AABB, deco rotates. After that: the
 level stops being a hand-typed table — first editor-primitive
 distillation step (still parked until gameplay is polished, human
-directive 2026-07-16).
+directive 2026-07-16). Post-upstream-merge queue: PAL relative-mouse API
++ input record v2 for captured-cursor mouse look.
 
 Parked (unchanged): VI-soft bilinear presentation + 5551/dither grade pass
 (the adopted default presentation — not yet in the PAL blit).
