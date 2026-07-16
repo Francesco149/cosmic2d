@@ -183,3 +183,32 @@ up/down pitch at knob rates, pausing yaw-follow like every manual
 drive), mouse drag look + wheel zoom + c recenter unchanged. Captured
 cursor mouse-look confirmed as the post-upstream-merge plan (needs the
 PAL relative-mouse API + input record v2).
+
+## D3D-011 — the primitive vocabulary: prisms, lathes, rotated deco (2026-07-16)
+
+gb.lua grew the round half of the proto vocabulary — `G.prism` (extruded
+n-gon, facet-flat side normals, optional top/bottom cap fans) and
+`G.lathe` (profile-of-{r,y}-pairs revolved around Y, smooth per-vertex
+ring normals from the profile slope), straight ports of proto/main.c
+draw_prism/draw_lathe, plus `G.tri` and rigid-transform helpers. All
+emitters now RETURN their tri count so level.lua stopped hand-counting
+segment sizes. Emitters accept an m4 xf; rigid (translate*rot) only —
+applydir doesn't renormalize, scale would skew lighting.
+
+The level speaks it: BOXES stay the axis-aligned walk surfaces; new
+PRISMS (12-gon round tower, hex keep, octagon pillar — the two metal
+pillar boxes replaced), LATHES (the proto graybox dome, *0.8, on the
+tower), DECO (y-rotated accent monoliths ringing the goal tower).
+**Collider rule: colliders stay AABB, only visuals rotate.** Prisms get
+the apothem box of the wider radius — facets clamp flush, corners
+overhang the collider (visuals may overhang colliders, never the
+reverse). Rotated deco gets its world-bounds AABB — a touch fat at the
+corners, never thinner than the visual. Placement keeps the D3D-009 gap
+rule (> cw where collider faces oppose). Soak-verified: walk-into-facet
+clamps at exactly apothem-hw; monolith at bounds-hw.
+
+Kill plane (surfaced by the autoplay trace running off the world edge
+and falling forever): `y < move.kill_y` (knob, -12) respawns at
+level.spawn with a landing squash so the reset reads as feedback, not a
+glitch. demo(1) now loops the course indefinitely — future golden
+material.

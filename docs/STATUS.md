@@ -4,6 +4,40 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-16 (round 4) — the primitive vocabulary: prisms + lathes
+
+gb.lua now speaks the round half of the proto vocabulary: **G.prism**
+(extruded n-gon, cap fans) and **G.lathe** (revolved {r,y} profile,
+smooth ring normals) — ports of proto draw_prism/draw_lathe — plus G.tri
+and rigid-xf support; all emitters return tri counts (no more
+hand-counted segments). level.lua grew PRISMS (12-gon round tower, hex
+keep + wood cone roof, octagon pillar), LATHES (the proto dome on the
+tower), DECO (y-rotated accent monoliths by the goal tower). Collider
+rule (D3D-011): **colliders stay AABB, only visuals rotate** — prisms
+take the apothem box (facets flush, corners overhang), rotated deco its
+world-bounds box. Also: kill-plane respawn (move.kill_y knob) — the
+autoplay trace fell off the world forever; now demo(1) loops the course
+indefinitely (future golden material). Verified: facet/monolith walk
+soaks clamp at predicted planes, 2D goldens ALL GREEN, 2 shots on
+llm-feed (hex keep + cone roof; tower + dome + monoliths).
+
+## Exact next step
+
+The playground now has non-axis-aligned structure; movement slice stays
+feel-approved (round-3 verdict). Next, in order of the human directive
+(gameplay first, editor parked):
+
+1. **Feel-check the new structure** via the feed (does round collision
+   read fair? monolith bounds ok?) — asked in the llm-feed note.
+2. **Demo 1 needs a goal loop**: the accent tower is "the goal" but
+   nothing happens — pick up / touch feedback (flash, sound hook, respawn
+   of a collectible) to make the course a game, still knob-driven.
+3. Then: first golden for bounce (demo(1) is deterministic and loops).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2 for captured-cursor mouse look. Parked (unchanged): VI-soft
+bilinear presentation + 5551/dither grade; editor-primitive distillation.
+
 ## 2026-07-16 (later still) — demo 1's movement slice is playable
 
 **projects/bounce**: the bouncy cube runs/jumps around an axis-aligned
@@ -57,7 +91,7 @@ yaw-follow; drag/wheel/c unchanged). Soak harness kept in-cartridge:
 game.demo(2) walk + _G.DBG=n telemetry. Captured-cursor mouse look
 re-confirmed as post-merge work (PAL relative-mouse API + record v2).
 
-## Exact next step
+## Exact next step (done — see the entry above)
 
 Playtest round 3 verdict: **"that feels good"** (after flipping arrow-cam
 yaw to the stick convention — godot HandleManualRotation signs; pitch and
