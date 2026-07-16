@@ -156,3 +156,30 @@ Mouse look ships as DRAG-look (absolute cursor deltas from the frozen
 relative-mouse API + a record revision — deferred, engine-shared surface,
 merge-sensitive. Headless runs see zeroed mouse fields so autoplay/
 goldens stay deterministic (same design as the godot original).
+
+## D3D-010 — epsilon side tests, the mantle, wasd/arrow controls (2026-07-16)
+
+Second playtest round. The D3D-009 resolver had a float hole: a side
+clamp stores `face - hw` into the f32 player buffer, and `(face-hw)+hw`
+can round PAST the face — the exact pre-move side test then classified
+the flush player as "squeezed" (clamp nothing) and it slid into the box.
+Symptoms: diagonal walks phased through the stairs; one pillar was solid
+on one axis only (per-face rounding luck). Rule: **any geometric side
+test against sim state stored in f32 buffers carries an epsilon** (1e-3
+world units here — far above f32 noise at these coordinates, far below
+one frame of motion). Found via a frame-exact `_G.DBG=1` track — the
+telemetry hook + `game.demo(2)` (pure forward walk) stay in the
+cartridge as the collision soak harness.
+
+Mantle (human-requested): a blocked step whose top is within `step_h`
+(knob, 0.6u) of the feet lifts the player instead of clamping — only if
+grounded and the body fits at the raised spot (headroom scan). Stairs
+are WALKED, jumps are for gaps; no squash on the lift. This replaces any
+step-up leniency in the jump itself and is checked before both x and z
+clamps.
+
+Controls settled: **wasd = movement, arrows = camera** (left/right yaw,
+up/down pitch at knob rates, pausing yaw-follow like every manual
+drive), mouse drag look + wheel zoom + c recenter unchanged. Captured
+cursor mouse-look confirmed as the post-upstream-merge plan (needs the
+PAL relative-mouse API + input record v2).
