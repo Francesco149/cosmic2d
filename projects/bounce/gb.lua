@@ -254,8 +254,9 @@ end
 
 -- revolve a profile of {r,y, r,y, ...} pairs around local Y under xf (proto
 -- draw_lathe), n segments per ring. Smooth ring shading: per-vertex normals
--- from the profile-plane slope, so this bypasses quad(). Returns tris.
-function G.lathe(out, xf, prof, n, col)
+-- from the profile-plane slope, so this bypasses quad(). alpha (0-255,
+-- nil = opaque) is for blend-segment ghosts (pickup pops). Returns tris.
+function G.lathe(out, xf, prof, n, col, alpha)
   local npts = #prof // 2
   local ntris = 0
   for j = 0, npts - 2 do
@@ -277,10 +278,10 @@ function G.lathe(out, xf, prof, n, col)
       local bx, by, bz = xfp(xf, rb * c1, yb, rb * s1)
       local cx, cy, cz = xfp(xf, ra * c1, ya, ra * s1)
       local dx, dy_, dz = xfp(xf, ra * c0, ya, ra * s0)
-      local A = vert(ax, ay, az, u0, v1, col, n0x, n0y, n0z)
-      local B = vert(bx, by, bz, u1, v1, col, n1x, n1y, n1z)
-      local C = vert(cx, cy, cz, u1, v0, col, n1x, n1y, n1z)
-      local D = vert(dx, dy_, dz, u0, v0, col, n0x, n0y, n0z)
+      local A = vert(ax, ay, az, u0, v1, col, n0x, n0y, n0z, alpha)
+      local B = vert(bx, by, bz, u1, v1, col, n1x, n1y, n1z, alpha)
+      local C = vert(cx, cy, cz, u1, v0, col, n1x, n1y, n1z, alpha)
+      local D = vert(dx, dy_, dz, u0, v0, col, n0x, n0y, n0z, alpha)
       out[#out + 1] = A .. B .. C .. A .. C .. D
       ntris = ntris + 2
     end

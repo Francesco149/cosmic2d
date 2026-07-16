@@ -76,6 +76,23 @@ local DECO = {
   { "accent", 1.2, 2.6, 0.5, 19.9, 8.3, 0, 1.2 },
 }
 
+-- the goal loop (pickups.lua): gem hover centers {x,y,z}, laid along the
+-- course ~0.7u above their walk surface, plus one mid-jump reward off the
+-- keep roof toward the first float platform
+L.gems = {
+  { 7.55, 1.25, 18 },   -- stair 1 (top 0.55)
+  { 10.95, 2.35, 18 },  -- stair 3 (top 1.65)
+  { 15.5, 3.45, 18 },   -- keep roof (2.75), off the stair exit
+  { 19.5, 3.45, 15.5 }, -- keep roof, turning toward the platforms
+  { 17.5, 4.55, 13.9 }, -- mid-air: the roof -> platform 1 jump arc
+  { 17.5, 4.7, 12.5 },  -- float platform 1 (top 4.0)
+  { 14.5, 5.6, 8.5 },   -- float platform 2 (top 4.9)
+  { 18.5, 6.5, 4.5 },   -- float platform 3 (top 5.8)
+  { -7, 1.8, 12 },      -- wood deck (top 1.1), the off-course stray
+}
+-- the goal star atop the accent tower (top 6.4)
+L.goal = { 23.5, 7.4, 4.5 }
+
 L.tex = nil -- material name -> PAL texture id (gb.load_textures)
 L.segs = nil -- { {tex,count,off}... } into bounce.verts
 L.colliders = nil -- { {x0,y0,z0,x1,y1,z1}... }

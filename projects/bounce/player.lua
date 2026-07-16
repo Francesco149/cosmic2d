@@ -12,6 +12,7 @@ local state = cm.require("cm.state")
 local gb = cm.require("gb")
 local m4 = cm.require("cm.m4")
 local level = cm.require("level")
+local audio = cm.require("audio")
 
 local M = {}
 
@@ -113,6 +114,7 @@ function M.step(ctl)
     vy = v0
     jbuf, coyote = 0, 0
     grounded = false
+    audio.sfx("jump", 96)
   end
   jbuf = m.max(0, jbuf - 1)
   coyote = m.max(0, coyote - 1)
@@ -197,6 +199,7 @@ function M.step(ctl)
         if vy < -2 then
           squash_amt = feel.squash * m.min(1, -vy / feel.vref)
           squash_t = feel.squash_frames
+          audio.sfx("land", m.min(127, (64 - vy * 4) // 1))
         end
         vy = 0
       elseif vy > 0 and y + hh <= b[2] + EPS then -- head was below: bonk
@@ -216,6 +219,7 @@ function M.step(ctl)
     squash_amt = feel.squash
     squash_t = feel.squash_frames
     grounded = true
+    audio.sfx("hit")
   end
 
   squash_t = m.max(0, squash_t - 1)

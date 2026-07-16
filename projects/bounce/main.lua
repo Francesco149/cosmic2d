@@ -31,6 +31,8 @@ local m4 = cm.require("cm.m4")
 local gb = cm.require("gb")
 local level = cm.require("level")
 local player = cm.require("player")
+local pickups = cm.require("pickups")
+local audio = cm.require("audio")
 
 local W, H = pal.gfx_size()
 local FOVY, ZN, ZF = 52, 0.3, 120
@@ -65,6 +67,14 @@ local KNOBS = {
   feel = {
     stretch = 0.32, squash = 0.42, vref = 12,
     squash_frames = 10, lean = 0.15,
+  },
+  goal = { -- the pickup loop (pickups.lua)
+    r = 0.9,        -- gem pickup radius (the star scales it up)
+    respawn = 300,  -- frames until a collected gem returns
+    pop = 12,       -- pickup ghost: expand-and-fade frames
+    banner = 100,   -- CLEAR banner frames
+    spin = 0.05,    -- gem spin, rad/frame (render-class)
+    bob = 0.16, bob_f = 80, -- hover bob amplitude (u) / period (frames)
   },
 }
 
@@ -111,14 +121,25 @@ function game.init()
   end
   if d.demo == nil then d.demo = 0 end
   if d.demo_t0 == nil then d.demo_t0 = 0 end
+  d.score = d.score or 0   -- gems collected, all time
+  d.laps = d.laps or 0     -- goal stars touched
+  d.clear_t = d.clear_t or 0
 
   level.build()
   player.init()
+  audio.init()
+  pickups.init()
   build_sky()
 
-  -- dyn: per-frame cube + shadow verts (render-class scratch, rebuilt in
-  -- draw; lives in a named buffer only so the PAL can read it)
-  dyn = pal.buf("bounce.dyn", 74 * 72)
+  -- dyn: per-frame cube + shadow + pickup verts (render-class scratch,
+  -- rebuilt in draw; a named buffer only so the PAL can read it)
+  local dyn_size = (74 + pickups.max_tris()) * 72
+  local ok, db = pcall(pal.buf, "bounce.dyn", dyn_size)
+  if not ok then -- worst case grew across a hot reload
+    pal.buf_free("bounce.dyn")
+    db = pal.buf("bounce.dyn", dyn_size)
+  end
+  dyn = db
 
   -- bounce.cam layout (f32): [0]yaw [4]pitch [8]dist [12/16/20]focus xyz
   -- [24]manual-hold frames [28/32]prev cursor [36]recentering flag
@@ -281,14 +302,16 @@ end
 
 function game.step()
   player.step(build_ctl())
+  pickups.step()
   cam_step()
   -- collision/feel telemetry: --eval "_G.DBG=10" prints the track every N
   -- frames; reads + prints only (the smoke DEMO_DBG pattern)
   if DBG and state.frame() % (tonumber(DBG) or 10) == 0 then
     local px, py, pz = player.pos()
     local vx, vy, vz = player.vel()
-    print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f yaw=%.2f"):format(
-      state.frame(), px, py, pz, vx, vy, vz, cam:f32(0)))
+    print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f yaw=%.2f gems=%d laps=%d"):format(
+      state.frame(), px, py, pz, vx, vy, vz, cam:f32(0),
+      state.doc.score, state.doc.laps))
   end
 end
 
@@ -324,18 +347,38 @@ function game.draw()
     pal.x_tris(s.tex, level.vbuf, s.count, s.off, 0)
   end
 
-  -- the cube (opaque), then its blob shadow (blend, no depth write)
+  -- the cube + pickups (opaque), then the blend pass: blob shadow +
+  -- pickup pop ghosts (no depth write, after all opaque)
+  local frame = state.frame()
   local out = {}
   local ncube = player.emit(out)
+  local ngem = pickups.emit(out, frame)
   local nsh = player.emit_shadow(out)
+  local nfx = pickups.emit_fx(out, frame)
   dyn:setstr(0, table.concat(out))
-  pal.x_tris(0, dyn, ncube, 0, 0)
-  pal.x_tris(level.tex.shadow, dyn, nsh, ncube * 72, 4)
+  local off = 0
+  pal.x_tris(0, dyn, ncube, off, 0); off = off + ncube * 72
+  if ngem > 0 then pal.x_tris(0, dyn, ngem, off, 0) end
+  off = off + ngem * 72
+  pal.x_tris(level.tex.shadow, dyn, nsh, off, 4); off = off + nsh * 72
+  if nfx > 0 then pal.x_tris(0, dyn, nfx, off, 4) end
 
   local st = pal.frame_stats()
   text.draw(3, 3, ("bounce  %d tris  frame %d")
-            :format(st.tris or 0, state.frame()))
-  if state.doc.demo ~= 0 then
+            :format(st.tris or 0, frame))
+  local d = state.doc
+  local hud = ("gems %d . laps %d"):format(d.score, d.laps)
+  text.draw(W - text.measure(hud) - 3, 3, hud,
+            { r = 1, g = 0.85, b = 0.45 })
+  if d.clear_t > 0 then
+    -- CLEAR banner: holds, then fades out over its last third
+    local kb = d.knobs.goal.banner
+    local a = m.min(1, 3 * d.clear_t / kb)
+    local msg = "COURSE CLEAR!"
+    text.draw((W - text.measure(msg, "8x16")) // 2, H // 3, msg,
+              { font = "8x16", r = 1, g = 0.9, b = 0.5, a = a })
+  end
+  if d.demo ~= 0 then
     local msg = "AUTOPLAY * press any key"
     text.draw((W - text.measure(msg)) // 2, 14, msg,
               { r = 1, g = 0.92, b = 0.6, a = 0.95 })
