@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — external-project picker lifecycle complete; location actions next (2026-07-16)
+## Current handoff — project location actions complete; duplicate next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -13,6 +13,38 @@ A0–A2 are complete and A3 is in progress. Broader project lifecycle,
 gamepad/player settings, shared genre-neutral runtime slices and demos,
 complete rewind product UI, and the release-candidate pass remain explicit
 alpha gates.
+
+**D077 closes the first project-location packet.** Every ready recent tile now
+has a `...` menu for **reveal**, **rename folder**, and **move folder**. Rename
+edits the final directory component without changing project metadata; move
+chooses an existing parent through the asynchronous native folder dialog. The
+picker refuses active-editor ownership, aliases, invalid projects, unsafe
+names, descendant moves, missing/unwritable parents, and collisions before any
+filesystem transition. The action overlays remain usable at 300% fixed-chrome
+scale.
+
+PAL API 16 makes the authoritative directory transition atomic and
+no-replace: Linux uses `renameat2(RENAME_NOREPLACE)` and Windows uses UTF-16
+`MoveFileExW` without replacement. This packet deliberately refuses
+cross-filesystem/volume moves until recursive transactional copy exists.
+Recents change only after the native move succeeds. A native failure therefore
+leaves the source and its tile untouched; a recents-only failure reports the
+exact new root and retains the stale tile as an explicit repair handle. Reveal
+hands Linux a percent-encoded UTF-8 `file:` URI and Explorer the original
+UTF-16 path, including spaced/non-ASCII names.
+
+**D077 proof:** Linux selftest passes **23,430 checks** and the staged native
+Windows executable passes **23,432** on PAL API 16. `nix run .#test` is ALL
+GREEN across release manifests, every historical trace, and all pixel/audio
+goldens; the corrected native Windows clean-machine archive matrix also
+passes. Fresh public Linux and Windows editor archives each moved an external
+project through spaced/non-ASCII source and destination paths, renamed it,
+persisted the replacement recent, restarted, and directly reopened the new
+root. The Windows ZIP additionally launched Explorer for that Unicode root and
+the proof identified exactly one matching native window. That archive check
+exposed and closed Windows' unreliable percent-encoded-file-URI behavior by
+moving Explorer to the UTF-16 native handoff. Inspected 100%, focused-rename,
+300%, and native-Windows picker captures are on llm-feed.
 
 **D076 closes the external-project entry/return packet.** PAL API 15 exposes
 SDL's asynchronous native folder chooser through a process-owned, pollable
@@ -160,14 +192,17 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** add the first location-changing project actions:
-**reveal**, **rename**, and **move** from a ready picker tile. Preflight source,
-destination, collisions, permissions, and active-editor ownership; update
-recents only after the filesystem operation succeeds, and leave the original
-root discoverable after every failure. Exit when fresh Linux and Windows
-archives can rename/move an external project into a spaced/non-ASCII path,
-reveal it in the native file manager, restart, and reopen the new root without
-a terminal. Leave duplicate, archive/delete, richer
+**Exact next packet:** add failure-safe **duplicate** from a ready picker tile.
+Choose an existing destination parent and editable folder name, copy the saved
+project into a unique non-authoritative sibling staging directory, omit
+machine/editor state (`.ed` and `video.dat`), validate the staged root, then
+publish it with one atomic no-replace rename before adding its recent tile.
+Expose progress and cancellation for large trees. Inject read/write/publish
+failures and prove the complete source plus every colliding destination remain
+untouched and partial staging is cleaned. Exit when fresh Linux and Windows
+archives can duplicate an external project through spaced/non-ASCII paths and
+open both independent roots. Reuse the recursive-copy primitive for a later
+cross-filesystem move; leave archive/delete confirmation, richer picker
 sort/search/keyboard/scrolling/thumbnails, and starter-template expansion for
 later A3 packets.
 
