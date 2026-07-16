@@ -12,7 +12,7 @@
 -- resolve without teleports; course design keeps riders clear of walls.
 
 local m = cm.require("cm.math")
-local gb = cm.require("gb")
+local gb = cm.require("cm.gb")
 local level = cm.require("level")
 
 local M = select(2, ...) or {}

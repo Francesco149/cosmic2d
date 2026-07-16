@@ -10,7 +10,7 @@
 
 local m = cm.require("cm.math")
 local m4 = cm.require("cm.m4")
-local gb = cm.require("gb")
+local gb = cm.require("cm.gb")
 
 local L = select(2, ...) or {}
 

@@ -1,7 +1,9 @@
--- gb.lua — the graybox library: material-checker textures + pre-lit
--- triangle emitters, ported from proto/main.c (tx_gb, draw_gbox) so bounce
--- reproduces the look reference (proto/out/graybox.png) without the baked
--- dump. Everything here is render-class: textures are procedural pixels,
+-- cm.gb — the graybox library: material-checker textures + pre-lit
+-- triangle emitters, ported from proto/main.c (tx_gb, draw_gbox) so
+-- cartridges reproduce the look reference (proto/out/graybox.png) without
+-- the baked dump. Born in projects/bounce (D3D-008), promoted engine-side
+-- when the figure cartridge became its second user (the cm.m4 precedent).
+-- Everything here is render-class: textures are procedural pixels,
 -- emitters turn box descriptions into x_tris vertex bytes (24B: xyz uv
 -- rgba), pre-lit per vertex like the whole retro pipeline (COSMIC3D.md §2).
 --
@@ -214,16 +216,19 @@ end
 -- extruded regular n-gon under xf (proto draw_prism): r0 bottom radius, r1
 -- top radius, height h from local y=0. Facet-flat side normals; uv wraps
 -- the perimeter (4 tiles around, h/2 down). caps: bit0 top, bit1 bottom.
--- Returns tris emitted.
-function G.prism(out, xf, n, r0, r1, h, col, caps)
+-- nrmxf (optional): a RIGID transform for normals when xf carries scale —
+-- positions deform, lighting stays rot-only (the player-squash precedent,
+-- D3D-008). Returns tris emitted.
+function G.prism(out, xf, n, r0, r1, h, col, caps, nrmxf)
   caps = caps or 0
+  local nxf = nrmxf or xf
   local ntris = 0
   for i = 0, n - 1 do
     local a0, a1 = i * m.tau / n, (i + 1) * m.tau / n
     local c0, s0 = m.cos(a0), m.sin(a0)
     local c1, s1 = m.cos(a1), m.sin(a1)
     local nl = m.sqrt((c0 + c1) ^ 2 + (s0 + s1) ^ 2)
-    local nx, ny, nz = xfn(xf, (c0 + c1) / nl, 0, (s0 + s1) / nl)
+    local nx, ny, nz = xfn(nxf, (c0 + c1) / nl, 0, (s0 + s1) / nl)
     local u0, u1, vv = i / n * 4, (i + 1) / n * 4, h / 2
     local ax, ay, az = xfp(xf, r1 * c0, h, r1 * s0)
     local bx, by, bz = xfp(xf, r1 * c1, h, r1 * s1)
@@ -234,7 +239,7 @@ function G.prism(out, xf, n, r0, r1, h, col, caps)
     ntris = ntris + 2
     if (caps & 1) ~= 0 and r1 > 0.001 then
       local px, py, pz = xfp(xf, 0, h, 0)
-      local ux, uy, uz = xfn(xf, 0, 1, 0)
+      local ux, uy, uz = xfn(nxf, 0, 1, 0)
       tri(out, { px, py, pz, 0.5, 0.5 },
           { ax, ay, az, 0.5 + 0.4 * c0, 0.5 + 0.4 * s0 },
           { bx, by, bz, 0.5 + 0.4 * c1, 0.5 + 0.4 * s1 }, col, ux, uy, uz)
@@ -242,7 +247,7 @@ function G.prism(out, xf, n, r0, r1, h, col, caps)
     end
     if (caps & 2) ~= 0 then
       local px, py, pz = xfp(xf, 0, 0, 0)
-      local ux, uy, uz = xfn(xf, 0, -1, 0)
+      local ux, uy, uz = xfn(nxf, 0, -1, 0)
       tri(out, { px, py, pz, 0.5, 0.5 },
           { cx, cy, cz, 0.5 + 0.4 * c1, 0.5 + 0.4 * s1 },
           { dx, dy, dz, 0.5 + 0.4 * c0, 0.5 + 0.4 * s0 }, col, ux, uy, uz)
@@ -255,9 +260,11 @@ end
 -- revolve a profile of {r,y, r,y, ...} pairs around local Y under xf (proto
 -- draw_lathe), n segments per ring. Smooth ring shading: per-vertex normals
 -- from the profile-plane slope, so this bypasses quad(). alpha (0-255,
--- nil = opaque) is for blend-segment ghosts (pickup pops). Returns tris.
-function G.lathe(out, xf, prof, n, col, alpha)
+-- nil = opaque) is for blend-segment ghosts (pickup pops). nrmxf (optional):
+-- rigid normal transform when xf carries scale (see G.prism). Returns tris.
+function G.lathe(out, xf, prof, n, col, alpha, nrmxf)
   local npts = #prof // 2
+  local nxf = nrmxf or xf
   local ntris = 0
   for j = 0, npts - 2 do
     local ra, ya = prof[j * 2 + 1], prof[j * 2 + 2]
@@ -270,8 +277,8 @@ function G.lathe(out, xf, prof, n, col, alpha)
       local a0, a1 = i * m.tau / n, (i + 1) * m.tau / n
       local c0, s0 = m.cos(a0), m.sin(a0)
       local c1, s1 = m.cos(a1), m.sin(a1)
-      local n0x, n0y, n0z = xfn(xf, nr * c0, ny, nr * s0)
-      local n1x, n1y, n1z = xfn(xf, nr * c1, ny, nr * s1)
+      local n0x, n0y, n0z = xfn(nxf, nr * c0, ny, nr * s0)
+      local n1x, n1y, n1z = xfn(nxf, nr * c1, ny, nr * s1)
       local u0, u1 = i / n * 4, (i + 1) / n * 4
       local v0, v1 = j / (npts - 1) * 2, (j + 1) / (npts - 1) * 2
       local ax, ay, az = xfp(xf, rb * c0, yb, rb * s0)
@@ -287,6 +294,16 @@ function G.lathe(out, xf, prof, n, col, alpha)
     end
   end
   return ntris
+end
+
+-- chunky low-poly ball of radius R under xf (proto draw_ball: the 6-point
+-- lathe profile, NOT a smooth uv-sphere — the era look). Ellipsoids: put
+-- the scale in xf and pass the rigid part transform as nrmxf.
+local BALLPROF = { 0, -1, 0.62, -0.78, 0.95, -0.20, 0.95, 0.20, 0.62, 0.78, 0, 1 }
+function G.ball(out, xf, R, n, col, alpha, nrmxf)
+  local prof = {}
+  for i = 1, #BALLPROF do prof[i] = BALLPROF[i] * R end
+  return G.lathe(out, xf, prof, n, col, alpha, nrmxf)
 end
 
 return G

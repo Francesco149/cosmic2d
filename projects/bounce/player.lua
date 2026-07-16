@@ -10,7 +10,7 @@
 
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
-local gb = cm.require("gb")
+local gb = cm.require("cm.gb")
 local m4 = cm.require("cm.m4")
 local level = cm.require("level")
 local movers = cm.require("movers")
