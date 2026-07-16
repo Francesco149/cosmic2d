@@ -352,6 +352,215 @@ void pal_gfx_begin(float r, float g, float b, float a) {
   G.clip_on = false;
   G.cur_target = 0; /* draws default to the game target each frame */
   G.grade_set = false; /* the color grade is opt-in per frame (pal.x_grade) */
+  G.v3count = 0;
+  G.seg3d_count = 0;
+  G.view3d_count = 0; /* 3D is opt-in per frame, like the grade */
+}
+
+/* ---------- 3D retro pipeline (x_view3d/x_tris, docs/COSMIC3D.md §2) ----------
+ * The prototype's gpu_proto.c grown into the PAL the cosmic2d way: same
+ * CPU-batch + segment model as quads, one extra render pass. Everything here
+ * is lazily created on first use so a pure-2D session's frame path (and its
+ * pixel goldens) stays byte-identical to cosmic2d's. */
+
+static SDL_GPUGraphicsPipeline *make_pipeline3d(SDL_GPUShader *vs,
+                                                SDL_GPUShader *fs, bool blend) {
+  SDL_GPUVertexBufferDescription vbd = {
+      .slot = 0,
+      .pitch = PAL_VERT3D_BYTES,
+      .input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX,
+  };
+  SDL_GPUVertexAttribute attrs[3] = {
+      {.location = 0, .buffer_slot = 0,
+       .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, .offset = 0},
+      {.location = 1, .buffer_slot = 0,
+       .format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, .offset = 12},
+      {.location = 2, .buffer_slot = 0,
+       .format = SDL_GPU_VERTEXELEMENTFORMAT_UBYTE4_NORM, .offset = 20},
+  };
+  SDL_GPUColorTargetDescription ct = {
+      .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+      .blend_state = {
+          .enable_blend = blend,
+          .src_color_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA,
+          .dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+          .color_blend_op = SDL_GPU_BLENDOP_ADD,
+          .src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE,
+          .dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA,
+          .alpha_blend_op = SDL_GPU_BLENDOP_ADD,
+      },
+  };
+  SDL_GPUGraphicsPipelineCreateInfo ci = {
+      .vertex_shader = vs,
+      .fragment_shader = fs,
+      .primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST,
+      .rasterizer_state = {.fill_mode = SDL_GPU_FILLMODE_FILL,
+                           .cull_mode = SDL_GPU_CULLMODE_NONE},
+      .multisample_state = {.sample_count = SDL_GPU_SAMPLECOUNT_1},
+      .depth_stencil_state = {
+          .compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL,
+          .enable_depth_test = true,
+          .enable_depth_write = !blend, /* decals never write depth */
+      },
+      .target_info = {.color_target_descriptions = &ct,
+                      .num_color_targets = 1,
+                      .depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+                      .has_depth_stencil_target = true},
+  };
+  ci.vertex_input_state.vertex_buffer_descriptions = &vbd;
+  ci.vertex_input_state.num_vertex_buffers = 1;
+  ci.vertex_input_state.vertex_attributes = attrs;
+  ci.vertex_input_state.num_vertex_attributes = 3;
+  SDL_GPUGraphicsPipeline *p = SDL_CreateGPUGraphicsPipeline(G.dev, &ci);
+  if (!p) pal_log("gfx: 3d pipeline: %s", SDL_GetError());
+  return p;
+}
+
+static bool gfx3d_up(void) {
+  if (G.pipe3d_opaque) return true;
+  SDL_GPUShader *vs = load_shader("pal/shaders/retro.vert.spv",
+                                  SDL_GPU_SHADERSTAGE_VERTEX, 0, 1);
+  SDL_GPUShader *fs = load_shader("pal/shaders/retro.frag.spv",
+                                  SDL_GPU_SHADERSTAGE_FRAGMENT, 1, 1);
+  if (!vs || !fs) {
+    if (vs) SDL_ReleaseGPUShader(G.dev, vs);
+    if (fs) SDL_ReleaseGPUShader(G.dev, fs);
+    return false;
+  }
+  G.pipe3d_opaque = make_pipeline3d(vs, fs, false);
+  G.pipe3d_blend = make_pipeline3d(vs, fs, true);
+  SDL_ReleaseGPUShader(G.dev, vs);
+  SDL_ReleaseGPUShader(G.dev, fs);
+  if (!G.pipe3d_opaque || !G.pipe3d_blend) {
+    if (G.pipe3d_opaque) SDL_ReleaseGPUGraphicsPipeline(G.dev, G.pipe3d_opaque);
+    if (G.pipe3d_blend) SDL_ReleaseGPUGraphicsPipeline(G.dev, G.pipe3d_blend);
+    G.pipe3d_opaque = G.pipe3d_blend = NULL;
+    return false;
+  }
+  return true;
+}
+
+bool pal_gfx_view3d(const float mvp[16], float fog_start, float fog_end,
+                    float fog_r, float fog_g, float fog_b, bool fog_on) {
+  if (!gfx3d_up()) return false;
+  if (G.view3d_count >= PAL_MAX_VIEW3D) return false;
+  PalView3D *v = &G.views3d[G.view3d_count++];
+  memcpy(v->mvp, mvp, sizeof v->mvp);
+  v->fog[0] = fog_start;
+  v->fog[1] = fog_end;
+  v->fog[2] = fog_on ? 1.0f : 0.0f;
+  v->fog[3] = 0;
+  v->fogcol[0] = fog_r;
+  v->fogcol[1] = fog_g;
+  v->fogcol[2] = fog_b;
+  v->fogcol[3] = 1;
+  return true;
+}
+
+bool pal_gfx_tris(int tex, const void *verts, uint32_t count, uint32_t flags) {
+  if (!G.view3d_count) return false; /* x_view3d first (luabind errors) */
+  if (!count) return true;
+  if (tex < 0 || tex >= PAL_MAX_TEX || !G.texs[tex].used) tex = 0;
+  int view = (int)G.view3d_count - 1;
+
+  uint32_t nv = count * 3;
+  if (G.v3count + nv > G.v3cap) {
+    uint32_t cap = G.v3cap ? G.v3cap : 4096 * 3;
+    while (cap < G.v3count + nv) cap *= 2;
+    G.verts3d = realloc(G.verts3d, (size_t)cap * PAL_VERT3D_BYTES);
+    G.v3cap = cap;
+  }
+  memcpy(G.verts3d + (size_t)G.v3count * PAL_VERT3D_BYTES, verts,
+         (size_t)nv * PAL_VERT3D_BYTES);
+
+  PalSeg3D *s = G.seg3d_count ? &G.segs3d[G.seg3d_count - 1] : NULL;
+  if (!s || s->tex != tex || s->flags != flags || s->view != view) {
+    if (G.seg3d_count == G.seg3d_cap) {
+      G.seg3d_cap = G.seg3d_cap ? G.seg3d_cap * 2 : 64;
+      G.segs3d = realloc(G.segs3d, G.seg3d_cap * sizeof *G.segs3d);
+    }
+    G.segs3d[G.seg3d_count++] = (PalSeg3D){
+        .tex = tex, .flags = flags, .view = view, .first = G.v3count, .count = 0};
+    s = &G.segs3d[G.seg3d_count - 1];
+  }
+  G.v3count += nv;
+  s->count += nv;
+  return true;
+}
+
+/* the 3D pass: clears the game target (color to the frame clear, depth to
+ * far) and draws the accumulated 3D segments; the 2D scene_pass then LOADs
+ * over it so quads/HUD composite on top. Runs only when 3D was drawn. */
+static bool scene3d_pass(SDL_GPUCommandBuffer *cmd) {
+  /* depth target tracks the internal target size (FOV resizes are live) */
+  if (!G.depth3d || G.depth3d_w != G.iw || G.depth3d_h != G.ih) {
+    if (G.depth3d) SDL_ReleaseGPUTexture(G.dev, G.depth3d);
+    G.depth3d = SDL_CreateGPUTexture(
+        G.dev, &(SDL_GPUTextureCreateInfo){
+                   .type = SDL_GPU_TEXTURETYPE_2D,
+                   .format = SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+                   .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
+                   .width = (Uint32)G.iw,
+                   .height = (Uint32)G.ih,
+                   .layer_count_or_depth = 1,
+                   .num_levels = 1});
+    if (!G.depth3d) {
+      pal_log("gfx: 3d depth target: %s", SDL_GetError());
+      G.depth3d_w = G.depth3d_h = 0;
+      return false; /* present falls back to the 2D clear */
+    }
+    G.depth3d_w = G.iw;
+    G.depth3d_h = G.ih;
+  }
+
+  SDL_GPUColorTargetInfo ct = {
+      .texture = G.target,
+      .clear_color = {G.clear[0], G.clear[1], G.clear[2], G.clear[3]},
+      .load_op = SDL_GPU_LOADOP_CLEAR,
+      .store_op = SDL_GPU_STOREOP_STORE,
+  };
+  SDL_GPUDepthStencilTargetInfo dst = {
+      .texture = G.depth3d,
+      .clear_depth = 1.0f,
+      .load_op = SDL_GPU_LOADOP_CLEAR,
+      .store_op = SDL_GPU_STOREOP_DONT_CARE,
+  };
+  SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dst);
+  struct { float mvp[16]; float fog[4]; } vubo;
+  struct { float mode[4]; float fogcol[4]; } fubo;
+  int cur_blend = -1, cur_view = -1;
+  for (uint32_t i = 0; i < G.seg3d_count; i++) {
+    PalSeg3D *s = &G.segs3d[i];
+    int blend = (s->flags & PAL_TRI_BLEND) ? 1 : 0;
+    if (blend != cur_blend) {
+      SDL_BindGPUGraphicsPipeline(pass,
+                                  blend ? G.pipe3d_blend : G.pipe3d_opaque);
+      SDL_BindGPUVertexBuffers(pass, 0,
+                               &(SDL_GPUBufferBinding){.buffer = G.vbuf3d}, 1);
+      cur_blend = blend;
+      cur_view = -1; /* uniforms rebind after a pipeline switch */
+    }
+    PalView3D *v = &G.views3d[s->view];
+    if (s->view != cur_view) {
+      memcpy(vubo.mvp, v->mvp, sizeof vubo.mvp);
+      memcpy(vubo.fog, v->fog, sizeof vubo.fog);
+      SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof vubo);
+      cur_view = s->view;
+    }
+    fubo.mode[0] = (s->flags & PAL_TRI_NEAREST) ? 0.0f : 1.0f;
+    fubo.mode[1] = (s->flags & PAL_TRI_ALPHATEST) ? 1.0f : 0.0f;
+    fubo.mode[2] = fubo.mode[3] = 0;
+    memcpy(fubo.fogcol, v->fogcol, sizeof fubo.fogcol);
+    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof fubo);
+    SDL_BindGPUFragmentSamplers(
+        pass, 0,
+        &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
+                                        .sampler = G.sampler},
+        1);
+    SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
+  }
+  SDL_EndGPURenderPass(pass);
+  return true;
 }
 
 static void seg_for(int tex) {
@@ -410,16 +619,18 @@ void pal_gfx_clip(bool on, int x, int y, int w, int h) {
 }
 
 /* render the accumulated segments belonging to one target into a texture,
- * clearing it first. The vertex buffer is shared; we just draw the segs whose
- * target matches, with this target's projection + full-rect scissor. */
+ * clearing it first (clear = NULL loads instead: the 3D pass already cleared
+ * + drew under the 2D quads). The vertex buffer is shared; we just draw the
+ * segs whose target matches, with this target's projection + full scissor. */
 static void scene_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *tex, int tw,
                        int th, int target_id, const float clear[4]) {
   SDL_GPUColorTargetInfo ct = {
       .texture = tex,
-      .clear_color = {clear[0], clear[1], clear[2], clear[3]},
-      .load_op = SDL_GPU_LOADOP_CLEAR,
+      .load_op = clear ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD,
       .store_op = SDL_GPU_STOREOP_STORE,
   };
+  if (clear)
+    ct.clear_color = (SDL_FColor){clear[0], clear[1], clear[2], clear[3]};
   SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, NULL);
   if (G.vcount) {
     SDL_BindGPUGraphicsPipeline(pass, G.pipe_scene);
@@ -556,6 +767,40 @@ bool pal_gfx_present(void) {
   G.stat_quads = G.vcount / 6;
   G.stat_segs = G.seg_count;
   G.stat_vbytes = bytes;
+  G.stat_tris = G.v3count / 3;
+  G.stat_segs3d = G.seg3d_count;
+
+  /* 3D batch upload (own buffer; the 2D flush below is untouched) */
+  uint32_t bytes3d = G.v3count * PAL_VERT3D_BYTES;
+  if (bytes3d) {
+    if (bytes3d > G.gpubuf3d_cap) {
+      uint32_t cap = G.gpubuf3d_cap ? G.gpubuf3d_cap
+                                    : 4096 * 3 * PAL_VERT3D_BYTES;
+      while (cap < bytes3d) cap *= 2;
+      if (G.vbuf3d) SDL_ReleaseGPUBuffer(G.dev, G.vbuf3d);
+      if (G.tbuf3d) SDL_ReleaseGPUTransferBuffer(G.dev, G.tbuf3d);
+      G.vbuf3d = SDL_CreateGPUBuffer(
+          G.dev, &(SDL_GPUBufferCreateInfo){.usage = SDL_GPU_BUFFERUSAGE_VERTEX,
+                                            .size = cap});
+      G.tbuf3d = SDL_CreateGPUTransferBuffer(
+          G.dev, &(SDL_GPUTransferBufferCreateInfo){
+                     .usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD, .size = cap});
+      if (!G.vbuf3d || !G.tbuf3d) {
+        pal_log("gfx: 3d vbuf: %s", SDL_GetError());
+        return false;
+      }
+      G.gpubuf3d_cap = cap;
+    }
+    void *p3 = SDL_MapGPUTransferBuffer(G.dev, G.tbuf3d, true);
+    memcpy(p3, G.verts3d, bytes3d);
+    SDL_UnmapGPUTransferBuffer(G.dev, G.tbuf3d);
+    SDL_GPUCopyPass *cp3 = SDL_BeginGPUCopyPass(cmd);
+    SDL_UploadToGPUBuffer(
+        cp3, &(SDL_GPUTransferBufferLocation){.transfer_buffer = G.tbuf3d},
+        &(SDL_GPUBufferRegion){.buffer = G.vbuf3d, .size = bytes3d}, true);
+    SDL_EndGPUCopyPass(cp3);
+  }
+
   if (bytes) {
     if (bytes > G.gpubuf_cap) {
       uint32_t cap = G.gpubuf_cap ? G.gpubuf_cap : 4096 * 6 * PAL_VERT_BYTES;
@@ -583,8 +828,10 @@ bool pal_gfx_present(void) {
 
   /* scene passes: game segments -> game target; ui segments -> ui canvas.
    * The game clears to its bg (opaque); the ui canvas clears to transparent so
-   * the game viewport shows through wherever no chrome was drawn. */
-  scene_pass(cmd, G.target, G.iw, G.ih, 0, G.clear);
+   * the game viewport shows through wherever no chrome was drawn. When the 3D
+   * pass ran, it owned the clear and the 2D pass loads over it (HUD on top). */
+  bool ran3d = bytes3d && scene3d_pass(cmd);
+  scene_pass(cmd, G.target, G.iw, G.ih, 0, ran3d ? NULL : G.clear);
   if (G.grade_set) grade_pass(cmd); /* bake the grade into the game target */
   if (G.ui_target) {
     static const float transparent[4] = {0, 0, 0, 0};

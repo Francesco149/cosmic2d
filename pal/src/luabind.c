@@ -740,6 +740,75 @@ static int l_draw_quads(lua_State *L) {
   return 0;
 }
 
+/* pal.x_view3d{ mvp={m0..m15}, fog_start=, fog_end=, fog={r,g,b}, fog_on= } —
+ * append a 3D camera/fog setup (docs/COSMIC3D.md §2) for subsequent x_tris
+ * calls; several per frame coexist (segments bind the latest at call time).
+ * mvp is column-major (proj*view*model, policy in Lua — the PAL is a dumb
+ * consumer; lighting too: vertex colors arrive pre-lit). pal.x_view3d() with
+ * no arg = identity mvp + fog off — NDC passthrough for the sky pass.
+ * Render-class: the sim never reads any of this. */
+static int l_x_view3d(lua_State *L) {
+  check_gfx(L);
+  float mvp[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+  float fs = 0, fe = 1, fr = 0, fg = 0, fb = 0;
+  bool fog_on = false;
+  if (!lua_isnoneornil(L, 1)) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    lua_getfield(L, 1, "mvp");
+    if (!lua_isnil(L, -1)) {
+      luaL_checktype(L, -1, LUA_TTABLE);
+      for (int i = 0; i < 16; i++) {
+        lua_geti(L, -1 - i, i + 1);
+        mvp[i] = (float)luaL_checknumber(L, -1);
+      }
+      lua_pop(L, 16);
+    }
+    lua_getfield(L, 1, "fog_start");
+    fs = (float)luaL_optnumber(L, -1, 0);
+    lua_getfield(L, 1, "fog_end");
+    fe = (float)luaL_optnumber(L, -1, 1);
+    lua_getfield(L, 1, "fog_on");
+    fog_on = lua_toboolean(L, -1);
+    lua_getfield(L, 1, "fog");
+    if (lua_istable(L, -1)) {
+      lua_geti(L, -1, 1);
+      fr = (float)luaL_optnumber(L, -1, 0);
+      lua_geti(L, -2, 2);
+      fg = (float)luaL_optnumber(L, -1, 0);
+      lua_geti(L, -3, 3);
+      fb = (float)luaL_optnumber(L, -1, 0);
+    }
+  }
+  if (!pal_gfx_view3d(mvp, fs, fe, fr, fg, fb, fog_on))
+    return luaL_error(L, "x_view3d: failed (shaders missing or >%d views "
+                         "this frame — see log)", PAL_MAX_VIEW3D);
+  return 0;
+}
+
+/* pal.x_tris(tex, buf, count[, off[, flags]]) — bulk 3D triangles from a
+ * buffer view: count tris of 3 packed verts (24 B each: x,y,z f32, u,v f32,
+ * rgba u8x4 pre-lit) at byte_off, drawn under the latest x_view3d with the
+ * PAL_TRI_* flags (1 = alpha-test cutout, 2 = nearest [default three-point],
+ * 4 = alpha blend + no depth write [decals]). The draw_quads sibling: Lua or
+ * kernels fill vertex buffers, the PAL draws them. Layout x_ experimental
+ * until the shape freezes. */
+static int l_x_tris(lua_State *L) {
+  check_gfx(L);
+  int tex = (int)luaL_checkinteger(L, 1);
+  BufView *v = checkview_at(L, 2);
+  lua_Integer count = luaL_checkinteger(L, 3);
+  lua_Integer off = luaL_optinteger(L, 4, 0);
+  uint32_t flags = (uint32_t)luaL_optinteger(L, 5, 0);
+  if (count < 0) return luaL_error(L, "x_tris: negative count");
+  if (off < 0 ||
+      (size_t)(off + count * 3 * PAL_VERT3D_BYTES) > v->b->size)
+    return luaL_error(L, "x_tris: out of bounds (off=%I count=%I size=%I)",
+                      off, count, (lua_Integer)v->b->size);
+  if (!pal_gfx_tris(tex, v->b->data + off, (uint32_t)count, flags))
+    return luaL_error(L, "x_tris: no view — call pal.x_view3d first");
+  return 0;
+}
+
 /* pal.x_ig_image_quads(tex, buf, count[, off[, rgba]]) — batch N textured
  * quads (8 f32 each: x,y,w,h,u0,v0,u1,v1, screen px + uv) onto the imgui
  * drawlist in ONE call; rgba tints all (default white). The map/tilemap
@@ -1027,6 +1096,10 @@ static int l_frame_stats(lua_State *L) {
   lua_setfield(L, -2, "segs");
   lua_pushinteger(L, G.stat_vbytes);
   lua_setfield(L, -2, "vbytes");
+  lua_pushinteger(L, G.stat_tris);
+  lua_setfield(L, -2, "tris");
+  lua_pushinteger(L, G.stat_segs3d);
+  lua_setfield(L, -2, "segs3d");
   int ntex = 0;
   for (int i = 0; i < PAL_MAX_TEX; i++)
     if (G.texs[i].used) ntex++;
@@ -1756,6 +1829,8 @@ static const luaL_Reg pal_funcs[] = {
     {"begin_frame", l_begin_frame},
     {"quad", l_quad},
     {"draw_quads", l_draw_quads},
+    {"x_view3d", l_x_view3d},
+    {"x_tris", l_x_tris},
     {"x_ig_image_quads", l_ig_image_quads},
     {"clip", l_clip},
     {"camera", l_camera},
