@@ -218,6 +218,10 @@ void pal_sha256(const void *data, size_t len, uint8_t out[32]);
 bool pal_sha256_file(const char *path, uint8_t out[32], char *err,
                      size_t errcap);
 uint32_t pal_crc32(uint32_t prior, const void *data, size_t len);
+bool pal_windows_exe_identity(const char *path, const void *png, size_t png_len,
+                              int width, int height, const char *title,
+                              const char *version, const char *author,
+                              const char *slug, char *err, size_t errcap);
 
 /* gfx.c */
 typedef struct {

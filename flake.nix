@@ -313,7 +313,11 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
         # double-click launches, while cosmic-console.exe retains a console
         # for diagnostics, headless runs, and CI. Both keep static compiler
         # runtimes; SDL3 remains the only adjacent runtime DLL.
-        cosmic-windows-dev = let cross = pkgs.pkgsCross.mingwW64;
+        cosmic-windows-dev = let
+          cross = pkgs.pkgsCross.mingwW64;
+          crossCC = "${cross.stdenv.cc}/bin/${cross.stdenv.cc.targetPrefix}cc";
+          crossLibc = "${cross.libc}/lib";
+          crossThreads = "${cross.windows.mcfgthreads}/lib";
         in cross.stdenv.mkDerivation {
           pname = "cosmic2d-windows-dev";
           version = releaseVersion;
@@ -326,6 +330,14 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
               LDFLAGS="-mconsole -static-libgcc -static-libstdc++"
             make -C pal EXE=.exe BIN=../bin/cosmic.exe \
               LDFLAGS="-mwindows -static-libgcc -static-libstdc++"
+            # Compiler-free in-editor exports brand this small delegating copy
+            # through Win32 UpdateResource. It has no project identity until
+            # copied to an export temp; the public engine/editor PEs stay
+            # engine-branded.
+            ${crossCC} -O2 -s -municode -mwindows -static-libgcc \
+              tools/windows-player-launcher.c \
+              -L${crossLibc} -L${crossThreads} -lshell32 \
+              -o bin/cosmic-player.exe
           '';
           installPhase = ''
             bash tools/stage-manifest.sh . dist/manifests/dev.txt $out

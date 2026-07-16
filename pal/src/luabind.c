@@ -1629,6 +1629,28 @@ static int l_x_file_publish(lua_State *L) {
   return 1;
 }
 
+/* Patch a private copy of the carried Windows GUI engine before it becomes the
+ * root player launcher. Project validation already pins a square PNG; width /
+ * height remain explicit so this native seam never needs a second decoder. */
+static int l_x_windows_exe_identity(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+  size_t png_len;
+  const char *png = luaL_checklstring(L, 2, &png_len);
+  int width = (int)luaL_checkinteger(L, 3);
+  int height = (int)luaL_checkinteger(L, 4);
+  const char *title = luaL_checkstring(L, 5);
+  const char *version = luaL_checkstring(L, 6);
+  const char *author = luaL_optstring(L, 7, "");
+  const char *slug = luaL_checkstring(L, 8);
+  char err[512];
+  if (!pal_windows_exe_identity(path, png, png_len, width, height, title,
+                                version, author, slug, err, sizeof err)) {
+    lua_pushnil(L); lua_pushstring(L, err); return 2;
+  }
+  lua_pushboolean(L, 1);
+  return 1;
+}
+
 /* recursive directory walk that PRUNES dot-directories (.ed, .git, …).
  * SDL_GlobDirectory would descend into them — and the .ed undo journal is
  * thousands of history files, so globbing the project root stat'd the whole
@@ -1792,6 +1814,7 @@ static const luaL_Reg pal_funcs[] = {
     {"crc32", l_crc32},
     {"x_path_info", l_x_path_info},
     {"x_file_publish", l_x_file_publish},
+    {"x_windows_exe_identity", l_x_windows_exe_identity},
     {"list_dir", l_list_dir},
     {"mtime", l_mtime},
     {"mkdir", l_mkdir},

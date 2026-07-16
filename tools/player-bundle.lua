@@ -40,6 +40,8 @@ if not repo and script:match("^tools/[^/]+$") then repo = "." end
 if not repo then die("cannot locate engine/cm/project.lua from " .. script) end
 local loaded, project = pcall(dofile, repo .. "/engine/cm/project.lua")
 if not loaded then die("cannot load canonical project model: " .. tostring(project)) end
+local export_loaded, exporter = pcall(dofile, repo .. "/engine/cm/export.lua")
+if not export_loaded then die("cannot load canonical player surface: " .. tostring(exporter)) end
 
 local function read_all(path, label, limit)
   local file, err = io.open(path, "rb")
@@ -83,72 +85,13 @@ if not checked then die(release_err) end
 local release = checked.release
 
 local title, version = release.name, release.version
-local author, description = release.author, release.description
-local licenses = release.licenses
-local controls, credits = checked.controls.text, checked.credits.text
-local icon = checked.icon.bytes
+local author = release.author
 
--- Escape metadata as Markdown text. Author-owned controls and credits are
--- intentionally Markdown and are embedded verbatim below their fixed headings.
-local MD_ESCAPE = {
-  ["\\"] = "\\\\", ["`"] = "\\`", ["*"] = "\\*", ["_"] = "\\_",
-  ["{"] = "\\{", ["}"] = "\\}", ["["] = "\\[", ["]"] = "\\]",
-  ["<"] = "\\<", [">"] = "\\>", ["#"] = "\\#", ["|"] = "\\|",
-}
-local function md(value)
-  return (value:gsub(".", function(ch) return MD_ESCAPE[ch] or ch end))
+local surface = exporter.player_surface(checked, slug, platform)
+for _, entry in ipairs(surface) do
+  write_all(bundle_root .. "/" .. entry.name, entry.bytes,
+            "player " .. entry.name)
 end
-
-local launcher = slug .. (platform == "windows" and ".exe" or "")
-local editor = "bin/cosmic2d-editor" .. (platform == "windows" and ".exe" or "")
-local project_link = "projects/" .. slug
-local lines = {
-  "# " .. md(title), "", md(description), "",
-  "Version `" .. md(version) .. "`" .. (author and (" · by " .. md(author)) or ""), "",
-  "## Play", "",
-}
-if platform == "windows" then
-  lines[#lines + 1] = "Double-click `" .. launcher .. "`."
-else
-  lines[#lines + 1] = "Run `./" .. launcher .. "`."
-end
-lines[#lines + 1] = ""
-lines[#lines + 1] = "## Controls"
-lines[#lines + 1] = ""
-lines[#lines + 1] = controls:gsub("\n$", "")
-lines[#lines + 1] = ""
-lines[#lines + 1] = "## Credits"
-lines[#lines + 1] = ""
-lines[#lines + 1] = credits:gsub("\n$", "")
-lines[#lines + 1] = ""
-lines[#lines + 1] = "## Licenses"
-lines[#lines + 1] = ""
-lines[#lines + 1] = "Project code and assets carry these author-supplied terms:"
-lines[#lines + 1] = ""
-for _, path in ipairs(licenses) do
-  local label = path:match("([^/]+)$")
-  lines[#lines + 1] = "- [" .. md(label) .. "](<" .. project_link .. "/" .. path .. ">)"
-end
-lines[#lines + 1] = "- [cosmic2d engine license](LICENSE)"
-lines[#lines + 1] = "- [engine and runtime notices](THIRD_PARTY_NOTICES.md)"
-lines[#lines + 1] = ""
-lines[#lines + 1] = "## About this build"
-lines[#lines + 1] = ""
-lines[#lines + 1] = "The editable project is included at `" .. project_link .. "`. "
-  .. "To deliberately inspect it with the included authoring tools, run `" .. editor .. "`."
-lines[#lines + 1] = ""
-lines[#lines + 1] = "This alpha build is unsigned. `SHA256SUMS` covers every extracted file; "
-  .. "the archive's sibling `.sha256` verifies the download when obtained from a trusted source."
-lines[#lines + 1] = ""
-
-write_all(bundle_root .. "/README.md", table.concat(lines, "\n"), "player README")
-write_all(bundle_root .. "/PLAY.txt",
-  title .. "\nversion " .. version .. "\n\n"
-  .. (platform == "windows" and ("Double-click " .. launcher .. " to play.\n")
-      or ("Run ./" .. launcher .. " to play.\n"))
-  .. "See README.md for controls, credits, licenses, and integrity notes.\n",
-  "player quick-start")
-write_all(bundle_root .. "/icon.png", icon, "player icon")
 
 -- The Windows root entrance is a tiny delegating launcher. Give that player-
 -- facing file the project's icon/title/version; the carried engine and editor

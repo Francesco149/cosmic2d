@@ -2711,7 +2711,8 @@ local function t_atomic_write()
         and type(pal.sha256_file) == "function"
         and type(pal.crc32) == "function"
         and type(pal.x_path_info) == "function"
-        and type(pal.x_file_publish) == "function",
+        and type(pal.x_file_publish) == "function"
+        and type(pal.x_windows_exe_identity) == "function",
         "export io: PAL api14 exposes hash/info/publication primitives")
   check(pal.sha256("") ==
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -2726,6 +2727,25 @@ local function t_atomic_write()
   check(info and info.type == "file" and info.size == 3 and not info.link
         and pal.sha256_file(path) == pal.sha256("abc"),
         "export io: path info and streaming file hash")
+  local identity_png = pal.png_encode(
+    string.rep("\x34\x78\xbc\xff", 32 * 32), 32, 32)
+  if pal.platform == "windows" then
+    local source = pal.read_file("bin/cosmic-player.exe")
+    local branded = tmproot() .. "/cosmic_selftest_branded.exe"
+    pal.write_file(branded, source)
+    local iok, ierr = pal.x_windows_exe_identity(
+      branded, identity_png, 32, 32, "Selftest Game", "7.8.9-alpha",
+      "Test Author", "selftest-game")
+    check(iok and not ierr and pal.read_file(branded) ~= source
+          and pal.read_file("bin/cosmic-player.exe") == source,
+          "export io: Windows launcher copy gains project resources only")
+    pal.x_remove(branded)
+  else
+    local iok, ierr = pal.x_windows_exe_identity(
+      path, identity_png, 32, 32, "Selftest Game", "1.0", "", "selftest")
+    check(not iok and ierr:find("unavailable on Linux", 1, true),
+          "export io: Linux names the unavailable Windows identity seam")
+  end
 
   local pubtmp = tmproot() .. "/cosmic_selftest_publish.tmp"
   local pubdst = tmproot() .. "/cosmic_selftest_publish.zip"
@@ -3018,6 +3038,135 @@ return {
   check(not ok and win.error:find("internal_h", 1, true)
         and pal.read_file(path) == before,
         "project window: invalid form stays visible and never reaches disk")
+end
+
+local function t_project_export()
+  local export = cm.require("cm.export")
+  local project = cm.require("cm.project")
+  local base = tmproot() .. "/cosmic_selftest_export"
+  local runtime, root, output = base .. "/runtime", base .. "/fixture-project",
+                                base .. "/out"
+  local function rm_tree(path)
+    local names = pal.list_dir(path) or {}
+    table.sort(names, function(a, b) return #a > #b end)
+    for _, name in ipairs(names) do pal.x_remove(path .. "/" .. name) end
+    pal.x_remove(path)
+  end
+  rm_tree(base)
+  local function put(path, bytes)
+    local dir = path:match("^(.*)/[^/]+$")
+    if dir then pal.mkdir(dir) end
+    check(pal.write_file(path, bytes or path) == true,
+          "export fixture: write " .. path)
+  end
+
+  -- A deliberately tiny portable-runtime shape. The exporter cares about
+  -- carried paths and exact bytes, not whether this fixture's fake engine can
+  -- execute; clean-machine tests own the real runtime proof.
+  put(runtime .. "/engine/boot.lua", "return true\n")
+  put(runtime .. "/projects/picker/main.lua", "return {}\n")
+  put(runtime .. "/LICENSE", "engine license\n")
+  put(runtime .. "/THIRD_PARTY_NOTICES.md", "notices\n")
+  put(runtime .. "/LICENSES/README.md", "license index\n")
+  put(runtime .. "/LICENSES/common/README.txt", "common notices\n")
+  put(runtime .. "/LICENSES/" .. pal.platform .. "-runtime/README.txt",
+      "runtime notices\n")
+  put(runtime .. "/pal/shaders/quad.spv", "shader")
+  put(runtime .. "/pal/vendor/fonts/font.ttf", "font")
+  put(runtime .. "/pal/res/cosmic2d.png", "engine icon")
+  if pal.platform == "linux" then
+    put(runtime .. "/bin/cosmic", "fake linux engine")
+    put(runtime .. "/cosmic2d-editor", "fake root engine")
+    put(runtime .. "/lib/libSDL3.so.0", "fake shared object")
+  else
+    put(runtime .. "/bin/cosmic.exe", "fake windows engine")
+    put(runtime .. "/bin/cosmic-console.exe", "fake console engine")
+    put(runtime .. "/bin/cosmic-player.exe", "fake player launcher")
+    put(runtime .. "/bin/SDL3.dll", "fake runtime dll")
+    put(runtime .. "/cosmic2d-editor.exe", "fake root engine")
+  end
+
+  local icon = pal.png_encode(string.rep("\x46\x82\xb4\xff", 32 * 32), 32, 32)
+  put(root .. "/icon.png", icon)
+  put(root .. "/CONTROLS.md", "jump\n")
+  put(root .. "/CREDITS.md", "selftest\n")
+  put(root .. "/LICENSE.md", "fixture license\n")
+  put(root .. "/main.lua", "return { init=function() end }\n")
+  put(root .. "/video.dat", "machine local -- must not ship")
+  put(root .. "/.ed/secret.dat", "recovery cache -- must not ship")
+  local meta = {
+    name = "Fixture Game", author = "cosmic selftest", version = "1.2",
+    description = "A release fixture.", internal_w = 64, internal_h = 64,
+    window_scale = 2, entry = "main.lua", icon = "icon.png",
+    controls = "CONTROLS.md", credits = "CREDITS.md",
+    licenses = { "LICENSE.md" },
+  }
+  put(root .. "/project.lua", assert(project.encode(meta)))
+  pal.mkdir(output)
+
+  local function finish(job)
+    local guard = 0
+    while not job.terminal and guard < 1000 do
+      export.step(job)
+      guard = guard + 1
+    end
+    check(guard < 1000, "export: bounded fixture job finishes")
+    return job
+  end
+  local opts = { runtime_root = runtime, project_root = root,
+                 output_dir = output, target = pal.platform, nonce = 101,
+                 skip_windows_identity = true }
+  local job = finish(export.start(opts))
+  check(job.complete and not job.error and pal.read_file(job.output),
+        "export: matching-host fixture publishes an archive")
+  local archive = pal.read_file(job.output)
+  check((pal.platform == "linux" and archive:sub(1, 3) == "\31\139\8")
+        or (pal.platform == "windows" and archive:sub(1, 4) == "PK\3\4"),
+        "export: host archive has the promised gzip/ZIP container")
+  check(archive:find("projects/fixture%-project/main.lua")
+        and archive:find("SHA256SUMS", 1, true)
+        and archive:find("RUNTIME%-LIBRARIES.txt")
+        and not archive:find("machine local", 1, true)
+        and not archive:find("recovery cache", 1, true),
+        "export: archive carries source + integrity metadata, not machine cache")
+  local sibling = pal.read_file(job.output .. ".sha256")
+  check(sibling == pal.sha256_file(job.output) .. "  "
+        .. job.output:match("([^/\\]+)$") .. "\n",
+        "export: sibling checksum names and hashes exact published bytes")
+
+  -- Cancellation occurs only at a yielded file boundary. It removes the
+  -- sibling temp and never creates either authoritative output.
+  pal.x_remove(job.output .. ".sha256"); pal.x_remove(job.output)
+  local cancel = export.start {
+    runtime_root = runtime, project_root = root, output_dir = output,
+    target = pal.platform, nonce = 102, skip_windows_identity = true,
+  }
+  for _ = 1, 5 do export.step(cancel) end
+  check(export.cancel(cancel), "export: active job accepts cancel")
+  finish(cancel)
+  check(cancel.cancelled and not pal.read_file(cancel.output)
+        and (not cancel.temp or not pal.read_file(cancel.temp)),
+        "export: cancel removes temp and publishes nothing")
+
+  -- A final-rename fault has the same authority shape and remains retryable.
+  local failed = finish(export.start {
+    runtime_root = runtime, project_root = root, output_dir = output,
+    target = pal.platform, nonce = 103, skip_windows_identity = true,
+    fail = { publish = { _fail = "rename" } },
+  })
+  check(failed.error and failed.error:find("publish", 1, true)
+        and not pal.read_file(failed.output)
+        and (not failed.temp or not pal.read_file(failed.temp)),
+        "export: publication failure is actionable and non-authoritative")
+
+  local other = pal.platform == "linux" and "windows" or "linux"
+  local wrong = finish(export.start {
+    runtime_root = runtime, project_root = root, output_dir = output,
+    target = other, nonce = 104,
+  })
+  check(wrong.error and wrong.error:find("matching cosmic2d editor", 1, true),
+        "export: unsupported cross-target explains the matching download")
+  rm_tree(base)
 end
 
 -- ---- A2 diagnostics + D065 crash locator envelope ----
@@ -5965,6 +6114,7 @@ function game.init()
   t_ed_game()
   t_atomic_write()
   t_project_settings()
+  t_project_export()
   t_crash()
   t_ed_text_save()
   t_ed_session()
