@@ -2722,6 +2722,47 @@ local function t_atomic_write()
         and ferr:find("live window", 1, true)
         and pal.x_folder_dialog_poll() == "idle",
         "project lifecycle: folder chooser refuses headless use cleanly")
+  check(pal.version.api >= 16 and type(pal.x_path_move) == "function"
+        and type(pal.x_path_reveal) == "function",
+        "project location: PAL api16 exposes safe move and native reveal")
+
+  -- The native location seam is no-replace at the authoritative operation,
+  -- not merely at a racy Lua preflight. Exercise real directory renames with
+  -- spaces + UTF-8 on both supported hosts; reveal uses its injected seam so
+  -- headless CI never launches a desktop file manager.
+  local move_source = tmproot() .. "/cosmic_selftest_path_source"
+  local move_dest = tmproot() .. "/cosmic selftest π moved"
+  local move_collision = tmproot() .. "/cosmic_selftest_path_collision"
+  for _, dir in ipairs({ move_source, move_dest, move_collision }) do
+    pal.x_remove(dir .. "/marker")
+    pal.x_remove(dir)
+  end
+  pal.mkdir(move_source)
+  pal.write_file(move_source .. "/marker", "source")
+  pal.mkdir(move_collision)
+  pal.write_file(move_collision .. "/marker", "collision")
+  local mok, merr = pal.x_path_move(move_source, move_collision)
+  check(not mok and merr:find("already exists", 1, true)
+        and pal.read_file(move_source .. "/marker") == "source"
+        and pal.read_file(move_collision .. "/marker") == "collision",
+        "project location: collision cannot replace source or destination")
+  mok, merr = pal.x_path_move(move_source, move_dest, { _fail = "rename" })
+  check(not mok and merr:find("injected", 1, true)
+        and pal.read_file(move_source .. "/marker") == "source"
+        and not pal.read_file(move_dest .. "/marker"),
+        "project location: native rename failure preserves discoverable source")
+  check(pal.x_path_move(move_source, move_dest) == true
+        and not pal.read_file(move_source .. "/marker")
+        and pal.read_file(move_dest .. "/marker") == "source",
+        "project location: directory moves intact into spaced UTF-8 path")
+  local rok, rerr = pal.x_path_reveal(move_dest, { _fail = "open" })
+  check(not rok and rerr:find("injected open failure", 1, true)
+        and pal.read_file(move_dest .. "/marker") == "source",
+        "project location: reveal failure is actionable and non-mutating")
+  pal.x_remove(move_dest .. "/marker")
+  pal.x_remove(move_dest)
+  pal.x_remove(move_collision .. "/marker")
+  pal.x_remove(move_collision)
   check(pal.sha256("") ==
           "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         and pal.sha256("abc") ==
@@ -3110,6 +3151,164 @@ return {
   check(not ok and win.error:find("internal_h", 1, true)
         and pal.read_file(path) == before,
         "project window: invalid form stays visible and never reaches disk")
+end
+
+local function t_project_location()
+  local location = cm.require("cm.project_location")
+  local project = cm.require("cm.project")
+  local source, parent = "/projects/source", "/else"
+  local destination = parent .. "/renamed π project"
+  local bytes = project.PROJECT_TMPL:gsub("__NAME__", "location test")
+
+  check(location.destination(parent, "renamed π project", { platform = "linux" })
+          == destination
+        and not location.destination(parent, "bad/name", { platform = "linux" })
+        and not location.destination(parent, "CON", { platform = "windows" }),
+        "project location: folder-name grammar allows spaces/UTF-8 and rejects unsafe hosts")
+  local pp, pn = location.parts("C:\\Games\\old project\\")
+  check(pp == "C:/Games" and pn == "old project",
+        "project location: parent/name split follows persistent path spelling")
+
+  local dirs, files, recent_root, replace_calls, probe_fail, move_fail
+  local function reset()
+    dirs = {
+      ["/projects"] = { type = "directory", link = false },
+      [source] = { type = "directory", link = false },
+      [parent] = { type = "directory", link = false },
+    }
+    files = { [source .. "/project.lua"] = bytes }
+    recent_root, replace_calls, probe_fail, move_fail = source, 0, nil, nil
+  end
+  reset()
+  local fs = {}
+  function fs.info(path)
+    return dirs[path]
+  end
+  function fs.read(path)
+    local value = files[path]
+    if value then return value end
+    return nil, "not found"
+  end
+  function fs.probe(path)
+    if path == probe_fail then return nil, "injected permission failure" end
+    return true
+  end
+  function fs.move(from, to)
+    if move_fail then return nil, "injected native move failure" end
+    if not dirs[from] or dirs[to] then return nil, "collision" end
+    dirs[to], dirs[from] = dirs[from], nil
+    files[to .. "/project.lua"] = files[from .. "/project.lua"]
+    files[from .. "/project.lua"] = nil
+    return true
+  end
+  function fs.reveal(path)
+    return dirs[path] and true or nil, "missing"
+  end
+  local rec = {}
+  function rec.contains(path) return path == recent_root end
+  function rec.replace(from, to, fail)
+    replace_calls = replace_calls + 1
+    if fail then return nil, "injected recent publication failure" end
+    if recent_root ~= from then return nil, "old recent missing" end
+    recent_root = to
+    return true
+  end
+  local base_opts = { fs = fs, recent = rec, active_root = false,
+                      platform = "linux", nonce = 7 }
+
+  local ready, err = location.preflight(source, destination, {
+    fs = fs, recent = rec, active_root = source, platform = "linux", nonce = 7,
+  })
+  check(not ready and err:find("return to the project picker", 1, true),
+        "project location: the currently open editor owns and pins its root")
+  recent_root = "/someone/else"
+  ready, err = location.preflight(source, destination, base_opts)
+  check(not ready and err:find("recent tile", 1, true),
+        "project location: relocation requires a durable recovery pointer")
+  recent_root = source
+  dirs[destination] = { type = "directory", link = false }
+  ready, err = location.preflight(source, destination, base_opts)
+  check(not ready and err:find("destination already exists", 1, true),
+        "project location: destination collision fails before permissions or move")
+  dirs[destination] = nil
+  probe_fail = parent
+  ready, err = location.preflight(source, destination, base_opts)
+  check(not ready and err:find("destination parent is not writable", 1, true),
+        "project location: destination permission failure is actionable")
+  probe_fail = nil
+
+  move_fail = true
+  local ok, detail, outcome = location.relocate(source, destination, base_opts)
+  check(not ok and not outcome.moved and dirs[source] and not dirs[destination]
+        and recent_root == source and replace_calls == 0
+        and detail:find("was not moved", 1, true),
+        "project location: native move failure leaves source and recents untouched")
+
+  move_fail = false
+  ok, detail, outcome = location.relocate(source, destination, {
+    fs = fs, recent = rec, active_root = false, platform = "linux", nonce = 8,
+    fail = { recent = { _fail = "rename" } },
+  })
+  check(not ok and outcome.moved and not dirs[source] and dirs[destination]
+        and recent_root == source and replace_calls == 1
+        and detail:find("old tile was kept for repair", 1, true),
+        "project location: recent failure keeps the stale source tile as repair handle")
+
+  reset()
+  local renamed = "/projects/renamed π project"
+  ok, detail, outcome = location.rename(source, "renamed π project", base_opts)
+  check(ok and detail == renamed and outcome.moved
+        and dirs[renamed] and not dirs[source] and recent_root == renamed,
+        "project location: rename stays in place and atomically advances recents")
+  reset()
+  ok, detail, outcome = location.move_to(source, parent, base_opts)
+  local moved = parent .. "/source"
+  check(ok and detail == moved and outcome.moved
+        and dirs[moved] and not dirs[source] and recent_root == moved,
+        "project location: move keeps the folder name and advances recents")
+  check(location.reveal(moved, { fs = fs }) == true,
+        "project location: reveal validates the ready root before host handoff")
+
+  -- Integrate the policy with the real PAL + atomic .recent.dat seam. This
+  -- covers the transient parent-permission probes that the fake boundary
+  -- above intentionally reduces to booleans.
+  local real_base = tmproot() .. "/cosmic_selftest_location_real"
+  local real_source = real_base .. "/source"
+  local real_parent = real_base .. "/destination parent"
+  local real_moved = real_parent .. "/source"
+  local real_renamed = real_parent .. "/renamed π project"
+  for _, path in ipairs({ real_source, real_moved, real_renamed }) do
+    pal.x_remove(path .. "/project.lua")
+    pal.x_remove(path)
+  end
+  pal.x_remove(real_parent)
+  pal.x_remove(real_base .. "/recent.dat")
+  pal.x_remove(real_base)
+  pal.mkdir(real_base)
+  pal.mkdir(real_source)
+  pal.mkdir(real_parent)
+  pal.write_file(real_source .. "/project.lua", bytes)
+  local real_recent = cm.require("cm.recent")
+  local old_recent = real_recent.path
+  real_recent.path = real_base .. "/recent.dat"
+  real_recent.note(real_source)
+  ok, detail = location.move_to(real_source, real_parent,
+    { active_root = false, nonce = 91 })
+  check(ok and detail == real_moved and pal.read_file(real_moved .. "/project.lua")
+        and real_recent.contains(real_moved) and not real_recent.contains(real_source),
+        "project location: real move probes parents then advances atomic recents")
+  ok, detail = location.rename(real_moved, "renamed π project",
+    { active_root = false, nonce = 92 })
+  check(ok and detail == real_renamed
+        and pal.read_file(real_renamed .. "/project.lua")
+        and real_recent.contains(real_renamed),
+        "project location: real rename preserves a valid UTF-8 project root")
+  real_recent.path = old_recent
+  pal.x_remove(real_renamed .. "/project.lua")
+  pal.x_remove(real_renamed)
+  pal.x_remove(real_parent)
+  pal.x_remove(real_base .. "/recent.dat")
+  pal.x_remove(real_base)
 end
 
 local function t_project_export()
@@ -6205,6 +6404,7 @@ function game.init()
   t_ed_game()
   t_atomic_write()
   t_project_settings()
+  t_project_location()
   t_project_export()
   t_crash()
   t_ed_text_save()

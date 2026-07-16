@@ -3033,3 +3033,57 @@ deduplication, and the active-export return guard. Scripted captures prove an
 external spaced-path project opens, returns to the picker, and remains the
 first recent tile after a fresh process. Full Linux/native-Windows counts and
 public-archive proof are recorded in `STATUS.md`.
+
+## D077 — project-folder moves are no-replace, same-filesystem transitions with a durable repair pointer (A3, 2026-07-16)
+
+**Context.** D076 can adopt a project wherever it already lives, but changing
+that location still required a file manager. A generic SDL rename replaces an
+existing destination and a cross-volume directory move implies recursive copy,
+rollback, and delete policy—the same hard boundaries as duplicate/archive,
+which this first location packet does not yet own. Updating `.recent.dat`
+before the filesystem would point at bytes that might never move; updating it
+afterward can fail even though the move is already authoritative. The active
+editor also has watchers, recovery state, journals, textures, and history tied
+to its root and must never be relocated underneath itself.
+
+**Decision.** A ready **recent** tile owns one `...` folder menu: **reveal**
+opens the project directory, **rename folder** edits only its final path
+component (the project title remains in settings), and **move folder** chooses
+an existing destination parent through the native folder chooser. These are
+picker-only render/dev operations. The source must already be recent so a
+durable recovery pointer exists, and returning from an editor crosses D076's
+teardown/durability boundary before its tile can act.
+
+`cm.project_location` preflights the exact boot-valid source, a real non-alias
+directory, inactive ownership, an absent non-descendant destination, existing
+directory parents, and create/delete authority in both parents through unique
+empty-directory probes. PAL API v16 repeats source/type and destination checks
+at the native boundary, then performs an atomic no-replace directory rename:
+Linux uses `renameat2(RENAME_NOREPLACE)` and Windows uses UTF-16
+`MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`. Different filesystems,
+drives, or volumes fail explicitly; they do not fall back to a partial copy.
+Reveal percent-encodes the absolute UTF-8 path into a `file:` URI and delegates
+to SDL's host opener (Explorer or the desktop file manager).
+
+The filesystem transition happens first. Only its success permits one atomic
+`recent.replace(old,new)`. A native failure leaves the working source and old
+recent entry untouched. If the recents write alone fails afterward, the move
+is reported with its exact destination and the old now-stale tile remains
+visible as the explicit **repair** route; the engine neither lies that the
+move failed nor risks an unsafe rollback over intervening filesystem changes.
+
+**Consequences.** Normal same-volume rename/move and reveal need no terminal,
+handle spaces and non-ASCII losslessly, and cannot overwrite another folder.
+Cross-volume move awaits the recursive transactional copy work shared with
+duplicate. Another cosmic2d process is outside this process-local ownership
+check; the native OS still refuses locked/in-use roots where required.
+Duplicate, archive/delete confirmation, richer picker navigation, and template
+breadth remain later A3 packets.
+
+**Proof.** PAL KATs pin collision preservation, injected native failure,
+spaced/UTF-8 directory success, and non-mutating reveal failure. Policy KATs
+pin unsafe names, active ownership, required recency, collisions, parent
+permissions, native failure ordering, post-move recents recovery, and real
+PAL-backed move/rename plus atomic recents. Inspected 100% and 300% picker
+captures cover the folder and rename overlays; full platform/release proof is
+recorded in `STATUS.md`.

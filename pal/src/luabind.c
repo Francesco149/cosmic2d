@@ -1,11 +1,12 @@
 /* luabind.c — the pal.* Lua module: the porting contract between the PAL
  * and the engine. Semantics + determinism classes: docs/ARCHITECTURE.md. */
 #ifndef _WIN32
-#define _DEFAULT_SOURCE /* lstat under strict -std=c11 */
+#define _GNU_SOURCE /* lstat + Linux renameat2 under strict -std=c11 */
 #endif
 #include "pal.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <string.h>
 
@@ -13,6 +14,9 @@
 #include <windows.h>
 #else
 #include <sys/stat.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
 #include <unistd.h>
 #endif
 
@@ -1711,6 +1715,225 @@ static int l_x_path_info(lua_State *L) {
   return 1;
 }
 
+/* Rename a project directory without ever replacing an existing destination.
+ * SDL_RenamePath deliberately has replace semantics, which is right for the
+ * atomic file writers but unsafe for a user-selected project location. The
+ * two alpha hosts both have an atomic no-replace form; cross-volume directory
+ * moves fail explicitly because they need the later recursive-copy packet.
+ */
+static bool path_move_noreplace(const char *source, const char *dest) {
+#ifdef _WIN32
+  int sn = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source, -1,
+                               NULL, 0);
+  int dn = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, dest, -1,
+                               NULL, 0);
+  if (sn <= 0 || dn <= 0) {
+    SDL_SetError("project path is not valid UTF-8");
+    return false;
+  }
+  WCHAR *sw = SDL_malloc((size_t)sn * sizeof *sw);
+  WCHAR *dw = SDL_malloc((size_t)dn * sizeof *dw);
+  if (!sw || !dw) {
+    SDL_free(sw);
+    SDL_free(dw);
+    SDL_SetError("out of memory converting project path");
+    return false;
+  }
+  bool converted = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, source,
+                                       -1, sw, sn) > 0
+                   && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, dest,
+                                          -1, dw, dn) > 0;
+  BOOL moved = converted && MoveFileExW(sw, dw, MOVEFILE_WRITE_THROUGH);
+  DWORD code = moved ? ERROR_SUCCESS : GetLastError();
+  SDL_free(sw);
+  SDL_free(dw);
+  if (moved) return true;
+  if (!converted) {
+    SDL_SetError("project path is not valid UTF-8");
+  } else if (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS) {
+    SDL_SetError("destination already exists");
+  } else if (code == ERROR_NOT_SAME_DEVICE) {
+    SDL_SetError("source and destination are on different volumes");
+  } else if (code == ERROR_ACCESS_DENIED || code == ERROR_SHARING_VIOLATION
+             || code == ERROR_LOCK_VIOLATION) {
+    SDL_SetError("permission denied or project folder is in use");
+  } else if (code == ERROR_PATH_NOT_FOUND) {
+    SDL_SetError("source or destination parent does not exist");
+  } else {
+    SDL_SetError("MoveFileExW failed (%lu)", (unsigned long)code);
+  }
+  return false;
+#elif defined(__linux__) && defined(SYS_renameat2)
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif
+  if (syscall(SYS_renameat2, AT_FDCWD, source, AT_FDCWD, dest,
+              RENAME_NOREPLACE) == 0)
+    return true;
+  int code = errno;
+  if (code == EEXIST || code == ENOTEMPTY) {
+    SDL_SetError("destination already exists");
+  } else if (code == EXDEV) {
+    SDL_SetError("source and destination are on different filesystems");
+  } else if (code == EACCES || code == EPERM) {
+    SDL_SetError("permission denied moving project folder");
+  } else if (code == EBUSY) {
+    SDL_SetError("project folder is in use");
+  } else if (code == ENOENT) {
+    SDL_SetError("source or destination parent does not exist");
+  } else if (code == EINVAL || code == ENOSYS) {
+    SDL_SetError("filesystem does not support collision-safe directory moves");
+  } else {
+    SDL_SetError("renameat2 failed: %s", strerror(code));
+  }
+  return false;
+#else
+  (void)source;
+  (void)dest;
+  SDL_SetError("collision-safe directory moves are unavailable on this host");
+  return false;
+#endif
+}
+
+/* pal.x_path_move(source,dest[, {_fail="rename"}]) -> true | nil,error.
+ * The destination must be absent both at preflight and at the authoritative
+ * native rename. A failure therefore leaves the complete source discoverable
+ * and never mutates colliding destination bytes. */
+static int l_x_path_move(lua_State *L) {
+  const char *source = luaL_checkstring(L, 1);
+  const char *dest = luaL_checkstring(L, 2);
+  SDL_PathInfo info;
+  if (!SDL_GetPathInfo(source, &info)) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "source is unavailable: %s", SDL_GetError());
+    return 2;
+  }
+  if (info.type != SDL_PATHTYPE_DIRECTORY) {
+    lua_pushnil(L);
+    lua_pushstring(L, "source is not a project folder");
+    return 2;
+  }
+  if (SDL_GetPathInfo(dest, &info)) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "destination already exists: %s", dest);
+    return 2;
+  }
+  const char *fail = fail_stage_at(L, 3);
+  SDL_ClearError();
+  if ((fail && strcmp(fail, "rename") == 0)
+      || !path_move_noreplace(source, dest)) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "move project folder: %s",
+                    fail ? "injected rename failure" : SDL_GetError());
+    return 2;
+  }
+  lua_pushboolean(L, true);
+  return 1;
+}
+
+static bool uri_plain(unsigned char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+         || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.'
+         || c == '~' || c == '/' || c == ':';
+}
+
+/* Convert an absolute or engine-root-relative UTF-8 path to a file URI.
+ * Encoding bytes (rather than codepoints) is the URI spelling of UTF-8 and
+ * keeps spaces, #, %, ?, and non-ASCII project names unambiguous. */
+static char *path_file_uri(const char *path) {
+  bool absolute = path[0] == '/';
+#ifdef _WIN32
+  absolute = absolute || ((path[0] >= 'A' && path[0] <= 'Z')
+                          || (path[0] >= 'a' && path[0] <= 'z'))
+                         && path[1] == ':';
+  absolute = absolute || (path[0] == '\\' && path[1] == '\\');
+#endif
+  char *cwd = NULL;
+  char *full = NULL;
+  if (absolute) {
+    full = SDL_strdup(path);
+  } else {
+    cwd = SDL_GetCurrentDirectory();
+    if (!cwd) return NULL;
+    size_t cn = strlen(cwd), pn = strlen(path);
+    full = SDL_malloc(cn + pn + 2);
+    if (full) {
+      SDL_memcpy(full, cwd, cn);
+      if (cn && cwd[cn - 1] != '/' && cwd[cn - 1] != '\\') full[cn++] = '/';
+      SDL_memcpy(full + cn, path, pn + 1);
+    }
+    SDL_free(cwd);
+  }
+  if (!full) {
+    SDL_SetError("out of memory building project path URI");
+    return NULL;
+  }
+  for (char *p = full; *p; p++) if (*p == '\\') *p = '/';
+
+  const char *prefix = "file://"; /* POSIX /x -> file:///x */
+  if (full[0] == '/' && full[1] == '/') prefix = "file:"; /* UNC */
+#ifdef _WIN32
+  else if (((full[0] >= 'A' && full[0] <= 'Z')
+            || (full[0] >= 'a' && full[0] <= 'z')) && full[1] == ':')
+    prefix = "file:///";
+#endif
+  size_t fn = strlen(full), pre = strlen(prefix);
+  char *uri = SDL_malloc(pre + fn * 3 + 1);
+  if (!uri) {
+    SDL_free(full);
+    SDL_SetError("out of memory encoding project path URI");
+    return NULL;
+  }
+  SDL_memcpy(uri, prefix, pre);
+  char *out = uri + pre;
+  static const char hex[] = "0123456789ABCDEF";
+  for (const unsigned char *p = (const unsigned char *)full; *p; p++) {
+    if (uri_plain(*p)) {
+      *out++ = (char)*p;
+    } else {
+      *out++ = '%';
+      *out++ = hex[*p >> 4];
+      *out++ = hex[*p & 15];
+    }
+  }
+  *out = '\0';
+  SDL_free(full);
+  return uri;
+}
+
+/* pal.x_path_reveal(path[, {_fail="open"}]) -> true | nil,error. Opening a
+ * directory URI asks the host's native handler (Explorer / desktop file
+ * manager) to show that project root. */
+static int l_x_path_reveal(lua_State *L) {
+  const char *path = luaL_checkstring(L, 1);
+  SDL_PathInfo info;
+  if (!SDL_GetPathInfo(path, &info) || info.type != SDL_PATHTYPE_DIRECTORY) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "project folder is unavailable: %s", SDL_GetError());
+    return 2;
+  }
+  if (fail_stage_is(fail_stage_at(L, 2), "open")) {
+    lua_pushnil(L);
+    lua_pushstring(L, "reveal project folder: injected open failure");
+    return 2;
+  }
+  char *uri = path_file_uri(path);
+  if (!uri) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "reveal project folder: %s", SDL_GetError());
+    return 2;
+  }
+  bool ok = SDL_OpenURL(uri);
+  SDL_free(uri);
+  if (!ok) {
+    lua_pushnil(L);
+    lua_pushfstring(L, "reveal project folder: %s", SDL_GetError());
+    return 2;
+  }
+  lua_pushboolean(L, true);
+  return 1;
+}
+
 /* pal.x_file_publish(temp,dest [, {_fail=sync|rename,_replace=bool}])
  * -> true | nil,error. Existing destinations require explicit replacement;
  * either way the exporter syncs its complete sibling temp before making that
@@ -1947,6 +2170,8 @@ static const luaL_Reg pal_funcs[] = {
     {"sha256_file", l_sha256_file},
     {"crc32", l_crc32},
     {"x_path_info", l_x_path_info},
+    {"x_path_move", l_x_path_move},
+    {"x_path_reveal", l_x_path_reveal},
     {"x_file_publish", l_x_file_publish},
     {"x_windows_exe_identity", l_x_windows_exe_identity},
     {"list_dir", l_list_dir},

@@ -17,6 +17,11 @@ back/forward buttons — walk your history. `src` opens the raw markdown.
   it. The picker remembers it across restarts. **refresh** rescans immediately;
   a missing recent folder offers **repair** (choose its new location) and
   **remove** (forget the shortcut, without deleting project files).
+- A ready recent tile's **...** menu can **reveal** its folder, **rename** the
+  folder, or **move** it beneath a chosen parent on the same filesystem. The
+  project name itself stays in project settings. Existing destinations are
+  never replaced; a failed recents update leaves the old tile available for
+  **repair**.
 - The bundled **demo** is a two-room platformer with music that swaps
   between rooms. Open it, walk into a door, grab the coins.
 - **+ New project** scaffolds a fresh, runnable project (auto-named with

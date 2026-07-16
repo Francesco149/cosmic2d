@@ -2,9 +2,10 @@
 -- project picker. Boots when `cosmic` is run with no project argument.
 -- Scans projects/* for project.lua and merges the engine-root .recent.dat.
 -- Open folder registers an arbitrary project in place (no copy), while stale
--- recent tiles can be repaired through the same native chooser. A tile opens the
--- project IN THE EDITOR (the picker is the editor's front door); the ▶
--- zone boots plain play mode.
+-- recent tiles can be repaired through the same native chooser. Ready recent
+-- tiles expose reveal/rename/move; relocation is a collision-safe directory
+-- rename followed by an atomic recents update. A tile opens the project IN THE
+-- EDITOR (the picker is the editor's front door); the ▶ zone boots play mode.
 --
 -- The switch mechanism (D052): write "<path>\n<mode>" into the `boot.next`
 -- named buffer (named buffers survive VM reboots by contract) and call
@@ -19,11 +20,13 @@ local M = select(2, ...) or {}
 local view
 local chrome = cm.require("cm.ed.chrome")
 local project = cm.require("cm.project")
+local location = cm.require("cm.project_location")
 local recent = cm.require("cm.recent")
 
 M.scan = M.scan or nil -- ephemeral tile cache (render/dev)
-M.folder = M.folder or nil -- active native chooser intent (open or repair)
+M.folder = M.folder or nil -- active native chooser (open / repair / move-to)
 M.notice = M.notice or nil -- latest actionable lifecycle result
+M.action = M.action or nil -- ready-tile project-folder overlay
 
 local C = {
   bg = 0x141220ff, text = 0xE8E4FFff, dim = 0x8a84b0ff,
@@ -101,6 +104,28 @@ local function scan()
   return tiles
 end
 
+-- Public proof/console door: open a ready recent tile's folder actions without
+-- synthesizing a mouse event. Ordinary UI reaches the same state through ... .
+local function open_actions(value, mode)
+  local root = project.normalize_root(type(value) == "table" and value.path or value)
+  if not root then return nil, "project action needs a folder path" end
+  local found
+  for _, item in ipairs(scan()) do
+    if item.path == root then found = item; break end
+  end
+  if not found or not found.ok then return nil, "project tile is not ready" end
+  if not found.recent then
+    return nil, "open the project once before changing its folder"
+  end
+  local _, folder_name = location.parts(root)
+  M.action = {
+    path = root, name = found.name, mode = mode or "menu",
+    rename = folder_name or found.name, focus = mode == "rename" and true or nil,
+  }
+  return true
+end
+M.open_actions = open_actions
+
 local say
 
 local function launch(path, mode)
@@ -118,19 +143,31 @@ say = function(text, bad)
   pal.log("[picker] " .. (bad and "FAILED: " or "") .. tostring(text))
 end
 
-local function begin_folder(repair)
+local function begin_folder(intent)
   if M.folder then return nil, "a folder chooser is already active" end
+  -- Backward-compatible public shape from D076: a tile table means repair.
+  if intent and not intent.kind and intent.path then
+    intent = { kind = "repair", tile = intent }
+  end
+  intent = intent or { kind = "open" }
   if pal.version.api < 15 or type(pal.x_folder_dialog) ~= "function"
      or type(pal.x_folder_dialog_poll) ~= "function" then
     local err = "opening a project folder needs PAL api >= 15"
     say(err, true)
     return nil, err
   end
-  local ok, err = pal.x_folder_dialog()
+  local start
+  if intent.kind == "move" then start = location.parts(intent.source) end
+  local ok, err = pal.x_folder_dialog(start)
   if not ok then say(err, true); return nil, err end
-  M.folder = { repair = repair }
-  say(repair and ("choose the replacement for " .. repair.path)
-             or "choose a cosmic2d project folder")
+  M.folder = intent
+  if intent.kind == "repair" then
+    say("choose the replacement for " .. intent.tile.path)
+  elseif intent.kind == "move" then
+    say("choose the destination parent for " .. intent.source)
+  else
+    say("choose a cosmic2d project folder")
+  end
   return true
 end
 M.begin_folder = begin_folder
@@ -138,11 +175,26 @@ M.begin_folder = begin_folder
 local function accept_folder(raw)
   local intent = M.folder
   M.folder = nil
+  -- A hot reload may preserve D076's old {repair=tile} ephemeral shape while
+  -- its native dialog is still open.
+  if intent and intent.repair and not intent.kind then
+    intent = { kind = "repair", tile = intent.repair }
+  end
+  if intent and intent.kind == "move" then
+    local ok, result, outcome = location.move_to(intent.source, raw)
+    M.scan = nil -- either the new tile or the stale repair handle is visible
+    if not ok then
+      say(result, true)
+      return nil, result, false, outcome
+    end
+    say("moved project folder · " .. result)
+    return true, result, false, outcome
+  end
   local root, meta = project.inspect_root(raw)
   if not root then say(meta, true); return nil, meta end
   local ok, err
-  if intent and intent.repair then
-    ok, err = recent.replace(intent.repair.path, root)
+  if intent and intent.kind == "repair" then
+    ok, err = recent.replace(intent.tile.path, root)
   else
     ok, err = recent.note(root)
   end
@@ -152,10 +204,10 @@ local function accept_folder(raw)
     return nil, msg
   end
   M.scan = nil -- registration is visible before the project-switch tick ends
-  say((intent and intent.repair and "repaired · opening " or "opening ")
+  say((intent and intent.kind == "repair" and "repaired · opening " or "opening ")
       .. (meta.name or root))
   launch(root, "edit")
-  return true
+  return true, root, true
 end
 M.accept_folder = accept_folder -- scripted lifecycle proof door
 
@@ -163,7 +215,10 @@ local function poll_folder()
   if not M.folder then return false end
   local state, value = pal.x_folder_dialog_poll()
   if state == "pending" then return false end
-  if state == "selected" then return accept_folder(value) == true end
+  if state == "selected" then
+    local ok, _, switched = accept_folder(value)
+    return ok == true and switched == true
+  end
   M.folder = nil
   if state == "error" then say("folder chooser: " .. tostring(value), true)
   elseif state == "cancelled" then say("folder selection cancelled")
@@ -215,6 +270,7 @@ function M.draw()
   ig, i = chrome.frame(ig, cm.require("cm.ui").inp,
                        view.cfg.chrome_scale or 1)
   local pal = chrome.pal
+  local modal_at_start = M.action ~= nil
 
   pal.x_ig_rect_fill(0, 0, ig.w, ig.h, C.bg)
   if poll_folder() then return end -- selected folder queued a VM reboot
@@ -237,10 +293,12 @@ function M.draw()
   local refresh_x = ig.w - 28 - refresh_w
   local open_x = refresh_x - 8 - open_w
   if button(open_x, 18, open_w, 28,
-            M.folder and "choosing…" or "open folder", not M.folder) then
+            M.folder and "choosing…" or "open folder",
+            not M.folder and not modal_at_start) then
     begin_folder()
   end
-  if button(refresh_x, 18, refresh_w, 28, "refresh", not M.folder) then refresh() end
+  if button(refresh_x, 18, refresh_w, 28, "refresh",
+            not M.folder and not modal_at_start) then refresh() end
   if M.notice then
     pal.x_ig_clip_push(28, 55, math.max(40, ig.w - 56), 18)
     pal.x_ig_text(28, 55, 11, M.notice.bad and C.bad or C.dim,
@@ -248,7 +306,7 @@ function M.draw()
     pal.x_ig_clip_pop()
   else
     pal.x_ig_text(28, 55, 11, C.dim,
-                  "Open keeps an external project in its current folder.", 0)
+                  "Open keeps an external project in place · ... manages its folder.", 0)
   end
 
   local tiles = scan()
@@ -265,8 +323,11 @@ function M.draw()
     local pzx, pzy, pzw, pzh = x + tw - 50, y + th - 34, 44, 26
     local phov = hov and i.wx >= pzx and i.wx < pzx + pzw
                  and i.wy >= pzy and i.wy < pzy + pzh
+    local azx, azy, azw, azh = x + tw - 36, y + 8, 28, 22
+    local ahov = t.recent and t.ok and i.wx >= azx and i.wx < azx + azw
+                 and i.wy >= azy and i.wy < azy + azh
     pal.x_ig_rect_fill(x, y, tw, th, hov and C.tile_hot or C.tile, 8)
-    pal.x_ig_rect(x, y, tw, th, (hov and not phov) and C.accent
+    pal.x_ig_rect(x, y, tw, th, (hov and not phov and not ahov) and C.accent
                   or C.tile_edge, hov and 1.5 or 1, 8)
     -- two subtitle rows under the name: a byline (author · version) then
     -- the description; the path stands in for whichever the metadata omits
@@ -275,7 +336,8 @@ function M.draw()
     local desc = (t.desc and t.desc ~= "") and t.desc or nil
     local sub1 = bl or t.path
     local sub2 = desc or (bl and t.path) or nil
-    pal.x_ig_clip_push(x, y, tw - (t.ok and 8 or 30), th)
+    pal.x_ig_clip_push(x, y, tw - (t.ok and t.recent and 46 or
+                                   (t.ok and 8 or 30)), th)
     pal.x_ig_text(x + 14, y + 11, 16, t.ok and C.text or C.missing,
                   t.name, 0)
     if sub1 then pal.x_ig_text(x + 14, y + 33, 10, C.dim, sub1, 1) end
@@ -293,10 +355,12 @@ function M.draw()
         pal.x_ig_text(x + 14, y + 51, 10, C.bad, t.issue, 0)
         pal.x_ig_clip_pop()
       end
-      if t.recent and button(x + 14, y + th - 52, 70, 24, "repair", not M.folder) then
+      if t.recent and button(x + 14, y + th - 52, 70, 24, "repair",
+                             not M.folder and not modal_at_start) then
         begin_folder(t)
       end
-      if t.recent and button(x + 92, y + th - 52, 70, 24, "remove", not M.folder) then
+      if t.recent and button(x + 92, y + th - 52, 70, 24, "remove",
+                             not M.folder and not modal_at_start) then
         local ok, err = recent.remove(t.path)
         if ok then
           M.scan = nil
@@ -307,11 +371,18 @@ function M.draw()
       end
     end
     if t.ok then
+      local action_clicked = false
+      if t.recent and button(azx, azy, azw, azh, "...",
+                             not M.folder and not modal_at_start) then
+        open_actions(t)
+        action_clicked = true
+      end
       pal.x_ig_rect_fill(pzx, pzy, pzw, pzh,
                          phov and 0x3a3560ff or 0x26223855, 6)
       pal.x_ig_text(pzx + 8, pzy + 6, 12, phov and C.play or C.dim,
                     "play", 0)
-      if hov and i.clicked[1] then
+      if hov and i.clicked[1] and not action_clicked and not ahov
+          and not modal_at_start then
         launch(t.path, phov and "play" or "edit")
       end
     end
@@ -333,13 +404,141 @@ function M.draw()
                     "+ New project", 0)
       pal.x_ig_text(x + 14, y + 42, 11, C.dim,
                     "3 random words · opens in the editor", 1)
-      if hov and i.clicked[1] then scaffold() end
+      if hov and i.clicked[1] and not modal_at_start then scaffold() end
     end
   end
 
   if #tiles == 0 then
     pal.x_ig_text(x0, y0 + 96, 15, C.dim,
                   "no projects yet — click + New project", 0)
+  end
+
+  -- Ready recent-tile actions live in one modal so ordinary tile click/play
+  -- stays generous. Relocation errors remain in context; a post-move recents
+  -- failure closes it because the stale tile is now the deliberate repair UI.
+  if M.action then
+    local a = M.action
+    local pw = math.min(560, ig.w - 48)
+    local ph = a.mode == "rename" and 224 or 190
+    local px, py = (ig.w - pw) * 0.5, math.max(24, (ig.h - ph) * 0.38)
+    for _, key in ipairs(i.keys) do
+      if key.down and not key.rep and key.scancode == 41 then
+        M.action = nil
+        return
+      end
+    end
+    pal.x_ig_overlay(true)
+    pal.x_ig_rect_fill(0, 0, ig.w, ig.h, 0x080611cc)
+    pal.x_ig_rect_fill(px, py, pw, ph, C.tile, 10)
+    pal.x_ig_rect(px, py, pw, ph, C.tile_edge, 1, 10)
+    pal.x_ig_text(px + 18, py + 16, 17, C.text,
+                  a.mode == "rename" and "rename project folder"
+                                           or "project folder", 0)
+    pal.x_ig_text(px + 18, py + 42, 12, C.accent, a.name or "project", 0)
+    pal.x_ig_clip_push(px + 18, py + 61, pw - 36, 18)
+    pal.x_ig_text(px + 18, py + 61, 10, C.dim, a.path, 1)
+    pal.x_ig_clip_pop()
+
+    if a.mode == "rename" then
+      local fy, fh = py + 92, 32
+      pal.x_ig_rect_fill(px + 18, fy, pw - 36, fh, 0x141220ff, 5)
+      pal.x_ig_rect(px + 18, fy, pw - 36, fh, C.tile_edge, 1, 5)
+      local text, changed, active, st = pal.x_ig_edit {
+        id = "picker_project_folder_rename", x = px + 25, y = fy + 6,
+        w = pw - 50, h = fh - 10, text = a.rename or "", px = 13,
+        font = 1, multiline = false, enter = true, focus = a.focus or nil,
+        ghost = true,
+      }
+      a.focus = nil
+      if changed then
+        a.rename = text:gsub("[\r\n\t]", "")
+        a.error = nil
+      end
+      -- The modal uses imgui's foreground drawlist; a normal widget window is
+      -- behind that layer. Keep x_ig_edit as the IME/selection machine and
+      -- mirror its glyphs, selection, and caret in the foreground explicitly.
+      local shown = changed and a.rename or text
+      local sx = st and st.sx or 0
+      local tx, ty = px + 25 - sx, fy + 8
+      pal.x_ig_clip_push(px + 23, fy + 3, pw - 46, fh - 6)
+      if active and st and st.sa and st.sb and st.sb > st.sa then
+        local before = shown:sub(1, st.sa)
+        local selected = shown:sub(st.sa + 1, st.sb)
+        local bx = pal.x_ig_text_size(before, 13, 1)
+        local sw = pal.x_ig_text_size(selected, 13, 1)
+        pal.x_ig_rect_fill(tx + bx, fy + 6, math.max(1, sw), 18, 0x5a548099, 2)
+      end
+      pal.x_ig_text(tx, ty, 13, C.text, shown, 1)
+      if active and st and st.caret then
+        local before = shown:sub(1, st.caret)
+        local cx = pal.x_ig_text_size(before, 13, 1)
+        pal.x_ig_line(tx + cx, fy + 6, tx + cx, fy + 25, C.accent, 1)
+      end
+      pal.x_ig_clip_pop()
+      local valid, name_error = location.validate_name(a.rename)
+      local status = a.error or name_error
+      if status then
+        pal.x_ig_clip_push(px + 18, fy + 39, pw - 36, 18)
+        pal.x_ig_text(px + 18, fy + 39, 10, C.bad, status, 0)
+        pal.x_ig_clip_pop()
+      else
+        pal.x_ig_text(px + 18, fy + 39, 10, C.dim,
+                      "Only the folder changes; project name stays in settings.", 0)
+      end
+      local by = py + ph - 44
+      local submit = st and st.submit
+      if button(px + 18, by, 104, 28, "rename folder", valid ~= nil)
+          or (submit and valid) then
+        local ok, result, outcome = location.rename(a.path, a.rename)
+        M.scan = nil
+        if ok then
+          say("renamed project folder · " .. result)
+          M.action = nil
+        else
+          say(result, true)
+          a.error = result
+          if outcome and outcome.moved then M.action = nil end
+        end
+      end
+      if M.action and button(px + 132, by, 72, 28, "cancel", true) then
+        M.action = nil
+      end
+    else
+      pal.x_ig_text(px + 18, py + 91, 11, C.dim,
+                    "Reveal, rename, or choose a new parent folder.", 0)
+      if a.error then
+        pal.x_ig_clip_push(px + 18, py + 112, pw - 36, 18)
+        pal.x_ig_text(px + 18, py + 112, 10, C.bad, a.error, 0)
+        pal.x_ig_clip_pop()
+      end
+      local by = py + ph - 44
+      if button(px + pw - 48, py + 12, 30, 24, "x", true) then
+        M.action = nil
+      end
+      if M.action and button(px + 18, by, 88, 28, "reveal", true) then
+        local ok, result = location.reveal(a.path)
+        if ok then
+          say("revealed project folder · " .. result)
+          M.action = nil
+        else
+          say(result, true)
+          a.error = result
+        end
+      end
+      if M.action and button(px + 116, by, 112, 28, "rename folder", true) then
+        a.mode, a.focus, a.error = "rename", true, nil
+      end
+      if M.action and button(px + 238, by, 102, 28, "move folder", true) then
+        local ok, err = begin_folder { kind = "move", source = a.path }
+        if ok then M.action = nil else a.error = err end
+      end
+    end
+    pal.x_ig_overlay(false)
+    if M.action and i.clicked[1]
+        and not (i.wx >= px and i.wx < px + pw
+                 and i.wy >= py and i.wy < py + ph) then
+      M.action = nil
+    end
   end
 end
 

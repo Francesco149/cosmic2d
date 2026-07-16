@@ -26,7 +26,9 @@ project** to scaffold your own, or choose **open folder** to register an
 existing project wherever it already lives. A tile opens a project in the
 editor; the ▶ zone plays it. Missing recent folders remain visible with
 **repair** and **remove** actions, and the editor's **← projects** button
-returns to this list after safely saving its recovery state.
+returns to this list after safely saving its recovery state. A ready recent
+tile's **...** menu reveals its folder or renames/moves it without overwriting
+an existing destination; move chooses a new parent on the same filesystem.
 
 ```sh
 bin/cosmic projects/demo            # play the demo directly

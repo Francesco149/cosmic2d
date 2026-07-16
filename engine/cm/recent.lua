@@ -45,6 +45,18 @@ function M.remove(path, fail)
   return publish(prior({ [path] = true }), fail)
 end
 
+-- Location-changing actions require an existing recovery pointer before they
+-- touch the filesystem. This read-only check canonicalizes legacy spellings
+-- exactly like note/replace, so a failed move always leaves a visible tile.
+function M.contains(path)
+  path = canonical(path)
+  if not path then return false end
+  for raw in (pal.read_file(M.path) or ""):gmatch("[^\n]+") do
+    if canonical(raw) == path then return true end
+  end
+  return false
+end
+
 -- Repair a stale entry in one atomic generation: the replacement becomes the
 -- most recent project, the dead spelling disappears, and any prior occurrence
 -- of the new spelling is deduplicated. A failed write leaves the old repair

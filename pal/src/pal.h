@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 15 /* v15: asynchronous native folder chooser */
+#define PAL_VERSION_API 16 /* v16: collision-safe path move + native reveal */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
