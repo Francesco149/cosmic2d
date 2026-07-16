@@ -30,7 +30,8 @@ local DIAG = 0.70710678       -- 1/sqrt(2), a fixed constant on purpose
 local game = {}
 
 local function reset(d)
-  d.x, d.y = W / 2 - PW / 2, H / 2 - PW / 2
+  -- spawn left of the middle wall, on open floor
+  d.x, d.y = W / 2 - 60, H / 2 - PW / 2
   d.got = {}
   for i = 1, #GEMS do d.got[i] = false end
   d.count = 0
@@ -93,7 +94,7 @@ function game.draw()
   end
   pal.quad(d.x, d.y, PW, PW, 0.95, 0.75, 0.42, 1)
   local msg = d.count == #GEMS and "all gems! move to start over"
-              or ("__NAME__ — arrows walk, R resets · gems " .. d.count
+              or ("__NAME__ - arrows walk, R resets - gems " .. d.count
                   .. "/" .. #GEMS)
   text.draw(14, H - 34, msg, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
 end

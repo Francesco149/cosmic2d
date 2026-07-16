@@ -117,10 +117,10 @@ function game.draw()
   text.draw(6, 6, hud, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
   if d.over then
     text.draw(W / 2 - 70, H / 2 - 10,
-              "game over — space flies again",
+              "game over - space flies again",
               { r = 0.95, g = 0.75, b = 0.42, a = 1 })
   else
-    text.draw(6, H - 14, "__NAME__ — arrows steer, space shoots, R resets",
+    text.draw(6, H - 14, "__NAME__ - arrows steer, space shoots, R resets",
               { r = 0.95, g = 0.92, b = 0.8, a = 0.55 })
   end
 end

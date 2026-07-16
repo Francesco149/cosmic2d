@@ -61,7 +61,7 @@ function game.draw()
   pal.quad(0, H - 8, W, 8, 0.30, 0.40, 0.36, 1)
   local d = state.doc
   pal.quad(d.x, d.y - 16, 16, 16, 0.95, 0.75, 0.42, 1)
-  text.draw(6, 6, "hello from __NAME__ — arrows + space. edit main.lua!",
+  text.draw(6, 6, "hello from __NAME__ - arrows + space. edit main.lua!",
             { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
 end
 return game

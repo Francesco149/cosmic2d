@@ -91,7 +91,7 @@ function game.draw()
   local d = state.doc
   pal.quad(d.x, d.y, PW, PH, 0.95, 0.75, 0.42, 1)
   text.draw(6, 6, d.won and "you made it! space starts over"
-            or "__NAME__ — arrows run, space jumps, R resets",
+            or "__NAME__ - arrows run, space jumps, R resets",
             { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
 end
 
