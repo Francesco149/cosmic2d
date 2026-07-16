@@ -3,9 +3,11 @@
 -- Scans projects/* for project.lua and merges the engine-root .recent.dat.
 -- Open folder registers an arbitrary project in place (no copy), while stale
 -- recent tiles can be repaired through the same native chooser. Ready recent
--- tiles expose reveal/rename/move; relocation is a collision-safe directory
--- rename followed by an atomic recents update. A tile opens the project IN THE
--- EDITOR (the picker is the editor's front door); the ▶ zone boots play mode.
+-- tiles expose reveal/rename/move/duplicate; relocation is a collision-safe
+-- directory rename followed by an atomic recents update, and duplicate is a
+-- staged cancellable copy published by one no-replace rename. A tile opens
+-- the project IN THE EDITOR (the picker is the editor's front door); the ▶
+-- zone boots play mode.
 --
 -- The switch mechanism (D052): write "<path>\n<mode>" into the `boot.next`
 -- named buffer (named buffers survive VM reboots by contract) and call
@@ -117,6 +119,9 @@ local function open_actions(value, mode)
   if not found.recent then
     return nil, "open the project once before changing its folder"
   end
+  if mode == "duplicate" then
+    return M.begin_folder { kind = "duplicate", source = root, name = found.name }
+  end
   local _, folder_name = location.parts(root)
   M.action = {
     path = root, name = found.name, mode = mode or "menu",
@@ -157,7 +162,9 @@ local function begin_folder(intent)
     return nil, err
   end
   local start
-  if intent.kind == "move" then start = location.parts(intent.source) end
+  if intent.kind == "move" or intent.kind == "duplicate" then
+    start = location.parts(intent.source)
+  end
   local ok, err = pal.x_folder_dialog(start)
   if not ok then say(err, true); return nil, err end
   M.folder = intent
@@ -165,6 +172,8 @@ local function begin_folder(intent)
     say("choose the replacement for " .. intent.tile.path)
   elseif intent.kind == "move" then
     say("choose the destination parent for " .. intent.source)
+  elseif intent.kind == "duplicate" then
+    say("choose the destination parent for a duplicate of " .. intent.source)
   else
     say("choose a cosmic2d project folder")
   end
@@ -179,6 +188,20 @@ local function accept_folder(raw)
   -- its native dialog is still open.
   if intent and intent.repair and not intent.kind then
     intent = { kind = "repair", tile = intent.repair }
+  end
+  if intent and intent.kind == "duplicate" then
+    -- The chosen parent only prepares the duplicate modal; nothing is copied
+    -- until its editable folder name is confirmed there.
+    local parent, perr = project.normalize_root(raw)
+    if not parent then say(perr, true); return nil, perr end
+    local _, source_name = location.parts(intent.source)
+    M.action = {
+      path = intent.source, name = intent.name, mode = "duplicate",
+      parent = parent, rename = (source_name or "project") .. " copy",
+      focus = true,
+    }
+    say("name the duplicate of " .. intent.source)
+    return true, parent, false
   end
   if intent and intent.kind == "move" then
     local ok, result, outcome = location.move_to(intent.source, raw)
@@ -210,6 +233,17 @@ local function accept_folder(raw)
   return true, root, true
 end
 M.accept_folder = accept_folder -- scripted lifecycle proof door
+
+-- Start the prepared duplicate job (UI button + scripted proof door). The job
+-- advances inside the modal so progress and cancel stay visible.
+function M.start_duplicate(opts)
+  local a = M.action
+  if not a or a.mode ~= "duplicate" then return nil, "no duplicate is prepared" end
+  if a.job and not a.job.terminal then return nil, "a duplicate is already running" end
+  a.error = nil
+  a.job = location.duplicate_start(a.path, a.parent, a.rename, opts)
+  return a.job
+end
 
 local function poll_folder()
   if not M.folder then return false end
@@ -419,45 +453,90 @@ function M.draw()
   if M.action then
     local a = M.action
     local pw = math.min(560, ig.w - 48)
-    local ph = a.mode == "rename" and 224 or 190
+    -- The duplicate layout is the tallest; 226 keeps its buttons on screen at
+    -- 300% fixed chrome on an ordinary 1280x800 window (D074's logical 266).
+    local ph = a.mode == "rename" and 224
+               or a.mode == "duplicate" and 226 or 190
     local px, py = (ig.w - pw) * 0.5, math.max(24, (ig.h - ph) * 0.38)
+    local busy = (a.job and not a.job.terminal) or false
     for _, key in ipairs(i.keys) do
       if key.down and not key.rep and key.scancode == 41 then
-        M.action = nil
-        return
+        -- Esc can never abandon a running copy silently; it asks the job to
+        -- cancel and the job cleans its own staging before the modal closes.
+        if busy then
+          location.duplicate_cancel(a.job)
+        else
+          M.action = nil
+          return
+        end
       end
     end
+    if busy then
+      for _ = 1, 12 do -- a few files per frame keeps large trees responsive
+        location.duplicate_step(a.job)
+        if a.job.terminal then break end
+      end
+    end
+    if a.job and a.job.terminal then
+      -- Terminal handling runs exactly once: the handle is cleared here.
+      local job = a.job
+      a.job = nil
+      if job.complete then
+        M.scan = nil
+        say("duplicated project folder · " .. tostring(job.published))
+        M.action = nil
+        return
+      elseif job.cancelled then
+        say("duplicate cancelled")
+      else
+        if job.published then M.scan = nil end
+        say(job.error or "duplicate failed", true)
+        a.error = job.error or "duplicate failed"
+      end
+    end
+    busy = (a.job and not a.job.terminal) or false
     pal.x_ig_overlay(true)
     pal.x_ig_rect_fill(0, 0, ig.w, ig.h, 0x080611cc)
     pal.x_ig_rect_fill(px, py, pw, ph, C.tile, 10)
     pal.x_ig_rect(px, py, pw, ph, C.tile_edge, 1, 10)
     pal.x_ig_text(px + 18, py + 16, 17, C.text,
                   a.mode == "rename" and "rename project folder"
-                                           or "project folder", 0)
+                    or a.mode == "duplicate" and "duplicate project"
+                    or "project folder", 0)
     pal.x_ig_text(px + 18, py + 42, 12, C.accent, a.name or "project", 0)
     pal.x_ig_clip_push(px + 18, py + 61, pw - 36, 18)
-    pal.x_ig_text(px + 18, py + 61, 10, C.dim, a.path, 1)
+    -- Duplicate trades the source-path row (already on the tile and menu) for
+    -- the destination parent so the whole flow fits 300% fixed chrome.
+    pal.x_ig_text(px + 18, py + 61, 10, C.dim,
+                  a.mode == "duplicate" and ("into  " .. tostring(a.parent))
+                    or a.path, 1)
     pal.x_ig_clip_pop()
 
-    if a.mode == "rename" then
-      local fy, fh = py + 92, 32
+    -- The shared destination-folder-name field. The modal uses imgui's
+    -- foreground drawlist; a normal widget window is behind that layer. Keep
+    -- x_ig_edit as the IME/selection machine and mirror its glyphs,
+    -- selection, and caret in the foreground explicitly.
+    local function name_field(id, fy, fh, enabled)
       pal.x_ig_rect_fill(px + 18, fy, pw - 36, fh, 0x141220ff, 5)
       pal.x_ig_rect(px + 18, fy, pw - 36, fh, C.tile_edge, 1, 5)
-      local text, changed, active, st = pal.x_ig_edit {
-        id = "picker_project_folder_rename", x = px + 25, y = fy + 6,
-        w = pw - 50, h = fh - 10, text = a.rename or "", px = 13,
-        font = 1, multiline = false, enter = true, focus = a.focus or nil,
-        ghost = true,
-      }
-      a.focus = nil
-      if changed then
-        a.rename = text:gsub("[\r\n\t]", "")
-        a.error = nil
+      local shown, st, active
+      if enabled then
+        local text, changed
+        text, changed, active, st = pal.x_ig_edit {
+          id = id, x = px + 25, y = fy + 6,
+          w = pw - 50, h = fh - 10, text = a.rename or "", px = 13,
+          font = 1, multiline = false, enter = true, focus = a.focus or nil,
+          ghost = true,
+        }
+        a.focus = nil
+        if changed then
+          a.rename = text:gsub("[\r\n\t]", "")
+          a.error = nil
+        end
+        shown = changed and a.rename or text
+      else
+        shown = a.rename or ""
       end
-      -- The modal uses imgui's foreground drawlist; a normal widget window is
-      -- behind that layer. Keep x_ig_edit as the IME/selection machine and
-      -- mirror its glyphs, selection, and caret in the foreground explicitly.
-      local shown = changed and a.rename or text
       local sx = st and st.sx or 0
       local tx, ty = px + 25 - sx, fy + 8
       pal.x_ig_clip_push(px + 23, fy + 3, pw - 46, fh - 6)
@@ -468,7 +547,7 @@ function M.draw()
         local sw = pal.x_ig_text_size(selected, 13, 1)
         pal.x_ig_rect_fill(tx + bx, fy + 6, math.max(1, sw), 18, 0x5a548099, 2)
       end
-      pal.x_ig_text(tx, ty, 13, C.text, shown, 1)
+      pal.x_ig_text(tx, ty, 13, enabled and C.text or C.dim, shown, 1)
       if active and st and st.caret then
         local before = shown:sub(1, st.caret)
         local cx = pal.x_ig_text_size(before, 13, 1)
@@ -476,6 +555,13 @@ function M.draw()
       end
       pal.x_ig_clip_pop()
       local valid, name_error = location.validate_name(a.rename)
+      return valid, name_error, st and st.submit
+    end
+
+    if a.mode == "rename" then
+      local fy, fh = py + 92, 32
+      local valid, name_error, submit =
+        name_field("picker_project_folder_rename", fy, fh, true)
       local status = a.error or name_error
       if status then
         pal.x_ig_clip_push(px + 18, fy + 39, pw - 36, 18)
@@ -486,7 +572,6 @@ function M.draw()
                       "Only the folder changes; project name stays in settings.", 0)
       end
       local by = py + ph - 44
-      local submit = st and st.submit
       if button(px + 18, by, 104, 28, "rename folder", valid ~= nil)
           or (submit and valid) then
         local ok, result, outcome = location.rename(a.path, a.rename)
@@ -503,9 +588,50 @@ function M.draw()
       if M.action and button(px + 132, by, 72, 28, "cancel", true) then
         M.action = nil
       end
+    elseif a.mode == "duplicate" then
+      local fy, fh = py + 84, 32
+      local valid, name_error, submit =
+        name_field("picker_project_folder_duplicate", fy, fh, not busy)
+      local status = a.error or name_error
+      if status then
+        pal.x_ig_clip_push(px + 18, fy + 39, pw - 36, 18)
+        pal.x_ig_text(px + 18, fy + 39, 10, C.bad, status, 0)
+        pal.x_ig_clip_pop()
+      elseif not busy then
+        pal.x_ig_text(px + 18, fy + 39, 10, C.dim,
+                      "Copies the saved project; editor history stays behind.", 0)
+      end
+      if busy then
+        local job = a.job
+        local ratio = (job.total and job.total > 0)
+                      and math.min(1, (job.done or 0) / job.total) or 0
+        pal.x_ig_text(px + 18, py + 140, 11, C.accent,
+                      tostring(job.phase or "copying"), 0)
+        pal.x_ig_rect_fill(px + 18, py + 154, pw - 36, 8, 0x141220ff, 3)
+        pal.x_ig_rect_fill(px + 18, py + 154,
+                           math.max(2, (pw - 36) * ratio), 8, C.accent, 3)
+        pal.x_ig_clip_push(px + 18, py + 166, pw - 36, 14)
+        pal.x_ig_text(px + 18, py + 166, 10, C.dim,
+                      tostring(job.detail or ""), 1)
+        pal.x_ig_clip_pop()
+      end
+      local by = py + ph - 44
+      if busy then
+        if button(px + 18, by, 104, 28, "cancel copy", true) then
+          location.duplicate_cancel(a.job)
+        end
+      else
+        if button(px + 18, by, 104, 28, "duplicate", valid ~= nil)
+            or (submit and valid) then
+          M.start_duplicate()
+        end
+        if M.action and button(px + 132, by, 72, 28, "cancel", true) then
+          M.action = nil
+        end
+      end
     else
       pal.x_ig_text(px + 18, py + 91, 11, C.dim,
-                    "Reveal, rename, or choose a new parent folder.", 0)
+                    "Reveal, rename, move, or duplicate this project's folder.", 0)
       if a.error then
         pal.x_ig_clip_push(px + 18, py + 112, pw - 36, 18)
         pal.x_ig_text(px + 18, py + 112, 10, C.bad, a.error, 0)
@@ -532,9 +658,14 @@ function M.draw()
         local ok, err = begin_folder { kind = "move", source = a.path }
         if ok then M.action = nil else a.error = err end
       end
+      if M.action and button(px + 350, by, 96, 28, "duplicate", true) then
+        local ok, err = begin_folder { kind = "duplicate", source = a.path,
+                                       name = a.name }
+        if ok then M.action = nil else a.error = err end
+      end
     end
     pal.x_ig_overlay(false)
-    if M.action and i.clicked[1]
+    if M.action and not busy and i.clicked[1]
         and not (i.wx >= px and i.wx < px + pw
                  and i.wy >= py and i.wy < py + ph) then
       M.action = nil
