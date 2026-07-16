@@ -131,6 +131,12 @@ developer toolchain; the first picker shows only intentional content.
 
 Goal: project work never requires filesystem or Nix knowledge for normal use.
 
+Progress: the first settings packet is complete. Boot, picker, packaging, and
+the editor now share one declarative `cm.project` codec/validator; the in-editor
+window atomically edits identity, internal resolution, and initial window
+defaults while preserving all unedited project keys. Icon/file references and
+export configuration keep the full settings checklist open.
+
 - [ ] Picker: create, import/open folder, refresh, sort/search, keyboard nav,
   thumbnails, missing-project repair, and large-list scrolling.
 - [ ] Project actions: settings, rename/move, duplicate, archive/delete with

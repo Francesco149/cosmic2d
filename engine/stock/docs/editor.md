@@ -8,6 +8,9 @@ windows around, and lay out a workspace that suits the task.
 
 **Right-click the canvas** for the spawn menu. The window kinds:
 
+- **project settings** — edit name/author/version/description, internal
+  resolution, and initial window defaults. Validation is live; Ctrl+S merges
+  into the shared `project.lua` working copy and saves it atomically.
 - **code editor** — a project file in a syntax-lit editor. `.md` docs (like
   this one) get headings, links, and code spans; Ctrl+click a link to follow
   it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and redo. Journals normally preserve
@@ -44,7 +47,8 @@ opens · **esc** closes.
 
 ## Per-window guides
 
-- [The map editor](engine/stock/docs/win-map.md) ·
+- [Project settings](engine/stock/docs/win-project.md) ·
+  [the map editor](engine/stock/docs/win-map.md) ·
   [sprite editor](engine/stock/docs/win-sprite.md) ·
   [tilemap](engine/stock/docs/win-tmap.md)
 - [synth](engine/stock/docs/win-synth.md) ·

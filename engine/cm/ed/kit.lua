@@ -326,10 +326,10 @@ function M.asset(spec)
   end
 
   function A.save(win, ed)
-    if win.path == "" then return end
+    if win.path == "" then return nil, "no asset is bound" end
     if ed.parked then
       pal.log("[ed] parked in the past — writes are walled (bring-back is the door)")
-      return
+      return nil, "parked in the past"
     end
     local a, p = A.open_asset(ed, win.path)
     if spec.encode then
@@ -353,10 +353,12 @@ function M.asset(spec)
       cm.require("cm.ed.win.assets").invalidate(ed)
       local msg = spec.after_save and spec.after_save(ed, win.path, a, p)
       pal.log(msg or ("[ed] saved " .. win.path))
+      return true
     else
       pal.log("[ed] SAVE FAILED " .. win.path ..
               (err and (": " .. tostring(err)) or ""))
       if ed.summon_console then ed.summon_console() end
+      return nil, err or "write failed"
     end
   end
 

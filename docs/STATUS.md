@@ -3,30 +3,32 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 complete; A3 project lifecycle next (2026-07-16)
+## Current handoff — A3 settings foundation complete; release references next (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-A0–A2 are complete. Project/export UX, gamepad/player settings, shared
-genre-neutral runtime slices and demos, complete rewind product UI, and the
-release-candidate pass remain explicit alpha gates.
+A0–A2 are complete and A3 is in progress. Project/export UX, gamepad/player
+settings, shared genre-neutral runtime slices and demos, complete rewind
+product UI, and the release-candidate pass remain explicit alpha gates.
 
-**A2 is complete (D070).** Play archives now open on a project-owned player
-surface rather than the engine authoring README. A declarative, fail-closed
-metadata contract requires a safe project-local square PNG icon, controls,
-credits, and one or more license files alongside title/version/description.
-It generates the root README, quick start, icon, and legal links. Both
-platforms have an obvious root game launcher while the inspectable project and
-deliberate `bin/cosmic2d-editor` entrance remain included under D052.
+**A3 settings packet 1 is complete (D071).** `cm.project` is now the one
+declarative project authority for engine boot, picker metadata, player
+packaging, and editor settings. Its empty-environment/plain-data codec,
+runtime/settings/D070 validators, canonical inspectable-Lua encoder, and
+field merge preserve project-specific extension keys while rejecting ambient
+code and invalid runtime values consistently.
 
-PAL API v12 applies the validated project PNG to every live game window and
-restores the canonical engine mark on projects without one. Linux's root game
-ELF resolves from `$ORIGIN/lib`. Windows uses a tiny Unicode delegating root
-PE with project-derived multi-resolution icon and exact title/version resources;
-the same-named locked engine under `bin/` and all tooling keep truthful
-cosmic2d identity.
+The new project-settings canvas window is available from the right-click menu
+and Ctrl+Space. It edits name/author/version/description, internal width/height,
+initial integer scale, and start-maximized; shows draft and export validation;
+and documents that render/window changes apply next launch. It shares the text
+window's `project.lua` working copy and journal, so simultaneous source/form
+edits merge. Ctrl+S uses the existing atomic text-save path: an injected failure
+preserves disk, retains complete dirty canonical bytes, summons the console,
+and retries cleanly. Invalid temporary form strings remain visible but never
+reach project authority.
 
 **A7's foundation remains complete (D065/D066).** The persistent four-lane
 rewind tray owns the live camera, zoom/pan, click seek, inclusive A/B loop, and
@@ -36,19 +38,19 @@ collision, and active selection rewind coherently. Persisted activity/event
 indexes, minute thumbnails, project-file epochs, standalone clip packages, and
 immutable replay/crash sources remain later A7 packets.
 
-**Proof:** metadata fixtures reject missing/escaping player references and pin
-both generated surfaces; PAL selftest passes 23,302 checks. Fresh final editor
-and demo play archives pass both checksum layers and every public root/bin
-entrance from unrelated Unicode paths under a restricted Debian 13 identity
-and a native Windows mutation-deny ACL. Windows additionally proves the
-project PE resources and UTF-16→UTF-8 argv delegation. The full deterministic
-trace/pixel/audio suite is green.
+**Proof:** focused KATs cover the codec fixpoint, plain-data rejection,
+extension preservation, shared D070 paths, typed fields, source/form merge,
+invalid-form refusal, and atomic failure/retry. `nix run .#test` is ALL GREEN at
+23,320 checks with every trace and pixel/audio golden matching; release metadata
+fixtures pass and both final Linux/Windows editor archives build. The inspected
+1280×800 capture shows the complete window at 100% canvas zoom.
 
-**Exact next packet:** begin A3 with a canonical project-settings model and its
-first in-editor settings window for name/author/version/description, internal
-resolution, and window defaults. Reuse D070's release metadata validation;
-leave icon/file pickers and export target/progress UI as named follow-up
-packets.
+**Exact next packet:** extend the same settings surface with project-local icon,
+controls, credits, and license selection plus live D070 file/content validation.
+Exit when a fresh project can become export-metadata-complete without editing
+Lua, while unsafe/missing/wrong-type selections remain actionable and cannot be
+saved as a false-valid release configuration. Leave export target/output/
+progress UI for the following packet.
 
 There is no known blocker or human-only verification required.
 

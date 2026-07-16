@@ -35,7 +35,7 @@ M.g = M.g or {}
 -- itself to. A kind module self-describes the rest — `M.menu` puts it
 -- on the spawn menu (roster order = menu order), `M.exts` routes asset
 -- double-clicks/drops to it (assets.kind_for reads it).
-local ROSTER = { "note", "text", "assets", "map", "tmap", "game",
+local ROSTER = { "note", "project", "text", "assets", "map", "tmap", "game",
                  "console", "anim", "perf", "image", "sprite", "sound",
                  "synth", "music", "palette", "help" }
 M.kinds = {}

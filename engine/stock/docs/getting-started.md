@@ -17,6 +17,9 @@ back/forward buttons — walk your history. `src` opens the raw markdown.
   between rooms. Open it, walk into a door, grab the coins.
 - **+ New project** scaffolds a fresh, runnable project (auto-named with
   three random words) and opens it in the editor.
+- In the editor, open **project settings** from the right-click menu or
+  **Ctrl+Space**. Give the project its real name, author/version/description,
+  internal resolution, and initial window defaults; Ctrl+S saves them.
 
 From a shell you can also run a project straight:
 

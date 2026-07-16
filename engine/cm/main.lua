@@ -82,10 +82,12 @@ local function load_project(dir)
   local src, err = pal.read_file(path)
   if not src then error("can't read " .. path .. ": " .. tostring(err), 0) end
   cm.register_special("@project", path, src)
-  local chunk, lerr = load(src, "@" .. path)
-  if not chunk then error(lerr, 0) end
-  local proj = chunk()
-  if type(proj) ~= "table" then error(path .. " did not return a table", 0) end
+  local project = cm.require("cm.project")
+  local proj, perr = project.decode(src, "@" .. path)
+  if not proj then error(path .. ": " .. tostring(perr), 0) end
+  local ok
+  ok, perr = project.validate_runtime(proj)
+  if not ok then error(path .. ": " .. tostring(perr), 0) end
   return proj
 end
 

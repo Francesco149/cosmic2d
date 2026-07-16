@@ -31,6 +31,16 @@ end
 project_dir = project_dir:gsub("/+$", "")
 bundle_root = bundle_root:gsub("/+$", "")
 
+-- Load the same pure project model used by engine boot, the picker, and the
+-- settings window.  Derive it from this script's path: packaging may run from
+-- an arbitrary build directory, so cwd is not an authority.
+local script = (arg and arg[0] or ""):gsub("\\", "/")
+local repo = script:match("^(.*)/tools/[^/]+$")
+if not repo and script:match("^tools/[^/]+$") then repo = "." end
+if not repo then die("cannot locate engine/cm/project.lua from " .. script) end
+local loaded, project = pcall(dofile, repo .. "/engine/cm/project.lua")
+if not loaded then die("cannot load canonical project model: " .. tostring(project)) end
+
 local function read_all(path, label, limit)
   local file, err = io.open(path, "rb")
   if not file then die("cannot read " .. label .. " " .. path .. ": " .. tostring(err)) end
@@ -53,62 +63,17 @@ local function write_all(path, bytes, label)
 end
 
 local meta_path = project_dir .. "/project.lua"
-local chunk, load_err = loadfile(meta_path, "t", {})
-if not chunk then die("invalid declarative project metadata: " .. tostring(load_err)) end
-local ran, meta = pcall(chunk)
-if not ran then die("project metadata failed: " .. tostring(meta)) end
-if type(meta) ~= "table" then die("project.lua must return a table") end
+local meta_bytes = read_all(meta_path, "project metadata", 512 * 1024)
+local meta, decode_err = project.decode(meta_bytes, "@" .. meta_path)
+if not meta then die(decode_err) end
+local release, release_err = project.validate_release(meta)
+if not release then die(release_err) end
 
-local function one_line(field, optional, max_len)
-  local value = meta[field]
-  if optional and (value == nil or value == "") then return nil end
-  if type(value) ~= "string" then die(field .. " must be a string") end
-  value = value:match("^%s*(.-)%s*$")
-  if value == "" then die(field .. " must not be empty") end
-  if #value > max_len then die(field .. " is too long (max " .. max_len .. " bytes)") end
-  if value:find("[%z\r\n]") then die(field .. " must fit on one line") end
-  return value
-end
-
-local title = one_line("name", false, 120)
-local version = one_line("version", false, 64)
-local author = one_line("author", true, 120)
-local description = one_line("description", false, 1000)
-
-local function project_path(field, value)
-  if type(value) ~= "string" then die(field .. " must be a project-relative path") end
-  if value == "" or #value > 240 or value:sub(1, 1) == "/"
-      or value:find("\\", 1, true) or value:find(":", 1, true)
-      or value:find("[%z\r\n<>#?]") then
-    die(field .. " must be a safe forward-slash project-relative path")
-  end
-  for segment in (value .. "/"):gmatch("(.-)/") do
-    if segment == "" or segment == "." or segment == ".." then
-      die(field .. " contains an unsafe path segment: " .. value)
-    end
-  end
-  return value
-end
-
-local icon_path = project_path("icon", meta.icon)
-local controls_path = project_path("controls", meta.controls)
-local credits_path = project_path("credits", meta.credits)
-if type(meta.licenses) ~= "table" or #meta.licenses == 0 then
-  die("licenses must be a non-empty array of project-relative paths")
-end
-local licenses, seen = {}, {}
-for i = 1, #meta.licenses do
-  local path = project_path("licenses[" .. i .. "]", meta.licenses[i])
-  if seen[path] then die("duplicate project license path: " .. path) end
-  seen[path] = true
-  licenses[#licenses + 1] = path
-end
-for key in pairs(meta.licenses) do
-  if type(key) ~= "number" or math.type(key) ~= "integer"
-      or key < 1 or key > #meta.licenses then
-    die("licenses must be a dense array")
-  end
-end
+local title, version = release.name, release.version
+local author, description = release.author, release.description
+local icon_path, controls_path, credits_path =
+  release.icon, release.controls, release.credits
+local licenses = release.licenses
 
 local function release_text(field, path)
   local bytes = read_all(project_dir .. "/" .. path, field, 512 * 1024)

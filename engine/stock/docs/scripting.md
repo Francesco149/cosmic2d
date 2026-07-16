@@ -24,12 +24,21 @@ A project needs `project.lua` and an entry file (normally `main.lua`):
       entry = "main.lua",
     }
 
+The editor's **project settings** window edits the identity, internal
+resolution, and initial window fields above. It shares the code editor's
+working `project.lua` bytes and journal, preserves unedited declarative keys,
+and atomically publishes canonical inspectable Lua on Ctrl+S. Icon/legal file
+pickers and export configuration remain follow-up A3 work; those keys are still
+editable directly in the code window today.
+
 Paths passed to `pal.read_file` are relative to the engine working directory.
 For project assets, prefix them with `cm.main.args.project .. "/"`.
 
-The first four player-facing fields (`name`, `version`, `author`, and
-`description`) are plain strings. A player bundle additionally requires the
-four project-local references above. `icon` is a square 32–1024 px PNG and is
+The file executes in an empty environment and must return only plain data
+(strings, finite numbers, booleans, and tables). The first four player-facing
+fields (`name`, `version`, `author`, and `description`) are plain strings. A
+player bundle additionally requires the four project-local references above.
+`icon` is a square 32–1024 px PNG and is
 also used for the live OS window. `controls` and `credits` are non-empty
 Markdown files; `licenses` is a non-empty array of text license/notice files.
 Use forward slashes and no `.`/`..` segments, absolute paths, drive prefixes,

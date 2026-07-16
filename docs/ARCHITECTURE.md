@@ -44,9 +44,10 @@ to revisit; this file describes *what is*. Keep it current when code changes.
    build .#cosmic-windows`; mingw + cross SDL3) (D038/D069).
 2. PAL creates the Lua state and runs `engine/boot.lua` — a deliberately thin
    shim that defines the **cm module system** and hands off to `cm.main`.
-3. `cm.main.boot()` parses flags, reads `<project>/project.lua` (plain table:
+3. `cm.main.boot()` parses flags, decodes `<project>/project.lua` through the
+   canonical `cm.project` empty-environment/plain-data model—a table containing
    name/version/author/description, internal w/h, window scale, entry, seed,
-   and project-local icon/controls/credits/licenses release references), calls
+   and project-local icon/controls/credits/licenses release references—calls
    `pal.gfx_init{…}`, applies the project PNG through
    `pal.x_window_icon`, requires the project entry module, and dispatches
    `--record`/`--verify` modes.

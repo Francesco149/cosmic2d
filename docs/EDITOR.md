@@ -753,3 +753,23 @@ middle-drag — its view was inert anyway). cm.ed.chips is the
 right-aligned header chip strip (hover on ctx.hot, on/off fill,
 width accounting) — sprite/tmap headers use it; map's tool-chip
 layout migrates when next touched.
+
+### 13.5 Project settings share the `project.lua` text citizen (A3/D071)
+
+`cm.ed.win.project` is a structured view over the **same** `project.lua`
+working bytes owned by `cm.ed.win.text`, not a second config cache. Temporary
+field strings live on the captured window so invalid intermediate input
+survives a session without becoming project authority. Ctrl+S decodes the
+latest shared source, validates and merges the editable subset, preserves
+unknown/plain extension keys, encodes canonical inspectable Lua, journals that
+one structured replacement, and takes the existing atomic text-save path.
+Source-side and form-side edits therefore merge deliberately; an interrupted
+write leaves both the saved generation and complete dirty replacement intact.
+
+The first surface owns name/author/version/description, internal width/height,
+initial integer scale, and start-maximized. It shows draft validation and the
+D070 release-schema result separately because a draft description may be empty
+while export may not. Render-target/window changes apply next launch rather
+than mutating the running sim/render contract. The form is editor-domain state
+and project-file bytes, never deterministic simulation state; both already ride
+the established session/rewind capture boundaries.

@@ -35,18 +35,14 @@ function M.step() end
 
 -- ---- the project list ----
 
--- Load a project's metadata table (name/author/version/description + the
--- fields the packager reads) by evaluating project.lua — the same load()
--- the engine does on boot (author-controlled source). Returns meta, exists;
--- falls back to a name-only regex if the file won't evaluate.
+-- Load a project's metadata table through the same declarative codec used by
+-- boot, settings, and export. Returns meta, exists; falls back to a name-only
+-- regex so a broken project still has a repairable tile.
 local function proj_meta(dir)
   local src = pal.read_file(dir .. "/project.lua")
   if not src then return nil, false end
-  local chunk = load(src, "@" .. dir .. "/project.lua")
-  if chunk then
-    local ok, t = pcall(chunk)
-    if ok and type(t) == "table" then return t, true end
-  end
+  local t = cm.require("cm.project").decode(src, "@" .. dir .. "/project.lua")
+  if t then return t, true end
   return { name = src:match('name%s*=%s*"([^"]*)"') }, true
 end
 

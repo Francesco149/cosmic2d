@@ -88,6 +88,24 @@ local plumb, working, open_asset, push_now =
 -- the restart-survival proof). Returns the working state + plumbing.
 M.open_win = A.open_win
 
+-- Structured editors (project settings first) share project.lua with ordinary
+-- code windows instead of inventing a second working copy.  Replacing through
+-- this door closes any pending typed gesture, journals the structured edit as
+-- one undoable step, and forces every live text widget on the path to adopt it.
+function M.replace(win, ed, bytes)
+  if not win or win.path == "" or type(bytes) ~= "string" then
+    return nil, "replace needs a bound text path and string bytes"
+  end
+  local a, p = open_asset(ed, win.path)
+  if p.due then push_now(ed, win.path) end
+  if a.text == bytes then return true end
+  a.text = bytes
+  p.force_set = true
+  push_now(ed, win.path)
+  ed.touch()
+  return true
+end
+
 -- the shell calls this on quit so no working state misses its journal
 function M.flush(ed)
   for path, p in pairs(ed.g.tw or {}) do

@@ -2734,6 +2734,119 @@ local function t_atomic_write()
   recent.path = old_recent
 end
 
+local function t_project_settings()
+  local project = cm.require("cm.project")
+  local src = [==[
+return {
+  name = "old name", author = "author", version = "1.2",
+  description = "old description",
+  internal_w = 320, internal_h = 180, window_scale = 3,
+  entry = "main.lua", seed = 77,
+  icon = "icon.png", controls = "CONTROLS.md", credits = "CREDITS.md",
+  licenses = { "LICENSE.md", "NOTICE.txt" },
+  custom = { mode = "kept", values = { 3, 5, 8 }, ["end"] = "keyword key" },
+}
+]==]
+  local meta, err = project.decode(src, "@project-fixture")
+  check(meta and meta.custom.values[3] == 8,
+        "project: declarative source decodes plain nested data")
+  local blocked, berr = project.decode("return { name = os.getenv('X') }", "@bad")
+  check(not blocked and berr:find("project metadata failed", 1, true),
+        "project: empty environment rejects ambient configuration code")
+  blocked, berr = project.decode("return { name='x', callback=function() end }", "@bad")
+  check(not blocked and berr:find("function", 1, true),
+        "project: declarative model rejects non-data values")
+
+  local form = project.settings(meta)
+  form.name, form.author, form.version = "  new name  ", "", "2.0-alpha"
+  form.description = "a changed description"
+  form.internal_w, form.internal_h, form.window_scale = "640", "360", "2"
+  form.maximized = true
+  local merged
+  merged, err = project.apply_settings(meta, form)
+  check(merged and merged.name == "new name" and merged.author == ""
+        and merged.internal_w == 640 and merged.internal_h == 360
+        and merged.window_scale == 2 and merged.maximized == true,
+        "project: settings validate, trim, and type editable fields")
+  check(merged.custom.mode == "kept" and merged.custom.values[2] == 5
+        and merged.entry == "main.lua" and merged.seed == 77,
+        "project: applying settings preserves unedited and extension fields")
+  local bytes
+  bytes, err = project.encode(merged)
+  local round = bytes and project.decode(bytes, "@project-roundtrip")
+  check(round and round.custom.values[3] == 8
+        and round.custom["end"] == "keyword key" and round.licenses[2] == "NOTICE.txt",
+        "project: canonical inspectable Lua round-trips nested metadata")
+  check(project.encode(round) == bytes, "project: canonical encoding is a fixpoint")
+  local release
+  release, err = project.validate_release(round)
+  check(release and release.name == "new name" and #release.licenses == 2,
+        "project: settings and player export share the D070 validator")
+  local escaping = {}
+  for key, value in pairs(round) do escaping[key] = value end
+  escaping.icon = "../icon.png"
+  release, err = project.validate_release(escaping)
+  check(not release and err:find("unsafe path segment", 1, true),
+        "project: shared release validator rejects escaping paths")
+  form.internal_w = "wide"
+  check(not project.validate_settings(form),
+        "project: invalid temporary numeric settings are rejected")
+  form.internal_w = "640"
+
+  -- The canonical model's direct persistence seam is atomic too.
+  local root = tmproot() .. "/cosmic_selftest_project_settings"
+  pal.mkdir(root)
+  local path = root .. "/project.lua"
+  pal.write_file(path, src)
+  local ok
+  ok, err = project.save(root, merged, { _fail = "rename" })
+  check(not ok and err:find(path, 1, true) and pal.read_file(path) == src,
+        "project: failed canonical save preserves previous source")
+  ok, bytes = project.save(root, merged)
+  check(ok and project.decode(pal.read_file(path), "@saved").name == "new name",
+        "project: canonical save atomically publishes decodable source")
+
+  -- The settings window edits the exact same working bytes/journal as a code
+  -- window. A source-side extension change and form-side identity change merge;
+  -- an injected write failure leaves complete dirty bytes for Ctrl+S retry.
+  local W = cm.require("cm.ed.win.project")
+  local T = cm.require("cm.ed.win.text")
+  local summoned = false
+  local ed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+               touch = function() end,
+               summon_console = function() summoned = true end }
+  local win = W.defaults()
+  W.open_win(win, ed)
+  check(win.form.name == "new name" and win.form.internal_w == "640",
+        "project window: form adopts the shared project.lua working copy")
+  local a, p = T.open_win(win, ed)
+  local source_meta = project.decode(a.text, "@working")
+  source_meta.extension_after_open = { enabled = true }
+  local source_bytes = project.encode(source_meta)
+  T.replace(win, ed, source_bytes)
+  win.form.name = "window name"
+  p._save_fail = { _fail = "rename" }
+  local before = pal.read_file(path)
+  ok, err = W.save(win, ed)
+  check(not ok and summoned and pal.read_file(path) == before,
+        "project window: atomic failure preserves disk and summons console")
+  check(W.dirty(win, ed) and a.text:find('name = "window name"', 1, true),
+        "project window: failed save retains complete dirty working settings")
+  p._save_fail = nil
+  ok, err = W.save(win, ed)
+  local saved = project.decode(pal.read_file(path), "@window-saved")
+  check(ok and saved.name == "window name" and saved.extension_after_open.enabled,
+        "project window: retry merges form edits without losing source extensions")
+  check(not W.dirty(win, ed),
+        "project window: successful save clears form and source dirty state")
+  win.form.internal_h = "nope"
+  before = pal.read_file(path)
+  ok, err = W.save(win, ed)
+  check(not ok and win.error:find("internal_h", 1, true)
+        and pal.read_file(path) == before,
+        "project window: invalid form stays visible and never reaches disk")
+end
+
 -- ---- A2 diagnostics + D065 crash locator envelope ----
 
 local function t_crash()
@@ -5588,6 +5701,7 @@ function game.init()
   t_ed_wm()
   t_ed_game()
   t_atomic_write()
+  t_project_settings()
   t_crash()
   t_ed_text_save()
   t_ed_session()

@@ -2743,3 +2743,41 @@ title/version resources, Unicode argv delegation, and a real windowed project
 icon application; Debian 13 pins both root ELF RPATH/launch paths. `nix run
 .#test` is ALL GREEN at 23,302 self-checks with every trace and pixel/audio
 golden unchanged.
+
+## D071 — project settings are a canonical view over shared source bytes (A3, 2026-07-16)
+
+**Context.** Boot, the picker, and D070 packaging each evaluated `project.lua`
+with locally copied rules. An in-editor form could easily become a fourth
+interpretation or maintain a second working copy that overwrote simultaneous
+code-window edits. Numeric fields also need to represent temporarily invalid
+typing without making an invalid render configuration authoritative.
+
+**Decision.** `cm.project` owns one empty-environment/plain-data decoder,
+runtime/settings/D070 validators, field merge, and deterministic inspectable-Lua
+encoder. Boot and the picker use that decoder; the host player-bundle helper
+loads the same pure module and uses its release schema before checking files.
+Top-level project keys are strings and values are finite plain data. Canonical
+output orders the supported fields first and then preserves extension keys.
+
+The project-settings canvas window is a structured view over the text
+citizen's `project.lua` working bytes and journal. Its captured form holds
+invalid intermediate strings. Save decodes the latest shared bytes, merges
+only name/author/version/description, internal width/height, initial integer
+scale, and start-maximized, then journals and atomically saves the canonical
+replacement. Concurrent source edits to other keys survive. Validation errors
+stay in-window; write failures summon the console, preserve the previous disk
+generation, and retain complete dirty bytes for retry. Resolution/window policy
+applies on next launch rather than rebuilding the running target.
+
+**Consequences.** Existing declarative projects remain compatible, including
+project-specific plain-data extensions; global-dependent config and non-data
+values are now rejected consistently with the release contract. A settings save
+intentionally normalizes comments/formatting into canonical Lua. The form and
+project file belong to editor/project-file history, not sim state, so existing
+session and rewind boundaries cover them without a new deterministic record.
+Icon/legal pickers and export configuration remain later A3 packets.
+
+**Proof.** Focused KATs reject ambient code and non-data, prove codec fixpoint,
+D070 path validation, extension preservation, typed field validation, atomic
+failure/retry, shared source/form merge, and visible invalid-form refusal. A
+1280x800 editor capture verifies the complete window at 100% canvas zoom.

@@ -1,6 +1,13 @@
--- cm.project — durable project scaffolding shared by the picker and tests.
--- project.lua is the authority marker and is published last: a directory is
--- never discoverable as a project until every required source is durable.
+-- cm.project — the canonical declarative project model.
+--
+-- project.lua is shared by boot, the picker, player packaging, and the A3
+-- settings window.  This module owns its plain-data codec and validation so
+-- those entrances cannot quietly grow different interpretations.  The file is
+-- still inspectable Lua, but it executes in an empty environment and may only
+-- return strings/numbers/booleans/tables.
+--
+-- Scaffolding publishes project.lua last: a directory is never discoverable
+-- as a project until every required source is durable.
 
 local M = select(2, ...) or {}
 
@@ -59,6 +66,374 @@ function game.draw()
 end
 return game
 ]==]
+
+local function trim(value)
+  return value:match("^%s*(.-)%s*$")
+end
+
+-- The D070 identity validator, shared with the player-bundle helper. Draft
+-- settings call the same primitive with an optional description; the complete
+-- release validator below makes description mandatory while author stays
+-- optional.
+function M.one_line(meta, field, optional, max_len)
+  local value = meta[field]
+  if optional and (value == nil or value == "") then return nil end
+  if type(value) ~= "string" then return nil, field .. " must be a string" end
+  value = trim(value)
+  if value == "" then return nil, field .. " must not be empty" end
+  if #value > max_len then
+    return nil, field .. " is too long (max " .. max_len .. " bytes)"
+  end
+  if value:find("[%z\r\n]") then
+    return nil, field .. " must fit on one line"
+  end
+  return value
+end
+
+function M.project_path(field, value)
+  if type(value) ~= "string" then
+    return nil, field .. " must be a project-relative path"
+  end
+  if value == "" or #value > 240 or value:sub(1, 1) == "/"
+      or value:find("\\", 1, true) or value:find(":", 1, true)
+      or value:find("[%z\r\n<>#?]") then
+    return nil, field .. " must be a safe forward-slash project-relative path"
+  end
+  for segment in (value .. "/"):gmatch("(.-)/") do
+    if segment == "" or segment == "." or segment == ".." then
+      return nil, field .. " contains an unsafe path segment: " .. value
+    end
+  end
+  return value
+end
+
+-- Validate the complete metadata needed to publish a player bundle.  File
+-- existence/content checks remain with the exporter because this pure schema
+-- is also loaded by the host-side packaging script (where `pal` is absent).
+function M.validate_release(meta)
+  if type(meta) ~= "table" then return nil, "project.lua must return a table" end
+  local out = {}
+  local err
+  out.name, err = M.one_line(meta, "name", false, 120)
+  if not out.name then return nil, err end
+  out.version, err = M.one_line(meta, "version", false, 64)
+  if not out.version then return nil, err end
+  out.author, err = M.one_line(meta, "author", true, 120)
+  if err then return nil, err end
+  out.description, err = M.one_line(meta, "description", false, 1000)
+  if not out.description then return nil, err end
+  for _, field in ipairs({ "icon", "controls", "credits" }) do
+    out[field], err = M.project_path(field, meta[field])
+    if not out[field] then return nil, err end
+  end
+  if type(meta.licenses) ~= "table" or #meta.licenses == 0 then
+    return nil, "licenses must be a non-empty array of project-relative paths"
+  end
+  out.licenses = {}
+  local seen = {}
+  for i = 1, #meta.licenses do
+    local path
+    path, err = M.project_path("licenses[" .. i .. "]", meta.licenses[i])
+    if not path then return nil, err end
+    if seen[path] then return nil, "duplicate project license path: " .. path end
+    seen[path] = true
+    out.licenses[#out.licenses + 1] = path
+  end
+  for key in pairs(meta.licenses) do
+    if type(key) ~= "number" or math.type(key) ~= "integer"
+        or key < 1 or key > #meta.licenses then
+      return nil, "licenses must be a dense array"
+    end
+  end
+  return out
+end
+
+local function plain(value, path, stack)
+  local kind = type(value)
+  if kind == "nil" or kind == "string" or kind == "boolean" then return true end
+  if kind == "number" then
+    if value ~= value or value == math.huge or value == -math.huge then
+      return nil, path .. " must be a finite number"
+    end
+    return true
+  end
+  if kind ~= "table" then return nil, path .. " contains a " .. kind end
+  if getmetatable(value) ~= nil then return nil, path .. " must not have a metatable" end
+  if stack[value] then return nil, path .. " contains a table cycle" end
+  stack[value] = true
+  for key, child in pairs(value) do
+    local kt = type(key)
+    if kt ~= "string" and not (kt == "number" and math.type(key) == "integer") then
+      stack[value] = nil
+      return nil, path .. " has a non-string/non-integer key"
+    end
+    local ok, err = plain(child, path .. "[" .. tostring(key) .. "]", stack)
+    if not ok then stack[value] = nil; return nil, err end
+  end
+  stack[value] = nil
+  return true
+end
+
+function M.validate_plain(meta)
+  if type(meta) ~= "table" then return nil, "project.lua must return a table" end
+  for key in pairs(meta) do
+    if type(key) ~= "string" then
+      return nil, "project.lua top-level keys must be strings"
+    end
+  end
+  return plain(meta, "project.lua", {})
+end
+
+local function integer_field(value, field, lo, hi)
+  if type(value) ~= "number" or math.type(value) ~= "integer"
+      or value < lo or value > hi then
+    return nil, field .. " must be an integer from " .. lo .. " to " .. hi
+  end
+  return value
+end
+
+-- Boot-time validation: keep old projects additive (the engine still supplies
+-- defaults for omitted fields), but reject values PAL would reject later with
+-- a less useful generic gfx_init error.
+function M.validate_runtime(meta)
+  local ok, err = M.validate_plain(meta)
+  if not ok then return nil, err end
+  if meta.name ~= nil then
+    local name
+    name, err = M.one_line(meta, "name", false, 120)
+    if not name then return nil, err end
+  end
+  if meta.internal_w ~= nil then
+    ok, err = integer_field(meta.internal_w, "internal_w", 1, 4096)
+    if not ok then return nil, err end
+  end
+  if meta.internal_h ~= nil then
+    ok, err = integer_field(meta.internal_h, "internal_h", 1, 4096)
+    if not ok then return nil, err end
+  end
+  if meta.window_scale ~= nil then
+    ok, err = integer_field(meta.window_scale, "window_scale", 1, 16)
+    if not ok then return nil, err end
+  end
+  if meta.maximized ~= nil and type(meta.maximized) ~= "boolean" then
+    return nil, "maximized must be true or false"
+  end
+  return true
+end
+
+-- The editable subset uses strings for number fields so the UI can represent a
+-- temporarily empty/invalid field without corrupting the underlying model.
+function M.settings(meta)
+  meta = meta or {}
+  return {
+    name = type(meta.name) == "string" and meta.name or "",
+    author = type(meta.author) == "string" and meta.author or "",
+    version = type(meta.version) == "string" and meta.version or "0.1",
+    description = type(meta.description) == "string" and meta.description or "",
+    internal_w = tostring(meta.internal_w or 480),
+    internal_h = tostring(meta.internal_h or 270),
+    window_scale = tostring(meta.window_scale or 2),
+    maximized = meta.maximized == true,
+  }
+end
+
+local function form_integer(form, field, lo, hi)
+  local raw = form[field]
+  if type(raw) ~= "string" or not raw:match("^%s*%d+%s*$") then
+    return nil, field .. " must be an integer from " .. lo .. " to " .. hi
+  end
+  return integer_field(math.tointeger(trim(raw)), field, lo, hi)
+end
+
+function M.validate_settings(form)
+  if type(form) ~= "table" then return nil, "project settings are unavailable" end
+  local out, err = {}
+  out.name, err = M.one_line(form, "name", false, 120)
+  if not out.name then return nil, err end
+  out.author, err = M.one_line(form, "author", true, 120)
+  if err then return nil, err end
+  out.version, err = M.one_line(form, "version", false, 64)
+  if not out.version then return nil, err end
+  -- A draft may be undescribed; validate the same D070 shape whenever present.
+  out.description, err = M.one_line(form, "description", true, 1000)
+  if err then return nil, err end
+  out.description = out.description or ""
+  out.internal_w, err = form_integer(form, "internal_w", 1, 4096)
+  if not out.internal_w then return nil, err end
+  out.internal_h, err = form_integer(form, "internal_h", 1, 4096)
+  if not out.internal_h then return nil, err end
+  out.window_scale, err = form_integer(form, "window_scale", 1, 16)
+  if not out.window_scale then return nil, err end
+  if type(form.maximized) ~= "boolean" then return nil, "maximized must be true or false" end
+  out.maximized = form.maximized
+  return out
+end
+
+local function clone(value, seen)
+  if type(value) ~= "table" then return value end
+  seen = seen or {}
+  if seen[value] then return seen[value] end
+  local out = {}
+  seen[value] = out
+  for key, child in pairs(value) do out[clone(key, seen)] = clone(child, seen) end
+  return out
+end
+
+function M.apply_settings(meta, form)
+  local settings, err = M.validate_settings(form)
+  if not settings then return nil, err end
+  local out = clone(meta or {})
+  out.name = settings.name
+  out.author = settings.author or ""
+  out.version = settings.version
+  out.description = settings.description
+  out.internal_w = settings.internal_w
+  out.internal_h = settings.internal_h
+  out.window_scale = settings.window_scale
+  out.maximized = settings.maximized and true or nil
+  local ok
+  ok, err = M.validate_runtime(out)
+  if not ok then return nil, err end
+  return out
+end
+
+-- ---- canonical inspectable-Lua codec ----
+
+local ORDER = {
+  "name", "author", "version", "description",
+  "internal_w", "internal_h", "window_scale", "maximized",
+  "entry", "seed", "icon", "controls", "credits", "licenses", "editor",
+}
+local RANK = {}
+for i, key in ipairs(ORDER) do RANK[key] = i end
+
+local function sorted_keys(tab)
+  local keys = {}
+  for key in pairs(tab) do keys[#keys + 1] = key end
+  table.sort(keys, function(a, b)
+    local ta, tb = type(a), type(b)
+    if ta ~= tb then return ta == "number" end
+    if ta == "number" then return a < b end
+    local ra, rb = RANK[a] or 100000, RANK[b] or 100000
+    if ra ~= rb then return ra < rb end
+    return a < b
+  end)
+  return keys
+end
+
+local function scalar(value)
+  return type(value) ~= "table"
+end
+
+local function dense_array(tab)
+  local count, high = 0, 0
+  for key in pairs(tab) do
+    if type(key) ~= "number" or math.type(key) ~= "integer" or key < 1 then
+      return nil
+    end
+    count, high = count + 1, math.max(high, key)
+  end
+  return count == high and high or nil
+end
+
+local encode_value
+
+local KEYWORD = {}
+for word in ("and break do else elseif end false for function goto if in "
+             .. "local nil not or repeat return then true until while"):gmatch("%S+") do
+  KEYWORD[word] = true
+end
+
+local function encode_key(key)
+  if type(key) == "string" and key:match("^[%a_][%w_]*$") and not KEYWORD[key] then
+    return key
+  end
+  return "[" .. encode_value(key, 0, {}) .. "]"
+end
+
+encode_value = function(value, depth, stack)
+  local kind = type(value)
+  if kind == "string" then return string.format("%q", value) end
+  if kind == "number" or kind == "boolean" then return tostring(value) end
+  if kind == "nil" then return "nil" end
+  if stack[value] then error("project.lua contains a table cycle", 0) end
+  stack[value] = true
+  local n = dense_array(value)
+  if n == 0 then stack[value] = nil; return "{}" end
+  if n and n > 0 then
+    local vals, width = {}, 4
+    local one_line = true
+    for i = 1, n do
+      if not scalar(value[i]) then one_line = false; break end
+      vals[i] = encode_value(value[i], depth + 1, stack)
+      width = width + #vals[i] + 2
+    end
+    if one_line and width <= 88 then
+      stack[value] = nil
+      return "{ " .. table.concat(vals, ", ") .. " }"
+    end
+  end
+  local indent = string.rep("  ", depth)
+  local child_indent = indent .. "  "
+  local lines = { "{" }
+  if n then
+    for i = 1, n do
+      lines[#lines + 1] = child_indent
+        .. encode_value(value[i], depth + 1, stack) .. ","
+    end
+  else
+    for _, key in ipairs(sorted_keys(value)) do
+      lines[#lines + 1] = child_indent .. encode_key(key) .. " = "
+        .. encode_value(value[key], depth + 1, stack) .. ","
+    end
+  end
+  lines[#lines + 1] = indent .. "}"
+  stack[value] = nil
+  return table.concat(lines, "\n")
+end
+
+function M.encode(meta)
+  local ok, err = M.validate_plain(meta)
+  if not ok then return nil, err end
+  local encoded
+  ok, encoded = pcall(encode_value, meta, 0, {})
+  if not ok then return nil, tostring(encoded) end
+  return "-- cosmic2d project settings (editable in the engine)\nreturn " .. encoded .. "\n"
+end
+
+function M.decode(bytes, chunkname)
+  if type(bytes) ~= "string" then return nil, "project.lua bytes are unavailable" end
+  local chunk, err = load(bytes, chunkname or "@project.lua", "t", {})
+  if not chunk then return nil, "invalid declarative project metadata: " .. tostring(err) end
+  local ran, meta = pcall(chunk)
+  if not ran then return nil, "project metadata failed: " .. tostring(meta) end
+  local ok
+  ok, err = M.validate_plain(meta)
+  if not ok then return nil, err end
+  return meta
+end
+
+function M.read(dir)
+  local path = dir .. "/project.lua"
+  local bytes, err = pal.read_file(path)
+  if not bytes then return nil, "cannot read " .. path .. ": " .. tostring(err) end
+  local meta
+  meta, err = M.decode(bytes, "@" .. path)
+  if not meta then return nil, err end
+  return meta, bytes
+end
+
+function M.save(dir, meta, fail)
+  local ok, err = M.validate_runtime(meta)
+  if not ok then return nil, err end
+  local bytes
+  bytes, err = M.encode(meta)
+  if not bytes then return nil, err end
+  local path = dir .. "/project.lua"
+  ok, err = pal.write_file_atomic(path, bytes, fail)
+  if not ok then return nil, "write project metadata " .. path .. " failed: " .. tostring(err) end
+  return true, bytes
+end
 
 function M.scaffold(dir, name, fail)
   if pal.read_file(dir .. "/project.lua") then
