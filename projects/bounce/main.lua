@@ -231,9 +231,10 @@ local function cam_step()
   end
   cam:f32(28, mx); cam:f32(32, my)
 
-  -- arrow keys: left/right yaw, up/down pitch (the godot Q/E R/F drive)
-  local kyaw = (input.down("cam_l") and -kc.orbit or 0)
-             + (input.down("cam_r") and kc.orbit or 0)
+  -- arrow keys as the right stick (godot HandleManualRotation signs:
+  -- push right -> swing right = yaw -=, down -> camera lifts = pitch +=)
+  local kyaw = (input.down("cam_l") and kc.orbit or 0)
+             + (input.down("cam_r") and -kc.orbit or 0)
   local kpitch = (input.down("cam_u") and -kc.key_pitch or 0)
               + (input.down("cam_d") and kc.key_pitch or 0)
   if kyaw ~= 0 or kpitch ~= 0 then
