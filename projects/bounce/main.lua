@@ -1,14 +1,27 @@
 -- bounce main.lua — demo 1's movement slice: the bouncy cube running and
--- jumping around an axis-aligned graybox playground, pull-string follow
--- camera, every feel value a live knob (the smoke KNOBS pattern, D028).
+-- jumping around an axis-aligned graybox playground, orbit-follow camera,
+-- every feel value a live knob (the smoke KNOBS pattern, D028).
 --
 -- Controls: arrows move (camera-relative: up = away from camera) · space
--- jump · z/x orbit the camera · ` console (game.demo(1) = autoplay loop).
+-- jump · mouse drag = look (yaw/pitch) · wheel = zoom · z/x orbit ·
+-- c recenter · ` console (game.demo(1) = autoplay loop).
+--
+-- The camera is the FollowCamera model from the human's godot cosmic
+-- project (F:\Documents\cosmic src/camera): explicit orbit yaw/pitch/dist,
+-- a smoothed focus on the player, and three composing drives — yaw-follow
+-- eases behind the velocity heading (holding a sideways run circles the
+-- camera around), manual look (drag / z/x) pauses yaw-follow briefly so
+-- they don't fight, and recenter snaps behind the facing. Drag-look uses
+-- absolute cursor deltas from the frozen input record; true captured-mouse
+-- look needs a PAL relative-mouse API (deferred — record v1 stays frozen).
 --
 -- Determinism: sim state in named buffers (bounce.player/bounce.cam) + doc
 -- tree; cm.math trig; fixed dt. The follow camera is GAMEPLAY state (input
 -- is camera-relative, so the sim must know it — the smoke cam precedent),
 -- stepped in game.step; view/proj matrices stay render-class in draw.
+-- Headless/autoplay runs see no mouse (zeroed record fields), so the demo
+-- is driven purely by yaw-follow and stays deterministic (same trick as
+-- the godot original's golden runs).
 
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
@@ -34,9 +47,17 @@ local KNOBS = {
     jump_h = 1.9, jump_apex_t = 22, fall_mul = 1.5, fall_max = 22,
     coyote = 6, buffer = 5, turn = 0.25,
   },
-  cam = {
+  cam = { -- the godot FollowCamera/CameraTuning knob set, per-frame units
     dist = 7.5, height = 3.2, look_h = 1.0,
-    lerp = 0.10, lerp_y = 0.06, orbit = 0.045,
+    min_dist = 3.5, max_dist = 13, wheel_step = 0.8,
+    pos_lerp = 0.10,             -- focus chase (PositionSharpness)
+    yaw_follow = 0.16,           -- 0 = never auto-rotate, 1 = hard behind
+    yaw_lerp = 0.04,             -- how fast yaw-follow catches up
+    min_speed = 1.5,             -- below this hspeed the orbit holds still
+    orbit = 0.045,               -- z/x yaw rate, rad/frame
+    mouse_yaw = 0.012, mouse_pitch = 0.010, -- rad per internal pixel
+    pitch_min = -0.6, pitch_max = 0.95,     -- rad around the ref elevation
+    recenter_lerp = 0.25, hold_frames = 42, -- manual pause of yaw-follow
   },
   feel = {
     stretch = 0.32, squash = 0.42, vref = 12,
@@ -96,12 +117,19 @@ function game.init()
   -- draw; lives in a named buffer only so the PAL can read it)
   dyn = pal.buf("bounce.dyn", 74 * 72)
 
-  cam = pal.buf("bounce.cam", 12) -- f32 x,y,z
-  if cam:f32(0) == 0 and cam:f32(4) == 0 and cam:f32(8) == 0 then
+  -- bounce.cam layout (f32): [0]yaw [4]pitch [8]dist [12/16/20]focus xyz
+  -- [24]manual-hold frames [28/32]prev cursor [36]recentering flag
+  local ok, cb = pcall(pal.buf, "bounce.cam", 40)
+  if not ok then -- pre-orbit sessions had a 12B pull-cam buffer
+    pal.buf_free("bounce.cam")
+    cb = pal.buf("bounce.cam", 40)
+  end
+  cam = cb
+  if cam:f32(0) == 0 and cam:f32(8) == 0 then -- virgin: behind the facing
     local px, py, pz = player.pos()
-    cam:f32(0, px - state.doc.knobs.cam.dist) -- behind the +x-facing spawn
-    cam:f32(4, py + state.doc.knobs.cam.height)
-    cam:f32(8, pz)
+    cam:f32(0, player.yaw() + m.pi)
+    cam:f32(8, state.doc.knobs.cam.dist)
+    cam:f32(12, px); cam:f32(16, py); cam:f32(20, pz)
   end
 
   input.map({
@@ -109,6 +137,7 @@ function game.init()
     { "up", input.key.up }, { "down", input.key.down },
     { "jump", input.key.space },
     { "orbit_l", input.key.z }, { "orbit_r", input.key.x },
+    { "recenter", input.key.c },
   })
 end
 
@@ -150,13 +179,10 @@ local function build_ctl()
   end
   local wishx, wishz = 0, 0
   if fwd ~= 0 or side ~= 0 then
-    local px, _, pz = player.pos()
-    local dx, dz = px - cam:f32(0), pz - cam:f32(8)
-    local l = m.sqrt(dx * dx + dz * dz)
-    if l < 1e-4 then dx, dz, l = 0, 1, 1 end
-    local fx, fz = dx / l, dz / l -- forward; right = (-fz, fx)... see below
-    -- screen right = cross(forward, up) on xz = (-fz, fx)? cross gives
-    -- (-fz, 0, fx) with f=(fx,0,fz): checked f=(0,0,-1) -> (1,0,0). yes.
+    -- forward = the camera's view direction on xz, straight from orbit yaw
+    -- (yaw 0 = camera on +z looking -z); right = cross(forward, up)
+    local yaw = cam:f32(0)
+    local fx, fz = -m.sin(yaw), -m.cos(yaw)
     wishx = fx * fwd + (-fz) * side
     wishz = fz * fwd + fx * side
     local wl = m.sqrt(wishx * wishx + wishz * wishz)
@@ -166,29 +192,80 @@ local function build_ctl()
   return { wishx = wishx, wishz = wishz, jump_pressed = jump_pressed }
 end
 
--- pull-string camera: manual orbit rotates the offset, then the camera is
--- dragged toward sitting cam.dist behind the player (Mario-cam lazy follow)
+local function angdiff(target, from) -- shortest arc, (-pi, pi]
+  return m.atan2(m.sin(target - from), m.cos(target - from))
+end
+
+-- orbit-follow camera (the godot FollowCamera model): explicit yaw/pitch/
+-- dist + a smoothed focus; drag-look and z/x steer the orbit directly and
+-- pause yaw-follow (hold), yaw-follow eases behind the velocity heading,
+-- c recenters behind the facing. Position derives in draw — only the
+-- orbit/focus STATE lives here.
 local function cam_step()
   local kc = state.doc.knobs.cam
   local px, py, pz = player.pos()
-  local cx, cy, cz = cam:f32(0), cam:f32(4), cam:f32(8)
-  local ox, oz = cx - px, cz - pz
-  local orbit = (input.down("orbit_l") and -kc.orbit or 0)
-              + (input.down("orbit_r") and kc.orbit or 0)
-  if orbit ~= 0 then
-    local c, s = m.cos(orbit), m.sin(orbit)
-    ox, oz = ox * c - oz * s, ox * s + oz * c
+  local yaw, pitch, dist = cam:f32(0), cam:f32(4), cam:f32(8)
+  local hold, rec = cam:f32(24), cam:f32(36)
+
+  -- wheel zoom (record-backed, zero in headless runs)
+  local w = input.wheel()
+  if w ~= 0 then
+    dist = m.clamp(dist - w * kc.wheel_step, kc.min_dist, kc.max_dist)
   end
-  local l = m.sqrt(ox * ox + oz * oz)
-  if l < 1e-4 then ox, oz, l = -1, 0, 1 end
-  local tx = px + ox / l * kc.dist
-  local tz = pz + oz / l * kc.dist
-  cx = px + ox -- orbit applies instantly, the pull eases
-  cz = pz + oz
-  cx = cx + (tx - cx) * kc.lerp
-  cz = cz + (tz - cz) * kc.lerp
-  cy = cy + (py + kc.height - cy) * kc.lerp_y
-  cam:f32(0, cx); cam:f32(4, cy); cam:f32(8, cz)
+
+  -- drag-look: cursor deltas while a mouse button is held steer the orbit
+  local mx, my = input.mouse()
+  local manual = false
+  if input.button_down(1) or input.button_down(3) then
+    local dx, dy = mx - cam:f32(28), my - cam:f32(32)
+    if dx ~= 0 or dy ~= 0 then
+      yaw = yaw - dx * kc.mouse_yaw
+      pitch = m.clamp(pitch + dy * kc.mouse_pitch, kc.pitch_min, kc.pitch_max)
+      manual = true
+    end
+  end
+  cam:f32(28, mx); cam:f32(32, my)
+
+  local kyaw = (input.down("orbit_l") and -kc.orbit or 0)
+             + (input.down("orbit_r") and kc.orbit or 0)
+  if kyaw ~= 0 then
+    yaw = yaw + kyaw
+    manual = true
+  end
+
+  if manual then
+    hold = kc.hold_frames
+    rec = 0
+  end
+
+  if input.pressed("recenter") then rec = 1 end
+  if rec == 1 then
+    local target = player.yaw() + m.pi
+    yaw = yaw + angdiff(target, yaw) * kc.recenter_lerp
+    pitch = pitch * (1 - kc.recenter_lerp)
+    if m.abs(angdiff(target, yaw)) < 0.01 and m.abs(pitch) < 0.01 then
+      yaw, pitch, rec = target, 0, 0
+    end
+  end
+
+  -- yaw-follow: ease behind the heading (the circling on a held sideways
+  -- run) unless the player just steered or a recenter is in flight
+  local vx, _, vz = player.vel()
+  local hspeed = m.sqrt(vx * vx + vz * vz)
+  if rec == 0 and hold <= 0 and kc.yaw_follow > 0 and hspeed > kc.min_speed then
+    local behind = m.atan2(-vx, -vz)
+    yaw = yaw + angdiff(behind, yaw) * kc.yaw_follow * kc.yaw_lerp
+  end
+  hold = m.max(0, hold - 1)
+
+  -- the focus chases the player; the rigid orbit hangs off it in draw
+  local fx = cam:f32(12) + (px - cam:f32(12)) * kc.pos_lerp
+  local fy = cam:f32(16) + (py - cam:f32(16)) * kc.pos_lerp
+  local fz = cam:f32(20) + (pz - cam:f32(20)) * kc.pos_lerp
+
+  cam:f32(0, m.fmod(yaw, m.tau)); cam:f32(4, pitch); cam:f32(8, dist)
+  cam:f32(12, fx); cam:f32(16, fy); cam:f32(20, fz)
+  cam:f32(24, hold); cam:f32(36, rec)
 end
 
 function game.step()
@@ -203,9 +280,20 @@ function game.draw()
   pal.x_view3d()
   pal.x_tris(0, skybuf, 2, 0, 0)
 
-  local px, py, pz = player.pos()
-  local view = m4.lookat(cam:f32(0), cam:f32(4), cam:f32(8),
-                         px, py + state.doc.knobs.cam.look_h, pz, 0, 1, 0)
+  -- camera position derives from the orbit state: height scales with zoom
+  -- so the reference elevation angle holds; pitch tilts around it on a
+  -- constant radius (godot OrbitOffset + ScaleFramingWithDistance)
+  local kc = state.doc.knobs.cam
+  local yaw, pitch, dist = cam:f32(0), cam:f32(4), cam:f32(8)
+  local fx, fy, fz = cam:f32(12), cam:f32(16), cam:f32(20)
+  local h = kc.height * dist / kc.dist
+  local e0 = m.atan2(h, dist)
+  local R = m.sqrt(dist * dist + h * h)
+  local elev = m.clamp(e0 + pitch, -1.4, 1.4)
+  local hr = m.cos(elev) * R
+  local view = m4.lookat(fx + m.sin(yaw) * hr, fy + m.sin(elev) * R,
+                         fz + m.cos(yaw) * hr,
+                         fx, fy + kc.look_h, fz, 0, 1, 0)
   local proj = m4.persp(FOVY, W / H, ZN, ZF)
   local fog = level.fog
   pal.x_view3d{
@@ -233,7 +321,7 @@ function game.draw()
     text.draw((W - text.measure(msg)) // 2, 14, msg,
               { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
-  text.draw(3, H - 11, "arrows move . space jump . z/x orbit cam")
+  text.draw(3, H - 11, "arrows move . space jump . drag look . wheel zoom . c recenter")
 end
 
 return game

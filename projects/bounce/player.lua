@@ -46,6 +46,14 @@ function M.pos()
   return buf:f32(O.x), buf:f32(O.y), buf:f32(O.z)
 end
 
+function M.vel()
+  return buf:f32(O.vx), buf:f32(O.vy), buf:f32(O.vz)
+end
+
+function M.yaw()
+  return buf:f32(O.yaw)
+end
+
 local function approach(v, target, step)
   if v < target then return m.min(v + step, target) end
   return m.max(v - step, target)
@@ -113,21 +121,37 @@ function M.step(ctl)
   vy = vy - (vy > 0 and g_rise or g_rise * k.fall_mul) * DT
   vy = m.max(vy, -k.fall_max)
 
-  -- collide axis-by-axis against the level AABBs
+  -- collide axis-by-axis against the level AABBs. The clamp face comes
+  -- from WHICH SIDE THE PLAYER WAS ON pre-move, never from the velocity
+  -- sign: velocity zeroes on the first hit, and a sign-based clamp then
+  -- snapped later overlaps to the wrong face — walking into a
+  -- narrower-than-the-player pocket teleported across the far box.
+  -- A pre-move overlap on the same axis (squeezed) clamps nothing here;
+  -- another axis or the next frame resolves it.
   local C = level.colliders
   local nx = x + vx * DT
   for _, b in ipairs(C) do
     if overlaps(b, nx, y, z, hw, hh) then
-      nx = vx > 0 and b[1] - hw or b[4] + hw
-      vx = 0
+      if x + hw <= b[1] then
+        nx = b[1] - hw
+        vx = 0
+      elseif x - hw >= b[4] then
+        nx = b[4] + hw
+        vx = 0
+      end
     end
   end
   x = nx
   local nz = z + vz * DT
   for _, b in ipairs(C) do
     if overlaps(b, x, y, nz, hw, hh) then
-      nz = vz > 0 and b[3] - hw or b[6] + hw
-      vz = 0
+      if z + hw <= b[3] then
+        nz = b[3] - hw
+        vz = 0
+      elseif z - hw >= b[6] then
+        nz = b[6] + hw
+        vz = 0
+      end
     end
   end
   z = nz
@@ -135,7 +159,7 @@ function M.step(ctl)
   local landed = false
   for _, b in ipairs(C) do
     if overlaps(b, x, ny, z, hw, hh) then
-      if vy <= 0 then
+      if vy <= 0 and y >= b[5] then -- feet were at/above this top: land
         ny = b[5]
         landed = true
         -- a real landing (not the grounded re-collide, ~0.7/frame) squashes
@@ -143,10 +167,11 @@ function M.step(ctl)
           squash_amt = feel.squash * m.min(1, -vy / feel.vref)
           squash_t = feel.squash_frames
         end
-      else
-        ny = b[2] - hh -- head bonk
+        vy = 0
+      elseif vy > 0 and y + hh <= b[2] then -- head was below: bonk
+        ny = b[2] - hh
+        vy = 0
       end
-      vy = 0
     end
   end
   y = ny

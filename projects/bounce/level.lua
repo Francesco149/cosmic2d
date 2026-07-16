@@ -21,11 +21,13 @@ local GX0, GZ0, GX1, GZ1 = -15, -15, 35, 35 -- ground extent
 
 -- { mat, sx, sy, sz, cx, cz, y0 } — box footprint center (cx,cz), base y0
 local BOXES = {
-  -- stair run (z 16..20), 4 rising steps
-  { "stone", 1.7, 0.55, 4, 6.85, 18, 0 },
-  { "stone", 1.7, 1.10, 4, 8.55, 18, 0 },
-  { "stone", 1.7, 1.65, 4, 10.25, 18, 0 },
-  { "stone", 1.7, 2.20, 4, 11.95, 18, 0 },
+  -- stair run (z 16..20), 4 rising steps, the last FLUSH against the keep
+  -- face at x=13.5 — never leave a narrower-than-the-player pocket (cw 0.9)
+  -- between colliders: un-fittable gaps are squeeze cases by construction
+  { "stone", 1.7, 0.55, 4, 7.55, 18, 0 },
+  { "stone", 1.7, 1.10, 4, 9.25, 18, 0 },
+  { "stone", 1.7, 1.65, 4, 10.95, 18, 0 },
+  { "stone", 1.7, 2.20, 4, 12.65, 18, 0 },
   -- the keep slab the stairs feed (walkable roof)
   { "stone", 8, 2.75, 8, 17.5, 18, 0 },
   -- ascending float platforms off the keep roof
