@@ -3617,6 +3617,557 @@ local function t_project_duplicate()
   real_cleanup()
 end
 
+-- Decode the stored-block (uncompressed-deflate) archives cm.archive writes,
+-- so tests verify exact member bytes rather than substrings.
+local function read_archive(bytes, format)
+  local out = {}
+  if format == "zip" then
+    local at = 1
+    while at + 3 <= #bytes
+          and string.unpack("<I4", bytes, at) == 0x04034b50 do
+      local size = string.unpack("<I4", bytes, at + 18)
+      local nlen, elen = string.unpack("<I2I2", bytes, at + 26)
+      local name = bytes:sub(at + 30, at + 29 + nlen)
+      at = at + 30 + nlen + elen
+      out[name] = bytes:sub(at, at + size - 1)
+      at = at + size
+    end
+    return out
+  end
+  -- gzip with stored deflate blocks: 10-byte header, then (final, len, ~len).
+  local at, chunks = 11, {}
+  while at <= #bytes - 8 do
+    local head = bytes:byte(at)
+    local len = string.unpack("<I2", bytes, at + 1)
+    chunks[#chunks + 1] = bytes:sub(at + 5, at + 4 + len)
+    at = at + 5 + len
+    if head & 1 == 1 then break end
+  end
+  local tar = table.concat(chunks)
+  at = 1
+  while at + 511 <= #tar do
+    local block = tar:sub(at, at + 511)
+    if block:byte(1) == 0 then break end
+    local name = block:sub(1, 100):gsub("%z.*", "")
+    local prefix = block:sub(346, 500):gsub("%z.*", "")
+    local size = tonumber(block:sub(125, 135), 8) or 0
+    local typeflag = block:sub(157, 157)
+    local full = prefix ~= "" and (prefix .. "/" .. name) or name
+    at = at + 512
+    if typeflag == "5" then
+      out[full] = ""
+    else
+      out[full] = tar:sub(at, at + size - 1)
+      at = at + size + ((-size) % 512)
+    end
+  end
+  return out
+end
+
+local function t_project_archive()
+  local location = cm.require("cm.project_location")
+  local project = cm.require("cm.project")
+  local source, parent = "/projects/original π", "/dest parent"
+  local bytes = project.PROJECT_TMPL:gsub("__NAME__", "archive test")
+
+  local dirs, files, probe_fail
+  local function reset()
+    dirs = {
+      ["/projects"] = { type = "directory", link = false },
+      [source] = { type = "directory", link = false },
+      [source .. "/assets"] = { type = "directory", link = false },
+      [source .. "/.ed"] = { type = "directory", link = false },
+      [parent] = { type = "directory", link = false },
+    }
+    files = {
+      [source .. "/project.lua"] = bytes,
+      [source .. "/main.lua"] = "return {}",
+      [source .. "/assets/hero π.spr"] = "SPRDATA",
+      [source .. "/video.dat"] = "machine-local viewport",
+      [source .. "/.ed/session.dat"] = "editor state",
+    }
+    probe_fail = nil
+  end
+  reset()
+  local source_keys = {}
+  for path in pairs(dirs) do source_keys[#source_keys + 1] = path end
+  for path in pairs(files) do source_keys[#source_keys + 1] = path end
+  local function source_intact()
+    for _, path in ipairs(source_keys) do
+      if path:sub(1, #source) == source and not (dirs[path] or files[path]) then
+        return false
+      end
+    end
+    return files[source .. "/project.lua"] == bytes
+  end
+  local function temp_leftover()
+    for path in pairs(files) do
+      if path:find(".tmp.", 1, true) then return path end
+    end
+    return nil
+  end
+
+  local fs = {}
+  function fs.info(path)
+    if dirs[path] then return dirs[path] end
+    local body = files[path]
+    if body then return { type = "file", link = false, size = #body } end
+    return nil, "not found"
+  end
+  function fs.read(path)
+    local body = files[path]
+    if body then return body end
+    return nil, "not found"
+  end
+  function fs.probe(path)
+    if path == probe_fail then return nil, "injected permission failure" end
+    return true
+  end
+  function fs.list(root)
+    if not dirs[root] then return nil, "not a directory" end
+    local prefix = root .. "/"
+    local function pruned(rel)
+      local acc = root
+      for part in (rel .. "/"):gmatch("([^/]+)/") do
+        acc = acc .. "/" .. part
+        if part:sub(1, 1) == "." and dirs[acc] then return true end
+      end
+      return false
+    end
+    local out = {}
+    for path in pairs(dirs) do
+      if path:sub(1, #prefix) == prefix and not pruned(path:sub(#prefix + 1)) then
+        out[#out + 1] = path:sub(#prefix + 1)
+      end
+    end
+    for path in pairs(files) do
+      if path:sub(1, #prefix) == prefix and not pruned(path:sub(#prefix + 1)) then
+        out[#out + 1] = path:sub(#prefix + 1)
+      end
+    end
+    return out
+  end
+  function fs.remove(path)
+    if files[path] then files[path] = nil; return true end
+    if dirs[path] then dirs[path] = nil; return true end
+    return nil, "not found"
+  end
+  function fs.append(path, chunk)
+    files[path] = (files[path] or "") .. chunk
+    return true
+  end
+  function fs.publish(temp, final, opts)
+    if opts and opts._fail then return nil, "injected publish failure" end
+    if not files[temp] then return nil, "missing temporary archive" end
+    if not (opts and opts._replace) and (files[final] or dirs[final]) then
+      return nil, "destination already exists: " .. final
+    end
+    files[final], files[temp] = files[temp], nil
+    return true
+  end
+  fs.crc = pal.crc32
+
+  local function run(opts)
+    opts = opts or {}
+    if opts.fs == nil then opts.fs = fs elseif opts.fs == false then opts.fs = nil end
+    if opts.active_root == nil then opts.active_root = false end
+    opts.platform = opts.platform or (opts.fs and "linux") or nil
+    opts.nonce = opts.nonce or 5
+    opts.stamp = opts.stamp or "2026-07-16"
+    local job = location.archive_start(opts.source or source,
+                                       opts.parent or parent, opts)
+    local steps = 0
+    while not job.terminal and steps < 1000 do
+      steps = steps + 1
+      if opts.cancel_at and steps == opts.cancel_at then
+        location.archive_cancel(job)
+      end
+      location.archive_step(job)
+    end
+    return job
+  end
+
+  local dest = parent .. "/original π 2026-07-16.tar.gz"
+  local job = run()
+  local members = job.complete and read_archive(files[dest] or "", "tar.gz")
+  check(job.complete and job.published == dest and members
+        and members["original π/project.lua"] == bytes
+        and members["original π/main.lua"] == "return {}"
+        and members["original π/assets/hero π.spr"] == "SPRDATA"
+        and members["original π/assets/"] == ""
+        and job.name == "archive test",
+        "project archive: dated tar.gz carries exact saved project bytes")
+  check(members and not members["original π/video.dat"]
+        and not members["original π/.ed/session.dat"]
+        and not (files[dest] or ""):find("machine-local", 1, true)
+        and not (files[dest] or ""):find("editor state", 1, true),
+        "project archive: machine/editor state (.ed, video.dat) is omitted")
+  check(source_intact() and not temp_leftover(),
+        "project archive: source is untouched and no temp remains")
+
+  local second = run()
+  check(second.complete
+        and second.published == parent .. "/original π 2026-07-16 (2).tar.gz"
+        and files[dest] and files[second.published],
+        "project archive: a same-day collision picks the next free name")
+  files[second.published] = nil
+
+  local zjob = run { platform = "windows" }
+  local zdest = parent .. "/original π 2026-07-16.zip"
+  local zmembers = zjob.complete and read_archive(files[zdest] or "", "zip")
+  check(zjob.complete and zjob.published == zdest and zmembers
+        and zmembers["original π/project.lua"] == bytes
+        and zmembers["original π/assets/"] == ""
+        and not zmembers["original π/video.dat"],
+        "project archive: the Windows host emits the same tree as a ZIP")
+  files[zdest] = nil
+  files[dest] = nil
+
+  reset()
+  job = run { active_root = source }
+  check(job.error and job.error:find("return to the project picker", 1, true)
+        and source_intact() and not temp_leftover(),
+        "project archive: the currently open editor pins its root")
+  reset()
+  job = run { parent = source .. "/assets" }
+  check(job.error and job.error:find("archived into itself", 1, true),
+        "project archive: a project cannot be archived into itself")
+  reset()
+  dirs[source].link = true
+  job = run()
+  check(job.error and job.error:find("alias cannot archive", 1, true),
+        "project archive: an alias source is refused before any write")
+  reset()
+  probe_fail = parent
+  job = run()
+  check(job.error and job.error:find("destination is not writable", 1, true),
+        "project archive: destination permission failure is actionable")
+  reset()
+  dirs[source .. "/assets"].link = true
+  job = run()
+  check(job.error and job.error:find("contains a link", 1, true)
+        and not temp_leftover() and not files[dest],
+        "project archive: links are refused instead of followed or flattened")
+
+  reset()
+  job = run { fail = { append = true } }
+  check(job.error and job.error:find("cannot write", 1, true)
+        and not temp_leftover() and not files[dest] and source_intact(),
+        "project archive: append failure cleans the temp and publishes nothing")
+  reset()
+  job = run { fail = { publish = true } }
+  check(job.error and job.error:find("was not published", 1, true)
+        and not temp_leftover() and not files[dest] and source_intact(),
+        "project archive: publish failure cleans the temp and publishes nothing")
+  reset()
+  job = run { cancel_at = 4 }
+  check(job.cancelled and not job.complete and not files[dest]
+        and not temp_leftover() and source_intact(),
+        "project archive: cancel mid-stream cleans the temp and publishes nothing")
+
+  -- Integrate with the real PAL primitives over spaced/non-ASCII paths.
+  local real_base = project.normalize_root(
+    tmproot() .. "/cosmic_selftest_archive")
+  local real_source = real_base .. "/source π project"
+  local real_parent = real_base .. "/dest parent"
+  local real_ext = pal.platform == "windows" and ".zip" or ".tar.gz"
+  local real_dest = real_parent .. "/source π project 2026-07-16" .. real_ext
+  local function real_cleanup()
+    for _, rel in ipairs({ "/.ed/session.dat", "/.ed", "/assets/hero π.spr",
+                           "/assets", "/project.lua", "/main.lua",
+                           "/video.dat" }) do
+      pal.x_remove(real_source .. rel)
+    end
+    pal.x_remove(real_source)
+    for _, rel in ipairs(pal.x_list_dir_all(real_parent) or {}) do
+      pal.x_remove(real_parent .. "/" .. rel)
+    end
+    pal.x_remove(real_parent)
+    pal.x_remove(real_base)
+  end
+  real_cleanup()
+  pal.mkdir(real_base)
+  pal.mkdir(real_source)
+  pal.mkdir(real_source .. "/assets")
+  pal.mkdir(real_source .. "/.ed")
+  pal.mkdir(real_parent)
+  pal.write_file(real_source .. "/project.lua", bytes)
+  pal.write_file(real_source .. "/main.lua", "return {}")
+  pal.write_file(real_source .. "/assets/hero π.spr", "SPRDATA")
+  pal.write_file(real_source .. "/video.dat", "machine-local")
+  pal.write_file(real_source .. "/.ed/session.dat", "editor state")
+
+  check(pal.version.api >= 17 and type(pal.x_list_dir_all) == "function",
+        "project archive: PAL api17 exposes the unpruned listing")
+  local pruned = pal.list_dir(real_source) or {}
+  local everything = pal.x_list_dir_all(real_source) or {}
+  local seen = {}
+  for _, rel in ipairs(everything) do seen[rel] = true end
+  local pruned_hit = false
+  for _, rel in ipairs(pruned) do
+    if rel:find("^%.ed") then pruned_hit = true end
+  end
+  check(not pruned_hit and seen[".ed"] and seen[".ed/session.dat"]
+        and seen["project.lua"] and seen["assets/hero π.spr"],
+        "pal.x_list_dir_all: dot tool state is listed only by the unpruned walk")
+
+  job = run { fs = false, source = real_source, parent = real_parent,
+              nonce = 88, fail = { publish = { _fail = "rename" } } }
+  check(job.error and job.error:find("was not published", 1, true)
+        and not pal.x_path_info(real_dest)
+        and #(pal.x_list_dir_all(real_parent) or {}) == 0,
+        "project archive: real publish failure cleans the staged temp")
+  job = run { fs = false, source = real_source, parent = real_parent,
+              nonce = 88 }
+  local real_bytes = job.complete and pal.read_file(job.published or "")
+  local real_members = real_bytes
+    and read_archive(real_bytes, pal.platform == "windows" and "zip" or "tar.gz")
+  check(job.complete and job.published == real_dest and real_members
+        and real_members["source π project/project.lua"] == bytes
+        and real_members["source π project/assets/hero π.spr"] == "SPRDATA"
+        and not real_members["source π project/video.dat"]
+        and not real_members["source π project/.ed/session.dat"]
+        and pal.read_file(real_source .. "/project.lua") == bytes,
+        "project archive: real spaced/UTF-8 archive publishes exact bytes")
+  real_cleanup()
+end
+
+local function t_project_delete()
+  local location = cm.require("cm.project_location")
+  local project = cm.require("cm.project")
+  local source = "/projects/original π"
+  local bytes = project.PROJECT_TMPL:gsub("__NAME__", "delete test")
+
+  local dirs, files, rec
+  local function reset()
+    dirs = {
+      ["/projects"] = { type = "directory", link = false },
+      [source] = { type = "directory", link = false },
+      [source .. "/assets"] = { type = "directory", link = false },
+      [source .. "/.ed"] = { type = "directory", link = false },
+    }
+    files = {
+      [source .. "/project.lua"] = bytes,
+      [source .. "/main.lua"] = "return {}",
+      [source .. "/assets/hero π.spr"] = "SPRDATA",
+      [source .. "/video.dat"] = "machine-local viewport",
+      [source .. "/.ed/session.dat"] = "editor state",
+    }
+    rec = { has = true }
+    function rec.contains(path) return rec.has and path == source end
+    function rec.remove(path, fail)
+      if fail then return nil, "injected recents failure" end
+      if path ~= source then return nil, "unexpected recents removal" end
+      rec.has = false
+      return true
+    end
+  end
+  reset()
+  local source_keys = {}
+  for path in pairs(dirs) do source_keys[#source_keys + 1] = path end
+  for path in pairs(files) do source_keys[#source_keys + 1] = path end
+  local function source_intact()
+    for _, path in ipairs(source_keys) do
+      if path:sub(1, #source) == source and not (dirs[path] or files[path]) then
+        return false
+      end
+    end
+    return files[source .. "/project.lua"] == bytes
+  end
+  local function anything_left()
+    if dirs[source] then return true end
+    local prefix = source .. "/"
+    for path in pairs(dirs) do
+      if path:sub(1, #prefix) == prefix then return true end
+    end
+    for path in pairs(files) do
+      if path:sub(1, #prefix) == prefix then return true end
+    end
+    return false
+  end
+
+  local fs = {}
+  function fs.info(path)
+    if dirs[path] then return dirs[path] end
+    local body = files[path]
+    if body then return { type = "file", link = false, size = #body } end
+    return nil, "not found"
+  end
+  function fs.read(path)
+    local body = files[path]
+    if body then return body end
+    return nil, "not found"
+  end
+  function fs.probe() return true end
+  function fs.list_all(root)
+    if not dirs[root] then return nil, "not a directory" end
+    local prefix = root .. "/"
+    local out = {}
+    for path in pairs(dirs) do
+      if path:sub(1, #prefix) == prefix then out[#out + 1] = path:sub(#prefix + 1) end
+    end
+    for path in pairs(files) do
+      if path:sub(1, #prefix) == prefix then out[#out + 1] = path:sub(#prefix + 1) end
+    end
+    return out
+  end
+  function fs.remove(path)
+    if files[path] then files[path] = nil; return true end
+    if dirs[path] then
+      local prefix = path .. "/"
+      for other in pairs(dirs) do
+        if other:sub(1, #prefix) == prefix then return nil, "not empty" end
+      end
+      for other in pairs(files) do
+        if other:sub(1, #prefix) == prefix then return nil, "not empty" end
+      end
+      dirs[path] = nil
+      return true
+    end
+    return nil, "not found"
+  end
+
+  local function run(opts)
+    opts = opts or {}
+    if opts.fs == nil then opts.fs = fs elseif opts.fs == false then opts.fs = nil end
+    if opts.recent == nil then opts.recent = rec
+    elseif opts.recent == false then opts.recent = nil end
+    if opts.active_root == nil then opts.active_root = false end
+    opts.platform = opts.platform or (opts.fs and "linux") or nil
+    opts.nonce = opts.nonce or 5
+    if opts.confirm == nil then opts.confirm = "original π" end
+    local job = location.delete_start(opts.source or source, opts)
+    local steps = 0
+    while not job.terminal and steps < 1000 do
+      steps = steps + 1
+      if opts.cancel_at and steps == opts.cancel_at then
+        location.delete_cancel(job)
+      end
+      location.delete_step(job)
+    end
+    return job
+  end
+
+  local job = run { confirm = "original" }
+  check(job.error and job.error:find("exact folder name", 1, true)
+        and source_intact() and rec.has,
+        "project delete: a wrong confirmation deletes nothing")
+  job = run { active_root = source }
+  check(job.error and job.error:find("return to the project picker", 1, true)
+        and source_intact(),
+        "project delete: the currently open editor pins its root")
+  rec.has = false
+  job = run()
+  check(job.error and job.error:find("recent tile", 1, true) and source_intact(),
+        "project delete: deletion requires the recent tile as recovery handle")
+  reset()
+  dirs[source].link = true
+  job = run()
+  check(job.error and job.error:find("alias cannot be deleted", 1, true)
+        and rec.has,
+        "project delete: an alias source is refused")
+  reset()
+  dirs[source .. "/assets"].link = true
+  job = run()
+  check(job.error and job.error:find("contains a link", 1, true)
+        and source_intact() and rec.has,
+        "project delete: links are refused before the first removal")
+
+  reset()
+  job = run()
+  check(job.complete and not anything_left() and not rec.has
+        and job.deleted and job.name == "delete test",
+        "project delete: confirmed delete removes the whole tree then the tile")
+
+  reset()
+  job = run { fail = { remove = ".ed/session.dat" } }
+  check(job.error and job.error:find("remaining project files were kept", 1, true)
+        and not files[source .. "/project.lua"]
+        and files[source .. "/main.lua"] == "return {}"
+        and rec.has and dirs[source],
+        "project delete: project.lua goes first and a failure keeps the tile")
+  job = run()
+  check(job.complete and not anything_left() and not rec.has,
+        "project delete: a half-deleted tree stays deletable on retry")
+
+  reset()
+  job = run { cancel_at = 6 }
+  check(job.cancelled and not job.complete and rec.has and anything_left()
+        and (job.removed or 0) > 0,
+        "project delete: cancel keeps the tile and reports partial removal")
+
+  reset()
+  job = run { fail = { root = true } }
+  check(job.error and job.error:find("cannot remove " .. source, 1, true)
+        and rec.has and dirs[source]
+        and not files[source .. "/project.lua"],
+        "project delete: a root failure keeps the tile pointing at the shell")
+
+  reset()
+  job = run { fail = { recent = true } }
+  check(job.error
+        and job.error:find("recent tile could not be removed", 1, true)
+        and job.deleted and not anything_left() and rec.has,
+        "project delete: a recents failure names the honest missing tile")
+
+  -- Integrate with the real PAL + atomic .recent.dat seam over spaced/UTF-8
+  -- paths, including dot tool state that only x_list_dir_all can see.
+  local real_base = project.normalize_root(
+    tmproot() .. "/cosmic_selftest_delete")
+  local real_source = real_base .. "/source π project"
+  local function real_fixture()
+    pal.mkdir(real_base)
+    pal.mkdir(real_source)
+    pal.mkdir(real_source .. "/assets")
+    pal.mkdir(real_source .. "/.ed")
+    pal.write_file(real_source .. "/project.lua", bytes)
+    pal.write_file(real_source .. "/main.lua", "return {}")
+    pal.write_file(real_source .. "/assets/hero π.spr", "SPRDATA")
+    pal.write_file(real_source .. "/video.dat", "machine-local")
+    pal.write_file(real_source .. "/.ed/session.dat", "editor state")
+  end
+  local function real_teardown()
+    for _, rel in ipairs(pal.x_list_dir_all(real_source) or {}) do
+      pal.x_remove(real_source .. "/" .. rel)
+    end
+    pal.x_remove(real_source)
+    pal.x_remove(real_base .. "/recent.dat")
+    pal.x_remove(real_base)
+  end
+  real_teardown()
+  real_fixture()
+  local real_recent = cm.require("cm.recent")
+  local old_recent = real_recent.path
+  real_recent.path = real_base .. "/recent.dat"
+  real_recent.note(real_source)
+
+  job = run { fs = false, recent = false, source = real_source,
+              confirm = "source π project", nonce = 99,
+              fail = { remove = "main.lua" } }
+  check(job.error and job.error:find("remaining project files were kept", 1, true)
+        and not pal.x_path_info(real_source .. "/project.lua")
+        and pal.read_file(real_source .. "/main.lua") == "return {}"
+        and real_recent.contains(real_source),
+        "project delete: a real partial failure keeps a repairable tile")
+  job = run { fs = false, recent = false, source = real_source,
+              confirm = "source π project", nonce = 99 }
+  check(job.complete and job.deleted
+        and not pal.x_path_info(real_source)
+        and not real_recent.contains(real_source),
+        "project delete: real retry finishes the half-deleted tree and tile")
+  -- A fresh fixture proves the one-shot real delete, including .ed.
+  real_fixture()
+  real_recent.note(real_source)
+  job = run { fs = false, recent = false, source = real_source,
+              confirm = "source π project", nonce = 99 }
+  check(job.complete and job.deleted
+        and not pal.x_path_info(real_source)
+        and not real_recent.contains(real_source),
+        "project delete: real spaced/UTF-8 delete removes tree, .ed, and tile")
+  real_recent.path = old_recent
+  real_teardown()
+end
+
 local function t_project_export()
   local export = cm.require("cm.export")
   local project = cm.require("cm.project")
@@ -6712,6 +7263,8 @@ function game.init()
   t_project_settings()
   t_project_location()
   t_project_duplicate()
+  t_project_archive()
+  t_project_delete()
   t_project_export()
   t_crash()
   t_ed_text_save()
