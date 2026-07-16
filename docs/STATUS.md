@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A7 rewind tray foundation built (2026-07-16)
+## Current handoff — A7 rewind state integrity + tray foundation (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
@@ -25,6 +25,20 @@ bypass an active clip. The tray derives honest sim/editor activity and basic
 input/code/eval/session markers read-only from resident FRAM/EDOC data; it
 labels unavailable presented-frame previews instead of inventing thumbnails.
 
+**The map/rewind split-state defect is closed (D066).** Every snapshot and
+trace observation now crosses one generic engine-state lifecycle: registered
+runtime facades flush authoritative data into ordinary captured buffers/docs,
+and every restore rebuilds those facades afterward. `cm.map` uses that
+contract to capture each stable map slot's path, canonical CMAP document,
+collision bytes, and the active-slot selector. Restoring across a map switch
+therefore restores the matching visuals, placements, markers, and collision
+world together while preserving held map/world table identities. Bundled
+multi-map level caches are revision-derived views of that captured state. A
+focused A→B→mutated-B rewind regression proves both historical maps and direct
+map-table edits restore coherently, including reconstruction without
+`game.init`; the mechanism is reusable rather than a scrubber-specific map
+exception.
+
 The next A7 packet persists multi-resolution activity/event indexes and minute
 `THMB` samples with the history segments, then adds project-file epochs. Older
 history remains browsable but must label missing index coverage. Immutable
@@ -42,7 +56,7 @@ project lifecycle, deterministic state, input, rendering, maps/collision,
 animation, and audio, with unsupported gamepad/query/export paths named.
 
 **Proof:** implementation-signature and local-link checks pass. `nix run
-.#test` is ALL GREEN: 23,279 self-checks, every trace verify, and all pixel
+.#test` is ALL GREEN: 23,287 self-checks, every trace verify, and all pixel
 goldens.
 
 **A1 packet 1 is complete.** PAL API v9 adds `pal.write_file_atomic`: a unique

@@ -169,8 +169,11 @@ function M.rebuild(world, o)
   return world
 end
 
--- adopt an existing world buffer by name (post-snapshot/reboot path)
-function M.open(name)
+-- Adopt an existing world buffer by name (post-snapshot/reboot/rewind path).
+-- When `world` is supplied its table identity is retained: project modules can
+-- safely hold the wrapper while cm.state restores/recreates the C-side buffer;
+-- decoded segment/circle glue is refreshed from captured truth in one place.
+function M.adopt(world, name)
   local found
   for _, b in ipairs(pal.buf_list()) do
     if b.name == name then found = b break end
@@ -180,10 +183,16 @@ function M.open(name)
   if buf:u32(0) ~= 1 then
     error("collide.open: " .. name .. " has no v1 collider header", 2)
   end
-  local self = setmetatable({ buf = buf, name = name,
-                              w = buf:i32(8), h = buf:i32(12) }, W)
+  local self = world or {}
+  setmetatable(self, W)
+  self.buf, self.name = buf, name
+  self.w, self.h = buf:i32(8), buf:i32(12)
   decode(self)
   return self
+end
+
+function M.open(name)
+  return M.adopt(nil, name)
 end
 
 -- ---- segment math (pure, inlined shapes) ----

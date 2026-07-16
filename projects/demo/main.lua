@@ -113,6 +113,7 @@ local function enter_room(room)
 end
 
 local function room_logic()
+  level.sync()
   local px, py = player.pos()
   local pw, ph = player.size()
   for _, p in ipairs(level.portals) do
@@ -167,6 +168,7 @@ function game.step()
 end
 
 function game.draw()
+  level.sync() -- rebuild all room-derived caches after a parked-state restore
   pal.begin_frame(0.07, 0.08, 0.12, 1)
   level.grade() -- per-room mood grade over the whole composite (render-only)
   local camx, camy = cam:f32(0), cam:f32(4)

@@ -182,14 +182,17 @@ M.current = nil
 M.spawn = { x = 56, y = 316 }
 M.portals, M.coins, M.hazards = {}, {}, {}
 
-function M.reset(room)
-  room = room or "town"
-  local proj = cm.main.args.project
-  local path = proj .. "/" .. room .. ".map"
-  if not pal.read_file(path) then -- dev bootstrap; inert once committed
-    pal.write_file(path, bootstrap_room(ROOMS[room], room, proj))
-  end
-  local inst = map.use{ path = path, name = "demo.mapc" }
+-- Everything below is a DERIVED view of cm.map's captured runtime slot. Map
+-- restore keeps the instance identity and bumps inst.rev; one sync refreshes
+-- every copied convenience field, so parked drawing cannot mix past movement
+-- with the present room's markers/title/background.
+function M.sync()
+  local inst = map.current() or map.sync(M.inst)
+  if not inst then return false end
+  local room = inst.path and inst.path:match("([^/]+)%.map$")
+               or cm.require("cm.state").doc.room or "town"
+  if M._map_rev == inst.rev and M.current == room then return true end
+
   M.inst, M.world = inst, inst.world
   M.pw, M.ph = inst.doc.w, inst.doc.h
   M.current = room
@@ -201,14 +204,29 @@ function M.reset(room)
     elseif mk.kind == "portal" then
       local to
       for _, e in ipairs(mk.extras or {}) do if e.k == "to" then to = e.v end end
-      M.portals[#M.portals + 1] = { x = mk.x, y = mk.y, w = mk.w, h = mk.h, to = to }
+      M.portals[#M.portals + 1] =
+        { x = mk.x, y = mk.y, w = mk.w, h = mk.h, to = to }
     elseif mk.kind == "coin" then
-      M.coins[#M.coins + 1] = { x = mk.x, y = mk.y, w = mk.w, h = mk.h, id = room .. ":" .. i }
+      M.coins[#M.coins + 1] =
+        { x = mk.x, y = mk.y, w = mk.w, h = mk.h, id = room .. ":" .. i }
     elseif mk.kind == "hazard" then
       M.hazards[#M.hazards + 1] = { x = mk.x, y = mk.y, w = mk.w, h = mk.h }
     end
   end
+  M._map_rev = inst.rev
   return true
+end
+
+function M.reset(room)
+  room = room or "town"
+  local proj = cm.main.args.project
+  local path = proj .. "/" .. room .. ".map"
+  if not pal.read_file(path) then -- dev bootstrap; inert once committed
+    pal.write_file(path, bootstrap_room(ROOMS[room], room, proj))
+  end
+  local inst = map.use{ path = path, name = "demo.mapc" }
+  M.inst = inst
+  return M.sync()
 end
 
 -- ---- render ----
@@ -222,6 +240,7 @@ local SKY = {
 -- not parallaxed — it's just placed there, named "backdrop"). All that's left
 -- to draw here is a flat per-room sky behind it (screen-fixed base color).
 function M.draw_bg(camx, camy)
+  M.sync()
   local paint = cm.require("cm.paint")
   local cols = SKY[M.current] and SKY[M.current].colors
   if not (cols and #cols >= 7) then return end
@@ -235,6 +254,7 @@ end
 -- frame (reset by begin_frame); never sim.
 local GRADE = { town = "warm", overworld = "cool" }
 function M.grade()
+  M.sync()
   cm.require("cm.grade").preset(GRADE[M.current] or "none")
 end
 
@@ -245,6 +265,7 @@ function M.collected() -- sim-state set of picked-up coin ids
 end
 
 function M.draw(camx, camy)
+  M.sync()
   -- every visual is a PLACED sprite/tilemap now (the backdrop + ground layers
   -- in the .map); colliders render nothing. gfx.layer(1) is already set by
   -- main.draw, so world coords draw straight.

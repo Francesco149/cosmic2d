@@ -20,6 +20,12 @@
   frozen and the decoded state is written into the live buffers/doc —
   the game's own draw renders the past, because draw is pure over state
   (the iron rules). No special "replay renderer" exists or is needed.
+- **One engine-state lifecycle** (cm.state, D066): modules with ergonomic Lua
+  handles flush them into ordinary buffers/doc before every snapshot/ring/
+  verify observation and rebuild derived wrappers after every table restore.
+  Scrub and trace never call module-specific repair functions. Map slots use
+  this for active identity, canonical placements/markers, and collision, so a
+  room transition cannot leave past movement under present map art.
 - **The captured editor domain** (D050): everything a rewound frame must
   show lives in `cm.ed.doc`, canon-clean; `ed.*` buffers reserved;
   mid-gesture state is ephemeral by contract.
@@ -205,6 +211,11 @@ running the suite unchanged.
   replay the editor, but `ring_load` replaces the live ring and exiting adopts
   the replay. A7 must not build its viewer on that destructive path; §13 gives
   live history and foreign replay files separate immutable sources.
+- **Project assets are the remaining file-epoch boundary** — D066 captures the
+  loaded logical map runtime; textures, tilemaps, sounds, and other project-file
+  versions still need A7's manifest/blob epochs (§14) for a standalone exact
+  historical render. Do not mistake that planned asset layer for permission to
+  leave mutable engine runtime on the Lua heap.
 
 ## 10. A7 surface: one real timeline tray
 

@@ -1152,7 +1152,85 @@ local function t_map()
         .. ry .. ")")
   check(map.get("awn2") ~= nil and map.get("awn") == nil,
         "map: reload rebuilt the name lookup")
-  pal.buf_free("selftest.mapw")
+
+  -- Rewind integration: a stable map slot changes A -> B, then a named
+  -- placement is mutated through its Lua handle. The generic state capture
+  -- boundary must put all three generations in the ring; restore_tables must
+  -- atomically rebuild the SAME instance/world wrappers from each frame.
+  local trace = cm.require("cm.trace")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  trace.ring_start({ project = "" })
+  local irec = ("\0"):rep(10)
+  state.advance_frame()
+  trace.record_frame(irec, nil)
+  local fa = state.frame()
+
+  local tmp2 = (os.getenv("TMPDIR") or "/tmp") .. "/cosmic_selftest_b.map"
+  local db = {
+    name = "other", w = 400, h = 240, grid = 8, bg = { 0.1, 0.2, 0.3 },
+    layers = map.default_layers(),
+    colliders = { { kind = "chain", verts = { 0, 220, 400, 220 } } },
+    places = { { path = "art/other.png", x = 24, y = 32, layer = 1,
+                 name = "other" } },
+    markers = { { x = 9, y = 10, w = 11, h = 12, kind = "spawn",
+                  label = "b", note = "" } },
+  }
+  check(pal.write_file(tmp2, map.encode(db)) == true, "map rewind: B tmp write")
+  local inst2 = map.use{ path = tmp2, name = "selftest.mapw" }
+  check(inst2 == inst and inst2.world == held_world,
+        "map rewind: switching maps retains slot + world identity")
+  state.advance_frame()
+  trace.record_frame(irec, nil)
+  local fb = state.frame()
+
+  map.get("other").x = 77 -- no setter/dirty call: capture must see the handle
+  state.advance_frame()
+  trace.record_frame(irec, nil)
+  local fm = state.frame()
+
+  local function park_at(f)
+    local st = trace.ring_state_at(f)
+    state.restore_tables(st.bufs, st.doct)
+  end
+  park_at(fa)
+  check(inst.path == tmp and inst.doc.name == "t" and map.current() == inst
+        and map.get("awn2") ~= nil,
+        "map rewind: frame A restores active path, doc, current slot + names")
+  rx, ry, rhit = held_world:move(60, 20, 10, 14, 0, 200)
+  check(ry == 100 - 14 and rhit.down,
+        "map rewind: frame A rebuilds held collision wrapper")
+
+  park_at(fb)
+  check(inst.path == tmp2 and inst.doc.name == "other"
+        and inst.doc.markers[1].label == "b" and map.get("other").x == 24,
+        "map rewind: frame B restores render doc + markers")
+  rx, ry, rhit = held_world:move(60, 20, 10, 14, 0, 240)
+  check(ry == 220 - 14 and rhit.down,
+        "map rewind: frame B restores matching collision")
+
+  park_at(fm)
+  check(map.get("other").x == 77,
+        "map rewind: direct placement-handle mutation is captured")
+
+  -- State restore is sufficient on its own: simulate a fresh Lua facade and
+  -- prove the CMRT signature + current selector discover/rebuild the slot.
+  map._slots[inst.name], map.cur = nil, nil
+  park_at(fb)
+  local discovered = map.current()
+  local dx, dy, dhit
+  if discovered then
+    dx, dy, dhit = discovered.world:move(60, 20, 10, 14, 0, 240)
+  end
+  check(discovered and discovered ~= inst and discovered.path == tmp2
+        and discovered.doc.markers[1].label == "b"
+        and dx == 60 and dy == 220 - 14 and dhit.down,
+        "map rewind: restore discovers a captured slot without game.init")
+
+  -- Leave later selftests exactly where this focused ring started.
+  map.release(discovered)
+  sim:i64(0, f0)
+  trace._R, trace._rec = nil, nil
 
   -- fill geometry (pure): loops/slabs/lines classified, attached offset
   local geom = map.geom(d)

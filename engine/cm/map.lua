@@ -1,6 +1,6 @@
 -- cm.map — the .map asset (MAPS.md §2, D057/a/b): a CMAP chunk container
 -- holding the map's parts — free colliders (sim truth), freehand
--- placements (render-only; grouped onto named LAYERS; optional name for
+-- placements (presentation state; grouped onto named LAYERS; optional name for
 -- code addressing; 0..n attached colliders riding the placement), and
 -- markers (rects + kind/label/extras — spawn/portals/props). Codec is
 -- pure and canonical (encode(decode(b)) == b); cm.chunk gives
@@ -43,16 +43,22 @@
 --
 -- M.use{ path=, name= } instances a decoded map into the live sim: the
 -- collider buffer (free colliders + every ENABLED placement's attached
--- colliders offset by its position) via cm.collide.build, plus plain
--- render/logic tables. Placements are render-only state — M.get(name)
--- hands game code the placement table itself (move a door, blink a sign:
--- camera-class mutations); driving a collider-carrying placement is the
--- R7b dynamic-body slot, not this.
+-- colliders offset by its position) via cm.collide.build, plus a captured
+-- canonical map-runtime buffer behind plain Lua render/logic handles.
+-- M.get(name) hands game code the placement table itself (move a door, blink
+-- a sign); cm.state flushes those mutations at every capture boundary and
+-- rebuilds the handles after every restore. Driving a collider-carrying
+-- placement is the R7b dynamic-body slot, not this.
 
 local M = select(2, ...) or {}
 
 local chunk = cm.require("cm.chunk")
 local collide = cm.require("cm.collide")
+local state = cm.require("cm.state")
+
+-- Stable map slots survive module reloads as Lua handles only; their truth is
+-- the ordinary named buffers described in the instancing section below.
+M._slots = M._slots or {}
 
 local pack, unpack = string.pack, string.unpack
 local floor = math.floor
@@ -310,11 +316,222 @@ local function to_world(c, ox, oy, out)
   end
 end
 
--- use{ path=, name= } — decode the file and instance it: the collider
--- buffer (named `name`, via cm.collide.build) + the doc. Returns
--- { doc=, world=, by_name= }. File reads are load-time content (like
--- sprites); live re-use rides the recorded hot-reload path (MAPS.md §9).
+-- A map instance has TWO captured named buffers:
+--   <name>          cm.collide's canonical geometry
+--   <name>.mapstate CMRT v1: path + canonical CMAP runtime bytes
+-- plus `cm.map.current`, the selected slot name used by get/ref/reload.
+--
+-- The second buffer closes the old split-brain bug: placements/markers and
+-- active-map identity used to live only on the Lua heap, so parking before a
+-- room switch restored old movement/collision under the PRESENT room's art.
+-- cm.state's participant boundary now flushes direct placement-handle edits
+-- before every snapshot/trace observation and rebuilds every Lua wrapper after
+-- every restore. Trace/scrub code remains map-agnostic.
+local RT_MAGIC, CUR_MAGIC = "CMRT", "CMRC"
+local CUR_BUF = "cm.map.current"
+
+local function buf_bytes(name)
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == name then return pal.buf(name, b.size):str(0, b.size) end
+  end
+end
+
+local function put_buf(name, bytes)
+  local size
+  for _, b in ipairs(pal.buf_list()) do
+    if b.name == name then size = b.size break end
+  end
+  if size and size ~= #bytes then pal.buf_free(name) end
+  pal.buf(name, #bytes):setstr(0, bytes)
+end
+
+local function runtime_name(name)
+  return name .. ".mapstate"
+end
+
+local function runtime_pack(path, raw)
+  return RT_MAGIC .. pack("<I4s4s4", 1, path, raw)
+end
+
+local function runtime_unpack(blob)
+  if not blob or blob:sub(1, 4) ~= RT_MAGIC then
+    error("map runtime: bad CMRT magic", 0)
+  end
+  local version, path, raw, pos = unpack("<I4s4s4", blob, 5)
+  if version ~= 1 then error("map runtime: unsupported version " .. version, 0) end
+  if pos ~= #blob + 1 then error("map runtime: trailing bytes", 0) end
+  return path, raw
+end
+
+local function current_write(name)
+  put_buf(CUR_BUF, CUR_MAGIC .. pack("<I4s4", 1, name))
+end
+
+local function current_read()
+  local blob = buf_bytes(CUR_BUF)
+  if not blob then return nil end
+  if blob:sub(1, 4) ~= CUR_MAGIC then error("map current: bad CMRC magic", 0) end
+  local version, name, pos = unpack("<I4s4", blob, 5)
+  if version ~= 1 then error("map current: unsupported version " .. version, 0) end
+  if pos ~= #blob + 1 then error("map current: trailing bytes", 0) end
+  return name
+end
+
+local function by_names(doc)
+  local out = {}
+  for _, p in ipairs(doc.places) do
+    if p.name and place_on(doc, p) and not out[p.name] then out[p.name] = p end
+  end
+  return out
+end
+
+local function invalidate(inst)
+  -- Geometry depends on the logical map generation. Asset caches are keyed by
+  -- path (+ asset epoch where needed), so retaining them makes frame-by-frame
+  -- scrubbing avoid re-reading the same tilemaps without mixing map state.
+  inst._fill = nil
+end
+
+local function set_doc(inst, doc, path, blob)
+  inst.doc, inst.path, inst.active = doc, path, true
+  inst.by_name = by_names(doc)
+  inst._runtime_blob = blob
+  inst._restore_rev = state.restore_rev
+  inst._doc_hash = state.value_hash(doc)
+  inst._dirty = nil
+  inst.rev = (inst.rev or 0) + 1
+  invalidate(inst)
+end
+
+-- Decode the captured runtime buffer into an existing slot and re-adopt its
+-- captured collision buffer. `force` matters when a direct Lua mutation has
+-- not yet reached a capture boundary and rewind restores the same CMRT bytes:
+-- restore must still discard that uncommitted heap-only future.
+local function runtime_adopt(inst, force)
+  local blob = buf_bytes(inst.state_name)
+  if not blob then
+    inst.active = false
+    inst._restore_rev = state.restore_rev
+    return nil
+  end
+  local changed = force or blob ~= inst._runtime_blob
+  if changed then
+    local path, raw = runtime_unpack(blob)
+    set_doc(inst, M.decode(raw), path, blob)
+  end
+  if changed or not inst.world then
+    inst.world = collide.adopt(inst.world, inst.name)
+  end
+  return inst
+end
+
+local function ensure_slot(name)
+  local inst = M._slots[name]
+  if not inst then
+    inst = { name = name, state_name = runtime_name(name), active = false }
+    M._slots[name] = inst
+  else
+    inst.name, inst.state_name = name, inst.state_name or runtime_name(name)
+  end
+  return inst
+end
+
+-- Detect direct mutations through map.get()'s ergonomic table handle. The
+-- cheap traversal runs at capture/draw/query boundaries; canonical CMAP
+-- encoding and buffer replacement happen only when the table actually moved.
+local function refresh_doc(inst)
+  if not inst or not inst.active then return nil end
+  local h = state.value_hash(inst.doc)
+  if h ~= inst._doc_hash then
+    inst._doc_hash = h
+    inst._dirty = true
+    inst.by_name = by_names(inst.doc)
+    inst.rev = (inst.rev or 0) + 1
+    invalidate(inst)
+  end
+  return inst
+end
+
+function M.sync(inst)
+  inst = inst or M.cur
+  if not inst then return nil end
+  -- restore_tables already invokes our participant, but the generation check
+  -- also makes a late/new wrapper self-healing without copying the full CMRT
+  -- buffer on every draw/query.
+  if inst._restore_rev ~= state.restore_rev
+     and not runtime_adopt(inst, true) then return nil end
+  if not inst.active then return nil end
+  return refresh_doc(inst)
+end
+
+local function capture_inst(inst)
+  if not refresh_doc(inst) or not inst._dirty then return end
+  local blob = runtime_pack(inst.path, M.encode(inst.doc))
+  -- Once the cheap change detector moves, canonical bytes are the authority;
+  -- equal bytes avoid a false-positive generation.
+  if blob ~= inst._runtime_blob then put_buf(inst.state_name, blob) end
+  inst._runtime_blob, inst._dirty = blob, nil
+end
+
+local function capture_maps()
+  local names = {}
+  for name in pairs(M._slots) do names[#names + 1] = name end
+  table.sort(names)
+  for _, name in ipairs(names) do capture_inst(M._slots[name]) end
+  if M.cur and M.cur.active then current_write(M.cur.name) end
+end
+
+local function restore_maps()
+  local names, seen = {}, {}
+  for name in pairs(M._slots) do
+    names[#names + 1], seen[name] = name, true
+  end
+  -- A full snapshot/replay may restore into a VM where game.init has not made
+  -- the wrapper yet. Discover canonical CMRT buffers by signature so restore
+  -- itself rebuilds the complete map facade; init remains idempotence, not a
+  -- hidden prerequisite for state integrity.
+  for _, b in ipairs(pal.buf_list()) do
+    local name = b.name:match("^(.*)%.mapstate$")
+    if name and name ~= "" and not seen[name] and b.size >= 4
+       and pal.buf(b.name, b.size):str(0, 4) == RT_MAGIC then
+      ensure_slot(name)
+      names[#names + 1], seen[name] = name, true
+    end
+  end
+  table.sort(names)
+  for _, name in ipairs(names) do runtime_adopt(M._slots[name], true) end
+  local cur = current_read()
+  M.cur = cur and M._slots[cur] or nil
+  if cur and not M.cur then
+    error("map current: captured slot is missing: " .. cur, 0)
+  end
+end
+
+state.participate("cm.map", { capture = capture_maps, restore = restore_maps })
+
+-- use{ path=, name= [, fresh=true] } — instance a map into a stable named
+-- slot. If captured state for the same path already exists (game.init after a
+-- snapshot/rewind/reload), adopt it without touching buffers or disk. A real
+-- room switch changes path and publishes a new captured generation. `fresh`
+-- is the explicit reset-to-disk escape hatch.
 function M.use(o)
+  local name = o.name or error("map.use: name", 2)
+  if name == CUR_BUF or name:sub(-9) == ".mapstate" then
+    error("map.use: reserved map slot name " .. name, 2)
+  end
+  local inst = ensure_slot(name)
+
+  local captured = buf_bytes(inst.state_name)
+  if captured and not o.fresh then
+    local path = runtime_unpack(captured)
+    if path == o.path then
+      runtime_adopt(inst, false)
+      M.cur = inst
+      current_write(name)
+      return inst
+    end
+  end
+
   local bytes = pal.read_file(o.path)
   if not bytes then error("map.use: no file " .. tostring(o.path), 2) end
   local doc = M.decode(bytes)
@@ -325,23 +542,47 @@ function M.use(o)
       for _, c in ipairs(p.cols or {}) do to_world(c, p.x, p.y, cols) end
     end
   end
-  local world = collide.build{ name = o.name or error("map.use: name", 2),
-                               w = doc.w, h = doc.h, colliders = cols }
-  local by_name = {}
-  for _, p in ipairs(doc.places) do
-    if p.name and place_on(doc, p) and not by_name[p.name] then
-      by_name[p.name] = p
-    end
+  if inst.world then
+    collide.rebuild(inst.world, { name = name, w = doc.w, h = doc.h,
+                                  colliders = cols })
+  else
+    inst.world = collide.build{ name = name, w = doc.w, h = doc.h,
+                                colliders = cols }
   end
-  M.cur = { doc = doc, world = world, by_name = by_name, path = o.path,
-            name = o.name }
-  return M.cur
+  local blob = runtime_pack(o.path, M.encode(doc))
+  put_buf(inst.state_name, blob)
+  set_doc(inst, doc, o.path, blob)
+  M.cur = inst
+  current_write(name)
+  return inst
+end
+
+function M.current()
+  return M.sync(M.cur)
+end
+
+-- Explicitly retire a stable slot (tests/transient worlds/project teardown).
+-- Normal room switching reuses a slot and should not call this.
+function M.release(which)
+  local inst = type(which) == "table" and which or M._slots[which]
+  if not inst or M._slots[inst.name] ~= inst then return false end
+  M._slots[inst.name] = nil
+  inst.active = false
+  pal.buf_free(inst.name)
+  pal.buf_free(inst.state_name)
+  if M.cur == inst then
+    M.cur = nil
+    pal.buf_free(CUR_BUF)
+  end
+  return true
 end
 
 -- the named-placement handle (D057b): the placement table itself —
--- mutate x/y/vis freely, it is render-only state (like the camera).
+-- mutate x/y/vis freely; the participant flushes it as captured presentation
+-- state before every snapshot/ring/verify observation.
 function M.get(name)
-  return M.cur and M.cur.by_name[name] or nil
+  local cur = M.current()
+  return cur and cur.by_name[name] or nil
 end
 
 -- built-in fallbacks for a dangling / missing named ref: graceful
@@ -371,7 +612,7 @@ M.is_visual = is_visual
 -- palette), so a deleted asset degrades loudly instead of crashing.
 -- Returns: path, kind, ok. `ok=false` means the fallback is in play.
 function M.ref(name)
-  local cur = M.cur
+  local cur = M.current()
   local proj = (cm.main and cm.main.args and cm.main.args.project) or "."
   local p = cur and cur.by_name[name]
   if not p then
@@ -397,7 +638,7 @@ end
 -- window submits it), so traces replay the change and rewind scrubs across
 -- it. A path that isn't the live map no-ops with a log.
 function M.reload(path)
-  local cur = M.cur
+  local cur = M.current()
   if not (cur and cur.path == path) then
     pal.log("[map] reload ignored (not the live map): " .. tostring(path))
     return false
@@ -421,16 +662,9 @@ function M.reload(path)
   end
   collide.rebuild(cur.world, { name = cur.name, w = doc.w, h = doc.h,
                                colliders = cols })
-  cur.doc = doc
-  cur.by_name = {}
-  for _, p in ipairs(doc.places) do
-    if p.name and place_on(doc, p) and not cur.by_name[p.name] then
-      cur.by_name[p.name] = p
-    end
-  end
-  cur._fill = nil
-  cur._ptex = nil
-  cur._ptm = nil
+  local blob = runtime_pack(path, M.encode(doc))
+  put_buf(cur.state_name, blob)
+  set_doc(cur, doc, path, blob)
   pal.log("[map] reloaded " .. path)
   return true
 end
@@ -541,6 +775,8 @@ end
 -- Everything culls to the camera window like TM:draw did — quads never
 -- leave the viewport (the capture path drops negative-origin quads).
 function M.draw_fill(inst, camx, camy)
+  inst = M.sync(inst)
+  if not inst then return end
   -- the §5 per-map switch: once art placements own the visuals the
   -- colliders render NOTHING in the game (editor gizmos only)
   if inst.doc.nofill then return end
@@ -756,6 +992,8 @@ end
 -- camera-culled; flip_x mirrors via swapped u. Art stacks on top of the
 -- collider fill until a per-map flag turns the fill off (§5).
 function M.draw_places(inst, camx, camy)
+  inst = M.sync(inst)
+  if not inst then return end
   local vw, vh = pal.gfx_size()
   local doc = inst.doc
   local tmap

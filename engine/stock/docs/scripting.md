@@ -170,6 +170,13 @@ Load it during `init` with a stable collision-buffer name:
       room = map.use({ path=path, name="mygame.room_collision" })
     end
 
+That name is a persistent map *slot*, not just a collision allocation. The
+engine captures its active path, canonical placements/markers, collision, and
+direct `map.get(...)` mutations, then rebuilds the same `room`/`room.world`
+wrapper identities after snapshot load, timeline parking, and rewind. Calling
+`map.use` again with the same slot/path adopts the captured generation; pass
+`fresh=true` only when you explicitly want to discard it and reload disk.
+
 Draw its visuals with the world layer active:
 
     gfx.layer(1)
@@ -182,6 +189,11 @@ in the inspector are returned as a table by `map.extras(marker)`:
       local fields = map.extras(marker)
       if marker.kind == "portal" and fields.to then ... end
     end
+
+If a level module copies markers, bounds, tint, or titles into convenience
+fields, treat those as a revision-keyed derived cache: call `map.sync(room)`
+and rebuild when `room.rev` changes before drawing. The bundled multi-room demo
+shows this pattern. Never keep an independent current-map truth on the Lua heap.
 
 A named placement can act as an asset reference:
 

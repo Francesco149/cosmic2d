@@ -10,6 +10,14 @@
 --   [8..39] xoshiro256++ s0..s3 (cm.rand)
 --   [40..63] reserved (zero)
 --
+-- Engine modules may expose ergonomic Lua handles over captured truth (for
+-- example cm.map's decoded placement tables over a named runtime buffer).
+-- Those modules register one state participant: capture() flushes handles to
+-- buffers/doc before EVERY state observation, restore() rebuilds the handles
+-- after EVERY table restore. The serialized model does not grow a third kind
+-- of state; participants are the one lifecycle boundary that keeps derived
+-- Lua glue honest across snapshots, traces, parking, rewind and verification.
+--
 -- A snapshot is a CSNP container (cm.chunk) holding the code bundle (D012),
 -- every named buffer, and the canonical doc bytes. Restore writes buffers,
 -- repopulates M.doc in place, and re-executes bundle code via
@@ -27,6 +35,8 @@ local M = select(2, ...) or {}
 local chunk = cm.require("cm.chunk")
 
 M.doc = M.doc or {}
+M._participants = M._participants or {}
+M.restore_rev = M.restore_rev or 0
 
 local pack, unpack = string.pack, string.unpack
 
@@ -201,6 +211,76 @@ function M.doc_hash()
   return hash_value(M.doc, 0xcbf29ce484222325)
 end
 
+-- The same cheap change detector for captured engine handles. This is not a
+-- canonical/content hash: it answers only "did this unchanged table move in
+-- this VM?" before a participant pays to encode canonical bytes. Like
+-- doc_hash it accepts a practical 2^-64 change-detection collision risk.
+function M.value_hash(v)
+  return hash_value(v, 0xcbf29ce484222325)
+end
+
+-- ---- captured-state participants ----
+
+-- Register/replace a named participant. Modules re-register on hot reload, so
+-- replacement is intentional. Hooks run name-sorted: capture order and any
+-- buffer writes are deterministic even when module load order differs.
+function M.participate(name, hooks)
+  if type(name) ~= "string" or name == "" then
+    error("state participant needs a name", 2)
+  end
+  if type(hooks) ~= "table"
+     or (hooks.capture == nil and hooks.restore == nil)
+     or (hooks.capture ~= nil and type(hooks.capture) ~= "function")
+     or (hooks.restore ~= nil and type(hooks.restore) ~= "function") then
+    error("state participant needs capture/restore functions", 2)
+  end
+  M._participants[name] = hooks
+  return hooks
+end
+
+function M.unparticipate(name, hooks)
+  if hooks == nil or M._participants[name] == hooks then
+    M._participants[name] = nil
+  end
+end
+
+local function run_participants(kind)
+  if M._participant_phase then
+    error("recursive state participant phase (" .. M._participant_phase
+          .. " -> " .. kind .. ")", 0)
+  end
+  local hooks_to_run = {}
+  for name, hooks in pairs(M._participants) do
+    if hooks[kind] then
+      hooks_to_run[#hooks_to_run + 1] = { name = name, fn = hooks[kind] }
+    end
+  end
+  table.sort(hooks_to_run, function(a, b) return a.name < b.name end)
+  M._participant_phase = kind
+  local ok, err = xpcall(function()
+    -- Snapshot the callable list before running it: a hook may load/register
+    -- another module, but that new participant joins the NEXT complete phase
+    -- instead of perturbing this one halfway through.
+    for _, hook in ipairs(hooks_to_run) do hook.fn() end
+  end, debug.traceback)
+  M._participant_phase = nil
+  if not ok then error(err, 0) end
+end
+
+-- Called at every state-observation boundary (snapshot/ring/verify), after the
+-- sim step and before buffer/doc enumeration.
+function M.capture_runtime()
+  run_participants("capture")
+end
+
+-- Called only by restore_tables, after all captured buffers and the doc are
+-- atomically back in place. Public for focused diagnostics; restore callers
+-- should use restore_tables rather than invoking it separately.
+function M.restore_runtime()
+  M.restore_rev = M.restore_rev + 1
+  run_participants("restore")
+end
+
 -- ---- snapshots ----
 
 local SNAP_MAGIC = "CSNP"
@@ -248,6 +328,7 @@ end
 -- opts.code = false omits the bundle (trace keyframes: the trace's starting
 -- snapshot + epoch records already pin the code)
 function M.snapshot(opts)
+  M.capture_runtime()
   local bufs = {}
   for _, b in ipairs(sorted_buf_list()) do
     local view = pal.buf(b.name, b.size)
@@ -309,6 +390,7 @@ function M.restore_tables(bufs, doct)
   if type(newdoc) ~= "table" then error("doc bytes are not a table", 0) end
   for k in pairs(M.doc) do M.doc[k] = nil end
   for k, v in pairs(newdoc) do M.doc[k] = v end
+  M.restore_runtime()
 end
 
 -- restore from a snapshot blob. Does NOT call game.init(); flows that

@@ -113,6 +113,17 @@ instead, all sim state lives in things the PAL can snapshot byte-exactly:
    the engine for snapshots and hashing. Convenient but slower — bulk data
    belongs in buffers.
 
+Engine modules may put an ergonomic Lua handle over those two forms, but the
+handle is never a third source of truth. `cm.state.participate(name, hooks)` is
+the single lifecycle boundary: name-sorted `capture()` hooks flush handles into
+ordinary named buffers/doc before snapshots, ring frames, and verification;
+name-sorted `restore()` hooks rebuild derived wrappers after every
+`restore_tables`. A capture hook returning private bytes is not supported — it
+must publish them through the normal state model, so every snapshot/trace path
+gets the state without module-specific plumbing. `cm.map` is the first user:
+its stable slot owns a collider buffer plus canonical map-runtime buffer, while
+decoded placements/lookups/world wrappers are rebuildable glue.
+
 A **snapshot** = all named buffers + serialized doc tree + frame counter
 **+ the code bundle**: a content-addressed copy of every loaded source file
 (engine + project). Code is live-editable, so state alone doesn't pin the

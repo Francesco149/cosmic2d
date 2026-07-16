@@ -385,6 +385,10 @@ local function ring_init(R)
   R.loaded = nil
   hist_adopt(R) -- R6.5: the continuous cross-session stream — adopt the
                 -- on-disk chain ending at the present frame, wipe the rest
+  -- One capture boundary for every engine-owned Lua handle. Participants
+  -- flush into ordinary named buffers/doc, so the ring needs no module-
+  -- specific chunks or restore calls (cm.state owns both halves).
+  state.capture_runtime()
   R.prev = {}
   for _, b in ipairs(sorted_buf_list()) do
     R.prev[b.name] = { mirror = mirror_of(pal.buf(b.name, b.size), b.size),
@@ -478,6 +482,7 @@ function M.record_frame(input_record, evals)
     M.ring_reset() -- reseeds from live (post-frame) state; resumes next frame
     return
   end
+  state.capture_runtime()
   local seg = R.segs[#R.segs]
   if evals and #evals > 0 then
     local ep = { pack("<I4", #evals) }
@@ -1088,6 +1093,9 @@ function M.verify(path, game)
       pal.snd_render()            -- sequencer + render inside the
                                   -- step on record AND verify
       state.advance_frame()
+      -- Match record_frame's observation boundary. Engine participants flush
+      -- ergonomic Lua handles before live buffers/doc are byte-compared.
+      state.capture_runtime()
 
       -- decode recorded per-buffer records, update expected mirrors
       local nbufs

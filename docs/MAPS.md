@@ -161,21 +161,29 @@ room byte-identically frame-for-frame *in behavior* (new golden, §10).
 
 ## 4. What the sim sees
 
-`cm.map.use(path)` (the level.lua successor): decode `.map` →
-**collider buffer** (named, e.g. `cosmic.mapc`: header + chains,
-canonical bytes — snapshot/trace/rewind-visible by construction) +
-**render tables** (placements/markers, plain Lua, render-only) +
-markers handed to game logic. Portals/spawn/prop_spots all read from
-markers — `maps/*.lua` build code dies.
+`cm.map.use{path=, name=}` (the level.lua successor) decodes `.map` into one
+stable named slot with two captured buffers:
 
-Placements are render-only state — deliberately *outside* sim
-snapshots (like all art). Colliders are sim truth — *inside*, as the
-buffer. Markers: read at map-use time by game code into its own sim
-state (props spawned, portal rects), same as today's tables.
+- `name`: the collider header + chains/circles;
+- `name .. ".mapstate"`: `CMRT v1`, the active path plus canonical CMAP runtime
+  bytes (bounds/layers/placements/markers).
+
+`cm.map.current` captures which slot backs `get`/`ref`/`reload`. Decoded docs,
+name lookups, render caches, and collision wrappers are derived Lua glue. They
+are rebuilt in place through `cm.state`'s universal participant lifecycle after
+every table restore, so held instance/world references survive snapshot load,
+park, rewind, cross-session resume, and map changes without split state.
+
+This corrects the original “render tables are outside snapshots” decision. Art
+*pixels/files* remain project assets (A7 file epochs capture their historical
+versions), but the loaded logical map, active-map identity, markers, and
+placement transforms are presentation truth and therefore captured. Direct
+`cm.map.get(name)` table mutations are flushed at every state-capture boundary;
+trace code has no map-specific chunk or restore call.
 
 **Named placements** (human, 2026-07-12): `cm.map.get(name)` → a
 handle over a named placement — read its rect, set position /
-visibility (render-only mutations, like the camera: doors slide,
+visibility (captured presentation mutations: doors slide,
 signs blink, elevator *visuals* track). If a named placement carries
 attached colliders and the game wants to *drive* it, the handle is
 the natural source for a dynamic body (§3's `body_*` slot adopts its
@@ -374,16 +382,18 @@ nothing in §5 needs it.
 
 The **sprite precedent verbatim** (EDITOR.md §12.6): editing touches
 working bytes only; **Ctrl+S saves the .map and the running game
-hot-reloads it** — `cm.map.use` re-decode rides the same recorded
-epoch/EVAL path sprite saves use (D041 5c), so traces replay map
-changes and **rewind scrubs across them** (the collider buffer is
-ring-visible; a rewound frame shows the old cliff). Unsaved map edits
+hot-reloads it** — `cm.map.reload` rides the recorded EVAL path and publishes
+the collider plus map-runtime buffers together, so traces replay map changes
+and **rewind scrubs across them** (a rewound frame shows the old cliff *and*
+its matching placements/markers). Re-running `cm.map.use` for the same stable
+slot/path adopts captured state; `fresh=true` is the explicit reset-to-disk
+operation. Unsaved map edits
 are visible in the map window but not the sim — the map window is
 authoring, the game window is truth; "apply live on gesture end" is a
 possible later toggle, not v1 (§12).
 
-Goldens: assets are committed files; headless loads them; nothing new
-leaks in. The determinism sweep: no wall-clock, no libm, ordered
+Goldens: assets are committed files; headless loads them; the runtime buffers
+make the loaded logical map part of trace truth. The determinism sweep: no wall-clock, no libm, ordered
 iteration everywhere (chains/placements are arrays; the spatial index
 is insertion-ordered), collider buffer canonical.
 

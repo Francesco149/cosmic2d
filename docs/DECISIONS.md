@@ -2494,3 +2494,56 @@ determinism verifier.
 when zoomed in; audio may move to an optional budget class if it materially
 shrinks useful history; a cryptographically signed replay trust model waits
 until sharing untrusted projects becomes a supported promise.
+
+## D066 — one captured-state lifecycle; loaded maps are state (human correction, 2026-07-16)
+
+**Context.** After switching rooms, parking rewind on an earlier frame restored
+the player and collider buffer but drew the map from the present. `cm.map` kept
+active path, decoded placements/markers, and named lookups only on the Lua heap;
+multi-map level hosts then copied more present-only fields (bounds, tint, title,
+markers). This directly contradicted the whole-engine rewind promise and D005's
+“Lua heap is never truth” rule. Fixing only `cm.scrub` with `map.reload` would
+repeat for every future engine subsystem and every restore entrance.
+
+**Decision.** `cm.state` owns one name-sorted participant lifecycle around the
+existing two state forms:
+
+1. `capture()` hooks flush ergonomic Lua handles into ordinary named buffers or
+   the canonical doc immediately before every snapshot, ring baseline/frame,
+   and verifier comparison.
+2. `restore()` hooks rebuild derived handles immediately after every
+   `restore_tables`, covering snapshot load, replay load, park/seek/close,
+   rewind/resume, verify, and cross-session adoption without caller knowledge.
+3. Hooks cannot return private serialized payloads. Captured truth must still be
+   a named buffer/doc, preserving one snapshot/trace codec and D005.
+
+`cm.map` is the first participant. A stable `name` slot owns the existing
+collider buffer, a `name .. ".mapstate"` `CMRT v1` buffer (active path + canonical
+CMAP runtime bytes), and the captured `cm.map.current` slot selector. Map use,
+switch, and reload publish both logical map and collision; direct named-
+placement table mutations flush at the next capture boundary. Restore decodes
+the map state and re-adopts the collision buffer into the same instance/world
+table identities. Re-running `map.use` for the same slot/path is restore-
+idempotent and adopts captured truth; `fresh=true` explicitly resets from disk.
+Cartridge convenience fields copied from a map are revision-keyed derived
+caches and must refresh from `inst.rev` before drawing; both bundled multi-map
+hosts do so.
+
+**Boundary.** Loaded logical map identity/layout is engine presentation truth
+and is captured. Referenced project-file contents (PNG/TM/SPR/audio and source
+versions) remain assets; D065's manifest/blob epochs are still required for an
+exact standalone historical render after those files change. “Asset” is not an
+excuse for mutable engine runtime to live only on the heap.
+
+**Proof.** A focused ring test records map A, switches the same stable slot to
+map B, directly moves a named B placement, and restores all three generations.
+It pins active path/doc/current lookup, markers, placement mutation, matching
+collision, and held instance/world identity. The demo and flagship both boot
+with revision-synchronized level views. A second restore with the Lua slot
+removed proves CMRT discovery reconstructs the facade without `game.init`; the
+full deterministic suite remains the release gate. Old traces retain their
+bundled pre-D066 map code and remain readable.
+
+**Revisit.** If participant traversal or a large map's change detection appears
+in profiles, add explicit revisioned proxy handles or move the runtime codec to
+a PAL helper; do not add subsystem-specific trace chunks or restore calls.
