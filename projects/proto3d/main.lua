@@ -22,7 +22,7 @@ local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 
 local W, H = pal.gfx_size()
-local game = {}
+local game = select(2, ...) or {}
 
 -- scene constants, verbatim from proto/main.c scene_graybox
 local AT = { 18, 4, 10 }             -- camera look-at

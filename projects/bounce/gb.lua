@@ -12,7 +12,7 @@
 local m = cm.require("cm.math")
 local m4 = cm.require("cm.m4")
 
-local G = {}
+local G = select(2, ...) or {}
 
 -- graybox scene lighting (proto/main.c scene_graybox)
 G.ambient = { 0.44, 0.44, 0.50 }

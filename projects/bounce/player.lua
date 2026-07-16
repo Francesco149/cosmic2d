@@ -14,7 +14,7 @@ local m4 = cm.require("cm.m4")
 local level = cm.require("level")
 local audio = cm.require("audio")
 
-local M = {}
+local M = select(2, ...) or {}
 
 local DT = 1.0 / 60.0
 

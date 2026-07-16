@@ -22,7 +22,7 @@ local level = cm.require("level")
 local player = cm.require("player")
 local audio = cm.require("audio")
 
-local M = {}
+local M = select(2, ...) or {}
 
 -- diamond gem: a 2-cone lathe profile {r,y}, 8 segments
 local GEM = { 0, -0.30, 0.26, 0, 0, 0.30 }

@@ -12,7 +12,7 @@ local m = cm.require("cm.math")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("gb")
 
-local L = {}
+local L = select(2, ...) or {}
 
 -- graybox atmosphere (proto/main.c scene_graybox)
 L.fog = { on = true, s = 28, e = 62, col = { 0.62, 0.70, 0.85 } }

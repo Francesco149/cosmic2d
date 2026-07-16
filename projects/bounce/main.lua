@@ -39,7 +39,7 @@ local audio = cm.require("audio")
 local W, H = pal.gfx_size()
 local FOVY, ZN, ZF = 52, 0.3, 120
 
-local game = {}
+local game = select(2, ...) or {}
 game.level = level -- console reach
 
 -- feel knobs, all live (doc tree -> console, snapshots). Units: world units
