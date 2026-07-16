@@ -5,5 +5,7 @@ projects/picker
 projects/demo
 README.md
 LICENSE
+LICENSES
+THIRD_PARTY_NOTICES.md
 pal/shaders
 pal/vendor/fonts

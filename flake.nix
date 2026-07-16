@@ -33,7 +33,166 @@
       # Three explicit distribution shapes share the compiled PAL but stage
       # different allowlists. Dev carries fixtures/tests; editor carries only
       # the picker and intentional demos; play is staged by the packager below.
-      packages = forAll (pkgs: rec {
+      packages = forAll (pkgs:
+        let
+          oneLicense = license:
+            if builtins.isAttrs license then
+              if license ? spdxId then license.spdxId
+              else if license ? shortName then license.shortName
+              else if license ? fullName then license.fullName
+              else "custom"
+            else toString license;
+          licenseNames = license:
+            if builtins.isList license
+            then pkgs.lib.concatMapStringsSep ", " oneLicense license
+            else oneLicense license;
+          component = name: package: { inherit name package; };
+
+          # Release artifacts reproduce upstream legal material from the exact
+          # sources pinned by flake.lock. Source archives are build inputs only;
+          # the output keeps the small notice files, not dependency sources.
+          collectSourceNotices = pname: components:
+            pkgs.runCommand pname {
+              nativeBuildInputs = with pkgs; [
+                coreutils findutils gnutar gzip bzip2 xz
+              ];
+            } ''
+              mkdir -p $out
+              printf '%s\n' 'Pinned runtime dependency notices' \
+                > $out/README.txt
+              printf 'component\tversion\tdeclared package licenses\n' \
+                >> $out/README.txt
+              ${pkgs.lib.concatMapStringsSep "\n" (entry: ''
+                printf '%s\t%s\t%s\n' \
+                  ${pkgs.lib.escapeShellArg entry.name} \
+                  ${pkgs.lib.escapeShellArg (toString entry.package.version)} \
+                  ${pkgs.lib.escapeShellArg
+                    (licenseNames (entry.package.meta.license or "not-declared"))} \
+                  >> $out/README.txt
+              '') components}
+
+              collect() {
+                label=$1
+                source=$2
+                scratch="$TMPDIR/$label"
+                if [ -d "$source" ]; then
+                  scan=$source
+                else
+                  mkdir -p "$scratch"
+                  tar -xf "$source" -C "$scratch"
+                  scan=$scratch
+                fi
+
+                mapfile -d "" files < <(
+                  find "$scan" -maxdepth 5 -type f \
+                    \( -iname 'COPYING*' -o -iname 'LICENSE*' \
+                       -o -iname 'NOTICE*' -o -iname 'COPYRIGHT*' \
+                       -o -iname 'AUTHORS*' \) \
+                    -size -2097152c -print0
+                )
+                if [ "''${#files[@]}" -eq 0 ]; then
+                  echo "$label has no recognizable upstream license/notice files" >&2
+                  exit 1
+                fi
+                for file in "''${files[@]}"; do
+                  relative="''${file#"$scan"/}"
+                  install -Dm644 "$file" "$out/$label/$relative"
+                done
+              }
+
+              ${pkgs.lib.concatMapStringsSep "\n" (entry: ''
+                collect \
+                  ${pkgs.lib.escapeShellArg
+                    "${entry.name}-${toString entry.package.version}"} \
+                  ${pkgs.lib.escapeShellArg (toString entry.package.src)}
+              '') components}
+            '';
+
+          commonLicenses = pkgs.runCommand "cosmic2d-common-licenses-${releaseVersion}" {
+            nativeBuildInputs = [ pkgs.gnugrep ];
+          } ''
+            mkdir -p $out
+            printf '%s\n' \
+              'Embedded cosmic2d dependency notices' \
+              'The component inventory is in THIRD_PARTY_NOTICES.md at the artifact root.' \
+              > $out/README.txt
+            cp ${self}/pal/vendor/imgui/LICENSE.txt $out/Dear-ImGui.txt
+            cp ${self}/pal/vendor/fonts/OFL-Inter.txt $out/Inter-OFL-1.1.txt
+            cp ${self}/pal/vendor/fonts/OFL-JetBrainsMono.txt \
+              $out/JetBrains-Mono-OFL-1.1.txt
+            sed -n '499,520p' ${self}/pal/vendor/lua/src/lua.h > $out/Lua.txt
+            sed -n '7947,7987p' ${self}/pal/vendor/stb/stb_image.h > $out/stb.txt
+            sed -n '9100,9148p' ${self}/pal/vendor/dr_libs/dr_wav.h > $out/dr_wav.txt
+            sed -n '5357,5412p' ${self}/pal/vendor/dr_libs/dr_mp3.h > $out/dr_mp3.txt
+            sed -n '/^Spleen 2\.1\.0/,/^POSSIBILITY OF SUCH DAMAGE\.]]/p' \
+              ${self}/engine/cm/assets/font_5x8.lua \
+              | sed '$s/]]$//' > $out/Spleen.txt
+            for notice in $out/*.txt; do
+              if [ ! -s "$notice" ]; then
+                echo "empty embedded dependency notice: $notice" >&2
+                exit 1
+              fi
+            done
+            grep -Fq 'Lua.org, PUC-Rio' $out/Lua.txt
+            grep -Fq 'Copyright (c) 2017 Sean Barrett' $out/stb.txt
+            grep -Fq 'Copyright 2023 David Reid' $out/dr_wav.txt
+            grep -Fq 'minimp3' $out/dr_mp3.txt
+            grep -Fq 'Copyright (c) 2018-2024, Frederic Cambus' $out/Spleen.txt
+            grep -Fq 'Copyright (c) 2014-2025 Omar Cornut' $out/Dear-ImGui.txt
+            grep -Fq 'SIL OPEN FONT LICENSE Version 1.1' $out/Inter-OFL-1.1.txt
+            grep -Fq 'SIL OPEN FONT LICENSE Version 1.1' \
+              $out/JetBrains-Mono-OFL-1.1.txt
+          '';
+
+          linuxRuntimeLicenses = collectSourceNotices
+            "cosmic2d-linux-runtime-licenses-${releaseVersion}" [
+              (component "SDL3" pkgs.sdl3)
+              (component "Vulkan-Loader" pkgs.vulkan-loader)
+              (component "GCC-Runtime" pkgs.gcc.cc)
+              (component "alsa-lib" pkgs.alsa-lib)
+              (component "libX11" pkgs.libx11)
+              (component "libXext" pkgs.libxext)
+              (component "libXcursor" pkgs.libxcursor)
+              (component "libXi" pkgs.libxi)
+              (component "libXfixes" pkgs.libxfixes)
+              (component "libXrandr" pkgs.libxrandr)
+              (component "libXScrnSaver" pkgs.libxscrnsaver)
+              (component "libXtst" pkgs.libxtst)
+              (component "libXrender" pkgs.libxrender)
+              (component "libXau" pkgs.libxau)
+              (component "libXdmcp" pkgs.libxdmcp)
+              (component "libxcb" pkgs.libxcb)
+              (component "libusb" pkgs.libusb1)
+              (component "JACK2" pkgs.libjack2)
+              (component "PipeWire" pkgs.pipewire)
+              (component "PulseAudio" pkgs.pulseaudio)
+              (component "libdrm" pkgs.libdrm)
+              (component "Mesa" pkgs.mesa)
+              (component "Wayland" pkgs.wayland)
+              (component "libglvnd" pkgs.libglvnd)
+              (component "libxkbcommon" pkgs.libxkbcommon)
+              (component "libdecor" pkgs.libdecor)
+              (component "systemd" pkgs.systemd)
+              (component "libsamplerate" pkgs.libsamplerate)
+              (component "D-Bus" pkgs.dbus)
+              (component "libffi" pkgs.libffi)
+              (component "libsndfile" pkgs.libsndfile)
+              (component "FLAC" pkgs.flac)
+              (component "libvorbis" pkgs.libvorbis)
+              (component "Opus" pkgs.libopus)
+              (component "libogg" pkgs.libogg)
+              (component "mpg123" pkgs.mpg123)
+              (component "LAME" pkgs.lame)
+            ];
+
+          windowsRuntimeLicenses = collectSourceNotices
+            "cosmic2d-windows-runtime-licenses-${releaseVersion}" [
+              (component "SDL3" pkgs.sdl3)
+              (component "GCC-Runtime" pkgs.gcc.cc)
+              (component "mcfgthread"
+                pkgs.pkgsCross.mingwW64.windows.mcfgthreads)
+            ];
+        in rec {
         # nixpkgs makes SDL's optional Vulkan/X11 loaders point directly into
         # the Nix store. That is useful inside Nix, but those compiled-in
         # paths make a bundled release unusable after extraction elsewhere.
@@ -63,6 +222,10 @@
           buildPhase = "make -C pal";
           installPhase = ''
             bash tools/stage-manifest.sh . dist/manifests/dev.txt $out
+            mkdir -p $out/LICENSES
+            cp -r --no-preserve=mode ${commonLicenses} $out/LICENSES/common
+            cp -r --no-preserve=mode ${linuxRuntimeLicenses} \
+              $out/LICENSES/linux-runtime
             # root launchers (the human's ask): extract -> run the one you want.
             # The binary auto-chdirs to the dir holding engine/, so a launcher
             # beside engine/ resolves projects/ fine; argv[0]'s basename routes
@@ -70,6 +233,9 @@
             # (opens projects in the editor), demo -> projects/demo locked.
             cp $out/bin/cosmic $out/cosmic2d-editor
             cp $out/bin/cosmic $out/demo
+          '';
+          postFixup = ''
+            bash ${self}/tools/release-integrity.sh tree $out linux-nix
           '';
         };
 
@@ -132,6 +298,8 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
               fi
             fi
           done < <(find $out -type f)
+
+          bash ${self}/tools/release-integrity.sh tree $out linux
         '';
 
         # M6 — Windows cross build (mingw-w64 + cross SDL3, both from nixpkgs;
@@ -156,6 +324,10 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
           '';
           installPhase = ''
             bash tools/stage-manifest.sh . dist/manifests/dev.txt $out
+            mkdir -p $out/LICENSES
+            cp -r --no-preserve=mode ${commonLicenses} $out/LICENSES/common
+            cp -r --no-preserve=mode ${windowsRuntimeLicenses} \
+              $out/LICENSES/windows-runtime
             cp ${cross.sdl3.out}/bin/SDL3.dll $out/bin/
           '';
           # the mingw stdenv symlinks runtime DLLs (libmcfgthread) into bin/;
@@ -213,6 +385,8 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
                 fi
               done
             done
+
+            bash ${self}/tools/release-integrity.sh tree $out windows
           '';
         };
 
@@ -266,7 +440,7 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
           '';
           runner = pkgs.writeShellApplication {
             name = "cosmic-test";
-            runtimeInputs = [ pkgs.diffutils ];
+            runtimeInputs = [ pkgs.diffutils pkgs.findutils ];
             text = suite;
           };
 
@@ -309,11 +483,16 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
               cp "$src/README.md" "$root/README.md" 2>/dev/null || true
               cp "$src/LICENSE" "$root/LICENSE" 2>/dev/null || true
               printf 'cosmic2d — %s\n\nRun  bin/%s  to play.\n' "$name" "$newexe" > "$root/PLAY.txt"
+              bash "$src/tools/release-integrity.sh" tree "$root" "$suffix"
               out="$PWD/$name-$suffix"
               if [ "$suffix" = windows ]; then
-                ( cd "$work" && zip -r -q "$out.zip" "$name" ); echo "packaged -> $out.zip"
+                ( cd "$work" && zip -r -q "$out.zip" "$name" )
+                bash "$src/tools/release-integrity.sh" archive "$out.zip"
+                echo "packaged -> $out.zip (+ .sha256)"
               else
-                tar czf "$out.tar.gz" -C "$work" "$name"; echo "packaged -> $out.tar.gz"
+                tar czf "$out.tar.gz" -C "$work" "$name"
+                bash "$src/tools/release-integrity.sh" archive "$out.tar.gz"
+                echo "packaged -> $out.tar.gz (+ .sha256)"
               fi
               rm -rf "$work"
             '';

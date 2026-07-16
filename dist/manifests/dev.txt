@@ -5,7 +5,10 @@ projects
 tests
 dist
 tools/stage-manifest.sh
+tools/release-integrity.sh
 README.md
 LICENSE
+LICENSES
+THIRD_PARTY_NOTICES.md
 pal/shaders
 pal/vendor/fonts

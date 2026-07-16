@@ -2595,3 +2595,45 @@ and log retention controls remain A7 work rather than being hidden in A2.
 locator, additive crash decode, binary input/eval metadata, atomic failure
 cleanup, unique publication, and disk decode. A live contained-error probe
 produces both a flushed process log and `.ccrash` outside the engine tree.
+
+## D068 — release artifacts are checksummed and self-noticing, but alpha is unsigned (A2, 2026-07-16)
+
+**Context.** A portable binary tree redistributes more than cosmic2d's MIT
+source: embedded Lua/imgui/audio/image/font work plus SDL and platform runtime
+libraries have their own attribution and license conditions. A hash shipped
+inside an archive can expose damaged extracted files, but cannot authenticate
+the archive that contains it. The project has no signing identity or
+certificate and must not turn a plain checksum into a false trust claim.
+
+**Decision.** Every Nix-built dev, editor, and play tree carries the cosmic2d
+license, a public third-party inventory, exact common notices, and the selected
+platform runtime's upstream notice files. Runtime material is collected from
+the exact dependency sources pinned by `flake.lock`; the collector fails when
+a component has no recognizable `LICENSE`, `COPYING`, `NOTICE`, `COPYRIGHT`,
+or `AUTHORS` file. A final sorted `SHA256SUMS` covers every regular tree file
+except itself after all stripping, RPATH edits, executable copies, and launcher
+renames. Release trees refuse symlinks rather than silently leaving their
+targets unchecked. Packaged zip/tar archives additionally receive a sibling
+`<archive>.sha256` whose filename is relative to that sidecar.
+
+Alpha artifacts are explicitly **unsigned**. Their hashes provide integrity
+only when the expected value came from a trusted channel; they are not proof
+of publisher identity. Official alpha release notes must say this, publish the
+archive hash, and never instruct users to disable platform protections. A
+future signing packet must establish a stable documented publisher identity,
+Authenticode-sign Windows entrances, and attach a verifiable detached
+signature to both platform archives before documentation calls any artifact
+authenticated.
+
+**Consequences.** Dependency bumps also become notice audits. Project exports
+retain the engine notices, but project authors own licensing for assets/code
+they add. `SHA256SUMS` verifies extracted contents while the external sidecar
+verifies the downloaded archive; neither replaces code signing. Generated
+license directories are deliberately verbose and may include upstream notices
+for source portions adjacent to the carried library, favoring complete
+attribution over a brittle hand-trimmed legal summary.
+
+**Proof.** Packaging KATs cover spaces/non-ASCII, content tampering, symlink
+rejection, required legal metadata, and archive sidecar verification. Linux
+portable, Windows dev/editor, and both demo play archives carry and verify
+their final manifests; the full deterministic suite remains green.

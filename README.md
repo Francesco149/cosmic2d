@@ -7,8 +7,8 @@ and in-editor export are still alpha release gates.
 
 **Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
 and an out-of-the-box demo game are here. The deterministic suite is green,
-but portable distribution, storage hardening, gamepad support, project/export
-UX, and broader genre demos are still release gates; see `docs/ALPHA.md`.
+but clean-machine release validation, gamepad support, project/export UX, and
+broader genre demos are still release gates; see `docs/ALPHA.md`.
 
 ## Try it
 
@@ -69,15 +69,24 @@ sound effects, and two 30-second BGMs.
 The developer packager can make the bundled demo into a play-only artifact:
 
 ```sh
-nix run .#package -- demo          # -> demo-windows.zip
-nix run .#package -- demo linux    # -> demo-linux.tar.gz
+nix run .#package -- demo          # -> demo-windows.zip + .sha256
+nix run .#package -- demo linux    # -> demo-linux.tar.gz + .sha256
 ```
 
 The bundle contains the selected editable project, engine/editor tooling,
-README, and LICENSE. Its named launcher boots the game locked to play mode;
-`bin/cosmic2d-editor` remains available for a deliberate authoring entrance.
+README, licenses/notices, a complete extracted-tree `SHA256SUMS`, and the exact
+carried runtime-library inventory. Its named launcher boots the game locked to
+play mode; `bin/cosmic2d-editor` remains available for a deliberate authoring
+entrance. Verify the archive's sibling checksum before extraction and run
+`sha256sum --check SHA256SUMS` from inside the extracted folder afterward.
 This is not yet the promised general export flow or a clean-machine-certified
 release; those are gates A2 and A3 in `docs/ALPHA.md`.
+
+Alpha artifacts are deliberately unsigned: checksums detect changed bytes but
+do not prove publisher identity. Windows may report an unknown publisher. Do
+not bypass platform warnings for an artifact whose source you do not trust;
+the full verification and future-signing policy is in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ## Shape of the thing
 
@@ -105,4 +114,6 @@ macOS is not supported for this alpha.
 ## License
 
 MIT — see [LICENSE](LICENSE). Vendored third-party code keeps its own
-(compatible) licenses, noted in `pal/vendor/`.
+(compatible) licenses. Packaged builds reproduce their exact notices plus the
+selected platform runtime notices under `LICENSES/`; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

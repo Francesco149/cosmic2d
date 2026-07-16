@@ -3,13 +3,13 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A2 diagnostics + A7 rewind foundation (2026-07-16)
+## Current handoff — A2 release identity + A7 rewind foundation (2026-07-16)
 
 The active release program is `ALPHA.md`; the original M-series in `PLAN.md`
 and the R-series in `REVAMP.md` are historical context. The runtime, editor,
 audio stack, two-room platformer demo, Linux build, and cross-built Windows
 bundle are working, with the deterministic suite green at the last baseline.
-The project remains an alpha candidate: durability, clean portable releases,
+The project remains an alpha candidate: clean-machine release validation,
 project/export UX, gamepad/player settings, broader genre proofs, and release
 validation are still explicit gates.
 
@@ -72,12 +72,32 @@ report outside the engine tree. Linux and native Windows selftests pass at
 23,300 checks; `nix run .#test` is ALL GREEN with every trace and pixel golden;
 the Windows dev cross-build and portable Linux artifact both build.
 
-**Exact next packet:** stay in A2 and carry release licenses/notices plus
-checksums into every artifact, with an explicit unsigned-alpha signing policy.
-After that, continue the clean-machine path/permission matrix. A7's queued
-implementation packet remains persisted multi-resolution activity/event
-indexes and minute `THMB` samples, followed by project-file epochs; legacy
-coverage must remain honestly labelled.
+**A2 packet 6 is complete (D068).** Every dev, editor, and play tree now carries
+the cosmic2d license, a public third-party inventory, extracted common notices,
+and exact upstream notice files from the selected platform runtime sources
+pinned by `flake.lock`. Final post-fixup `SHA256SUMS` manifests cover every
+regular file except themselves and reject symlink-bearing trees; packaged zip
+and tar archives receive sibling `.sha256` files. The public policy states
+plainly that alpha artifacts are unsigned, hashes are integrity rather than
+publisher authentication, and future signing needs a stable identity,
+Authenticode entrances, and detached archive signatures.
+
+**Proof:** KATs cover required legal material, spaces/non-ASCII, a nested file
+named `SHA256SUMS`, tamper detection, symlink rejection, and relative archive
+sidecars. Linux/Windows dev and editor trees, the portable Linux tree, and both
+fresh demo play archives build and verify; the extracted archives contain only
+`picker` + `demo`. A fresh read-only offscreen/Lavapipe play boot passes. This
+shell lacked Podman/Docker, so the already-proven Debian 13 smoke was not rerun.
+`nix run .#test` is ALL GREEN at 23,300 checks with every trace and pixel golden.
+
+**Exact next packet:** stay in A2 and complete the clean-machine path/permission
+matrix: extracted editor and play archives on Windows and Linux, paths with
+spaces and non-ASCII, read-only install roots, and writable diagnostics/state
+outside them. Restore a container runtime for the Debian leg and exercise the
+native Windows leg through the console entrance. After that, make the play
+bundle player-facing. A7's queued packet remains persisted multi-resolution
+activity/event indexes and minute `THMB` samples, followed by project-file
+epochs; legacy coverage must remain honestly labelled.
 
 **A0 is complete.** The former 3,112-line STATUS diary is archived verbatim;
 the live handoff and docs index are compact; active and historical roadmaps are
@@ -303,7 +323,13 @@ codec, publication failure, identity creation/adoption/rotation/failure, and
 durable lookup. Linux and native Windows selftests pass at 23,300 checks; the
 complete deterministic suite, Windows dev build, and portable Linux build pass.
 
-**Exact next packet:** carry release licenses/notices and checksums into every
-artifact and document the unsigned-alpha signing policy.
+**A2 packet 6 is complete.** All artifact shapes carry exact pinned dependency
+notices plus final extracted-tree and archive checksums under D068's explicit
+unsigned-alpha policy. Packaging KATs, Linux/Windows dev and editor builds,
+portable Linux, both play archives, a read-only portable boot, and the full
+23,300-check deterministic suite pass.
+
+**Exact next packet:** complete the clean-machine paths/non-ASCII/read-only
+matrix on Linux and native Windows, including external writable diagnostics.
 
 There is no known blocker or human-only verification required.

@@ -112,12 +112,12 @@ Goal: artifacts work on clean supported machines exactly as advertised.
   tarball) that has no Nix-store runtime dependency.
 - [x] Ship Windows GUI-subsystem launchers; retain a separate console/headless
   executable for diagnostics and CI.
-- [ ] Complete artifact identity, diagnostics, and release metadata:
+- [x] Complete artifact identity, diagnostics, and release metadata:
   - [x] Add a canonical application icon and embed multi-resolution icon plus
     version resources in every Windows executable.
   - [x] Define a documented crash-log/report location and stable project/
     history-stream/frame envelope for A7.
-  - [ ] Carry licenses/notices and checksums in the artifacts; document the
+  - [x] Carry licenses/notices and checksums in the artifacts; document the
     signing expectations for an unsigned alpha.
 - [ ] Test extract-and-run in clean Windows and Linux VMs/containers, including
   paths with spaces/non-ASCII and read-only install locations.
