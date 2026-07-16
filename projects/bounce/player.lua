@@ -208,6 +208,16 @@ function M.step(ctl)
   y = ny
   grounded = landed
 
+  -- kill plane: off the world edge (the ground collider is finite) -> back
+  -- to spawn with a landing squash, so falls read as a reset, not a glitch
+  if y < k.kill_y then
+    x, y, z = level.spawn.x, level.spawn.y, level.spawn.z
+    vx, vy, vz = 0, 0, 0
+    squash_amt = feel.squash
+    squash_t = feel.squash_frames
+    grounded = true
+  end
+
   squash_t = m.max(0, squash_t - 1)
 
   -- lean into the run (proto's lean param, here pitch toward the heading)

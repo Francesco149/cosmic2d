@@ -47,6 +47,7 @@ local KNOBS = {
     jump_h = 1.9, jump_apex_t = 22, fall_mul = 1.5, fall_max = 22,
     coyote = 6, buffer = 5, turn = 0.25,
     step_h = 0.6, -- mantle: blocked steps up to this lift are walked up
+    kill_y = -12, -- fell off the world: respawn
   },
   cam = { -- the godot FollowCamera/CameraTuning knob set, per-frame units
     dist = 7.5, height = 3.2, look_h = 1.0,

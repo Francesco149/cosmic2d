@@ -145,8 +145,29 @@ local function quad(out, a, b, c, d, col, nx, ny, nz, alpha)
   local C = vert(c[1], c[2], c[3], c[4], c[5], col, nx, ny, nz, alpha)
   local D = vert(d[1], d[2], d[3], d[4], d[5], col, nx, ny, nz, alpha)
   out[#out + 1] = A .. B .. C .. A .. C .. D
+  return 2
 end
 G.quad = quad
+
+-- single tri ABC (ccw), verts {x,y,z,u,v}, one normal
+local function tri(out, a, b, c, col, nx, ny, nz, alpha)
+  out[#out + 1] = vert(a[1], a[2], a[3], a[4], a[5], col, nx, ny, nz, alpha)
+               .. vert(b[1], b[2], b[3], b[4], b[5], col, nx, ny, nz, alpha)
+               .. vert(c[1], c[2], c[3], c[4], c[5], col, nx, ny, nz, alpha)
+end
+G.tri = tri
+
+-- position/direction through an optional transform. Rigid xfs only
+-- (translate*rot): applydir doesn't renormalize, so scale would skew the
+-- lighting (same caveat as gbox's rot).
+local function xfp(xf, x, y, z)
+  if xf then return m4.apply(xf, x, y, z) end
+  return x, y, z
+end
+local function xfn(xf, x, y, z)
+  if xf then return m4.applydir(xf, x, y, z) end
+  return x, y, z
+end
 
 local F = { -- proto draw_gbox face tables: corner indices, normal, uv axes
   { { 0, 1, 2, 3 }, { 0, 0, -1 }, 1, 2 },
@@ -187,6 +208,84 @@ function G.gbox(out, xf, size, center, col, uvs, rot)
          { c[1], c[2], c[3], uw, vh }, { d[1], d[2], d[3], 0, vh },
          col, nx, ny, nz)
   end
+  return 12
+end
+
+-- extruded regular n-gon under xf (proto draw_prism): r0 bottom radius, r1
+-- top radius, height h from local y=0. Facet-flat side normals; uv wraps
+-- the perimeter (4 tiles around, h/2 down). caps: bit0 top, bit1 bottom.
+-- Returns tris emitted.
+function G.prism(out, xf, n, r0, r1, h, col, caps)
+  caps = caps or 0
+  local ntris = 0
+  for i = 0, n - 1 do
+    local a0, a1 = i * m.tau / n, (i + 1) * m.tau / n
+    local c0, s0 = m.cos(a0), m.sin(a0)
+    local c1, s1 = m.cos(a1), m.sin(a1)
+    local nl = m.sqrt((c0 + c1) ^ 2 + (s0 + s1) ^ 2)
+    local nx, ny, nz = xfn(xf, (c0 + c1) / nl, 0, (s0 + s1) / nl)
+    local u0, u1, vv = i / n * 4, (i + 1) / n * 4, h / 2
+    local ax, ay, az = xfp(xf, r1 * c0, h, r1 * s0)
+    local bx, by, bz = xfp(xf, r1 * c1, h, r1 * s1)
+    local cx, cy, cz = xfp(xf, r0 * c1, 0, r0 * s1)
+    local dx, dy, dz = xfp(xf, r0 * c0, 0, r0 * s0)
+    quad(out, { ax, ay, az, u0, 0 }, { bx, by, bz, u1, 0 },
+         { cx, cy, cz, u1, vv }, { dx, dy, dz, u0, vv }, col, nx, ny, nz)
+    ntris = ntris + 2
+    if (caps & 1) ~= 0 and r1 > 0.001 then
+      local px, py, pz = xfp(xf, 0, h, 0)
+      local ux, uy, uz = xfn(xf, 0, 1, 0)
+      tri(out, { px, py, pz, 0.5, 0.5 },
+          { ax, ay, az, 0.5 + 0.4 * c0, 0.5 + 0.4 * s0 },
+          { bx, by, bz, 0.5 + 0.4 * c1, 0.5 + 0.4 * s1 }, col, ux, uy, uz)
+      ntris = ntris + 1
+    end
+    if (caps & 2) ~= 0 then
+      local px, py, pz = xfp(xf, 0, 0, 0)
+      local ux, uy, uz = xfn(xf, 0, -1, 0)
+      tri(out, { px, py, pz, 0.5, 0.5 },
+          { cx, cy, cz, 0.5 + 0.4 * c1, 0.5 + 0.4 * s1 },
+          { dx, dy, dz, 0.5 + 0.4 * c0, 0.5 + 0.4 * s0 }, col, ux, uy, uz)
+      ntris = ntris + 1
+    end
+  end
+  return ntris
+end
+
+-- revolve a profile of {r,y, r,y, ...} pairs around local Y under xf (proto
+-- draw_lathe), n segments per ring. Smooth ring shading: per-vertex normals
+-- from the profile-plane slope, so this bypasses quad(). Returns tris.
+function G.lathe(out, xf, prof, n, col)
+  local npts = #prof // 2
+  local ntris = 0
+  for j = 0, npts - 2 do
+    local ra, ya = prof[j * 2 + 1], prof[j * 2 + 2]
+    local rb, yb = prof[j * 2 + 3], prof[j * 2 + 4]
+    local dy, dr = yb - ya, rb - ra
+    local len = m.sqrt(dy * dy + dr * dr)
+    local nr = len > 1e-6 and dy / len or 1
+    local ny = len > 1e-6 and -dr / len or 0
+    for i = 0, n - 1 do
+      local a0, a1 = i * m.tau / n, (i + 1) * m.tau / n
+      local c0, s0 = m.cos(a0), m.sin(a0)
+      local c1, s1 = m.cos(a1), m.sin(a1)
+      local n0x, n0y, n0z = xfn(xf, nr * c0, ny, nr * s0)
+      local n1x, n1y, n1z = xfn(xf, nr * c1, ny, nr * s1)
+      local u0, u1 = i / n * 4, (i + 1) / n * 4
+      local v0, v1 = j / (npts - 1) * 2, (j + 1) / (npts - 1) * 2
+      local ax, ay, az = xfp(xf, rb * c0, yb, rb * s0)
+      local bx, by, bz = xfp(xf, rb * c1, yb, rb * s1)
+      local cx, cy, cz = xfp(xf, ra * c1, ya, ra * s1)
+      local dx, dy_, dz = xfp(xf, ra * c0, ya, ra * s0)
+      local A = vert(ax, ay, az, u0, v1, col, n0x, n0y, n0z)
+      local B = vert(bx, by, bz, u1, v1, col, n1x, n1y, n1z)
+      local C = vert(cx, cy, cz, u1, v0, col, n1x, n1y, n1z)
+      local D = vert(dx, dy_, dz, u0, v0, col, n0x, n0y, n0z)
+      out[#out + 1] = A .. B .. C .. A .. C .. D
+      ntris = ntris + 2
+    end
+  end
+  return ntris
 end
 
 return G
