@@ -30,24 +30,32 @@ GREEN from the committed tree; 3 shots on llm-feed (soft composite,
 dither before/after zoom, re-shot ferry golden) with a softness-level
 question.
 
+## Verdicts landed (2026-07-17, human)
+
+All open feel questions resolved positive in one pass: rounds 4–7
+gameplay **"the feel is good. moving platform and all"** and the round-8
+presentation **"the soft filter looks correct"**. No change requests.
+Demo 1's two stated goals (movement feel + level aesthetic) are both
+human-approved. Direction chosen by the human for the next round (asked
+directly, 2026-07-17): **figures + mascot — start demo 2's character
+work** (over deepening demo 1 or unparking the editor).
+
 ## Exact next step
 
-1. **Human feel-check on the feed** (all open): NEW — the presentation
-   round (softness level ok vs proto? keep soft as the bounce default
-   or prefer sharp? dither strength read?) plus the mover round (lift
-   speed/size, ferry speed + dock wait, dome-rim walk difficulty, wall
-   balance-beam fun) and the still-open round-4/5/6 questions
-   (dome-stand embed depth, star touch timing, round collision
-   fairness, monolith bounds, gem radius/spin/bob, goal-star
-   readability).
-2. Then (human directive order, gameplay first): more course / feel
-   polish per verdicts; editor distillation stays parked. proto3d can
-   adopt the look knobs on its next touch (no golden depends on it).
+1. **The rigid-part figure runtime** (D3D-005): joint tree + rigid part
+   meshes + per-joint euler keyframes (lerp/stepped), root-only
+   translation, evaluated per frame into x_tris buffers via m4 rigid
+   transforms. New files (merge-clean); the SM64 technique.
+2. **The mascot as its first character** (approved direction: lathe
+   teardrop body, Rayman floating mitts/boots, antenna star, eye style
+   B): port proto draw_mascot geometry, idle + walk cycles, a showcase
+   cartridge with orbit camera → goldens + feed shots.
+3. proto3d can adopt the look knobs on its next touch (no golden
+   depends on it).
 
 Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
 record v2 for captured-cursor mouse look. Parked (unchanged): the
-PS1-preset extras (affine wobble + vertex snap) — VI-soft + 5551 grade
-SHIPPED this round.
+PS1-preset extras (affine wobble + vertex snap).
 
 ## 2026-07-17 (round 7) — moving platforms + the reload-pattern bug (superseded — see above)
 
