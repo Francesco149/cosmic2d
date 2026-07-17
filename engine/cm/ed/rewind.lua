@@ -55,6 +55,8 @@ local function state(ed)
   return r
 end
 
+local free_thumbtex -- defined with the preview lane below; freed on close
+
 -- Pure camera helpers are public so the headless selftest can pin the exact
 -- zoom-at-cursor and pan contract without an imgui surface.
 function M.default_view(lo, hi)
@@ -180,6 +182,7 @@ function M.close(ed, force)
   if scrub.paused() then scrub.close() end
   r.open, r.gesture, r.preview = nil, nil, nil
   r.summary = nil
+  free_thumbtex(r) -- release the preview lane's GPU textures
   return true
 end
 
@@ -295,9 +298,19 @@ local function draw_ruler(v, ax, y, aw, h, hi)
   pal.x_ig_line(ax, y, ax + aw, y, C.edge, 1)
 end
 
-local function draw_empty_previews(v, ax, y, aw, h, hi)
-  -- Empty cards are explicit absence, not generated screenshots. Minute
-  -- samples become real THMB media in the next A7 capture packet.
+-- Free the tray's cached preview textures except the frames in `keep` (nil =
+-- all). GPU slots are finite, so only currently-visible previews stay resident.
+function free_thumbtex(r, keep)
+  if not r.thumbtex then return end
+  for frame, tx in pairs(r.thumbtex) do
+    if not (keep and keep[frame]) then
+      pal.tex_free(tx.id)
+      r.thumbtex[frame] = nil
+    end
+  end
+end
+
+local function preview_ticks(v, ax, y, aw, h)
   local minute = 60 * 60
   local f = math.ceil(v.start / minute) * minute
   while f <= v.start + v.span do
@@ -305,9 +318,51 @@ local function draw_empty_previews(v, ax, y, aw, h, hi)
     pal.x_ig_line(x, y + 3, x, y + h - 3, 0x3a356066, 1)
     f = f + minute
   end
-  local msg = "NO PRESENTED-FRAME PREVIEWS IN THIS HISTORY"
-  local tw = pal.x_ig_text_size(msg, 10, 0)
-  text(ax + (aw - tw) * 0.5, y + (h - 10) * 0.48, 10, C.faint, msg)
+end
+
+-- The PREVIEWS lane: presented-frame thumbnails from the live history, drawn at
+-- their exact frame. ring_thumbs already decimates to a target count; we skip
+-- any that would still overlap a neighbour and decode/cache one GPU texture per
+-- visible frame. Chunk-less/adopted history has no preview yet, so the lane
+-- falls back to minute ticks + an honest absence label there.
+local function draw_previews(r, v, ax, y, aw, h, hi)
+  r.thumbtex = r.thumbtex or {}
+  local want = math.max(1, math.floor(aw / 96))
+  local q0, q1 = math.floor(v.start), math.ceil(v.start + v.span)
+  local ok, thumbs = pcall(trace.ring_thumbs, q0, q1, want)
+  if not ok then thumbs = {} end
+  local keep, last_x1, drew = {}, -1e9, false
+  for _, t in ipairs(thumbs) do
+    local cx = x_at(v, t.frame, ax, aw)
+    local dh = math.max(1, math.min(h - 10, t.h))
+    local dw = math.max(1, math.floor(t.w * dh / t.h + 0.5))
+    local x0 = cx - dw * 0.5
+    if x0 > last_x1 + 3 and cx >= ax - dw and cx <= ax + aw + dw then
+      local tx = r.thumbtex[t.frame]
+      if not tx then
+        local ok2, pix, pw, ph = pcall(pal.png_read, t.png)
+        if ok2 and pix then
+          tx = { id = pal.tex_create(pw, ph, pix), w = pw, h = ph }
+          r.thumbtex[t.frame] = tx
+        end
+      end
+      if tx then
+        local ty = y + (h - dh) * 0.5
+        pal.x_ig_rect_fill(x0 - 1, ty - 1, dw + 2, dh + 2, 0x000000aa, 2)
+        pal.x_ig_image(tx.id, x0, ty, dw, dh)
+        pal.x_ig_rect(x0, ty, dw, dh, C.edge, 1, 0)
+        pal.x_ig_line(cx, ty + dh, cx, y + h, 0x3a3560cc, 1)
+        keep[t.frame], last_x1, drew = true, x0 + dw, true
+      end
+    end
+  end
+  free_thumbtex(r, keep)
+  if not drew then
+    preview_ticks(v, ax, y, aw, h)
+    local msg = "NO PRESENTED-FRAME PREVIEWS IN THIS HISTORY"
+    local tw = pal.x_ig_text_size(msg, 10, 0)
+    text(ax + (aw - tw) * 0.5, y + (h - 10) * 0.48, 10, C.faint, msg)
+  end
 end
 
 local function draw_activity(summary, v, ax, y, aw, h, i)
@@ -621,7 +676,7 @@ function M.draw(ed, ig, i)
   draw_legend(bx + 260, head_y + 9)
 
   pal.x_ig_clip_push(ax, film_y, aw, axis_h)
-  draw_empty_previews(v, ax, film_y, aw, film_h, hi)
+  draw_previews(r, v, ax, film_y, aw, film_h, hi)
   local summary = summary_for(r, v, aw, hi)
   draw_activity(summary, v, ax, act_y, aw, act_h, i)
   draw_events(summary, v, ax, event_y, aw, event_h, i)
