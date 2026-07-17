@@ -6,7 +6,8 @@
 --
 -- The look is 100% PLACED sprites (D061): each room's .map carries a
 -- **backdrop** layer (a static hill-silhouette .tm, named so code can reach
--- it) behind a **ground** layer (the colliders autotiled into a .tm) — both
+-- it, scrolling at half camera speed via its LAYR v2 parallax factor)
+-- behind a **ground** layer (the colliders autotiled into a .tm) — both
 -- render in the map editor. Colliders draw nothing. A per-room grade adds
 -- the mood (warm town / cool overworld).
 
@@ -15,7 +16,7 @@ local map = cm.require("cm.map")
 local tmap = cm.require("cm.tmap")
 local palette = cm.require("cm.palette")
 
-local M = {}
+local M = select(2, ...) or {} -- adopt the module table (survives bundle re-execution)
 
 local T = 16 -- lay geometry on a tidy grid
 
@@ -168,7 +169,11 @@ local function bootstrap_room(def, room, proj)
   return map.encode {
     name = def.name, w = def.w, h = def.h, grid = def.grid, bg = def.bg,
     nofill = true, -- colliders draw nothing; the placed tilemaps ARE the art
-    layers = { { name = "backdrop", vis = true, on = true },
+    -- the backdrop layer scrolls at half the camera speed horizontally
+    -- (LAYR v2 parallax — presentation-only; colliders/markers stay
+    -- world-space). Vertical stays 1: the rooms are shallow and the
+    -- hill horizon is authored against the room bottom.
+    layers = { { name = "backdrop", vis = true, on = true, par_x = 0.5 },
                { name = "ground", vis = true, on = true } },
     colliders = def.colliders,
     places = places,
@@ -236,9 +241,10 @@ local SKY = {
   overworld = palette.load("engine/stock/pal/frostbyte-8.pal"),
 }
 
--- The landscape is now a PLACED backdrop layer inside the .map (world-space,
--- not parallaxed — it's just placed there, named "backdrop"). All that's left
--- to draw here is a flat per-room sky behind it (screen-fixed base color).
+-- The landscape is a PLACED backdrop layer inside the .map, riding the
+-- layer's LAYR v2 parallax factor (0.5 — draw_places scrolls it at half
+-- camera speed). All that's left to draw here is a flat per-room sky
+-- behind it (screen-fixed base color).
 function M.draw_bg(camx, camy)
   M.sync()
   local paint = cm.require("cm.paint")
