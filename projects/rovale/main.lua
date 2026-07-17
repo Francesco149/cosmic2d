@@ -22,6 +22,7 @@ local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local world = cm.require("world")
 local spr = cm.require("cm.spr")
+local walk = cm.require("cm.walk")
 local player = cm.require("player")
 local npc = cm.require("npc")
 local audio = cm.require("audio")
@@ -186,7 +187,8 @@ local function tanf()
   return TANF
 end
 
--- screen pixel -> ground point (the click ray): coarse march + bisect
+-- screen pixel -> ground point (the click ray): this rig's NDC ray +
+-- cm.walk.raycast's march/bisect against the sim ground
 local function pick(mx, my)
   local ex, ey, ez, dx, dy, dz, rx, ry, rz, ux, uy, uz = cam_basis()
   local ndx = (mx + 0.5) / W * 2 - 1
@@ -197,25 +199,7 @@ local function pick(mx, my)
   local kz = dz + rz * (ndx * tf * W / H) + uz * (ndy * tf)
   local kl = m.sqrt(kx * kx + ky * ky + kz * kz)
   kx, ky, kz = kx / kl, ky / kl, kz / kl
-  local prev = 0
-  for s = 1, 400 do
-    local t = s * 0.35
-    local x, y, z = ex + kx * t, ey + ky * t, ez + kz * t
-    if y < world.ground(x, z) then
-      local lo, hi = prev, t
-      for _ = 1, 14 do
-        local mid = (lo + hi) * 0.5
-        if ey + ky * mid < world.ground(ex + kx * mid, ez + kz * mid) then
-          hi = mid
-        else
-          lo = mid
-        end
-      end
-      local t2 = (lo + hi) * 0.5
-      return ex + kx * t2, ez + kz * t2
-    end
-    prev = t
-  end
+  return walk.raycast(world.ground, ex, ey, ez, kx, ky, kz)
 end
 
 -- world point -> screen pixel (nil if behind/off-screen): the demo's

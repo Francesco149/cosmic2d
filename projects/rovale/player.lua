@@ -13,12 +13,13 @@ local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local world = cm.require("world")
 local spr = cm.require("cm.spr")
+local walk = cm.require("cm.walk")
 local mascot = cm.require("cm.mascot")
 
 local P = select(2, ...) or {}
 
--- ro.player layout: [0]x [4]z [8]face [12]dist_phase [16]u32 path_len
--- [20]u32 path_idx [24]marker x [28]marker z [32]marker ttl
+-- ro.player is a cm.walk WALKER buffer (layout owned/documented there):
+-- [0]x [4]z [8]face [12]dist_phase [16]len [20]idx [24/28/32]marker
 -- [40..] u32 path cells (PATH_MAX)
 local PATH_MAX = 160
 local buf
@@ -54,63 +55,22 @@ function P.face()
 end
 
 function P.moving()
-  return buf:u32(20) < buf:u32(16)
+  return walk.moving(buf)
 end
 
 -- a world-point walk command (real click or the demo's synthetic one):
--- snap to walkable, path, arm the marker. Returns true if a path exists.
--- Silent: the caller owns the click sfx (a held-repeat re-command must
--- not spam it — human playtest 2026-07-17).
+-- cm.walk snaps to walkable, paths, arms the marker. Returns true if a
+-- path exists. Silent: the caller owns the click sfx (a held-repeat
+-- re-command must not spam it — human playtest 2026-07-17).
 function P.command(wx, wz)
   local k = state.doc.knobs.move
-  local px, pz = buf:f32(0), buf:f32(4)
-  local scx, scz = world.cell(px, pz)
-  local gcx, gcz = world.cell(wx, wz)
-  gcx, gcz = world.snap_walkable(gcx, gcz, 4)
-  if not gcx then return false end
-  local path = world.astar(scx, scz, gcx, gcz)
-  if not path then return false end
-  local n = m.min(#path, PATH_MAX)
-  for i = 1, n do buf:u32(36 + i * 4, path[i]) end
-  buf:u32(16, n)
-  buf:u32(20, 0)
-  buf:f32(24, wx)
-  buf:f32(28, wz)
-  buf:f32(32, k.marker_ttl)
-  return true
+  return walk.command(buf, PATH_MAX, world.GW, world.walkable,
+                      wx, wz, 4, k.marker_ttl)
 end
 
 function P.step()
   local k = state.doc.knobs.move
-  local x, z = buf:f32(0), buf:f32(4)
-  local len, idx = buf:u32(16), buf:u32(20)
-  local left = k.speed / 60.0
-  while idx < len and left > 1e-6 do
-    local cell = buf:u32(36 + (idx + 1) * 4)
-    local tx = (cell % world.GW) + 0.5
-    local tz = (cell // world.GW) + 0.5
-    local dx, dz = tx - x, tz - z
-    local d = m.sqrt(dx * dx + dz * dz)
-    if d < 1e-4 then
-      idx = idx + 1
-    else
-      local step = m.min(d, left)
-      x = x + dx / d * step
-      z = z + dz / d * step
-      left = left - step
-      buf:f32(12, buf:f32(12) + step)
-      -- ease the facing toward the travel direction (short arc)
-      local want = m.atan2(dx, dz)
-      local face = buf:f32(8)
-      local da = m.atan2(m.sin(want - face), m.cos(want - face))
-      buf:f32(8, m.fmod(face + da * k.turn, m.tau))
-      if step >= d - 1e-6 then idx = idx + 1 end
-    end
-  end
-  buf:f32(0, x)
-  buf:f32(4, z)
-  buf:u32(20, idx)
-  buf:f32(32, m.max(0, buf:f32(32) - 1))
+  walk.step(buf, world.GW, k.speed, k.turn)
 end
 
 -- sheet row + frame: pure function of the sim (walk on a distance phase)

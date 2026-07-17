@@ -10,7 +10,7 @@
 -- replays byte-identical under any bake budget (the §10 honesty shape).
 --
 -- Sim truth: W.ground (terrain + walkable deck slabs, the §4 walkable-prop
--- answer), W.walkable/W.astar on the 64x64 walk grid (1u cells, the GAT
+-- answer), W.walkable + cm.walk pathing on the 64x64 walk grid (1u, the GAT
 -- scale: 2x the render tiles), W.shadow (the same pure function the bake
 -- multiplies in tints sprites at their feet — recipe rule 0.7+0.3*sh).
 
@@ -227,7 +227,7 @@ function W.shadow(wx, wz)
   return s
 end
 
--- ---- the walk grid (GAT scale: 64x64 cells of 1u) + heap A* --------------
+-- ---- the walk grid (GAT scale: 64x64 cells of 1u; A*/snap ride cm.walk) --
 
 local GW = N * 2 -- 64
 W.GW = GW
@@ -269,112 +269,6 @@ end
 
 function W.cell(wx, wz) -- world -> cell
   return m.clamp(floor(wx), 0, GW - 1), m.clamp(floor(wz), 0, GW - 1)
-end
-
--- nearest walkable cell to (cx,cz) within r rings (the RO click snap)
-function W.snap_walkable(cx, cz, r)
-  if W.walkable(cx, cz) then return cx, cz end
-  for ring = 1, r do
-    local best, bd = nil, 1e18
-    for dz = -ring, ring do
-      for dx = -ring, ring do
-        if m.max(m.abs(dx), m.abs(dz)) == ring and W.walkable(cx + dx, cz + dz) then
-          local d = dx * dx + dz * dz
-          if d < bd then bd, best = d, { cx + dx, cz + dz } end
-        end
-      end
-    end
-    if best then return best[1], best[2] end
-  end
-  return nil
-end
-
--- heap A*, 8-dir, no corner cutting; returns a list of cell indices
--- (start cell excluded, goal included) or nil. ~3 ms worst case (§11).
-function W.astar(sx, sz, gx, gz)
-  if not W.walkable(gx, gz) then return nil end
-  if sx == gx and sz == gz then return {} end
-  local INF = 1e18
-  local gs, came, closed = {}, {}, {}
-  local heap, hn = {}, 0
-  local function hpush(node, f)
-    hn = hn + 1
-    heap[hn] = { node, f }
-    local i = hn
-    while i > 1 do
-      local p = i // 2
-      if heap[p][2] <= heap[i][2] then break end
-      heap[p], heap[i] = heap[i], heap[p]
-      i = p
-    end
-  end
-  local function hpop()
-    local top = heap[1]
-    heap[1] = heap[hn]
-    heap[hn] = nil
-    hn = hn - 1
-    local i = 1
-    while true do
-      local l, r = 2 * i, 2 * i + 1
-      local sm = i
-      if l <= hn and heap[l][2] < heap[sm][2] then sm = l end
-      if r <= hn and heap[r][2] < heap[sm][2] then sm = r end
-      if sm == i then break end
-      heap[sm], heap[i] = heap[i], heap[sm]
-      i = sm
-    end
-    return top[1]
-  end
-  local function hc(x, z)
-    local dx, dz = m.abs(x - gx), m.abs(z - gz)
-    local mn = dx < dz and dx or dz
-    return (dx + dz) - 0.5858 * mn
-  end
-  local s0 = sz * GW + sx
-  gs[s0] = 0
-  hpush(s0, hc(sx, sz))
-  local goal = gz * GW + gx
-  while hn > 0 do
-    local cur = hpop()
-    if not closed[cur] then
-      closed[cur] = true
-      if cur == goal then break end
-      local cx, cz = cur % GW, cur // GW
-      for dz = -1, 1 do
-        for dx = -1, 1 do
-          if dx ~= 0 or dz ~= 0 then
-            local nx, nz = cx + dx, cz + dz
-            if W.walkable(nx, nz) then
-              local ni = nz * GW + nx
-              if not closed[ni]
-                 and (dx == 0 or dz == 0
-                      or (W.walkable(nx, cz) and W.walkable(cx, nz))) then
-                local step = (dx == 0 or dz == 0) and 1.0 or 1.4142135
-                local ng = gs[cur] + step
-                if ng < (gs[ni] or INF) then
-                  gs[ni] = ng
-                  came[ni] = cur
-                  hpush(ni, ng + hc(nx, nz))
-                end
-              end
-            end
-          end
-        end
-      end
-    end
-  end
-  if not came[goal] and s0 ~= goal then return nil end
-  local path = {}
-  local cur = goal
-  while cur and cur ~= s0 do
-    path[#path + 1] = cur
-    cur = came[cur]
-  end
-  -- reverse in place (came walks goal -> start)
-  for i = 1, #path // 2 do
-    path[i], path[#path - i + 1] = path[#path - i + 1], path[i]
-  end
-  return path
 end
 
 -- ---- materials + the per-tile bake (render-class) ------------------------
