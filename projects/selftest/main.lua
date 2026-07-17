@@ -304,6 +304,71 @@ local function t_ease()
   check(ease.get("selftest_step")(0.7) == 1.0, "custom curve registered")
 end
 
+-- ---- cm.box: pure AABB queries + the axis-at-a-time slide (A5/D090) ----
+
+local function t_box()
+  local box = cm.require("cm.box")
+  -- overlap is strict: sharing an edge is NOT overlapping
+  check(box.overlap(0, 0, 10, 10, 5, 5, 10, 10), "box: plain overlap")
+  check(not box.overlap(0, 0, 10, 10, 10, 0, 10, 10), "box: right edge touch is out")
+  check(not box.overlap(0, 0, 10, 10, 0, 10, 10, 10), "box: bottom edge touch is out")
+  check(box.overlap(0, 0, 10, 10, 9, 9, 10, 10), "box: 1px in is in")
+  check(not box.overlap(0, 0, 10, 10, -10, 0, 10, 10), "box: left edge touch is out")
+  check(box.overlap(0, 0, 10, 10, 2, 2, 4, 4), "box: containment overlaps")
+  check(box.overlap_rect(0, 0, 10, 10, { x = 5, y = 5, w = 10, h = 10 }),
+        "box: keyed-rect form agrees")
+  check(not box.overlap_rect(0, 0, 10, 10, { x = 10, y = 0, w = 5, h = 5 }),
+        "box: keyed-rect edge is out")
+  -- touch: centered square at a point (the pickup shape)
+  check(box.touch(0, 0, 10, 10, { x = 12, y = 5 }, 6), "box: touch reaches")
+  check(not box.touch(0, 0, 10, 10, { x = 13, y = 5 }, 6), "box: touch edge is out")
+  -- contains: right/bottom exclusive, matching overlap
+  check(box.contains(0, 0, 10, 10, 0, 0), "box: contains top-left corner")
+  check(not box.contains(0, 0, 10, 10, 10, 5), "box: right edge excluded")
+  check(not box.contains(0, 0, 10, 10, 5, 10), "box: bottom edge excluded")
+  check(box.contains(0, 0, 10, 10, 9.5, 9.5), "box: interior float point")
+  -- expand grows every side; negative shrinks
+  local ex, ey, ew, eh = box.expand(10, 20, 30, 40, 3)
+  check(ex == 7 and ey == 17 and ew == 36 and eh == 46, "box: expand grows")
+  ex, ey, ew, eh = box.expand(10, 20, 30, 40, -5)
+  check(ex == 15 and ey == 25 and ew == 20 and eh == 30, "box: expand shrinks")
+  -- hit: first match in array order; extra rect fields pass through
+  local rects = { { x = 0, y = 0, w = 10, h = 10, tag = "a" },
+                  { x = 20, y = 0, w = 10, h = 10, tag = "b" },
+                  { x = 22, y = 0, w = 10, h = 10, tag = "c" } }
+  local i, r = box.hit(rects, 25, 5, 2, 2)
+  check(i == 2 and r.tag == "b", "box: hit returns the first in order")
+  check(box.hit(rects, 100, 100, 5, 5) == nil, "box: hit misses honestly")
+  check(box.hit({}, 0, 0, 5, 5) == nil, "box: empty list misses")
+  local ids = box.hits(rects, 21, 5, 5, 5)
+  check(#ids == 2 and ids[1] == 2 and ids[2] == 3, "box: hits lists in order")
+  local reuse = { 9, 9, 9, 9 }
+  box.hits(rects, 100, 100, 1, 1, reuse)
+  check(#reuse == 0, "box: hits clears the reused table")
+  -- slide: whole-step axis-at-a-time with cancelled axes reported
+  local walls = { { x = 20, y = -100, w = 10, h = 200 } } -- a right wall
+  local nx, ny, hx, hy = box.slide(0, 0, 10, 10, 5, 3, walls)
+  check(nx == 5 and ny == 3 and not hx and not hy, "box: free slide moves both")
+  nx, ny, hx, hy = box.slide(8, 0, 10, 10, 5, 3, walls)
+  check(nx == 8 and ny == 3 and hx and not hy, "box: x blocked, y still moves")
+  nx, ny, hx, hy = box.slide(10, 0, 10, 10, 0, 7, walls) -- flush against it
+  check(nx == 10 and ny == 7 and not hx and not hy,
+        "box: flush contact never counts as overlap")
+  local floorw = { { x = -100, y = 20, w = 200, h = 10 } }
+  nx, ny, hx, hy = box.slide(0, 8, 10, 10, 4, 5, floorw)
+  check(nx == 4 and ny == 8 and not hx and hy, "box: y blocked, x still moves")
+  local corner = { { x = 20, y = -100, w = 10, h = 200 },
+                   { x = -100, y = 20, w = 200, h = 10 } }
+  nx, ny, hx, hy = box.slide(12, 12, 10, 10, 5, 5, corner)
+  check(nx == 12 and ny == 12 and hx and hy, "box: cornered cancels both")
+  nx, ny = box.slide(0, 0, 10, 10, 0, 0, walls)
+  check(nx == 0 and ny == 0, "box: zero move is a no-op")
+  -- the tunneling caveat is real and documented: a step past a thin wall
+  -- lands on the far side (this is the lightweight mover, not the swept one)
+  nx = box.slide(0, 0, 10, 10, 40, 0, walls)
+  check(nx == 40, "box: whole-step tunneling is the documented tradeoff")
+end
+
 -- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -8535,6 +8600,7 @@ function game.init()
   t_canon()
   t_exp2()
   t_ease()
+  t_box()
   t_snapshot()
   t_buf_poke()
   t_input()

@@ -8,12 +8,11 @@
 --   PAIN(actor):  props/items/triggers are parallel ad-hoc tables per room;
 --                 stable ids are hand-invented ("cellar:key"), iteration
 --                 order is array order by construction.
---   PAIN(query):  blocked()/touch() are the same AABB loops every project
---                 rewrites (third copy in this repo: demo, topdown, here).
 --   PAIN(depth):  the y-sort comparator + rebuilt draw list every frame is
 --                 boilerplate every top-down game needs.
---   PAIN(move):   axis-at-a-time wall sliding + diagonal normalization is
---                 copied from the topdown template verbatim.
+--   resolved(query/move): this file's hand-rolled overlap loops and the
+--                 axis-at-a-time wall slide moved into cm.box (A5/D090) —
+--                 swarm and the demo keep their naive copies as contrast.
 --
 -- Everything that changes per frame lives in state.doc (snapshots, traces,
 -- rewind stay exact); cm.math sin drives bobs off the sim frame count.
@@ -21,6 +20,7 @@ local state = cm.require("cm.state")
 local input = cm.require("cm.input")
 local text = cm.require("cm.text")
 local m = cm.require("cm.math")
+local box = cm.require("cm.box")
 
 local W, H = pal.gfx_size()
 local PW, PH = 10, 12         -- player footprint (collision is the base)
@@ -92,11 +92,6 @@ function game.init()
   if d.room == nil then reset(d) end
 end
 
--- PAIN(query): the AABB overlap loop, hand-rolled again
-local function overlap(x, y, w, h, r)
-  return x < r.x + r.w and x + w > r.x and y < r.y + r.h and y + h > r.y
-end
-
 local function solids(room, d)
   -- walls + pillar bases + the closed gate/door, rebuilt per call
   -- PAIN(actor/query): no world to ask; every caller reassembles the set
@@ -118,16 +113,10 @@ local function solids(room, d)
   return list
 end
 
-local function blocked(room, d, x, y)
-  for _, r in ipairs(solids(room, d)) do
-    if overlap(x, y, PW, PH, r) then return true end
-  end
-  return false
-end
-
 local function near_door(room, d)
-  return room.door and overlap(d.x - 6, d.y - 6, PW + 12, PH + 12, {
-    x = room.door.x, y = room.door.y, w = room.door.w, h = room.door.h })
+  if not room.door then return false end
+  local ex, ey, ew, eh = box.expand(d.x, d.y, PW, PH, 6) -- interact reach
+  return box.overlap_rect(ex, ey, ew, eh, room.door)
 end
 
 function game.step()
@@ -136,9 +125,8 @@ function game.step()
   if d.won then return end
   local room = ROOMS[d.room]
 
-  -- movement: the analog stick wins when deflected, else digital keys.
-  -- PAIN(move): quantized-axis scaling + axis-at-a-time sliding + DIAG,
-  -- copied from the topdown starter almost line for line.
+  -- movement: the analog stick wins when deflected, else digital keys;
+  -- cm.box.slide is the wall-slide the topdown starter hand-rolls (A5)
   local ax = input.pad_axis(1, "lx") / 127
   local ay = input.pad_axis(1, "ly") / 127
   local dx, dy = ax * SPEED, ay * SPEED
@@ -148,28 +136,23 @@ function game.step()
     local s = (ix ~= 0 and iy ~= 0) and SPEED * DIAG or SPEED
     dx, dy = ix * s, iy * s
   end
-  if dx ~= 0 and not blocked(room, d, d.x + dx, d.y) then d.x = d.x + dx end
-  if dy ~= 0 and not blocked(room, d, d.x, d.y + dy) then d.y = d.y + dy end
+  d.x, d.y = box.slide(d.x, d.y, PW, PH, dx, dy, solids(room, d))
 
   -- touch pickups (the key persists across rooms in doc — the A6 line)
-  if d.room == "cellar" and not d.has_key then
-    local k = room.key
-    if overlap(d.x, d.y, PW, PH, { x = k.x - 4, y = k.y - 4, w = 8, h = 8 }) then
-      d.has_key = true
-    end
+  if d.room == "cellar" and not d.has_key
+     and box.touch(d.x, d.y, PW, PH, room.key, 8) then
+    d.has_key = true
   end
-  if d.room == "vault" and not d.gem then
-    local g = room.gem
-    if overlap(d.x, d.y, PW, PH, { x = g.x - 5, y = g.y - 5, w = 10, h = 10 }) then
-      d.gem = true
-      d.won = true
-    end
+  if d.room == "vault" and not d.gem
+     and box.touch(d.x, d.y, PW, PH, room.gem, 10) then
+    d.gem = true
+    d.won = true
   end
 
   -- the pressure plate latches the gate open (walk-on trigger)
   if d.room == "vault" and not d.plate then
     local p = room.plate
-    if overlap(d.x, d.y, PW, PH, { x = p.x - 7, y = p.y - 5, w = 14, h = 10 }) then
+    if box.overlap(d.x, d.y, PW, PH, p.x - 7, p.y - 5, 14, 10) then
       d.plate = true
     end
   end
@@ -181,13 +164,11 @@ function game.step()
   end
 
   -- room transition: walk into an open doorway's rect
-  if room.door and (not room.door.locked or d.door_open) then
-    if overlap(d.x, d.y, PW, PH, { x = room.door.x, y = room.door.y,
-                                   w = room.door.w, h = room.door.h }) then
-      local dest = ROOMS[room.door.to]
-      d.room = room.door.to
-      d.x, d.y = dest.spawn.x, dest.spawn.y
-    end
+  if room.door and (not room.door.locked or d.door_open)
+     and box.overlap_rect(d.x, d.y, PW, PH, room.door) then
+    local dest = ROOMS[room.door.to]
+    d.room = room.door.to
+    d.x, d.y = dest.spawn.x, dest.spawn.y
   end
 end
 

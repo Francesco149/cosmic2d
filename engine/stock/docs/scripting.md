@@ -301,9 +301,40 @@ Useful queries are:
   order.
 
 The mover handles solid and one-way chains, slopes up to 45 degrees, and map
-bounds. General AABB/circle layers, raycasts, and trigger-query ergonomics are
-still alpha A5 work; projects currently scan markers or use small overlap
-helpers as the demo does.
+bounds.
+
+## Rectangles, triggers, and the lightweight slide (`cm.box`)
+
+For game-object rectangles that are not map terrain — pickups, triggers,
+doorways, hand-built rooms — `cm.box` is a set of pure AABB helpers. Rects
+are plain keyed tables `{ x=, y=, w=, h= }` (your actor tables pass through
+untouched), overlap is strict (rects sharing only an edge do NOT overlap),
+and everything is exact math on the inputs, so determinism is trivial.
+
+    local box = cm.require("cm.box")
+
+    -- did we grab the coin? (a centered square of side 8 at coin.x/y)
+    if box.touch(d.x, d.y, PW, PH, coin, 8) then ... end
+
+    -- are we inside the doorway rect?
+    if box.overlap_rect(d.x, d.y, PW, PH, room.door) then ... end
+
+    -- interaction reach: grow our rect, then test
+    local ex, ey, ew, eh = box.expand(d.x, d.y, PW, PH, 6)
+    if box.overlap_rect(ex, ey, ew, eh, room.door) then ... end
+
+    -- first solid we would hit, in array order
+    local i, r = box.hit(solids, x, y, w, h)
+
+    -- walk with the classic wall-slide feel (axis-at-a-time)
+    d.x, d.y = box.slide(d.x, d.y, PW, PH, dx, dy, solids)
+
+`box.slide` moves one whole step per axis and cancels an axis entirely when
+it would overlap — the feel every top-down game hand-rolls. It is NOT swept:
+a step larger than a wall's thickness tunnels, so fast movers against real
+terrain belong to `room.world:move` above. The bundled `cellar` project is
+the worked example; layers/masks, circles, raycasts, and richer trigger
+ergonomics remain later A5 work.
 
 ## Sound effects and music
 
@@ -436,6 +467,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.gfx` — camera/layers, PNG textures, sprite rectangles, pixel snap.
 - `cm.text` — bitmap text drawing and measurement.
 - `cm.map` / `cm.collide` — map assets, placements, markers, swept AABBs.
+- `cm.box` — pure AABB overlap/queries and the lightweight wall slide.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
