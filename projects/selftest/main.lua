@@ -765,6 +765,96 @@ local function t_tween()
         "tween: same ops, same canonical bytes")
 end
 
+-- ---- cm.depth: stable draw-order sorting (A5/D095) ----
+
+local function t_depth()
+  local depth = cm.require("cm.depth")
+
+  -- push refusals: key must be a real number, item must exist
+  local dl = depth.list()
+  check(not pcall(depth.push, dl, "ten", "a"), "depth: string key refused")
+  check(not pcall(depth.push, dl, nil, "a"), "depth: nil key refused")
+  check(not pcall(depth.push, dl, 0 / 0, "a"), "depth: NaN key refused")
+  check(not pcall(depth.push, dl, 5, nil), "depth: nil item refused")
+  check(#dl == 0, "depth: refused pushes leave the list empty")
+
+  -- sort orders ascending by key; items pass through untouched
+  local pa, pb = { name = "a" }, { name = "b" }
+  depth.push(dl, 30, pa)
+  depth.push(dl, 10, "tag")
+  depth.push(dl, 20, pb)
+  depth.sort(dl)
+  local got, keys = {}, {}
+  for i, item, key in depth.each(dl) do
+    got[i], keys[i] = item, key
+  end
+  check(#got == 3 and got[1] == "tag" and got[2] == pb and got[3] == pa,
+        "depth: sort ascends by key, any item type passes through")
+  check(keys[1] == 10 and keys[2] == 20 and keys[3] == 30,
+        "depth: each reports the keys")
+  check(pa.name == "a" and pa.key == nil, "depth: items are not mutated")
+
+  -- ties keep push order: pushed later draws later (on top)
+  depth.clear(dl)
+  check(#dl == 0, "depth: clear empties for reuse")
+  depth.push(dl, 5, "first")
+  depth.push(dl, 5, "second")
+  depth.push(dl, 3, "under")
+  depth.push(dl, 5, "third")
+  depth.sort(dl)
+  got = {}
+  for i, item in depth.each(dl) do got[i] = item end
+  check(got[1] == "under" and got[2] == "first" and got[3] == "second"
+          and got[4] == "third",
+        "depth: equal keys keep push order")
+  depth.sort(dl)
+  local again = {}
+  for i, item in depth.each(dl) do again[i] = item end
+  check(again[1] == got[1] and again[2] == got[2] and again[3] == got[3]
+          and again[4] == got[4], "depth: re-sort is idempotent")
+
+  -- empty and single-entry lists are fine
+  local e = depth.list()
+  depth.sort(e)
+  local n = 0
+  for _ in depth.each(e) do n = n + 1 end
+  check(n == 0, "depth: empty list sorts and iterates")
+  depth.push(e, 1, "only")
+  depth.sort(e)
+  check(select(2, depth.each(e)(e, 0)) == "only", "depth: single entry holds")
+
+  -- negative/float keys order by plain numeric comparison
+  depth.clear(dl)
+  depth.push(dl, 0.5, "b")
+  depth.push(dl, -2, "a")
+  depth.push(dl, 0.75, "c")
+  depth.sort(dl)
+  got = {}
+  for i, item in depth.each(dl) do got[i] = item end
+  check(got[1] == "a" and got[2] == "b" and got[3] == "c",
+        "depth: negative and float keys compare plainly")
+
+  -- ysort: stable in-place ascending by field, default "y"
+  local i1 = { y = 40, id = 1 }
+  local i2 = { y = 12, id = 2 }
+  local i3 = { y = 40, id = 3 }
+  local i4 = { y = 8, id = 4 }
+  local arr = { i1, i2, i3, i4 }
+  check(depth.ysort(arr) == arr, "depth: ysort returns the same table")
+  check(arr[1] == i4 and arr[2] == i2 and arr[3] == i1 and arr[4] == i3,
+        "depth: ysort ascends and equal ys keep array order")
+  local custom = { { base = 9 }, { base = 2 }, { base = 5 } }
+  depth.ysort(custom, "base")
+  check(custom[1].base == 2 and custom[2].base == 5 and custom[3].base == 9,
+        "depth: ysort sorts a custom field")
+  check(not pcall(depth.ysort, { { y = 1 }, { z = 2 } }),
+        "depth: ysort refuses a missing field by index")
+  check(not pcall(depth.ysort, { { y = 0 / 0 } }),
+        "depth: ysort refuses a NaN field")
+  depth.ysort({})
+  check(true, "depth: ysort accepts an empty array")
+end
+
 -- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -9035,6 +9125,7 @@ function game.init()
   t_actor()
   t_camera()
   t_tween()
+  t_depth()
   t_snapshot()
   t_buf_poke()
   t_input()

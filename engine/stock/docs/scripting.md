@@ -518,6 +518,41 @@ shake / death flash triple is three `play` calls, one `tick`, and two
 draw lines. Sequences/chains, auto-writing field tweens, callbacks, and
 springs are deliberately absent for now.
 
+## Depth sorting (`cm.depth`)
+
+Top-down games draw by feet position: things lower on the screen draw
+later, in front. `cm.depth` is the stable draw-order sort that pattern
+hand-rolls — push an explicit sort key (usually the base/feet y) with
+your own item, sort, walk back-to-front:
+
+    local depth = cm.require("cm.depth")
+
+    -- in draw, after the floor/flat layers:
+    local dl = depth.list()
+    for _, p in ipairs(room.pillars) do
+      depth.push(dl, p.y + PILLAR_BASE, p)   -- key = the base line
+    end
+    depth.push(dl, d.y + PLAYER_H, "player") -- items can be anything
+    depth.sort(dl)
+    for _, item in depth.each(dl) do
+      if item == "player" then draw_player(d) else draw_pillar(item) end
+    end
+
+- The sort is **stable and total**: ascending by key, and equal keys keep
+  push order (pushed later draws later, on top). Ordering is explicit
+  data, never table/hash order, so drawing stays deterministic.
+- Items pass through untouched — actor tables, static prop tables, or a
+  plain string tag all work. `each` also yields the key as a third value.
+- Reuse a list across frames with `depth.clear(dl)` if you prefer (the
+  `box.hits` pattern); a fresh `depth.list()` per draw is fine too.
+- Already have an array of tables carrying a `y`? `depth.ysort(items)`
+  is the one-liner: a stable in-place ascending sort (pass a field name
+  to sort by something else, e.g. `depth.ysort(props, "base")`).
+
+This is within-layer ordering. Parallax and screen-fixed layers are
+`gfx.layer` (and per-map-layer `par` factors in the map window); the
+bundled top-down demo (cellar) is the worked example.
+
 ## Sound effects and music
 
 Instruments must be uploaded into the simulation bank before use. The demo's
@@ -653,6 +688,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.actor` — actor worlds in doc: stable ids, tags, spawn order, timers.
 - `cm.camera` — follow/deadzone, bounds, room cuts, shake, world<->screen.
 - `cm.tween` — named effect counters: hit pause, flashes, shake, eased decay.
+- `cm.depth` — stable draw-order sorting: y-sorted draw lists, `ysort`.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.

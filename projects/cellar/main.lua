@@ -8,12 +8,13 @@
 --   PAIN(actor):  props/items/triggers are parallel ad-hoc tables per room;
 --                 stable ids are hand-invented ("cellar:key"), iteration
 --                 order is array order by construction.
---   PAIN(depth):  the y-sort comparator + rebuilt draw list every frame is
---                 boilerplate every top-down game needs.
 --   resolved(query/move): this file's hand-rolled overlap loops and the
 --                 axis-at-a-time wall slide moved into cm.box (A5/D090);
 --                 the demo keeps its naive copy as contrast (swarm's
 --                 moved into cm.actor at D091).
+--   resolved(depth): the hand-rolled y-sort comparator + draw list moved
+--                 into cm.depth (A5/D095): push base-y keys, stable sort,
+--                 walk back-to-front — ties draw in push order.
 --
 -- Everything that changes per frame lives in state.doc (snapshots, traces,
 -- rewind stay exact); cm.math sin drives bobs off the sim frame count.
@@ -22,6 +23,7 @@ local input = cm.require("cm.input")
 local text = cm.require("cm.text")
 local m = cm.require("cm.math")
 local box = cm.require("cm.box")
+local depth = cm.require("cm.depth")
 
 local W, H = pal.gfx_size()
 local PW, PH = 10, 12         -- player footprint (collision is the base)
@@ -208,27 +210,20 @@ function game.draw()
     pal.quad(g.x - 4, g.y - 4 + m.sin(t * 0.07) * 2, 8, 8, 0.4, 0.9, 0.85, 1)
   end
 
-  -- PAIN(depth): the y-sort. Rebuild a draw list of pillars + player every
-  -- frame and sort by base y (x, then kind, break ties deterministically).
-  local list = {}
-  for _, p in ipairs(room.pillars) do
-    list[#list + 1] = { y = p.y + PILBASE, x = p.x, kind = 0, p = p }
-  end
-  list[#list + 1] = { y = d.y + PH, x = d.x, kind = 1 }
-  table.sort(list, function(a, b)
-    if a.y ~= b.y then return a.y < b.y end
-    if a.x ~= b.x then return a.x < b.x end
-    return a.kind < b.kind
-  end)
-  for _, e in ipairs(list) do
-    if e.kind == 0 then
-      local p = e.p
-      pal.quad(p.x, p.y + PILBASE - PILTALL, PILW, PILTALL, 0.24, 0.21, 0.19, 1)
-      pal.quad(p.x, p.y + PILBASE - PILTALL, PILW, 4, 0.38, 0.34, 0.30, 1)
-      pal.quad(p.x, p.y, PILW, PILBASE, 0.20, 0.17, 0.15, 1)
-    else
+  -- depth: cm.depth carries the y-sort (A5/D095) — push base-y keys,
+  -- stable sort (ties draw in push order), walk back-to-front
+  local dl = depth.list()
+  for _, p in ipairs(room.pillars) do depth.push(dl, p.y + PILBASE, p) end
+  depth.push(dl, d.y + PH, "player")
+  depth.sort(dl)
+  for _, e in depth.each(dl) do
+    if e == "player" then
       pal.quad(d.x, d.y - 6, PW, PH + 6, 0.92, 0.72, 0.45, 1)
       pal.quad(d.x + 2, d.y - 4, PW - 4, 4, 0.5, 0.3, 0.2, 1)
+    else
+      pal.quad(e.x, e.y + PILBASE - PILTALL, PILW, PILTALL, 0.24, 0.21, 0.19, 1)
+      pal.quad(e.x, e.y + PILBASE - PILTALL, PILW, 4, 0.38, 0.34, 0.30, 1)
+      pal.quad(e.x, e.y, PILW, PILBASE, 0.20, 0.17, 0.15, 1)
     end
   end
 
