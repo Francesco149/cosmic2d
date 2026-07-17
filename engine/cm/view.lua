@@ -197,7 +197,8 @@ function M.save_accessibility()
   end
   local t = { editor_scale = M.cfg.editor_scale,
               chrome_scale = M.cfg.chrome_scale,
-              access_auto = M.cfg.access_auto }
+              access_auto = M.cfg.access_auto,
+              history_budget_mb = M.cfg.history_budget_mb }
   local ok, err = pal.write_file_atomic(path, cm.require("cm.state").canon(t),
                                         M._access_save_fail)
   if not ok then
@@ -230,6 +231,27 @@ function M.load_accessibility()
     M.cfg.access_auto = false
     M.access_resolved = true
   end
+  local mb = M.budget_mb_ok(t.history_budget_mb)
+  if mb then M.cfg.history_budget_mb = mb end
+end
+
+-- The rewind history disk budget (A7 retention surface) is machine-local editor
+-- policy, exactly like the scaling above: it bounds total retained history in
+-- MB and rides editor.dat so a chosen bound survives restart across every
+-- project. nil == unset (cm.trace keeps its own default). Range: 16 MB .. 64 GB.
+function M.budget_mb_ok(v)
+  if type(v) ~= "number" or v ~= v then return nil end
+  local mb = math.floor(v)
+  if mb < 16 then mb = 16 elseif mb > 65536 then mb = 65536 end
+  return mb
+end
+
+function M.set_history_budget(v)
+  local mb = M.budget_mb_ok(v)
+  if not mb then return nil, "invalid history budget" end
+  M.cfg.history_budget_mb = mb
+  M.save_accessibility()
+  return mb
 end
 
 function M.save_video()

@@ -552,6 +552,11 @@ function M.boot()
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
   M.trace.ring.thumbs = not args.headless -- live-only presented-frame previews
+  -- adopt the machine-local retained-history disk budget (A7 retention surface),
+  -- persisted in editor.dat beside the display scaling; unset keeps the default
+  if M.view.cfg.history_budget_mb then
+    M.trace.ring.budget_mb = M.view.cfg.history_budget_mb
+  end
   M.trace.ring_start({ project = M.ed_cache_ok == false and "" or args.project })
   if M.pending_crash then
     local p = M.pending_crash
