@@ -405,6 +405,10 @@ function M.boot()
 
   M.state = cm.require("cm.state")
   M.input = cm.require("cm.input")
+  -- adopt currently-connected gamepads (and ONLY those — a fresh session
+  -- must never inherit a previous project's pad latch, A4/D083). Live-side;
+  -- headless/verify machines without controllers stay byte-identical to v1.
+  M.input.pad_sync()
   M.ui = cm.require("cm.ui")
   M.repl = cm.require("cm.repl")
   M.console = cm.require("cm.console")

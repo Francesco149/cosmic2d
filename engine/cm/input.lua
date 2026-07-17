@@ -68,12 +68,19 @@ local live_mx, live_my = 0.0, 0.0
 local live_buttons = 0
 local wheel_carry = 0.0
 -- live pad registry: slot (1..4) -> { held = u32, tap = u32, ax = {6 raw
--- i16} }. Populated by feed()'s pad events; device->slot assignment is the
--- caller's (live-only) concern. M._pad_live is the domain latch: once any
--- pad has ever been part of a record this engine run, sample() keeps
--- emitting the PAD extension (n=0 when empty) so edges always resolve.
--- It lives on M so a hot reload cannot silently strand held pad state.
+-- i16} }. Populated by feed()'s pad events. M._pad_live is the domain
+-- latch: once any pad has ever been part of a record this engine run,
+-- sample() keeps emitting the PAD extension (n=0 when empty) so edges
+-- always resolve. It lives on M so a hot reload cannot silently strand
+-- held pad state.
 local live_pads = {}
+-- device->slot assignment (live-only, the A4 policy): the PAL hands feed()
+-- DEVICE-level gpad/gpadbtn/gpadaxis events keyed by SDL instance id; the
+-- first-connected device claims the lowest free slot 1..4 and keeps it
+-- until disconnect, a fifth device is ignored (logged) until a slot frees,
+-- and a reconnect is just a fresh claim. The slot-level pad/padbtn/padaxis
+-- shapes remain feed()'s direct vocabulary (tests, future remote input).
+local live_dev = {}
 
 local BUF = "cm.input"
 local PADBUF = "cm.input.pad"
@@ -139,6 +146,34 @@ end
 -- a key-up landing on such a tick never cleared, sticking the key. live_tap
 -- accumulates sub-frame taps across zero-step ticks until sample() consumes
 -- them, so a press never vanishes regardless of render rate.
+-- slot-level pad primitives shared by the slot shapes (pad/padbtn/padaxis)
+-- and the device shapes (gpad/gpadbtn/gpadaxis) after id->slot translation
+local function pad_connect(slot)
+  live_pads[slot] = { held = 0, tap = 0, ax = { 0, 0, 0, 0, 0, 0 } }
+  M._pad_live = true
+end
+
+local function pad_button(slot, button, down)
+  -- events for unregistered slots are dropped (a disconnect raced them)
+  local p = live_pads[slot]
+  if p and button >= 0 and button <= 31 then
+    local bit = 1 << button
+    if down then
+      p.held = p.held | bit
+      p.tap = p.tap | bit -- sticky tap, same contract as keys
+    else
+      p.held = p.held & ~bit
+    end
+  end
+end
+
+local function pad_axis(slot, axis, value)
+  local p = live_pads[slot]
+  if p and axis >= 0 and axis <= 5 then
+    p.ax[axis + 1] = value
+  end
+end
+
 function M.feed(events)
   for _, e in ipairs(events) do
     if e.type == "key" then
@@ -166,31 +201,48 @@ function M.feed(events)
       -- from the entry vanishing off the next record).
       if e.pad >= 1 and e.pad <= PAD_SLOTS then
         if e.connected then
-          live_pads[e.pad] = { held = 0, tap = 0, ax = { 0, 0, 0, 0, 0, 0 } }
-          M._pad_live = true
+          pad_connect(e.pad)
         else
           live_pads[e.pad] = nil
         end
       end
     elseif e.type == "padbtn" then
-      -- {type="padbtn", pad=1..4, button=SDL number 0..31, down=bool};
-      -- events for unregistered slots are dropped (a disconnect raced them)
-      local p = live_pads[e.pad]
-      if p and e.button >= 0 and e.button <= 31 then
-        local bit = 1 << e.button
-        if e.down then
-          p.held = p.held | bit
-          p.tap = p.tap | bit -- sticky tap, same contract as keys
-        else
-          p.held = p.held & ~bit
-        end
-      end
+      -- {type="padbtn", pad=1..4, button=SDL number 0..31, down=bool}
+      pad_button(e.pad, e.button, e.down)
     elseif e.type == "padaxis" then
       -- {type="padaxis", pad=1..4, axis=SDL number 0..5, value=raw i16}
-      local p = live_pads[e.pad]
-      if p and e.axis >= 0 and e.axis <= 5 then
-        p.ax[e.axis + 1] = e.value
+      pad_axis(e.pad, e.axis, e.value)
+    elseif e.type == "gpad" then
+      -- {type="gpad", id=SDL instance id, connected=bool}: PAL hot-plug.
+      -- Assignment policy in the registry comment above; a reconnect of a
+      -- still-registered id resets its slot in place.
+      if e.connected then
+        local slot = live_dev[e.id]
+        for s = 1, PAD_SLOTS do
+          if not slot and not live_pads[s] then slot = s end
+        end
+        if slot then
+          live_dev[e.id] = slot
+          pad_connect(slot)
+        else
+          pal.log(("[input] gamepad %d ignored: all %d pad slots taken")
+                  :format(e.id, PAD_SLOTS))
+        end
+      else
+        local slot = live_dev[e.id]
+        live_dev[e.id] = nil
+        if slot then live_pads[slot] = nil end
       end
+    elseif e.type == "gpadbtn" then
+      -- {type="gpadbtn", id=, button=SDL number, down=bool}; events for
+      -- unassigned devices are dropped (all slots were taken, or a
+      -- disconnect raced them)
+      local slot = live_dev[e.id]
+      if slot then pad_button(slot, e.button, e.down) end
+    elseif e.type == "gpadaxis" then
+      -- {type="gpadaxis", id=, axis=SDL number 0..5, value=raw i16}
+      local slot = live_dev[e.id]
+      if slot then pad_axis(slot, e.axis, e.value) end
     end
   end
 end
@@ -266,12 +318,41 @@ function M.sample()
   return rec
 end
 
--- Live-side reset for the pad domain: forget connected pads and stop
--- emitting the PAD extension. For project boot and tests — a new session
--- must not inherit the previous one's latch. Never touches applied state.
+-- Live-side reset for the pad domain: forget connected pads, drop every
+-- device->slot assignment, and stop emitting the PAD extension. Never
+-- touches applied state.
 function M.pad_reset()
   live_pads = {}
+  live_dev = {}
   M._pad_live = nil
+end
+
+-- Project boot (and tests): reset, then adopt the PAL's CURRENT physical
+-- reality from pal.pad_list(). SDL announced those controllers' hot-plug
+-- long ago and will not re-fire it for a fresh VM, so a still-connected
+-- controller claims its slot before frame one — while a session with
+-- nothing connected never inherits the previous project's latch and stays
+-- byte-identical to v1. Ascending instance id = original connect order.
+function M.pad_sync()
+  M.pad_reset()
+  if not pal.pad_list then return end -- host-loaded/fake pal (tests)
+  local list = pal.pad_list()
+  table.sort(list, function(a, b) return a.id < b.id end)
+  local evs = {}
+  for _, p in ipairs(list) do
+    evs[#evs + 1] = { type = "gpad", id = p.id, connected = true }
+  end
+  M.feed(evs)
+end
+
+-- Return every live axis to neutral (buttons/connectivity untouched). The
+-- editor calls this when game-input focus leaves: a stick held across the
+-- focus change must not keep driving the sim, while held buttons follow
+-- the key rule (their release event always passes). Live-side only.
+function M.pad_neutralize()
+  for _, p in pairs(live_pads) do
+    for a = 1, 6 do p.ax[a] = 0 end
+  end
 end
 
 -- back-compat: feed then sample in one call. Headless lockstep (one tick =

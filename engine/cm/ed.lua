@@ -347,10 +347,26 @@ function M.filter_events(events)
   local g = M.g
   local live = win and not g.alt and not g.ig_kb and not g.launcher
   local rect = win and g.grect and g.grect[win.id]
+  -- game focus just left: return live pad axes to neutral so a held stick
+  -- can't keep driving the sim (buttons follow the key rule — their release
+  -- events pass below, exactly like keys)
+  if g.pad_was_live and not live then
+    cm.require("cm.input").pad_neutralize()
+  end
+  g.pad_was_live = live
   local out = {}
   for _, e in ipairs(events) do
     if e.type == "quit" then
       out[#out + 1] = e
+    elseif e.type == "gpad" then
+      -- hot-plug always passes: the device->slot registry must track
+      -- physical reality no matter which window has focus
+      out[#out + 1] = e
+    elseif e.type == "gpadbtn" then
+      -- the key rule: new presses only while playing, releases always
+      if live or not e.down then out[#out + 1] = e end
+    elseif e.type == "gpadaxis" then
+      if live then out[#out + 1] = e end
     elseif e.type == "key" then
       -- Esc + grave are the shell's (§12.3); releases always pass
       if not e.down then
