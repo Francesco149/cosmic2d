@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar + swarm shipped (D088/D089) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box shipped (D088–D090) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,19 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D090 lands the first A5 slice: cm.box.** Pure AABB ergonomics over
+plain keyed rects — strict-edge overlap (rect + 8-number forms),
+centered-square `touch` pickups, `contains`, `expand` reach, ordered
+`hit`/`hits` list queries, and the axis-at-a-time `slide` with
+cancelled axes reported — exactly the semantics the four hand-rolled
+copies agreed on. Pure = trivially deterministic; sweeping/layers/
+circles/raycasts stay future cuts (fast movers keep `cm.collide`'s
+world mover, tunneling documented). 28 KATs (Linux 23,795 / native
+Windows 23,797); the cellar retrofit is the ergonomics proof with
+bit-identical behavior (bot clears at the same frame) and a re-cut
+golden that verifies on both platforms; swarm and the demo keep their
+naive copies as contrast. Guide section shipped beside the map mover.
 
 **D089 completes the naive family set.** `projects/swarm` is the
 one-file arcade mini-demo: a twin-stick arena shooter — PRNG edge
@@ -634,20 +647,19 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the first A5 slice proper.** The pain-first
-prerequisite is met: all three families have naive bundled proofs, and
-their PAIN markers vote. The sharpest documented case is
-**query/collision ergonomics** — the same AABB overlap loop now exists
-in four copies (demo `overlap`, topdown template `blocked`, cellar
-`overlap`+`solids`, swarm `hits`), beside cellar's hand-rebuilt solids
-list and swarm's O(shots×enemies) walk. Second vote: the **actor/world
-pattern** (swarm's two swap-remove pools with unstable ids, cellar's
-parallel prop/item tables). Design ONE of them per the A5 contract —
-deterministic state in doc/named buffers, stable iteration, lifetime/
-reload/snapshot/rewind specified, KATs + at least one trace, task-based
-examples, primitives stay opt-out — then retrofit exactly one demo as
-the proof-of-ergonomics and leave the others naive as contrast until
-the slice earns its keep. Camera/tween/UI slices queue behind these.
+**Exact next packet:** **the actor/world slice** — the loudest
+remaining PAIN vote (swarm's two swap-remove pools with unstable ids
+and O(shots×enemies) walks; cellar's parallel prop/item tables with
+hand-invented string ids). Design it per the A5 contract: stable ids,
+spawn/despawn, deterministic iteration order, tags/groups, timers, and
+a documented snapshot/rewind story — plain doc trees so canon/replay
+work by construction, a composable module (NOT a full ECS, per §2),
+KATs plus a trace, and ONE demo retrofit (swarm is the natural proof)
+with the others left naive as contrast. After that: the camera slice
+(the platformer demo hand-rolls clamp/lerp), then tween/effect and
+runtime-UI. A6 bundling polish (READMEs, thumbnails, release-manifest
+promotion for cellar/swarm) can interleave once slices make the demos
+concise.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

@@ -3881,3 +3881,43 @@ two's init read it back into doc across a real restart. `nix run
 and all pixel/audio goldens; selftest counts unchanged. Inspected
 captures on llm-feed: wave-2 mid-fight and the decaying death flash
 with the persisted best.
+
+## D090 — cm.box: the query slice starts pure (A5, 2026-07-17)
+
+**Context.** With all three families' naive demos in (D088/D089), the
+PAIN markers voted: the same strict-edge AABB overlap loop existed in
+four copies (demo `overlap`, topdown starter `blocked`, cellar, swarm),
+plus two hand-rolled axis-at-a-time wall slides. A5's first slice
+should absorb exactly that — no more.
+
+**Decision.** `cm.box` is pure functions over plain keyed rects
+`{x=,y=,w=,h=}` (actor tables pass through untouched): `overlap` /
+`overlap_rect` with STRICT edges (flush contact is not a hit — the
+semantics every copy agreed on), `touch` (centered-square pickups),
+`contains` (right/bottom exclusive), `expand` (interaction reach),
+`hit`/`hits` (first/all list matches in array order, reuse-table form
+clears first), and `slide` (whole-step axis-at-a-time with cancelled
+axes reported — the classic wall-slide feel). Deliberately NOT here:
+sweeping (a big step tunnels — documented; fast movers stay with
+`cm.collide`'s world mover), layers/masks, circles, raycasts — later
+A5 cuts earn those from real pain. Purity makes the determinism story
+trivial (no state, no buffers, exact math on inputs) and the module
+free to call from sim or render code alike.
+
+**Consequences.** The cellar is the worked proof of ergonomics: its
+query/move pain collapsed into box calls with bit-identical behavior
+(the route bot clears at the same frame 510), and its golden was
+re-cut with committed code per policy. Swarm and the demo keep their
+naive copies deliberately — contrast for the next slices (actor/world
+is the loudest remaining vote). The shipped scripting guide gained a
+`cm.box` section beside the map mover with the tunneling caveat and
+the cellar as the copyable example.
+
+**Proof.** Linux selftest passes **23,795** checks (+28 box KATs: the
+strict-edge matrix, containment bounds, expand grow/shrink, query
+order and honest misses, reuse clearing, every slide axis case
+including flush contact and the documented tunneling) and the staged
+native Windows executable **23,797**. `nix run .#test` is ALL GREEN —
+the re-cut cellar golden and every historical trace and pixel/audio
+golden pass — and the cellar golden re-verifies byte-exact on native
+Windows. `tools/build-windows.sh` refreshed the stage and shortcut.
