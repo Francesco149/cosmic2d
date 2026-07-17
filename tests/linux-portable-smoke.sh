@@ -80,6 +80,12 @@ fi
     grep -F "## Controls" "$play_root/README.md"
     grep -F "## Credits" "$play_root/README.md"
     grep -F "## Licenses" "$play_root/README.md"
+    # The A6 bundled demo matrix ships complete in the editor archive.
+    for name in demo cellar swarm; do
+      test -f "$editor_root/projects/$name/README.md"
+      test -s "$editor_root/projects/$name/icon.png"
+      test -f "$editor_root/projects/$name/CONTROLS.md"
+    done
     test -f "$editor_root/lib/libvulkan.so.1"
     test -f "$play_root/lib/libvulkan.so.1"
 
@@ -132,6 +138,10 @@ fi
     run_release "$editor_root" "$editor_root/cosmic2d-editor" \
       --headless --frames 1
     run_release "$editor_root" "$editor_root/demo" --headless --frames 1
+    run_release "$editor_root" "$editor_root/bin/cosmic" projects/cellar \
+      --headless --frames 1
+    run_release "$editor_root" "$editor_root/bin/cosmic" projects/swarm \
+      --headless --frames 1
     run_release "$editor_root" "$editor_root/bin/cosmic" \
       --headless --frames 1
     run_release "$play_root" "$play_root/$GAME" --headless --frames 1

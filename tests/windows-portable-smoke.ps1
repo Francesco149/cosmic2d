@@ -129,6 +129,14 @@ try {
                         $playGame, $playEditor, $playConsole)) {
         Assert-True (Test-Path -LiteralPath $path -PathType Leaf) "missing launcher: $path"
     }
+    # The A6 bundled demo matrix ships complete in the editor archive.
+    foreach ($name in @("demo", "cellar", "swarm")) {
+        foreach ($file in @("README.md", "icon.png", "CONTROLS.md")) {
+            $bundled = Join-Path $editorRoot "projects\$name\$file"
+            Assert-True (Test-Path -LiteralPath $bundled -PathType Leaf) `
+                "bundled demo lacks $file`: $bundled"
+        }
+    }
     $playerReadme = [IO.File]::ReadAllText((Join-Path $playRoot "README.md"))
     foreach ($signature in @("# cosmic demo", "Version ``0.1``", "## Controls",
                               "## Credits", "## Licenses")) {
@@ -179,6 +187,8 @@ try {
     Invoke-Cosmic $editorFront @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $editorDemo @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $editorConsole @("--headless", "--frames", "1") $outside
+    Invoke-Cosmic $editorConsole @("projects/cellar", "--headless", "--frames", "1") $outside
+    Invoke-Cosmic $editorConsole @("projects/swarm", "--headless", "--frames", "1") $outside
     Invoke-Cosmic $playFront @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $playGame @("--headless", "--frames", "1") $outside
     Invoke-Cosmic $playEditor @("--headless", "--frames", "1") $outside
