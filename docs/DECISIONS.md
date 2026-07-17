@@ -3848,3 +3848,36 @@ executable. `nix run .#test` is ALL GREEN with the new trace beside
 every historical trace and all pixel/audio goldens; selftest counts are
 unchanged (no engine surface changed). Inspected captures on llm-feed:
 boot, the vault mid-clear, and the win state.
+
+## D089 — the swarm: the naive arcade mini-demo completes the family set (A5/A6, 2026-07-17)
+
+**Context.** D088's pain-first program: naive demos before A5 slices.
+After the cellar, the arcade family's bundled proof was the last one
+missing (the platformer demo has covered side-view since M-series).
+
+**Decision.** `projects/swarm` is the one-screen arcade mini-demo, one
+readable file, deliberately naive: a twin-stick arena shooter with
+waves of edge-spawned chasers drawn from `cm.rand` (the PRNG is sim
+state, so runs replay bit-for-bit), 8-way stick/keys movement,
+right-stick aim where deflection implies fire, an 8-way facing shot,
+two swap-remove actor pools, and juice as three hand-tuned doc counters
+(hit pause, screen shake, death flash) with render-only offset math off
+the sim frame count — never the PRNG. Score restarts instantly on fire;
+the high score persists through the D086 doors: an absent-fill read in
+`init` (the boot door — the trace SNAP carries the result) and a
+pure-output `save.write` on death. `PAIN(actor|query|effect|move)`
+markers name the A5 slices; the AABB overlap loop reaches copy four,
+and the swap-remove pools state the stable-id case. Dev-tree only until
+the A6 bundling packet.
+
+**Proof.** `tests/traces/swarm_runs.ctrace`: 1,306 frames, two lives
+driven by a virtual twin-stick pad through the real loop — waves,
+kills, the death juice, the hiscore write, the instant fire-restart,
+and a second death with best retained — verifying byte-exact on Linux
+and the staged native Windows executable. A live windowed pair proved
+the boot door against the real store: run one wrote hiscore 456, run
+two's init read it back into doc across a real restart. `nix run
+.#test` is ALL GREEN with the new trace beside every historical trace
+and all pixel/audio goldens; selftest counts unchanged. Inspected
+captures on llm-feed: wave-2 mid-fight and the decaying death flash
+with the persisted best.

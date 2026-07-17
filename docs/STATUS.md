@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — the cellar shipped (D088) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar + swarm shipped (D088/D089) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,20 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D089 completes the naive family set.** `projects/swarm` is the
+one-file arcade mini-demo: a twin-stick arena shooter — PRNG edge
+waves, 8-way stick/keys movement, right-stick aim-implies-fire, two
+swap-remove actor pools, hit pause / shake / death flash as doc
+counters with render-only offsets, instant fire-restart, and a high
+score persisted through both D086 doors (absent-fill boot read, pure-
+output write on death; a live windowed pair proved the read against
+the real store across a restart). The AABB overlap loop is on copy
+FOUR — the A5 query slice's case is made. Committed
+`tests/traces/swarm_runs.ctrace` (1,306 frames, two lives, best
+retained across the restart) verifies on Linux and native Windows.
+All three A6 families now have naive bundled proofs: demo (side-view),
+cellar (top-down), swarm (arcade).
 
 **D088 opens A5/A6 the pain-first way.** A5's rule is naive demos
 before slices, and two of the three family proofs didn't exist. The
@@ -620,18 +634,20 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **A5 begins — the first genre-neutral runtime
-slice.** ALPHA.md's rule: implement only after writing each demo naively
-enough to expose its real pain, and the three naive starter templates
-plus the demo already exist. Start by auditing them (plus the A6 demo
-list) for the sharpest shared pain — likely the actor/world +
-query/collision slice or the camera slice (the demo hand-rolls camera
-clamp/lerp math; every template hand-rolls actor tables and overlap
-tests). Define the slice per ALPHA.md §2's contract: deterministic
-state in doc/named buffers, stable iteration, lifetime/reload/snapshot/
-rewind behavior specified, focused selftests plus at least one trace,
-task-based examples, primitives stay opt-out. One slice per packet;
-keep demos naive until a slice genuinely earns its keep.
+**Exact next packet:** **the first A5 slice proper.** The pain-first
+prerequisite is met: all three families have naive bundled proofs, and
+their PAIN markers vote. The sharpest documented case is
+**query/collision ergonomics** — the same AABB overlap loop now exists
+in four copies (demo `overlap`, topdown template `blocked`, cellar
+`overlap`+`solids`, swarm `hits`), beside cellar's hand-rebuilt solids
+list and swarm's O(shots×enemies) walk. Second vote: the **actor/world
+pattern** (swarm's two swap-remove pools with unstable ids, cellar's
+parallel prop/item tables). Design ONE of them per the A5 contract —
+deterministic state in doc/named buffers, stable iteration, lifetime/
+reload/snapshot/rewind specified, KATs + at least one trace, task-based
+examples, primitives stay opt-out — then retrofit exactly one demo as
+the proof-of-ergonomics and leave the others naive as contrast until
+the slice earns its keep. Camera/tween/UI slices queue behind these.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
