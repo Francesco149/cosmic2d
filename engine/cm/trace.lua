@@ -1364,9 +1364,42 @@ function M.on_code_change(changed_names)
   pal.log("[trace] code epoch: " .. table.concat(names, ", "))
 end
 
--- serialize segments first_i.. as a CTRC blob and write it
-local function write_trace(path, project, kf, first_i)
+-- Standalone-clip packaging (A7 §14): gather the project manifest at A plus
+-- every file version any segment in [first_i,last_i] references, read from the
+-- content-addressed store. Returns nil when the opening keyframe has no manifest
+-- (legacy / spill-off history) — the caller names that missing capability rather
+-- than writing a clip that cannot materialize its own project. The manifest is
+-- itself content-addressed, so its blob doubles as the MFST payload the loader
+-- decodes without needing the store.
+local function collect_clip(R, first_i, last_i)
+  local mh = R.segs[first_i].manifest_hash
+  if not mh then return nil end
+  local mfst = M.blob_get(mh)
+  if not mfst then return nil end
+  local want, order = {}, {}
+  local function want_blob(hash)
+    if hash and not want[hash] then want[hash] = true; order[#order + 1] = hash end
+  end
+  -- §14 keyframe granularity: union the blobs each in-range segment's manifest
+  -- names, so a file saved mid-range ships every version needed through B.
+  for i = first_i, last_i do
+    local files = M.manifest_files(R.segs[i].manifest_hash)
+    if files then for _, h in pairs(files) do want_blob(h) end end
+  end
+  local blobs = {}
+  for _, h in ipairs(order) do
+    local bytes = M.blob_get(h)
+    if bytes then blobs[#blobs + 1] = { hash = h, bytes = bytes } end
+  end
+  return mfst, blobs
+end
+
+-- serialize segments first_i..last_i as a CTRC blob and write it. `standalone`
+-- (a { a, b } loop-bounds table) additionally embeds the clip's complete project
+-- tree so it materializes on load with no dependency on this session's store.
+local function write_trace(path, project, kf, first_i, last_i, standalone)
   local R = M._R
+  last_i = last_i or #R.segs
   local w = chunk.writer("CTRC")
   local names = input.actions()
   local head = { pack("<I4s4I4", kf, project, #names) }
@@ -1375,15 +1408,15 @@ local function write_trace(path, project, kf, first_i)
   local s1 = seg_load(R, R.segs[first_i]) -- spilled segments materialize
   w.chunk("SNAP", 1, state.encode_snapshot(s1.kf_bufs, s1.kf_doct, s1.bundle))
   local frames = 0
-  for i = first_i, #R.segs do
+  for i = first_i, last_i do
     local s = seg_load(R, R.segs[i])
     if i > first_i then
       w.chunk("KEYF", 1, state.encode_snapshot(s.kf_bufs, s.kf_doct))
     end
     -- FSAV/MARK/THMB/PMAN are history chrome (activity, lifecycle, previews,
-    -- the project-manifest hash), not replay state; a standalone clip's own
-    -- bundled manifest + blobs are the next packaging packet, so an exported
-    -- .ctrace stays byte-identical to before (goldens hold).
+    -- the project-manifest hash), not replay state; a standalone clip carries
+    -- its tree through the MFST/BLOB chunks below instead, so a plain export
+    -- stays byte-identical to before (goldens hold).
     for _, c in ipairs(s.chunks) do
       if c.tag ~= "FSAV" and c.tag ~= "MARK" and c.tag ~= "THMB"
          and c.tag ~= "PMAN" then
@@ -1393,6 +1426,21 @@ local function write_trace(path, project, kf, first_i)
     frames = frames + s.frames
   end
   w.chunk("TAIL", 1, pack("<I4", frames))
+  if standalone then
+    -- A7 §14: MFST = the project tree at A ({ relpath -> blob }); one BLOB per
+    -- referenced file version (content-addressed, so already deduped); LOOP =
+    -- the intended A/B bounds so loading reopens on the same range and loop.
+    local mfst, blobs = collect_clip(R, first_i, last_i)
+    if mfst then
+      w.chunk("MFST", 1, mfst)
+      for _, e in ipairs(blobs) do
+        w.chunk("BLOB", 1, pack("<s4s4", e.hash, e.bytes))
+      end
+      if standalone.a then
+        w.chunk("LOOP", 1, pack("<I4I4", standalone.a, standalone.b))
+      end
+    end
+  end
   local blob = w.result()
   local ok, err = pal.write_file_atomic(path, blob,
                          M._write_fail and M._write_fail.trace)
@@ -1431,6 +1479,40 @@ function M.ring_export(path)
   return write_trace(path, R.project, ring_kf(), first_i)
 end
 
+-- Export the inclusive A..B range as a STANDALONE .ctrace (A7 §14): the exact
+-- state through B plus the complete project tree (all source + assets) at A, so
+-- the clip materializes its own project on load with no dependency on this
+-- session's blob store. Segment-aligned: the SNAP is A's keyframe and whole
+-- segments through B's are written (the LOOP metadata pins the exact A/B).
+-- Returns ok, frames | nil, reason. Live-range only for now: the opening
+-- segment must carry a code bundle. Adopted cross-session ranges are already
+-- materialization-ready (their manifest is captured) but need the bundle-
+-- reconstruction packet — named honestly, never crashed.
+function M.export_clip(a, b, path)
+  local R = M._R
+  local lo, hi = M.ring_range()
+  if not lo then return nil, "no history to export" end
+  a = math.max(lo, math.min(math.floor(a + 0.5), hi))
+  b = math.max(lo, math.min(math.floor(b + 0.5), hi))
+  if b < a then a, b = b, a end
+  local first_i, last_i = 1, #R.segs
+  for i = 1, #R.segs do -- segments ascend by first, so the last <= wins
+    if R.segs[i].first <= a then first_i = i end
+    if R.segs[i].first <= b then last_i = i end
+  end
+  local aseg = R.segs[first_i]
+  if not aseg.bundle then
+    return nil, "adopted cross-session history: standalone export of an " ..
+      "adopted range is the next step (its project tree is already captured)"
+  end
+  if not aseg.manifest_hash then
+    return nil, "legacy history has no project manifest — record under A7 to " ..
+      "export a standalone clip"
+  end
+  return write_trace(path, R.project, ring_kf(), first_i, last_i,
+                     { a = a, b = b })
+end
+
 -- Quit/crash durability boundary (R6.5/D067): spill the open segment so the
 -- session tail joins the cross-session stream (closed segments already
 -- spilled). The boolean proves that the active stream's exact tail is now
@@ -1447,6 +1529,68 @@ function M.ring_flush()
   local _, hi = M.ring_range()
   local disk = M.hist_locator(R.project)
   return disk ~= nil and disk.stream == R.stream_id and disk.frame == hi
+end
+
+-- ---- standalone-clip materialization (A7 §14) ----
+--
+-- A standalone clip carries its complete project tree (MFST + BLOBs). On load
+-- that tree is written into an isolated, ephemeral REPLAY WORKSPACE — a fixed
+-- per-user directory well outside any project, so a replay's browsable source
+-- can never touch a real project and the editor's parked write wall keeps its
+-- own experiments ephemeral. The workspace is named by the manifest's content
+-- hash, so identical clips share one and distinct clips never collide.
+
+-- overridable for tests via M._workspace_root; else a fixed per-user root
+local function workspace_root()
+  if M._workspace_root then return M._workspace_root end
+  if type(pal.user_path) ~= "function" then return nil end
+  local base = pal.user_path()
+  return base and (base .. "replay-workspaces")
+end
+
+-- best-effort recursive removal (list is parent-then-children; reverse empties
+-- directories before removing them). Used to keep at most one workspace around.
+local function remove_tree_at(root)
+  if not root or not pal.mtime(root) then return end
+  local names = pal.x_list_dir_all and pal.x_list_dir_all(root)
+                or pal.list_dir(root) or {}
+  for i = #names, 1, -1 do pal.x_remove(root .. "/" .. names[i]) end
+  pal.x_remove(root)
+end
+
+-- write the clip's manifest tree into a fresh workspace and return its path (nil
+-- if no per-user root). Sweeps sibling workspaces first so a replay session
+-- leaves at most one behind. A blob a partial clip omitted is skipped honestly.
+local function materialize_workspace(mfst_bytes, blobmap)
+  local root = workspace_root()
+  if not root then return nil end
+  local id = pal.sha256(mfst_bytes)
+  local ws = root .. "/" .. id
+  pal.mkdir(root)
+  for _, n in ipairs(pal.list_dir(root) or {}) do
+    local top = n:match("^[^/]+")
+    if top and top ~= id then remove_tree_at(root .. "/" .. top) end
+  end
+  remove_tree_at(ws) -- drop a stale/partial workspace of the same id
+  pal.mkdir(ws)
+  local paths = manifest_decode(mfst_bytes)
+  local rels = {}
+  for rel in pairs(paths) do rels[#rels + 1] = rel end
+  table.sort(rels)
+  local written, missing = 0, 0
+  for _, rel in ipairs(rels) do
+    local bytes = blobmap[paths[rel]]
+    if bytes then
+      local dir = rel:match("^(.*)/[^/]+$")
+      if dir then pal.mkdir(ws .. "/" .. dir) end
+      if pal.write_file(ws .. "/" .. rel, bytes) then written = written + 1 end
+    else
+      missing = missing + 1
+    end
+  end
+  pal.log(("[trace] replay workspace: %s (%d files%s)"):format(ws, written,
+          missing > 0 and (", %d unmaterializable"):format(missing) or ""))
+  return ws
 end
 
 -- load a .ctrace as the ring (replay playback, M5): the live ring is
@@ -1470,6 +1614,7 @@ function M.ring_load(path)
   local segs, cur, snap_blob, f0
   local frames = 0
   local bundle, border -- working file map + insertion order
+  local blobmap, mfst_bytes, loop_a, loop_b = {}, nil, nil, nil -- §14 standalone
   local function bundle_list()
     local out = {}
     for i, n in ipairs(border) do out[i] = bundle[n] end
@@ -1514,6 +1659,13 @@ function M.ring_load(path)
               kf_doct = s.doct, bundle = bundle_list(), chunks = {},
               frames = 0, bytes = 0 }
       segs[#segs + 1] = cur
+    elseif c.tag == "MFST" and c.version == 1 then
+      mfst_bytes = c.payload -- the project tree at A (§14 standalone clip)
+    elseif c.tag == "BLOB" and c.version == 1 then
+      local h, bytes = unpack("<s4s4", c.payload)
+      blobmap[h] = bytes
+    elseif c.tag == "LOOP" and c.version == 1 then
+      loop_a, loop_b = unpack("<I4I4", c.payload)
     elseif c.tag == "TAIL" and c.version == 1 then
       local n = unpack("<I4", c.payload)
       if n ~= frames then
@@ -1532,9 +1684,50 @@ function M.ring_load(path)
   R.last_frame = f0 + frames -- the loaded newest; exits rewind to rebase
   R.prev, R.prev_doc, R.prev_doc_hash = {}, nil, nil
   R.manifest, R.manifest_hash, R.manifest_dirty = nil, nil, nil -- foreign tree
+  -- §14: materialize the clip's bundled project tree into an ephemeral, isolated
+  -- workspace (a legacy/partial clip with no MFST simply has none). The A/B loop
+  -- the clip recorded rides alongside so the caller can reopen on the same range.
+  if R.workspace then remove_tree_at(R.workspace) end
+  R.workspace, R.replay_loop = nil, nil
+  if mfst_bytes then
+    local ok, ws = pcall(materialize_workspace, mfst_bytes, blobmap)
+    if ok then R.workspace = ws
+    else pal.log("[trace] replay workspace failed: " .. tostring(ws)) end
+  end
+  if loop_a then R.replay_loop = { a = loop_a, b = loop_b } end
   M._R = R
   pal.log(("[trace] replay loaded: %s (%d frames)"):format(path, frames))
   return f0, f0 + frames
+end
+
+-- the loaded standalone clip's materialized project tree (A7 §14), or nil for a
+-- legacy / non-standalone replay. The drag-in editor mount browses this.
+function M.replay_workspace() return M._R and M._R.workspace end
+
+-- the A/B loop bounds a standalone clip recorded ({ a, b }), or nil
+function M.replay_loop() return M._R and M._R.replay_loop end
+
+-- Read a standalone clip and materialize its bundled project tree into a replay
+-- workspace WITHOUT touching the live ring or state (A7 §14) — the drag-in
+-- preview primitive and what a round-trip test exercises. Shares ring_load's
+-- materialize core. Returns workspace, { a, b } | nil, reason.
+function M.materialize_clip(path)
+  local blob, err = pal.read_file(path)
+  if not blob then return nil, "can't read clip: " .. tostring(err) end
+  local mfst_bytes, loop, blobmap = nil, nil, {}
+  for _, c in ipairs(chunk.read(blob, "CTRC")) do
+    if c.tag == "MFST" and c.version == 1 then
+      mfst_bytes = c.payload
+    elseif c.tag == "BLOB" and c.version == 1 then
+      local h, bytes = unpack("<s4s4", c.payload); blobmap[h] = bytes
+    elseif c.tag == "LOOP" and c.version == 1 then
+      local a, b = unpack("<I4I4", c.payload); loop = { a = a, b = b }
+    end
+  end
+  if not mfst_bytes then return nil, "not a standalone clip (no project tree)" end
+  local ws = materialize_workspace(mfst_bytes, blobmap)
+  if not ws then return nil, "no per-user workspace root available" end
+  return ws, loop
 end
 
 -- ---- scrub access (no game code runs) ----
