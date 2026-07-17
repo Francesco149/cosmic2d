@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax shipped (D088–D093) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween shipped (D088–D094) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,31 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D094 lands the tween/effect slice: cm.tween.** Named decaying
+effects on any plain doc table (the reserved `tw` key): `play` arms
+an integer frame countdown that remembers its lifetime (t0 and an
+optional stored strength), `tick` — once per step — decrements each
+independently with the zero frame making `play(n)` gate exactly n
+post-tick steps (`if tween.on(d, "pause") then return end` IS the
+hit-pause idiom; the tween table ticks through its own freeze while
+the skipped actor.tick freezes world timers for free), and all
+presentation math is pure functions of the remaining fraction k:
+`val` (mag * curve(k), cm.ease curves by name), `mix` (explicit
+endpoints), `wobble` (cm.camera.offset's exact sin pair for screens
+without a camera — never the PRNG), and the pure looping `bob`. 36
+KATs (Linux 23,914 / native Windows 23,916). Swarm is the retrofit
+proof: the hit pause / shake / death flash counter triple became
+three plays, one tick, and two draw lines, timing-exact (the stored
+mags 2.4/7.2 are the old t0 * 0.4). The golden was honestly re-cut
+by replaying its own 1,346 input records through a real virtual pad
+against a fresh boot (exact quantize_axis preimages; record stream
+byte-identical to the old trace; the fight reproduces — 120, instant
+pad restart, short second life, best retained; the inert driver-arm
+EVAL stripped, the D093 input-only idiom) and verifies byte-exact on
+Linux and native Windows. Cellar and the demo keep their naive
+counters as contrast; PAIN(move) and PAIN(depth) stay marked. The
+shipped guide gained a juice section beside cm.camera.
 
 **D093 lands per-layer map parallax (LAYR v2) — the human's "backdrop
 doesn't parallax" report.** Map layers carry `par_x`/`par_y` factors
@@ -721,21 +746,23 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the tween/effect slice** — the standing
-PAIN(effect) votes: swarm's hit pause / shake / death flash as three
-hand-tuned doc counters with render-only offset math, cellar's sim-
-frame bobs, and the demo's fx/feel juice (squash/stretch timers in
-fx.lua). Design it per the A5 contract: deterministic counters in
-doc (cm.actor timers and cm.camera shake are the established shape),
-render-only presentation math, `cm.ease` already exists as the pure
-curve library — the slice likely composes it over doc-counter
-lifetimes rather than inventing new state. KATs plus a trace,
-task-based defaults with primitives open, ONE demo retrofit (swarm
-is the loudest vote) with the others left naive as contrast. After
-that: layer/depth (cellar's y-sort comparator is the PAIN(depth)
-vote), transition, then runtime-UI. A6 bundling polish (READMEs,
-thumbnails, release-manifest promotion for cellar/swarm) can
-interleave once slices make the demos concise.
+**Exact next packet:** **the layer/depth slice** — the standing
+PAIN(depth) vote: cellar rebuilds and sorts a draw list of pillars +
+player every frame with a hand-rolled y-sort comparator (base y,
+then x, then kind — ties broken deterministically because hash order
+must never draw). Design it per the A5 contract: a pure deterministic
+sort/draw-order helper (plain data in, stable explicit tiebreaks —
+no scene graph, per §2's "layers/depth sorting without forcing a
+scene graph"), KATs pinning comparator totality and tie stability,
+ONE retrofit (cellar is the only vote — swarm and the demo don't
+y-sort) with its golden honestly re-cut if doc bytes move (the committed
+re-cut vehicle is `tools/trace/replay-driver.lua` + `dump.lua` +
+`strip-eval.lua`: quantize preimages + virtual pad + EVAL strip —
+usage in the headers and PROCESS.md). After that: transition, then
+runtime-UI, then swarm's
+PAIN(move) aim/axis dance when the move slice's evidence is in. A6
+bundling polish (READMEs, thumbnails, release-manifest promotion
+for cellar/swarm) can interleave once slices make the demos concise.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

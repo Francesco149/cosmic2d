@@ -4114,3 +4114,71 @@ moved. Inspected captures on llm-feed: the camera-x=400 before/after
 pair (the hill mass hanging back at half speed) and the layer panel
 showing the backdrop's 0.5/1. `tools/build-windows.sh` refreshed the
 stage (4 durable entries preserved) and Start Menu shortcut.
+
+## D094 — cm.tween: the tween/effect slice (A5, 2026-07-17)
+
+**Context.** The standing PAIN(effect) votes: swarm's hit pause /
+screen shake / death flash as three hand-tuned doc counters whose
+draw math re-derives each lifetime by hand (`alpha = flash / 14 *
+0.55`), the platformer's squash/stretch f32 timers easing over t/t0
+in player.lua, and cellar's sin item bobs. §2 lists "easing/tweens,
+hit pause, flashes, and basic screen feedback"; cm.ease already
+holds the pure curve registry, and cm.actor timers + cm.camera shake
+established the doc-counter shape.
+
+**Decision.** `cm.tween` keeps named decaying effects on ANY plain
+doc table (the reserved `o.tw` key): `play(o, name, frames [, mag])`
+arms (or wholesale replaces — the camera.shake rule) an integer frame
+countdown that REMEMBERS its lifetime (`{ t, t0, mag }`), so the draw
+math never re-derives t0. `tick(o)` — once per step, top of step —
+decrements each effect independently (hash-order-safe) and removes it
+one tick AFTER reaching 0: the zero frame exists, so play(n) keeps an
+effect present for exactly n post-tick steps and `if tween.on(d,
+"pause") then return end` after tick IS the hit-pause idiom — the
+tween table ticks through its own freeze while the skipped
+actor.tick freezes world timers for free. All presentation math is
+pure functions of the remaining fraction `k = t/t0` (1 at the armed
+frame's own draw): `val` = mag * curve(k) with cm.ease curves BY NAME
+(names live in doc), `mix(from, to, curve)` for explicit endpoints,
+`wobble` = cm.camera.offset's exact sin-pair idiom for screens
+without a camera (never the PRNG), and the pure `bob(frame, period,
+amp)` looping helper for item bobs. No module state, no buffers, no
+callbacks: canon, snapshots, traces, rewind, and hot reload carry
+running effects by construction. Deliberately NOT here:
+sequences/chains, per-field auto-writing tweens, callbacks/events,
+springs, wall-clock time, particles (fx.lua's pool is buffer craft).
+
+**Consequences.** Swarm is the retrofit proof: the counter triple
+became three plays, one tick, and two draw lines, with gameplay
+timing preserved exactly (the post-tick gate freezes the same two
+steps the pre-decrement gate did; the shake amplitudes carry over as
+stored mags 2.4/7.2 = the old t0 * 0.4). Two honest presentation
+deltas: the wobble phase now runs off the remaining count (the
+camera idiom) instead of the sim frame, and a pause left pending at
+death now decays during game-over instead of freezing — both
+render-/doc-shape-only, invisible to play. The golden was honestly
+re-cut by replaying the old trace's own 1,346 input records through
+a REAL virtual pad against a fresh boot of the retrofitted game
+(exact quantize_axis preimages at the default deadzone; the pad
+attaches before frame 2 exactly as recorded): the new trace's record
+stream is byte-identical to the old one, the fight reproduces (120,
+death, instant pad restart, short second life, best retained), and
+the inert driver-arm EVAL is stripped so the committed trace is
+input-only (the D093 camtour idiom). Cellar and the demo keep their
+naive counters/bobs as contrast; PAIN(move) and PAIN(depth) stay
+marked for their slices.
+
+**Proof.** Linux selftest passes **23,914** checks (+36 tween KATs:
+play refusals and stored t/t0/mag, wholesale replacement,
+independent decrement, the zero frame and per-effect removal, the
+exact n-step pause gate, empty-table removal from the host, val/mix
+against exact cm.ease values including unknown-curve refusal and
+idle rests, the wobble sin pair, bob, stop/clear/play(0), and
+same-ops-same-canon-bytes) and the staged native Windows executable
+**23,916** on PAL API 19. `nix run .#test` is ALL GREEN — the
+re-cut swarm_runs.ctrace (verified byte-exact on Linux AND native
+Windows) beside every historical trace and all pixel/audio goldens.
+Inspected capture on llm-feed: frame 938 of the re-cut golden,
+mid-death-flash with the shake visibly offsetting the arena. The
+shipped scripting guide gained a juice section beside cm.camera.
+`tools/build-windows.sh` refreshed the stage and Start Menu shortcut.
