@@ -4,6 +4,26 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 11 playtest) — the stroke clip + the splash sizzle
+
+Human on round 11: **"the physics of being in the water feel
+reasonable"**, worth a swim animation; the splash "feels like a low
+pitch laser", wants sizzle. Both in: **cm.mascot.swim** — alternate
+mitt strokes (reach near the surface / pull back low) over a boot
+flutter, rolling (rz) into each stroke, glide stretch between, antenna
+trailing; the player swaps walk->swim on the same distance phase while
+the regime holds (still zero animation state; base rx stays clear for
+the paddle tilt). **sfx-splash rebuilt**: the laser was a NOTE-CLOCKED
+short LFSR at note 48 under a lowpass with a -9st sweep; now two
+FIXED-CLOCK noise carriers — 12kHz long-LFSR hiss + 2.8kHz plosh —
+through the hp sizzle filter, no sweep. A/B'd headlessly via
+pal.x_snd_tap (zcr 0.001 -> 0.157/sample, ~7.5kHz effective). Lesson
+banked in the goldens commit: **snd.bank is a named sim buffer — an
+.ins edit re-records every trace of that cartridge** (the suite caught
+it at frame 1). Both openworld traces re-recorded + drift-proven,
+swim png re-shot (stroke pose), tour png byte-identical. Suite ALL
+GREEN; stroke shot on the feed (splash needs an in-game listen).
+
 ## 2026-07-17 (round 11) — deep water swims + the guy pinned opposite
 
 Two human verdicts landed and both are in. **The box guy stays** in the
@@ -29,14 +49,15 @@ on the feed (swim Q: does the half-sunk float read?).
 
 ## Exact next step
 
-1. Feed questions open (non-blocking): the half-sunk swim read, jump
-   read, band colors + fog at 320x240, eye size at 320x240.
+1. Feed questions open (non-blocking): the splash sizzle needs an
+   in-game listen, the half-sunk swim read, jump read, band colors +
+   fog at 320x240, eye size at 320x240.
 2. **Demo 2 grows** (unchanged menu): a first NPC (cm.fig guy or a
    second mascot) with a proximity exchange (the Zelda-ish beat), more
-   mascot clips (turn/hop/wave — a swim stroke clip would also lift the
-   paddle read), water polish (shoreline read, swim-out splash), or
-   scatter props/collectibles to give the wander a goal. Figure EDITOR
-   stays parked until the human unparks it.
+   mascot clips (turn/hop/wave for the exchange), water polish
+   (shoreline read, swim-out splash), or scatter props/collectibles to
+   give the wander a goal. Figure EDITOR stays parked until the human
+   unparks it.
 3. proto3d can adopt the look knobs on its next touch (unchanged).
 
 Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
