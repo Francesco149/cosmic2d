@@ -4,9 +4,9 @@
 -- squash & stretch) with the ground swapped from AABB tops to the terrain
 -- heightfield: land when the integrated y reaches world.ground(x,z), glue
 -- to the slope while walking downhill (k.snap), fall past the glue window
--- (walk-offs still fall). Tree trunks are the only side colliders — the
--- bounce clamp rules (pre-move side decides the face, EPS side tests,
--- D3D-009/010) apply unchanged.
+-- (walk-offs still fall). Tree trunks + high-band boulders are the side
+-- colliders — the bounce clamp rules (pre-move side decides the face,
+-- EPS side tests, D3D-009/010) apply unchanged.
 --
 -- Deep water swims (D3D-019). The regime is DERIVED, never stored: water
 -- deeper than k.swim_depth under the feet + feet below the surface. While

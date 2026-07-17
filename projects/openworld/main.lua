@@ -424,7 +424,7 @@ function game.draw()
     fog_start = fog.s, fog_end = fog.e, fog = fog.col, fog_on = fog.on,
   }
 
-  -- static level: terrain (detail-textured) + trees
+  -- static level: terrain (detail-textured) + trees + props
   for _, s in ipairs(world.segs) do
     pal.x_tris(s.tex, world.vbuf, s.count, s.off, 0)
   end
