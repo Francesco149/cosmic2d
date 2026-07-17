@@ -551,6 +551,7 @@ function M.boot()
   collectgarbage("setstepmul", 400)
   M.trace = cm.require("cm.trace")
   M.trace.ring.spill = not args.headless
+  M.trace.ring.thumbs = not args.headless -- live-only presented-frame previews
   M.trace.ring_start({ project = M.ed_cache_ok == false and "" or args.project })
   if M.pending_crash then
     local p = M.pending_crash
@@ -747,6 +748,10 @@ function M.tick()
   pal.present()
   M.perf.note((pal.time_ns() - t0) / 1e6, (draw_t0 - sim_t0) / 1e6,
               (present_t0 - draw_t0) / 1e6)
+  -- After present the game FOV holds this frame's finished render: sample it for
+  -- the rewind timeline's presented-frame previews (~one per minute; live
+  -- windowed sessions only — gated on ring.thumbs, a no-op headless/CI/capped).
+  if M.trace then M.trace.thumb_pump() end
 
   M.ticks = M.ticks + 1
   if M.args.frames and M.ticks >= M.args.frames then

@@ -70,7 +70,13 @@ local pack, unpack = string.pack, string.unpack
 -- headless/CI never write); budget_mb bounds the total retained history
 -- (whole oldest segment files evicted past it). The seconds window is
 -- RAM residency, not the history bound, once spill is on.
-M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024 }
+M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024,
+                      thumbs = false }
+
+-- A7 §11 presented-frame previews (THMB): about one game-FOV thumbnail every
+-- this many recorded frames. Console-tunable; read live by thumb_pump. The
+-- default is one per minute at the fixed 60 Hz.
+M.thumb_period = M.thumb_period or 60 * 60
 
 -- Read-only timeline marker bits returned by ring_timeline(). They are chrome
 -- metadata derived from existing records, never sim state and never verified.
@@ -218,6 +224,47 @@ end
 local function ensure_summary(seg)
   if not seg.summary then seg.summary = summarize_segment(seg) end
   return seg.summary
+end
+
+-- ---- presented-frame previews (A7 §11) ----
+--
+-- A tiny thumbnail of the game FOV, captured about once a minute in a live
+-- windowed session. Observer-only like the digest: never a named buffer, never
+-- the sim doc, never verified, stripped from exported clips. seg.thumb is the
+-- in-RAM index the tray draws from (it survives demotion and dies with the
+-- segment on eviction); a durable THMB chunk rides the segment blob so a future
+-- cross-session scan can recover previews the manifest is too small to carry.
+
+local THUMB_H = 46     -- preview height (px); width follows the FOV aspect
+local THUMB_WMAX = 128 -- cap very wide FOVs so one preview can't dominate
+
+-- the preview dimensions for a source FOV, height-normalized then width-capped
+local function thumb_dims(sw, sh)
+  sw, sh = math.max(1, math.floor(sw)), math.max(1, math.floor(sh))
+  local dh = math.min(THUMB_H, sh)
+  local dw = math.max(1, math.floor(sw * dh / sh + 0.5))
+  if dw > THUMB_WMAX then
+    dw = THUMB_WMAX
+    dh = math.max(1, math.min(sh, math.floor(sh * dw / sw + 0.5)))
+  end
+  return dw, dh
+end
+
+-- Point-sample a tightly-packed RGBA image (sw x sh, top-left origin) down to
+-- dw x dh. Nearest-neighbour keeps it cheap enough to run inline once a minute;
+-- a 46px preview does not need a box filter. sub() copies each 4-byte pixel
+-- whole, so no per-channel decode/encode.
+local function downscale_rgba(src, sw, sh, dw, dh)
+  local out, k = {}, 0
+  for dy = 0, dh - 1 do
+    local row = math.floor(dy * sh / dh) * sw
+    for dx = 0, dw - 1 do
+      local p = (row + math.floor(dx * sw / dw)) * 4 + 1
+      k = k + 1
+      out[k] = src:sub(p, p + 3)
+    end
+  end
+  return table.concat(out)
 end
 
 -- the one manifest-line spelling: id first frames fbytes + the 4 digest fields.
@@ -992,6 +1039,49 @@ function M.note_event(bit)
   seg.summary = nil
 end
 
+-- Store one presented-frame preview for the current recorded frame. `rgba` is a
+-- tightly-packed w*h*4 image (the game FOV, from pal.read_pixels). Pure of the
+-- GPU so the selftest drives it with synthetic pixels. The preview is attached
+-- to the open segment: the in-RAM seg.thumb index the tray draws from, plus a
+-- durable THMB chunk (frame,w,h,png) that rides the blob on spill.
+function M.thumb_capture(rgba, w, h)
+  local R = M._R
+  if not R or #R.segs == 0 then return end
+  w, h = math.floor(w or 0), math.floor(h or 0)
+  if w < 1 or h < 1 or #rgba < w * h * 4 then return end
+  local dw, dh = thumb_dims(w, h)
+  local png = pal.png_encode(downscale_rgba(rgba, w, h, dw, dh), dw, dh)
+  local frame = R.last_frame or (R.segs[#R.segs].first - 1)
+  local seg = R.segs[#R.segs]
+  seg.thumb = { frame = frame, w = dw, h = dh, png = png }
+  if seg.chunks then
+    seg_append(seg, "THMB", pack("<I4I4I4", frame, dw, dh) .. png)
+  end
+  return seg.thumb
+end
+
+-- Render/dev tick hook: capture a preview about every M.thumb_period recorded
+-- frames. Gated on M.ring.thumbs — set for live windowed sessions exactly like
+-- spill, and off headless/CI/capped — so goldens, traces, and --frames runs
+-- never read a pixel or carry a THMB. It rides its own flag rather than spill so
+-- previews are a RAM-index feature independent of whether history hits disk.
+-- A read/encode failure just advances the cadence and logs; previews are chrome.
+function M.thumb_pump()
+  local R = M._R
+  if not R or not M.ring.thumbs then return end
+  local f = R.last_frame
+  if not f then return end
+  local period = math.max(1, math.floor(M.thumb_period or 3600))
+  if R.thumb_next == nil then R.thumb_next = f end -- first eligible tick captures
+  if f < R.thumb_next then return end
+  local ok, err = pcall(function()
+    M.thumb_capture(pal.read_pixels(), pal.gfx_size())
+  end)
+  if not ok then pal.log("[trace] preview capture failed: " .. tostring(err)) end
+  R.thumb_next = f + period
+  while R.thumb_next <= f do R.thumb_next = R.thumb_next + period end
+end
+
 -- called when hot reload swapped modules mid-session
 function M.on_code_change(changed_names)
   local R = M._R
@@ -1026,10 +1116,12 @@ local function write_trace(path, project, kf, first_i)
     if i > first_i then
       w.chunk("KEYF", 1, state.encode_snapshot(s.kf_bufs, s.kf_doct))
     end
-    -- FSAV/MARK are history-activity chrome, not replay state; a standalone
-    -- clip's own activity index is the later packaging packet's job.
+    -- FSAV/MARK/THMB are history chrome (activity, lifecycle, previews), not
+    -- replay state; a standalone clip's own indexes are the packaging packet.
     for _, c in ipairs(s.chunks) do
-      if c.tag ~= "FSAV" and c.tag ~= "MARK" then w.chunk(c.tag, 1, c.payload) end
+      if c.tag ~= "FSAV" and c.tag ~= "MARK" and c.tag ~= "THMB" then
+        w.chunk(c.tag, 1, c.payload)
+      end
     end
     frames = frames + s.frames
   end
@@ -1297,6 +1389,45 @@ function M.ring_timeline(from_frame, to_frame, bins)
   return { data = data, missing = missing, from = from_frame, to = to_frame }
 end
 
+-- The presented-frame previews (seg.thumb) whose frame falls in [from,to],
+-- decimated to at most `max`, spread evenly by frame. RAM-index only — it never
+-- loads or decodes a history blob, so adopted cross-session segments (which
+-- carry no in-RAM preview yet) contribute none while their activity digest
+-- still draws. Each entry is the shared { frame, w, h, png } table.
+function M.ring_thumbs(from_frame, to_frame, max)
+  local R = M._R
+  local lo, hi = M.ring_range()
+  if not R or not lo then return {} end
+  from_frame = math.max(lo, math.floor(from_frame or lo))
+  to_frame = math.min(hi, math.ceil(to_frame or hi))
+  max = math.max(1, math.floor(max or 1))
+  local all = {}
+  for _, seg in ipairs(R.segs) do -- segments ascend, so `all` stays frame-sorted
+    local t = seg.thumb
+    if t and t.frame >= from_frame and t.frame <= to_frame then
+      all[#all + 1] = t
+    end
+  end
+  if #all <= max then return all end
+  -- Keep the preview nearest each of `max` evenly-spaced frame slots. O(max*n),
+  -- and n is tiny (previews are ~1/minute), so this only bites at hour-scale zoom.
+  local out, used = {}, {}
+  local span = math.max(1, to_frame - from_frame)
+  for i = 1, max do
+    local target = from_frame + (i - 0.5) / max * span
+    local best, bestd
+    for j, t in ipairs(all) do
+      if not used[j] then
+        local d = math.abs(t.frame - target)
+        if not bestd or d < bestd then best, bestd = j, d end
+      end
+    end
+    if best then used[best] = true; out[#out + 1] = all[best] end
+  end
+  table.sort(out, function(a, b) return a.frame < b.frame end)
+  return out
+end
+
 -- the segment whose FRAMs contain frame f (so its input record and EPOC
 -- positions are visible); the oldest keyframe state (f = segs[1].first-1)
 -- resolves to segs[1] with zero frames to walk
@@ -1445,6 +1576,8 @@ function M.rewind(f)
   for i = #seg.chunks, cut + 1, -1 do seg.chunks[i] = nil end
   seg.frames = need
   seg.summary = nil -- the kept prefix re-summarizes if it re-spills
+  if seg.thumb and seg.thumb.frame > f then seg.thumb = nil end
+  R.thumb_next = nil -- re-anchor the preview cadence after the truncation
   local bytes = 0
   for _, c in ipairs(seg.chunks) do bytes = bytes + #c.payload end
   seg.bytes = bytes
