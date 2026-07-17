@@ -4432,3 +4432,70 @@ the packet adds a dev-tree project and guide prose — and `nix run
 all pixel/audio goldens byte-identical. `tools/build-windows.sh`
 refreshed the stage (4 durable entries preserved) and Start Menu
 shortcut.
+
+## D099 — A6 bundling polish: the demo matrix closes (A6, 2026-07-17)
+
+**Context.** After D098 closed A5, A6's remaining lines were entirely
+distribution-shaped: cellar and swarm existed only as dev-tree
+projects with bare project.lua files, no demo had the promised
+README/welcome note, the public archives shipped the platformer
+alone, headless pixel smoke existed only for smoke/uigallery, and
+the puzzle/board recipe gap audit had never been run.
+
+**Decision.** Promote the whole matrix in one packet, changing no
+sim-visible byte. (1) Every bundled demo carries the A6 welcome
+note — controls, concepts taught, file tour, modification prompts,
+and its matching starter-template provenance (demo↔platformer,
+cellar↔top-down, swarm↔arcade). (2) cellar and swarm carry full
+picker/player metadata: author/version/description, gameplay-cut
+128px icons (a posed cellar frame; swarm's wave closing on the
+player), CONTROLS/CREDITS/LICENSE — validated through the real
+player-bundle door. project.lua is not part of the code bundle, so
+all three committed traces verify un-recut (proven empirically on
+both platforms, not assumed). (3) `editor.txt` stages both demos;
+the manifest test asserts every shipped demo arrives complete,
+proves both export through the real play-archive path with pinned
+README phrases, and gains the missing perfgauge absent-guard
+(dev-tree only per D098 — it had never been added to the leak
+lists). Root launchers stay demo-only: the picker is the front door
+for the rest. (4) One boot-frame pixel golden per promoted demo
+(cellar frame 90, swarm frame 175 on pinned lavapipe) — smoke, not
+exhaustive goldens; the committed traces stay the deep state net,
+and the demos' sim mixes already ride the trace hashes. (5) The
+shipped guide gains "Recipe: a puzzle or board game" (flat doc
+grid, pressed-edge turns, doc undo list, hud.place centering with
+inverted mouse picking, cm.rand deals, cm.save progress); the gap
+audit built the recipe verbatim as a scratch project and it ran
+first try — hud.place needing the explicit gfx_size box was the
+only friction and the recipe text now shows it. **No fourth demo**:
+a puzzle adds no materially different shared capability; the D096
+menu/panel and transition deferrals remain the only open cuts,
+still awaiting real votes. (6) Both clean-machine smokes assert the
+new members (README/icon/CONTROLS present, cellar and swarm boot
+from the read-only install) — with this, **A6 is closed** and its
+exit checklist walked.
+
+**Consequences.** Opening the archive now demonstrates all three
+genre families with thumbnails and welcome notes; the demos teach
+by copy against the A5 slices they ride. Anything that later moves
+a demo's sim/doc bytes still re-cuts that demo's golden with the
+committed replay vehicle (PROCESS.md); README/metadata edits do
+not. Revisit triggers: a demo hand-rolling a fade/wipe/hold votes
+the transition slice in (D096); a real menu/dialogue vote reopens
+the runtime-UI cuts; a puzzle demo joins the matrix only if a real
+game shows a shared capability the recipe cannot express.
+
+**Proof.** Linux selftest **23,991** and the staged native Windows
+executable **23,993** on PAL API 19 (no new KATs — the proof is the
+promoted artifacts). `nix run .#test` is ALL GREEN with the two new
+pixel goldens (each re-cut byte-identically on a second run) beside
+every historical trace; cellar_clear (556), swarm_runs (1,346), and
+demo_camtour (2,068) verify byte-exact on Linux AND native Windows
+after the metadata changes. Both public release archives rebuilt;
+the Debian 13 container and native PowerShell clean-machine
+matrices PASS with the new-member checks; cellar and swarm packaged
+as full player archives on both hosts (checksums verified, README
+and launcher spot-checked). `tools/build-windows.sh` refreshed the
+stage (4 durable entries preserved) and Start Menu shortcut.
+Inspected captures on llm-feed: the picker with both new thumbnail
+tiles and the gap-audit gridtoy running.

@@ -239,21 +239,37 @@ camera math, lifetime bookkeeping, input plumbing, or storage boilerplate.
 
 Goal: opening the archive immediately demonstrates breadth and teaches by copy.
 
-- [ ] Polish the current platformer into the canonical side-view mini-demo.
-- [ ] Build a one/two-room top-down action mini-demo: analog movement,
+- [x] Polish the current platformer into the canonical side-view mini-demo.
+  (The A5 retrofits made it the showpiece — cm.camera/D092, parallax/D093,
+  cm.hud/D096 — with real pad bindings since D087; README at D099.)
+- [x] Build a one/two-room top-down action mini-demo: analog movement,
   interaction/trigger, depth sort, room transition, one persistent pickup.
-- [ ] Build a one-screen arcade mini-demo: waves, pooled/lightweight actors,
+  (D088: `projects/cellar`, retrofitted onto box/depth/hud/move at A5.)
+- [x] Build a one-screen arcade mini-demo: waves, pooled/lightweight actors,
   projectiles/overlaps, juice, score/high score, instant restart.
-- [ ] Give every demo a short `README`/welcome note: controls, concepts, file
+  (D089: `projects/swarm`, retrofitted onto actor/tween/move at A5.)
+- [x] Give every demo a short `README`/welcome note: controls, concepts, file
   tour, modification prompts, and matching starter-template provenance.
-- [ ] Add picker thumbnails and metadata; keep assets small and project-local.
-- [ ] Add headless state/pixel/audio smoke coverage without turning demos into
-  brittle exhaustive goldens.
-- [ ] Write a puzzle/board recipe and use it as a gap audit; add a fourth demo
-  only if it reveals a materially different shared capability.
+  (D099: all three demos.)
+- [x] Add picker thumbnails and metadata; keep assets small and project-local.
+  (D099: gameplay-cut 128px icons + author/version/description + the full
+  player-packaging file set for cellar and swarm.)
+- [x] Add headless state/pixel/audio smoke coverage without turning demos into
+  brittle exhaustive goldens. (Committed traces carry deep state coverage —
+  cellar_clear, swarm_runs, demo_camtour — plus one boot-frame pixel golden
+  per promoted demo at D099; the demos' sim mixes ride the trace hashes, so
+  no separate audio golden.)
+- [x] Write a puzzle/board recipe and use it as a gap audit; add a fourth demo
+  only if it reveals a materially different shared capability. (D099: the
+  shipped guide's recipe, built verbatim against shipped modules — nothing
+  missing, no fourth demo.)
 
 Exit: platformer, top-down, and arcade demos are playable with keyboard and
 gamepad, editable end to end, export cleanly, and are readable starter sources.
+**A6 exit walked and closed (D099):** all three ship in the public archives
+(clean-machine matrices re-proven on Debian 13 and native Windows), export
+cleanly as full player archives on both hosts, and are completed by committed
+traces under keyboard and virtual-pad input.
 
 ### A7 — rewind/replay product UI
 

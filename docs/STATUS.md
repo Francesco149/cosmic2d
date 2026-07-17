@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087), A5 closed (D098); A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth, cm.hud, cm.move, the perf envelope shipped (D088–D098) (2026-07-17)
+## Current handoff — A4 (D087), A5 (D098), and A6 (D099) closed; A7 (rewind/replay product UI) is the open gate (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -19,9 +19,36 @@ has since confirmed a physical Switch Pro controller through native
 win32 SDL drives games and rebinding correctly — the Esc menu is the
 full player options surface (D085), games have real player saves
 (D086), and the all-inputs determinism proof plus the walked exit
-checklist closed the gate (D087). Shared genre-neutral runtime slices
-and demos (A5/A6), the complete rewind product UI (A7), and the
-release-candidate pass (A8) remain the open alpha gates.
+checklist closed the gate (D087). **A5 and A6 are also complete**
+(D088–D099): the shared runtime slices shipped against real demo pain,
+and the three-family demo matrix — demo (side-view), cellar (top-down),
+swarm (arcade) — ships in the public archives with READMEs, thumbnails,
+and export proofs. The complete rewind product UI (A7) and the
+release-candidate pass (A8) are the open alpha gates.
+
+**D099 closes A6 with the bundling packet — no sim-visible byte
+moved.** Every bundled demo carries the A6 welcome note (controls,
+concepts, file tour, modification prompts, starter-template
+provenance: demo↔platformer, cellar↔top-down, swarm↔arcade). cellar
+and swarm carry full picker/player metadata — author/version/
+description, gameplay-cut 128px icons, CONTROLS/CREDITS/LICENSE —
+validated through the real player-bundle door; project.lua is not in
+the code bundle, so all three committed traces verify un-recut
+(proven on both platforms). `editor.txt` stages both demos; the
+manifest test asserts every shipped demo arrives complete, proves
+both export through the real play-archive path, and gains the
+missing perfgauge absent-guard. Root launchers stay demo-only (the
+picker is the front door). One boot-frame pixel golden per promoted
+demo (cellar 90, swarm 175, pinned lavapipe) keeps smoke honest —
+the committed traces stay the deep state net. The shipped guide
+gained "Recipe: a puzzle or board game", and the gap audit built the
+recipe verbatim as a scratch project — it ran first try, so **no
+fourth demo** (the D096 menu/transition deferrals stay the only open
+cuts). Clean-machine matrices on Debian 13 and native Windows PASS
+with new-member checks; cellar and swarm packaged as full player
+archives on both hosts. Selftest 23,991 Linux / 23,993 native
+Windows; `nix run .#test` ALL GREEN. Picker-with-thumbnails and
+gridtoy captures inspected on llm-feed.
 
 **D098 closes A5 with the performance-envelope audit.** The vehicle
 is `projects/perfgauge` (dev-tree only, never bundled): a
@@ -844,25 +871,25 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **A6 bundling polish** — the demo matrix's
-remaining lines: READMEs/welcome notes for cellar and swarm
-(controls, concepts, file tour, modification prompts, starter-
-template provenance — the demo has one to match), picker thumbnails
-and metadata for both, release-manifest promotion so cellar and
-swarm ship in the public archives (with the clean-machine matrix
-re-proving the new members), headless state/pixel smoke coverage
-that doesn't turn the demos into brittle exhaustive goldens, and
-the puzzle/board recipe gap audit (write the recipe against the
-shipped slices; add a fourth demo only if it reveals a materially
-different shared capability). The A5 revisit trigger stays logged
-in D098: a real game needing >500 rich doc actors votes for a
-recorder-side per-subtree delta, then `projects/perfgauge` re-runs
-and the guide's envelope rises honestly. The
-transition slice stays deferred until a demo actually hand-rolls a
-fade/wipe/hold (D096's audit); a future retrofit that moves sim/doc
-bytes re-cuts its golden with the committed vehicle
-`tools/trace/replay-driver.lua` + `dump.lua` + `strip-eval.lua`
-(usage in the headers and PROCESS.md).
+**Exact next packet:** **A7 — the rewind/replay product UI.** The
+foundation (persistent tray, scrub grammar, wall-clocked transport:
+D065/D066/D074) and the store's durability rework (D073) are done;
+the open lines in ALPHA.md §A7 are the timeline's information layer
+and the replay artifact. The natural first packet is **timeline
+markers + activity envelope**: persisted per-segment activity/event
+indexes (sim vs editor vs project-file deltas, input transitions,
+code epochs, asset saves, restarts/session boundaries, errors)
+drawable without any state reconstruction, then the roughly
+once-a-minute presented-frame thumbnails. After that: disk
+budget/retention surfaces, immutable timeline sources with
+drag-in replay files, the standalone clip package (the
+content-addressed project-blob generalization), atomic clip export
+to `replays/`, and crash-report drops. Standing revisit triggers:
+>500 rich doc actors votes the recorder per-subtree delta (D098,
+re-run perfgauge); a hand-rolled fade/wipe/hold votes the
+transition slice in (D096); a sim/doc-moving demo retrofit re-cuts
+its golden with `tools/trace/replay-driver.lua` + `dump.lua` +
+`strip-eval.lua` (usage in the headers and PROCESS.md).
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
