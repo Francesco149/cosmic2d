@@ -855,6 +855,107 @@ local function t_depth()
   check(true, "depth: ysort accepts an empty array")
 end
 
+-- ---- cm.hud: anchored HUD text + device-flavored labels (A5/D096) ----
+
+local function t_hud()
+  local hud = cm.require("cm.hud")
+  local text = cm.require("cm.text")
+  local input = cm.require("cm.input")
+
+  -- place: the nine anchors over an explicit box (block 10x8 in 100x60)
+  local x, y = hud.place("tl", 4, 3, 10, 8, 100, 60)
+  check(x == 4 and y == 3, "hud: tl insets from the top-left")
+  x, y = hud.place("t", 0, 3, 10, 8, 100, 60)
+  check(x == 45 and y == 3, "hud: t centers horizontally")
+  x, y = hud.place("tr", 4, 3, 10, 8, 100, 60)
+  check(x == 86 and y == 3, "hud: tr insets from the right edge")
+  x, y = hud.place("l", 4, 0, 10, 8, 100, 60)
+  check(x == 4 and y == 26, "hud: l centers vertically")
+  x, y = hud.place("c", 0, 0, 10, 8, 100, 60)
+  check(x == 45 and y == 26, "hud: c centers both axes")
+  x, y = hud.place("r", 4, 0, 10, 8, 100, 60)
+  check(x == 86 and y == 26, "hud: r rides the right edge midline")
+  x, y = hud.place("bl", 4, 3, 10, 8, 100, 60)
+  check(x == 4 and y == 49, "hud: bl insets from the bottom-left")
+  x, y = hud.place("b", 0, 2, 10, 8, 100, 60)
+  check(x == 45 and y == 50, "hud: b centers over the bottom edge")
+  x, y = hud.place("br", 4, 3, 10, 8, 100, 60)
+  check(x == 86 and y == 49, "hud: br insets from both far edges")
+
+  -- centering floors exactly like the demo's (W - measure) // 2
+  x = hud.place("t", 0, 0, 9, 8, 100, 60)
+  check(x == 45, "hud: odd centering remainders floor")
+  -- centered axes take plain signed shifts
+  x, y = hud.place("c", -10, 5, 10, 8, 100, 60)
+  check(x == 35 and y == 31, "hud: centered axes take signed shifts")
+
+  -- refusals are loud
+  check(not pcall(hud.place, "mid", 0, 0, 10, 8, 100, 60),
+        "hud: unknown anchor refused")
+  check(not pcall(hud.place, "t", "4", 0, 10, 8, 100, 60),
+        "hud: non-number inset refused")
+  check(not pcall(hud.text, "t", 0, 0, 42), "hud: non-string text refused")
+
+  -- text: anchored draw is cm.text.draw at place() over measure — the
+  -- glyph pixels land exactly where the anchor says (spleen 'A' = 14 lit)
+  local W, H = pal.gfx_size()
+  pal.begin_frame(0, 0, 0, 1)
+  local rx, ry = hud.text("br", 2, 2, "A")
+  pal.present()
+  check(rx == W - 2 - 5 and ry == H - 2 - 8,
+        "hud: text returns the resolved top-left")
+  local pix = pal.read_pixels()
+  local lit_in, lit_out = 0, 0
+  for py = 0, H - 1 do
+    for px = 0, W - 1 do
+      if pix:byte((py * W + px) * 4 + 1) ~= 0 then
+        if px >= rx and px < rx + 5 and py >= ry and py < ry + 8 then
+          lit_in = lit_in + 1
+        else
+          lit_out = lit_out + 1
+        end
+      end
+    end
+  end
+  check(lit_in == 14 and lit_out == 0,
+        "hud: br-anchored glyph lands in its cell (in " .. lit_in
+        .. " out " .. lit_out .. ")")
+
+  -- multi-line centered blocks align each line to the anchor's side
+  pal.begin_frame(0, 0, 0, 1)
+  rx, ry = hud.text("t", 0, 0, "A\nAA")
+  pal.present()
+  check(rx == (W - 10) // 2 and ry == 0, "hud: multi-line block placement")
+  pix = pal.read_pixels()
+  lit_in, lit_out = 0, 0
+  for py = 0, H - 1 do
+    for px = 0, W - 1 do
+      if pix:byte((py * W + px) * 4 + 1) ~= 0 then
+        local l1 = px >= rx + 2 and px < rx + 7 and py >= 0 and py < 8
+        local l2 = px >= rx and px < rx + 10 and py >= 8 and py < 16
+        if l1 or l2 then lit_in = lit_in + 1 else lit_out = lit_out + 1 end
+      end
+    end
+  end
+  check(lit_in == 42 and lit_out == 0,
+        "hud: centered lines each align to the block (in " .. lit_in
+        .. " out " .. lit_out .. ")")
+
+  -- label: the pad-else-key flavor dance, live against pad 1 connectivity
+  input.map({ { "act", input.key.e, "pad:south" } })
+  input.pad_reset()
+  check(hud.label("act") == input.label("act", "key"),
+        "hud: label speaks keys with no pad")
+  input.feed({ { type = "pad", pad = 1, connected = true } })
+  input.apply(input.sample())
+  check(hud.label("act") == input.label("act", "pad"),
+        "hud: label speaks pad while pad 1 is connected")
+  check(hud.label("act") ~= input.label("act", "key"),
+        "hud: the two flavors actually differ for a dual-bound action")
+  input.pad_reset()
+  check(#input.sample() == 10, "hud: the label test leaves the pad domain unlatched")
+end
+
 -- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -9135,6 +9236,7 @@ function game.init()
   t_options()
   t_save()
   t_text()
+  t_hud()
   t_repl()
   t_ui()
   t_uispace()

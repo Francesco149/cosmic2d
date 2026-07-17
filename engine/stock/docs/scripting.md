@@ -553,6 +553,38 @@ This is within-layer ordering. Parallax and screen-fixed layers are
 `gfx.layer` (and per-map-layer `par` factors in the map window); the
 bundled top-down demo (cellar) is the worked example.
 
+## HUD text and button prompts (`cm.hud`)
+
+Every HUD hand-rolls the same two blocks: margin/centering arithmetic
+against `pal.gfx_size()`, and the "name the button on the device the
+player is actually holding" dance. `cm.hud` is both, render-only:
+
+    local hud = cm.require("cm.hud")
+
+    -- in draw: nine anchors — "tl" "t" "tr" / "l" "c" "r" / "bl" "b" "br".
+    -- dx/dy inset INWARD from the named edges; centering is automatic.
+    hud.text("t", 0, 3, title, { r = 1, g = 0.92, b = 0.7 })      -- top center
+    hud.text("tl", 4, 3, "coins " .. n, { r = 1, g = 0.9, b = 0.4 })
+    hud.text("bl", 4, 2, "walk into a door")                       -- bottom left
+    hud.text("c", 0, 0, "GAME OVER\n" .. hud.label("fire") .. " restarts")
+
+- `hud.text(anchor, dx, dy, str, opts)` draws through `cm.text` (same
+  `font`/`r`/`g`/`b`/`a` opts). On a centered axis `dx`/`dy` are plain
+  signed shifts. Multi-line strings place as one measured block with each
+  line aligned to the anchor's side; the call returns the block's
+  resolved top-left for badges drawn relative to it.
+- `hud.label(action)` is the live binding label flavored for the device
+  in hand — pad names while pad 1 is connected, else key names. Rebinds
+  show through automatically (it is `input.label(action, kind)` with the
+  kind chosen for you).
+- `hud.place(anchor, dx, dy, tw, th, w, h)` is the bare anchor math over
+  any box when you need to place quads, bars, or icons the same way.
+
+Everything is draw-time presentation: nothing touches `state.doc`, so
+use it freely in `draw` without determinism concerns. There is no
+menu/dialogue kit yet — a pause screen is a `d.paused` flag, an early
+`return` in `tick`, and a `hud.text("c", ...)` overlay.
+
 ## Sound effects and music
 
 Instruments must be uploaded into the simulation bank before use. The demo's
@@ -689,6 +721,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.camera` — follow/deadzone, bounds, room cuts, shake, world<->screen.
 - `cm.tween` — named effect counters: hit pause, flashes, shake, eased decay.
 - `cm.depth` — stable draw-order sorting: y-sorted draw lists, `ysort`.
+- `cm.hud` — anchored HUD text and device-flavored binding labels.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
