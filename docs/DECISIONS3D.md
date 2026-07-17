@@ -622,3 +622,46 @@ unregenerated (the round's proof of the render-class/sim split). The
 four openworld pixel goldens re-shot deliberately (~2.5k new static
 tris in every framing). Suite ALL GREEN; 3 shots on the feed
 (density + boulder-gray questions open).
+
+## D3D-023 — the meadow wanderer: NPCs become a list, one walks (2026-07-17)
+
+Round 15, autonomous (no new feed verdicts; water polish and exchange
+depth stay gated on R11/R12 answers). The ungated STATUS option that
+grows the figure/animation showcase — and after the human trimmed the
+props back in R14, more life beat more clutter: a SECOND NPC that
+walks its own little route.
+
+- **npc.lua holds a LIST of instances**, each a cm.mascot.build color
+  variant with one named sim buffer (36B f32: yaw, greet start/end as
+  frame+1, greet count, armed, x, z, waypoint, walk phase). The pond
+  watcher is instance 1, behavior unchanged; the lavender/moss MEADOW
+  WANDERER is instance 2 with a route. Emission stays a pure function
+  of (buffer, frame) — the zero-animation-state rule holds at two.
+- **Greeting = start > end.** Keeping BOTH edges in the buffer (old
+  code zeroed the start on exit) buys the draw side blend-out for
+  free: the wave blends in from the start edge, back out from the end
+  edge (frozen at the phase where it stopped), and a walker's gait
+  weight makes way symmetrically. No new state, two comparisons.
+- **A greet HOLDS a walker, then it walks on** (k.hold = 180f): stop,
+  ease facing, wave, line, resume — it has flowers to count. Re-greet
+  arms only past exit_r, so a standing player gets one hello per lap,
+  not a machine-gun. The armed flag subsumes the watcher's old
+  hysteresis exactly.
+- **The loop is verified ground like every route**: six legs through
+  the flower meadow on the tour's south leg, h 0.50..1.32, >= 1.2u
+  clear of every collider, probed headlessly before a line of NPC
+  code. Walkers have no collider and glue to world.ground — verified
+  gentle terrain is what makes that honest.
+- **Stage the entrance, don't spawn it in your face**: the wanderer
+  starts on the loop's FAR side (start_wp), so demo(6)'s player
+  settles among the flowers before the hello walks into frame — the
+  first draft greeted mid-corridor with its back to the camera. Beats
+  are placement + timing, not just clips.
+- **audio.sfx grew a note override**: the wanderer's hello is the
+  same greet bell a fourth up (note 81), not a new preset draft.
+
+Fallout: knobs.npc grew speed/arrive/hold and the ow.npc buffer
+layout changed — all four openworld traces re-recorded (drift-proven)
+and their pixels re-shot; the wanderer stands in the stars f1740
+framing. New goldens: openworld_meet.ctrace (900f) + .png (f690,
+face-to-face wave with the full line). Suite ALL GREEN.

@@ -4,6 +4,48 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 15) — the meadow wanderer: a second NPC, walking
+
+Autonomous round (no new feed verdicts; water polish + exchange depth
+stay gated). The ungated pick — after R14's "fewer boulders" verdict,
+more LIFE beat more clutter: **npc.lua becomes a list of instances**
+(D3D-023) and the second one walks. The lavender/moss **meadow
+wanderer** laps a six-leg loop through the flower meadow on the tour's
+south ring leg (probed headlessly first: h 0.50..1.32, >=1.2u clear of
+every collider) — walk clip on a distance phase like the player, greet
+edges (start AND end, frame+1) in the buffer so the wave blends in and
+back out as pure functions; a greet HOLDS it for k.hold frames (stop,
+face you, wave, line) and then it walks on — re-greet arms only past
+exit_r, one hello per lap. Its bell is the greet preset a fourth up
+(audio.sfx note override, no new .ins). The watcher is instance 1,
+behavior unchanged. demo(6) = walk the verified east corridor, stand
+in the flowers, and the wanderer walks INTO frame for the beat (it
+starts far-side on purpose — the first draft greeted mid-corridor,
+back to camera). Goldens: openworld_meet.ctrace (900f, drift-proven) +
+.png (f690 face-to-face wave, full line); all four openworld traces
+re-recorded (knobs.npc + ow.npc layout) + pixels re-shot (the wanderer
+stands in the stars framing). Suite ALL GREEN; 3 shots on the feed.
+
+## Exact next step
+
+1. Feed questions open (non-blocking): R15's (does the walk-up greet
+   beat land? wanderer palette read at 320x240? should walkers dodge
+   the player or keep plowing their route?); R13's (star read,
+   completion beat, persist collection?), R12's (exchange read, dialog
+   tone, text box vs bare HUD line) and R11's (splash in-game listen,
+   half-sunk swim read, jump read, band colors + fog, eye size).
+2. **Demo 2 grows** (menu, minus stars + props + second NPC): water
+   polish (shoreline read, swim-out splash) and exchange depth
+   (multi-line dialog pages, star-count-aware lines) stay gated;
+   ungated: a third NPC species-variant elsewhere (snow band?), prop
+   shadows (trees/boulders cast nothing today), or route variety for
+   the wanderer (pause-and-sniff-a-flower beats). Figure EDITOR stays
+   parked until the human unparks.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 14 playtest 2) — boulder tops are solid
 
 Human: **"if i jump on top of a boulder sometimes I can phase into
@@ -49,7 +91,7 @@ deliberately. Suite ALL GREEN; 3 shots on the feed. (Note: one suite
 run tripped a transient selftest fail — concurrent /tmp/cosmic_selftest
 collision with another repo's suite on this machine; clean on re-run.)
 
-## Exact next step
+## Exact next step (done — see round 15 above)
 
 1. Feed questions open (non-blocking): R14 answered ("looks good"
    after the boulder cut — see the playtest entry above). Still open:
