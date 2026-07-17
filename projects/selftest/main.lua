@@ -3716,6 +3716,237 @@ local function t_options()
   pal.x_remove(root)
 end
 
+-- ---- cm.save: namespaced atomic player storage (A4/D086) ----
+
+local function t_save()
+  local save = cm.require("cm.save")
+  local project = cm.require("cm.project")
+  local repl = cm.require("cm.repl")
+
+  -- the save_id grammar: the stable namespace key under the user root
+  check(project.save_id_error("my-game_2") == nil
+        and project.save_id_error("x") == nil
+        and project.save_id_error(("a"):rep(64)) == nil,
+        "save: valid save_ids pass the grammar")
+  check(project.save_id_error(nil) ~= nil
+        and project.save_id_error("") ~= nil
+        and project.save_id_error("My-Game") ~= nil
+        and project.save_id_error("-lead") ~= nil
+        and project.save_id_error("sp ace") ~= nil
+        and project.save_id_error("p/ath") ~= nil
+        and project.save_id_error("..") ~= nil
+        and project.save_id_error(("a"):rep(65)) ~= nil,
+        "save: unsafe save_ids are refused")
+  check(project.save_slug("My Game! vol.2") == "my-game-vol-2"
+        and project.save_slug("π") == "game"
+        and project.save_slug("--x--") == "x",
+        "save: slugs fold names into the grammar with an honest fallback")
+  check(project.validate_runtime({ name = "g", save_id = "ok-id" }) == true
+        and not project.validate_runtime({ name = "g", save_id = "Bad Id" }),
+        "save: boot validation admits only grammar-clean save_ids")
+
+  -- settings: empty is a legal draft, invalid never crosses, valid persists
+  local meta = { name = "g" }
+  local form = project.settings(meta)
+  check(form.save_id == "", "save: an undeclared save_id edits as empty")
+  local ok = project.validate_settings(form)
+  check(ok and ok.save_id == nil, "save: an empty save id stays a draft")
+  form.save_id = "Bad Id"
+  local _, serr = project.validate_settings(form)
+  check(serr and serr:find("save_id", 1, true),
+        "save: settings refuse a save id off the grammar")
+  form.save_id = "  good-id  "
+  meta = project.apply_settings(meta, form)
+  check(meta and meta.save_id == "good-id",
+        "save: apply_settings writes the trimmed id")
+  form.save_id = ""
+  meta = project.apply_settings(meta, form)
+  check(meta and meta.save_id == nil,
+        "save: clearing the settings field removes the key")
+
+  -- bind: the store exists only for a validly declared id
+  save.bind(nil)
+  local on, why = save.enabled()
+  check(not on and why:find("off this session", 1, true),
+        "save: an unbound session names itself")
+  save.bind({ name = "g" })
+  on, why = save.enabled()
+  check(not on and why:find("no save_id", 1, true),
+        "save: a project without save_id has no store")
+  save.bind({ name = "g", save_id = "Bad Id" })
+  check(not save.enabled(), "save: an invalid save_id never binds")
+  check(select(2, save.write(1, { x = 1 })) ~= nil
+        and select(2, save.read(1)) ~= nil
+        and select(2, save.slots()) ~= nil
+        and select(2, save.profiles()) ~= nil
+        and select(2, save.erase(1)) ~= nil
+        and select(2, save.wipe()) ~= nil,
+        "save: every door answers a disabled store with the reason")
+
+  -- the real store under a fixture root (the selftest seam)
+  local root = tmproot() .. "/cosmic_selftest_save"
+  local function rmtree()
+    for _, rel in ipairs(pal.x_list_dir_all(root) or {}) do
+      pal.x_remove(root .. "/" .. rel)
+    end
+    for _, rel in ipairs({ "fixture-game/default", "fixture-game/alt",
+                           "fixture-game" }) do
+      pal.x_remove(root .. "/" .. rel)
+    end
+    pal.x_remove(root)
+  end
+  rmtree()
+  save.bind({ name = "g", save_id = "fixture-game" })
+  save._root = root
+  check(save.enabled() == true, "save: a declared id binds the store")
+
+  -- slot grammar
+  check(select(2, save.write(0, {})) ~= nil
+        and select(2, save.write(1.5, {})) ~= nil
+        and select(2, save.read(save.MAX_SLOT + 1)) ~= nil,
+        "save: slots are integers 1.." .. save.MAX_SLOT)
+
+  -- write/read round-trip: exact plain tree, envelope stamps the schema
+  local data = { hp = 3, name = "α\nβ\0γ\"]]", items = { "sword", n = 2 },
+                 pos = { x = 1.5, y = -2 } }
+  check(save.write(1, data) == true, "save: write publishes")
+  local got = save.read(1)
+  check(got.hp == 3 and got.name == "α\nβ\0γ\"]]" and got.items[1] == "sword"
+        and got.items.n == 2 and got.pos.x == 1.5 and got.pos.y == -2,
+        "save: read returns the exact plain tree")
+  local env = state.parse(pal.read_file(root .. "/fixture-game/default/slot1.sav"))
+  check(env.schema == 1 and env.data.hp == 3,
+        "save: the envelope stamps the declared schema")
+  check(select(2, save.read(2)):find("no save in slot 2", 1, true),
+        "save: a missing slot is the named first-run answer")
+
+  -- refusals before any write: nil data, non-plain data
+  check(select(2, save.write(1)) == "save data required",
+        "save: nil data is refused")
+  check(tostring(select(2, save.write(1, { f = print }))):find("plain", 1, true),
+        "save: non-plain data is refused before any write")
+
+  -- a failed atomic replacement preserves the previous save byte-for-byte
+  local before = pal.read_file(root .. "/fixture-game/default/slot1.sav")
+  local wok, werr = save.write(1, { hp = 99 }, { _fail = "rename" })
+  check(not wok and werr ~= nil, "save: an injected write failure is named")
+  check(pal.read_file(root .. "/fixture-game/default/slot1.sav") == before,
+        "save: a failed write preserves the previous save byte-for-byte")
+  check(save.read(1).hp == 3, "save: the preserved save still decodes")
+
+  -- malformed bytes are a named error, never a crash, and stay on disk
+  pal.write_file(root .. "/fixture-game/default/slot3.sav", "not a save")
+  check(select(2, save.read(3)):find("unreadable", 1, true),
+        "save: malformed bytes answer as unreadable")
+  check(pal.read_file(root .. "/fixture-game/default/slot3.sav") == "not a save",
+        "save: reads never touch a malformed file")
+
+  -- schema: newer refusal, stepwise migration, missing/failing steps
+  save.write(4, { coins = 7 }) -- schema 1
+  check(save.schema(3) == 3, "save: schema declares")
+  check(not pcall(save.schema, 0) and not pcall(save.schema, 1.5),
+        "save: schema versions are positive integers")
+  local nerr = select(2, save.read(4))
+  check(nerr and nerr:find("no migration from save schema 1", 1, true),
+        "save: a missing migration step is named")
+  save.migrate(1, function(d) return { coins = d.coins, gems = 0 } end)
+  nerr = select(2, save.read(4))
+  check(nerr and nerr:find("no migration from save schema 2", 1, true),
+        "save: migration stops at the exact missing step")
+  save.migrate(2, function(d) d.bank = d.coins * 10 return d end)
+  got = save.read(4)
+  check(got.coins == 7 and got.gems == 0 and got.bank == 70,
+        "save: reads migrate stepwise to the declared schema")
+  save.migrate(2, function() error("boom") end)
+  nerr = select(2, save.read(4))
+  check(nerr and nerr:find("migration from schema 2 failed", 1, true),
+        "save: a raising migration is a named error")
+  save.migrate(2, function() return nil end)
+  nerr = select(2, save.read(4))
+  check(nerr and nerr:find("returned no data", 1, true),
+        "save: a migration returning nothing is refused")
+  pal.write_file(root .. "/fixture-game/default/slot5.sav",
+                 state.canon({ schema = 9, data = { future = true } }))
+  nerr = select(2, save.read(5))
+  check(nerr and nerr:find("newer version", 1, true),
+        "save: a newer-schema save is refused honestly")
+  save.write(5, { fresh = true })
+  check(state.parse(pal.read_file(
+          root .. "/fixture-game/default/slot5.sav")).schema == 3,
+        "save: writes stamp the current declared schema")
+
+  -- profiles + slot listing
+  check(save.profile() == "default", "save: the default profile is default")
+  check(select(2, save.profile("Bad Name")) ~= nil
+        and save.profile() == "default",
+        "save: profile names follow the save_id grammar")
+  check(save.profile("alt") == "alt", "save: profile selects")
+  check(#save.slots() == 0, "save: a fresh profile has no slots")
+  save.write(2, { alt = true })
+  local slots = save.slots()
+  check(#slots == 1 and slots[1] == 2, "save: slots list the profile's saves")
+  save.profile("default")
+  slots = save.slots() -- the malformed slot 3 fixture is still a slot
+  check(#slots == 4 and slots[1] == 1 and slots[2] == 3 and slots[3] == 4
+        and slots[4] == 5,
+        "save: slots list ascending in the current profile")
+  local profs = save.profiles()
+  check(#profs == 2 and profs[1] == "alt" and profs[2] == "default",
+        "save: profiles list every namespace holding saves")
+
+  -- erase: explicit, idempotent
+  check(save.erase(4) == true and select(2, save.read(4)) ~= nil,
+        "save: erase removes one slot")
+  check(save.erase(4) == true, "save: erasing an absent slot succeeds")
+
+  -- wipe: the current profile only
+  check(save.wipe() == true and #save.slots() == 0,
+        "save: wipe empties the current profile")
+  save.profile("alt")
+  check(#save.slots() == 1, "save: wipe leaves other profiles alone")
+  check(save.wipe() == true and save.wipe() == true,
+        "save: wiping an empty profile is a no-op")
+  save.profile("default")
+
+  -- the mid-session load door: read+migrate now, apply through the
+  -- recorded eval channel at the next frame start
+  check(#repl.queue == 0, "save: the repl queue starts idle")
+  check(select(2, save.load(1)) == "no on_load handler is registered",
+        "save: load without a handler is refused")
+  save.schema(1)
+  save.write(1, data)
+  local applied
+  save.on_load(function(d) applied = d end)
+  check(select(2, save.load(2)) ~= nil, "save: loading an empty slot is named")
+  check(save.load(1) == true, "save: load queues the recorded apply")
+  check(#repl.queue == 1 and repl.queue[1]:find("_apply", 1, true),
+        "save: the queued command rides the eval channel")
+  local drained = repl.drain()
+  check(applied and applied.hp == 3 and applied.name == "α\nβ\0γ\"]]"
+        and applied.items.n == 2,
+        "save: the handler receives the exact bytes the record carries")
+  check(drained and #drained == 1,
+        "save: the drained command is what a recording would carry as EVAL")
+  applied = nil
+  repl.exec(drained[1]) -- verify's replay path: the same exec, same command
+  check(applied and applied.hp == 3 and applied.pos.y == -2,
+        "save: replaying the recorded command re-applies the same data")
+  save._apply("garbage bytes") -- a corrupt record logs, never crashes
+  save.on_load(nil)
+  save._apply(state.canon({ ok = true })) -- handler-less apply logs, never crashes
+
+  -- a rebind resets declarations and profile: nothing leaks across projects
+  save.profile("alt")
+  save.schema(5)
+  save.bind({ name = "g", save_id = "fixture-game" })
+  check(save.profile() == "default" and save._schema == 1,
+        "save: bind resets profile and declarations")
+
+  save._root = nil
+  save.bind(nil)
+  rmtree()
+end
+
 local function t_project_settings()
   local project = cm.require("cm.project")
   local src = [==[
@@ -3935,6 +4166,7 @@ local function t_project_location()
   local source, parent = "/projects/source", "/else"
   local destination = parent .. "/renamed π project"
   local bytes = project.PROJECT_TMPL:gsub("__NAME__", "location test")
+                          :gsub("__SAVEID__", "location-test")
 
   check(location.destination(parent, "renamed π project", { platform = "linux" })
           == destination
@@ -4093,6 +4325,7 @@ local function t_project_duplicate()
   local project = cm.require("cm.project")
   local source, parent = "/projects/original π", "/dest parent"
   local bytes = project.PROJECT_TMPL:gsub("__NAME__", "duplicate test")
+                          :gsub("__SAVEID__", "duplicate-test")
 
   local dirs, files, notes, note_calls
   local probe_fail, read_fail
@@ -4445,6 +4678,7 @@ local function t_project_archive()
   local project = cm.require("cm.project")
   local source, parent = "/projects/original π", "/dest parent"
   local bytes = project.PROJECT_TMPL:gsub("__NAME__", "archive test")
+                          :gsub("__SAVEID__", "archive-test")
 
   -- cm.export re-declares these so the host packager can dofile() it without
   -- the cm global; the values must stay the shared writer's exact limits.
@@ -4720,6 +4954,7 @@ local function t_project_delete()
   local project = cm.require("cm.project")
   local source = "/projects/original π"
   local bytes = project.PROJECT_TMPL:gsub("__NAME__", "delete test")
+                          :gsub("__SAVEID__", "delete-test")
 
   local dirs, files, rec
   local function reset()
@@ -8307,6 +8542,7 @@ function game.init()
   t_input_gpad()
   t_input_bind()
   t_options()
+  t_save()
   t_text()
   t_repl()
   t_ui()
