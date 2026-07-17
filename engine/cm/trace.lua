@@ -74,7 +74,11 @@ M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024 }
 
 -- Read-only timeline marker bits returned by ring_timeline(). They are chrome
 -- metadata derived from existing records, never sim state and never verified.
-M.timeline_event = { INPUT = 1, CODE = 2, EVAL = 4, SESSION = 8 }
+-- SAVE/ERROR/RESTART ride observer chunks (FSAV/MARK) the editor emits at the
+-- render/dev phase; INPUT/CODE/EVAL are read back out of the sim chunk stream;
+-- SESSION is the adopted<->live structural boundary.
+M.timeline_event = { INPUT = 1, CODE = 2, EVAL = 4, SESSION = 8,
+                     SAVE = 16, ERROR = 32, RESTART = 64 }
 
 -- M._R = ring session { project, stream_id, segs, next_id, prev, prev_doc,
 --                       last_frame }
@@ -99,6 +103,130 @@ end
 
 local function ring_kf()
   return math.max(1, math.floor(M.ring.kf or 60))
+end
+
+-- ---- the timeline activity/event summary (A7 §12) ----
+--
+-- Each closed segment carries a coarse { sim, editor, files, events } digest:
+-- the max single-frame changed bytes for named sim buffers+doc, the editor
+-- doc, and project files (asset saves + code epochs), plus the OR of the
+-- frame event bits. It is observer-only — never a named buffer, never the sim
+-- doc, never verified — and it is what lets the tray draw the WHOLE retained
+-- window (including demoted, spilled, and adopted cross-session segments)
+-- without decoding a single frame of state. Resident segments still render
+-- exactly from their chunk streams; the digest is the zoomed-out / cross-
+-- session fallback. It is persisted in the segment blob (SUMM) and, so boot
+-- adoption never reads the blobs, in the manifest line.
+
+-- A lightweight FRAM reader for the activity lane. It counts the bytes actually
+-- carried by logical deltas/full replacements and the sim document; it does not
+-- allocate buffers, apply deltas, or reconstruct frame state.
+local function timeline_fram(p)
+  local irec, pos = unpack("<s4", p)
+  local nbufs
+  nbufs, pos = unpack("<I4", p, pos)
+  local changed = 0
+  for _ = 1, nbufs do
+    local name, kind, payload
+    name, kind, payload, pos = unpack("<s4I1s4", p, pos)
+    changed = changed + #payload
+  end
+  if p:byte(pos) == 1 then
+    local doc = unpack("<s4", p, pos + 1)
+    changed = changed + #doc
+  end
+  -- Mouse motion is intentionally not an "input transition" marker. Action
+  -- bits + mouse/pad buttons (and pad connects) are discrete user decisions;
+  -- wheel and analog axes already produce visible state activity when a game
+  -- consumes them, and quantized stick drift must not saturate the lane.
+  local input_key
+  if #irec >= 10 then
+    local keyparts = { irec:sub(1, 4), irec:sub(9, 9) }
+    local kpos = 11
+    while kpos + 1 <= #irec do -- v2 extensions (D082); malformed = stop
+      local tag, len = irec:byte(kpos), irec:byte(kpos + 1)
+      local fin = kpos + 1 + len
+      if fin > #irec then break end
+      if tag == 1 and len >= 1 then
+        local n, q = irec:byte(kpos + 2), kpos + 3
+        for _ = 1, math.min(n, 4) do
+          if q + 4 > fin then break end
+          keyparts[#keyparts + 1] = irec:sub(q, q + 4) -- slot + buttons
+          q = q + 11
+        end
+      end
+      kpos = fin + 1
+    end
+    input_key = table.concat(keyparts)
+  else
+    input_key = irec
+  end
+  return changed, input_key
+end
+
+-- total changed source bytes carried by an EPOC (hot-reload) chunk
+local function epoc_bytes(payload)
+  local ok, n, pos = pcall(unpack, "<I4", payload)
+  if not ok then return 0 end
+  local total = 0
+  for _ = 1, n do
+    local name, fpath, source
+    ok, name, fpath, source, pos = pcall(unpack, "<s4s4s4", payload, pos)
+    if not ok then break end
+    total = total + #source
+  end
+  return total
+end
+
+-- Fold a segment's resident chunk stream into its coarse digest. Reused at
+-- spill (the durable copy) and after a rewind truncation (the kept prefix).
+-- Input transitions here are intra-segment only; the exact per-frame path in
+-- ring_timeline still catches the segment-boundary transition for resident
+-- segments, and the digest is a zoomed-out summary either way.
+local function summarize_segment(seg)
+  local E = M.timeline_event
+  local s = { sim = 0, editor = 0, files = 0, events = 0 }
+  local last_input
+  for _, c in ipairs(seg.chunks or {}) do
+    if c.tag == "FRAM" then
+      local sim, ikey = timeline_fram(c.payload)
+      if sim > s.sim then s.sim = sim end
+      if last_input and ikey ~= last_input then s.events = s.events | E.INPUT end
+      last_input = ikey
+    elseif c.tag == "EDOC" then
+      local ok, edoc = pcall(unpack, "<s4", c.payload, 2)
+      local n = ok and #edoc or 0
+      if n > s.editor then s.editor = n end
+    elseif c.tag == "FSAV" then
+      local ok, _, nbytes = pcall(unpack, "<s4I4", c.payload)
+      if ok and nbytes > s.files then s.files = nbytes end
+      s.events = s.events | E.SAVE
+    elseif c.tag == "EVAL" then
+      s.events = s.events | E.EVAL
+    elseif c.tag == "EPOC" then
+      s.events = s.events | E.CODE
+      local n = epoc_bytes(c.payload)
+      if n > s.files then s.files = n end
+    elseif c.tag == "MARK" then
+      local ok, bit = pcall(unpack, "<I4", c.payload)
+      if ok then s.events = s.events | bit end
+    end
+  end
+  return s
+end
+
+local function ensure_summary(seg)
+  if not seg.summary then seg.summary = summarize_segment(seg) end
+  return seg.summary
+end
+
+-- the one manifest-line spelling: id first frames fbytes + the 4 digest fields.
+-- Legacy 4-field lines (pre-A7) decode with no digest and read back as an
+-- honest "no summary" gap; hist_scan tolerates both.
+local function seg_index_line(seg, fbytes)
+  local s = ensure_summary(seg)
+  return ("%d %d %d %d %d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
+    fbytes, s.sim, s.editor, s.files, s.events)
 end
 
 -- ---- the segment ring ----
@@ -240,8 +368,7 @@ end
 
 local function index_append(R, seg)
   local path = hist_index(hist_dir(R))
-  local line = ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
-                                           seg.fbytes)
+  local line = seg_index_line(seg, seg.fbytes)
   local bytes = (R.index_bytes or pal.read_file(path) or "") .. line
   local ok, err = pal.write_file_atomic(path, bytes,
                                         M._write_fail and M._write_fail.index)
@@ -252,6 +379,8 @@ end
 local function spill_blob(seg)
   local w = chunk.writer("CSEG")
   w.chunk("HEAD", 1, pack("<I4I4", seg.first, seg.frames))
+  local s = ensure_summary(seg)
+  w.chunk("SUMM", 1, pack("<I4I4I4I4", s.sim, s.editor, s.files, s.events))
   for _, b in ipairs(seg.kf_bufs) do
     w.chunk("KFBF", 1, pack("<s4s4", b.name, b.bytes))
   end
@@ -393,7 +522,7 @@ start_spill = function(R, seg)
   end
 
   local index_path = hist_index(hist_dir(R))
-  local line = ("%d %d %d %d\n"):format(seg.id, seg.first, seg.frames, #blob)
+  local line = seg_index_line(seg, #blob)
   local index_bytes = (R.index_bytes or pal.read_file(index_path) or "") .. line
   local id, err = pal.x_write_file_pair_atomic_async(
     path, blob, index_path, index_bytes,
@@ -436,6 +565,9 @@ local function seg_load(R, seg)
   local kf_bufs, chunks2, doct, edoc = {}, {}, "", ""
   for _, c in ipairs(chunk.read(blob, "CSEG")) do
     if c.tag == "HEAD" then -- id/first/frames live on the skeleton
+    elseif c.tag == "SUMM" then
+      local sim, ed, fi, ev = unpack("<I4I4I4I4", c.payload)
+      seg.summary = { sim = sim, editor = ed, files = fi, events = ev }
     elseif c.tag == "KFBF" then
       local name, bytes = unpack("<s4s4", c.payload)
       kf_bufs[#kf_bufs + 1] = { name = name, bytes = bytes }
@@ -466,14 +598,26 @@ local function hist_scan(project)
   local dir = project .. "/.ed/history"
   local blob = pal.read_file(hist_index(dir))
   if not blob then return {} end
+  -- Parse per line (last-wins dedup by id). The four digest fields are
+  -- optional: legacy pre-A7 lines have only the first four and read back with
+  -- no summary (an honest gap the tray labels).
   local byid, order = {}, {}
-  for id, first, frames, fbytes in
-      blob:gmatch("(%d+) (%d+) (%d+) (%d+)") do
-    id = tonumber(id)
-    if not byid[id] then order[#order + 1] = id end
-    byid[id] = { id = id, first = tonumber(first),
-                 frames = tonumber(frames), fbytes = tonumber(fbytes),
-                 file = ("%s/seg_%06d"):format(dir, id) }
+  for line in blob:gmatch("[^\n]+") do
+    local id, first, frames, fbytes = line:match("^(%d+) (%d+) (%d+) (%d+)")
+    if id then
+      id = tonumber(id)
+      if not byid[id] then order[#order + 1] = id end
+      local e = { id = id, first = tonumber(first),
+                  frames = tonumber(frames), fbytes = tonumber(fbytes),
+                  file = ("%s/seg_%06d"):format(dir, id) }
+      local sim, ed, fi, ev =
+        line:match("^%d+ %d+ %d+ %d+ (%d+) (%d+) (%d+) (%d+)")
+      if sim then
+        e.summary = { sim = tonumber(sim), editor = tonumber(ed),
+                      files = tonumber(fi), events = tonumber(ev) }
+      end
+      byid[id] = e
+    end
   end
   local ent = {}
   for _, id in ipairs(order) do
@@ -543,10 +687,17 @@ local function hist_adopt(R)
     R.segs[#R.segs + 1] = {
       id = e.id, first = e.first, frames = e.frames, bytes = 0,
       file = e.file, fbytes = e.fbytes, spilled = true, adopted = true,
-    }
+      summary = e.summary, -- from the manifest, so the tray draws the past
+    }                      -- without touching a single spilled blob
     R.next_id = math.max(R.next_id, e.id + 1)
-    lines[#lines + 1] = ("%d %d %d %d\n"):format(e.id, e.first, e.frames,
-                                                 e.fbytes)
+    local s = e.summary
+    if s then
+      lines[#lines + 1] = ("%d %d %d %d %d %d %d %d\n"):format(e.id, e.first,
+        e.frames, e.fbytes, s.sim, s.editor, s.files, s.events)
+    else
+      lines[#lines + 1] = ("%d %d %d %d\n"):format(e.id, e.first, e.frames,
+                                                   e.fbytes)
+    end
   end
   pal.mkdir(dir)
   local ok, err = pal.write_file_atomic(hist_index(dir), table.concat(lines),
@@ -811,6 +962,36 @@ function M.record_frame(input_record, evals)
   end
 end
 
+-- Observer hooks for the render/dev phase (not the sim step). Both append a
+-- tiny chunk to the open segment so the activity/event lanes see project-file
+-- and lifecycle events; both are ignored by state reconstruction and the
+-- determinism verifier, so they never touch a replay's bytes. No-ops without
+-- a live ring (headless/CI never records these).
+
+-- An editor asset save. nbytes is the published source size (files activity);
+-- the bytes themselves belong to the later blob/manifest packet.
+function M.note_save(path, nbytes)
+  local R = M._R
+  if not R or #R.segs == 0 then return end
+  local seg = R.segs[#R.segs]
+  seg_append(seg, "FSAV",
+    pack("<s4I4", tostring(path or ""), math.max(0, math.floor(nbytes or 0))))
+  seg.summary = nil
+end
+
+-- A lifecycle event bit (M.timeline_event.ERROR / .RESTART) at the current
+-- frame. INPUT/CODE/EVAL/SAVE/SESSION derive from other chunks; this carries
+-- the ones with no state footprint of their own.
+function M.note_event(bit)
+  local R = M._R
+  if not R or #R.segs == 0 then return end
+  bit = math.floor(bit or 0)
+  if bit == 0 then return end
+  local seg = R.segs[#R.segs]
+  seg_append(seg, "MARK", pack("<I4", bit))
+  seg.summary = nil
+end
+
 -- called when hot reload swapped modules mid-session
 function M.on_code_change(changed_names)
   local R = M._R
@@ -845,7 +1026,11 @@ local function write_trace(path, project, kf, first_i)
     if i > first_i then
       w.chunk("KEYF", 1, state.encode_snapshot(s.kf_bufs, s.kf_doct))
     end
-    for _, c in ipairs(s.chunks) do w.chunk(c.tag, 1, c.payload) end
+    -- FSAV/MARK are history-activity chrome, not replay state; a standalone
+    -- clip's own activity index is the later packaging packet's job.
+    for _, c in ipairs(s.chunks) do
+      if c.tag ~= "FSAV" and c.tag ~= "MARK" then w.chunk(c.tag, 1, c.payload) end
+    end
     frames = frames + s.frames
   end
   w.chunk("TAIL", 1, pack("<I4", frames))
@@ -1009,58 +1194,14 @@ local function decode_fram(p)
   return irec, recs, doc
 end
 
--- A lightweight FRAM reader for the A7 activity lane. It counts the bytes
--- actually carried by logical deltas/full replacements and the sim document;
--- it does not allocate buffers, apply deltas, or reconstruct frame state.
-local function timeline_fram(p)
-  local irec, pos = unpack("<s4", p)
-  local nbufs
-  nbufs, pos = unpack("<I4", p, pos)
-  local changed = 0
-  for _ = 1, nbufs do
-    local name, kind, payload
-    name, kind, payload, pos = unpack("<s4I1s4", p, pos)
-    changed = changed + #payload
-  end
-  if p:byte(pos) == 1 then
-    local doc = unpack("<s4", p, pos + 1)
-    changed = changed + #doc
-  end
-  -- Mouse motion is intentionally not an "input transition" marker. Action
-  -- bits + mouse/pad buttons (and pad connects) are discrete user decisions;
-  -- wheel and analog axes already produce visible state activity when a game
-  -- consumes them, and quantized stick drift must not saturate the lane.
-  local input_key
-  if #irec >= 10 then
-    local keyparts = { irec:sub(1, 4), irec:sub(9, 9) }
-    local kpos = 11
-    while kpos + 1 <= #irec do -- v2 extensions (D082); malformed = stop
-      local tag, len = irec:byte(kpos), irec:byte(kpos + 1)
-      local fin = kpos + 1 + len
-      if fin > #irec then break end
-      if tag == 1 and len >= 1 then
-        local n, q = irec:byte(kpos + 2), kpos + 3
-        for _ = 1, math.min(n, 4) do
-          if q + 4 > fin then break end
-          keyparts[#keyparts + 1] = irec:sub(q, q + 4) -- slot + buttons
-          q = q + 11
-        end
-      end
-      kpos = fin + 1
-    end
-    input_key = table.concat(keyparts)
-  else
-    input_key = irec
-  end
-  return changed, input_key
-end
-
 -- Summarize a retained interval into max-per-bin activity and event bits for
--- the product timeline. This deliberately reads only resident chunk streams:
--- old R6 disk skeletons have no summary index, and drawing the tray must never
--- synchronously load/decode hundreds of history files. `missing` tells the UI
--- to label that honest legacy gap. A later A7 packet persists the same summary
--- shape as multi-resolution segment indexes.
+-- the product timeline. Resident segments render exactly from their chunk
+-- streams; demoted, spilled, and adopted cross-session segments render coarsely
+-- from their persisted per-segment digest (A7 §12) — drawing the tray never
+-- synchronously loads or decodes a history blob. `missing` is set only for
+-- pre-A7 legacy segments that carry neither chunks nor a digest, so the UI can
+-- label that honest gap. Refining a coarse segment to per-frame detail happens
+-- naturally: seeking there materializes its chunks (LRU) and this reads them.
 function M.ring_timeline(from_frame, to_frame, bins)
   local R = M._R
   local lo, hi = M.ring_range()
@@ -1083,6 +1224,9 @@ function M.ring_timeline(from_frame, to_frame, bins)
     local bi = bucket(f)
     if bi then data[bi].events = data[bi].events | bit end
   end
+  local function bump(bi, key, n)
+    if bi and n > data[bi][key] then data[bi][key] = n end
+  end
 
   local missing = false
   local last_input
@@ -1096,10 +1240,7 @@ function M.ring_timeline(from_frame, to_frame, bins)
     end
     prior_adopted = adopted
     if sl >= from_frame and sf <= to_frame then
-      if not seg.chunks then
-        missing = true
-        last_input = nil
-      else
+      if seg.chunks then
         local frame = seg.first - 1
         local pending = 0
         for _, c in ipairs(seg.chunks) do
@@ -1107,26 +1248,49 @@ function M.ring_timeline(from_frame, to_frame, bins)
             pending = pending | E.EVAL
           elseif c.tag == "EPOC" then
             event(frame, E.CODE)
+            bump(bucket(frame), "files", epoc_bytes(c.payload))
           elseif c.tag == "FRAM" then
             frame = frame + 1
             local sim, ikey = timeline_fram(c.payload)
             local bi = bucket(frame)
             if bi then
-              if sim > data[bi].sim then data[bi].sim = sim end
+              bump(bi, "sim", sim)
               data[bi].events = data[bi].events | pending
             end
             pending = 0
             if last_input and ikey ~= last_input then event(frame, E.INPUT) end
             last_input = ikey
           elseif c.tag == "EDOC" then
-            local bi = bucket(frame)
-            if bi then
-              local ok, edoc = pcall(unpack, "<s4", c.payload, 2)
-              local n = ok and #edoc or 0
-              if n > data[bi].editor then data[bi].editor = n end
-            end
+            local ok, edoc = pcall(unpack, "<s4", c.payload, 2)
+            bump(bucket(frame), "editor", ok and #edoc or 0)
+          elseif c.tag == "FSAV" then
+            local ok, _, nbytes = pcall(unpack, "<s4I4", c.payload)
+            bump(bucket(frame), "files", ok and nbytes or 0)
+            event(frame, E.SAVE)
+          elseif c.tag == "MARK" then
+            local ok, bit = pcall(unpack, "<I4", c.payload)
+            if ok then event(frame, bit) end
           end
         end
+      elseif seg.summary then
+        -- Coarse: one max per segment. Paint the segment's whole visible width
+        -- with its max envelope (we can't claim any bin is quieter) and place
+        -- its event bits at the segment's leading visible bin.
+        local s = seg.summary
+        local b0 = bucket(math.max(from_frame, seg.first))
+        local b1 = bucket(math.min(to_frame, sl))
+        if b0 and b1 then
+          for bi = b0, b1 do
+            bump(bi, "sim", s.sim)
+            bump(bi, "editor", s.editor)
+            bump(bi, "files", s.files)
+          end
+          data[b0].events = data[b0].events | s.events
+        end
+        last_input = nil
+      else
+        missing = true
+        last_input = nil
       end
     end
   end
@@ -1280,6 +1444,7 @@ function M.rewind(f)
   R.loaded = nil
   for i = #seg.chunks, cut + 1, -1 do seg.chunks[i] = nil end
   seg.frames = need
+  seg.summary = nil -- the kept prefix re-summarizes if it re-spills
   local bytes = 0
   for _, c in ipairs(seg.chunks) do bytes = bytes + #c.payload end
   seg.bytes = bytes

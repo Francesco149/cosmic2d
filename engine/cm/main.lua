@@ -184,6 +184,11 @@ local function enter_error(traceback, kind, attempt)
     pal.log("[trace] recording stopped by the error")
   end
   if M.trace then
+    -- Mark the contained error on the timeline before flushing so the crash
+    -- boundary spills with the segment it belongs to (observer-only).
+    if M.trace.note_event then
+      M.trace.note_event(M.trace.timeline_event.ERROR)
+    end
     -- The throwing step never reached record_frame, so flushing publishes only
     -- the last fully committed frame. The partial live state is not blessed.
     local ok, exact = pcall(M.trace.ring_flush)
@@ -238,6 +243,11 @@ function M.reset_game()
   -- (else the music plays silent voices — the restart-goes-quiet bug).
   cm.require("cm.snd").seq.reset()
   if M.game then guarded("game.init", M.game.init) end
+  -- Mark the restart on the timeline (observer-only; the restart itself is
+  -- the recorded EVAL that carries the state delta).
+  if M.trace and M.trace.note_event then
+    M.trace.note_event(M.trace.timeline_event.RESTART)
+  end
   pal.log(("[main] game restarted (frame %d)"):format(f))
 end
 

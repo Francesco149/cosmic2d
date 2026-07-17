@@ -346,6 +346,10 @@ function M.asset(spec)
     end
     if ok then
       p.disk = a[field]
+      -- note the save on the rewind timeline (observer-only; files activity +
+      -- an asset-save event marker)
+      local trace = cm.require("cm.trace")
+      if trace.note_save then trace.note_save(win.path, #(a[field] or "")) end
       close(ed, win.path, journal.SAVED)
       -- a save may have CREATED the file (the pathfield door) or baked
       -- new siblings: the asset browser's cached list must see it

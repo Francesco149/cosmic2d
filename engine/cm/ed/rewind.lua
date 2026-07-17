@@ -25,7 +25,8 @@ local C = {
   playhead = 0xf5efffff, live = 0x7fd8a8ff, retained = 0x8878d0ff,
   sim = 0x786bd8ff, editor = 0x62c9a2ff, files = 0xffb46eff,
   input = 0x73b9e6ff, code = 0xffb46eff, eval = 0xc68ce8ff,
-  session = 0xf07f8fff, selection = 0x7fd8a826,
+  session = 0xf07f8fff, err = 0xff5c6aff, restart = 0xffa24eff,
+  save = 0x74d29aff, selection = 0x7fd8a826,
   selection_edge = 0x7fd8a8dd, button = 0x2a263dff,
   button_hot = 0x3a3560ff, button_off = 0x211e32ff,
   tooltip = 0x100f1bf4,
@@ -374,7 +375,18 @@ local function draw_activity(summary, v, ax, y, aw, h, i)
   end
 end
 
-local function draw_events(summary, v, ax, y, aw, h)
+-- Event marker priority: the most decision-worthy bit wins the bin's tick.
+local EVENT_KINDS = {
+  { bit = "ERROR",   color = "err",     name = "error",       top = 0, w = 2 },
+  { bit = "SESSION", color = "session", name = "session",     top = 0, w = 2 },
+  { bit = "RESTART", color = "restart", name = "restart",     top = 0, w = 2 },
+  { bit = "CODE",    color = "code",    name = "code reload", top = 1, w = 2 },
+  { bit = "SAVE",    color = "save",    name = "asset save",  top = 3, w = 2 },
+  { bit = "EVAL",    color = "eval",    name = "console",     top = 5, w = 2 },
+  { bit = "INPUT",   color = "input",   name = "input",       top = -7, w = 1 },
+}
+
+local function draw_events(summary, v, ax, y, aw, h, i)
   if not summary or not summary.data then return end
   local n = #summary.data
   if n == 0 then return end
@@ -384,15 +396,32 @@ local function draw_events(summary, v, ax, y, aw, h)
     local bits = b.events or 0
     if bits ~= 0 then
       local x = ax + (bi - 0.5) * bw
-      if bits & (E.SESSION or 8) ~= 0 then
-        pal.x_ig_line(x, y, x, y + h, C.session, 2)
-      elseif bits & (E.CODE or 2) ~= 0 then
-        pal.x_ig_line(x, y + 1, x, y + h, C.code, 2)
-      elseif bits & (E.EVAL or 4) ~= 0 then
-        pal.x_ig_line(x, y + 5, x, y + h, C.eval, 2)
-      elseif bits & (E.INPUT or 1) ~= 0 then
-        pal.x_ig_line(x, y + h - 7, x, y + h, C.input, 1)
+      for _, k in ipairs(EVENT_KINDS) do
+        if bits & (E[k.bit] or 0) ~= 0 then
+          local y0 = k.top < 0 and (y + h + k.top) or (y + k.top)
+          pal.x_ig_line(x, y0, x, y + h, C[k.color], k.w)
+          break
+        end
       end
+    end
+  end
+
+  -- Hovering a bin names the events in it — the marker lane is self-documenting
+  -- rather than needing a permanent legend.
+  if i and inside(i, ax, y, aw, h) then
+    local bi = clamp(math.floor((i.wx - ax) / aw * n) + 1, 1, n)
+    local bits = summary.data[bi] and summary.data[bi].events or 0
+    if bits ~= 0 then
+      local names = {}
+      for _, k in ipairs(EVENT_KINDS) do
+        if bits & (E[k.bit] or 0) ~= 0 then names[#names + 1] = k.name end
+      end
+      local label = table.concat(names, "  ")
+      local tw = pal.x_ig_text_size(label, 11, 0)
+      local tx = clamp(i.wx + 12, ax, ax + aw - tw - 14)
+      local ty = y - 24
+      pal.x_ig_line(tx - 7, ty + 6.5, tx + tw + 7, ty + 6.5, C.tooltip, 21)
+      text(tx, ty, 11, C.text, label)
     end
   end
 end
@@ -595,7 +624,7 @@ function M.draw(ed, ig, i)
   draw_empty_previews(v, ax, film_y, aw, film_h, hi)
   local summary = summary_for(r, v, aw, hi)
   draw_activity(summary, v, ax, act_y, aw, act_h, i)
-  draw_events(summary, v, ax, event_y, aw, event_h)
+  draw_events(summary, v, ax, event_y, aw, event_h, i)
   draw_ruler(v, ax, ruler_y, aw, ruler_h, hi)
 
   local a, b = scrub.loop_range()
