@@ -6560,7 +6560,14 @@ local function t_ring_spill()
   trace.ring_start({ project = root })
   local left = pal.list_dir(root .. "/.ed/history")
   local fork_loc = trace.ring_locator()
-  check(left and #left == 1 and left[1] == "stream"
+  -- segments and the old stream marker are gone; the content-addressed blob
+  -- store (§14, D103) survives as its own gc_blobs-managed subtree.
+  local segs_left, has_stream = 0, false
+  for _, n in ipairs(left or {}) do
+    if n:find("^seg_") then segs_left = segs_left + 1 end
+    if n == "stream" then has_stream = true end
+  end
+  check(left and segs_left == 0 and has_stream
         and fork_loc.stream ~= first_loc.stream,
         "ring adopt: a fork wipes segments and rotates stream identity")
 
@@ -9588,6 +9595,173 @@ local function t_timeline_retention()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_project_blobs()
+  -- A7 §14 (D103): the content-addressed project-blob store + per-segment
+  -- project manifest — the foundation that lets a retained range (including an
+  -- adopted cross-session one) name a COMPLETE project tree without copying an
+  -- unchanged file into every segment. Observer-only like the rest of the disk
+  -- tier: it rides ring.spill, so the green suite proves no golden byte moved.
+  local trace = cm.require("cm.trace")
+  local chunk = cm.require("cm.chunk")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local root = tmproot() .. "/cosmic_selftest_blobs"
+  local blobdir = root .. "/.ed/history/blobs"
+  pal.mkdir(root)
+  local function wipe_hist() -- recursive: the blob store is a subtree
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(blobdir)
+    pal.x_remove(root .. "/.ed/history")
+  end
+  wipe_hist()
+  -- a real project tree: two files with IDENTICAL content (proves dedup), a
+  -- nested asset, project source, and two machine files that must be excluded.
+  local hero = ("HERO"):rep(9)
+  pal.write_file(root .. "/main.lua", "return {}\n")
+  pal.mkdir(root .. "/art")
+  pal.write_file(root .. "/art/hero.spr", hero)
+  pal.write_file(root .. "/dup.txt", hero)         -- same bytes as hero.spr
+  pal.write_file(root .. "/video.dat", "MACHINE")  -- per-machine, excluded
+  pal.write_file(root .. "/input.dat", "MACHINE")  -- rebind store, excluded
+
+  trace.ring.kf = 4
+  trace.ring.seconds = 30
+  trace.ring.spill = true
+  trace.ring.budget_mb = 64
+  local b = pal.buf("st.blobs", 8)
+  b:i32(0, 0)
+  local irec = ("\0"):rep(10)
+  local function drive(a, z)
+    for i = a, z do
+      b:i32(0, i * 5); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+    end
+  end
+  local function count_blob(hash)
+    local n = 0
+    for _, e in ipairs(pal.list_dir(blobdir) or {}) do
+      if e == hash then n = n + 1 end
+    end
+    return n
+  end
+
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+
+  -- ---- baseline manifest: the complete tree, machine files excluded ----
+  check(trace.ring_stats().manifest == true,
+        "blobs: a live spill session captures a project manifest")
+  local man = trace.ring_manifest()
+  check(man and man["main.lua"] and man["art/hero.spr"] and man["dup.txt"],
+        "blobs: the manifest names project source + nested assets")
+  check(not man["video.dat"] and not man["input.dat"],
+        "blobs: machine files (video.dat/input.dat) are excluded")
+  check(man["art/hero.spr"] == pal.sha256(hero),
+        "blobs: a manifest entry is the file's content hash")
+  check(trace.blob_get(man["art/hero.spr"]) == hero,
+        "blobs: the referenced blob round-trips its exact bytes")
+
+  -- ---- dedup: identical content shares exactly one blob ----
+  check(man["dup.txt"] == man["art/hero.spr"],
+        "blobs: identical file content shares one content-addressed blob")
+  check(count_blob(man["dup.txt"]) == 1,
+        "blobs: the shared blob exists once on disk")
+
+  -- ---- a save advances the manifest to the new content hash ----
+  drive(1, 4) -- frame f0+1.. rides the baseline-manifest segment
+  local base_mh = trace.manifest_at(f0 + 1)
+  check(base_mh and trace.manifest_files(base_mh)["main.lua"],
+        "blobs: a segment's manifest decodes to the project tree")
+  local hero2 = ("EDIT"):rep(9)
+  pal.write_file(root .. "/art/hero.spr", hero2) -- an editor save to disk
+  trace.note_save("art/hero.spr", #hero2)        -- marks the manifest dirty
+  trace.manifest_pump()                          -- render-phase fold
+  local man2 = trace.ring_manifest()
+  check(man2["art/hero.spr"] == pal.sha256(hero2)
+        and man2["art/hero.spr"] ~= man["art/hero.spr"],
+        "blobs: a save re-hashes the file into the manifest")
+  check(trace.ring_stats().manifest and trace.manifest_at(f0 + 1) == base_mh,
+        "blobs: the already-closed keyframe keeps its own manifest")
+  drive(5, 12) -- newer segments snapshot the advanced manifest
+  local new_mh = trace.manifest_at(f0 + 12)
+  check(new_mh and new_mh ~= base_mh
+        and trace.manifest_files(new_mh)["art/hero.spr"] == pal.sha256(hero2),
+        "blobs: later segments carry the advanced project manifest")
+
+  -- ---- spill + cross-session adoption recovers the manifest ----
+  drive(13, 24)
+  check(trace.history_drain(), "blobs: spill drains")
+  local mid = f0 + 6
+  local mh_pre = trace.manifest_at(mid)
+  check(mh_pre, "blobs: a spilled segment carries a manifest hash")
+  -- "reboot": the counter already sits at the tail, so ring_start adopts the
+  -- chain ending at the present exactly as a fresh process would.
+  trace.ring_start({ project = root })
+  local mh_post = trace.manifest_at(mid)
+  check(mh_post == mh_pre,
+        "blobs: adoption recovers each segment's manifest hash from the index")
+  check(trace.manifest_files(mh_post) and trace.manifest_files(mh_post)["main.lua"],
+        "blobs: adopted cross-session history is materialization-ready (§14)")
+
+  -- ---- gc_blobs sweeps orphans; referenced blobs survive ----
+  local orphan = ("0"):rep(64) -- a valid-looking hash no manifest references
+  pal.write_file(blobdir .. "/" .. orphan, "junk")
+  local live = trace.manifest_at(mid)
+  local live_file = trace.manifest_files(live)["main.lua"]
+  check(count_blob(orphan) == 1 and count_blob(live_file) == 1,
+        "blobs: the orphan and a referenced blob both exist before gc")
+  trace.ring_start({ project = root }) -- reboot re-runs gc_blobs
+  check(count_blob(orphan) == 0,
+        "blobs: gc_blobs sweeps a blob no retained segment references")
+  check(count_blob(live_file) == 1,
+        "blobs: gc_blobs keeps a blob a retained segment still names")
+  check((trace.ring_stats().blob_bytes or 0) > 0,
+        "blobs: the disk meter counts the retained blob store")
+
+  -- ---- an exported clip carries no manifest chrome (goldens hold) ----
+  drive(25, 28) -- live segments (with a code bundle) past the adopted tail
+  local clip = root .. "/clip.ctrace"
+  trace.ring_export(clip)
+  local saw_pman, saw_fram = false, false
+  for _, c in ipairs(chunk.read(pal.read_file(clip) or "", "CTRC")) do
+    if c.tag == "PMAN" then saw_pman = true end
+    if c.tag == "FRAM" then saw_fram = true end
+  end
+  check(saw_fram and not saw_pman,
+        "blobs: an exported .ctrace has frames but no PMAN (stripped)")
+
+  -- ---- clear_cache removes the populated history incl. the blob subtree ----
+  check(trace.blob_get(live_file) == pal.read_file(root .. "/main.lua"),
+        "blobs: the referenced blob still holds main.lua before clear")
+  local cache = cm.require("cm.ed.cache")
+  local ok_clear, n_removed = cache.clear(root)
+  check(ok_clear and n_removed > 0,
+        "blobs: cache.clear removes the whole history subtree (depth-first)")
+  check(not pal.mtime(blobdir),
+        "blobs: the content-addressed blob store is gone after clear")
+
+  -- ---- observer-only: no spill ⇒ no walk, no manifest, no blobs ----
+  trace.ring.spill = false
+  trace.ring_start({ project = root })
+  check(trace.ring_stats().manifest == false and trace.ring_manifest() == nil
+        and (trace.ring_stats().blob_bytes or 0) == 0,
+        "blobs: a spill-off (headless/verify) session captures no manifest")
+
+  -- leave a clean tree + ring behind
+  wipe_hist()
+  for _, n in ipairs({ "main.lua", "art/hero.spr", "art", "dup.txt",
+                       "video.dat", "input.dat", "clip.ctrace" }) do
+    pal.x_remove(root .. "/" .. n)
+  end
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, f0)
+  pal.buf_free("st.blobs")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -9722,6 +9896,7 @@ function game.init()
   t_timeline_summary()
   t_timeline_thumbs()
   t_timeline_retention()
+  t_project_blobs()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
