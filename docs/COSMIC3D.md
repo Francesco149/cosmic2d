@@ -373,6 +373,16 @@ chunk?), entity LOD/update scheduling as a sim-legal pattern (no
 hash-order iteration), collider set swapping, and whether golden
 traces can span chunk boundaries.
 
+## 8f. Streaming verdict + the RO-demo pivot (2026-07-17)
+
+Human on round 17: **"the open world demo you made last time feels
+great"** — the streaming world + glider land. Direction: **move onto the
+Ragnarok-style demo (demo 3) now**, and after it, **"distil the 3 demos
+into the necessary engine ergonomics to accommodate these types of 3d
+games without the user hand rolling everything"** — the distillation
+phase (editor primitives + engine modules) begins when demo 3's slice
+is feel-approved. Demo 3's design is sketched in §11.
+
 ## 9. Body Harvest techniques (from ../body-harvest decomp, see notes there)
 
 An N64 open-world game whose whole huge terrain fits 4MB — directly relevant
@@ -498,3 +508,106 @@ The candidate engine-ergonomics finding this demo exists to prove or
 refute: a retained-GPU-geometry PAL API (upload a chunk once, draw by
 handle). Deferred until the demo shows the submit cost biting on a real
 scene — measure in-demo first.
+
+## 11. The RO demo — sketch + measurements (2026-07-17, round 18)
+
+The §8f pivot engineered. New cartridge: **projects/rovale** — a small
+RO-style vale (the proto scene ro2 look: docs/research-3d/
+ro-render-recipe.md holds the authentic constants). "Must FEEL like RO"
+decomposes into five reads: the camera (15° FOV, steep pitch, free yaw,
+stepped zoom), click-to-move on a walk grid, chibi billboard sprites
+tinted by baked ground shadow, blended organic terrain with zero tile
+grid, and the milky water plane. Sketched before code on a headless
+soak (scratch, this box, quiet-window numbers):
+
+| what | cost |
+|---|---|
+| terrain bake (weights+materials+shadow, Lua) | ~4.8 µs/texel |
+| full 32×32-tile map @ 34×34 texels/tile | ~5.7 s |
+| atlas assembly (4.7 MB string ops) | ~16 ms |
+| `tex_create` 1088×1088 | ~6 ms |
+| heap A* on 64×64 walk cells, cross-map worst case | ~2.9 ms/path |
+| click ray-march vs T.sample (300 steps + 16 bisect) | ~60 µs |
+
+### Terrain: the ro2 bake as a budgeted render-class pass
+
+Map = one resident cm.terr grid, 32×32 tiles at tile 2.0 (the proto ro2
+size — 64 u square; RO maps are villages, not open worlds). Heights,
+material weights, prop scatter all deterministic Lua data (the openworld
+build_data pattern: fbm + domain-warped pond lobes + plaza flatten).
+
+The signature move is the **per-tile baked blended texture** (§8c): a
+UNIQUE 34×34 texel tile (32 + 1-texel gutter each side, the RO 258-slot
+trick) sampling materials in continuous world space, weights feathered
+over noisy smoothstep bands, prop shadows multiplied in on the authentic
+8×8-per-tile lightmap lattice. All tiles pack into ONE 1088×1088 atlas
+texture (one segment, one draw). At ~5.7 s the full bake cannot run
+synchronously in init: it runs as a **budgeted in-draw pass** (N tiles/
+frame knob, bigworld's paging precedent) into the atlas via tex_update,
+behind a small LOADING read. It is pure render-class policy: the SIM
+reads only T.sample heights + the walk grid — a trace replays
+byte-identical whatever the bake budget (the §10 honesty proof shape);
+pixel goldens shoot past the completion frame. Disk-caching the baked
+atlas is the known dev-comfort upgrade if reload cost annoys (rc-class
+cache, suite never reads it).
+
+### Click-to-move: the sim-legal RO kernel
+
+Mouse x/y/buttons are already in the input record v1 — a click IS sim
+input. Click → unproject through the sim-state camera (cm.math only) →
+ray-march T.sample (60 µs) → snap to the **walk grid** (2× subdivision
+of the render grid: 64×64 cells of 1.0 u — the GAT scale exactly);
+derive per-cell flags once at init from slope + water depth + prop
+colliders → **heap A*** (2.9 ms worst case, fine per click) → the
+player walks the waypoint chain at a speed knob, facing snapped to 8
+directions for the sprite. No physics, no jump: RO movement is pathing
+(the platformer kernel stays in demos 1/2). A destination marker + a
+re-click retarget make the feel. Demo autoplay feeds synthetic clicks
+through the SAME pick+path pipeline (screen-space, via the sim camera)
+so golden traces exercise the whole kernel headlessly.
+
+### Sprites: the figure→sprite bake goes live (the §5 loop closes)
+
+The player and NPCs are **billboards baked from cm.fig figures** — the
+proto ro scene's proven hero shot (bake_guy_sprite) and the strategic
+license-clean answer (§8/2: our renders, CC0 by construction; the
+Kushnariova CC-BY pack stays a reference, never a golden dependency —
+assets/ is gitignored and the suite runs from the committed tree). New
+cartridge module: a tiny deterministic Lua rasterizer (edge functions +
+z-buffer + the pre-lit vertex colors already in the emitted tris) that
+renders a figure clip at 8 yaws × N walk frames into a sprite-sheet
+texture at load time (tiny res; nearest + alpha-test always). The
+mascot chibi (big-head proportions via per-part scale overrides) is the
+player; palette variants are the NPCs. This is the demo's headline
+ergonomics candidate: **model once → use as 3D (demos 1/2) or billboard
+(demo 3)** with zero external art. Billboard draw rules from the
+recipe: upright quad, Y-face the camera, ~3 u tall vs 2 u tiles, unlit
+but tinted 0.7+0.3·shadow at the feet, blob shadow decal, nearest +
+alphatest flags. The depth-pull-toward-camera trick (tall sprites vs
+terrain behind) is a flagged PAL candidate — only if clipping shows in
+the vale (smooth ground + steep camera should hide it).
+
+### The rest of the read
+
+- **Camera**: sim-state rig — pitch ~50° default (free 30..80), yaw
+  free (arrows/drag), stepped wheel zoom, **15° vertical FOV** (m4.persp
+  15) — the near-ortho RO look with perspective life. No yaw-follow.
+- **Water**: T.emit_water at the authentic 144/255 opacity, submitted
+  AFTER the sprite segments (the recipe's draw order); vertex wave +
+  texture cycle deferred to a polish round.
+- **Props**: round-canopy trees + bushes (gb lathes/balls, ro2's
+  species), the diagonal gazebo + crisp plaza slab (§8c v6 rule:
+  ground blends, architecture is hard-edged geometry), fence posts.
+  Props register shadow casters for the bake and AABBs for the walk
+  grid.
+- **Presentation**: 480×270 internal (the RO preset res), quant 5 +
+  soft on (D3D-015 knobs).
+- **Goldens**: one tour trace (click-route autoplay, drift-proven, plus
+  the §10-style honesty proof: re-verify under a different bake budget)
+  + pixel goldens past bake completion. Audio: a click/step/greet set
+  via the bounce .ins pattern.
+
+Round 1 scope: terrain+bake, camera, click-to-move, baked mascot-chibi
+player + 2-3 NPC variants wandering/greeting, water, props, HUD, demo,
+goldens. Deferred: water wave/cycle, paper-doll layers, palette dyes,
+monsters/combat, the terrain-editor window (distillation phase).
