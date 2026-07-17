@@ -3,20 +3,63 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — gamepads are live end-to-end (D083); the rebind UI/API next (2026-07-17)
+## Current handoff — rebindable actions shipped (D084); the options packet next (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A3 are complete and A4 is two packets in.** A3's full promise holds:
+**A0–A3 are complete and A4 is three packets in.** A3's full promise holds:
 from a fresh archive a user can create (from four starter templates),
 import, rename, relocate, duplicate, archive, delete, edit, play, and
-export projects entirely through the shipped UI. Real SDL controllers now
-drive games deterministically (D082 record + D083 discovery). The rest of
-A4 (rebinding, options, player storage), shared genre-neutral runtime
-slices and demos (A5/A6), the complete rewind product UI (A7), and the
-release-candidate pass (A8) remain the open alpha gates.
+export projects entirely through the shipped UI. Real SDL controllers
+drive games deterministically (D082 record + D083 discovery) and every
+action is player-rebindable across keyboard and pads (D084). The rest of
+A4 (options, player storage, the all-inputs determinism proof), shared
+genre-neutral runtime slices and demos (A5/A6), the complete rewind
+product UI (A7), and the release-candidate pass (A8) remain the open
+alpha gates.
+
+**D084 closes the rebind UI/API packet, the third A4 line.** An action
+now holds a list of bindings — `key:<scancode>`, pad-1 buttons
+(`pad:south`), stick/trigger directions past the live `axis_threshold`
+(`pad:lx-`), and `pad2..4:` pins — all ORed into the same frozen v1
+action bit at `sample()` time. Bindings are pure live policy, exactly as
+D082 planned: the recorded bits stay authoritative, so rebinding can
+never invalidate a trace. Code-declared maps are the defaults; the
+player's per-action overrides live in the machine-local, never-exported
+`<project>/input.dat` (atomic saves, malformed data ignored, overrides
+for undefined actions kept inert across hot reloads/version skew).
+Conflicts are legal API state surfaced by `conflicts()`; the Esc menu's
+new **controls page** lists binding chips per action (`*` = overridden,
+red = shared), captures the next key/pad-button/strong-deflection through
+the real event stream, steals the input from other actions with an
+honest note, offers del-to-remove and defaults, and saves on every
+change (failures name themselves, summon the console, keep the live
+rebind). `ui.capture_pads()` extends the menu's key rule to pads. HUD
+strings come from `input.bind_label`/`input.label` (host scancode names
++ the positional pad vocabulary); the starter templates dropped their
+hardcoded pad readers for real default bindings and device-flavored
+`input.label` HUD lines. The shipped scripting guide documents it all.
+
+**D084 proof:** Linux selftest passes **23,655 checks** and the staged
+native Windows executable **23,657** on PAL API 18 (49 new KATs: every
+descriptor form and refusal, pad-button/sticky-tap/threshold-exact-axis/
+pinned-pad sampling into the v1 bits, conflicts, labels, capture
+normalization boundaries, and the store's load/win/round-trip/injected-
+failure/malformed-fallback contract). `nix run .#test` is ALL GREEN —
+every historical trace and all pixel/audio goldens unchanged, proving
+bindings changed no recorded byte — and both Linux-recorded traces
+(`smoke_kitcheck` 830 frames, `padtest_drive` 600 frames) verify
+byte-exactly on native Windows. A scripted SDL virtual pad drove the
+REAL capture path headlessly: an armed capture on the scaffolded
+platformer bound `pad:north` to jump and persisted it to `input.dat`,
+and a second run rebinding reset stole `pad:south` from jump with the
+honest "moved from jump" note. `tools/build-windows.sh` refreshed the
+Windows stage (4 durable entries preserved) and Start Menu shortcut.
+Inspected captures on llm-feed: options main page, the controls page
+with the jump override, the armed prompt, red conflict marks, the steal
+result, and the pad-flavored template HUD.
 
 **D083 closes the SDL gamepad discovery/hot-plug packet, the second A4
 line.** The split follows the PAL boundary: PAL API 18 owns device
@@ -445,25 +488,27 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the rebind UI/API** — the third A4 line: multiple
-bindings per action (keys AND pad buttons feeding the same v1 action
-bits, which is why rebinding can never invalidate a trace — D082 planned
-this), conflict handling, a per-project + per-user binding store, and the
-starter templates displaying the actual current bindings in their HUD
-line instead of hardcoded key names. Keep bindings live-side policy: the
-action map already rebinds by name (`input.define`), so the packet is a
-binding data model (project defaults + user overrides, likely beside the
-other machine-local `editor.dat`/`video.dat`-class state for the user
-half), a pad-button→action bind path in `cm.input`, the settings surface,
-and honest display strings (`pal.scancode_name` + `pad_btn` names). After
-that: the options packet (volumes, fullscreen/window sizes, the deadzone
-knob D082 reserved) and namespaced atomic player storage.
+**Exact next packet:** **the options packet** — the fourth A4 line:
+master/music/SFX volume knobs, fullscreen/window sizes that fit the
+current display (today's four hardcoded presets ignore the desktop
+size), the deadzone knob D082 reserved and the axis-threshold knob D084
+added (both pure live policy), and extensibility for project-specific
+settings. The Esc menu already owns the surface (main page + controls
+page, D084's page grammar generalizes); the missing pieces are an audio
+volume path (`cm.snd`/PAL mixer — check what the mixer already exposes),
+display-derived window-size candidates, and a persistence split: video
+knobs stay in `video.dat`, input knobs likely join `input.dat`, and
+whatever is user-global belongs beside `editor.dat`. After that:
+namespaced atomic player storage, then the A4 exit proof (input
+recording, rewind, resume, replay, cross-platform verify with keyboard,
+mouse, and gamepad records together).
 
 Worth a hallway test when the human is around: plug a real controller
-into the Windows editor and play a template in the game window (the
-agent-side proof used SDL virtual pads plus WSLg; a physical XInput pad
-through native win32 SDL is the one path no automated check touched).
-No blocker — the rebind packet can start immediately.
+into the Windows editor, play a template, and rebind a couple of actions
+through the Esc menu's controls page (agent-side proof used SDL virtual
+pads; a physical XInput pad through native win32 SDL is the one path no
+automated check touched). No blocker — the options packet can start
+immediately.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

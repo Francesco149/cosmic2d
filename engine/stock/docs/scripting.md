@@ -115,18 +115,38 @@ change a buffer's size without an explicit migration.
 
 Define actions in a fixed array during `init`. Their first-definition order is
 part of recorded input, so append new actions rather than reordering old ones.
+Each action lists ALL of its bindings — keyboard scancodes and pad
+descriptors feed the same action:
 
     local input = cm.require("cm.input")
 
     input.map({
-      { "left", input.key.left, input.key.a },
-      { "right", input.key.right, input.key.d },
-      { "jump", input.key.space },
+      { "left", input.key.left, input.key.a, "pad:dpleft", "pad:lx-" },
+      { "right", input.key.right, input.key.d, "pad:dpright", "pad:lx+" },
+      { "jump", input.key.space, "pad:south" },
     })
 
     if input.down("left") then ... end       -- held
     if input.pressed("jump") then ... end    -- up -> down edge
     if input.released("jump") then ... end   -- down -> up edge
+
+A binding is a scancode number (`input.key` names common ones) or a string:
+`"pad:south"` is a pad-1 button, `"pad:lx-"`/`"pad:lx+"` is a stick or
+trigger direction past a threshold (`input.axis_threshold`, default 40 of
+127), and `"pad2:..."` pins a binding to another pad. What you declare are
+the DEFAULTS: players can rebind every action from the Esc menu's controls
+page, and their overrides persist per machine in the project's `input.dat`
+(never exported with the project). Show bindings honestly in your HUD with
+`input.label`:
+
+    input.label("jump")           -- every binding: "Space/south"
+    input.label("jump", "key")    -- first keyboard binding: "Space"
+    input.label("jump", "pad")    -- first pad binding: "south"
+
+`input.bindings(name)` returns the active binding list, `input.rebind(name,
+list)` overrides it from code (`nil` restores defaults), and
+`input.conflicts()` reports inputs bound to several actions — legal, but
+the controls page marks them.
 
 Mouse input uses internal game pixels and is recorded too:
 
@@ -136,9 +156,9 @@ Mouse input uses internal game pixels and is recorded too:
     local steps = input.wheel()
 
 The current input format supports keyboard, mouse position/buttons, wheel,
-and up to four gamepads, with at most 32 actions. Player rebinding and an
-options surface are planned for later in alpha; until then, read pad buttons
-alongside your key actions the way the starter templates do.
+and up to four gamepads, with at most 32 actions. Actions and rebinding
+cover the common case; read the pad directly (below) for analog movement,
+per-pad multiplayer, or anything the action bits cannot express.
 
 ## Gamepads
 

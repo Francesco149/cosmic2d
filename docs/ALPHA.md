@@ -186,8 +186,11 @@ Goal: exported desktop games meet basic player expectations.
   first-connected-lowest-slot policy, `pad_sync` at boot, and the editor
   focus rules live in Lua; virtual pads + `projects/padtest` are the
   headless proof vehicle; templates read pad 1 beside their key maps.)
-- [ ] Rebind UI/API with multiple bindings per action and conflict handling;
-  starter templates display the actual current bindings.
+- [x] Rebind UI/API with multiple bindings per action and conflict handling;
+  starter templates display the actual current bindings. (D084: key/pad/axis
+  bindings feed the frozen v1 action bits live-side; the Esc menu's controls
+  page captures/steals/resets; overrides persist per machine in the
+  project's `input.dat`; HUDs read `input.label`.)
 - [ ] Options: master/music/SFX volume, bindings, fullscreen/window sizes that
   fit the current display, and extensibility for project-specific settings.
 - [ ] Add namespaced atomic player storage outside the install/project folder:

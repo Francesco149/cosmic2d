@@ -3453,3 +3453,101 @@ controller drove a freshly scaffolded platformer template through the
 real loop from spawn to the far wall with jumps. `tools/build-windows.sh`
 refreshed the Windows stage (4 durable state entries preserved) and
 Start Menu shortcut.
+
+## D084 — rebindable actions: bindings are live policy over the frozen v1 bits (A4, 2026-07-17)
+
+**Context.** D082/D083 delivered deterministic pad state and live
+discovery, with the templates reading pad 1 through hardcoded readers as
+a stopgap. A4's third line needs player rebinding: multiple bindings per
+action across keyboard and pads, conflict handling, a persistent binding
+store, and template HUDs that stop lying the moment a binding changes.
+D082 already fixed the invariant that makes this safe: gamepad inputs
+bind to actions **live-side into the existing v1 action bits**, so no
+rebinding concept may ever enter the record or the sim.
+
+**Decision.** An action holds a **list of bindings**, each a canonical
+descriptor: `key:<scancode>` (numbers in `define()`/`map()` normalize),
+`pad:<button>` (pad-1 SDL standard button by name), `pad:<axis><+|->` (a
+stick/trigger direction past `axis_threshold`, default 40 of 127,
+compared on the same quantized value the PAD extension records), and
+`pad2..4:` pins. `sample()` ORs every binding of an action into its
+frozen v1 bit — keys with the sticky-tap rule, pad buttons with
+`held|tap` cleared by the same record's PAD encode so the bit and the
+recorded entry always agree, axes on quantized deflection. Everything is
+live policy; replay applies recorded bits and never re-derives bindings.
+`define()` validates the whole list before touching the map (no
+half-defined actions), and what code declares are the **defaults**.
+
+**The store is video.dat-class machine state**: `<project>/input.dat`
+(cm.state canon, `{schema=1, actions={name={descriptors}}}`) holds the
+player's per-action override lists; adopted only by interactive windowed
+boots (headless/verify/captures keep code defaults, so goldens never
+depend on a machine's store), written only by explicit saves through the
+atomic primitive with the injectable failure seam, excluded by name from
+exports/duplicates/archives, gitignored. Malformed files or entries are
+logged and ignored, never fatal; overrides naming actions the project no
+longer defines stay inert in the store, so hot reloads and version skew
+cannot eat a player's bindings. `rebind(name, list|nil)`, `bindings()`,
+`default_bindings()`, `overridden()`, and `save_binds()` are the API.
+
+**Conflicts are surfaced, not refused**: the API allows one input on
+several actions (context-dependent overloads are a real pattern) and
+`conflicts()` reports them in bit order. The **controls page** in the
+Esc options menu is the player surface: binding chips per action (`*`
+marks overrides, shared inputs draw in the error color with a footer
+note), click a chip or `+` to arm a capture that binds the next key
+down, pad button, or ≥64-quantized deflection (`bind_of_pad_event`
+normalizes any pad to a pad-1 binding; noise cannot bind), **stealing**
+the input from any other action that held it and saying so. Del removes
+the armed binding; Esc walks one grammar step at a time (cancel capture
+→ leave controls → close menu); esc/grave/del are capture-reserved.
+Every change saves immediately — a failure names itself, summons the
+console, and keeps the live rebind applied. While the menu is open,
+`ui.capture_pads()` extends the key rule to pads (downs swallowed,
+releases and hot-plug pass, raw events stay readable in `ui.inp.pads`)
+and live axes neutralize like the editor's focus-loss edge.
+
+**Honest names ride the bindings**: `bind_label` renders keys through
+`pal.scancode_name` ("Space", "Left"; `key N` fallback) and pads through
+the positional vocabulary ("south", "dpad left", "stick left",
+"p2 east"); `label(action[, kind])` joins them or picks the first
+key/pad-flavored binding. The starter templates dropped their hardcoded
+pad readers: dpad/stick/south/start are default bindings beside the
+keys, `step()` reads only actions, and the HUD derives from
+`input.label`, pad-flavored while a controller is connected — so it
+names the actual current bindings, rebinds included. The shipped
+scripting guide documents descriptors, `label`, `rebind`, `conflicts`,
+and the store's machine-local nature.
+
+**Consequences.** The action map is now the ergonomic default for
+single-player input (rebindable for free); raw pad readers remain the
+door for analog movement, per-pad multiplayer, and anything bits cannot
+express — pinned `padN:` bindings exist but the capture UI deliberately
+normalizes to pad 1. The A4 options packet still owes volumes, window
+sizes, and the deadzone/threshold knobs; player storage (the next line)
+may later want the store under a per-user profile root instead of the
+project directory — the codec and exclusion rules are ready either way.
+
+**Proof.** Linux selftest passes **23,655 checks** and the staged native
+Windows executable **23,657** on PAL API 18 (49 new KATs:
+canonical normalization and refusal-without-half-definition, pad-button/
+sticky-tap/axis-threshold-exact/direction/pinned-pad/keyboard sampling
+into the v1 bits, conflicts in bit order, host + positional labels,
+capture normalization boundaries incl. release/hot-plug refusal, store
+load/win/partial-drop/late-adoption/round-trip, byte-exact store
+preservation through an injected save failure with the live rebind still
+applied, malformed-store fallback, and the ui pad-capture pass rules).
+`nix run .#test` is ALL GREEN — every historical trace verifies
+byte-exactly and all pixel/audio goldens match, proving bindings changed
+no recorded byte — and the Linux-recorded `smoke_kitcheck` (830 frames)
+and `padtest_drive` (600 frames) traces both verify byte-exactly on
+native Windows. `tools/build-windows.sh` refreshed the Windows stage
+(4 durable state entries preserved) and Start Menu shortcut. A scripted
+SDL virtual pad
+drove the REAL capture path headlessly: armed capture on the scaffolded
+platformer bound `pad:north` to jump and persisted it to the project's
+`input.dat`; a second run rebinding reset stole `pad:south` from jump
+with the honest "moved from jump" note. Inspected captures on llm-feed:
+options main page, controls page with the jump override, armed prompt,
+red conflict marks with both HUD labels honestly reading "Space", the
+steal result, and the pad-flavored template HUD.
