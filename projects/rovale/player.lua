@@ -14,7 +14,6 @@ local state = cm.require("cm.state")
 local world = cm.require("world")
 local spr = cm.require("spr")
 local mascot = cm.require("cm.mascot")
-local audio = cm.require("audio")
 
 local P = select(2, ...) or {}
 
@@ -26,7 +25,7 @@ local buf
 
 P.sheet = nil -- the baked mascot sheet (render-class)
 
-function P.init()
+function P.init(force_bake)
   local ok, b = pcall(pal.buf, "ro.player", 40 + PATH_MAX * 4)
   if not ok then
     pal.buf_free("ro.player")
@@ -43,7 +42,7 @@ function P.init()
     { mascot.walk, 0 }, { mascot.walk, 0.25 },
     { mascot.walk, 0.5 }, { mascot.walk, 0.75 },
     { mascot.wave, 0 }, { mascot.wave, 0.5 },
-  })
+  }, force_bake)
 end
 
 function P.pos()
@@ -60,6 +59,8 @@ end
 
 -- a world-point walk command (real click or the demo's synthetic one):
 -- snap to walkable, path, arm the marker. Returns true if a path exists.
+-- Silent: the caller owns the click sfx (a held-repeat re-command must
+-- not spam it — human playtest 2026-07-17).
 function P.command(wx, wz)
   local k = state.doc.knobs.move
   local px, pz = buf:f32(0), buf:f32(4)
@@ -76,7 +77,6 @@ function P.command(wx, wz)
   buf:f32(24, wx)
   buf:f32(28, wz)
   buf:f32(32, k.marker_ttl)
-  audio.sfx("click", 70)
   return true
 end
 
@@ -123,13 +123,14 @@ local function anim_rc()
   return 0
 end
 
-function P.emit(out, cam_yaw)
+function P.emit(out, cam_yaw, cam_pitch)
   local k = state.doc.knobs.spr
   local x, z = buf:f32(0), buf:f32(4)
   local y = world.ground(x, z)
   local tint = 0.7 + 0.3 * world.shadow(x, z)
   local col = spr.oct(buf:f32(8), cam_yaw)
-  return spr.billboard(out, P.sheet, x, y, z, k.h, col, anim_rc(), tint, cam_yaw)
+  return spr.billboard(out, P.sheet, x, y, z, k.h, col, anim_rc(), tint,
+                       cam_yaw, cam_pitch)
 end
 
 function P.emit_shadow(out)

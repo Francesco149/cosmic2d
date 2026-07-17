@@ -48,7 +48,7 @@ local DEFS = {
 
 N.list = {}
 
-function N.init()
+function N.init(force_bake)
   N.list = {}
   for i, d in ipairs(DEFS) do
     local name = "ro.npc" .. i
@@ -69,7 +69,7 @@ function N.init()
         { mascot.walk, 0 }, { mascot.walk, 0.25 },
         { mascot.walk, 0.5 }, { mascot.walk, 0.75 },
         { mascot.wave, 0 }, { mascot.wave, 0.5 },
-      }),
+      }, force_bake),
     }
   end
 end
@@ -153,14 +153,14 @@ local function anim_rc(n)
 end
 
 -- one NPC -> its own draw segment (each variant is its own sheet texture)
-function N.emit_one(n, out, cam_yaw)
+function N.emit_one(n, out, cam_yaw, cam_pitch)
   local k = state.doc.knobs.spr
   local x, z = n.buf:f32(0), n.buf:f32(4)
   local y = world.ground(x, z)
   local tint = 0.7 + 0.3 * world.shadow(x, z)
   local col = spr.oct(n.buf:f32(8), cam_yaw)
   return spr.billboard(out, n.sheet, x, y, z, k.h, col, anim_rc(n), tint,
-                       cam_yaw)
+                       cam_yaw, cam_pitch)
 end
 
 function N.emit_shadow(out)

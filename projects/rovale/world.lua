@@ -124,10 +124,13 @@ local function build_heights()
   W.terr = t
 end
 
--- terrain height only (no decks): the bake + water classification
+-- terrain height only (no decks): the bake + water classification.
+-- Exact-bound clamp: T.sample handles wx==0 and wx==WS precisely, and
+-- the apron's edge vertices must land EXACTLY on the mesh edge (a 0.01
+-- inset left a hairline shimmer against the border row).
 function W.terrain_h(x, z)
-  return terr.sample(W.terr, m.clamp(x, 0.01, N * TILE - 0.01),
-                     m.clamp(z, 0.01, N * TILE - 0.01))
+  return terr.sample(W.terr, m.clamp(x, 0, N * TILE),
+                     m.clamp(z, 0, N * TILE))
 end
 
 -- point in a deck slab? (rotated gazebo frame) -> deck top or nil
@@ -674,43 +677,42 @@ local function emit_gazebo_wood(out)
   return n
 end
 
--- the border apron: the map edge extended outward in chunked flat rings so
--- the RO camera never sees past the world into sky (fog takes the far
--- edge). Muted ground tone, straight-up normal, lit like the terrain.
+-- the border apron: the map edge extended outward in flat rings so the
+-- RO camera never sees past the world into sky (fog takes the far edge).
+-- NON-OVERLAPPING bands (human playtest 2026-07-17: the first draft's
+-- corner strips overlapped coplanar and z-fought — a shimmering diagonal
+-- west of the map): N/S bands span the full outer width including the
+-- corners, W/E bands cover only 0..WS between them, and EVERY vertex
+-- lattice is the same TILE step from the same origin, so ring seams and
+-- the mesh edge share vertices exactly (no T-junction cracks).
 local APRON_C = { 0.36, 0.48, 0.30 }
 local function emit_apron(out)
   local WS = N * TILE
-  local rings = { 0, 8, 18, 34 }
+  local R = 34 -- apron reach beyond the edge
   local d = m.max(0, -(0 * W.sun[1] - 1 * W.sun[2] + 0 * W.sun[3]))
   local r = m.clamp(APRON_C[1] * (W.ambient[1] + d), 0, 1)
   local g = m.clamp(APRON_C[2] * (W.ambient[2] + d), 0, 1)
   local b = m.clamp(APRON_C[3] * (W.ambient[3] + d), 0, 1)
   local cr, cg, cb = (r * 255) // 1, (g * 255) // 1, (b * 255) // 1
-  local function av(x, z)
-    -- edge-clamped terrain height so the apron seams to the border row
-    local h = W.terrain_h(m.clamp(x, 0.01, WS - 0.01),
-                          m.clamp(z, 0.01, WS - 0.01))
-    return pack("<fffffBBBB", x, h, z, 0, 0, cr, cg, cb, 255)
+  local function av(x, z) -- edge-clamped height: seams to the border row
+    return pack("<fffffBBBB", x, W.terrain_h(x, z), z, 0, 0, cr, cg, cb, 255)
   end
   local ntris = 0
-  local SEG = 8
-  for ring = 1, #rings - 1 do
-    local r0, r1 = rings[ring], rings[ring + 1]
-    for i = 0, (WS + 2 * r1) // SEG - 1 do
-      local a0 = -r1 + i * SEG
-      local a1 = m.min(a0 + SEG, WS + r1)
-      -- four sides (north/south/west/east strips)
-      out[#out + 1] = av(a0, -r0) .. av(a1, -r0) .. av(a1, -r1)
-                   .. av(a0, -r0) .. av(a1, -r1) .. av(a0, -r1)
-      out[#out + 1] = av(a0, WS + r1) .. av(a1, WS + r1) .. av(a1, WS + r0)
-                   .. av(a0, WS + r1) .. av(a1, WS + r0) .. av(a0, WS + r0)
-      out[#out + 1] = av(-r0, a0) .. av(-r1, a0) .. av(-r1, a1)
-                   .. av(-r0, a0) .. av(-r1, a1) .. av(-r0, a1)
-      out[#out + 1] = av(WS + r1, a0) .. av(WS + r0, a0) .. av(WS + r0, a1)
-                   .. av(WS + r1, a0) .. av(WS + r0, a1) .. av(WS + r1, a1)
-      ntris = ntris + 8
+  local function band(x0, z0, x1, z1) -- quads on the TILE lattice
+    for zz = z0, z1 - TILE, TILE do
+      for xx = x0, x1 - TILE, TILE do
+        out[#out + 1] = av(xx, zz) .. av(xx + TILE, zz)
+                     .. av(xx + TILE, zz + TILE)
+                     .. av(xx, zz) .. av(xx + TILE, zz + TILE)
+                     .. av(xx, zz + TILE)
+        ntris = ntris + 2
+      end
     end
   end
+  band(-R, -R, WS + R, 0)         -- north (with corners)
+  band(-R, WS, WS + R, WS + R)    -- south (with corners)
+  band(-R, 0, 0, WS)              -- west
+  band(WS, 0, WS + R, WS)         -- east
   return ntris
 end
 

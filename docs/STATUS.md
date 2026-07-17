@@ -4,6 +4,27 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 18 playtest) — sheets become assets; four verdicts in
+
+Human played rovale: **"exactly the vibe we would want"**, with four
+fixes, all landed. (1) **Sprite sheets are PERMANENT assets now**:
+spr.lua writes RLE-packed `.spx` files (committed, ~205KB each,
+projects/rovale/spr/) on first rasterize and boots load them instantly;
+`game.rebake_sprites()` re-rasterizes + rewrites (SPR_STAMP invalidates
+other checkouts; the suite's read-only store falls back to rasterizing).
+(2) **The shimmering diagonal west of the map**: the apron's corner
+strips overlapped coplanar and z-fought — rebuilt as four
+NON-overlapping bands on one TILE-step lattice (ring seams and the mesh
+edge share vertices exactly; W.terrain_h clamp went 0.01-inset -> exact
+bounds for the same reason). (3) **Billboards fully face the camera**
+(they foreshortened under pitch): quads now span camera right x camera
+up, feet-anchored — full size at any pitch, verified at pitch 1.15.
+(4) **Click sfx on the press EDGE only** — held-repeat re-commands
+silently (the sfx moved from player.command to main's edge path; demo
+clicks still tick). Trace verify PASS unregenerated through all four;
+both pixels re-shot (deliberate: billboards changed); the RO_BUDGET
+honesty cmp re-proven. Suite ALL GREEN.
+
 ## 2026-07-17 (round 18) — rovale: demo 3, the RO vale
 
 Two human verdicts opened the round: **the streaming demo "feels
@@ -32,10 +53,9 @@ the honesty cmp. Suite ALL GREEN; 3 shots on the feed.
 
 ## Exact next step
 
-1. Feed questions open (non-blocking): R18's (does the vale read as RO
-   at 480×270? chibi sprite proportions/size? click feel — marker,
-   held-repeat cadence? sand/shore band? pave deck read?); R17's and
-   earlier (see round 17's list below).
+1. R18 verdict landed: **"exactly the vibe we would want"** (the four
+   playtest fixes above are in). Feed questions still open
+   (non-blocking): R17's and earlier (see round 17's list below).
 2. **rovale grows on verdicts**; ungated candidates: cliff tiles (the
    GND sharp-edge model — forces the sprite depth-pull question),
    water texture cycle + vertex wave (recipe constants ready), a

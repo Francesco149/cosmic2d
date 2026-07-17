@@ -80,6 +80,14 @@ function game.save_knobs()
   return pal.write_file(knob_file(), state.canon(state.doc.knobs))
 end
 
+-- console: re-rasterize every sprite sheet and rewrite the committed
+-- .spx assets (after editing the mascot/variants/bake camera; bump
+-- SPR_STAMP in spr.lua for changes that must invalidate other checkouts)
+function game.rebake_sprites()
+  player.init(true)
+  npc.init(true)
+end
+
 local function build_sky()
   skybuf = pal.buf("rc.ro.sky", 6 * 24)
   local function sv(x, y, c)
@@ -271,7 +279,7 @@ local function demo_step()
   end
   local sx, sy = project(wp[1], world.ground(wp[1], wp[2]), wp[2])
   if sx then
-    player.command(wp[1], wp[2])
+    if player.command(wp[1], wp[2]) then audio.sfx("click", 70) end
     d.demo_cd = 20
   else -- orbit toward the waypoint's bearing until it enters the frame
     local kc = d.knobs.cam
@@ -328,16 +336,18 @@ function game.step()
     end
   end
   if d.demo == 0 then
-    -- click to walk: on press, and re-command while held (the RO drag)
+    -- click to walk: on press, and re-command while held (the RO drag).
+    -- Only the press EDGE ticks the click sfx (held-repeat is silent —
+    -- human playtest 2026-07-17)
     local mx, my = input.mouse()
-    local clicked = input.button_pressed(1)
-    if not clicked and input.button_down(1)
-       and state.frame() % d.knobs.move.repeat_f == 0 then
-      clicked = true
-    end
-    if clicked then
+    local edge = input.button_pressed(1)
+    local held = not edge and input.button_down(1)
+                 and state.frame() % d.knobs.move.repeat_f == 0
+    if edge or held then
       local wx, wz = pick(mx, my)
-      if wx then player.command(wx, wz) end
+      if wx and player.command(wx, wz) and edge then
+        audio.sfx("click", 70)
+      end
     end
   end
   player.step()
@@ -420,12 +430,13 @@ function game.draw()
   -- dynamic, the authentic order: click marker -> blob shadows -> sprites
   -- -> water LAST (recipe: water renders after sprites)
   local out = {}
+  local pitch = cam:f32(4)
   local nmk = player.emit_marker(out)
   local nsh = player.emit_shadow(out) + npc.emit_shadow(out)
-  local npl = player.emit(out, yaw)
+  local npl = player.emit(out, yaw, pitch)
   local nnp = {}
   for i, n in ipairs(npc.list) do
-    nnp[i] = npc.emit_one(n, out, yaw)
+    nnp[i] = npc.emit_one(n, out, yaw, pitch)
   end
   dyn:setstr(0, table.concat(out))
   local off = 0

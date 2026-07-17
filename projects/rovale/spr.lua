@@ -102,17 +102,52 @@ local function raster(bytes, mvp, zb, cr, cg, cb, ca)
   end
 end
 
-local meta_buf -- rc.ro.sprmeta: [0]stamp, per-variant [4+8i]fv_micro [8+8i]done
+-- ---- the .spx sheet asset (PERMANENT bake, human verdict 2026-07-17) ----
+-- "CSPX" + <I4 stamp> <I4 w> <I4 h> <I4 rows> <I4 fv_micro> + RLE pixels
+-- (runs of <I2 count><4B rgba> — sheets are mostly transparent, so this
+-- cuts ~80%). Committed in projects/rovale/spr/; boot LOADS instead of
+-- rasterizing. A stamp/shape mismatch re-rasterizes and rewrites (the
+-- write is best-effort: the suite runs from a read-only store).
 
-local function meta()
-  if not meta_buf then
-    meta_buf = pal.buf("rc.ro.sprmeta", 4 + 8 * 8)
-    if meta_buf:u32(0) ~= SPR_STAMP then
-      meta_buf:u32(0, SPR_STAMP)
-      for i = 0, 7 do meta_buf:u32(8 + 8 * i, 0) end -- all dirty
+local packs, unpacks = string.pack, string.unpack
+
+local function spx_path(slot)
+  return cm.main.args.project .. "/spr/sheet" .. slot .. ".spx"
+end
+
+local function spx_encode(px, w, h, rows, fv)
+  local out = { "CSPX", packs("<I4I4I4I4I4", SPR_STAMP, w, h, rows,
+                              floor(fv * 1e6)) }
+  local n = #px // 4
+  local i = 1
+  while i <= n do
+    local p = px:sub(i * 4 - 3, i * 4)
+    local run = 1
+    while run < 65535 and i + run <= n
+          and px:sub((i + run) * 4 - 3, (i + run) * 4) == p do
+      run = run + 1
     end
+    out[#out + 1] = packs("<I2", run) .. p
+    i = i + run
   end
-  return meta_buf
+  return concat(out)
+end
+
+local function spx_decode(bytes, w, h, rows)
+  if #bytes < 24 or bytes:sub(1, 4) ~= "CSPX" then return nil end
+  local stamp, fw, fh, frows, fvm = unpacks("<I4I4I4I4I4", bytes, 5)
+  if stamp ~= SPR_STAMP or fw ~= w or fh ~= h or frows ~= rows then
+    return nil
+  end
+  local out, i = {}, 25
+  while i + 5 <= #bytes + 1 do
+    local run = unpacks("<I2", bytes, i)
+    out[#out + 1] = bytes:sub(i + 2, i + 5):rep(run)
+    i = i + 6
+  end
+  local px = concat(out)
+  if #px ~= w * h * 4 then return nil end
+  return px, fvm / 1e6
 end
 
 -- sheet texture registry (free old generation across reloads)
@@ -128,57 +163,61 @@ local function reg_tex(slot, id)
   if slot + 1 > idbuf:u32(0) then idbuf:u32(0, slot + 1) end
 end
 
--- bake one variant's sheet: 8 dirs (cols) x rows (list of {keys, t}).
--- slot = fixed variant index (cache identity). Returns
--- { tex, rows, fv } — fv = feet row fraction from the cell top.
-function S.bake(slot, figure, rows)
-  local mb = meta()
-  local W_, H_ = DIRS * CW, #rows * CH
-  local ok, pxbuf = pcall(pal.buf, "rc.ro.spx" .. slot, W_ * H_ * 4)
-  if not ok then -- row count changed across a reload
-    pal.buf_free("rc.ro.spx" .. slot)
-    pxbuf = pal.buf("rc.ro.spx" .. slot, W_ * H_ * 4)
-    mb:u32(8 + 8 * slot, 0)
-  end
-  local fv
-  if mb:u32(8 + 8 * slot) == 1 then -- cached: pixels survive hot reloads
-    fv = mb:u32(4 + 8 * slot) / 1e6
-  else
-    local t0 = os.clock()
-    local mvp = bake_mvp()
-    local feet = 0
-    for ri, spec in ipairs(rows) do
-      local pose = fig.cycle(spec[1], spec[2])
-      for d = 0, DIRS - 1 do
-        local zb, cr, cg, cb, ca = {}, {}, {}, {}, {}
-        for k = 1, CW * CH do
-          zb[k] = 1e18
-          ca[k] = 0
-          cr[k], cg[k], cb[k] = 0, 0, 0
+-- rasterize one variant's sheet: 8 dirs (cols) x rows ({keys, t} list).
+-- Returns pixels (RGBA string), fv (feet row fraction from the cell top).
+local function rasterize_sheet(figure, rows)
+  local W_ = DIRS * CW
+  local mvp = bake_mvp()
+  local feet = 0
+  local sheet = {} -- one string per sheet pixel row
+  for i = 1, #rows * CH do sheet[i] = false end
+  for ri, spec in ipairs(rows) do
+    local pose = fig.cycle(spec[1], spec[2])
+    for d = 0, DIRS - 1 do
+      local zb, cr, cg, cb, ca = {}, {}, {}, {}, {}
+      for k = 1, CW * CH do
+        zb[k] = 1e18
+        ca[k] = 0
+        cr[k], cg[k], cb[k] = 0, 0, 0
+      end
+      local out = {}
+      fig.emit(out, figure, m4.roty(d * (m.pi / 4)), pose)
+      raster(concat(out), mvp, zb, cr, cg, cb, ca)
+      for py = 0, CH - 1 do
+        local row = {}
+        for px = 0, CW - 1 do
+          local k = py * CW + px + 1
+          row[px + 1] = char(floor(cr[k]), floor(cg[k]), floor(cb[k]), ca[k])
+          if ca[k] > 0 and py > feet then feet = py end
         end
-        local out = {}
-        fig.emit(out, figure, m4.roty(d * (m.pi / 4)), pose)
-        raster(concat(out), mvp, zb, cr, cg, cb, ca)
-        -- write the cell into the sheet buffer row by row
-        for py = 0, CH - 1 do
-          local row = {}
-          for px = 0, CW - 1 do
-            local k = py * CW + px + 1
-            row[px + 1] = char(floor(cr[k]), floor(cg[k]), floor(cb[k]), ca[k])
-            if ca[k] > 0 and py > feet then feet = py end
-          end
-          pxbuf:setstr((((ri - 1) * CH + py) * W_ + d * CW) * 4, concat(row))
-        end
+        local sy = (ri - 1) * CH + py + 1
+        sheet[sy] = (sheet[sy] or "") .. concat(row)
       end
     end
-    fv = (feet + 1) / CH
-    mb:u32(4 + 8 * slot, floor(fv * 1e6))
-    mb:u32(8 + 8 * slot, 1)
-    pal.log(("[spr] baked sheet %d: %dx%d, %.2fs"):format(
-      slot, W_, H_, os.clock() - t0))
   end
-  local tex = pal.tex_create(W_, H_, string.rep("\0", W_ * H_ * 4))
-  pal.tex_update(tex, pxbuf, W_, H_)
+  return concat(sheet), (feet + 1) / CH
+end
+
+-- the sheet for a variant: load the committed .spx asset, or rasterize
+-- and (best-effort) write it. force = re-rasterize + rewrite (console).
+-- Returns { tex, rows, fv }.
+function S.bake(slot, figure, rows, force)
+  local W_, H_ = DIRS * CW, #rows * CH
+  local px, fv
+  if not force then
+    local bytes = pal.read_file(spx_path(slot))
+    if bytes then px, fv = spx_decode(bytes, W_, H_, #rows) end
+  end
+  if not px then
+    local t0 = os.clock()
+    px, fv = rasterize_sheet(figure, rows)
+    local wrote = pal.write_file(spx_path(slot), spx_encode(px, W_, H_,
+                                                            #rows, fv))
+    pal.log(("[spr] rasterized sheet %d: %dx%d, %.2fs%s"):format(
+      slot, W_, H_, os.clock() - t0,
+      wrote and ", wrote .spx" or " (read-only: not saved)"))
+  end
+  local tex = pal.tex_create(W_, H_, px)
   reg_tex(slot, tex)
   return { tex = tex, rows = #rows, fv = fv }
 end
@@ -192,24 +231,32 @@ end
 
 local pack = string.pack
 
--- upright billboard quad -> 2 tris (draw with flags 3: alphatest+nearest).
--- (x,y,z) = feet on the ground; h = cell height in world units (the feet
--- fraction fv anchors the sheet so baked feet land on y). tint 0..1.
-function S.billboard(out, sh, x, y, z, h, col, row, tint, cam_yaw)
+-- billboard quad -> 2 tris (draw with flags 3: alphatest+nearest).
+-- FULLY camera-facing (human playtest 2026-07-17: upright quads
+-- foreshorten under the pitched RO camera — "they shrink"): the quad
+-- spans camera right x camera up, so it never shrinks at any pitch.
+-- (x,y,z) = feet on the ground, anchored via the sheet's feet fraction
+-- fv; the top tips away from the eye like the classic RO lean-back.
+function S.billboard(out, sh, x, y, z, h, col, row, tint, cam_yaw, cam_pitch)
   local w = h * CW / CH
-  local rx, rz = m.cos(cam_yaw), -m.sin(cam_yaw) -- camera right on xz
+  local sy, cy = m.sin(cam_yaw), m.cos(cam_yaw)
+  local sp, cp = m.sin(cam_pitch), m.cos(cam_pitch)
+  local rx, rz = cy, -sy            -- camera right on xz
+  local ux, uy, uz = -sy * sp, cp, -cy * sp -- camera up
   local hw = w * 0.5
-  local top = y + h * sh.fv
-  local bot = top - h
+  local a0 = -h * (1 - sh.fv) -- feet -> bottom along up
+  local a1 = h * sh.fv        -- feet -> top along up
   local u0, u1 = col / DIRS, (col + 1) / DIRS
   local v0, v1 = row / sh.rows, (row + 1) / sh.rows
   local t = (tint * 255) // 1
-  local blx, blz = x - rx * hw, z - rz * hw
-  local brx, brz = x + rx * hw, z + rz * hw
-  local A = pack("<fffffBBBB", blx, top, blz, u0, v0, t, t, t, 255)
-  local B = pack("<fffffBBBB", brx, top, brz, u1, v0, t, t, t, 255)
-  local C = pack("<fffffBBBB", brx, bot, brz, u1, v1, t, t, t, 255)
-  local D = pack("<fffffBBBB", blx, bot, blz, u0, v1, t, t, t, 255)
+  local A = pack("<fffffBBBB", x - rx * hw + ux * a1, y + uy * a1,
+                 z - rz * hw + uz * a1, u0, v0, t, t, t, 255)
+  local B = pack("<fffffBBBB", x + rx * hw + ux * a1, y + uy * a1,
+                 z + rz * hw + uz * a1, u1, v0, t, t, t, 255)
+  local C = pack("<fffffBBBB", x + rx * hw + ux * a0, y + uy * a0,
+                 z + rz * hw + uz * a0, u1, v1, t, t, t, 255)
+  local D = pack("<fffffBBBB", x - rx * hw + ux * a0, y + uy * a0,
+                 z - rz * hw + uz * a0, u0, v1, t, t, t, 255)
   out[#out + 1] = A .. B .. C .. A .. C .. D
   return 2
 end

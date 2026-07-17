@@ -383,6 +383,11 @@ games without the user hand rolling everything"** — the distillation
 phase (editor primitives + engine modules) begins when demo 3's slice
 is feel-approved. Demo 3's design is sketched in §11.
 
+**Playtest verdict on the round-18 build (2026-07-17, human): "exactly
+the vibe we would want"** — with four fixes, all landed same-day
+(permanent .spx sprite assets, the apron corner z-fight, fully
+camera-facing billboards, edge-only click sfx; see STATUS + D3D-026).
+
 ## 9. Body Harvest techniques (from ../body-harvest decomp, see notes there)
 
 An N64 open-world game whose whole huge terrain fits 4MB — directly relevant

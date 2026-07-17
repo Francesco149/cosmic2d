@@ -818,3 +818,30 @@ first, measured (bake ~4.8µs/texel → 5.7s/map, A* ~2.9ms worst, pick
   ray + walk-grid A* are engine-shaped (cm.walk?); billboards could join
   cm.gb; the sprite depth-pull PAL flag stayed unneeded (smooth vale +
   steep camera — revisit on cliffs).
+
+## D3D-027 — playtest: sprite sheets are committed assets; billboards fully face the camera (2026-07-17)
+
+Four rovale playtest verdicts ("exactly the vibe we would want" plus
+fixes), the two decision-shaped ones recorded:
+
+- **The figure→sprite bake outputs ASSETS, not boot work.** spr.lua
+  writes each rasterized sheet as a committed RLE `.spx` file
+  (projects/rovale/spr/, ~205KB each vs 466KB raw); boots load
+  instantly, `game.rebake_sprites()` re-rasterizes + rewrites, and
+  SPR_STAMP invalidates stale files in other checkouts (a read-only
+  tree — the suite's nix store — just rasterizes in memory). This is
+  the editor-era shape: bake is a button, the result is a file asset.
+- **Billboards span camera right × camera up** (feet-anchored), not
+  upright-Y: upright quads foreshorten under the pitched RO camera
+  ("they shrink when i angle the camera"). Full facing = full size at
+  any pitch; the top tips away from the eye like RO's lean-back, and
+  the smooth vale keeps the head end out of the terrain (the depth-pull
+  PAL flag stays unneeded — revisit on cliffs).
+- Also: the border apron rebuilt as non-overlapping TILE-lattice bands
+  (the overlapping corner strips z-fought — a shimmering diagonal);
+  W.terrain_h clamps to exact bounds; the click sfx fires on the press
+  edge only (held-repeat re-commands silently).
+- Proofs: rovale_tour.ctrace verified UNREGENERATED through all four
+  changes (sim untouched except the sfx call site, which the demo path
+  reproduces identically); both pixels re-shot deliberately; the
+  RO_BUDGET honesty cmp re-proven; suite ALL GREEN.
