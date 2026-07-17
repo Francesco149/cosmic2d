@@ -4568,3 +4568,76 @@ information layer moved no recorded byte. Inspected capture on llm-feed: the
 tray over a 210-frame session with the populated files lane and the
 save/error/restart markers; previews honestly report none (the thumbnail
 packet). `tools/build-windows.sh` refreshed the stage and Start Menu shortcut.
+
+## D101 — presented-frame previews: the rewind tray's PREVIEWS lane (A7, 2026-07-17)
+
+**Context.** D100 lit the activity/event lanes across the whole retained window,
+but the tray's PREVIEWS (film) lane still printed "NO PRESENTED-FRAME PREVIEWS
+IN THIS HISTORY". `ALPHA.md` §A7 asks for "roughly one presented-frame thumbnail
+per minute … decimating at wide zoom, never re-running the sim." Every primitive
+already existed: `pal.read_pixels` reads back the fixed game FOV target (the
+`--shot`/golden path), `pal.png_encode`/`png_read` are the compact codec,
+`pal.tex_create`/`x_ig_image` draw a texture on the overlay drawlist. So this is
+a Lua-only observer packet — no PAL API bump.
+
+**Decision.** About once per `M.thumb_period` recorded frames (default one per
+minute at 60 Hz), `thumb_pump` — called from `M.tick` **after present**, so the
+game FOV holds the finished frame — point-samples `read_pixels` down to a
+height-46 thumbnail (`thumb_dims` normalizes height, caps width at 128; nearest
+sampling is cheap enough to run inline at that cadence) and stores it two ways,
+exactly mirroring the D100 digest's observer discipline:
+
+1. `seg.thumb = { frame, w, h, png }` on the **open segment** — the in-RAM index
+   the tray draws from. It survives `demote` (that only nils the keyframe/chunk
+   fields) and dies with the segment on eviction, so it needs zero pruning; a
+   rewind truncation clears it when its frame passes the cut. One slot per
+   segment: at any sane cadence (period ≫ the 60-frame segment) captures never
+   collide, so last-wins within a segment is exactly one preview per segment.
+2. A durable `THMB` chunk (`frame,w,h` + PNG) appended to the same segment, so it
+   rides the segment blob on spill for a future cross-session preview scan. Like
+   `FSAV`/`MARK` it is **stripped from exported `.ctrace` clips** and ignored by
+   state reconstruction and `verify` — no recorded byte moves.
+
+`M.ring_thumbs(from,to,max)` returns the in-range previews decimated to `max`,
+spread evenly by frame; it is RAM-index only and never loads or decodes a history
+blob (so adopted cross-session segments, which carry no in-RAM preview yet,
+contribute none while their D100 activity digest still draws). The tray's
+`draw_previews` requests `~aw/96` previews, decodes one GPU texture per **visible**
+frame into a small per-frame cache, skips any that would still overlap a
+neighbour, and frees textures that leave the visible set (and all of them on
+close) so the finite texture pool is never exhausted. Chunk-less/adopted history
+falls back to the minute ticks + honest absence label.
+
+**Capture gate.** Previews ride a dedicated `M.ring.thumbs` flag (set to
+`not args.headless` beside `spill`), not `spill` itself — so previews are a
+RAM-index feature independent of whether history hits disk, and a capture/soak
+harness can enable them without triggering disk writes. Goldens, traces,
+`--verify`, and `--frames` runs are all headless, so the flag is off and no
+pixel is ever read: the whole determinism story is unchanged by construction.
+
+**Consequences.** The tray now shows what the game looked like at each retained
+moment across its full zoom, seek target in hand. Previews are the game FOV (no
+editor chrome, fixed size regardless of window), so they read cleanly at 46px and
+never depend on window layout. Cost is one GPU readback + PNG encode about once a
+minute (a deliberate, negligible periodic hitch) plus ~a few KB of RAM per
+retained minute; both are bounded by the same eviction as the segments. Adopted
+cross-session previews and multi-resolution sub-segment previews are still the
+packaging packet's job (the durable `THMB` chunk is the forward hook).
+
+**Revisit.** A cadence below the segment length would silently give one preview
+per segment (the single `seg.thumb` slot); no sane preview cadence approaches
+that, but a game wanting sub-second previews votes a per-segment preview list.
+The point-sampled thumbnail votes a box filter (or a PAL `x_downscale`) if the
+previews read too aliased at a larger tray size. Cross-session preview recovery
+votes the blob scan the `THMB` chunk already feeds.
+
+**Proof.** Linux selftest **24,008** on PAL API 19 (11 new KATs in
+`t_timeline_thumbs`: capture→`ring_thumbs` round-trip with exact frames and
+`thumb_dims` 160×92→80×46, the PNG decodes to those dims, decimation to a
+requested max, previews survive their segment's demotion after spill, `THMB` is
+stripped from an exported clip, and `thumb_pump` reads a pixel only when
+`ring.thumbs` is set). `nix run .#test` is ALL GREEN — every historical trace
+verifies byte-exact and all pixel/audio goldens match, proving the preview layer
+moved no recorded byte. Inspected capture on llm-feed: the tray over a ~320-frame
+`smoke --edit` session with the PREVIEWS lane populated by one game-FOV thumbnail
+per segment. `tools/build-windows.sh` refreshed the stage and Start Menu shortcut.

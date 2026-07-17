@@ -278,12 +278,14 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
 - [x] Replace the hover slider with a persistent full-width timeline tray:
   default to the ten minutes ending at live, wheel-zoom at cursor,
   middle-drag pan, frame-level near zoom, and full-history far zoom.
-- [~] Capture/display roughly one presented-frame thumbnail per minute and a
+- [x] Capture/display roughly one presented-frame thumbnail per minute and a
   log-scaled max-per-pixel state-activity envelope, split into sim, editor, and
   project-file/asset deltas so one-frame significant events survive zoom-out.
   The activity envelope (sim/editor/files) is built and persisted per segment
   (D100) so it draws the whole retained window including adopted cross-session
-  history; the presented-frame thumbnails (`THMB`) remain the next packet.
+  history; the presented-frame thumbnails (`THMB`, D101) fill the PREVIEWS lane
+  from a live game-FOV sample, one per segment, decimated at wide zoom. Adopted
+  cross-session previews (the durable `THMB` blob scan) ride the packaging packet.
 - [~] Show current/live/retention markers plus input transitions, code epochs,
   asset saves/imports, restarts/session boundaries, errors, and crashes without
   requiring state reconstruction to draw the timeline. Current/live/retention

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate, first information-layer packet landed (D100, 2026-07-17)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the timeline information layer (activity digest D100 + presented-frame previews D101) is in (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -25,6 +25,44 @@ and the three-family demo matrix — demo (side-view), cellar (top-down),
 swarm (arcade) — ships in the public archives with READMEs, thumbnails,
 and export proofs. The complete rewind product UI (A7) and the
 release-candidate pass (A8) are the open alpha gates.
+
+**D101 fills the rewind tray's PREVIEWS lane: presented-frame
+previews (`THMB`).** The film lane read "NO PRESENTED-FRAME PREVIEWS
+IN THIS HISTORY"; now it draws small game-FOV thumbnails across the
+whole tray, one per segment, seek target in hand. Every primitive
+already existed, so this is a Lua-only observer packet (no PAL API
+bump): about once per `M.thumb_period` recorded frames (default one
+per minute at 60 Hz), `thumb_pump` — called from `M.tick` **after
+present**, so the game FOV holds the finished frame — point-samples
+`pal.read_pixels` down to a height-46 thumbnail (`thumb_dims`
+normalizes height, caps width at 128) and stores it two ways,
+mirroring the D100 digest's discipline: `seg.thumb = {frame,w,h,png}`
+on the open segment (the in-RAM index the tray draws from — it
+survives `demote`, dies with the segment on eviction, and a rewind
+truncation clears it past the cut; one slot per segment, which any
+sane cadence ≫ the 60-frame segment fills with exactly one preview),
+and a durable `THMB` chunk that rides the segment blob for a future
+cross-session scan. Like `FSAV`/`MARK`, `THMB` is stripped from
+exported `.ctrace` clips and ignored by reconstruction and `verify`,
+so **no recorded byte moved**. `ring_thumbs(from,to,max)` returns
+in-range previews decimated evenly by frame (RAM-index only, never
+decodes a blob, so adopted cross-session history shows none while its
+D100 activity digest still draws); the tray's `draw_previews` decodes
+one GPU texture per *visible* frame into a small per-frame cache,
+skips overlaps, and frees textures that leave the set (and all on
+close) so the texture pool can't exhaust. Previews ride their own
+`M.ring.thumbs` flag (set to `not args.headless` beside `spill`), not
+`spill` itself — so a capture/soak harness can enable previews
+without disk writes, and every headless path (goldens, traces,
+`--verify`, `--frames`) reads no pixel by construction. Linux
+selftest **24,008** / native Windows **24,010** on PAL API 19 (11 new
+KATs in `t_timeline_thumbs`); `nix run .#test` ALL GREEN with every
+historical trace and pixel/audio golden byte-identical. Inspected
+capture on llm-feed: the tray over a ~320-frame `smoke --edit`
+session with the PREVIEWS lane populated by one game-FOV thumbnail
+per segment. Adopted cross-session previews and multi-resolution
+sub-segment previews stay the packaging packet's job (the durable
+`THMB` chunk is the forward hook), logged.
 
 **D100 lands the first A7 information-layer packet: the persisted
 timeline summary index.** The rewind tray's activity/event lanes read
@@ -897,9 +935,10 @@ rewind tray owns the live camera, zoom/pan, click seek, wall-clocked
 1×/2×/4×/8× inclusive A/B playback, and two-step Esc grammar. Generic state
 participants flush/rebuild runtime facades at every capture/restore boundary;
 `cm.map` proves maps, placements, markers, collision, and active selection
-rewind coherently. Persisted activity/event indexes, minute thumbnails,
-project-file epochs, standalone clip packages, and immutable replay/crash
-sources remain later A7 packets.
+rewind coherently. The timeline information layer landed since (activity/event
+digest D100, presented-frame previews D101); the disk budget/retention surface,
+standalone clip packages, and immutable replay/crash sources remain later A7
+packets.
 
 **Proof:** focused KATs cover draft/partial policy, normalized content, missing
 files, binary text, bad icon type/shape, extensionless legal candidates, picker
@@ -911,27 +950,32 @@ release tab and chooser at 100% canvas zoom.
 
 **Exact next packet:** **A7 — the rewind/replay product UI, continued.**
 The foundation (persistent tray, scrub grammar, wall-clocked
-transport: D065/D066/D074), the store's durability rework (D073),
-and now the **timeline information layer** (D100 — the persisted
-per-segment activity/event digest; the activity envelope +
-save/error/restart/session markers draw the whole retained window
-including adopted cross-session history) are done. The natural next
-packet is the **presented-frame thumbnails** (`THMB`): capture a
-small compositor-output sample near each minute boundary as
-observer-only media so the PREVIEWS lane fills (it currently draws
-"NO PRESENTED-FRAME PREVIEWS"), decimating at wide zoom, never
-re-running the sim. After that: disk budget/retention surfaces,
+transport: D065/D066/D074), the store's durability rework (D073), and
+the whole **timeline information layer** are now done: the persisted
+per-segment activity/event digest (D100 — the sim/editor/files
+envelope + save/error/restart/session markers draw the whole retained
+window including adopted cross-session history) and the
+presented-frame previews (D101 — the PREVIEWS lane draws game-FOV
+thumbnails, one per segment). The natural next packet is the
+**disk budget / retention surface**: the tray already shows
+`used / budget · N segments`, so make it a *control* — visible
+disk use with pause/clear and retention knobs, and a bounded,
+understandable long session (`ALPHA.md` §A7 line 4; `cm.ed.clear_cache`
++ the budget-eviction path already exist to build on). After that:
 immutable timeline sources with drag-in replay files, the standalone
 clip package (the content-addressed project-blob generalization,
-which also extends `FSAV` to carry a blob hash), atomic clip export
-to `replays/`, and crash-report drops (the ERROR marker + ring
-locator are already in place). Standing revisit triggers: >500 rich
-doc actors votes the recorder per-subtree delta (D098, re-run
-perfgauge); a game needing per-frame detail in adopted history votes
-multi-resolution sub-segment digest buckets (D100); a hand-rolled
-fade/wipe/hold votes the transition slice in (D096); a sim/doc-moving
-demo retrofit re-cuts its golden with `tools/trace/replay-driver.lua`
-+ `dump.lua` + `strip-eval.lua` (usage in the headers and PROCESS.md).
+which extends `FSAV` to carry a blob hash and folds in the D101
+`THMB` durable chunks + D100 digest for adopted/cross-session
+recovery), atomic clip export to `replays/`, and crash-report drops
+(the ERROR marker + ring locator are already in place). Standing
+revisit triggers: >500 rich doc actors votes the recorder per-subtree
+delta (D098, re-run perfgauge); a game needing per-frame detail in
+adopted history votes multi-resolution sub-segment digest buckets
+(D100); a sub-second preview cadence votes a per-segment preview list
+(D101); a hand-rolled fade/wipe/hold votes the transition slice in
+(D096); a sim/doc-moving demo retrofit re-cuts its golden with
+`tools/trace/replay-driver.lua` + `dump.lua` + `strip-eval.lua`
+(usage in the headers and PROCESS.md).
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
