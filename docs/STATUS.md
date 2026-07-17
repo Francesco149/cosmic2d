@@ -3,22 +3,67 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — rebindable actions shipped (D084); the options packet next (2026-07-17)
+## Current handoff — the options packet shipped (D085); player storage next (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A3 are complete and A4 is three packets in.** A3's full promise holds:
+**A0–A3 are complete and A4 is four packets in.** A3's full promise holds:
 from a fresh archive a user can create (from four starter templates),
 import, rename, relocate, duplicate, archive, delete, edit, play, and
 export projects entirely through the shipped UI. Real SDL controllers
-drive games deterministically (D082 record + D083 discovery) and every
-action is player-rebindable across keyboard and pads (D084). The rest of
-A4 (options, player storage, the all-inputs determinism proof), shared
-genre-neutral runtime slices and demos (A5/A6), the complete rewind
-product UI (A7), and the release-candidate pass (A8) remain the open
-alpha gates.
+drive games deterministically (D082 record + D083 discovery), every
+action is player-rebindable across keyboard and pads (D084) — the human
+has since confirmed a physical Switch Pro controller through native
+win32 SDL drives games and rebinding correctly — and the Esc menu is
+the full player options surface (D085). The rest of A4 (player storage,
+the all-inputs determinism proof), shared genre-neutral runtime slices
+and demos (A5/A6), the complete rewind product UI (A7), and the
+release-candidate pass (A8) remain the open alpha gates.
+
+**D085 closes the options packet, the fourth A4 line.** Volume is a
+device-output affair: PAL API 19's `x_snd_gain(master, music, sfx)`
+generalizes the editor-mute split into per-category gains on the DEVICE
+copy of the sim mix (music slots 32..47, sfx 0..31, 48..63 master-only)
+while master scales the whole callback output, editor bank included —
+the hashed full mix is untouched by construction, so every audio golden
+and trace is byte-identical under any volume, and `x_snd_dev_tap` is
+the headless KAT seam that proves the math exactly. Window-size buttons
+now derive from `x_display_size` through the pure
+`cm.view.size_candidates`: ladder-filling multiples of the project's
+FOV families that actually fit the desktop (largest eight, 1x fallbacks
+for tiny displays, the classic static four without a display). The
+controls page gained the two stick knobs D082/D084 reserved — deadzone
+and axis press threshold, percent views over exact raw ints — riding
+input.dat additively with defaults omitted and every load resetting
+first. `video.dat` became the per-project machine-local options store
+proper via `cm.view.video_contrib`; `cm.options` contributes the volume
+percents and the new `custom` table backing `cm.options.add{...}` —
+project-declared toggle/slider/choice settings rendered under "game
+options", persisted per machine, undeclared stored ids inert (the
+input.dat rule), documented in the shipped guide as LIVE presentation
+policy (sim-read settings belong in `state.doc`). Slider gestures apply
+live but persist once on release. Volumes apply on adoption, before the
+first audible frame.
+
+**D085 proof:** Linux selftest passes **23,711 checks** and the staged
+native Windows executable **23,713** on PAL API 19 (56 new KATs: gain
+clamps/category selection/half-gain-exactness/hashed-mix purity through
+the dev-tap seam, knob setter clamps, the retuned-threshold sampling
+boundary exact at quantized 80, the input.dat knob ride, size
+candidates across 1080p/laptop/4K/tiny/no-display and the 960x540
+family, options.add validation, set_vol clamps, the real video.dat
+round-trip with inert foreign custom ids, redeclaration fallback).
+`nix run .#test` is ALL GREEN — every historical trace and all
+pixel/audio goldens unchanged. A live windowed WSLg fixture proved the
+end-to-end: run one set volumes, a custom option, and both stick knobs
+through the API doors; run two's real interactive boot adopted all of
+them from the published stores with master honestly at its untouched
+default. `tools/build-windows.sh` refreshed the Windows stage and Start
+Menu shortcut. Inspected captures on llm-feed: the main page (volumes,
+six display-fitted sizes, game options) and the controls page (stick
+knobs at their exact default percents).
 
 **D084 closes the rebind UI/API packet, the third A4 line.** An action
 now holds a list of bindings — `key:<scancode>`, pad-1 buttons
@@ -488,27 +533,21 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the options packet** — the fourth A4 line:
-master/music/SFX volume knobs, fullscreen/window sizes that fit the
-current display (today's four hardcoded presets ignore the desktop
-size), the deadzone knob D082 reserved and the axis-threshold knob D084
-added (both pure live policy), and extensibility for project-specific
-settings. The Esc menu already owns the surface (main page + controls
-page, D084's page grammar generalizes); the missing pieces are an audio
-volume path (`cm.snd`/PAL mixer — check what the mixer already exposes),
-display-derived window-size candidates, and a persistence split: video
-knobs stay in `video.dat`, input knobs likely join `input.dat`, and
-whatever is user-global belongs beside `editor.dat`. After that:
-namespaced atomic player storage, then the A4 exit proof (input
-recording, rewind, resume, replay, cross-platform verify with keyboard,
-mouse, and gamepad records together).
-
-Worth a hallway test when the human is around: plug a real controller
-into the Windows editor, play a template, and rebind a couple of actions
-through the Esc menu's controls page (agent-side proof used SDL virtual
-pads; a physical XInput pad through native win32 SDL is the one path no
-automated check touched). No blocker — the options packet can start
-immediately.
+**Exact next packet:** **namespaced atomic player storage** — the fifth
+A4 line: save data outside the install/project folder (the per-user
+root `pal.user_path()` already exists — likely
+`<user root>/saves/<namespace>/`), profiles/slots, a schema version
+with migration, explicit reset, and error reporting through the same
+named-failure discipline as every other store. Design questions to
+settle in the ADR: the namespace key (project name is mutable —
+probably a declared `project.lua` save id with a validated grammar),
+what the Lua API owes determinism (saves are written by sim-triggered
+events but the FILES are machine state — the D084/D085 live-policy
+line needs an explicit statement for reads), and how exports/archives
+relate (they must not carry another machine's saves). After that: the
+A4 exit proof — input recording, rewind, resume, replay, and
+cross-platform verify with keyboard, mouse, and gamepad records
+together.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

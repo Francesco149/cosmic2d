@@ -191,8 +191,11 @@ Goal: exported desktop games meet basic player expectations.
   bindings feed the frozen v1 action bits live-side; the Esc menu's controls
   page captures/steals/resets; overrides persist per machine in the
   project's `input.dat`; HUDs read `input.label`.)
-- [ ] Options: master/music/SFX volume, bindings, fullscreen/window sizes that
+- [x] Options: master/music/SFX volume, bindings, fullscreen/window sizes that
   fit the current display, and extensibility for project-specific settings.
+  (D085: volumes are device-output gains — goldens never hear them; window
+  sizes derive from `x_display_size`; stick knobs ride input.dat, volumes +
+  `cm.options.add` project settings ride video.dat via contributor hooks.)
 - [ ] Add namespaced atomic player storage outside the install/project folder:
   profiles/slots, schema version, migration, reset, and error reporting.
 - [ ] Prove input recording, rewind, resume, replay, and cross-platform verify

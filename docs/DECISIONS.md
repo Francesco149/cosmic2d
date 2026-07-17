@@ -3551,3 +3551,102 @@ with the honest "moved from jump" note. Inspected captures on llm-feed:
 options main page, controls page with the jump override, armed prompt,
 red conflict marks with both HUD labels honestly reading "Space", the
 steal result, and the pad-flavored template HUD.
+
+## D085 — the options packet: player options are live policy over split per-project stores (A4, 2026-07-17)
+
+**Context.** A4's fourth line owes players the expected desktop options:
+volume, window sizes that fit their display (the M8.6 menu hardcoded
+four presets sized for 1080p), the deadzone knob D082 reserved and the
+axis-threshold knob D084 added, and a door for project-specific
+settings. Every one of these must stay what D082–D084 made the input
+knobs: **live policy that can never enter the record, the sim, or a
+golden**.
+
+**Decision — volume is a device-output affair.** PAL API 19's
+`pal.x_snd_gain(master, music, sfx)` (0..128, 128 unity, clamped)
+generalizes the editor's monitor-mute split: music/sfx gain the sim
+bank's voice categories (music slots 32..47, sfx 0..31, 48..63
+master-only) on the **device copy** of the mix, composing with the
+mutes; master scales the whole audio-callback output, the editor
+audition bank included. The hashed full mix is untouched by
+construction — `snd_render` still hashes the true mix, only the fifo
+push hears the policy — so every PCM golden and trace is byte-identical
+under any volume. The split path now renders headless too, and
+`pal.x_snd_dev_tap()` exposes the device copy so KATs prove the gain
+math exactly (gain 64 composes with the mix shift into one arithmetic
+shift). Gains reset to unity per VM boot like the mute clear; the
+project store re-applies the player's volumes immediately after.
+`cm.options` speaks percent (0..100) and maps to gains at apply time.
+
+**Window sizes derive from the display.** `pal.x_display_size()`
+reports the desktop of the display the window occupies (nil without
+one). Pure `cm.view.size_candidates(dw, dh)` generates the
+ladder-filling sizes — whole multiples of the project's reference FOV
+and its 4:3-capped sibling (D054 families get their own multiples) —
+that fit that desktop, largest eight, 1x fallbacks for tiny displays,
+the classic static four when no display exists. The options menu
+consumes it per frame, so moving the window to another monitor honestly
+reshapes the offer.
+
+**The stores split by owner.** `<project>/input.dat` (D084) gains
+optional `deadzone`/`axis_threshold` fields — schema 1, additive; old
+stores read unchanged, malformed values are ignored, numeric ones
+clamp, every load resets to code defaults first (a project switch never
+leaks tuning), and **only off-default values persist** so an untouched
+player never freezes today's defaults against a future retune.
+`<project>/video.dat` becomes the per-project machine-local options
+store proper: `cm.view.video_contrib(name, save, load)` lets owning
+modules merge flat fragments into the canonical table and adopt-or-
+reset on every load. `cm.options` contributes `vol_master/music/sfx`
+(percent, omitted at 100) and `custom` — and applies the gains on
+adoption, so volumes take effect before the first audible frame.
+
+**Projects declare their own options.** `cm.options.add{id, label,
+kind=toggle|slider|choice, default, min/max/step, choices, on_change}`
+renders under "game options" on the main page; `get`/`set` are the
+scripted doors. Values live in video.dat's `custom` table as plain
+scalars; entries for undeclared ids (version skew, hot reload) stay
+inert in the store exactly like input.dat's unknown actions, and a
+stored value failing a redeclared validation yields the new default
+without touching the store. The contract is documented where projects
+will read it: these are LIVE presentation settings (read in draw or via
+on_change); a sim-read setting belongs in `state.doc` where it is
+recorded, or replay breaks.
+
+**The menu surface.** The main page: fullscreen, the fitted size
+buttons, ui scale, three volume sliders, then game options — scrolling,
+with controls/close/quit fixed at the bottom. The controls page gains
+the two stick sliders (deadzone, "stick press at") as percent views
+over the exact raw integers. Slider gestures apply live every frame but
+persist once on release (an Esc mid-drag still lands the save through
+the same flush), keeping the A1 atomic-write discipline without a write
+per drag frame.
+
+**Consequences.** Exported games now meet the basic desktop
+expectations without project code; templates need nothing. The A4 lines
+left are namespaced player storage and the all-inputs determinism
+proof. The volume knobs deliberately do not duck or fade (a later
+audio-polish affair), and the capture UI still normalizes to pad 1.
+
+**Proof.** Linux selftest passes **23,711 checks** and the staged
+native Windows executable **23,713** on PAL API 19 (56 new KATs: gain
+clamps and category selection through the dev-tap seam — neutral
+identity, music-0 device-only silence, half gain exactly one shift,
+uncategorized unity, byte-identical hashed mix under any gain — knob
+setter clamps, the retuned-threshold sampling boundary exact at
+quantized 80, the input.dat knob ride, size candidates across
+1080p/laptop/4K/tiny/no-display and the 960x540 family, the
+x_display_size contract, options.add validation without half
+declarations, set_vol clamps, the real video.dat round-trip with inert
+foreign ids, and redeclaration fallback). `nix run .#test` is ALL
+GREEN — every historical trace and all pixel/audio goldens unchanged,
+proving no recorded or hashed byte moved. A live windowed WSLg fixture
+proved the real end-to-end: run one set volumes, a custom option, and
+both stick knobs through the API doors; run two's real interactive boot
+adopted all of them (master honestly at its untouched default) from the
+published `video.dat`/`input.dat`. Inspected captures on llm-feed: the
+main page with volumes, six display-fitted sizes, and game options; the
+controls page with the stick knobs at their exact default percents.
+The human separately confirmed D084's one untested path: a physical
+Switch Pro controller through native win32 SDL drives games and
+rebinding correctly.
