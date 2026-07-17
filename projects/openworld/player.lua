@@ -206,6 +206,19 @@ function M.step(ctl)
   -- slope within k.snap (downhill walks stick; a real ledge drop exceeds
   -- the window and becomes a fall — walk-offs still read as falls)
   local g = world.ground(x, z)
+  -- ...raised to any collider TOP under the feet (round 14 playtest: a
+  -- jump onto a boulder fell INTO it — the side clamps rightly ignore
+  -- squeezed overlaps (D3D-009), so entry through the top face needs its
+  -- own landing plane; the bounce box-top rule, feet-at-or-above only,
+  -- EPS on every f32 test per D3D-010). Walking off the top exceeds
+  -- k.snap and becomes an ordinary fall.
+  for _, b in ipairs(C) do
+    if b[5] > g and y >= b[5] - EPS
+       and x + hw > b[1] + EPS and x - hw < b[4] - EPS
+       and z + hw > b[3] + EPS and z - hw < b[6] - EPS then
+      g = b[5]
+    end
+  end
   local ny = y + vy * DT
   local landed = false
   if ny <= g then
