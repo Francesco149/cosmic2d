@@ -35,9 +35,10 @@ function M.init()
   end
 end
 
-function M.sfx(name, vel)
+function M.sfx(name, vel, note) -- note overrides the slot default (the
+  -- wanderer's hello is the same bell a fourth up, not a new preset)
   local s = by_name[name]
-  if s then snd.on(s.slot, s.note, vel or 110) end
+  if s then snd.on(s.slot, note or s.note, vel or 110) end
 end
 
 -- all-stars fanfare: a bell major triad on the greet slot (bounce's goal

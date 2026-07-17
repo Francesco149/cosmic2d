@@ -70,13 +70,16 @@ local KNOBS = {
     idle_f = 120,   -- frames per idle breath cycle
     swim_tilt = 0.30, -- forward pitch while swimming (the paddle read)
   },
-  npc = { -- the pond watcher's exchange (D3D-020)
+  npc = { -- the exchange (D3D-020) + the walkers (D3D-023)
     greet_r = 4.2, -- come this close and the exchange begins
     exit_r = 5.6,  -- ...and it ends this far out (hysteresis: no chime spam)
     turn = 0.10,   -- facing ease toward the player / back home
     wave_f = 44,   -- frames per wave cycle
     blend_f = 14,  -- idle->wave blend-in frames
     type_f = 2,    -- frames per typed dialog character
+    speed = 2.2,   -- a walker's amble along its route
+    arrive = 0.35, -- waypoint arrival radius
+    hold = 180,    -- a walker stops this long per greet, then walks on
   },
   stars = { -- the wander's goal (stars.lua)
     r = 1.3,        -- pickup radius (3D, vs the mascot's center)
@@ -148,8 +151,8 @@ function game.init()
   build_sky()
 
   -- dyn: per-frame figure + shadow + star verts (render-class scratch;
-  -- two mascots + two blob shadows + the star field worst-case)
-  local dyn_size = (2800 + stars.max_tris()) * 72
+  -- three mascots + three blob shadows + the star field worst-case)
+  local dyn_size = (4200 + stars.max_tris()) * 72
   local ok, db = pcall(pal.buf, "rc.ow.dyn", dyn_size)
   if not ok then
     pal.buf_free("rc.ow.dyn")
@@ -187,7 +190,9 @@ end
 -- = the pond crossing (the swim regime on show); game.demo(4) = walk to
 -- the pond watcher and stand for the exchange; game.demo(5) = the star
 -- sweep — collect all ten stars (ring, banks, the mid-pond swim), end
--- standing by the watcher; any real press takes back
+-- standing by the watcher; game.demo(6) = walk to the flower meadow and
+-- stand on the wanderer's loop — it comes around, stops, waves, says its
+-- line, and walks on (the lap brings it back); any real press takes back
 function game.demo(on)
   local d = state.doc
   if on and on ~= 0 then
@@ -235,13 +240,21 @@ local ROUTE_STARS = {
   { 56, 68 }, { 55.4, 72.0 },
 }
 
-local HOLD_LAST = { [4] = true, [5] = true } -- these routes end standing
+-- demo(6): the meadow meeting — south from the spawn bowl (east of the
+-- z~86-88 tree pair, every leg verified h 0.78..1.68 with >=2u collider
+-- clearance) to a stand-spot ON the wanderer's loop; it comes around,
+-- greets, walks on, and the next lap greets again
+local ROUTE_MEET = {
+  { 71, 84 }, { 70.5, 90 }, { 66, 96 },
+}
+
+local HOLD_LAST = { [4] = true, [5] = true, [6] = true } -- end standing
 
 local function route_ctl()
   local d = state.doc
   local px, _, pz = player.pos()
   local route = d.demo == 3 and ROUTE_SWIM or d.demo == 4 and ROUTE_NPC
-    or d.demo == 5 and ROUTE_STARS or ROUTE
+    or d.demo == 5 and ROUTE_STARS or d.demo == 6 and ROUTE_MEET or ROUTE
   local wp = route[d.demo_wp]
   local dx, dz = wp[1] - px, wp[2] - pz
   local dist = m.sqrt(dx * dx + dz * dz)
@@ -388,6 +401,12 @@ function game.step()
     print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f g=%.3f yaw=%.2f stars=%d"):format(
       state.frame(), px, py, pz, vx, vy, vz, world.ground(px, pz), cam:f32(0),
       state.doc.stars))
+    for _, n in ipairs(npc.list) do
+      local b = n.buf
+      print(("  npc %s p=%.2f,%.2f yaw=%.2f wp=%d greet %d..%d n=%d"):format(
+        n.buf_name, b:f32(20), b:f32(24), b:f32(0), b:f32(28), b:f32(4),
+        b:f32(12), b:f32(8)))
+    end
   end
 end
 
