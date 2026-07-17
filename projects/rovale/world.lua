@@ -18,6 +18,7 @@ local m = cm.require("cm.math")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local terr = cm.require("cm.terr")
+local atlas = cm.require("cm.atlas")
 
 local W = select(2, ...) or {}
 
@@ -36,7 +37,6 @@ local WATER_C = { 0.42, 0.72, 0.66 } -- milky teal, unlit, alpha 144/255
 
 local N, TILE = 32, 2.0 -- 64u square vale
 W.N, W.TILE = N, TILE
-local ATLAS = N * 34 -- 1088
 
 -- the gazebo placement (diagonal on purpose — §8c)
 local GX, GZ, GROT = 40.0, 22.0, 0.55
@@ -327,77 +327,54 @@ end
 
 local char, concat = string.char, table.concat
 
--- bake ONE tile's 34x34 texels into the atlas buffer (gutter texels reach
--- into the neighbors so 3-point filtering never seams)
-local function bake_tile(abuf, tx, tz)
-  for py = 0, 33 do
-    local row = {}
-    for qx = 0, 33 do
-      local wx = (tx + (qx - 1 + 0.5) / 32.0) * TILE
-      local wz = (tz + (py - 1 + 0.5) / 32.0) * TILE
-      local h = W.terrain_h(wx, wz)
-      local w0, w1, w2 = weights(wx, wz, h)
-      local px, pz = floor(wx * 16), floor(wz * 16)
-      local r, g, b = 0, 0, 0
-      if w0 > 0.004 then
-        local mr, mg, mb = mat_grass(px, pz)
-        r, g, b = r + w0 * mr, g + w0 * mg, b + w0 * mb
-      end
-      if w1 > 0.004 then
-        local mr, mg, mb = mat_dirt(px, pz)
-        r, g, b = r + w1 * mr, g + w1 * mg, b + w1 * mb
-      end
-      if w2 > 0.004 then
-        local mr, mg, mb = mat_sand(px, pz)
-        r, g, b = r + w2 * mr, g + w2 * mg, b + w2 * mb
-      end
-      local sh = W.shadow(wx, wz)
-      if h < W.water_y then -- underwater ground darkens + cools
-        sh = sh * 0.80
-        b = b * 1.08
-      end
-      r, g, b = r * sh, g * sh, b * sh
-      if r > 255 then r = 255 end
-      if g > 255 then g = 255 end
-      if b > 255 then b = 255 end
-      row[qx + 1] = char(floor(r), floor(g), floor(b), 255)
-    end
-    abuf:setstr(((tz * 34 + py) * ATLAS + tx * 34) * 4, concat(row))
+-- the per-texel ground colour cm.atlas bakes into every tile's cell: the RO
+-- "no visible tile grid" trick sampled in CONTINUOUS world space — feathered
+-- grass/dirt/sand weights, prop shadows multiplied in, underwater ground
+-- cooled + darkened. Returns r,g,b in 0..255 (cm.atlas clamps + packs).
+local function texel(wx, wz)
+  local h = W.terrain_h(wx, wz)
+  local w0, w1, w2 = weights(wx, wz, h)
+  local px, pz = floor(wx * 16), floor(wz * 16)
+  local r, g, b = 0, 0, 0
+  if w0 > 0.004 then
+    local mr, mg, mb = mat_grass(px, pz)
+    r, g, b = r + w0 * mr, g + w0 * mg, b + w0 * mb
   end
+  if w1 > 0.004 then
+    local mr, mg, mb = mat_dirt(px, pz)
+    r, g, b = r + w1 * mr, g + w1 * mg, b + w1 * mb
+  end
+  if w2 > 0.004 then
+    local mr, mg, mb = mat_sand(px, pz)
+    r, g, b = r + w2 * mr, g + w2 * mg, b + w2 * mb
+  end
+  local sh = W.shadow(wx, wz)
+  if h < W.water_y then -- underwater ground darkens + cools
+    sh = sh * 0.80
+    b = b * 1.08
+  end
+  return r * sh, g * sh, b * sh
 end
 
--- bump when the bake math/inputs change: a mismatched stamp rebakes on
+-- bump when the texel math/inputs change: a mismatched stamp rebakes on
 -- reload instead of showing a stale atlas
 local BAKE_STAMP = 4
 
-W.atlas_tex = nil
-local abuf, bakest
+W.atlas = nil     -- the cm.atlas handle (built in W.build)
+W.atlas_tex = nil -- its texture id (the terrain segment samples it)
 
 -- run K tiles of bake budget; returns done fraction 0..1. Call from draw
--- ONLY (render-class). Uploads the atlas once on completion.
+-- ONLY (render-class). cm.atlas uploads the atlas once on completion.
 function W.bake(budget)
-  local next_t = bakest:u32(0)
-  local total = N * N
-  if next_t >= total then return 1 end
-  local stop = m.min(total, next_t + budget)
-  while next_t < stop do
-    bake_tile(abuf, next_t % N, next_t // N)
-    next_t = next_t + 1
-  end
-  bakest:u32(0, next_t)
-  if next_t >= total then
-    pal.tex_update(W.atlas_tex, abuf, ATLAS, ATLAS)
-  end
-  return next_t / total
+  return atlas.bake(W.atlas, budget, texel)
 end
 
 function W.bake_done()
-  return bakest:u32(0) >= N * N
+  return atlas.done(W.atlas)
 end
 
-function W.rebake() -- console: after editing the bake math live
-  bakest:u32(0, 0)
-  bakest:u32(4, BAKE_STAMP)
+function W.rebake() -- console: after editing the texel math live
+  atlas.rebake(W.atlas)
 end
 
 -- ---- prop/deck textures (procedural, render-class) -----------------------
@@ -483,14 +460,14 @@ end
 
 local function emit_terrain(out)
   local t = W.terr
-  local e0, e1 = 1.0 / 34, 33.0 / 34
   local ntris = 0
   for tz = 0, N - 1 do
     for tx = 0, N - 1 do
       local x0, x1 = tx * TILE, (tx + 1) * TILE
       local z0, z1 = tz * TILE, (tz + 1) * TILE
-      local u0, u1 = (tx + e0) / N, (tx + e1) / N
-      local v0, v1 = (tz + e0) / N, (tz + e1) / N
+      -- interior UV rect of this tile's atlas cell (cm.atlas owns the
+      -- gutter inset the bake and the mesh must agree on)
+      local u0, v0, u1, v1 = atlas.uv(W.atlas, tx, tz)
       local h00, h10 = terr.hget(t, tx, tz), terr.hget(t, tx + 1, tz)
       local h01, h11 = terr.hget(t, tx, tz + 1), terr.hget(t, tx + 1, tz + 1)
       local ax, ay, az = smooth_nrm(t, tx, tz)
@@ -624,12 +601,21 @@ function W.build()
   build_walk()
   gb.sun, gb.ambient = W.sun, W.ambient -- props light like the terrain
 
+  -- the baked terrain atlas: cm.atlas creates + fills the texture and owns the
+  -- bake state (pixel buffer + progress persist across reload; a finished bake
+  -- re-uploads instantly). Its LIFETIME is ours, so W.atlas_tex rides the
+  -- texture registry below with the rest (freed together on reload)
+  W.atlas = atlas.build{
+    pixels = "rc.ro.atlas", state = "rc.ro.bake",
+    n = N, tile = TILE, fill = "\40\60\40\255", stamp = BAKE_STAMP,
+  }
+  W.atlas_tex = W.atlas.tex
+
   -- texture registry: [0]=count then ids (free the old generation on reload)
   local idbuf = pal.buf("rc.ro.texids", 4 * 8)
   local nold = idbuf:u32(0)
   for i = 1, nold do pal.tex_free(idbuf:u32(4 * i)) end
   W.tex = gb.load_textures("rc.ro.gbtex") -- shadow blob rides along
-  W.atlas_tex = pal.tex_create(ATLAS, ATLAS, string.rep("\40\60\40\255", ATLAS * ATLAS))
   W.pave_tex = pal.tex_create(64, 64, tx_pave())
   W.shingle_tex = pal.tex_create(64, 64, tx_shingle())
   W.ring_tex = pal.tex_create(32, 32, tx_ring())
@@ -638,17 +624,6 @@ function W.build()
   idbuf:u32(8, W.pave_tex)
   idbuf:u32(12, W.shingle_tex)
   idbuf:u32(16, W.ring_tex)
-
-  -- the atlas pixel buffer + bake progress (persist across hot reloads:
-  -- a finished bake re-uploads instantly instead of rebaking)
-  abuf = pal.buf("rc.ro.atlas", ATLAS * ATLAS * 4)
-  bakest = pal.buf("rc.ro.bake", 8)
-  if bakest:u32(4) ~= BAKE_STAMP then
-    bakest:u32(0, 0)
-    bakest:u32(4, BAKE_STAMP)
-  elseif W.bake_done() then
-    pal.tex_update(W.atlas_tex, abuf, ATLAS, ATLAS)
-  end
 
   local out, sg, off = {}, {}, 0
   local function flush(tex, ntris, flags)
