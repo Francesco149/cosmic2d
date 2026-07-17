@@ -3262,6 +3262,235 @@ local function t_atomic_write()
   recent.path = old_recent
 end
 
+-- ---- rebindable actions (A4/D084): descriptors, sampling, store, UI seams ----
+
+local function t_input_bind()
+  local input = cm.require("cm.input")
+  input.pad_reset()
+  input.load_binds(nil) -- no store, no overrides: a clean live session
+
+  -- one map exercising every descriptor kind; earlier suites' actions get
+  -- rebound to non-overlapping keys so conflict checks start clean
+  input.map({ { "jump", input.key.q },
+              { "left", input.key.left, "pad:dpleft", "pad:lx-" },
+              { "right", input.key.e },
+              { "fire", input.key.space, "pad:south" },
+              { "boost", "pad:lt+", "pad2:east", "key:7" } })
+  local L = 1 << input.bit_of.left
+  local F = 1 << input.bit_of.fire
+  local B = 1 << input.bit_of.boost
+
+  local c = input.bindings("left")
+  check(#c == 3 and c[1] == "key:80" and c[2] == "pad:dpleft"
+        and c[3] == "pad:lx-",
+        "bind: scancode numbers and pad descriptors canonicalize")
+  c = input.bindings("boost")
+  check(c[1] == "pad:lt+" and c[2] == "pad2:east" and c[3] == "key:7",
+        "bind: trigger directions and pinned pads keep their spelling")
+  check(not pcall(input.define, "bad", { "pad:warp" })
+        and not pcall(input.define, "bad2", { "pads:south" })
+        and not pcall(input.define, "bad3", { true })
+        and input.bit_of.bad == nil and input.bit_of.bad2 == nil,
+        "bind: invalid descriptors refuse without half-defining an action")
+  check(not pcall(input.bindings, "nope") and not pcall(input.rebind, "nope"),
+        "bind: unknown actions are loud")
+
+  local function bits()
+    return (string.unpack("<I4", input.sample()))
+  end
+
+  -- a pad button drives its action's v1 bit, with the key sticky-tap rule
+  input.feed({ { type = "pad", pad = 1, connected = true },
+               { type = "padbtn", pad = 1, button = input.pad_btn.dpleft,
+                 down = true } })
+  check(bits() & L ~= 0, "bind: a pad button drives the action bit")
+  input.feed({ { type = "padbtn", pad = 1, button = input.pad_btn.dpleft,
+                 down = false } })
+  check(bits() & L == 0, "bind: the pad release clears the bit")
+  input.feed({ { type = "padbtn", pad = 1, button = input.pad_btn.dpleft,
+                 down = true },
+               { type = "padbtn", pad = 1, button = input.pad_btn.dpleft,
+                 down = false } })
+  check(bits() & L ~= 0, "bind: a sub-frame pad tap lands one record")
+  check(bits() & L == 0, "bind: the pad tap clears on the next record")
+
+  -- an axis binding fires at the quantized threshold, direction-aware
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = -15801 } })
+  check(bits() & L ~= 0, "bind: stick deflection at the threshold fires")
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = -15750 } })
+  check(bits() & L == 0, "bind: deflection inside the threshold does not")
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = 32767 } })
+  check(bits() & L == 0, "bind: the opposite direction never fires")
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = 0 },
+               { type = "padaxis", pad = 1, axis = 4, value = 32767 } })
+  check(bits() & B ~= 0, "bind: a trigger direction drives its bit")
+  input.feed({ { type = "padaxis", pad = 1, axis = 4, value = 0 } })
+
+  -- a binding pinned to pad 2 ignores pad 1
+  input.feed({ { type = "padbtn", pad = 1, button = input.pad_btn.east,
+                 down = true } })
+  check(bits() & B == 0, "bind: a pad2-pinned binding ignores pad 1")
+  input.feed({ { type = "padbtn", pad = 1, button = input.pad_btn.east,
+                 down = false },
+               { type = "pad", pad = 2, connected = true },
+               { type = "padbtn", pad = 2, button = input.pad_btn.east,
+                 down = true } })
+  check(bits() & B ~= 0, "bind: the pinned pad drives it")
+  input.feed({ { type = "padbtn", pad = 2, button = input.pad_btn.east,
+                 down = false } })
+
+  -- keys keep working beside pads on the same action
+  input.feed({ { type = "key", scancode = 44, down = true, rep = false } })
+  check(bits() & F ~= 0, "bind: keyboard bindings still drive the bit")
+  input.feed({ { type = "key", scancode = 44, down = false } })
+
+  -- conflicts: an input on two actions is legal API state and reported
+  check(#input.conflicts() == 0, "bind: the clean map reports no conflicts")
+  input.rebind("fire", { "key:44", "key:80" })
+  local cf = input.conflicts()
+  check(#cf == 1 and cf[1].bind == "key:80"
+        and cf[1].actions[1] == "left" and cf[1].actions[2] == "fire",
+        "bind: a shared input reports both actions in bit order")
+  input.rebind("fire", nil)
+  check(#input.conflicts() == 0 and not input.overridden("fire"),
+        "bind: dropping the override clears the conflict")
+
+  -- labels: honest names for keys (through the host), pads, and axes
+  check(input.bind_label("key:44") == "Space"
+        and input.bind_label("key:80") == "Left",
+        "bind: key labels come from the host scancode name")
+  check(input.bind_label("pad:south") == "south"
+        and input.bind_label("pad:dpleft") == "dpad left"
+        and input.bind_label("pad:lx-") == "stick left"
+        and input.bind_label("pad:rt+") == "rtrigger"
+        and input.bind_label("pad2:east") == "p2 east",
+        "bind: pad labels use the positional vocabulary")
+  check(input.label("left") == "Left/dpad left/stick left",
+        "bind: the full label joins every binding")
+  check(input.label("left", "key") == "Left"
+        and input.label("left", "pad") == "dpad left"
+        and input.label("jump", "pad") == "Q",
+        "bind: kind labels pick the first match with a fallback")
+  input.rebind("jump", {})
+  check(input.label("jump") == "unbound", "bind: no bindings reads unbound")
+  input.rebind("jump", nil)
+
+  -- capture normalization (the rebind UI's seam): button downs and strong
+  -- deflections bind, releases and noise do not, any pad captures as pad 1
+  check(input.bind_of_pad_event({ type = "gpadbtn", button = 0, down = true })
+          == "pad:south"
+        and input.bind_of_pad_event({ type = "padbtn", pad = 3, button = 6,
+                                      down = true }) == "pad:start",
+        "bind: button capture normalizes to pad 1")
+  check(input.bind_of_pad_event({ type = "gpadbtn", button = 0, down = false })
+          == nil,
+        "bind: a release never captures")
+  check(input.bind_of_pad_event({ type = "gpadaxis", axis = 0,
+                                  value = -32767 }) == "pad:lx-"
+        and input.bind_of_pad_event({ type = "gpadaxis", axis = 1,
+                                      value = 20482 }) == "pad:ly+",
+        "bind: strong deflections capture with their direction")
+  check(input.bind_of_pad_event({ type = "gpadaxis", axis = 1,
+                                  value = 20481 }) == nil
+        and input.bind_of_pad_event({ type = "gpad", id = 9,
+                                      connected = true }) == nil,
+        "bind: weak deflections and hot-plug never capture")
+
+  -- the store: overrides load, win, wait for their action, and round-trip
+  local root = tmproot() .. "/cosmic_selftest_binds"
+  pal.x_remove(root .. "/input.dat")
+  pal.x_remove(root)
+  pal.mkdir(root)
+  pal.write_file(root .. "/input.dat", state.canon({
+    schema = 1,
+    actions = { fire = { "key:9", "pad:warp", "pad:north" },
+                phantom = { "key:30" } },
+  }))
+  input.load_binds(root)
+  c = input.bindings("fire")
+  check(#c == 2 and c[1] == "key:9" and c[2] == "pad:north"
+        and input.overridden("fire"),
+        "bind: a stored override wins and drops only its bad entries")
+  check(input.default_bindings("fire")[1] == "key:44"
+        and not input.overridden("left"),
+        "bind: defaults stay intact beside the override")
+  input.define("phantom", { input.key.z })
+  check(input.bindings("phantom")[1] == "key:30"
+        and input.overridden("phantom")
+        and input.default_bindings("phantom")[1] == "key:29",
+        "bind: a stored override adopts its action defined later")
+
+  input.rebind("left", { "key:4", "pad:dpleft" })
+  check(input.save_binds() == true, "bind: save publishes the store")
+  input.load_binds(root)
+  c = input.bindings("left")
+  check(#c == 2 and c[1] == "key:4" and input.overridden("left")
+        and input.bindings("fire")[1] == "key:9"
+        and input.bindings("phantom")[1] == "key:30",
+        "bind: rebinds survive the store round trip")
+
+  -- a failed save preserves the previous store byte-for-byte while the
+  -- live rebind stays applied (the A1 atomic-write contract)
+  local before = pal.read_file(root .. "/input.dat")
+  input.rebind("left", { "key:5" })
+  local ok, err = input.save_binds({ _fail = "rename" })
+  check(ok == nil and type(err) == "string"
+        and pal.read_file(root .. "/input.dat") == before,
+        "bind: a failed save preserves the previous store byte-for-byte")
+  check(input.bindings("left")[1] == "key:5",
+        "bind: the live rebind stays applied after a failed save")
+  check(input.save_binds() == true, "bind: the retry publishes")
+
+  input.rebind("left", nil)
+  check(input.bindings("left")[1] == "key:80",
+        "bind: dropping the override returns to the defaults")
+
+  -- a malformed store falls back to defaults and never crashes the boot
+  pal.write_file(root .. "/input.dat", "not a store")
+  input.load_binds(root)
+  check(not input.overridden("fire")
+        and input.bindings("fire")[1] == "key:44",
+        "bind: a malformed store falls back to the defaults")
+
+  input.load_binds(nil)
+  check(input.save_binds() == nil,
+        "bind: no store exists outside a project session")
+  pal.x_remove(root .. "/input.dat")
+  pal.x_remove(root)
+
+  -- cm.ui's pad capture (the menu rule): captured downs and axes never
+  -- reach the game, releases and hot-plug always pass, and the raw events
+  -- stay readable for the rebind capture
+  local ui = cm.require("cm.ui")
+  ui.frame({})
+  ui.capture_pads()
+  ui.frame_end() -- latches cap_pads for the next tick, like keys/mouse
+  local out = ui.frame({
+    { type = "gpad", id = 7, connected = true },
+    { type = "gpadbtn", id = 7, button = 0, down = true },
+    { type = "gpadbtn", id = 7, button = 1, down = false },
+    { type = "gpadaxis", id = 7, axis = 0, value = 32767 },
+    { type = "key", scancode = 4, down = true, rep = false },
+  })
+  check(#out == 3 and out[1].type == "gpad"
+        and out[2].type == "gpadbtn" and out[2].down == false
+        and out[3].type == "key",
+        "bind: captured pads pass only hot-plug and releases to the game")
+  check(#ui.inp.pads == 4,
+        "bind: the raw pad stream stays readable while captured")
+  ui.frame_end()
+  out = ui.frame({ { type = "gpadbtn", id = 7, button = 0, down = true } })
+  check(#out == 1 and #ui.inp.pads == 1,
+        "bind: without capture pad downs pass to the game")
+  ui.frame_end()
+
+  -- leave the suite the way we found it: no live pads, unlatched domain
+  input.feed({ { type = "pad", pad = 1, connected = false },
+               { type = "pad", pad = 2, connected = false } })
+  input.pad_reset()
+  check(#input.sample() == 10, "bind: the suite leaves the domain unlatched")
+end
+
 local function t_project_settings()
   local project = cm.require("cm.project")
   local src = [==[
@@ -4703,9 +4932,9 @@ local function t_project_templates()
   for k, v in pairs(input.bit_of) do saved_bits[k] = v end
   local saved_defs = {}
   for di, d in ipairs(input.defs) do
-    local keys = {}
-    for j, sc in ipairs(d.keys) do keys[j] = sc end
-    saved_defs[di] = { name = d.name, keys = keys }
+    local defaults = {}
+    for j, c in ipairs(d.defaults) do defaults[j] = c end
+    saved_defs[di] = { name = d.name, defaults = defaults }
   end
   for _, t in ipairs(project.TEMPLATES) do
     rm_dir()
@@ -4761,7 +4990,14 @@ local function t_project_templates()
     end
   end
   state.doc = saved_doc
-  input.defs, input.bit_of = saved_defs, saved_bits
+  -- rebuild the map through define() so the restored defs are functional
+  -- (parsed binds, not just the saved canonical strings)
+  input.defs, input.bit_of = {}, {}
+  for _, d in ipairs(saved_defs) do input.define(d.name, d.defaults) end
+  check(#input.defs == #saved_defs, "templates: action map restored")
+  for k, v in pairs(saved_bits) do
+    check(input.bit_of[k] == v, "templates: bit preserved for " .. k)
+  end
   input.pad_reset() -- the templates poll pad 1 (A4), which latches the
                     -- live pad domain; later suites expect bare v1
   rm_dir()
@@ -7772,6 +8008,7 @@ function game.init()
   t_input()
   t_input_pad()
   t_input_gpad()
+  t_input_bind()
   t_text()
   t_repl()
   t_ui()
