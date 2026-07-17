@@ -706,3 +706,60 @@ probe while it carries uncommitted work — trim the probe line
 instead (sed '$ d'); the probe-append/checkout habit silently
 reverted the player's collision edits once and only the re-verify
 caught it.
+
+## D3D-025 — the streaming world: pure-function ground, render-class chunks, closed-form far entities (2026-07-17)
+
+The §8e directive (stream a HUGE world with entities everywhere,
+stress-tested by a glider) implemented as COSMIC3D.md §10 sketched it —
+sketch first, measured (the §10 budget table), then projects/bigworld.
+
+- **Ground is a pure function; the sim never sees chunks.** cm.terr grew
+  T.sample_fn (triangle-exact sampling backed by a lattice height
+  FUNCTION, no stored grid) and world-lattice ox/oz offsets on
+  T.emit/T.emit_water (world-coord positions, jitter hashes, detail UVs
+  — chunk borders agree byte-exactly; defaults keep openworld
+  byte-identical, proven by the unregenerated suite). bigworld's
+  world.hfn = the openworld fbm + a continental octave (plains / ~30u
+  mountain regions / lakes) over 2048x2048u. Consequences, all landed:
+  no terrain in any snapshot; traces cross chunk boundaries by
+  construction; the §8e golden question dissolved.
+- **Chunks are render-class buffers under a budget.** 16x16-tile chunks
+  (~1ms gen, measured) into rc.bw.c<id> named buffers, nearest-first,
+  default 1 gen/frame, evicted past the ring (+1 hysteresis), submitted
+  distance-culled in fixed cz/cx order (~30k tris on screen). Prop
+  COLLIDERS derive from the same per-chunk pure streams on demand
+  (boxes_near, cached — memoizing a pure function is sim-legal), so
+  solidity never depends on residency.
+- **Far entities are (route, phase) — update-or-don't answered by
+  construction.** ~2500 wanderers in ONE buffer (48B slots): position =
+  home + circle(base + w*frame + phase_off), O(1) at any frame gap,
+  identical under any schedule — no hash order, no update-rate drift
+  possible. Near the player (deterministic distance + hysteresis,
+  promote 20u / demote 24u) a slot joins bw.near (sim state: traces pin
+  the promote/demote history) and runs the interactive kernel: greet/
+  wave (chime pitched per species), route freeze via phase_off (so
+  demotion needs NO re-anchor), the D3D-024 wait, solidity through
+  player.step's dyncol. Spatial access is home-chunk buckets rebuilt
+  from the pure placement streams at init; the sim scans a 3x3-ish
+  window, the renderer its draw window — never the population.
+- **The glider is a movement regime, not a system**: one buffer field;
+  deploy on an air jump press (past coyote), 26u/s soar with slow
+  steering, gentle sink, drop on press, touchdown/water stows. Pose =
+  the breaststroke's glide stretch frozen near-prone. demo(2) hop-glides
+  a probed heading forever (~800u/2400f soaked, lake swims included).
+- **Proofs**: bigworld_tour.ctrace (900f) + bigworld_glide.ctrace
+  (1500f, ~25 chunk boundaries) verify PASS + drift-proven; BOTH verify
+  under _G.BW_RES=2/_G.BW_BUDGET=8 (the sim-side honesty proof); the
+  glide pixel re-shot under _G.BW_BUDGET=6 is BYTE-IDENTICAL (paging
+  config is a pop-in transient only). Suite ALL GREEN with the two new
+  pixels; openworld/bounce goldens passed unregenerated through the
+  terr change.
+- **PAL verdict (the ergonomics finding §8e asked about)**: nothing
+  needed at this scale — the frame re-uploads ~30k tris (~2-5ms
+  lavapipe) and chunk gen amortizes fine. The retained-GPU-geometry API
+  stays a DEFERRED candidate; it starts biting somewhere past ~100k
+  submitted tris/frame (the §10 measurements), not here.
+
+Open (feed): glide speed/read, totem->figure pop distance, world
+variety, entity density (2467 of a 4000 cap — the walkability accept
+rejects mountain/water routes).

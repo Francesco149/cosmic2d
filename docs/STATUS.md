@@ -4,6 +4,54 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 17) — bigworld: the streaming world + the glider
+
+The §8e directive, sketch-first (COSMIC3D.md §10: design + a headless
+lavapipe measurement soak — chunk gen ~1ms/16x16, ground sample
+~3.7us, slot update ~0.66us, submit ceiling ~50k tris/frame) then
+**projects/bigworld** (D3D-025). The decisive move: **ground is a
+pure function** (cm.terr grew T.sample_fn + world-lattice ox/oz on
+emit; openworld byte-identical, suite proved it unregenerated) — the
+sim holds ZERO terrain state, so chunks exist only as render-class
+rc.bw.c<id> buffers paged nearest-first under a 1-chunk/frame budget,
+and prop colliders derive from per-chunk pure streams on demand.
+2048x2048u world (fbm + continental octave: plains, ~30u mountains,
+lakes). **~2500 entities in ONE buffer**: far = closed-form
+(route,phase) — zero cost, exact at any frame gap, schedule-
+independent by construction; near (20u/24u hysteresis, bw.near is sim
+state) promotes into the full greet/wave/queue/solid kernel; far draw
+= 18-tri totem LODs. **The glider**: air jump deploys (26u/s, gentle
+sink, slow steering), press drops, touchdown stows; demo(2) hop-
+glides a probed heading forever (~800u/2400f soaked), demo(1) laps a
+probed hexagon. Goldens: bigworld_tour.ctrace (900f) +
+bigworld_glide.ctrace (1500f, ~25 chunk crossings) + two pixels, all
+drift-proven; the honesty proofs — traces verify under _G.BW_RES/
+BW_BUDGET overrides, and the glide pixel re-shot under BW_BUDGET=6 is
+BYTE-IDENTICAL (paging is a pop-in transient only). Suite ALL GREEN;
+3 shots on the feed. PAL verdict: nothing needed at this scale;
+retained-GPU-geometry stays deferred (bites past ~100k tris/frame).
+
+## Exact next step
+
+1. Feed questions open (non-blocking): R17's (glide speed/read?
+   totem->figure pop ok at 320x240 or want a mid LOD? world variety?
+   entity density — 2467 of a 4000 cap?); R15/16's (walk-up greet
+   beat, wanderer palette, solid-feel), R13's (star read, completion
+   beat, persist collection?), R12's (exchange read, dialog tone,
+   text box vs HUD line), R11's (splash listen, swim read, jump read,
+   band colors + fog, eye size).
+2. **bigworld grows on verdicts**; ungated candidates: entity density
+   up (accept retry or higher per-chunk draw), a mid LOD (simple
+   figure, no clips) to soften the totem pop, glide polish (bank into
+   turns, a deploy puff sfx, camera pull-back while soaring), chunk
+   content variety (band-specific props: snow rocks, lake reeds), or
+   the RO demo 3 pivot if the human calls streaming sufficient.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras; figure EDITOR until
+the human unparks.
+
 ## 2026-07-17 (round 16) — solid NPCs + the streaming-world directive
 
 Two human messages landed. **"make the npcs solid so I can't walk
@@ -27,7 +75,7 @@ everywhere** (efficient update-or-don't scheduling for far entities),
 stress-tested via **a glider fast-travel**. Recorded as COSMIC3D.md
 §8e; demo 2 pivots from content rounds to the streaming stress demo.
 
-## Exact next step
+## Exact next step (done — see round 17 above)
 
 1. **The streaming-world stress demo** (human direction, §8e). Sketch
    before code: chunked cm.terr paging (deterministic per-chunk gen,
