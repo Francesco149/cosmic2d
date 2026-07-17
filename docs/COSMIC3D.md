@@ -616,3 +616,96 @@ Round 1 scope: terrain+bake, camera, click-to-move, baked mascot-chibi
 player + 2-3 NPC variants wandering/greeting, water, props, HUD, demo,
 goldens. Deferred: water wave/cycle, paper-doll layers, palette dyes,
 monsters/combat, the terrain-editor window (distillation phase).
+
+## 12. The distillation phase — vote audit + slice roadmap (2026-07-17, round 19)
+
+The §8f directive activates: demo 3 landed "exactly the vibe we would
+want", so the three demos distil into engine ergonomics. Before picking
+slices, two audits — our own duplication count and a survey of what
+upstream cosmic2d did in the same phase (A5, D088–D097, landed since
+our fork point).
+
+### The upstream A5 survey (read at f791824..2b885d5)
+
+cosmic2d ran precisely this exercise for 2D and its process is now the
+proven house style, adopted here verbatim:
+
+- **Pain-first, votes counted honestly**: a slice absorbs only code
+  that exists in multiple agreed copies (or is human-logged as
+  engine-shaped); single patterns stay in the demo until they hurt
+  twice. Slices that find no duplication DEFER (their D096 transition
+  slice is the worked example).
+- **One slice per packet**: a `cm.*` module of pure functions / math
+  over plain doc tables or the caller's named buffers — no module
+  state, no callbacks; determinism by construction. Every ADR carries
+  a "deliberately NOT here" list; later slices earn features from real
+  pain.
+- **Retrofit proof**: at least one demo rides the module the same
+  commit. Bit-identical retrofits leave goldens UN-RECUT (their
+  cm.box/cm.move proofs; the strongest form). Honest re-cuts only when
+  doc shape moves (their cm.actor/cm.camera).
+
+Upstream modules shipped in A5 (none exist in our fork yet; they
+arrive at the post-1.0 re-merge): `cm.box`, `cm.actor`, `cm.camera`,
+`cm.tween`, `cm.depth`, `cm.hud`, `cm.move`, plus earlier `cm.save`,
+`cm.pick` (the project-picker list model — the name is TAKEN; our pick
+ray must not squat it). Consequences for the 3D fork:
+
+- **Name collisions banned**: no fork module may claim cm.box,
+  cm.actor, cm.camera, cm.tween, cm.depth, cm.hud, cm.move, cm.save,
+  cm.pick. The 3D camera slice is `cm.rig`; the pick-ray/pathing slice
+  is `cm.walk`.
+- **Don't build 3D twins of dimension-agnostic slices.** cm.tween
+  (juice counters — our squash/hold/pop timers), cm.hud (anchored
+  text — our hand-centered HUD lines), cm.move (stick+key merge),
+  cm.actor (stable ids/tags/timers — our NPC lists) all apply to 3D
+  cartridges unchanged. The demos keep their naive copies as merge
+  bait; at re-merge they retrofit onto the upstream modules instead of
+  onto fork inventions we would then have to unwind. Only slices that
+  are genuinely 3D-shaped get built here.
+- Also noted upstream: **input record v2 exists now** (D082, additive
+  quantized-pad extension) plus gamepads/rebinding/options/save — the
+  parked relative-mouse+record-v2 work stays post-merge but its
+  prerequisite shipped; and their D092 camera found the recorder
+  re-canons a moving doc each frame (~3.5KB/frame) — our rigs already
+  live in f32 buffers, which sidesteps that cost; keep it that way.
+
+### The fork's vote audit (2026-07-17)
+
+- **Orbit-follow camera rig: 3 copies, byte-identical math** (bounce/
+  openworld/bigworld main.lua: angdiff + cam_step + the eye/lookat
+  derivation + the camera-relative wish rotation + the virgin-buffer
+  seed; the D3D-018 back-cone fix was applied three times). The
+  loudest vote → **cm.rig**.
+- **Player kernel: 3 diverging copies with an agreed core** (the
+  D3D-009/010 clamp rules + EPS, D029 jump, mantle, box-top landing,
+  squash/stretch juice). Real divergence on top (swim regime, glider,
+  terrain vs box ground) → a later, harder slice; extract only the
+  agreed collide+jump core when cut (**cm.kin**, name tentative).
+- **NPC greet/wave: 2–3 copies** (openworld npc, rovale npc, bigworld
+  ents' near-kernel): greet radius + hysteresis, facing ease, typed
+  line, hold. Candidate after the singles; may shrink further at
+  re-merge when cm.actor arrives.
+- **audio.lua sfx pattern: 4 small copies** (~40 lines each) — thin;
+  defer until a slice shape is obvious.
+- **Human-logged rovale singles** (D3D-026, engine-shaped by
+  direction): the figure→sprite baker (**cm.spr**), the terrain
+  bake atlas (module + future editor button), pick ray + walk-grid A*
+  (**cm.walk**), camera-facing billboards (**into cm.gb**).
+
+### Slice order
+
+1. **cm.rig** — 3 votes, bit-identical extraction, goldens un-recut.
+2. **cm.spr** — the baker as an engine module (any figure, any sheet
+   spec, .spx read/write + stamp); rovale retrofits; committed sheets
+   stay byte-identical.
+3. **cm.walk** — pick ray (march+bisect over a ground fn), grid snap,
+   heap A*, cell-chain follow; rovale retrofits, trace un-recut.
+4. **Billboards into cm.gb** + the terrain-bake module (likely with
+   the editor bake button when the editor unparks).
+5. **cm.kin** (the shared collide+jump core) and the NPC slice — after
+   the singles, designed against all three kernels.
+
+Editor windows (terrain paint/bake, figure vertex-pushing, sheet
+preview) stay parked until the human unparks the editor; the modules
+above are their runtime substrate.
