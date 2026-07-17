@@ -703,8 +703,14 @@ ray must not squat it). Consequences for the 3D fork:
    heap A*, cell-chain follow; rovale retrofits, trace un-recut.
 4. **Billboards into cm.gb** + the terrain-bake module (likely with
    the editor bake button when the editor unparks).
-5. **cm.kin** (the shared collide+jump core) and the NPC slice — after
-   the singles, designed against all three kernels.
+5. **cm.kin** (the shared collide+jump core) ✓ **DONE** (D3D-032):
+   approach/overlaps/jump_curve/run/gravity/jump/slide/mantle_top/
+   ground_top/land_squash/lean, value-based (the three player buffers
+   diverge, so no owned layout — and it can't resize a persistent
+   buffer, dodging the D3D-031 trap); all three kernels retrofitted,
+   whole-trajectory FRAM byte-identity + pixels + traces un-recut. The
+   **NPC greet slice** (greet radius + hysteresis, facing ease, typed
+   line, hold across openworld/rovale/bigworld) is the remaining half.
 
 Editor windows (terrain paint/bake, figure vertex-pushing, sheet
 preview) stay parked until the human unparks the editor; the modules

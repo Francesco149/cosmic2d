@@ -1023,3 +1023,86 @@ so they pin the extracted layout + loop + upload chain end to end; the
 tour re-shot under _G.RO_BUDGET=32 is byte-identical to the committed
 budget-8 golden (the §10 honesty proof: same atlas at any tiles/frame).
 Full suite ALL GREEN. No visual change — no feed captures.
+
+## D3D-032 — cm.kin: the shared collide+jump core of the three player kernels (2026-07-17)
+
+§12 slice 5, the harder one flagged since the vote audit: the player
+kernel exists as **three diverging copies with an agreed core**. bounce
+(the bouncy cube), openworld and bigworld (the mascot) all grew their
+`step()` from the same DNA — the D3D-009/010 swept AABB clamp, the D029
+fixed-apex jump with coyote/buffer, mantle, the box-top landing raise,
+the squash/stretch juice — then each grew its own divergence on top.
+That agreed core is now **engine/cm/kin.lua**; the divergence stays in
+the cartridges.
+
+**The surface** (pure functions, the cm.walk model — values in, values
+out, no module state, no buffers of its own): `approach`, `overlaps`,
+`jump_curve` (→ g_rise, v0), `run` (accelerate toward the wish + turn
+to the heading, or brake), `gravity` (the rise-slope / heavier-fall
+D029 curve), `jump` (buffered press + coyote; the swim paddle-hop is a
+`swim`/`paddle` hook so bounce passes `swim=false` and never runs it),
+`slide` (one axis of the clamp), `mantle_top`, `ground_top`,
+`land_squash`, `lean`. `DT` (60fps) and `EPS` (the D3D-010 epsilon)
+are owned here; `K.EPS` is re-exported for the demos' own inline f32
+side tests (bounce's mover carry + its per-box land/bonk).
+
+**The clamp is the crown jewel** (`K.slide`). One axis at a time: the
+face comes from the pre-move side `p0` (never the velocity sign —
+D3D-009), every side test carries `EPS` (D3D-010), a squeezed pre-move
+overlap clamps nothing. bounce's mantle interleaves, so `slide` takes
+an optional `mantle(b, px, pz, cy)` probe (the cm.walk-`ok` precedent —
+a pure fn passed per call, not a stored callback) that RAISES the
+working feet `cy` instead of clamping; `cy` threads out of X into Z and
+on to the vertical pass, exactly as the old inline `y = top` did. ow/bw
+pass no probe (the mascot has no stair run). The collider SOURCE stays
+the caller's: bounce merges level boxes + the movers' post-step boxes;
+ow passes `{world.colliders}` then `{dyncol}`; bw calls
+`world.boxes_near(x,z)` once and shares it across both sweeps and the
+ground-top raise. Same iteration order as the old `GROUPS` loops → same
+bytes.
+
+**Value-based on purpose** (and it dodges the D3D-031 trap). The three
+player buffers DIVERGE — bounce.player 52B, ow.player 56B (+phase),
+bw.player 60B (+phase+glide) — so no single owned layout fits (unlike
+cm.rig's 40B cam or cm.walk's walker). And because cm.kin never touches
+a buffer, it can never resize a PERSISTENT sim buffer, which is exactly
+what D3D-031 warns breaks verify's double-init. The retrofit changed no
+buffer size and no doc shape, so the traces stay **un-recut**.
+
+**Deliberately NOT here** (divergence / project policy; a later cut
+earns it from real pain): the swim regime (buoyancy spring, paddle hop,
+entry splash — only the paddle is a hook), the glider (bigworld's §8e
+stress instrument), the **vertical assembly** (bounce lands AND bonks
+per box in an axis-aligned world; ow/bw integrate against a heightfield
+with the k.snap downhill glue — cm.kin hands over slide/ground_top/
+mantle_top/land_squash and the demo composes its own ground truth), the
+mover carry, the kill-plane respawn, the walk-cycle odometer, and
+emit()/the blob shadow (render-class). The camera-relative wish is
+cm.rig's / main's.
+
+**Proof — byte-identical, so goldens un-recut (the strongest form),
+upgraded to whole-trajectory frame identity.**
+- Full suite **ALL GREEN**: the 17 pixel goldens compare byte-identical
+  on CURRENT sources under pinned lavapipe (D3D-028's "real proof" —
+  bounce_tour is 1920 autoplay frames of the new `step()`, openworld
+  1290, bigworld glide 600, plus demo/lap/soft/npc/meet/stars/swim);
+  the 10 player traces verify **PASS UN-RECUT** (no buffer resized, no
+  doc shape moved → boot's init and the bundle's re-init agree, so the
+  double-init stays clean).
+- **Whole-trajectory sim byte-identity** (stronger than single-frame
+  pixels): re-recorded each demo's tour with the new code AND with the
+  committed code (`git stash`), then parsed the CTRC chunk streams —
+  `<tag><u32 ver><u32 len><payload>`. EVERY per-frame `FRAM` chunk (plus
+  `HEAD`/`EVAL`/`KEYF`/`TAIL`) is byte-identical across all three; the
+  ONLY difference is the `SNAP` chunk, which embeds the loaded source
+  bundle (`cm.modules()`) and so changed with the source by
+  construction. Same chunk count, same bytes, every frame — the mover
+  carry, mantle, box-top/bonk, kill-plane (bounce), swim + heightfield +
+  dyncol (openworld), and the glider + chunk streams (bigworld) all
+  reproduce exactly. (Lesson: a raw `cmp` of two traces is confounded by
+  the SNAP bundle — compare FRAM chunks, or use `--verify` / pixels.)
+
+Net −213 lines across the three demos; the triplicated core is one
+source of truth now. The **NPC greet slice** (§12's other half —
+greet radius + hysteresis, facing ease, typed line, hold across
+openworld/rovale/bigworld) is the next packet.

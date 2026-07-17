@@ -4,6 +4,67 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 21) — cm.kin: the shared collide+jump core
+
+§12 slice 5, the harder one: the player kernel's **agreed core across
+its three diverging copies** (bounce/openworld/bigworld) extracted to
+**cm.kin** (D3D-032). Pure functions, values in/out, no module state,
+no buffers of its own (the cm.walk model): `approach`, `overlaps`,
+`jump_curve`, `run` (accel+turn / brake), `gravity` (the D029
+heavier-fall curve), `jump` (buffered press + coyote; the swim
+paddle-hop a `swim`/`paddle` hook so bounce never runs it), `slide`
+(one axis of the D3D-009/010 clamp — face from the pre-move side,
+EPS-tolerant, squeezed clamps nothing, an optional pure `mantle` probe
+that raises the working feet `cy` and threads it through both axes),
+`mantle_top`, `ground_top`, `land_squash`, `lean`. `DT`/`EPS` owned
+here (`K.EPS` re-exported for the demos' inline side tests).
+
+**Value-based on purpose** — the three player buffers DIVERGE
+(bounce.player 52B, ow 56B +phase, bw 60B +phase+glide), so no owned
+layout fits; and touching no buffer means cm.kin can never resize a
+PERSISTENT sim buffer, exactly the D3D-031 double-init trap. The demos
+keep their step() orchestration and all divergence (swim regime,
+glider, terrain-vs-box vertical assembly, mover carry, kill-plane,
+walk odometer, emit/shadow — the "deliberately NOT here" list).
+
+**Proof — un-recut, upgraded to whole-trajectory frame identity.** Full
+suite ALL GREEN: 17 pixel goldens byte-identical on CURRENT sources
+(bounce_tour = 1920 autoplay frames of the new step(), ow 1290, bw
+glide 600, + the rest), 10 player traces verify PASS un-recut (no
+buffer resized, no doc shape moved). Then the strong form: re-recorded
+each tour with the new code AND the committed code (git stash) and
+parsed the CTRC chunks — EVERY per-frame `FRAM` (plus HEAD/EVAL/KEYF/
+TAIL) is byte-identical across all three; the only difference is the
+`SNAP` code bundle (the embedded source, changed by construction). All
+divergent paths reproduce exactly (mover carry+mantle+box-top+kill;
+swim+heightfield+dyncol; glider+chunk streams). Net −213 lines across
+the demos. No knob/doc/visual change — no feed captures.
+
+## Exact next step
+
+1. **§12 slice 5's other half: the NPC greet slice.** greet radius +
+   hysteresis, facing ease, typed line, hold — extracted from the 2–3
+   copies: **openworld/npc.lua** (the pond watcher + meadow wanderer),
+   **rovale/npc.lua** (the three ambling greeters), **bigworld/ents.lua**
+   (the near-entity greet kernel). Design against all three; it may
+   shrink further at re-merge when upstream **cm.actor** lands (stable
+   ids/tags/timers), so keep the dimension-agnostic parts demo-side as
+   merge bait (§12) and extract only the 3D-shaped greet geometry
+   (radius/facing/hold as pure functions of a caller buffer + frame).
+   Same discipline as cm.kin: touch no persistent-buffer SIZE in an
+   un-recut retrofit (D3D-031), prove with pixels-on-current-sources +
+   traces un-recut (+ the FRAM-chunk whole-trajectory diff if in doubt).
+   After it, `audio.lua`'s 4 sfx copies stay deferred (thin, §12) and
+   the distillation phase is complete pending the editor unpark.
+2. Feed: the sharp-vs-soft pair (round 19) still awaits a look; R18/17-
+   and-earlier questions open (non-blocking).
+3. rovale growth stays verdict-gated (cliffs, water cycle, a poring,
+   paper-doll, 8-frame walks); proto3d look knobs unchanged.
+
+Post-upstream-merge queue unchanged: PAL relative-mouse API + record v2
+(prerequisite SHIPPED upstream, D082). Parked: PS1-preset extras;
+figure EDITOR until the human unparks.
+
 ## 2026-07-17 (round 20) — the distillation continues: cm.atlas (the terrain bake)
 
 §12 slice 4: rovale's per-tile atlas bake — the RO "no visible tile
@@ -44,7 +105,7 @@ tour re-shot under _G.RO_BUDGET=32 is byte-identical to the committed
 budget-8 golden (the §10 honesty proof: one atlas at any tiles/frame).
 Full suite ALL GREEN. No visual change — no feed captures.
 
-## Exact next step
+## Exact next step (cm.kin done — see round 21 above)
 
 1. **The distillation continues** (§12 order): slice 5 — **cm.kin**
    (the shared collide+jump core across bounce/openworld/bigworld's
