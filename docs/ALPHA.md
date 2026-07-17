@@ -181,8 +181,11 @@ Goal: exported desktop games meet basic player expectations.
   axes without invalidating v1 traces; document the determinism decision.
   (D082: tagged extensions after the frozen 10 v1 bytes; live-side
   deadzone/quantization; `cm.input.pad` buffer; hot-plug is live-only.)
-- [ ] SDL gamepad discovery/hot-plug, standard buttons/axes, deadzones, device
-  assignment, and keyboard fallback.
+- [x] SDL gamepad discovery/hot-plug, standard buttons/axes, deadzones, device
+  assignment, and keyboard fallback. (D083: PAL API 18 owns device lifetime;
+  first-connected-lowest-slot policy, `pad_sync` at boot, and the editor
+  focus rules live in Lua; virtual pads + `projects/padtest` are the
+  headless proof vehicle; templates read pad 1 beside their key maps.)
 - [ ] Rebind UI/API with multiple bindings per action and conflict handling;
   starter templates display the actual current bindings.
 - [ ] Options: master/music/SFX volume, bindings, fullscreen/window sizes that

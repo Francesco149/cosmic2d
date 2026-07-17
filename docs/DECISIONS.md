@@ -3384,3 +3384,72 @@ pad_reset v1 purity. `nix run .#test` is ALL GREEN: every historical
 trace verifies byte-exactly and all pixel/audio goldens match, and the
 Linux-recorded 830-frame `smoke_kitcheck` trace verifies byte-exactly on
 native Windows through the new apply path.
+
+## D083 — SDL gamepad discovery: PAL owns device lifetime, Lua owns slot policy (A4, 2026-07-17)
+
+**Context.** D082 froze the deterministic half of gamepads: the PAD
+extension carries slot-addressed state and hot-plug is by design a
+live-only concern. What remained was the live half — real SDL3
+controllers reaching `cm.input.feed` — plus a headless test vehicle,
+because CI and the golden suite have no physical controllers and the
+discovery layer must not become the one untested subsystem.
+
+**Decision.** Split along the existing PAL boundary. **The PAL owns
+device lifetime** (API 18): `SDL_INIT_GAMEPAD` at process start
+(non-fatal when the host lacks it), `SDL_OpenGamepad`/`SDL_CloseGamepad`
+on hot-plug events in the pump — so open devices survive Lua VM reboots
+exactly like the window — and three DEVICE-level event shapes keyed by
+SDL instance id (`gpad` connect/disconnect, `gpadbtn`, `gpadaxis`, SDL
+standard numbering, raw i16 axes). **Lua owns policy** in `cm.input`:
+first-connected claims the lowest free slot 1..4, a fifth device is
+ignored (logged) until a slot frees, reconnect resets its slot in place,
+and unassigned-device events drop. Because SDL only announces hot-plug
+as events, a fresh VM would never hear about already-connected
+controllers: `pal.pad_list()` reports what is attached right now, and
+`pad_sync()` (called at project boot) resets then adopts it in ascending
+instance-id order — a fresh session never inherits the previous
+project's latch, while a still-plugged controller claims its slot before
+frame one. The editor's `filter_events` extends the key rule to pads:
+hot-plug always passes (the registry must track physical reality),
+button downs gate on game-window focus while releases always pass, and
+axes gate on focus with `pad_neutralize()` zeroing live axes on the
+focus-loss edge (a held stick must not keep driving the sim; held
+buttons resolve through their eventual release like keys). **Virtual
+SDL gamepads are the test vehicle**: `pal.x_pad_virtual*` attach/poke/
+detach a full standard-layout virtual controller and `pal.x_events_pump`
+drains SDL synchronously, so KATs and recorded traces exercise the exact
+event path physical hardware uses, headless. The starter templates read
+pad 1 naively (dpad/left stick + south + start) beside their key maps —
+deliberately hardcoded until the A4 rebind packet — and the new dev-tree
+`projects/padtest` fixture consumes axes/edges/connectivity into
+`state.doc` as the committed gamepad determinism trace.
+
+**Consequences.** Device identity, names, and ordering never enter the
+sim or the record, so platform differences in enumeration cannot break
+determinism. One SDL quirk is load-bearing for tests: virtual-pad state
+changes only become events at the next joystick update, so a sub-frame
+tap must pump between down and up or SDL sees no net change (real
+hardware always delivers both events). A game that polls pads latches
+the PAD extension on — template projects' records run 13 bytes/frame
+instead of 10, which is honest and costs nothing. The rebind UI/API and
+the deadzone options knob are the next A4 packets; both stay live-side
+by construction.
+
+**Proof.** Linux selftest **23,606** checks and the staged native
+Windows executable **23,608** on PAL API 18. New KATs pin the slot
+policy (claim order, routing by id, unassigned drops, disconnect frees
+exactly its slot, lowest-free reclaim, fifth-device refusal, reconnect
+reset, neutralize zeroing axes only) and the real SDL path via a virtual
+pad (attach arrives as a connected `gpad` event, `pad_list` names it,
+slot claim, button/axis readback through SDL numbering, release edge,
+`pad_sync` adoption, detach as disconnect) with a loud logged skip where
+a host cannot init the subsystem. `nix run .#test` is ALL GREEN —
+release manifests, every historical trace, the new 600-frame
+`padtest_drive` gamepad trace (two mid-recording hot-plug cycles,
+partial/full deflections, a sticky tap), and all pixel goldens — and
+both gamepad traces (the committed one and a 294-frame live windowed
+WSLg recording) verify byte-exactly on native Windows. A virtual
+controller drove a freshly scaffolded platformer template through the
+real loop from spawn to the far wall with jumps. `tools/build-windows.sh`
+refreshed the Windows stage (4 durable state entries preserved) and
+Start Menu shortcut.

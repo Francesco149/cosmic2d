@@ -135,9 +135,33 @@ Mouse input uses internal game pixels and is recorded too:
     if input.button_down(2) then ... end
     local steps = input.wheel()
 
-The current input format supports keyboard, mouse position/buttons, and wheel,
-with at most 32 actions. Gamepad input, axes, and player rebinding are planned
-for alpha gate A4 and must not be advertised by a project yet.
+The current input format supports keyboard, mouse position/buttons, wheel,
+and up to four gamepads, with at most 32 actions. Player rebinding and an
+options surface are planned for later in alpha; until then, read pad buttons
+alongside your key actions the way the starter templates do.
+
+## Gamepads
+
+Controllers can connect and disconnect at any time. The first connected
+controller becomes pad 1, the next pad 2 (up to pad 4), and a disconnected
+slot frees up for the next controller. Pad state is part of the recorded
+input, so traces, rewind, and replay carry gamepad play exactly.
+
+    if input.pad_connected(1) then ... end
+    if input.pad_down(1, "south") then ... end     -- bottom face button held
+    if input.pad_pressed(1, "start") then ... end  -- edges, like actions
+    if input.pad_released(1, "south") then ... end
+    local lx = input.pad_axis(1, "lx")             -- sticks: -127..127
+    local rt = input.pad_axis(1, "rt")             -- triggers: 0..127
+
+Buttons and axes use SDL's standard gamepad layout (`input.pad_btn`,
+`input.pad_ax` name them): the face buttons are positional
+`south/east/west/north` (south = Xbox A / Nintendo B), plus
+`back/guide/start`, `lstick/rstick`, `lshoulder/rshoulder`, and
+`dpup/dpdown/dpleft/dpright`; the axes are `lx/ly/rx/ry/lt/rt`. Axis values
+arrive already deadzoned and quantized to whole numbers, so using them
+directly in the sim stays deterministic — divide by 127 when you want a
+-1..1 float.
 
 ## Drawing, cameras, and text
 

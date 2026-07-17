@@ -319,11 +319,14 @@ fragment samplers set 2 / uniforms set 3.
 ## Input
 
 PAL delivers raw events (`pal.poll_events()`): key scancode up/down, mouse,
-window, utf-8 text (while `pal.text_input` is on). The engine UI sees raw
-events first (`cm.ui.frame` filters what the game may sample — see UI
-below); the rest are folded into **actions** via the rebindable action map
-(project + user bindings); the sim reads actions only. Gamepad later = new
-event types + map entries, zero sim changes.
+window, utf-8 text (while `pal.text_input` is on), and device-level gamepad
+events (`gpad`/`gpadbtn`/`gpadaxis`, API v18 — the PAL owns SDL device
+open/close on hot-plug). The engine UI sees raw events first (`cm.ui.frame`
+filters what the game may sample — see UI below); keys fold into **actions**
+via the rebindable action map (project + user bindings), and gamepads map
+device→slot 1..4 in `cm.input` (first-connected takes the lowest free slot)
+before entering the recorded PAD extension (D082/D083). The sim reads
+actions and slot-addressed pad state only.
 
 ## Engine UI (cm.ui — M2)
 
@@ -651,6 +654,9 @@ binary incompatible, in either direction (D015).
 | `pal.x_path_move(source,dest[,opts])` / `pal.x_path_reveal(path[,opts])` | dev/io | API v16: move a directory with an atomic **no-replace** operation (Linux `renameat2(RENAME_NOREPLACE)`, Windows `MoveFileExW` without replacement) or open it in the native file manager (UTF-16 path on Windows, percent-encoded UTF-8 `file:` URI on Linux). Existing destinations are never mutated; cross-filesystem/volume moves fail explicitly pending a later recursive-copy packet |
 | `pal.user_path()` → path or `nil,error` | dev/io | API v11: SDL-selected absolute per-user writable root for the fixed `cosmic2d/engine` identity; created on demand, platform separator retained |
 | `pal.poll_events()` | input | array of event tables, drained each tick |
+| `pal.pad_list()` | input | API v18: currently connected gamepads `{id=,name=}` (SDL instance ids, ascending = connect order); the project-boot reseed source since SDL only announces hot-plug as events |
+| `pal.x_pad_virtual()` / `x_pad_virtual_remove(id)` / `x_pad_virtual_button(id,btn,down)` / `x_pad_virtual_axis(id,axis,v)` / `x_events_pump()` | dev | API v18: attach/poke/detach a virtual standard-layout SDL gamepad and drain SDL synchronously — the headless test vehicle; virtual pads ride the exact event path physical controllers do |
+| events `{type="gpad", id, connected}` / `{type="gpadbtn", id, button, down}` / `{type="gpadaxis", id, axis, value}` | input | API v18: device-level gamepad events (SDL standard numbering, raw i16 axes); the PAL opens/closes devices on hot-plug, `cm.input.feed` owns id→slot policy |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |
 
 ### PAL API v2 additions (M1)

@@ -3,19 +3,60 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — input record v2 designed (D082); SDL gamepad discovery next (2026-07-17)
+## Current handoff — gamepads are live end-to-end (D083); the rebind UI/API next (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A3 are complete and A4 has begun.** A3's full promise holds: from a
-fresh archive a user can create (from four starter templates), import,
-rename, relocate, duplicate, archive, delete, edit, play, and export
-projects entirely through the shipped UI. The rest of A4 (SDL gamepads,
-rebinding, options, player storage), shared genre-neutral runtime slices
-and demos (A5/A6), the complete rewind product UI (A7), and the
+**A0–A3 are complete and A4 is two packets in.** A3's full promise holds:
+from a fresh archive a user can create (from four starter templates),
+import, rename, relocate, duplicate, archive, delete, edit, play, and
+export projects entirely through the shipped UI. Real SDL controllers now
+drive games deterministically (D082 record + D083 discovery). The rest of
+A4 (rebinding, options, player storage), shared genre-neutral runtime
+slices and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D083 closes the SDL gamepad discovery/hot-plug packet, the second A4
+line.** The split follows the PAL boundary: PAL API 18 owns device
+lifetime — `SDL_INIT_GAMEPAD` at process start (non-fatal where absent),
+gamepads opened/closed on hot-plug events in the pump so devices survive
+VM reboots like the window, and device-level `gpad`/`gpadbtn`/`gpadaxis`
+events keyed by SDL instance id — while `cm.input` owns policy:
+first-connected claims the lowest free slot 1..4, a fifth device is
+ignored until a slot frees, reconnect resets its slot in place, and
+unassigned-device events drop. `pal.pad_list()` reports what is attached
+right now, and `pad_sync()` at project boot resets then adopts it in
+connect order, so a fresh session never inherits the previous latch while
+a still-plugged controller claims its slot before frame one. The editor's
+`filter_events` extends the key rule to pads: hot-plug always passes,
+button downs gate on game-window focus (releases always pass), and axes
+gate on focus with `pad_neutralize()` zeroing live axes on the focus-loss
+edge. Virtual SDL gamepads (`pal.x_pad_virtual*` + `pal.x_events_pump`)
+are the headless test vehicle riding the exact physical event path. The
+three non-blank starter templates read pad 1 naively (dpad/left stick,
+south, start) beside their key maps — hardcoded until the rebind packet —
+and the shipped scripting guide now documents the pad readers. The new
+dev-tree `projects/padtest` fixture consumes axes/edges/connectivity into
+`state.doc` and anchors the committed gamepad trace.
+
+**D083 proof:** Linux selftest passes **23,606 checks** and the staged
+native Windows executable **23,608** on PAL API 18 (new KATs: the whole
+slot policy plus the real SDL path via a virtual pad — attach event,
+`pad_list`, SDL-numbered button/axis readback, release edges, `pad_sync`
+adoption, detach). `nix run .#test` is ALL GREEN including the new
+600-frame `padtest_drive` gamepad trace (two mid-recording hot-plug
+cycles, partial/full deflections, a sticky sub-frame tap), and that
+Linux-recorded trace plus a 294-frame live windowed WSLg recording both
+verify byte-exactly on native Windows. A virtual controller drove a
+freshly scaffolded platformer template through the real loop from spawn
+to the far wall. One SDL quirk worth remembering: virtual-pad state
+changes become events only at the next pump, so a sub-frame tap needs a
+pump between down and up (real hardware always delivers both events).
+`tools/build-windows.sh` refreshed the Windows stage (4 durable entries
+preserved) and Start Menu shortcut. Inspected captures on llm-feed: the
+padtest fixture after the committed drive and the pad-driven platformer.
 
 **D082 closes the input-record-v2 design packet, the first A4 line.** The
 input record is now self-describing and additive: the first 10 bytes stay
@@ -404,22 +445,25 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **SDL gamepad discovery/hot-plug** — the second A4
-line. Wire real controllers into the D082 record: PAL-side SDL3 gamepad
-open/close on hot-plug events, a live-side device→slot assignment policy
-(first-connected claims the lowest free slot 1..4; keep the policy in Lua
-where it stays inspectable), translation of SDL button/axis events into
-the existing `cm.input` feed shapes (`pad`/`padbtn`/`padaxis`), and
-`pad_reset()` called at project boot so a new session never inherits the
-previous latch. Exit with: a physical (or SDL virtual) controller driving
-a starter template, records carrying the PAD extension through the real
-windowed loop, a recorded gamepad trace that verifies byte-exactly on
-Linux and native Windows, and hot-plug mid-recording proven benign. The
-rebind UI/API and the binding-display line in the starter templates are
-the packets after; SDL virtual gamepads (`SDL_AttachVirtualJoystick`) look
-like the right headless test vehicle for the discovery layer.
+**Exact next packet:** **the rebind UI/API** — the third A4 line: multiple
+bindings per action (keys AND pad buttons feeding the same v1 action
+bits, which is why rebinding can never invalidate a trace — D082 planned
+this), conflict handling, a per-project + per-user binding store, and the
+starter templates displaying the actual current bindings in their HUD
+line instead of hardcoded key names. Keep bindings live-side policy: the
+action map already rebinds by name (`input.define`), so the packet is a
+binding data model (project defaults + user overrides, likely beside the
+other machine-local `editor.dat`/`video.dat`-class state for the user
+half), a pad-button→action bind path in `cm.input`, the settings surface,
+and honest display strings (`pal.scancode_name` + `pad_btn` names). After
+that: the options packet (volumes, fullscreen/window sizes, the deadzone
+knob D082 reserved) and namespaced atomic player storage.
 
-There is no known blocker or human-only verification required.
+Worth a hallway test when the human is around: plug a real controller
+into the Windows editor and play a template in the game window (the
+agent-side proof used SDL virtual pads plus WSLg; a physical XInput pad
+through native win32 SDL is the one path no automated check touched).
+No blocker — the rebind packet can start immediately.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
