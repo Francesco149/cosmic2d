@@ -583,3 +583,42 @@ re-recorded and re-shot (stars entered every framing; the tour now
 reads 7/10 mid-lap, the npc golden collects the watcher's star). New
 goldens: openworld_stars.ctrace (1900f, drift-proven) + .png (f1740:
 banner + gold 10/10 counter + the exchange). Suite ALL GREEN.
+
+## D3D-022 — props beyond trees: boulders, pebbles, flower patches (2026-07-17)
+
+Round 14, autonomous (no new feed verdicts; water polish and exchange
+depth stay gated). The STATUS menu's remaining verdict-free option:
+the world's first props beyond the cone trees — static dressing that
+makes the bands read as *places* without touching the sim.
+
+- **Three scatters, three PRNG streams**: boulders/pebbles/flowers
+  each run their own xs32 state (seeds 517/733/271). The tree stream
+  (seed 99) is byte-identical to round 10 — its trunk boxes are the
+  trace-locked collider list. Same in-loop lesson as the trees: every
+  draw happens BEFORE the accept test, so placement survives accept-
+  rule edits (and it did — the flower band was retuned twice).
+- **Boulders keep to the high bands (h >= 3.8)**: every verified demo
+  route leg stays h <= 3.3, so the new colliders — world-bounds AABBs
+  around the rotated prisms, per D3D-011 — cannot touch a golden
+  trace. Proven, not assumed: all 7 traces replayed byte-identical
+  with 42 boulder colliders live (137 colliders total). This is the
+  cheap way to add colliding props mid-demo: place them where the
+  goldens never walk, and the suite becomes the proof.
+- **Pebbles and flowers are collider-free walk-over deco** (ankle
+  clutter; a 0.1u pebble as a wall would read as a bug, and the
+  mantle only helps against real colliders).
+- **Flowers grow in patches**: the first draft's uniform scatter read
+  as lone lollipops at 320x240; 2-4 clumped flowers per accepted
+  patch point (90 patch attempts -> ~25 patches, 95 flowers) read as
+  a meadow. Head = a tiny 2-cone diamond lathe (the bounce-gem
+  species, 20 tris) on a 3-gon stem — G.ball heads were 3x the tris
+  for no read gain. Four petal colors from a fixed palette.
+- **Rock gray one shade up from the band color** ({0.56,0.52,0.49} vs
+  the band's {0.47,0.43,0.41}): under the warm sun the band color
+  itself read charcoal on a standing prism.
+
+Fallout: no knob, doc, or snd change — all 7 traces stand
+unregenerated (the round's proof of the render-class/sim split). The
+four openworld pixel goldens re-shot deliberately (~2.5k new static
+tris in every framing). Suite ALL GREEN; 3 shots on the feed
+(density + boulder-gray questions open).

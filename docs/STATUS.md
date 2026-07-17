@@ -4,6 +4,43 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 14) — props: the bands become places
+
+Autonomous round (no new feed verdicts; water polish + exchange depth
+stay gated). **First props beyond trees** (D3D-022, all in world.lua):
+42 boulders (rotated squat prisms, rock-band gray one shade up) on the
+high bands ONLY (h >= 3.8 — every verified route leg stays <= 3.3, so
+their D3D-011 bounds-box colliders can't touch a golden trace), 52
+pebbles + 95 flowers as collider-free grass clutter. Flowers grow in
+2-4 clumps per patch (uniform scatter read as lone lollipops at
+320x240); head = tiny 2-cone diamond lathe on a 3-gon stem, 4 petal
+colors. Three NEW xs32 streams — the tree stream (and its trace-locked
+trunk colliders) byte-identical. ~2.5k static tris. **All 7 traces
+replayed unregenerated** (no knob/doc/snd change — the round's proof of
+the render-class/sim split); the four openworld pngs re-shot
+deliberately. Suite ALL GREEN; 3 shots on the feed. (Note: one suite
+run tripped a transient selftest fail — concurrent /tmp/cosmic_selftest
+collision with another repo's suite on this machine; clean on re-run.)
+
+## Exact next step
+
+1. Feed questions open (non-blocking): R14's — do the flower heads
+   read as flowers or confetti at 320x240? boulder gray ok? density
+   thicker/thinner/more bands? Plus R13's (star read, completion
+   beat, persist collection?), R12's (exchange read, dialog tone,
+   text box vs bare HUD line) and R11's (splash in-game listen,
+   half-sunk swim read, jump read, band colors + fog, eye size).
+2. **Demo 2 grows** (menu, minus stars + first props): water polish
+   (shoreline read, swim-out splash), more exchange depth (the NPC
+   walking its own little route, multi-line dialog pages,
+   star-count-aware lines), a second NPC elsewhere, or MORE props
+   (band-specific species: snow rocks, sand shells, prop shadows).
+   Figure EDITOR stays parked until the human unparks.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 13) — stars: the wander gets a goal
 
 Autonomous round (no new feed verdicts; water polish + exchange depth
@@ -22,7 +59,7 @@ all three openworld traces re-recorded (knobs.stars + snd.bank) and
 re-shot (stars in every framing). Suite ALL GREEN; 3 shots on the
 feed.
 
-## Exact next step
+## Exact next step (done — see round 14 above)
 
 1. Feed questions open (non-blocking): do the stars read at 320x240
    (size/color vs the grass)? does the completion beat land (fanfare
