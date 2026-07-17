@@ -369,6 +369,134 @@ local function t_box()
   check(nx == 40, "box: whole-step tunneling is the documented tradeoff")
 end
 
+-- ---- cm.actor: the actor/world slice (A5/D091) ----
+
+local function t_actor()
+  local actor = cm.require("cm.actor")
+  local state_m = cm.require("cm.state")
+
+  -- spawn: ascending stable ids, same table back, fields pass through
+  local w = actor.world()
+  check(w.next_id == 1 and #w.list == 0, "actor: fresh world is empty")
+  local a = actor.spawn(w, { tag = "enemy", x = 0, y = 0, w = 10, h = 10 })
+  local b = actor.spawn(w, { tag = "shot", x = 40, y = 0, w = 4, h = 4 })
+  local c = actor.spawn(w, { tag = "enemy", x = 20, y = 0, w = 10, h = 10 })
+  check(a.id == 1 and b.id == 2 and c.id == 3, "actor: ids ascend from 1")
+  check(w.list[1] == a and w.list[3] == c, "actor: spawn appends in order")
+  check(a.tag == "enemy" and a.speed == nil, "actor: your table passes through")
+  check(not pcall(actor.spawn, w, "nope"), "actor: non-table spawn refused")
+  check(not pcall(actor.spawn, w, a), "actor: double spawn refused")
+  check(not pcall(actor.spawn, w, { tag = 7 }), "actor: non-string tag refused")
+
+  -- get: binary search over the id-sorted list
+  check(actor.get(w, 2) == b, "actor: get finds by id")
+  check(actor.get(w, 99) == nil, "actor: unknown id is nil")
+
+  -- iteration: spawn order, tag filter
+  local seen = {}
+  for x in actor.each(w) do seen[#seen + 1] = x.id end
+  check(#seen == 3 and seen[1] == 1 and seen[2] == 2 and seen[3] == 3,
+        "actor: each walks spawn order")
+  seen = {}
+  for x in actor.each(w, "enemy") do seen[#seen + 1] = x.id end
+  check(#seen == 2 and seen[1] == 1 and seen[2] == 3, "actor: tag filter")
+  check(actor.count(w) == 3 and actor.count(w, "enemy") == 2
+        and actor.count(w, "ghost") == 0, "actor: count live by tag")
+  check(actor.first(w) == a and actor.first(w, "shot") == b
+        and actor.first(w, "ghost") == nil, "actor: first in spawn order")
+
+  -- despawn marks: queries skip immediately, corpse stays until tick
+  check(actor.despawn(w, a) == true, "actor: despawn live returns true")
+  check(actor.despawn(w, a) == false, "actor: double despawn is a no-op")
+  check(actor.despawn(w, 99) == false, "actor: despawn unknown id is a no-op")
+  check(actor.get(w, 1) == nil, "actor: dead id reads nil")
+  check(actor.count(w, "enemy") == 1 and actor.first(w, "enemy") == c,
+        "actor: dead skipped by count/first")
+  check(#w.list == 3, "actor: corpse remains listed until tick")
+
+  -- despawn inside an each pass is safe; spawns during a pass are visited
+  local order = {}
+  for x in actor.each(w) do
+    order[#order + 1] = x.id
+    if x.id == 2 then
+      actor.despawn(w, 3)
+      actor.spawn(w, { tag = "shot" })
+    end
+  end
+  check(#order == 2 and order[1] == 2 and order[2] == 4,
+        "actor: mid-pass despawn skipped, mid-pass spawn visited")
+
+  -- tick sweeps corpses preserving order; ids stay stable
+  actor.tick(w)
+  check(#w.list == 2 and w.list[1].id == 2 and w.list[2].id == 4,
+        "actor: tick sweeps dead, order preserved")
+  check(actor.get(w, 2) == b, "actor: get still exact after sweep")
+  check(actor.spawn(w, {}).id == 5, "actor: ids never reused after sweep")
+  check(actor.despawn(w, b) and select("#", actor.tick(w)) == 0,
+        "actor: tick returns nothing")
+
+  -- hit: first live strict-edge overlap in spawn order
+  local hw = actor.world()
+  local h1 = actor.spawn(hw, { tag = "enemy", x = 0, y = 0, w = 10, h = 10 })
+  local h2 = actor.spawn(hw, { tag = "enemy", x = 8, y = 0, w = 10, h = 10 })
+  actor.spawn(hw, { tag = "marker" }) -- rect-less: never hittable
+  check(actor.hit(hw, "enemy", 9, 5, 4, 4) == h1, "actor: hit first in order")
+  actor.despawn(hw, h1)
+  check(actor.hit(hw, "enemy", 9, 5, 4, 4) == h2, "actor: hit skips the dead")
+  check(actor.hit(hw, "enemy", 30, 0, 5, 5) == nil, "actor: hit misses honestly")
+  check(actor.hit(hw, "enemy", 17, 0, 5, 5) == h2
+        and actor.hit(hw, "enemy", 18, 0, 5, 5) == nil,
+        "actor: hit edges are strict")
+  check(actor.hit(hw, nil, 0, 0, 500, 500) == h2,
+        "actor: untagged hit sees every rect actor")
+
+  -- timers: integer countdowns; expired exactly on the zero frame
+  local tw = actor.world()
+  local e = actor.spawn(tw, { tag = "enemy" })
+  actor.timer(e, "cool", 2)
+  check(actor.time(e, "cool") == 2 and actor.running(e, "cool")
+        and not actor.expired(e, "cool"), "actor: armed timer runs")
+  actor.tick(tw)
+  check(actor.time(e, "cool") == 1 and actor.running(e, "cool"),
+        "actor: timer counts down")
+  actor.tick(tw)
+  check(actor.expired(e, "cool") and not actor.running(e, "cool"),
+        "actor: expired exactly on the zero frame")
+  actor.tick(tw)
+  check(actor.time(e, "cool") == nil and not actor.expired(e, "cool"),
+        "actor: the tick after expiry forgets the timer")
+  check(e.t == nil, "actor: empty timer table leaves the doc")
+  actor.timer(e, "cool", 5)
+  actor.tick(tw)
+  actor.timer(e, "cool", 5)
+  check(actor.time(e, "cool") == 5, "actor: rearm resets the count")
+  actor.timer(e, "zap", 0)
+  check(actor.expired(e, "zap"), "actor: zero-frame timer expires now")
+  actor.timer(tw, "wave", 1)
+  actor.tick(tw)
+  check(actor.expired(tw, "wave"), "actor: the world itself holds timers")
+  actor.despawn(tw, e)
+  actor.tick(tw)
+  check(actor.time(e, "cool") == 4, "actor: dead actors' timers stop ticking")
+  check(not pcall(actor.timer, e, "bad", -1), "actor: negative frames refused")
+  check(not pcall(actor.timer, e, "bad", 1.5), "actor: float frames refused")
+
+  -- determinism: identical op sequences canonicalize byte-identically
+  local function build()
+    local bw = actor.world()
+    local p = actor.spawn(bw, { tag = "enemy", x = 3, y = 4, w = 9, h = 9 })
+    actor.spawn(bw, { tag = "shot", x = 1, y = 1, w = 4, h = 4 })
+    actor.timer(p, "cool", 3)
+    actor.timer(bw, "wave", 30)
+    actor.tick(bw)
+    actor.despawn(bw, 2)
+    actor.tick(bw)
+    return bw
+  end
+  check(state_m.canon(build()) == state_m.canon(build()),
+        "actor: same ops, same canonical bytes")
+end
+
 -- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -8601,6 +8729,7 @@ function game.init()
   t_exp2()
   t_ease()
   t_box()
+  t_actor()
   t_snapshot()
   t_buf_poke()
   t_input()

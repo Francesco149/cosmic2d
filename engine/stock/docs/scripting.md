@@ -336,6 +336,57 @@ terrain belong to `room.world:move` above. The bundled `cellar` project is
 the worked example; layers/masks, circles, raycasts, and richer trigger
 ergonomics remain later A5 work.
 
+## Actors, tags, and timers (`cm.actor`)
+
+When a game grows populations — enemies, shots, pickups — the bookkeeping
+(stable identity, spawn/despawn, iteration, cooldowns) is the same
+everywhere. `cm.actor` is that bookkeeping over ONE plain table you keep in
+`state.doc`, so snapshots, traces, and rewind carry your world by
+construction. It is a small composable module, not an entity system: your
+actors are your own plain tables, and everything else in this guide still
+applies to them.
+
+    local actor = cm.require("cm.actor")
+
+    function game.init()
+      local d = state.doc
+      d.world = d.world or actor.world()
+    end
+
+    -- spawn: your table gains a stable ascending id
+    local e = actor.spawn(state.doc.world, { tag = "enemy", x = 40, y = 8,
+                                             w = 9, h = 9, hp = 2 })
+
+    function game.step()
+      local d = state.doc
+      actor.tick(d.world)           -- ONCE per step: sweep + timers
+      for a in actor.each(d.world, "enemy") do a.x = a.x + 0.5 end
+      local hitme = actor.hit(d.world, "enemy", d.x, d.y, 10, 10)
+      if hitme then actor.despawn(d.world, hitme) end
+    end
+
+The rules that make it deterministic and safe:
+
+- Iteration (`each`, `count`, `first`, `hit`) is always spawn order —
+  ascending id. `hit` is the first strict-edge overlap (`cm.box` semantics;
+  give actors `x`/`y`/`w`/`h` and they are box rects).
+- `despawn` only marks: every query skips the actor immediately, and the
+  next `tick` removes it — so despawning inside your own `each` loop is
+  safe. Ids are never reused; `actor.get(w, id)` finds a live actor by id.
+- `tick(w)` runs once per step (top of `step` is the canonical spot). Skip
+  it and the world freezes — that is hit-pause for free.
+- Timers are integer frame countdowns on any actor or the world itself:
+  `actor.timer(w, "wave", 90)` arms, `running` is true while counting,
+  `expired` is true exactly on the frame it reaches zero, and the next
+  tick forgets it. `actor.timer(e, "cool", 9)` is a cooldown; check
+  `not actor.running(e, "cool")` to act again.
+
+The bundled `swarm` project is the worked example: enemies and shots are
+tags in one world, the fire cooldown and the wave breather are world
+timers, and the shots-vs-enemies loop is `actor.hit`. Components/systems,
+multi-tags, parent/child links, and spatial indexes are deliberately
+absent — later A5 slices earn ergonomics from real demo pain first.
+
 ## Sound effects and music
 
 Instruments must be uploaded into the simulation bank before use. The demo's
@@ -468,6 +519,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.text` — bitmap text drawing and measurement.
 - `cm.map` / `cm.collide` — map assets, placements, markers, swept AABBs.
 - `cm.box` — pure AABB overlap/queries and the lightweight wall slide.
+- `cm.actor` — actor worlds in doc: stable ids, tags, spawn order, timers.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
