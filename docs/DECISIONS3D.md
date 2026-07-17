@@ -763,3 +763,58 @@ sketch first, measured (the §10 budget table), then projects/bigworld.
 Open (feed): glide speed/read, totem->figure pop distance, world
 variety, entity density (2467 of a 4000 cap — the walkability accept
 rejects mountain/water routes).
+
+## D3D-026 — rovale: the RO recipe in-engine — baked terrain atlas, click-to-move, the live figure→sprite bake (2026-07-17)
+
+The §8f pivot (demo 3) built as COSMIC3D.md §11 sketched it — sketch
+first, measured (bake ~4.8µs/texel → 5.7s/map, A* ~2.9ms worst, pick
+~60µs), then projects/rovale.
+
+- **The baked blended terrain is a budgeted render-class pass.** Every
+  tile gets a UNIQUE 34×34 texture (32 + 1-texel gutters into the
+  neighbors) baked by sampling grass/dirt/sand in continuous world
+  space, weights feathered over noisy smoothstep bands, prop shadows
+  multiplied on the authentic 8×8-per-tile lattice — all packed into ONE
+  1088×1088 atlas (one tex_create + one terrain segment). Too slow for
+  init (5.7s), it runs in draw under a tiles/frame knob behind a loading
+  bar, pixels in a persistent rc. buffer (hot reloads re-upload
+  instantly; a BAKE_STAMP mismatch rebakes). Honesty proven the §10
+  way: the tour pixel golden re-shot under _G.RO_BUDGET=32 is
+  BYTE-IDENTICAL — the sim reads only T.sample + the walk grid.
+- **Click-to-move is sim input end to end.** The mouse already lives in
+  input record v1, and the camera rig is sim state — so pick ray
+  (march + bisect vs W.ground), walk-grid snap, heap A* (64×64 cells of
+  1u — the GAT 2× scale), and the cell-chain walk all replay from a
+  trace. No physics kernel: RO movement is pathing (facing is a smooth
+  sim angle, octant-snapped only at sprite time). demo(1) tours the vale
+  by SYNTHESIZING clicks through the same pick+path pipeline (projecting
+  the next waypoint into the frame, orbiting the camera when it isn't) —
+  the golden trace exercises the entire kernel headlessly.
+- **The figure→sprite bake went live** (§5's "model once, use as 3D or
+  billboard", the license-clean §8/2 answer): spr.lua rasterizes any
+  cm.fig figure — edge functions, z-buffer, the pre-lit vertex colors
+  already in the emitted tris, proto bake_guy_sprite's 3/4 camera — into
+  an 8-yaw × 7-row sheet (idle/walk×4/wave×2) in ~0.25s/variant at
+  boot, pixel-cached in rc. buffers across reloads. The mascot is the
+  player; cm.mascot.build color variants are the three NPCs. Billboards
+  per the recipe: upright camera-yaw quads, nearest+alphatest, unlit
+  tinted 0.7+0.3·shadow(feet), blob decals, water AFTER sprites at
+  144/255. Sheet column = octant(facing − camera yaw).
+- **Walkable props answered §4's bridge question in miniature**: the
+  plaza deck slabs are crisp gbox props whose tops override W.ground
+  inside their rotated footprint — the walk grid and A* just see the
+  height, and the player steps onto the gazebo deck (tour f≈450 stands
+  at 2.10 = inner slab top).
+- **Terrain tweaks vs proto ro2**: a ford floor (max-blend to ankle
+  depth) where the path crosses the pond arm, and a chunked flat APRON
+  ring outside the map so the 15° camera never sees past the world edge
+  (fog takes the far rim).
+- Goldens: rovale_tour.ctrace (1000f: ford wade, plaza deck stand, two
+  greets) verify PASS + drift-proven; rovale_tour.png (f620 greet beat)
+  + rovale_pond.png (f200 shoreline) + the RO_BUDGET honesty cmp.
+- **Ergonomics candidates logged for the distillation phase** (the §8f
+  goal): the terrain bake wants a cm module + editor bake button; the
+  sprite baker wants to be cm.spr (any cartridge, any figure); the pick
+  ray + walk-grid A* are engine-shaped (cm.walk?); billboards could join
+  cm.gb; the sprite depth-pull PAL flag stayed unneeded (smooth vale +
+  steep camera — revisit on cliffs).

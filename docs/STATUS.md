@@ -4,6 +4,53 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 18) — rovale: demo 3, the RO vale
+
+Two human verdicts opened the round: **the streaming demo "feels
+great"**, and the direction — **the RO-style demo now, then distil all
+three demos into engine ergonomics** (recorded as COSMIC3D.md §8f; the
+distillation phase begins when demo 3's slice is approved). Sketch
+first (§11 + a measured soak: bake ~4.8µs/texel, heap A* ~2.9ms
+worst-case, pick ray ~60µs), then **projects/rovale** (D3D-026): the
+proto ro2 look in-engine. The signature move: every tile gets a UNIQUE
+34×34 gutter-baked blended texture (grass/dirt/sand feathered over
+noisy bands, prop shadows on the authentic 8×8 lattice) packed into one
+1088×1088 atlas — baked in draw under a budget knob behind a loading
+bar (render-class end to end; the tour pixel re-shot under
+_G.RO_BUDGET=32 is BYTE-IDENTICAL). **Click-to-move is sim input**:
+pick ray → walk-grid snap (64×64 1u cells, GAT scale) → heap A* → cell
+chain; demo(1) tours by synthesizing clicks through the real pipeline.
+**The figure→sprite bake went live** (spr.lua, ~0.25s/variant): the
+mascot + three color variants rasterized to 8-yaw×7-row sheets by a
+tiny Lua rasterizer, drawn as recipe billboards (nearest+alphatest,
+0.7+0.3·shadow tint, water after sprites at 144/255). Plaza deck slabs
+are walkable props (W.ground override — §4's answer in miniature);
+path ford + border apron round out the vale. Three NPCs amble and
+greet with baked wave rows + typed lines. Goldens: rovale_tour.ctrace
+(1000f: ford wade, deck stand, two greets) drift-proven + two pixels +
+the honesty cmp. Suite ALL GREEN; 3 shots on the feed.
+
+## Exact next step
+
+1. Feed questions open (non-blocking): R18's (does the vale read as RO
+   at 480×270? chibi sprite proportions/size? click feel — marker,
+   held-repeat cadence? sand/shore band? pave deck read?); R17's and
+   earlier (see round 17's list below).
+2. **rovale grows on verdicts**; ungated candidates: cliff tiles (the
+   GND sharp-edge model — forces the sprite depth-pull question),
+   water texture cycle + vertex wave (recipe constants ready), a
+   monster (hopping poring species via a new tiny figure + bake),
+   paper-doll layers (hat/held-item sheets with anchors), 8-frame
+   walks. Or, if the human calls demo 3 sufficient: **the distillation
+   phase begins** (§8f) — candidates logged in D3D-026 (cm.spr, the
+   terrain-bake module + editor button, cm.walk pick/A*, billboards
+   into cm.gb).
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras; figure EDITOR until
+the human unparks.
+
 ## 2026-07-17 (round 17) — bigworld: the streaming world + the glider
 
 The §8e directive, sketch-first (COSMIC3D.md §10: design + a headless
