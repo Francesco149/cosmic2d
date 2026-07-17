@@ -4,6 +4,44 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 11) — deep water swims + the guy pinned opposite
+
+Two human verdicts landed and both are in. **The box guy stays** in the
+figure showcase, now pinned exactly opposite the ring mascot: one
+shared anim.ring_rate replaces the drifting per-walker rates, the guy's
+angle is mascot + pi by construction — overlap is impossible.
+figure_show goldens re-recorded/re-shot (knob schema + guy position).
+**Deep water swims** (D3D-019): the fbm floored at -1.0 so no real deep
+water existed — the noise's deepest basin (42,64) is carved into a
+2.8u pond (quartic scoop, untouched outside R=9; the tour trajectory
+diffed byte-identical). The swim regime is DERIVED, never stored (no
+new player-buffer field): deep water under the feet + feet below the
+surface → buoyancy spring to the float line with water drag (a small
+surface bob), swim-tuned move numbers, buffered jump = paddle hop,
+entry splash on the derived edge (new sfx-splash.ins), forward paddle
+tilt + neutral scale on the mascot, shore exit = the ordinary landing
+snap. Shallower water stays wading (the round-10 question answered as
+allow-with-a-floor). demo(3) = the pond-crossing ring. Goldens:
+openworld_swim.ctrace (900f, drift-proven) + openworld_swim.png (f300
+mid-pond); openworld_tour re-recorded (doc grew the swim knobs) +
+re-shot (the pond entered the f1290 framing). Suite ALL GREEN; 3 shots
+on the feed (swim Q: does the half-sunk float read?).
+
+## Exact next step
+
+1. Feed questions open (non-blocking): the half-sunk swim read, jump
+   read, band colors + fog at 320x240, eye size at 320x240.
+2. **Demo 2 grows** (unchanged menu): a first NPC (cm.fig guy or a
+   second mascot) with a proximity exchange (the Zelda-ish beat), more
+   mascot clips (turn/hop/wave — a swim stroke clip would also lift the
+   paddle read), water polish (shoreline read, swim-out splash), or
+   scatter props/collectibles to give the wander a goal. Figure EDITOR
+   stays parked until the human unparks it.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 10 playtest) — verdicts + the backwards-camera fix
 
 Human played openworld: **"the mascot reads well and the openworld demo
@@ -40,7 +78,7 @@ openworld_tour.ctrace (1000f, verify PASS, drift-proven) +
 openworld_tour.png (f1290, the pond crossing). Full suite ALL GREEN
 from the committed tree; 3 shots on llm-feed.
 
-## Exact next step
+## Exact next step (done — see round 11 above)
 
 1. Feed questions open (non-blocking): jump read on the mascot, band
    colors + fog at 320x240, block-or-allow deep-water wading; plus

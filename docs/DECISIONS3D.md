@@ -443,3 +443,54 @@ leg (off the goal tower, back west) now enters the cone, so the camera
 eases differently and the f1920 framing rotated; the sim path is
 byte-identical (world-space route steering), the frame still pins the
 ferry carry. All traces + every other pixel golden unchanged.
+
+## D3D-019 — deep water swims: the derived regime + the pond (2026-07-17)
+
+Human direction on the round-10 feed question (block-or-allow deep
+water): "just add a basic swim mechanic". Two problems: the mechanic,
+and the fact that no deep water existed — the openworld fbm is
+base^2*20 - 1.0, floored at -1.0, so the deepest basin was 0.62u of
+ankle water on a 1.9u mascot.
+
+- **The pond**: the noise's own deepest basin (42,64) is scooped with a
+  quartic radial carve (R=9u, -2.2 at center → 2.8u deep). Outside R
+  the heightfield is byte-untouched; the tour route's nearest leg
+  passes ~11u out and its 1290-frame telemetry diffed identical through
+  the change. Level design stays a deterministic function in world.lua.
+- **The swim regime is DERIVED, never stored** (the playable-figure
+  no-animation-state rule extended to movement modes): swimming :=
+  water deeper than move.swim_depth under the feet AND feet below the
+  surface. No flag in the player buffer — the layout didn't grow, and
+  there is no transition state to desync.
+- **In the regime**: buoyancy springs y to the float line (surface -
+  float_depth) against a vertical water drag, settling into a small
+  bob; horizontal motion runs swim_speed/accel/fric; a buffered jump
+  press becomes a paddle hop (paddle * the jump's v0) — enough to read
+  as a stroke and help mantle a bank. Everything else is the unchanged
+  kernel: the shore exit is the ordinary landing snap as the ground
+  rises through the threshold (float line sits just above the cutoff
+  depth, so the regime hands off with a ~0.1u settle, no pop).
+- **Depth split**: swim_depth 1.05 vs float_depth 0.95 — shallower
+  water stays plain wading (walkable, feet wet), the round-10 question
+  answered as allow-with-a-floor.
+- **The entry splash is a derived edge too**: regime false at step
+  start, true after integration → one splash (sfx-splash.ins, noise2
+  through a swept lp filter), velocity-scaled gain. No stored
+  was-swimming bit.
+- **Presentation**: neutral body scale while swimming (the airborne
+  stretch would gong on every bob), a forward paddle tilt
+  (feel.swim_tilt) on the base joint, and the walk clip keeps its
+  distance phase as the stroke — the paddle is the walk cycle at swim
+  speed, no new clip needed for "basic".
+
+Fallout: openworld_tour.ctrace re-recorded — the new move.swim_* knobs
+grow the doc tree, and verify refills defaults via game.init after the
+SNAP restore, so the old trace's doc compare diverges at frame 1 (the
+trajectory itself proved identical). openworld_tour.png re-shot: the
+carved pond sits inside the f1290 framing (deliberate look change).
+New goldens: openworld_swim.ctrace (900f demo(3) pond-crossing ring:
+splash, crossing, mid-pond paddle hop, bank exit, rim walk home) +
+openworld_swim.png (f300 mid-pond). Same round, the figure showcase:
+one shared anim.ring_rate pins the box guy exactly opposite the ring
+mascot (per-walker rates drifted the gap; human: keep the guy, never
+let him overlap the mascot) — figure_show goldens re-recorded/re-shot.
