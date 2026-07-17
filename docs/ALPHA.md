@@ -196,8 +196,12 @@ Goal: exported desktop games meet basic player expectations.
   (D085: volumes are device-output gains — goldens never hear them; window
   sizes derive from `x_display_size`; stick knobs ride input.dat, volumes +
   `cm.options.add` project settings ride video.dat via contributor hooks.)
-- [ ] Add namespaced atomic player storage outside the install/project folder:
+- [x] Add namespaced atomic player storage outside the install/project folder:
   profiles/slots, schema version, migration, reset, and error reporting.
+  (D086: `cm.save` under `<user root>/saves/<save_id>/`; save_id declared in
+  project.lua, scaffolded + settings-editable; reads feed the sim only via
+  idempotent init or the recorded eval-channel load door, so replays never
+  need a machine's saves.)
 - [ ] Prove input recording, rewind, resume, replay, and cross-platform verify
   with keyboard, mouse, and gamepad records.
 

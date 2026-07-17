@@ -3650,3 +3650,92 @@ controls page with the stick knobs at their exact default percents.
 The human separately confirmed D084's one untested path: a physical
 Switch Pro controller through native win32 SDL drives games and
 rebinding correctly.
+
+## D086 — namespaced player storage: saves live under the user root, loads ride the record (A4, 2026-07-17)
+
+**Context.** A4's fifth line owes exported games real save data: outside
+the install/project folder, profiles/slots, a schema version with
+migration, explicit reset, and named errors. Three questions needed
+settling: the namespace key (the project NAME is mutable), what the Lua
+API owes determinism — D082..D085 drew the live-policy line for knobs,
+but save READS legitimately feed the sim, which is exactly what that
+line forbids — and how exports/archives relate to saves.
+
+**Decision — the namespace is a declared id, the files live under the
+user root.** `project.lua` gains optional `save_id`: 1..64 of lowercase
+`a-z 0-9 - _`, alphanumeric start (`cm.project.save_id_error`), boot-
+validated, edited as an ordinary draft-legal identity field on the
+settings general tab, and scaffolded from the project name via
+`cm.project.save_slug` (non-ASCII-only names fall back to "game") — so
+every new project is save-ready while renaming/moving/duplicating a
+project never orphans or forks player data silently. Saves live at
+`<pal.user_path()>saves/<save_id>/<profile>/slot<n>.sav`; nothing under
+a project root, so exports, archives, duplicates, and moves cannot carry
+another machine's progress **by construction** rather than by exclusion
+list. A project without `save_id` has no store: every door answers
+nil + "project declares no save_id" instead of inventing a mutable key.
+
+**The store is input.dat-class, with one new statement for reads.**
+`cm.save` binds only in interactive windowed sessions (the exact
+load_binds gate); headless / `--frames` / `--verify` see a disabled
+store with named reasons, so goldens and verifies never depend on one
+machine's saves. Writes are pure outputs — sim code may call
+`save.write` freely; on verify the re-simmed call no-ops. Reads feeding
+the sim have exactly two sanctioned shapes, both captured by the
+existing record stream: **boot loads** fill absent doc fields in
+`game.init` (reload-idempotence means the trace SNAP carries the result
+and verify's re-run leaves it alone), and **mid-session loads** go
+through `save.load(slot)`, which reads+migrates live-side and enqueues
+the exact post-migration canon bytes as a `cm.save._apply(%q)` command
+on the recorded console-eval channel (D022, via the new history-less
+`cm.repl.enqueue`). The payload replays from the EVAL record through the
+same `repl.exec`; the registered `save.on_load` handler applies it to
+doc at the next frame start on record and verify alike. No trace format
+change, and the timeline's EVAL marker shows loads for free. Reading a
+slot inside `step()` and branching on it is documented as the
+determinism bug it is — the oracle catches it as doc divergence.
+
+**Envelope, migration, reset.** A slot is `cm.state` canon
+`{ schema, data }` (plain trees only, validated before any write) under
+the A1 atomic-replacement discipline: a failed write preserves the
+previous save byte-for-byte. `save.schema(n)` declares the current
+version; `save.migrate(from, fn)` registers the step to `from + 1`;
+reads chain steps to the declared version, name the exact missing or
+failing step, and refuse newer-version saves honestly. Malformed files
+are named errors that stay on disk untouched until the next explicit
+write. `erase(slot)` (idempotent) and `wipe()` (current profile) are the
+explicit resets; `slots()`/`profiles()` enumerate what exists;
+`profile(name)` shares the save_id grammar. Bind resets profile and
+declarations, so a project switch never leaks another game's schema.
+
+**Consequences.** Exported games can save without a line of platform
+code, and the A4 exit promise "save data survives restart" is provable.
+The remaining A4 line is the all-inputs determinism proof. Save-file
+inspection UI (a slots browser in the Esc menu) and cloud-style
+copy/backup are deliberately not this packet; A6's demos will exercise
+the high-score/pickup patterns the guide documents.
+
+**Proof.** Linux selftest passes **23,767 checks** and the staged native
+Windows executable **23,769** on PAL API 19 (56 new KATs: grammar
+accept/reject and slug folding, boot/settings validation with the
+trimmed-id round trip, disabled-store refusals, the exact plain-tree
+round trip with binary-ish strings, schema stamping, the named
+first-run answer, nil/non-plain refusals before any write, an injected
+rename failure preserving the previous save byte-for-byte, malformed
+bytes unreadable-but-untouched, newer-schema refusal, stepwise
+migration with exact missing/raising/empty-step errors, profile/slot
+listing and grammar, idempotent erase, profile-scoped wipe, and the
+recorded load door round trip including verify-path re-exec). `nix run
+.#test` is ALL GREEN — every historical trace and all pixel/audio
+goldens unchanged. The live WSLg fixture proved the whole story: run
+one started from "no save in slot 1", wrote level 1 to the real
+`~/.local/share/cosmic2d/engine/saves/d086-save-fixture/`, and applied
+a mid-session load; run two's real boot read level 1 back, bumped to 2,
+and recorded a 90-frame trace of the write+load — then, with the saves
+**deleted**, `--verify` replayed it byte-exact: the disabled store
+no-op'd with named reasons while the recorded EVAL carried the load
+payload. The same Linux-recorded trace also verifies byte-exact on the
+staged native Windows executable, where no saves exist at all — the
+recorded-load channel is cross-platform by construction. Inspected
+capture on llm-feed: the settings general tab with the new save id
+identity field.

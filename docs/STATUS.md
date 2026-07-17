@@ -3,24 +3,63 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — the options packet shipped (D085); player storage next (2026-07-17)
+## Current handoff — player storage shipped (D086); the A4 exit proof next (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A3 are complete and A4 is four packets in.** A3's full promise holds:
+**A0–A3 are complete and A4 is five packets in.** A3's full promise holds:
 from a fresh archive a user can create (from four starter templates),
 import, rename, relocate, duplicate, archive, delete, edit, play, and
 export projects entirely through the shipped UI. Real SDL controllers
 drive games deterministically (D082 record + D083 discovery), every
 action is player-rebindable across keyboard and pads (D084) — the human
 has since confirmed a physical Switch Pro controller through native
-win32 SDL drives games and rebinding correctly — and the Esc menu is
-the full player options surface (D085). The rest of A4 (player storage,
-the all-inputs determinism proof), shared genre-neutral runtime slices
-and demos (A5/A6), the complete rewind product UI (A7), and the
-release-candidate pass (A8) remain the open alpha gates.
+win32 SDL drives games and rebinding correctly — the Esc menu is the
+full player options surface (D085), and games now have real player
+saves (D086). The rest of A4 (the all-inputs determinism proof), shared
+genre-neutral runtime slices and demos (A5/A6), the complete rewind
+product UI (A7), and the release-candidate pass (A8) remain the open
+alpha gates.
+
+**D086 closes the player-storage packet, the fifth A4 line.** `cm.save`
+keeps saves at `<pal.user_path()>saves/<save_id>/<profile>/slot<n>.sav`
+— outside the install and project folder, so exports/archives/
+duplicates/moves cannot carry another machine's progress by
+construction. `save_id` is the stable namespace key (the project name
+is mutable): a validated grammar in project.lua, boot-checked,
+scaffolded from the project name for every new project, and editable as
+a draft-legal identity field on the settings general tab. The store is
+input.dat-class — bound only in interactive windowed sessions; headless
+/ --frames / --verify answer every door with a named reason — plus the
+new statement for reads: writes are pure outputs, and reads feed the
+sim only through idempotent init (the trace SNAP carries the result) or
+`save.load(slot)`, which queues the exact post-migration bytes through
+the recorded console-eval channel (D022) so replays carry their own
+payload. Slots are atomic `{ schema, data }` canon envelopes: a failed
+write preserves the previous save byte-for-byte, reads migrate old
+schemas stepwise (`save.schema`/`save.migrate`) and refuse newer ones
+honestly, malformed files are named-but-untouched, `erase`/`wipe` are
+the explicit resets, and profiles share the save_id grammar. The
+shipped scripting guide documents the whole contract.
+
+**D086 proof:** Linux selftest passes **23,767 checks** and the staged
+native Windows executable **23,769** on PAL API 19 (56 new KATs across
+grammar/slug/settings round-trip, disabled-store refusals, the exact
+plain-tree round trip, injected-failure byte-preservation, schema
+migration and refusals, listing/erase/wipe, and the recorded load door
+including verify-path re-exec). `nix run .#test` is ALL GREEN — every
+historical trace and all pixel/audio goldens unchanged. The live WSLg
+fixture proved the end-to-end: run one wrote level 1 to the real
+per-user store and applied a mid-session load; run two read it back
+across a real boot, bumped it, and recorded a 90-frame trace — which
+then verified byte-exact with the saves **deleted** (disabled store,
+recorded EVAL carrying the payload) on Linux AND on the staged native
+Windows executable where no saves exist. `tools/build-windows.sh`
+refreshed the Windows stage (4 durable entries preserved) and Start
+Menu shortcut. Inspected capture on llm-feed: the settings general tab
+with the save id field.
 
 **D085 closes the options packet, the fourth A4 line.** Volume is a
 device-output affair: PAL API 19's `x_snd_gain(master, music, sfx)`
@@ -533,21 +572,17 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **namespaced atomic player storage** — the fifth
-A4 line: save data outside the install/project folder (the per-user
-root `pal.user_path()` already exists — likely
-`<user root>/saves/<namespace>/`), profiles/slots, a schema version
-with migration, explicit reset, and error reporting through the same
-named-failure discipline as every other store. Design questions to
-settle in the ADR: the namespace key (project name is mutable —
-probably a declared `project.lua` save id with a validated grammar),
-what the Lua API owes determinism (saves are written by sim-triggered
-events but the FILES are machine state — the D084/D085 live-policy
-line needs an explicit statement for reads), and how exports/archives
-relate (they must not carry another machine's saves). After that: the
-A4 exit proof — input recording, rewind, resume, replay, and
-cross-platform verify with keyboard, mouse, and gamepad records
-together.
+**Exact next packet:** **the A4 exit proof** — the last A4 line: prove
+input recording, rewind, resume, replay, and cross-platform verify with
+keyboard, mouse, and gamepad records together. Shape it as one recorded
+session on a fixture that consumes all three input domains (plus a
+mid-session recorded save load, now that D086 exists), exercising
+rewind/resume mid-recording, exported as a committed trace that the
+suite verifies on Linux and the staged native Windows executable. Then
+walk the A4 exit checklist honestly: controller + keyboard completing
+every bundled demo, rebindings and save data surviving restart. After
+that A4 closes and A5/A6 (genre-neutral runtime slices + the demo
+matrix) begin.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

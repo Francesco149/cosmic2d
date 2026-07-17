@@ -356,6 +356,67 @@ apply them via `on_change`. A setting that changes gameplay belongs in
 `options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
 are the scripted doors to the same knobs.
 
+## Player saves
+
+`cm.save` stores save data per player, outside the project folder, so exports
+and copies of a game never carry anyone's progress. Declare a stable id in
+`project.lua` first (new projects scaffold one; the project settings window
+edits it):
+
+    save_id = "my-game",   -- lowercase a-z 0-9 - _; renaming the project is
+                           -- safe, changing save_id orphans existing saves
+
+Then, in `main.lua`:
+
+    local save = cm.require("cm.save")
+
+    save.write(1, { level = d.level, coins = d.coins }) -- slot 1, atomic
+    local data, err = save.read(1)  -- nil, "no save in slot 1" on a first run
+    save.erase(1)                   -- explicit reset of one slot
+    save.slots()                    -- { 1, 3 }: which slots exist
+
+Saved data must be plain tables/numbers/strings/booleans, like `state.doc`.
+Writes are atomic: a failure (named in `err`) can never corrupt the previous
+save. `save.profile("name")` switches between per-player namespaces and
+`save.wipe()` resets the current one.
+
+**Loading must respect the recording.** Save files live on one machine;
+recordings replay on any machine. The two safe shapes:
+
+- **Boot loads** — read in `init`, and only fill `state.doc` fields that are
+  absent (the same idempotence hot reload already requires):
+
+      function game.init()
+        local d = state.doc
+        if d.level == nil then
+          local got = save.read(1)
+          d.level = got and got.level or 1
+        end
+      end
+
+- **Mid-session loads** (a "load game" menu entry) — register a handler and
+  call `save.load(slot)`; the engine records the loaded bytes and applies
+  them at the start of the next frame, so replays reproduce the load without
+  needing the file:
+
+      save.on_load(function(data) state.doc.level = data.level end)
+      if menu_picked_load then save.load(1) end
+
+Reading a slot directly inside `step` and branching on it is a determinism
+bug, exactly like reading any other local file. Writing from `step` is always
+fine — a save write feeds nothing back into the simulation.
+
+When your saved shape changes, bump the schema and describe each step once;
+old saves migrate on read, and saves from a newer version of your game are
+refused with a named error instead of being misread:
+
+    save.schema(2)
+    save.migrate(1, function(data) data.gems = 0 return data end)
+
+Headless runs, captures, and replay verifies see a disabled store (`nil` plus
+a reason), so test runs and recordings never depend on one machine's saves.
+Handle the "no save" answer and your first run already does the right thing.
+
 ## Determinism checklist
 
 - Change simulation only in `init`/`step`; keep `draw` side-effect free.
@@ -379,6 +440,7 @@ are the scripted doors to the same knobs.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
 - `cm.options` — the Esc menu: game-declared settings, volume doors.
+- `cm.save` — per-player save slots/profiles outside the project folder.
 - `cm.palette` / `cm.grade` — palette data and render-only color grading.
 - `cm.rand` / `cm.math` / `cm.ease` — deterministic helpers.
 
