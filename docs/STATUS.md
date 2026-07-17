@@ -4,6 +4,71 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 20) — the distillation continues: cm.atlas (the terrain bake)
+
+§12 slice 4: rovale's per-tile atlas bake — the RO "no visible tile
+grid" signature — extracted to **cm.atlas** (D3D-031). The
+engine-shaped half moved BYTE-IDENTICAL: the atlas LAYOUT (cell+gutter
+→ block, tile → byte offset, the interior-UV `A.uv` seam the bake and
+the mesh emitter share), the BUDGETED render-class bake loop (`A.bake`
+K tiles/frame, upload-once-on-done, the 0..1 done fraction the loading
+bar reads), the texture CONTENTS (create / fill / re-upload-a-finished-
+bake-on-reload), + `A.done`/`A.rebake`, all over the caller's named
+rc.* buffers. The per-texel COLOUR stays project policy — rovale hands
+cm.atlas a `texel(wx,wz)→r,g,b` (its grass/dirt/sand blend + prop
+shadows + underwater tint, unchanged), the cm.walk-`ok` /
+cm.terr-`sample_fn` precedent (a pure sample fn, not a stored
+callback). rovale retrofitted (world.lua −25 lines net).
+
+**The round's lesson** (D3D-031): the atlas texture's LIFETIME stays
+the caller's (rovale's rc.ro.texids registry frees it, as always). The
+first draft had cm.atlas own the free — a texid slot grew its state
+buffer 8→16 bytes, which BROKE the un-recut trace. `--verify`
+DOUBLE-INITS: `cm.main.boot` inits the current sources (new world.build
+→ cm.atlas makes rc.ro.bake@16), then `trace.verify` restores the SNAP
+bundle and inits AGAIN over the SAME named buffers — and the bundle's
+stale pre-cm.walk world.lua does a raw `pal.buf(rc.ro.bake, 8)` → size
+mismatch, boot error. cm.walk never resized a persistent buffer, so it
+dodged this. **Rule: an un-recut retrofit must not change the SIZE of
+any named buffer its stale bundle still creates** (the two generations
+coexist in verify's double-init). Keeping the state buffer at its
+historical 8-byte shape (atlas back in the count-4 registry) made the
+whole retrofit byte-identical.
+
+**Proofs** (the un-recut form, strongest): the bake is render-class so
+--verify never runs it → the committed rovale_tour trace verifies PASS
+UN-RECUT (hermetic bundle, no module deleted); both pixel goldens
+BYTE-IDENTICAL on current sources under pinned lavapipe (the terrain
+pixels ARE the atlas, pinning the layout+loop+upload chain), and the
+tour re-shot under _G.RO_BUDGET=32 is byte-identical to the committed
+budget-8 golden (the §10 honesty proof: one atlas at any tiles/frame).
+Full suite ALL GREEN. No visual change — no feed captures.
+
+## Exact next step
+
+1. **The distillation continues** (§12 order): slice 5 — **cm.kin**
+   (the shared collide+jump core across bounce/openworld/bigworld's
+   three diverging player kernels: the D3D-009/010 clamp+EPS rules,
+   D029 jump, mantle, box-top landing, squash/stretch juice — extract
+   only the AGREED core, leaving swim/glider/terrain-vs-box divergence
+   in the demos) and the **NPC greet slice** (2–3 copies: greet radius
+   + hysteresis, facing ease, typed line, hold — may shrink at re-merge
+   when upstream cm.actor lands). Design both against all three copies.
+   **Heed the D3D-031 rule**: cm.kin touches the player buffer, a
+   PERSISTENT sim buffer — if a retrofit resizes it the traces must be
+   RE-CUT, never left un-recut, or verify's double-init collides.
+   Editor windows (terrain paint + a cm.atlas bake button, figure
+   vertex-push, sheet preview) stay parked until the human unparks the
+   editor; cm.atlas is now their bake substrate.
+2. Feed: the sharp-vs-soft pair (round 19) still awaits a look; R18/17-
+   and-earlier questions open (non-blocking).
+3. rovale growth stays verdict-gated (cliffs, water cycle, a poring,
+   paper-doll, 8-frame walks); proto3d look knobs unchanged.
+
+Post-upstream-merge queue unchanged: PAL relative-mouse API + record v2
+(prerequisite SHIPPED upstream, D082). Parked: PS1-preset extras;
+figure EDITOR until the human unparks.
+
 ## 2026-07-17 (round 19) — the distillation phase opens: three slices
 
 Human directive: "distill the 3d primitives into nice engine
@@ -47,7 +112,7 @@ git-TRACKED files — stage new engine files before trusting a run; and
 one suite FAIL was the known concurrent-/tmp/cosmic_selftest collision
 with the cosmic2d agent (clean on re-run, the round-14 signature).
 
-## Exact next step
+## Exact next step (done — see round 20 above)
 
 1. **The distillation continues** (§12 order): the terrain-bake module
    (rovale world.lua's atlas bake → a cm module + the future editor

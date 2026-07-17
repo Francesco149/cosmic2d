@@ -960,3 +960,66 @@ compare byte-identical on current sources under pinned lavapipe — the
 tour IS synthetic clicks through pick→snap→astar→follow, so the
 pixels pin the whole extracted chain. Full suite ALL GREEN. No visual
 change — no feed captures.
+
+## D3D-031 — cm.atlas: the per-tile terrain bake goes engine-side (2026-07-17)
+
+The fourth §12 slice, the third D3D-026 human-logged candidate ("the
+terrain bake atlas — module + future editor button"). The RO signature
+move — every terrain TILE gets its own gutter-padded cell in one big
+texture, so the ground carries a unique blended texture per tile with
+zero visible grid (the roBrowser/BrowEdit 258-slot trick). Named
+cm.atlas; the runtime substrate for the terrain-paint/bake editor
+window when the editor unparks.
+
+- **engine/cm/atlas.lua** owns the engine-shaped half of rovale's bake,
+  extracted verbatim (byte-identical math): the LAYOUT (cell + gutter →
+  block, tile → atlas byte offset, and **A.uv**'s interior UV rect —
+  the gutter inset the bake and the mesh emitter must agree on, the one
+  seam they share), the **BUDGETED render-class bake loop** (A.bake
+  runs K tiles/frame, uploads the atlas once on completion, returns the
+  0..1 done fraction for the loading bar), the texture CONTENTS (create
+  + fill + re-upload a finished bake instantly on reload), and
+  A.done/A.rebake — all over the caller's named rc.* buffers (the pixel
+  buffer + a two-u32 progress/stamp buffer). No module state; the
+  handle is rebuilt each build() like cm.terr's terrain object.
+- **The per-texel COLOUR stays project policy.** The caller passes
+  `texel(wx,wz) → r,g,b` (0..255, cm.atlas clamps + packs); rovale's is
+  its feathered grass/dirt/sand blend with prop shadows multiplied in +
+  the underwater cool/darken, unchanged — just handed over. The
+  cm.walk-`ok` / cm.terr-`sample_fn` precedent: a pure sample function
+  passed to a pure function, never a stored callback.
+- **The texture's LIFETIME stays the caller's** (cm.atlas creates and
+  fills it, but rovale keeps it in its rc.ro.texids registry, freed
+  with the rest on reload). This was FORCED, and it is the round's
+  lesson. The first draft had cm.atlas own the free (a texid slot in
+  its state buffer, the gb.load_textures shape) — which grew that
+  buffer 8→16 bytes and BROKE the un-recut trace. Why: `--verify`
+  double-inits. `cm.main.boot` inits the CURRENT sources (new
+  world.build → cm.atlas makes rc.ro.bake@16), then `trace.verify`
+  restores the SNAP bundle and inits AGAIN — and the bundle's OLD
+  world.lua (D3D-029-era, carried un-recut through cm.walk) does a raw
+  `pal.buf("rc.ro.bake", 8)` over that same name → size mismatch, boot
+  error. cm.walk never resized a persistent buffer, so it never hit
+  this. **Rule: an un-recut retrofit must not change the SIZE of any
+  named buffer its stale bundle still creates** — the two generations
+  coexist in one process during verify's double-init. Keeping the state
+  buffer at its historical 8-byte shape (and the atlas back in the
+  count-4 registry) made the whole retrofit byte-identical and the
+  bundle replays clean.
+- **Deliberately NOT here**: non-uniform / rectangle packing (this is a
+  UNIFORM tile grid — sprite SHEETS are cm.spr's), splat-weight
+  sampling, normal/AO/mip baking, the terrain MESH emission (the
+  caller's emitter owns the vertex layout; A.uv is the shared seam).
+  Later cuts from real editor pain.
+
+**Proof.** rovale retrofitted (world.lua −25 lines net: bake_tile /
+W.bake / the bake-state block → cm.atlas; a `texel` policy fn + A.uv
+wired in). The bake is render-class so `--verify` never runs it → the
+committed rovale_tour trace verifies **PASS UN-RECUT** (hermetic
+bundle, no module deleted; the sim reads only heights/walk/decks,
+untouched). Both pixel goldens compare **byte-identical** on current
+sources under pinned lavapipe — and the terrain pixels ARE the atlas,
+so they pin the extracted layout + loop + upload chain end to end; the
+tour re-shot under _G.RO_BUDGET=32 is byte-identical to the committed
+budget-8 golden (the §10 honesty proof: same atlas at any tiles/frame).
+Full suite ALL GREEN. No visual change — no feed captures.
