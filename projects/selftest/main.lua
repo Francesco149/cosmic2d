@@ -10385,6 +10385,175 @@ local function t_crash_focus()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_clip_trust()
+  -- A7 §13 trust: opening a dragged-in clip RUNS its bundled code with the
+  -- open-a-project boundary, so the drop door identifies that code WITHOUT
+  -- executing it and asks before the first run. Identity = the SNAP bundle +
+  -- every EPOC revision (module name + source; recorded paths are machine-
+  -- local noise). write_trace pre-trusts everything this session wrote (a
+  -- self-export never prompts); an explicit confirm trusts a foreign identity
+  -- for the rest of the session; cancel runs nothing. The imgui prompt panel
+  -- is chrome (verified windowed); this pins the identity math + state machine.
+  local trace = cm.require("cm.trace")
+  local scrub = cm.require("cm.scrub")
+  local ed = cm.require("cm.ed")
+  local view = cm.require("cm.view")
+  local rewind = cm.require("cm.ed.rewind")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+
+  local save_after = cm.main.after_restore
+  local save_on, save_doc, save_root = ed.on, ed.doc, ed.root
+  local save_mode = view.mode
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local save_ws = trace._workspace_root
+  cm.main.after_restore = function() end
+
+  local root = tmproot() .. "/cosmic_selftest_cliptrust"
+  local wsroot = tmproot() .. "/cosmic_selftest_cliptrustws"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  local function wipe_ws()
+    local ns = pal.x_list_dir_all and pal.x_list_dir_all(wsroot) or {}
+    for i = #ns, 1, -1 do pal.x_remove(wsroot .. "/" .. ns[i]) end
+    pal.x_remove(wsroot)
+  end
+  wipe_hist(); wipe_ws()
+  pal.write_file(root .. "/main.lua", "return {}\n")
+
+  ed.launch(root)
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  trace._workspace_root = wsroot
+  local b = pal.buf("st.cliptrust", 8)
+  local irec = ("\0"):rep(10)
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  for i = 1, 16 do
+    b:i32(0, i * 3); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+  end
+  trace.history_drain()
+  local clip = root .. "/trust.ctrace"
+  check(trace.export_clip(f0 + 3, f0 + 12, clip), "clip-trust: exported a clip")
+  local live_lo, live_hi = trace.ring_range()
+
+  -- ---- identity: computed without executing, stable, EPOC-sensitive ----
+  local h1 = trace.clip_code_hash(clip)
+  check(type(h1) == "string" and #h1 == 64 and h1:match("^%x+$") ~= nil,
+        "clip-trust: the code identity is a sha256 hex digest")
+  check(trace.clip_code_hash(clip) == h1,
+        "clip-trust: the identity is deterministic")
+  -- an appended EPOC is code a replay would ALSO run: it must change identity
+  local blob = pal.read_file(clip)
+  local function epoc_chunk(fpath)
+    local p = string.pack("<I4", 1)
+              .. string.pack("<s4s4s4", "cm.evil", fpath, "return {}")
+    return "EPOC" .. string.pack("<I4I4", 1, #p) .. p
+  end
+  local tampered = root .. "/tampered.ctrace"
+  pal.write_file(tampered, blob .. epoc_chunk("/x"))
+  local h2 = trace.clip_code_hash(tampered)
+  check(h2 ~= nil and h2 ~= h1,
+        "clip-trust: an appended EPOC revision changes the identity")
+  local tampered2 = root .. "/tampered2.ctrace"
+  pal.write_file(tampered2, blob .. epoc_chunk("/elsewhere"))
+  check(trace.clip_code_hash(tampered2) == h2,
+        "clip-trust: the recorded file path never enters the identity")
+
+  -- ---- refusals: bytes that can't be a replay name the reason ----
+  local none, nwhy = trace.clip_code_hash(root .. "/absent.ctrace")
+  check(none == nil and nwhy ~= nil and nwhy:find("read") ~= nil,
+        "clip-trust: a missing file refuses with the reason")
+  pal.write_file(root .. "/junk.ctrace", "not a container")
+  local j, jwhy = trace.clip_code_hash(root .. "/junk.ctrace")
+  check(j == nil and jwhy ~= nil,
+        "clip-trust: junk bytes refuse (bad container)")
+  local w = cm.require("cm.chunk").writer("CTRC")
+  w.chunk("HEAD", 1, "")
+  pal.write_file(root .. "/nosnap.ctrace", w.result())
+  local s, swhy = trace.clip_code_hash(root .. "/nosnap.ctrace")
+  check(s == nil and swhy ~= nil and swhy:find("SNAP") ~= nil,
+        "clip-trust: a SNAP-less container refuses honestly")
+
+  -- ---- the session trust set ----
+  check(trace.clip_trusted(h1),
+        "clip-trust: this session's own export is pre-trusted (write_trace)")
+  trace._trust_reset()
+  check(not trace.clip_trusted(h1),
+        "clip-trust: a fresh session trusts nothing")
+  check(not trace.clip_trusted(nil),
+        "clip-trust: a nil identity is never trusted")
+  trace.trust_clip(h1)
+  check(trace.clip_trusted(h1), "clip-trust: an explicit confirm trusts")
+
+  -- ---- the drop door: untrusted parks a prompt; nothing runs ----
+  trace._trust_reset()
+  check(not rewind.drop_clip(ed, clip),
+        "clip-trust: an untrusted drop does NOT open the clip")
+  local r = ed.g.rw
+  check(r ~= nil and r.trust ~= nil and r.trust.hash == h1
+        and r.trust.path == clip,
+        "clip-trust: the drop parks a pending prompt naming the clip")
+  check(not scrub.on and not trace.has_stash(),
+        "clip-trust: nothing was stashed, mounted, or run")
+  check(rewind.escape(ed) and r.trust == nil,
+        "clip-trust: Esc cancels the prompt first")
+  check(not scrub.on and not trace.has_stash(),
+        "clip-trust: cancel runs nothing")
+  rewind.drop_clip(ed, clip)
+  check(r.trust ~= nil,
+        "clip-trust: a later drop asks again (cancel is not distrust-forever)")
+
+  -- ---- confirm: trust_run opens through the same door ----
+  check(rewind.trust_run(ed), "clip-trust: run confirms and opens the clip")
+  check(r.trust == nil, "clip-trust: the prompt is consumed by run")
+  scrub.frame() -- chrome phase: do_load stashes the live ring + mounts
+  check(scrub.is_clip() and trace.has_stash(),
+        "clip-trust: the confirmed clip opens as the normal editor clip")
+  scrub.close()
+  local rlo, rhi = trace.ring_range()
+  check(not scrub.is_clip() and not trace.has_stash()
+        and rlo == live_lo and rhi == live_hi,
+        "clip-trust: dismissal restores the untouched live ring")
+
+  -- ---- the confirmed identity stays trusted for the session ----
+  check(rewind.drop_clip(ed, clip) and r.trust == nil,
+        "clip-trust: a re-drop of the confirmed identity opens directly")
+  scrub.frame()
+  check(scrub.is_clip(), "clip-trust: ...as a mounted clip")
+  scrub.close()
+
+  -- restore the world for the tests that follow
+  trace._trust_reset()
+  wipe_hist(); wipe_ws()
+  for _, n in ipairs({ "main.lua", "trust.ctrace", "tampered.ctrace",
+      "tampered2.ctrace", "junk.ctrace", "nosnap.ctrace" }) do
+    pal.x_remove(root .. "/" .. n)
+  end
+  ed.on, ed.doc, ed.root = save_on, save_doc, save_root
+  ed.parked, ed.g.stash = false, nil
+  ed.g.root_stash, ed.g.root_stashed = nil, nil
+  if ed.g.rw then
+    ed.g.rw.trust, ed.g.rw.trust_rect = nil, nil
+    ed.g.rw.crash, ed.g.rw.open = nil, nil
+  end
+  view.mode = save_mode
+  cm.main.after_restore = save_after
+  trace._workspace_root = save_ws
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  scrub.live_snap = nil
+  sim:i64(0, f0)
+  pal.buf_free("st.cliptrust")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -10525,6 +10694,7 @@ function game.init()
   t_clip_lifecycle()
   t_crash_resolve()
   t_crash_focus()
+  t_clip_trust()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
