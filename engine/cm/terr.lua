@@ -86,6 +86,27 @@ function T.sample(t, wx, wz)
   return h00 + (h01 - h00) * fz + (h11 - h01) * fx
 end
 
+-- height at world (wx, wz) from a PURE lattice-vertex height function
+-- hfn(vx, vz) instead of a stored grid — the streaming-world model
+-- (COSMIC3D.md §10): the sim can stand anywhere in a world of any size
+-- with zero resident terrain state. Triangle-exact against T.emit's
+-- NW->SE diagonal exactly like T.sample; the caller clamps wx/wz to its
+-- world bounds (this function has no edge knowledge).
+function T.sample_fn(hfn, tile, wx, wz)
+  local x = (wx / tile) // 1
+  local z = (wz / tile) // 1
+  local fx = m.clamp(wx / tile - x, 0, 1)
+  local fz = m.clamp(wz / tile - z, 0, 1)
+  local h00 = hfn(x, z)
+  local h11 = hfn(x + 1, z + 1)
+  if fx >= fz then
+    local h10 = hfn(x + 1, z)
+    return h00 + (h10 - h00) * fx + (h11 - h10) * fz
+  end
+  local h01 = hfn(x, z + 1)
+  return h00 + (h01 - h00) * fz + (h11 - h01) * fx
+end
+
 -- ---- emission (render-class) ---------------------------------------------
 
 local pack = string.pack
@@ -123,6 +144,12 @@ end
 --            are NOT defaulted here — the openworld look has its own light)
 --   flat_y = normal-flattening divisor (default 2: softer than geometric,
 --            the proto "painted" shading)
+--   ox, oz = LATTICE offset of this grid's origin in a larger world
+--            (default 0): vertex positions, jitter hashes, and the detail
+--            UV all use world vertex coords (position (ox+x)*tile), so a
+--            chunk emitted from a window of one big world lands in place
+--            with no transform and agrees byte-exactly with its neighbors
+--            along shared borders (COSMIC3D.md §10).
 -- Returns tris emitted.
 function T.emit(out, t, opts)
   local s = t.tile
@@ -130,6 +157,7 @@ function T.emit(out, t, opts)
   local jit = opts.jitter or 0.35
   local seed = opts.seed or 9
   local flat = opts.flat_y or 2.0
+  local ox, oz = opts.ox or 0, opts.oz or 0
   local ntris = 0
   for z = 0, t.h - 1 do
     for x = 0, t.w - 1 do
@@ -143,18 +171,19 @@ function T.emit(out, t, opts)
       local nl = m.sqrt(nx * nx + flat * flat + nz * nz)
       nx, nz = nx / nl, nz / nl
       local ny = flat / nl
-      -- per-corner banded color; jitter hashes the shared VERTEX so seams
-      -- agree across tiles
-      local c00 = band_col(bands, h00 + (hash(seed, x, z) - 0.5) * jit)
-      local c10 = band_col(bands, h10 + (hash(seed, x + 1, z) - 0.5) * jit)
-      local c01 = band_col(bands, h01 + (hash(seed, x, z + 1) - 0.5) * jit)
-      local c11 = band_col(bands, h11 + (hash(seed, x + 1, z + 1) - 0.5) * jit)
-      local x0, x1, z0, z1 = x * s, (x + 1) * s, z * s, (z + 1) * s
+      -- per-corner banded color; jitter hashes the shared WORLD vertex so
+      -- seams agree across tiles (and across chunk borders under ox/oz)
+      local wx, wz = ox + x, oz + z
+      local c00 = band_col(bands, h00 + (hash(seed, wx, wz) - 0.5) * jit)
+      local c10 = band_col(bands, h10 + (hash(seed, wx + 1, wz) - 0.5) * jit)
+      local c01 = band_col(bands, h01 + (hash(seed, wx, wz + 1) - 0.5) * jit)
+      local c11 = band_col(bands, h11 + (hash(seed, wx + 1, wz + 1) - 0.5) * jit)
+      local x0, x1, z0, z1 = wx * s, (wx + 1) * s, wz * s, (wz + 1) * s
       -- detail uv: one tile per tile, continuous in world space
-      local A = vert(x0, h00, z0, x, z, c00, nx, ny, nz, sun, amb)
-      local B = vert(x1, h10, z0, x + 1, z, c10, nx, ny, nz, sun, amb)
-      local C = vert(x1, h11, z1, x + 1, z + 1, c11, nx, ny, nz, sun, amb)
-      local D = vert(x0, h01, z1, x, z + 1, c01, nx, ny, nz, sun, amb)
+      local A = vert(x0, h00, z0, wx, wz, c00, nx, ny, nz, sun, amb)
+      local B = vert(x1, h10, z0, wx + 1, wz, c10, nx, ny, nz, sun, amb)
+      local C = vert(x1, h11, z1, wx + 1, wz + 1, c11, nx, ny, nz, sun, amb)
+      local D = vert(x0, h01, z1, wx, wz + 1, c01, nx, ny, nz, sun, amb)
       out[#out + 1] = A .. B .. C .. A .. C .. D -- NW->SE diagonal: T.sample
       ntris = ntris + 2
     end
@@ -165,15 +194,17 @@ end
 -- flat water plane at level y over the whole grid, unlit (zero normal, the
 -- proto rule), alpha-blended — draw as a blend segment (flags 4) after all
 -- opaque. Chunked so per-vertex fog stays honest. Returns tris.
-function T.emit_water(out, t, y, col, alpha, step)
+function T.emit_water(out, t, y, col, alpha, step, ox, oz)
   step = step or 8
+  ox, oz = ox or 0, oz or 0 -- lattice offset, same contract as T.emit
   local s = t.tile
   local ntris = 0
   for z = 0, t.h - 1, step do
     for x = 0, t.w - 1, step do
       local x1t = m.min(x + step, t.w)
       local z1t = m.min(z + step, t.h)
-      local x0, x1, z0, z1 = x * s, x1t * s, z * s, z1t * s
+      local x0, x1 = (ox + x) * s, (ox + x1t) * s
+      local z0, z1 = (oz + z) * s, (oz + z1t) * s
       local A = vert(x0, y, z0, 0, 0, col, 0, 0, 0, nil, nil, alpha)
       local B = vert(x1, y, z0, 0, 0, col, 0, 0, 0, nil, nil, alpha)
       local C = vert(x1, y, z1, 0, 0, col, 0, 0, 0, nil, nil, alpha)
