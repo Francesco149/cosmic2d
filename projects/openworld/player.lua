@@ -95,7 +95,12 @@ end
 
 -- ctl: wishx/wishz (camera-relative unit move vector or 0,0),
 --      jump_pressed (edge)
-function M.step(ctl)
+-- dyncol: extra AABBs that move (the solid NPCs — main passes
+--      npc.boxes()); they clamp and land exactly like world.colliders.
+--      Positions are the buffers' pre-npc.step values (one sim frame
+--      behind the draw) — at amble speeds that's 0.04u, and it keeps
+--      the step order player -> npc that the exchange depends on.
+function M.step(ctl, dyncol)
   local k = state.doc.knobs.move
   local feel = state.doc.knobs.feel
 
@@ -172,30 +177,34 @@ function M.step(ctl)
   -- from the pre-move side, EPS side tests, squeezed overlaps clamp
   -- nothing) and clamp to the world edge
   local sx, sz = world.size()
-  local C = world.colliders
+  local GROUPS = { world.colliders, dyncol or {} }
 
   local nx = m.clamp(x + vx * DT, 2, sx - 2)
-  for _, b in ipairs(C) do
-    if overlaps(b, nx, y, z, hw, hh) then
-      if x + hw <= b[1] + EPS then
-        nx = b[1] - hw
-        vx = 0
-      elseif x - hw >= b[4] - EPS then
-        nx = b[4] + hw
-        vx = 0
+  for _, C in ipairs(GROUPS) do
+    for _, b in ipairs(C) do
+      if overlaps(b, nx, y, z, hw, hh) then
+        if x + hw <= b[1] + EPS then
+          nx = b[1] - hw
+          vx = 0
+        elseif x - hw >= b[4] - EPS then
+          nx = b[4] + hw
+          vx = 0
+        end
       end
     end
   end
   x = nx
   local nz = m.clamp(z + vz * DT, 2, sz - 2)
-  for _, b in ipairs(C) do
-    if overlaps(b, x, y, nz, hw, hh) then
-      if z + hw <= b[3] + EPS then
-        nz = b[3] - hw
-        vz = 0
-      elseif z - hw >= b[6] - EPS then
-        nz = b[6] + hw
-        vz = 0
+  for _, C in ipairs(GROUPS) do
+    for _, b in ipairs(C) do
+      if overlaps(b, x, y, nz, hw, hh) then
+        if z + hw <= b[3] + EPS then
+          nz = b[3] - hw
+          vz = 0
+        elseif z - hw >= b[6] - EPS then
+          nz = b[6] + hw
+          vz = 0
+        end
       end
     end
   end
@@ -212,11 +221,13 @@ function M.step(ctl)
   -- own landing plane; the bounce box-top rule, feet-at-or-above only,
   -- EPS on every f32 test per D3D-010). Walking off the top exceeds
   -- k.snap and becomes an ordinary fall.
-  for _, b in ipairs(C) do
-    if b[5] > g and y >= b[5] - EPS
-       and x + hw > b[1] + EPS and x - hw < b[4] - EPS
-       and z + hw > b[3] + EPS and z - hw < b[6] - EPS then
-      g = b[5]
+  for _, C in ipairs(GROUPS) do
+    for _, b in ipairs(C) do
+      if b[5] > g and y >= b[5] - EPS
+         and x + hw > b[1] + EPS and x - hw < b[4] - EPS
+         and z + hw > b[3] + EPS and z - hw < b[6] - EPS then
+        g = b[5]
+      end
     end
   end
   local ny = y + vy * DT

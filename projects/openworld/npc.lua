@@ -109,6 +109,25 @@ function M.init()
   end
 end
 
+-- the NPCs' collider AABBs (human verdict 2026-07-17: "make the npcs
+-- solid so I can't walk through them"). Derived per call from the sim
+-- buffers — the boxes ride the wanderer. D3D-011 rule: the box stays
+-- INSIDE the round visual (body lathe max r 0.82 -> hw 0.575), only the
+-- visual is round. main passes these into player.step, so the player
+-- clamps against them exactly like tree trunks — including landing on
+-- top (an NPC head is a perch, the box-top rule).
+function M.boxes()
+  local k = state.doc.knobs.npc
+  local hw = k.cw / 2
+  local out = {}
+  for i, n in ipairs(M.list) do
+    local x, z = n.buf:f32(O.x), n.buf:f32(O.z)
+    local y = world.ground(x, z)
+    out[i] = { x - hw, y, z - hw, x + hw, y + k.ch, z + hw }
+  end
+  return out
+end
+
 local function greeting_since(n) -- frames since the greet began, or nil
   local s, e = n.buf:f32(O.gstart), n.buf:f32(O.gend)
   if s <= e then return nil end
@@ -162,12 +181,21 @@ local function step_one(n)
     end
     local step = m.min(k.speed * DT, dist)
     if dist > 1e-4 then
-      b:f32(O.x, x + wx / dist * step)
-      b:f32(O.z, z + wz / dist * step)
-      -- the walk clip rides GROUND DISTANCE (the player's no-foot-slide
-      -- rule); knobs.move.stride keeps both gaits in the same unit
-      b:f32(O.phase,
-            (b:f32(O.phase) + step / state.doc.knobs.move.stride) % 1)
+      local nx, nz = x + wx / dist * step, z + wz / dist * step
+      -- solid NPCs can't plow through a solid player: if this step would
+      -- close inside stop_r on the player, wait instead (still facing
+      -- route-ward — it reads as queuing, and it resumes the moment the
+      -- player steps aside). Direction-aware so walking AWAY from a
+      -- close player never freezes.
+      local pd2 = (nx - px) * (nx - px) + (nz - pz) * (nz - pz)
+      if pd2 >= k.stop_r * k.stop_r or pd2 >= d2 then
+        b:f32(O.x, nx)
+        b:f32(O.z, nz)
+        -- the walk clip rides GROUND DISTANCE (the player's no-foot-slide
+        -- rule); knobs.move.stride keeps both gaits in the same unit
+        b:f32(O.phase,
+              (b:f32(O.phase) + step / state.doc.knobs.move.stride) % 1)
+      end
     end
     target = m.atan2(wx, wz)
   else

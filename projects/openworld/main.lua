@@ -80,6 +80,10 @@ local KNOBS = {
     speed = 2.2,   -- a walker's amble along its route
     arrive = 0.35, -- waypoint arrival radius
     hold = 180,    -- a walker stops this long per greet, then walks on
+    -- solid bodies (human verdict 2026-07-17): the collider AABB inside
+    -- the round visual (body lathe max r 0.82), and the walker's
+    -- won't-plow-through-you radius
+    cw = 1.15, ch = 1.7, stop_r = 1.6,
   },
   stars = { -- the wander's goal (stars.lua)
     r = 1.3,        -- pickup radius (3D, vs the mascot's center)
@@ -390,7 +394,7 @@ local function cam_step()
 end
 
 function game.step()
-  player.step(build_ctl())
+  player.step(build_ctl(), npc.boxes()) -- NPCs are solid (pre-step boxes)
   npc.step() -- after the player: the exchange reads this step's position
   stars.step() -- likewise: pickup tests run on this step's position
   cam_step()
