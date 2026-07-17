@@ -64,9 +64,11 @@ A map is a **file asset** like a sprite — `maps/rim_hub.map` — a
   names exist to address placements from code, §4), then **0..n
   attached colliders** (same encoding as COLL, coords **relative to
   the placement origin** — they ride the placement when it moves).
-- **LAYR** (optional, future): named layers with parallax factors.
-  V1 renders one implicit layer; the format carries the slot so
-  GRAYBOX's deferred parallax/decor lands here without a version bump.
+- **LAYR**: named layers, since D093 with per-layer parallax factors
+  (v2 adds `f par_x, f par_y` per layer; v1 stays the canonical
+  encoding for all-world-speed maps so historical bytes never move).
+  `draw_places` applies parallax per layer through `cm.gfx.layer`;
+  colliders/markers/refs stay world-space.
 - **MRKR** (one per marker): rect i32 px, kind (string: spawn / portal
   / prop / arena / poi / secret / shop / npc…), label, note, extras as
   flat k=v string pairs (`to=south_trail at=from_rim`).
@@ -193,7 +195,8 @@ bodies at R7b.
 
 ## 5. Rendering + the graybox language
 
-Draw order per frame: bg tint/parallax (future LAYR) → placements in
+Draw order per frame: bg tint → placements in layer order, each layer
+at its LAYR parallax depth (D093) — i.e. placements in
 file order (`.spr`/`.png` = one quad; `.tm` = the existing culled
 batched-quads path per visible cell — "behaves as one baked sprite"
 means *placement/move/z as a unit*, not literally pre-baked; a real

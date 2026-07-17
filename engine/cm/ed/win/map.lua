@@ -1376,10 +1376,12 @@ local function draw_layer_panel(win, ed, p, doc, x0, y0, pw, ph, z, fpx, ctx)
     return hot and i.clicked[1]
   end
 
-  -- rows: front (highest index) at the top
+  -- rows: front (highest index) at the top (two footer rows below:
+  -- parallax, then the add/del/reorder/rename strip)
   local footer_y = y0 + ph - rowh - pad
+  local par_y = footer_y - rowh - 2 * z
   for k = #doc.layers, 1, -1 do
-    if y + rowh > footer_y - 2 * z then
+    if y + rowh > par_y - 2 * z then
       pal.x_ig_text(x, y, fpx * 0.75, COL.dim, "…", 0)
       break
     end
@@ -1409,6 +1411,30 @@ local function draw_layer_panel(win, ed, p, doc, x0, y0, pw, ph, z, fpx, ctx)
     pal.x_ig_clip_pop()
     if namehot and i.clicked[1] then win.layer = k; ctx.touch() end
     y = y + rowh + 1 * z
+  end
+
+  -- parallax row: the active layer's LAYR v2 factors (1 = world speed,
+  -- 0.5 = half-speed backdrop, 0 = screen-fixed). Presentation-only —
+  -- draw_places multiplies the play camera; the editor canvas always
+  -- shows authored positions. Journaled like every other layer edit.
+  if not ctx.occluded then
+    local La = doc.layers[math.min(#doc.layers, active)]
+    pal.x_ig_text(x, par_y + 1.5 * z, fpx * 0.8, COL.dim, "par", 0)
+    local lw = pal.x_ig_text_size("par", fpx * 0.8, 0) + 4 * z
+    local pfw = (pw - pad * 2 - lw - 2 * z) * 0.5
+    for a, key in ipairs({ "par_x", "par_y" }) do
+      local txt, _, _, st = pal.x_ig_edit {
+        id = "maplyr" .. key .. win.id, x = x + lw + (a - 1) * (pfw + 2 * z),
+        y = par_y + 1, w = pfw, h = rowh - 2,
+        text = ("%g"):format(La[key] or 1), px = fpx * 0.8, font = 1,
+        enter = true, multiline = false,
+      }
+      if st and st.submit and tonumber(txt) then
+        local v = tonumber(txt)
+        La[key] = v ~= 1 and v or nil
+        commit(ed, win.path)
+      end
+    end
   end
 
   -- footer: + add · x del · ^ v reorder · rename(active)

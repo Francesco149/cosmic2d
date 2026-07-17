@@ -1622,7 +1622,7 @@ local function t_map()
   local doc = {
     name = "t", w = 320, h = 200, grid = 8, bg = { 0.5, 0.25, 1 },
     layers = {
-      { name = "bg", vis = true, on = true },
+      { name = "bg", vis = true, on = true, par_x = 0.5, par_y = 0.25 },
       { name = "props", vis = false, on = true },
       { name = "overlay", vis = true, on = false },
     },
@@ -1658,6 +1658,10 @@ local function t_map()
         == "props" and d.layers[2].vis == false and d.layers[3].on == false
         and d.layers[1].vis == true and d.layers[1].on == true,
         "map: LAYR round trip (names + vis/on flags)")
+  check(d.layers[1].par_x == 0.5 and d.layers[1].par_y == 0.25
+        and d.layers[2].par_x == nil and d.layers[2].par_y == nil
+        and d.layers[3].par_x == nil,
+        "map: LAYR v2 parallax pair round trips (1 stays nil)")
   check(#d.colliders == 3 and d.colliders[1].kind == "chain"
         and d.colliders[1].verts[4] == 180 and d.colliders[2].kind == "quad"
         and d.colliders[2].w == 40 and d.colliders[3].kind == "circle"
@@ -1697,6 +1701,37 @@ local function t_map()
         and v1d.places[1].layer == 1 and v1d.places[1].vis == false
         and v1d.places[1].x == 5 and v1d.places[1].anim == nil,
         "map: legacy PLCE v1 + no LAYR migrates (hidden->vis=false, layer 1)")
+
+  -- legacy LAYR v1 bytes (no parallax pair) read as par = 1 (nil)
+  local wl = chunklib.writer("CMAP")
+  wl.chunk("HEAD", 1, string.pack("<i4i4I4fffs4", 32, 32, 8, 1, 1, 1, "l1"))
+  wl.chunk("LAYR", 1, string.pack("<I2I1s4I1s4", 2, 3, "back", 3, "front"))
+  wl.chunk("TAIL", 1, "")
+  local l1d = map.decode(wl.result())
+  check(#l1d.layers == 2 and l1d.layers[1].name == "back"
+        and l1d.layers[1].par_x == nil and l1d.layers[2].par_y == nil
+        and l1d.layers[1].vis == true and l1d.layers[1].on == true,
+        "map: legacy LAYR v1 reads (parallax defaults to 1)")
+
+  -- the canonical-version rule (the FLGS idiom): all-world-speed maps
+  -- write LAYR v1 (historical bytes untouched); any parallax → v2
+  local function layr_version(bytes)
+    for _, c in ipairs(chunklib.read(bytes, "CMAP")) do
+      if c.tag == "LAYR" then return c.version end
+    end
+  end
+  local pd = { name = "p", w = 16, h = 16, grid = 8, colliders = {},
+               places = {}, markers = {},
+               layers = { { name = "a", vis = true, on = true } } }
+  check(layr_version(map.encode(pd)) == 1,
+        "map: all-world-speed LAYR stays canonical v1")
+  pd.layers[1].par_x = 0.5
+  check(layr_version(map.encode(pd)) == 2,
+        "map: any parallax factor promotes LAYR to v2")
+  pd.layers[1].par_x = nil
+  pd.layers[1].par_y = 2
+  check(layr_version(map.encode(pd)) == 2,
+        "map: par_y alone promotes LAYR to v2")
 
   -- FLGS (§5 per-map fill switch): written only when set, round-trips
   local fd = { name = "f", w = 32, h = 32, grid = 8,

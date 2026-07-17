@@ -9,8 +9,17 @@
 --   HEAD v1: <i4 w> <i4 h> <I4 grid px> <f f f bg tint> <s4 name>
 --   FLGS v1 (optional, only when nonzero): <I4 bit0 nofill — the in-game
 --            collider fill is off; art placements own the visuals (§5)>
---   LAYR v1: <I2 n> n * ( <I1 flags bit0 vis(editor), bit1 on(game)>
---            <s4 name> ) — the named layers, in z order (back → front).
+--   LAYR v2: <I2 n> n * ( <I1 flags bit0 vis(editor), bit1 on(game)>
+--            <s4 name> <f par_x> <f par_y> ) — the named layers, in z
+--            order (back → front), with per-layer PARALLAX factors
+--            (1 = world speed, 0.5 = half-speed backdrop, 0 = screen-
+--            fixed; MAPS.md §2's reserved slot). Parallax is
+--            presentation-only: draw_places multiplies the camera per
+--            layer, while colliders/refs/markers stay world-space.
+--   LAYR v1: same without the two floats (par = 1). CANONICAL for an
+--            all-world-speed map (the FLGS idiom: v2 is written only
+--            when some layer's parallax differs from 1), so maps that
+--            never use the feature keep their exact historical bytes.
 --            Absent = one default layer {name="main", vis=on=true} that
 --            all placements fall onto (old maps upgrade transparently).
 --   COLL v1: one free collider (col_pack below) — layer-independent
@@ -153,7 +162,9 @@ end
 -- ---- codec ----
 
 -- doc = { name=, w=, h=, grid=, bg = {r,g,b}, nofill=,
---         layers = { {name=, vis=bool, on=bool}, ... },  -- 1-based, z order
+--         layers = { {name=, vis=bool, on=bool,
+--                      par_x=, par_y=}, ... },  -- 1-based, z order;
+--                                               -- par nil = 1 (world speed)
 --         colliders = {c...},
 --         places = { {path=, x=, y=, layer=idx, flip=, vis=bool,
 --                     name=, anim=, cols={c...}} },
@@ -169,13 +180,25 @@ function M.encode(doc)
   -- per-map switch: art placements have taken over the visuals)
   if doc.nofill then w.chunk("FLGS", 1, pack("<I4", 1)) end
   local layers = doc.layers or M.default_layers()
+  -- v2 (with the parallax pair) is written ONLY when a layer actually
+  -- moves at non-world speed — the FLGS idiom. An all-world-speed map
+  -- keeps its exact v1 bytes, so historical canon (committed maps,
+  -- captured mapstate buffers, traces) is untouched by the feature.
+  local par
+  for _, L in ipairs(layers) do
+    if (L.par_x or 1) ~= 1 or (L.par_y or 1) ~= 1 then par = true break end
+  end
   local lp = { pack("<I2", #layers) }
   for _, L in ipairs(layers) do
-    lp[#lp + 1] = pack("<I1s4",
-      ((L.vis ~= false) and 1 or 0) | ((L.on ~= false) and 2 or 0),
-      L.name or "")
+    local flags = ((L.vis ~= false) and 1 or 0) | ((L.on ~= false) and 2 or 0)
+    if par then
+      lp[#lp + 1] = pack("<I1s4ff", flags, L.name or "",
+                         L.par_x or 1, L.par_y or 1)
+    else
+      lp[#lp + 1] = pack("<I1s4", flags, L.name or "")
+    end
   end
-  w.chunk("LAYR", 1, table.concat(lp))
+  w.chunk("LAYR", par and 2 or 1, table.concat(lp))
   for _, c in ipairs(doc.colliders or {}) do
     w.chunk("COLL", 1, col_pack(c))
   end
@@ -219,14 +242,20 @@ function M.decode(bytes)
     elseif c.tag == "FLGS" and c.version == 1 then
       local fl = unpack("<I4", c.payload)
       doc.nofill = fl & 1 ~= 0 or nil
-    elseif c.tag == "LAYR" and c.version == 1 then
+    elseif c.tag == "LAYR" and (c.version == 1 or c.version == 2) then
       local n, pos = unpack("<I2", c.payload, 1)
       doc.layers = {}
       for _ = 1, n do
         local flags, name
         flags, name, pos = unpack("<I1s4", c.payload, pos)
-        doc.layers[#doc.layers + 1] =
-          { name = name, vis = flags & 1 ~= 0, on = flags & 2 ~= 0 }
+        local L = { name = name, vis = flags & 1 ~= 0, on = flags & 2 ~= 0 }
+        if c.version >= 2 then -- v2: the parallax pair (1 stays nil)
+          local px, py
+          px, py, pos = unpack("<ff", c.payload, pos)
+          L.par_x = px ~= 1 and px or nil
+          L.par_y = py ~= 1 and py or nil
+        end
+        doc.layers[#doc.layers + 1] = L
       end
     elseif c.tag == "COLL" and c.version == 1 then
       doc.colliders[#doc.colliders + 1] = col_unpack(c.payload, 1)
@@ -988,24 +1017,43 @@ function M.place_frame(path, anim_name, elapsed)
   return fi, info.w, info.h, info.frames
 end
 
--- draw the placements in file order (= z order) with gfx.layer(1) active,
--- camera-culled; flip_x mirrors via swapped u. Art stacks on top of the
--- collider fill until a per-map flag turns the fill off (§5).
+-- draw the placements in file order (= z order) with gfx.layer(1) active
+-- and gfx.camera == (camx, camy), camera-culled; flip_x mirrors via
+-- swapped u. Art stacks on top of the collider fill until a per-map flag
+-- turns the fill off (§5). Layers with LAYR v2 parallax factors draw at
+-- their own gfx parallax depth (culled with the layer-effective camera)
+-- and gfx.layer(1) is restored afterwards; an all-world-speed map never
+-- touches gfx.layer, so the caller's translation stays byte-authoritative.
 function M.draw_places(inst, camx, camy)
   inst = M.sync(inst)
   if not inst then return end
   local vw, vh = pal.gfx_size()
   local doc = inst.doc
   local tmap
+  local par -- any layer at non-world speed? (presentation only)
+  for _, L in ipairs(doc.layers or {}) do
+    if (L.par_x or 1) ~= 1 or (L.par_y or 1) ~= 1 then par = true break end
+  end
+  local gfx = par and cm.require("cm.gfx") or nil
+  local cur -- the layer whose parallax depth is active
+  local ecx, ecy = camx, camy -- the active layer's effective camera
   for _, pi in ipairs(M.z_order(doc)) do
     local p = doc.places[pi]
     -- draw the image only for a live layer + a visible visual placement;
     -- off-layer / novis / non-visual placements are refs (no image)
     if place_on(doc, p) and p.vis ~= false then
+      if par and (p.layer or 1) ~= cur then
+        cur = p.layer or 1
+        local L = doc.layers[cur]
+        local px = L and L.par_x or 1
+        local py = L and L.par_y or 1
+        gfx.layer(px, py)
+        ecx, ecy = camx * px, camy * py
+      end
       local rec = kind_of(p.path) == "tm" and place_tm(inst, p) or nil
       if rec then -- a .tm: tmap.draw culls per cell; flip is a no-op
         tmap = tmap or cm.require("cm.tmap")
-        tmap.draw(rec.doc, rec.tex, p.x, p.y, camx, camy)
+        tmap.draw(rec.doc, rec.tex, p.x, p.y, ecx, ecy)
       else
         local t = kind_of(p.path) ~= "tm" and place_tex(inst, p) or nil
         if t then
@@ -1013,8 +1061,8 @@ function M.draw_places(inst, camx, camy)
           local fi, fw, fh = M.place_frame(p.path, p.anim,
             cm.require("cm.state").frame())
           local dw, dh = fi and fw or t.w, fi and fh or t.h
-          if p.x < camx + vw and p.x + dw > camx
-             and p.y < camy + vh and p.y + dh > camy then
+          if p.x < ecx + vw and p.x + dw > ecx
+             and p.y < ecy + vh and p.y + dh > ecy then
             local su0, su1 = 0, 1
             if fi then su0, su1 = fi * fw / t.w, (fi + 1) * fw / t.w end
             if p.flip then su0, su1 = su1, su0 end
@@ -1022,11 +1070,12 @@ function M.draw_places(inst, camx, camy)
           end
         elseif is_visual(p.path) then
           -- a dangling visual (deleted/typo): the checkerboard, loudly
-          M.draw_null(inst, p, camx, camy)
+          M.draw_null(inst, p, ecx, ecy)
         end
       end
     end
   end
+  if par then gfx.layer(1) end
 end
 
 -- the in-game null-ref placeholder: a small magenta/black checkerboard at

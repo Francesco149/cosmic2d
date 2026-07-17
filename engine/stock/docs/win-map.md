@@ -54,6 +54,12 @@ Name a layer and your code can reach its placements by name via
 `cm.map.ref("name")`. Clicking a placement makes its layer active; **lock**
 confines picking and new drops to the active layer.
 
+The **par** row edits the active layer's parallax factors (x, then y):
+1 = world speed, 0.5 = a half-speed backdrop, 0 = screen-fixed. The game
+applies them in `draw_places`; the editor canvas always shows authored
+positions. Parallax is visual only — colliders and markers stay
+world-space.
+
 ## Grouping
 
 - **ctrl+g** groups the selection — they move together; a faint hull shows the
