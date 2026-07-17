@@ -497,6 +497,148 @@ local function t_actor()
         "actor: same ops, same canonical bytes")
 end
 
+-- ---- cm.camera: follow/bounds/shake/convert over a plain doc table (A5/D092) ----
+
+local function t_camera()
+  local camera = cm.require("cm.camera")
+  local state_m = cm.require("cm.state")
+  local gw, gh = pal.gfx_size()
+
+  -- new: view-size defaults from the project FOV; explicit fields win
+  local c = camera.new()
+  check(c.x == 0 and c.y == 0 and c.w == gw and c.h == gh,
+        "camera: new defaults to the FOV at 0,0")
+  c = camera.new({ x = 5, y = 6, w = 320, h = 180 })
+  check(c.x == 5 and c.y == 6 and c.w == 320 and c.h == 180,
+        "camera: explicit new fields")
+
+  -- center: the cut. Unbounded is exact; bounds clamp it.
+  camera.center(c, 500, 300)
+  check(c.x == 500 - 160 and c.y == 300 - 90, "camera: center is exact")
+  camera.bounds(c, 0, 0, 1000, 400)
+  camera.center(c, 0, 0)
+  check(c.x == 0 and c.y == 0, "camera: center clamps to bounds")
+  camera.center(c, 2000, 2000)
+  check(c.x == 1000 - 320 and c.y == 400 - 180,
+        "camera: center clamps to the far edge")
+
+  -- bounds: setting clamps NOW; a small span centers; clearing frees
+  c.x, c.y = -50, -50
+  camera.bounds(c, 0, 0, 1000, 400)
+  check(c.x == 0 and c.y == 0, "camera: bounds clamps immediately")
+  camera.bounds(c, 0, 0, 100, 180)
+  check(c.x == (100 - 320) / 2 and c.y == 0,
+        "camera: a span smaller than the view centers over it")
+  camera.bounds(c)
+  check(c.bx == nil and c.bw == nil, "camera: bounds clear")
+  camera.center(c, -400, -400)
+  check(c.x == -400 - 160, "camera: unbounded roams free")
+
+  -- follow: default is snap (lerp 1, dead 0)
+  c = camera.new({ w = 320, h = 180 })
+  camera.follow(c, 100, 50)
+  check(c.x == 100 - 160 and c.y == 50 - 90, "camera: default follow snaps")
+
+  -- follow: the exact demo lerp — err * lerp beyond a zero deadzone
+  c = camera.new({ w = 320, h = 180 })
+  local tx = 100
+  local want = 0 + ((tx - (0 + 160)) * 0.25)
+  camera.follow(c, tx, 90, { lerp = 0.25 })
+  check(c.x == want, "camera: follow lerp math is exact")
+  check(c.y == 0, "camera: centered axis holds still")
+
+  -- deadzone: inside holds, beyond eases by the excess only, both signs
+  c = camera.new({ w = 320, h = 180 })
+  camera.follow(c, 160, 90 + 26, { lerp = 0.5, dead = 26 })
+  check(c.x == 0 and c.y == 0, "camera: error inside the deadzone holds")
+  camera.follow(c, 160, 90 + 30, { lerp = 0.5, dead = 26 })
+  check(c.y == (30 - 26) * 0.5, "camera: eases by the excess beyond dead")
+  camera.follow(c, 160 - 40, 90 + 30 - c.y, { lerp = 0.5, dead = 26 })
+  check(c.x == -(40 - 26) * 0.5, "camera: negative side is symmetric")
+
+  -- per-axis knobs + the lookahead offset
+  c = camera.new({ w = 320, h = 180 })
+  camera.follow(c, 160, 100, { lerp = 0.5, lerp_y = 0.25, dead_y = 4 })
+  check(c.x == 0 and c.y == (10 - 4) * 0.25, "camera: per-axis lerp/dead")
+  c = camera.new({ w = 320, h = 180 })
+  camera.follow(c, 160, 90, { ox = 30 })
+  check(c.x == 30, "camera: ox offsets the target (lookahead)")
+
+  -- follow ends clamped
+  c = camera.new({ w = 320, h = 180 })
+  camera.bounds(c, 0, 0, 1000, 180)
+  camera.follow(c, -500, 90)
+  check(c.x == 0 and c.y == 0, "camera: follow ends clamped")
+
+  -- shake: refusals, countdown, linear fade, removal at zero
+  check(not pcall(camera.shake, c, -1, 10), "camera: negative mag refused")
+  check(not pcall(camera.shake, c, "big", 10), "camera: non-number mag refused")
+  check(not pcall(camera.shake, c, 3, 1.5), "camera: float frames refused")
+  check(not pcall(camera.shake, c, 3, -2), "camera: negative frames refused")
+  camera.shake(c, 3, 2)
+  check(c.shake == 2 and c.shake_t0 == 2 and c.shake_mag == 3,
+        "camera: shake arms the doc counters")
+  local ox, oy = camera.offset(c)
+  check(ox ~= 0 or oy ~= 0, "camera: armed shake wobbles")
+  local full = ox * ox + oy * oy
+  camera.tick(c)
+  check(c.shake == 1, "camera: tick counts the shake down")
+  ox, oy = camera.offset(c)
+  check(ox * ox + oy * oy < full, "camera: the wobble fades as it counts")
+  camera.tick(c)
+  check(c.shake == nil and c.shake_t0 == nil and c.shake_mag == nil,
+        "camera: a finished shake leaves the table")
+  check(select(1, camera.offset(c)) == 0 and select(2, camera.offset(c)) == 0,
+        "camera: idle offset is zero")
+  camera.shake(c, 3, 10)
+  camera.tick(c)
+  camera.shake(c, 1, 4)
+  check(c.shake == 4 and c.shake_t0 == 4 and c.shake_mag == 1,
+        "camera: rearm replaces a running shake")
+  camera.shake(c, 0, 4)
+  check(c.shake == nil, "camera: zero mag clears")
+  camera.shake(c, 3, 0)
+  check(c.shake == nil, "camera: zero frames clears")
+
+  -- offsets are deterministic: same counters, same wobble
+  local c1 = camera.shake(camera.new({ w = 320, h = 180 }), 5, 7)
+  local c2 = camera.shake(camera.new({ w = 320, h = 180 }), 5, 7)
+  local a1, b1 = camera.offset(c1)
+  local a2, b2 = camera.offset(c2)
+  check(a1 == a2 and b1 == b2, "camera: same counters, same offset")
+
+  -- conversion: exact round trip through the UNSHAKEN camera
+  c = camera.new({ x = 12.5, y = -3, w = 320, h = 180 })
+  camera.shake(c, 9, 30)
+  local sx, sy = camera.to_screen(c, 100, 50)
+  check(sx == 87.5 and sy == 53, "camera: to_screen ignores the shake")
+  local wx, wy = camera.to_world(c, sx, sy)
+  check(wx == 100 and wy == 50, "camera: to_world round-trips exactly")
+
+  -- apply: returns the shaken top-left it handed to gfx
+  local ax, ay = camera.apply(c)
+  local pox, poy = camera.offset(c)
+  check(ax == c.x + pox and ay == c.y + poy,
+        "camera: apply returns the shaken top-left")
+  camera.shake(c, 0, 0)
+  ax, ay = camera.apply(c)
+  check(ax == c.x and ay == c.y, "camera: apply without shake is the camera")
+  cm.require("cm.gfx").camera(0, 0) -- leave the render camera as found
+
+  -- determinism: identical op sequences canonicalize byte-identically
+  local function build()
+    local bc = camera.new({ w = 320, h = 180 })
+    camera.bounds(bc, 0, 0, 640, 360)
+    camera.center(bc, 100, 100)
+    camera.follow(bc, 140, 100, { lerp = 0.1, dead_y = 26, ox = 12 })
+    camera.shake(bc, 4, 18)
+    camera.tick(bc)
+    return bc
+  end
+  check(state_m.canon(build()) == state_m.canon(build()),
+        "camera: same ops, same canonical bytes")
+end
+
 -- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -8730,6 +8872,7 @@ function game.init()
   t_ease()
   t_box()
   t_actor()
+  t_camera()
   t_snapshot()
   t_buf_poke()
   t_input()

@@ -387,6 +387,59 @@ timers, and the shots-vs-enemies loop is `actor.hit`. Components/systems,
 multi-tags, parent/child links, and spatial indexes are deliberately
 absent — later A5 slices earn ergonomics from real demo pain first.
 
+## The camera (`cm.camera`)
+
+A scrolling game wants a camera that eases after its target, respects the
+room's edges, cuts on room swaps, and shakes on impact. `cm.camera` is that
+math over a plain table you keep in `state.doc` — snapshots, traces, and
+rewind carry it by construction, and extra fields on the table are yours.
+
+    local camera = cm.require("cm.camera")
+
+    function game.init()
+      local d = state.doc
+      d.cam = d.cam or camera.new()               -- view-sized, top-left x/y
+      camera.bounds(d.cam, 0, 0, level.pw, level.ph)
+      camera.center(d.cam, player.center())       -- the cut: no whip-pan
+    end
+
+    function game.step()
+      local d = state.doc
+      camera.tick(d.cam)                          -- ONCE per step: shake decay
+      camera.follow(d.cam, px, py, { lerp = 0.1, lerp_y = 0.08, dead_y = 26 })
+      if hit_spikes then camera.shake(d.cam, 3, 18) end
+    end
+
+    function game.draw()
+      pal.begin_frame(...)
+      local camx, camy = camera.apply(d.cam)      -- set gfx camera + shake
+      gfx.layer(1)                                 -- then draw world layers
+      ...
+    end
+
+The rules:
+
+- `follow` eases the view **center** toward the point: per-axis
+  `lerp`/`lerp_y` (default 1 = snap) over the error beyond the per-axis
+  deadzone `dead`/`dead_y` (default 0 — a plain lerp). `ox`/`oy` offset the
+  target; for facing lookahead, smooth a field yourself and pass it:
+  `d.cam.look = m.lerp(d.cam.look or 0, facing * 26, 0.05)` then
+  `{ ox = d.cam.look }` — the bundled demo does exactly this.
+- Every motion door ends clamped to `bounds`; a room smaller than the view
+  centers instead of jittering. `center` is the cut — use it at init, room
+  swaps, and anywhere a follow would whip-pan. Clearing: `camera.bounds(c)`.
+- `shake(c, mag, frames)` arms integer counters in the table; `tick` counts
+  them down. The wobble itself is render-only math off the counters
+  (`offset`/`apply`), fading linearly — sim logic must never read it.
+- `to_world`/`to_screen` convert through the **unshaken** camera, so mouse
+  aim stays deterministic while the view wobbles.
+- Pixel-art projects: `gfx.pixel_snap(true)` still owns the whole-pixel
+  rasterization policy; the camera stays sub-pixel smooth underneath.
+
+The bundled platformer demo is the worked example (its whole hand-rolled
+camera collapsed into `follow`/`center`/`shake`). Zones/rails, dual-target
+framing, zoom, and smooth room pans are deliberately absent for now.
+
 ## Sound effects and music
 
 Instruments must be uploaded into the simulation bank before use. The demo's
@@ -520,6 +573,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.map` / `cm.collide` — map assets, placements, markers, swept AABBs.
 - `cm.box` — pure AABB overlap/queries and the lightweight wall slide.
 - `cm.actor` — actor worlds in doc: stable ids, tags, spawn order, timers.
+- `cm.camera` — follow/deadzone, bounds, room cuts, shake, world<->screen.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
