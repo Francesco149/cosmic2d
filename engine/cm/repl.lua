@@ -32,6 +32,12 @@ M.env = M.env or setmetatable({}, {
   end,
 })
 
+-- queue a command for the next sim frame WITHOUT touching console history:
+-- the engine-internal recordable path (cm.save.load rides it, A4/D086)
+function M.enqueue(s)
+  M.queue[#M.queue + 1] = s
+end
+
 -- queue a command for the next sim frame (the recordable path)
 function M.submit(s)
   s = s:match("^%s*(.-)%s*$")

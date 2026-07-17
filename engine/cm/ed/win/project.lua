@@ -27,7 +27,7 @@ local COL = {
 
 local FORM_FIELDS = {
   "name", "author", "version", "description",
-  "internal_w", "internal_h", "window_scale", "maximized",
+  "save_id", "internal_w", "internal_h", "window_scale", "maximized",
   "icon", "controls", "credits",
 }
 
@@ -36,6 +36,7 @@ local FIELD_ROWS = {
   { "author", "author" },
   { "version", "version" },
   { "description", "description" },
+  { "save_id", "save id" },
   { "internal_w", "internal width" },
   { "internal_h", "internal height" },
   { "window_scale", "initial scale" },
@@ -601,7 +602,7 @@ local function draw_general(win, ctx, y)
   y = y + 20 * z
   local any_active = false
   for index, spec in ipairs(FIELD_ROWS) do
-    if index == 5 then
+    if index == 6 then -- game surface starts after the identity rows
       y = y + 4 * z
       pal.x_ig_text(ctx.cx + 10 * z, y, math.max(4, 13 * z), COL.hot,
                     "game surface", 0)

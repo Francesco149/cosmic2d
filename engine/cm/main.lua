@@ -442,6 +442,13 @@ function M.boot()
   if not args.headless and not args.frames then
     M.input.load_binds(args.project)
   end
+  -- namespaced player storage (A4/D086) is the same machine-local class:
+  -- the store binds only in interactive windowed sessions, keyed by the
+  -- project's declared save_id under the per-user root. Headless / capped
+  -- captures / --verify see a disabled store, so goldens and trace verifies
+  -- never depend on one machine's saves (recorded loads carry their bytes).
+  M.save = cm.require("cm.save")
+  M.save.bind((not args.headless and not args.frames) and proj or nil)
   cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- R6.5 (D055): a live session CONTINUES the project's past stream —

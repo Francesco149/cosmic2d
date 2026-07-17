@@ -15,6 +15,9 @@ M.PROJECT_TMPL = [==[
 -- a fresh cosmic2d project. Tweak these; the picker + packager read them.
 return {
   name = "__NAME__",
+  save_id = "__SAVEID__", -- keys player saves under the per-user root; keep
+                          -- it stable once players have data (renaming the
+                          -- project is safe, changing save_id orphans saves)
   internal_w = 480,
   internal_h = 270,
   window_scale = 2,
@@ -307,6 +310,34 @@ function M.validate_plain(meta)
   return plain(meta, "project.lua", {})
 end
 
+-- The save_id grammar (A4/D086): the stable key player saves live under at
+-- <user root>/saves/<save_id>/ — the NAME is mutable, this is the promise.
+-- Filesystem-safe on every host by construction: 1..64 of a-z 0-9 - _,
+-- starting alphanumeric. cm.save shares this grammar for profile names.
+-- Returns nil when valid, else the reason.
+function M.save_id_error(value)
+  if type(value) ~= "string" then return "save_id must be a string" end
+  if #value < 1 or #value > 64 then
+    return "save_id must be 1 to 64 characters"
+  end
+  if not value:match("^[a-z0-9][a-z0-9_%-]*$") then
+    return "save_id must be lowercase a-z 0-9 - _ and start with a letter or digit"
+  end
+  return nil
+end
+
+-- Derive a valid save_id from a human project name (scaffold time): ASCII
+-- letters/digits fold to lowercase, every other run becomes one dash. A name
+-- with nothing usable ("π") falls back to "game" rather than failing a
+-- scaffold over its save key.
+function M.save_slug(name)
+  local slug = tostring(name or ""):lower()
+    :gsub("[^a-z0-9]+", "-"):gsub("^%-+", ""):gsub("%-+$", ""):sub(1, 64)
+    :gsub("%-+$", "")
+  if M.save_id_error(slug) then return "game" end
+  return slug
+end
+
 local function integer_field(value, field, lo, hi)
   if type(value) ~= "number" or math.type(value) ~= "integer"
       or value < lo or value > hi then
@@ -341,6 +372,10 @@ function M.validate_runtime(meta)
   if meta.maximized ~= nil and type(meta.maximized) ~= "boolean" then
     return nil, "maximized must be true or false"
   end
+  if meta.save_id ~= nil then
+    err = M.save_id_error(meta.save_id)
+    if err then return nil, err end
+  end
   return true
 end
 
@@ -353,6 +388,7 @@ function M.settings(meta)
     author = type(meta.author) == "string" and meta.author or "",
     version = type(meta.version) == "string" and meta.version or "0.1",
     description = type(meta.description) == "string" and meta.description or "",
+    save_id = type(meta.save_id) == "string" and meta.save_id or "",
     internal_w = tostring(meta.internal_w or 480),
     internal_h = tostring(meta.internal_h or 270),
     window_scale = tostring(meta.window_scale or 2),
@@ -412,6 +448,15 @@ function M.validate_settings(form)
   out.description, err = M.one_line(form, "description", true, 1000)
   if err then return nil, err end
   out.description = out.description or ""
+  -- an empty save id is a legal draft (no player storage); a non-empty one
+  -- must meet the grammar before it can become the saves namespace
+  if type(form.save_id) ~= "string" then return nil, "save_id must be a string" end
+  local save_id = trim(form.save_id)
+  if save_id ~= "" then
+    err = M.save_id_error(save_id)
+    if err then return nil, err end
+    out.save_id = save_id
+  end
   out.internal_w, err = form_integer(form, "internal_w", 1, 4096)
   if not out.internal_w then return nil, err end
   out.internal_h, err = form_integer(form, "internal_h", 1, 4096)
@@ -455,6 +500,7 @@ function M.apply_settings(meta, form)
   out.author = settings.author or ""
   out.version = settings.version
   out.description = settings.description
+  out.save_id = settings.save_id
   out.internal_w = settings.internal_w
   out.internal_h = settings.internal_h
   out.window_scale = settings.window_scale
@@ -472,7 +518,7 @@ end
 -- ---- canonical inspectable-Lua codec ----
 
 local ORDER = {
-  "name", "author", "version", "description",
+  "name", "author", "version", "description", "save_id",
   "internal_w", "internal_h", "window_scale", "maximized",
   "entry", "seed", "icon", "controls", "credits", "licenses", "editor",
 }
@@ -672,6 +718,7 @@ function M.scaffold(dir, name, fail, template)
   -- user-chosen name stays inert.
   local subs = {
     __NAME__ = (name:gsub('[\\"]', "\\%1")),
+    __SAVEID__ = M.save_slug(name), -- grammar-safe by construction
     __DESC__ = tmpl.main
       and ("started from the " .. tmpl.label .. " starter template") or "",
   }
