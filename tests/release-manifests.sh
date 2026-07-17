@@ -19,19 +19,26 @@ assert_legal_skeleton() {
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/editor.txt" "$stage/editor"
-for name in selftest smoke igcanvas uigallery padtest inputproof cellar swarm; do
+for name in selftest smoke igcanvas uigallery padtest inputproof perfgauge; do
   assert_absent "$stage/editor/projects/$name"
 done
 assert_present "$stage/editor/projects/picker/project.lua"
-assert_present "$stage/editor/projects/demo/project.lua"
 assert_present "$stage/editor/engine/cm/ed.lua"
-assert_present "$stage/editor/projects/demo/main.lua"
 assert_present "$stage/editor/pal/res/cosmic2d.png"
+# The A6 bundled demo matrix: every shipped demo arrives complete — code,
+# welcome note, thumbnail icon, and the player-packaging references.
+for name in demo cellar swarm; do
+  for file in project.lua main.lua README.md icon.png CONTROLS.md \
+              CREDITS.md; do
+    assert_present "$stage/editor/projects/$name/$file"
+  done
+done
 assert_legal_skeleton "$stage/editor"
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/play.txt" "$stage/play" demo
-for name in selftest smoke igcanvas uigallery padtest inputproof cellar swarm; do
+for name in selftest smoke igcanvas uigallery padtest inputproof perfgauge \
+            cellar swarm; do
   assert_absent "$stage/play/projects/$name"
 done
 assert_present "$stage/play/projects/picker/project.lua"
@@ -73,6 +80,25 @@ for phrase in 'IDI_GAME ICON "game.ico"' 'FILEVERSION 0,1,0,0' \
   grep -Fq "$phrase" "$stage/player.rc" || {
     echo "player RC lacks project metadata: $phrase" >&2; exit 1;
   }
+done
+
+# The promoted A6 demos export cleanly through the same play-archive path:
+# stage each as the selected project and publish its player metadata.
+for name in cellar swarm; do
+  "$repo/tools/stage-manifest.sh" "$repo" \
+    "$repo/dist/manifests/play.txt" "$stage/play-$name" "$name"
+  lua "$repo/tools/player-bundle.lua" \
+    "$stage/play-$name/projects/$name" "$stage/play-$name" "$name" linux
+  assert_present "$stage/play-$name/README.md"
+  assert_present "$stage/play-$name/icon.png"
+  cmp "$stage/play-$name/icon.png" "$stage/play-$name/projects/$name/icon.png"
+  for phrase in "# $name" 'Version `0.1`' "## Controls" "## Credits" \
+                "## Licenses" "projects/$name/LICENSE.md" \
+                "rebindable"; do
+    grep -Fq "$phrase" "$stage/play-$name/README.md" || {
+      echo "player README lacks $name metadata: $phrase" >&2; exit 1;
+    }
+  done
 done
 
 # Fail closed on paths that escape the project and on missing player files.
@@ -118,7 +144,8 @@ fi
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/dev.txt" "$stage/dev"
-for name in selftest smoke igcanvas uigallery padtest inputproof cellar swarm; do
+for name in selftest smoke igcanvas uigallery padtest inputproof perfgauge \
+            cellar swarm; do
   assert_present "$stage/dev/projects/$name/project.lua"
 done
 assert_present "$stage/dev/tests/release-manifests.sh"

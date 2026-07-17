@@ -3,6 +3,8 @@ bin
 engine
 projects/picker
 projects/demo
+projects/cellar
+projects/swarm
 README.md
 LICENSE
 LICENSES
