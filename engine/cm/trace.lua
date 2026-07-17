@@ -1730,6 +1730,43 @@ function M.materialize_clip(path)
   return ws, loop
 end
 
+-- ---- non-destructive foreign-source open (A7 §13) ----
+--
+-- The product UI opens a replay clip WITHOUT adopting its timeline: the live
+-- ring is stashed intact, a fresh ring receives the clip's destructive load,
+-- and dismissal restores the stashed ring byte-for-byte. This is the coarse
+-- form of §13's "stash the live source object" — one table swap rather than a
+-- polymorphic source interface. The live ring's on-disk segment/blob files are
+-- never touched while stashed: recording is dormant (the sim is frozen/parked),
+-- so nothing spills, evicts, or gc's meanwhile.
+
+function M.has_stash() return M._stashed_live ~= nil end
+
+-- Stash the live ring so a foreign clip can load into a fresh one. Drains any
+-- pending native spill for the live ring first (its files must be complete
+-- before we stop touching them), then clears M._R so ring_load builds fresh
+-- instead of clobbering the stash. Refuses to double-stash.
+function M.stash_live()
+  if M._stashed_live then return nil, "a foreign source is already open" end
+  M.history_drain()
+  M._stashed_live = M._R or false -- false marks "was nil" (still restorable)
+  M._R = nil
+  return true
+end
+
+-- Restore the stashed live ring, discarding the replay ring and its ephemeral
+-- workspace tree. The caller restores the live present state/editor doc/root
+-- separately (cm.scrub.close_clip); this owns only the ring swap + workspace
+-- sweep. Refuses when nothing is stashed.
+function M.restore_live()
+  if not M._stashed_live then return nil, "no stashed live ring" end
+  local replay = M._R
+  if replay and replay.workspace then remove_tree_at(replay.workspace) end
+  M._R = M._stashed_live or nil -- the false sentinel restores to nil
+  M._stashed_live = nil
+  return true
+end
+
 -- ---- scrub access (no game code runs) ----
 
 local function decode_fram(p)

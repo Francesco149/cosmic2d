@@ -74,6 +74,12 @@ function M.has_loop()
   return M.loop_a ~= nil
 end
 
+-- A7 §13: a foreign clip opened non-destructively in an editor session (drag-in)
+-- — the live ring/present are stashed, not adopted, so dismissal restores them.
+function M.is_clip()
+  return M.editor_clip == true
+end
+
 function M.loop_range()
   return M.loop_a, M.loop_b
 end
@@ -152,6 +158,7 @@ end
 -- in replay mode there is no other present — adopt the trace's end
 function M.close()
   if not M.on then return end
+  if M.editor_clip then return M.close_clip() end
   if M.replay then
     M.at = M.hi
     return M.rewind_here()
@@ -160,6 +167,28 @@ function M.close()
   cm.require("cm.ed").unpark(false) -- the stashed present comes back
   M.on, M.play = false, false
   M.loop_a, M.loop_b, M.play_hold = nil, nil, nil
+  clear_play_clock()
+end
+
+-- Dismiss an editor drag-in clip (A7 §13): restore the untouched live ring,
+-- present state, editor doc, and real project root — deliberately NOT adopting
+-- the replay's future. The order matters: unmount the clip's root, restore the
+-- live present buffers/doc/code from the snapshot taken at open (no init — the
+-- live game resumes stepping from exactly where it was), swap the live ring
+-- back (dropping the ephemeral replay workspace), then unpark the stashed
+-- editor doc.
+function M.close_clip()
+  if not M.on then return end
+  local ed = cm.require("cm.ed")
+  ed.unmount_replay()
+  if M.live_snap then
+    state.restore(M.live_snap)
+    M.live_snap = nil
+  end
+  trace.restore_live()
+  ed.unpark(false)
+  M.on, M.play, M.replay, M.editor_clip = false, false, false, nil
+  M.loop_a, M.loop_b, M.play_hold, M.shown = nil, nil, nil, nil
   clear_play_clock()
 end
 
@@ -186,20 +215,47 @@ function M.open_replay(path)
   M.pending = path
 end
 
-local function do_load(path)
+-- A7 §13 drag-in: open a .ctrace as a NON-destructive editor clip. Same chrome-
+-- phase queue as open_replay, but do_load stashes the live ring/present and
+-- mounts the clip's project tree instead of adopting the trace's timeline.
+function M.open_clip(path)
+  M.pending_clip = path
+end
+
+local function do_load(path, editor_clip)
   if cm.main.dev_locked() then return end
+  if editor_clip then
+    -- §13: keep the live ring + present intact so dismissal restores them
+    -- exactly (no adopt). Snapshot the live present state, then stash the live
+    -- ring so the clip's destructive ring_load lands in a fresh one.
+    M.live_snap = state.snapshot()
+    local sok, swhy = trace.stash_live()
+    if not sok then
+      pal.log("[scrub] clip open refused: " .. tostring(swhy))
+      M.live_snap = nil
+      return
+    end
+  end
   local ok, lo = pcall(trace.ring_load, path)
   if not ok then
     pal.log("[scrub] replay load failed: " .. tostring(lo))
+    if editor_clip then trace.restore_live(); M.live_snap = nil end
     return
   end
   if cm.main and cm.main.after_restore then cm.main.after_restore() end
   local rlo, rhi = trace.ring_range()
   M.on, M.replay = true, true
+  M.editor_clip = editor_clip and true or nil
   M.lo, M.hi = rlo, rhi
   M.at, M.shown = rlo, rlo
   M.play, M.speed = rhi > rlo, 1 -- it's a showcase: roll it in real time
   M.play_hold, M.loop_a, M.loop_b = true, nil, nil
+  -- §13 mount: point the editor root at the clip's materialized project tree so
+  -- the asset windows browse its bundle, ephemerally (the parked write wall).
+  if editor_clip then
+    local ws = trace.replay_workspace and trace.replay_workspace()
+    if ws then cm.require("cm.ed").mount_replay(ws) end
+  end
   -- A standalone clip (A7 §14) records its A/B bounds; open on the same range
   -- and start the same loop (§14: loading reopens on the range without change).
   local loop = trace.replay_loop and trace.replay_loop()
@@ -211,6 +267,10 @@ local function do_load(path)
     M.at, M.shown = la, la
     M.play = lb > la
   end
+  -- A mounted clip must park the editor immediately (the ephemeral write wall +
+  -- the clip's own editor doc), so force the first apply to actually run even
+  -- though at == the initial shown frame.
+  if editor_clip then M.shown = nil end
   reset_play_clock()
   M.irec = nil
 end
@@ -273,6 +333,11 @@ function M.frame()
     local path = M.pending
     M.pending = nil
     do_load(path)
+  end
+  if M.pending_clip then
+    local path = M.pending_clip
+    M.pending_clip = nil
+    do_load(path, true)
   end
   local ed = cm.require("cm.ed")
   if not ed.on then

@@ -169,6 +169,26 @@ function M.launch(root)
   pal.log("[ed] editor shell on (" .. root .. ")")
 end
 
+-- A7 §13: mount a replay clip's materialized project tree as the editor root so
+-- every asset door (cm.ed.kit / launcher / cache, the assets window's glob)
+-- browses the CLIP's bundled project instead of the live one. The swap rides
+-- ed.g (ephemeral, never captured) and is guarded by the parked write wall —
+-- edits land in the parked doc and evaporate on dismiss. unmount_replay restores
+-- the real project root. Idempotent; a clip drop only ever happens in a real
+-- editor session, so M.root is non-nil.
+function M.mount_replay(ws)
+  if not ws or M.g.root_stashed then return end
+  M.g.root_stash, M.g.root_stashed = M.root, true
+  M.root = ws
+  pal.log("[ed] mounted replay workspace: " .. ws)
+end
+
+function M.unmount_replay()
+  if not M.g.root_stashed then return end
+  M.root = M.g.root_stash
+  M.g.root_stash, M.g.root_stashed = nil, nil
+end
+
 -- Console/API door for a safe cache rebuild. This intentionally preserves
 -- session.dat and journals: they may be the only copy of unsaved work.
 function M.clear_cache()
@@ -394,6 +414,13 @@ function M.filter_events(events)
         out[#out + 1] = e
         g.wheel_taken = true -- the canvas must not also zoom on it
       end
+    elseif e.type == "drop" and M.doc and e.path
+           and e.path:lower():match("%.ctrace$") then
+      -- A7 §13: a replay clip dropped anywhere in the editor opens as an
+      -- ephemeral, non-destructive replay — the tray opens on it, its bundled
+      -- project mounts, and Esc layering restores the live session. Never a
+      -- project asset (a .ctrace is a recording, not source/art).
+      cm.require("cm.ed.rewind").drop_clip(M, e.path)
     elseif e.type == "drop" and M.doc then
       -- an OS file dropped on the window: over an assets window = add to
       -- project (EDITOR.md §12.5); over a map window = add + PLACE at the

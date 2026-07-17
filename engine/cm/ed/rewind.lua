@@ -255,6 +255,29 @@ function M.toggle(ed)
   return M.close(ed, false)
 end
 
+-- A7 §13: a .ctrace dropped into an editor view opens as a NON-destructive
+-- replay. cm.scrub.open_clip queues the load for the chrome phase (never
+-- mid-frame); it stashes the live ring/present and mounts the clip's bundled
+-- project. We open the tray now and fit the view to the clip once its range is
+-- live (fit_clip). Esc layering (clip -> tray) restores the untouched session.
+function M.drop_clip(ed, path)
+  local r = state(ed)
+  -- Opening a clip snapshots the live present; refuse while already time-
+  -- travelling (parked / another clip) so we never capture a past frame as
+  -- "live". The user leaves the timeline first (one Esc, or eject).
+  if scrub.paused() then
+    r.open = true
+    flash(r, scrub.is_clip() and "already viewing a clip -- eject it first"
+                             or "leave the timeline before opening a clip")
+    return false
+  end
+  scrub.open_clip(path)
+  r.open, r.fit_clip = true, true
+  r.view, r.summary, r.preview = nil, nil, nil
+  flash(r, "opening replay clip -- Esc twice returns to live")
+  return true
+end
+
 -- Esc is deliberately layered: clip first, tray/past second.
 function M.escape(ed)
   local r = state(ed)
@@ -644,8 +667,16 @@ function M.draw(ed, ig, i)
   local lo, hi = trace.ring_range()
   local parked = scrub.paused()
   local recp = trace.rec_paused()
+  local clip = scrub.is_clip()
   if parked and lo and not r.open then
     r.open, r.view = true, M.default_view(lo, hi)
+  end
+  -- A dropped clip loads in the chrome phase; once its range is live, fit the
+  -- whole clip into view (short by design) rather than the ten-minute default.
+  if r.fit_clip and clip and lo then
+    r.view = M.clamp_view(
+      { start = lo, span = math.max(M.MIN_SPAN, hi - lo) }, lo, hi)
+    r.fit_clip = nil
   end
 
   pal.x_ig_overlay(true)
@@ -653,7 +684,8 @@ function M.draw(ed, ig, i)
   -- The collapsed entrance remains useful at all times: retained duration,
   -- a live recording dot, and a parked/paused/clip state that reads at a glance.
   local pill_label
-  if scrub.has_loop and scrub.has_loop() then pill_label = "A/B LOOP"
+  if clip then pill_label = scrub.has_loop() and "CLIP A/B" or "CLIP"
+  elseif scrub.has_loop and scrub.has_loop() then pill_label = "A/B LOOP"
   elseif parked then pill_label = "PARKED"
   elseif recp then pill_label = "REC PAUSED"
   elseif lo then pill_label = fmt_duration(hi - lo)
@@ -714,9 +746,10 @@ function M.draw(ed, ig, i)
   apply_gestures(r, i, v, lo, hi, ax, film_y, aw, axis_h)
 
   local stats = trace.ring_stats() or {}
-  text(bx + 14, head_y + 9, 12, C.text, "REWIND")
-  text(bx + 79, head_y + 9, 11, C.dim,
-    parked and "LIVE HISTORY  /  PARKED"
+  text(bx + 14, head_y + 9, 12, C.text, clip and "REPLAY" or "REWIND")
+  text(bx + 79, head_y + 9, 11, clip and C.eval or C.dim,
+    clip and "REPLAY CLIP  /  EPHEMERAL -- Esc restores live"
+    or parked and "LIVE HISTORY  /  PARKED"
     or (recp and "LIVE HISTORY  /  REC PAUSED" or "LIVE HISTORY  /  RECORDING"))
 
   -- The retention surface (A7): a live disk-use meter plus the controls that
@@ -775,15 +808,21 @@ function M.draw(ed, ig, i)
   local segw = pal.x_ig_text_size(seg, 10, 0)
   text(mx + mw - segw, head_y + 6, 10, C.faint, seg)
 
-  -- disk-budget knob: [-] value [+]
+  -- disk-budget knob: [-] value [+]. All three retention controls act on the
+  -- LIVE ring; while a replay clip is mounted that ring is stashed, so they
+  -- disable (the header already says the clip is ephemeral).
   right = right - 8
   local mb = trace.ring.budget_mb or 1024
-  if button(i, place_r(19), hy, 19, hbh, "+") then set_budget(step_budget(mb, 1)) end
+  if button(i, place_r(19), hy, 19, hbh, "+", { enabled = not clip }) then
+    set_budget(step_budget(mb, 1))
+  end
   local val, vw = fmt_budget(mb), 58
   local vx = place_r(vw)
   local vtw = pal.x_ig_text_size(val, 11, 0)
-  text(vx + (vw - vtw) * 0.5, head_y + 8, 11, C.text, val)
-  if button(i, place_r(19), hy, 19, hbh, "-") then set_budget(step_budget(mb, -1)) end
+  text(vx + (vw - vtw) * 0.5, head_y + 8, 11, clip and C.faint or C.text, val)
+  if button(i, place_r(19), hy, 19, hbh, "-", { enabled = not clip }) then
+    set_budget(step_budget(mb, -1))
+  end
 
   -- clear: two-click confirm (auto-disarms after 3s); a live clip blocks it
   right = right - 8
@@ -792,7 +831,7 @@ function M.draw(ed, ig, i)
   end
   local armed = r.confirm_clear ~= nil
   if button(i, place_r(58), hy, 58, hbh, armed and "sure?" or "clear",
-            { enabled = not scrub.has_loop(), accent = armed,
+            { enabled = not scrub.has_loop() and not clip, accent = armed,
               outline = armed and C.err or nil, px = 11 }) then
     if armed then
       r.confirm_clear = nil
@@ -811,7 +850,8 @@ function M.draw(ed, ig, i)
   -- growing. Only at the live edge (parked/clip already stop recording).
   local pz = place_r(78)
   if button(i, pz, hy, 78, hbh, recp and "resume rec" or "pause rec",
-            { enabled = recp or (not parked and not scrub.has_loop()),
+            { enabled = not clip
+                        and (recp or (not parked and not scrub.has_loop())),
               accent = recp, px = 11 }) then
     if recp then
       trace.set_rec_paused(false) -- reseeds the ring: drop stale tray caches
@@ -834,7 +874,8 @@ function M.draw(ed, ig, i)
   lane(act_y, act_h, "ACTIVITY")
   lane(event_y, event_h, "EVENTS")
   lane(ruler_y, ruler_h, "TIME")
-  if bx + 260 + 176 < right then draw_legend(bx + 260, head_y + 9) end
+  -- the sim/editor/files legend yields to the clip's longer "EPHEMERAL" subtitle
+  if not clip and bx + 260 + 176 < right then draw_legend(bx + 260, head_y + 9) end
 
   pal.x_ig_clip_push(ax, film_y, aw, axis_h)
   draw_previews(r, v, ax, film_y, aw, film_h, hi)
@@ -900,13 +941,23 @@ function M.draw(ed, ig, i)
     right = right - 6
     return rx
   end
-  if a then
+  -- A mounted replay clip is ephemeral and non-adoptable: the only right-cluster
+  -- action is eject (restore the live session). Export/resume-here/bring-back all
+  -- act on live history and are suppressed while a clip owns the ring.
+  if clip then
+    local ejx = place(86)
+    if button(i, ejx, foot_y, 86, foot_h, "eject clip", { accent = true }) then
+      M.close(ed, true) -- forces past the A/B loop -> scrub.close_clip restores live
+      pal.x_ig_overlay(false)
+      return
+    end
+  elseif a then
     local ex = place(94)
     if button(i, ex, foot_y, 94, foot_h, "export replay", { accent = true }) then
       export_replay(ed, r, a, b)
     end
   end
-  if parked then
+  if parked and not clip then
     local rx = place(92)
     if button(i, rx, foot_y, 92, foot_h, "resume here",
               { accent = true, enabled = not a }) then
