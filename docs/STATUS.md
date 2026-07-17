@@ -4,6 +4,16 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 11 playtest, second pass) — breaststroke
+
+Human on the crawl draft: **"the arms move together front to back and
+the legs open to closed"** looks better. cm.mascot.swim reworked as a
+breaststroke: mitts reach forward together / sweep back low / recover
+under, boots OPEN on the pull and snap CLOSED on the frog kick, surge
+on the glide stretch, roll gone (symmetric). Draw-only data change —
+all traces verified untouched, only openworld_swim.png re-shot. Suite
+ALL GREEN; coiled-key shot on the feed.
+
 ## 2026-07-17 (round 11 playtest) — the stroke clip + the splash sizzle
 
 Human on round 11: **"the physics of being in the water feel
