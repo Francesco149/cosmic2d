@@ -378,9 +378,19 @@ ephemerally), and enters replay on the recorded A/B `LOOP`. Dismissal
 present state, the live ring, the editor doc, and the real project root — never
 `rewind_here`-adopting the replay. The tray marks it **REPLAY CLIP / EPHEMERAL**
 and disables the live-only retention/adopt controls while a clip owns the ring.
-Still open: the **trust prompt** before executing an untrusted bundle, and the
-live-history / crash-focus source kinds as first-class objects (today live scrub
-already stashes/restores via park; crash focus is §16).
+**Built (D107), the trust prompt.** The drag-in door identifies the code a clip
+can ever run — sha256 over the SNAP bundle plus every EPOC revision (module
+name + source; recorded paths are machine-local noise), computed without
+executing anything — and an untrusted identity parks an amber **UNTRUSTED
+REPLAY** panel at the tray with nothing stashed, mounted, or run until the user
+confirms. A transient session trust set (never persisted) is seeded by
+`write_trace` — a same-session self-export never prompts, it is your own
+code — and grown by the explicit confirm; Esc cancels, layered above the
+clip/loop escape. `scrub.open_clip` stays the un-prompted scripted door (the
+CLI-launch trust stance), and the future embedded crash tail routes through the
+same gated drop door. Still open: the live-history / crash-focus source kinds
+as first-class objects (today live scrub already stashes/restores via park;
+crash focus is §16).
 
 ## 14. One logical history/replay format, self-contained clips
 

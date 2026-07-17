@@ -316,9 +316,12 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   adopting the replay's future. (D105: the **replay-file** drag-in ships — a
   dropped `.ctrace` opens a non-destructive editor clip, mounts its bundled
   project as the editor root under the parked write wall, and Esc/eject restores
-  the untouched live ring + present + real root without adopting. Live history
-  already stashes/restores via park; the **crash-focus** source and a
-  trust-prompt before executing an untrusted bundle remain open.)
+  the untouched live ring + present + real root without adopting. D106 adds the
+  **crash-focus** entry point and D107 the **trust prompt**: an untrusted
+  dragged-in clip parks an UNTRUSTED REPLAY confirm at the tray — nothing runs
+  until the user says so; a same-session self-export never prompts. Live history
+  already stashes/restores via park; first-class source *objects* remain a
+  refactor cut.)
 - [~] Generalize the history store and additive `.ctrace` packaging around the
   same segment + content-addressed project-blob model. A new clip is standalone:
   exact A state through inclusive B, editor state, code, **all project source

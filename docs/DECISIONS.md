@@ -5033,3 +5033,59 @@ scripted Esc cleared the loop, parked on the last safe frame, and lit "resume he
 Inspected captures on llm-feed: the crashed-minute loop and the Esc-cleared inspect
 state. (`--win` capture is headless so spill is off; the fixture forces a stream
 identity for the offscreen shot — real windowed sessions record with spill on.)
+
+## D107 — the trust prompt before running an untrusted replay bundle (A7 §13, 2026-07-18)
+
+**Context.** D105's clip mount and (when embedded tails land) D106's crash focus
+execute a dropped `.ctrace`'s bundled game code with the **same trust boundary as
+opening a project**, and `REWIND.md` §13 requires the UI to *say so* before executing
+an untrusted (dragged-in / downloaded) bundle — the deferral both ADRs named. The
+prompt must not tax the common case: your own just-exported clip is your own code.
+
+**Decision.**
+- **Code identity, computed without executing anything.** `cm.trace.clip_code_hash
+  (path)` is sha256 over everything a replay of the clip can ever run: the SNAP
+  bundle plus **every EPOC revision**, in file order, hashed over module *name +
+  source* only (the recorded file *path* is machine-local noise and never enters the
+  identity). Bytes that cannot be a replay at all — unreadable, bad container,
+  SNAP-less, bundle-less — refuse with the reason. An appended EPOC (code a replay
+  would also run) changes the identity by construction, so an innocuous-SNAP /
+  malicious-EPOC clip can never ride an approved hash.
+- **A transient session trust set — never persisted, never near sim/doc.**
+  `write_trace` seeds it with the identity of every trace this session writes (from
+  the in-memory blob, no re-read): a **same-session self-export never prompts** — it
+  is your own code, whichever door wrote it (`export_clip`, `ring_export`,
+  `--record`). `trust_clip`/`clip_trusted` are the policy doors; an explicit confirm
+  trusts the identity **for the rest of the session** (a cancel is not
+  distrust-forever: a later drop simply asks again). A fresh process trusts nothing.
+- **The gate lives at the drag-in door, not in `do_load`.** `cm.ed.rewind.drop_clip`
+  identifies the clip first; an untrusted identity parks a pending tray prompt —
+  `r.trust = { path, hash }` — with **nothing stashed, mounted, or run**. The amber
+  **UNTRUSTED REPLAY** panel floats above the tray (drawn even with no live history,
+  so the question is never invisible): "<name> contains code; opening it runs that
+  code", **cancel** / **run clip** buttons, and Esc layered *above* the clip/loop
+  escape. `trust_run` remembers the identity and re-enters the same drop door;
+  `trust_cancel` (or Esc, or a crash/close superseding it) drops the prompt with the
+  code never having run. `scrub.open_clip`/`open_replay` stay un-prompted scripted
+  doors — the CLI-launch trust stance — and gating `do_load` would have broken the
+  recorded-eval replay path under verify. The future embedded crash tail routes
+  through `open_clip` via this same gated door.
+
+**Revisit triggers.** A persisted (cross-session) trust store, a hash display /
+"details" affordance on the prompt, or trusting by publisher identity are future
+cuts; the first real complaint about re-confirming a known clip across sessions
+votes for the persisted store.
+
+**Proof.** Linux selftest **24,149** / native Windows **24,151** on PAL API 19 (24 new
+KATs in `t_clip_trust`, no PAL API bump — pure Lua chrome/policy). Pinned: the
+identity is a deterministic sha256, EPOC-sensitive, path-insensitive; missing / junk
+/ SNAP-less bytes refuse with the reason; a self-export is pre-trusted; an untrusted
+drop parks the prompt with no stash and nothing run; Esc cancels and a later drop
+asks again; `trust_run` opens the normal D105 editor clip whose dismissal restores
+the untouched live ring; the confirmed identity opens directly for the rest of the
+session. `nix run .#test` ALL GREEN — every historical trace and pixel/audio golden
+byte-identical (no sim/doc/recorded byte moved). Composite fixture: `smoke --edit`
+dropped a foreign-process `.ctrace` through the real `drop_clip` door — the prompt
+parked over the still-recording live tray; a scripted `trust_run` opened it as the
+normal REPLAY CLIP with the identity trusted thereafter. Inspected captures on
+llm-feed: the pending prompt and the confirmed clip.

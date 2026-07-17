@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), the §14 project-blob store foundation (D103), the standalone `.ctrace` clip (D104), the drag-in replay consumer (D105), and the crash-report drop (D106) are in — A7 now reaches its full exit (2026-07-18)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is at its full exit; the information layer (D100/D101), retention surface (D102), §14 blob-store foundation (D103), standalone clip (D104), drag-in consumer (D105), crash-report drop (D106), and the untrusted-bundle trust prompt (D107) are in — the remaining A7 items are honestly-named refinement packets (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -30,6 +30,39 @@ release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
 materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
+
+**D107 lands the trust prompt before running an untrusted replay bundle (A7
+§13) — the deferral D105/D106 both named.** Opening a dragged-in clip executes its
+bundled code with the same trust boundary as opening a project; now the UI says so
+first. **`cm.trace.clip_code_hash`** is the identity of everything a replay can ever
+run — sha256 over the SNAP bundle **plus every EPOC revision**, in file order, over
+module *name + source* only (the recorded path is machine-local noise) — computed
+without executing anything; unreadable / bad-container / SNAP-less bytes refuse with
+the reason. A **transient session trust set** (never persisted, never near sim/doc)
+is seeded by `write_trace` from the in-memory blob — a **same-session self-export
+never prompts**, whichever door wrote it — and grown only by an explicit confirm
+(`trust_clip`/`clip_trusted`; a cancel is not distrust-forever, a later drop asks
+again). The gate lives at the **drag-in door** (`drop_clip`), deliberately not in
+`scrub.do_load` — that would have broken the recorded-eval replay path under verify —
+so `scrub.open_clip` stays the un-prompted scripted door (the CLI-launch trust
+stance) and the future embedded crash tail routes through the same gated door. An
+untrusted drop parks a pending prompt with **nothing stashed, mounted, or run**: an
+amber **UNTRUSTED REPLAY** panel above the tray (drawn even with no live history)
+naming the file — "contains code; opening it runs that code" — with **cancel** /
+**run clip**, Esc layered above the clip/loop escape, and `trust_run` re-entering the
+same door once trusted. Pure Lua chrome/policy, **no sim/doc/recorded byte moved**:
+Linux selftest **24,149** / native Windows **24,151** on PAL API 19 (24 new KATs in
+`t_clip_trust`: deterministic + EPOC-sensitive + path-insensitive identity, the three
+refusals, self-export pre-trust, the park-with-nothing-run drop, Esc cancel + re-ask,
+the confirm→normal-D105-clip→untouched-live-ring round trip, session persistence of
+the confirm), `nix run .#test` ALL GREEN with every historical trace and pixel/audio
+golden byte-identical. Composite fixture: `smoke --edit` dropped a foreign-process
+`.ctrace` through the real door — prompt parked over the still-recording tray;
+scripted `trust_run` opened the normal REPLAY CLIP. Inspected captures on llm-feed:
+the pending prompt and the confirmed clip. `tools/build-windows.sh` refreshed the
+stage (4 durable entries) and Start Menu shortcut. **Deferred, named honestly:** a
+persisted cross-session trust store (first real re-confirm complaint votes it in), a
+hash/"details" affordance on the prompt, and publisher-identity trust.
 
 **D106 lands the crash-report drop (A7 §16) — the last A7 timeline source.**
 A `.ccrash` dropped into any editor view now opens the crashed minute. It routes in
@@ -188,29 +221,26 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **A7 — the trust prompt before executing an untrusted
-bundle (REWIND.md §13, ALPHA §A7).** With the crash drop in, A7 reaches its
-stated exit: a user can spot a high-activity moment, seek / A/B-loop / export it,
-drag a standalone replay into a fresh editor and poke around its bundled project,
-dismiss back to the untouched live session, and reach the preceding minute from a
-crash report — all while understanding storage use. The remaining A7 items are
-refinements. The clearest and most shippable-alpha-relevant is the **trust
-prompt**: both D105's clip mount and D106's crash focus execute a bundle's game
-code with the **same trust boundary as opening a project**, and §13 requires the
-UI to *say so* before running an untrusted (dragged-in / downloaded) bundle. The
-packet: a confirm gate in `scrub.do_load(editor_clip)` / `drop_crash`'s
-mount-and-run path (a modal or tray affordance — "this replay contains code; run
-it?"), remembered per bundle-hash for the session, that a same-session self-export
-skips (it's your own code). Then the honestly-deferred siblings, in rough order:
-**adopted-range standalone export** (reconstruct the SNAP code bundle from the
-adopted segment's manifest `.lua` sources + host engine `cm.*`, so `export_clip`
-stops refusing adopted ranges), an **embedded crash tail** in the `.ccrash`
-container (route it through `open_clip` like a clip — closes the §16 "prefer
-embedded" path), **captured-audio embedding**, a **wall-clock clip filename**
-(needs a PAL date door), and cross-process **native-failure next-launch
-synthesis**. Once A7's refinements are done or deferred, **A8** (documentation,
-accessibility, release candidate — ALPHA §A8) is the open gate. See `ALPHA.md`
-§A7/§A8 and `REWIND.md` §13/§16.
+**Exact next packet:** **A7 — adopted-range standalone export (REWIND.md §14,
+ALPHA §A7).** With the trust prompt in, A7's exit story is complete AND honest
+about foreign code: spot a moment, seek / A/B-loop / export it, drag a standalone
+replay into a fresh editor (confirming its code the first time), poke around its
+bundled project, dismiss back to the untouched live session, and reach the
+preceding minute from a crash report — all while understanding storage use. The
+remaining A7 items are the honestly-deferred refinements, in rough order:
+**adopted-range standalone export** first — it is the only place the shipped UI
+still *refuses* something the §14 foundation already paid for (the adopted
+segment's project manifest is captured, but its SNAP needs a code bundle
+reconstructed from the manifest's `.lua` sources + the host engine `cm.*`, so
+`export_clip` stops refusing adopted ranges and "export replay" works on
+cross-session history). Then the **embedded crash tail** in the `.ccrash`
+container (route it through the gated `open_clip` door like a clip — closes the
+§16 "prefer embedded" path and inherits D107's prompt for free),
+**captured-audio embedding**, a **wall-clock clip filename** (needs a PAL date
+door), and cross-process **native-failure next-launch synthesis**. Any of these
+can also be judged deferred-past-alpha on its merits — at that point **A8**
+(documentation, accessibility, release candidate — ALPHA §A8) is the open gate.
+See `ALPHA.md` §A7/§A8 and `REWIND.md` §13/§14/§16.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's
