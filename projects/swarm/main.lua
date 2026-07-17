@@ -11,17 +11,22 @@
 --                 doc, tags "enemy"/"shot", stable ids, spawn-order
 --                 iteration, world timers. cellar and the demo keep
 --                 their naive tables as contrast.
---   PAIN(effect): hit pause, screen shake, and the death flash are three
---                 hand-tuned doc counters plus draw-side offset math.
+--   resolved(effect): the hit pause / shake / death flash counter triple
+--                 moved into cm.tween (A5/D094): named effects on the doc
+--                 root remembering their lifetime, one tick, and the
+--                 eased draw math (val/wobble) instead of hand-tuned
+--                 offset/alpha formulas re-deriving each t0. cellar and
+--                 the demo keep their naive counters as contrast.
 --   PAIN(move):   the aim/axis normalization dance is re-derived yet again.
 --
 -- Determinism: everything per-frame lives in state.doc — the actor world
 -- is a plain doc subtree, so snapshots/traces/rewind carry it by
 -- construction; spawns come from cm.rand (the PRNG is sim state, so runs
--- replay bit-for-bit); the shake offset is render-only math off the sim
--- frame count, never the PRNG. The high score is read ONCE in init under
--- the reload-idempotence contract (absent-fill only) — the trace SNAP
--- carries the result — and written back as a pure output on death.
+-- replay bit-for-bit); the shake wobble is render-only math off the
+-- effect's remaining count, never the PRNG. The high score is read ONCE
+-- in init under the reload-idempotence contract (absent-fill only) — the
+-- trace SNAP carries the result — and written back as a pure output on
+-- death.
 local state = cm.require("cm.state")
 local input = cm.require("cm.input")
 local text = cm.require("cm.text")
@@ -29,6 +34,7 @@ local m = cm.require("cm.math")
 local rand = cm.require("cm.rand")
 local save = cm.require("cm.save")
 local actor = cm.require("cm.actor")
+local tween = cm.require("cm.tween")
 
 local W, H = pal.gfx_size()
 local PW = 10                 -- player square
@@ -48,7 +54,7 @@ local function reset(d)
   d.wave = 0
   d.score = 0
   d.over = false
-  d.pause, d.shake, d.flash = 0, 0, 0
+  tween.clear(d)
 end
 
 function game.init()
@@ -90,15 +96,14 @@ end
 function game.step()
   local d = state.doc
   if input.pressed("reset") then reset(d) end
-  if d.shake > 0 then d.shake = d.shake - 1 end
-  if d.flash > 0 then d.flash = d.flash - 1 end
+  tween.tick(d) -- pause/shake/flash decay whether or not the world runs
   if d.over then
     if input.pressed("fire") then reset(d) end -- instant restart
     return
   end
   -- juice: hit pause freezes the world for a beat (render still runs);
   -- returning before tick also freezes every actor timer — pause for free
-  if d.pause > 0 then d.pause = d.pause - 1 return end
+  if tween.on(d, "pause") then return end
   local w = d.world
   actor.tick(w) -- once per step: sweep last frame's dead, run the timers
 
@@ -161,16 +166,16 @@ function game.step()
       actor.despawn(w, e)
       actor.despawn(w, s)
       d.score = d.score + 10
-      d.pause = 2          -- juice: a 2-frame hit pause
-      d.shake = 6
+      tween.play(d, "pause", 2)      -- juice: a 2-frame hit pause
+      tween.play(d, "shake", 6, 2.4) -- peak px, fading over 6 frames
     end
   end
 
   -- an enemy reaches you: run over
   if actor.hit(w, "enemy", d.x, d.y, PW, PW) then
     d.over = true
-    d.flash = 14
-    d.shake = 18
+    tween.play(d, "flash", 14, 0.55)
+    tween.play(d, "shake", 18, 7.2)
     if d.score > d.hiscore then
       d.hiscore = d.score
       -- pure output (D086): result deliberately ignored; on replay the
@@ -192,10 +197,8 @@ end
 
 function game.draw()
   local d = state.doc
-  local t = state.frame()
-  -- juice: render-only shake off the sim frame count (never the PRNG)
-  local sx = d.shake > 0 and m.sin(t * 2.7) * d.shake * 0.4 or 0
-  local sy = d.shake > 0 and m.sin(t * 3.1 + 2) * d.shake * 0.4 or 0
+  -- juice: render-only shake off the effect counter (never the PRNG)
+  local sx, sy = tween.wobble(d, "shake")
   pal.begin_frame(0.07, 0.07, 0.10, 1)
   pal.quad(2 + sx, 2 + sy, W - 4, H - 4, 0.10, 0.10, 0.14, 1)
   for s in actor.each(d.world, "shot") do
@@ -210,10 +213,8 @@ function game.draw()
     pal.quad(d.x + d.fx * 4 + 3 + sx, d.y + d.fy * 4 + 3 + sy, 4, 4,
              0.85, 0.95, 1.0, 1)
   end
-  if d.flash > 0 then -- juice: the death flash washes the arena
-    local a = d.flash / 14 * 0.55
-    pal.quad(0, 0, W, H, 0.9, 0.25, 0.25, a)
-  end
+  local a = tween.val(d, "flash") -- juice: the death flash washes the arena
+  if a > 0 then pal.quad(0, 0, W, H, 0.9, 0.25, 0.25, a) end
   local k = input.pad_connected(1) and "pad" or "key"
   local msg = d.over
     and ("run over! " .. input.label("fire", k) .. " restarts instantly")
