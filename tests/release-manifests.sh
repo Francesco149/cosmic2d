@@ -19,7 +19,7 @@ assert_legal_skeleton() {
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/editor.txt" "$stage/editor"
-for name in selftest smoke igcanvas uigallery padtest inputproof; do
+for name in selftest smoke igcanvas uigallery padtest inputproof cellar; do
   assert_absent "$stage/editor/projects/$name"
 done
 assert_present "$stage/editor/projects/picker/project.lua"
@@ -31,7 +31,7 @@ assert_legal_skeleton "$stage/editor"
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/play.txt" "$stage/play" demo
-for name in selftest smoke igcanvas uigallery padtest inputproof; do
+for name in selftest smoke igcanvas uigallery padtest inputproof cellar; do
   assert_absent "$stage/play/projects/$name"
 done
 assert_present "$stage/play/projects/picker/project.lua"
@@ -118,7 +118,7 @@ fi
 
 "$repo/tools/stage-manifest.sh" "$repo" \
   "$repo/dist/manifests/dev.txt" "$stage/dev"
-for name in selftest smoke igcanvas uigallery padtest inputproof; do
+for name in selftest smoke igcanvas uigallery padtest inputproof cellar; do
   assert_present "$stage/dev/projects/$name/project.lua"
 done
 assert_present "$stage/dev/tests/release-manifests.sh"
