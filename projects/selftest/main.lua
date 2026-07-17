@@ -3638,7 +3638,7 @@ local function t_options()
         "options: set refuses out-of-range values")
 
   -- volumes + custom values round-trip the REAL video.dat save/load
-  local vroot = tmproot() .. "/cosmic_selftest_video"
+  local vroot = tmproot() .. "/cosmic_selftest_optvideo"
   pal.x_remove(vroot .. "/video.dat")
   pal.x_remove(vroot .. "/editor.dat")
   pal.x_remove(vroot)
