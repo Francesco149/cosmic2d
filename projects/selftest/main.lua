@@ -9932,6 +9932,244 @@ local function t_standalone_clip()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_clip_nondestructive()
+  -- A7 §13: the drag-in replay opens a clip WITHOUT adopting its timeline. The
+  -- ring layer proves the untouched-live promise: stash_live parks the live ring
+  -- aside, ring_load lands the clip in a fresh ring (its own range + workspace),
+  -- and restore_live puts the live ring back byte-for-byte, dropping the
+  -- ephemeral workspace. (The present-state / editor-root halves are cm.scrub /
+  -- cm.ed unit-checked below and exercised end-to-end by the windowed fixture.)
+  local trace = cm.require("cm.trace")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local save_ws = trace._workspace_root
+  local root = tmproot() .. "/cosmic_selftest_clipnd"
+  local wsroot = tmproot() .. "/cosmic_selftest_clipndws"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  local function wipe_ws()
+    local ns = pal.x_list_dir_all and pal.x_list_dir_all(wsroot) or {}
+    for i = #ns, 1, -1 do pal.x_remove(wsroot .. "/" .. ns[i]) end
+    pal.x_remove(wsroot)
+  end
+  wipe_hist(); wipe_ws()
+
+  pal.write_file(root .. "/main.lua", "return {}\n")
+  pal.mkdir(root .. "/art")
+  pal.write_file(root .. "/art/hero.spr", ("HERO"):rep(9))
+
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  trace._workspace_root = wsroot
+  local b = pal.buf("st.clipnd", 8)
+  local irec = ("\0"):rep(10)
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  for i = 1, 16 do
+    b:i32(0, i * 7); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+  end
+  trace.history_drain()
+
+  -- a standalone clip of a sub-range, then capture the LIVE ring's identity
+  local A, B = f0 + 3, f0 + 12
+  local clip = root .. "/range.ctrace"
+  check(trace.export_clip(A, B, clip), "clip-nd: export a standalone sub-range")
+  local live_lo, live_hi = trace.ring_range()
+  local live_mfst = trace.ring_manifest() and trace.ring_manifest()["main.lua"]
+  local live_export = root .. "/before.ctrace"
+  trace.ring_export(live_export)
+  local before_bytes = pal.read_file(live_export)
+  check(before_bytes and #before_bytes > 0, "clip-nd: captured the live ring bytes")
+
+  -- ---- stash the live ring; load the clip into a fresh one ----
+  check(trace.stash_live(), "clip-nd: stash_live parks the live ring")
+  check(trace.has_stash(), "clip-nd: has_stash reports the parked live ring")
+  check(trace.ring_range() == nil, "clip-nd: no live ring visible while stashed")
+  local ok2, why2 = trace.stash_live()
+  check(not ok2 and why2 and why2:find("already"),
+        "clip-nd: a second stash is refused, not silently clobbering")
+
+  trace.ring_load(clip)
+  local rlo, rhi = trace.ring_range()
+  check(rhi == B and rlo <= A,
+        "clip-nd: the replay ring covers the clip's frames through B")
+  local ws = trace.replay_workspace()
+  check(ws and pal.read_file(ws .. "/main.lua") == "return {}\n",
+        "clip-nd: the clip's project tree materialized into a workspace")
+  check(trace.replay_loop() and trace.replay_loop().a == A
+        and trace.replay_loop().b == B,
+        "clip-nd: the clip's A/B loop bounds ride alongside")
+
+  -- ---- restore the live ring: byte-identical, workspace swept ----
+  check(trace.restore_live(), "clip-nd: restore_live swaps the live ring back")
+  check(not trace.has_stash(), "clip-nd: the stash is consumed on restore")
+  local rlo2, rhi2 = trace.ring_range()
+  check(rlo2 == live_lo and rhi2 == live_hi,
+        "clip-nd: the live range is exactly what it was before the clip")
+  check((trace.ring_manifest() and trace.ring_manifest()["main.lua"]) == live_mfst,
+        "clip-nd: the live project manifest is unchanged")
+  local after_export = root .. "/after.ctrace"
+  trace.ring_export(after_export)
+  check(pal.read_file(after_export) == before_bytes,
+        "clip-nd: the live ring exports byte-for-byte identically (untouched)")
+  check(not pal.mtime(ws .. "/main.lua"),
+        "clip-nd: the ephemeral replay workspace is swept on restore")
+  local ok3, why3 = trace.restore_live()
+  check(not ok3 and why3, "clip-nd: restore with nothing stashed is refused")
+
+  -- ---- cm.ed root mount is a scoped, reversible swap ----
+  local ed = cm.require("cm.ed")
+  local was_root, was_stash, was_stashed =
+    ed.root, ed.g.root_stash, ed.g.root_stashed
+  ed.root, ed.g.root_stash, ed.g.root_stashed = "/live/project", nil, nil
+  ed.mount_replay("/some/ws")
+  check(ed.root == "/some/ws" and ed.g.root_stashed,
+        "clip-nd: mount_replay swaps ed.root to the workspace")
+  ed.mount_replay("/other/ws")
+  check(ed.root == "/some/ws",
+        "clip-nd: mount_replay is idempotent (no double-stash of the real root)")
+  ed.unmount_replay()
+  check(ed.root == "/live/project" and not ed.g.root_stashed,
+        "clip-nd: unmount_replay restores the real project root")
+  ed.unmount_replay()
+  check(ed.root == "/live/project",
+        "clip-nd: unmount with nothing mounted is a no-op")
+  ed.root, ed.g.root_stash, ed.g.root_stashed = was_root, was_stash, was_stashed
+
+  -- leave a clean tree + ring behind
+  wipe_hist(); wipe_ws()
+  for _, n in ipairs({ "main.lua", "art/hero.spr", "art", "range.ctrace",
+      "before.ctrace", "after.ctrace" }) do
+    pal.x_remove(root .. "/" .. n)
+  end
+  trace._workspace_root = save_ws
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, f0)
+  pal.buf_free("st.clipnd")
+  trace.ring_start({ project = "selftest" })
+end
+
+local function t_clip_lifecycle()
+  -- A7 §13 integration: drive the REAL editor drag-in lifecycle headlessly.
+  -- scrub.open_clip -> (chrome phase) do_load stashes the live ring, snapshots
+  -- the present, ring_loads the clip and mounts its workspace; apply parks the
+  -- editor onto the clip; scrub.close (is_clip -> close_clip) restores the
+  -- present state, live ring, editor doc, and real project root WITHOUT adopting
+  -- the replay. The imgui tray is chrome (verified windowed); this pins the
+  -- state machine that must never let a replay become project state.
+  local trace = cm.require("cm.trace")
+  local scrub = cm.require("cm.scrub")
+  local ed = cm.require("cm.ed")
+  local state = cm.require("cm.state")
+  local view = cm.require("cm.view")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+
+  -- isolate: after_restore normally re-runs the game's init — here that IS this
+  -- selftest, so stub it. Remember everything we perturb.
+  local save_after = cm.main.after_restore
+  local save_on, save_doc, save_root = ed.on, ed.doc, ed.root
+  local save_mode = view.mode
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local save_ws = trace._workspace_root
+  cm.main.after_restore = function() end
+
+  local root = tmproot() .. "/cosmic_selftest_cliplife"
+  local wsroot = tmproot() .. "/cosmic_selftest_cliplifews"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  local function wipe_ws()
+    local ns = pal.x_list_dir_all and pal.x_list_dir_all(wsroot) or {}
+    for i = #ns, 1, -1 do pal.x_remove(wsroot .. "/" .. ns[i]) end
+    pal.x_remove(wsroot)
+  end
+  wipe_hist(); wipe_ws()
+  pal.write_file(root .. "/main.lua", "return {}\n")
+
+  ed.launch(root) -- ed.on, ed.doc, ed.root = root
+  check(ed.on and ed.root == root, "clip-life: editor launched on the project")
+
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  trace._workspace_root = wsroot
+  local b = pal.buf("st.cliplife", 8)
+  local irec = ("\0"):rep(10)
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  for i = 1, 16 do
+    b:i32(0, i * 7); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+  end
+  trace.history_drain()
+  local A, B = f0 + 3, f0 + 12
+  local clip = root .. "/range.ctrace"
+  check(trace.export_clip(A, B, clip), "clip-life: exported an A..B clip")
+  local live_lo, live_hi = trace.ring_range()
+
+  -- a distinct live PRESENT: the buffer advanced past the last recorded frame.
+  -- close must restore exactly this, not the replay's frame.
+  local LIVE = 0x51192026
+  b:i32(0, LIVE)
+
+  -- ---- drop-in: open_clip queues; scrub.frame (chrome phase) loads it ----
+  scrub.open_clip(clip)
+  scrub.frame() -- do_load + apply(loop A) + ed.park; returns before the tray
+  check(scrub.is_clip() and scrub.paused(),
+        "clip-life: the clip opens as a paused, non-destructive replay")
+  check(trace.has_stash(), "clip-life: the live ring is stashed, not replaced")
+  check(ed.root == trace.replay_workspace() and ed.root ~= root,
+        "clip-life: ed.root mounts the clip's materialized workspace")
+  check(ed.parked, "clip-life: the editor is parked (edits stay ephemeral)")
+  check(b:i32(0) ~= LIVE,
+        "clip-life: the live buffers now show the replay frame, not the present")
+
+  -- ---- dismiss: scrub.close routes to close_clip; live comes back intact ----
+  local ws = trace.replay_workspace()
+  scrub.close()
+  check(not scrub.is_clip() and not scrub.paused() and not scrub.on,
+        "clip-life: dismiss leaves no replay state")
+  check(not trace.has_stash(), "clip-life: the stash is consumed on dismiss")
+  check(ed.root == root, "clip-life: the real project root is restored")
+  check(not ed.parked, "clip-life: the editor is unparked")
+  local rlo, rhi = trace.ring_range()
+  check(rlo == live_lo and rhi == live_hi,
+        "clip-life: the live ring range is exactly what it was")
+  check(b:i32(0) == LIVE,
+        "clip-life: the live PRESENT buffer is restored, not the replay's")
+  check(ws and not pal.mtime(ws .. "/main.lua"),
+        "clip-life: the ephemeral replay workspace is swept on dismiss")
+
+  -- restore the world for the tests that follow
+  wipe_hist(); wipe_ws()
+  pal.x_remove(root .. "/main.lua")
+  pal.x_remove(root .. "/range.ctrace")
+  ed.on, ed.doc, ed.root = save_on, save_doc, save_root
+  ed.parked, ed.g.stash = false, nil
+  ed.g.root_stash, ed.g.root_stashed = nil, nil
+  view.mode = save_mode
+  cm.main.after_restore = save_after
+  trace._workspace_root = save_ws
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  scrub.live_snap = nil
+  sim:i64(0, f0)
+  pal.buf_free("st.cliplife")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -10068,6 +10306,8 @@ function game.init()
   t_timeline_retention()
   t_project_blobs()
   t_standalone_clip()
+  t_clip_nondestructive()
+  t_clip_lifecycle()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
