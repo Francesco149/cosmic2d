@@ -17,6 +17,27 @@ M.DEFAULT_SPAN = 10 * 60 * 60 -- ten minutes at the fixed 60 Hz
 M.MIN_SPAN = 60               -- the near zoom shows individual frames
 M.ZOOM_STEP = 1.18
 
+-- The retained-history disk-budget ladder the tray's -/+ knob steps through
+-- (MB). cm.view clamps any value to [16, 65536]; these are the round rungs.
+M.BUDGET_MB = { 128, 256, 512, 1024, 2048, 4096, 8192, 16384 }
+
+-- Next ladder rung strictly above (dir>0) / below (dir<0) the current budget,
+-- so the knob always moves in the pressed direction from an off-rung value.
+local function step_budget(cur, dir)
+  local L = M.BUDGET_MB
+  if dir > 0 then
+    for k = 1, #L do if L[k] > cur + 0.5 then return L[k] end end
+    return L[#L]
+  end
+  for k = #L, 1, -1 do if L[k] < cur - 0.5 then return L[k] end end
+  return L[1]
+end
+
+local function fmt_budget(mb)
+  if mb >= 1024 then return ("%g GB"):format(mb / 1024) end
+  return ("%g MB"):format(mb) -- %g: robust to a console-set fractional budget
+end
+
 local C = {
   panel = 0x191726fa, panel2 = 0x211e32ff, lane = 0x151321ff,
   edge = 0x4a4370ff, edge_hot = 0x6a60a0ff,
@@ -580,6 +601,7 @@ function M.draw(ed, ig, i)
   local r = state(ed)
   local lo, hi = trace.ring_range()
   local parked = scrub.paused()
+  local recp = trace.rec_paused()
   if parked and lo and not r.open then
     r.open, r.view = true, M.default_view(lo, hi)
   end
@@ -587,10 +609,11 @@ function M.draw(ed, ig, i)
   pal.x_ig_overlay(true)
 
   -- The collapsed entrance remains useful at all times: retained duration,
-  -- a live recording dot, and a parked/clip state that reads at a glance.
+  -- a live recording dot, and a parked/paused/clip state that reads at a glance.
   local pill_label
   if scrub.has_loop and scrub.has_loop() then pill_label = "A/B LOOP"
   elseif parked then pill_label = "PARKED"
+  elseif recp then pill_label = "REC PAUSED"
   elseif lo then pill_label = fmt_duration(hi - lo)
   else pill_label = "NO HISTORY" end
   local px = 12
@@ -602,9 +625,10 @@ function M.draw(ed, ig, i)
   pal.x_ig_rect_fill(pill.x, pill.y, pill.w, pill.h,
     r.open and 0x393456f5 or (pill_hov and C.button_hot or 0x262238ee), 8)
   pal.x_ig_circle_fill(pill.x + 11, pill.y + ph * 0.5, 3.5,
-    parked and C.code or C.live)
+    recp and C.restart or (parked and C.code or C.live))
   text(pill.x + 20, pill.y + 6, px,
-    r.open and C.text or (parked and C.code or C.dim), pill_label)
+    r.open and C.text or (recp and C.restart or (parked and C.code or C.dim)),
+    pill_label)
   if pill_hov and i.clicked[1] and lo then M.toggle(ed) end
 
   if not r.open or not lo then
@@ -648,19 +672,109 @@ function M.draw(ed, ig, i)
   apply_gestures(r, i, v, lo, hi, ax, film_y, aw, axis_h)
 
   local stats = trace.ring_stats() or {}
-  local used = math.max(stats.disk_bytes or 0,
-    (stats.chunk_bytes or 0) + (stats.keyframe_bytes or 0))
-  local budget = (trace.ring.budget_mb or 1024) * 1024 * 1024
   text(bx + 14, head_y + 9, 12, C.text, "REWIND")
   text(bx + 79, head_y + 9, 11, C.dim,
-    parked and "LIVE HISTORY  /  PARKED" or "LIVE HISTORY  /  RECORDING")
-  local storage = ("%s / %s   %d segments"):format(fmt_bytes(used),
-    fmt_bytes(budget), stats.segs or 0)
-  local stw = pal.x_ig_text_size(storage, 10, 0)
-  text(bx + bw - stw - 45, head_y + 10, 10, C.dim, storage)
-  if button(i, bx + bw - 33, head_y + 5, 23, 21, "x",
-            { enabled = not scrub.has_loop() }) then
+    parked and "LIVE HISTORY  /  PARKED"
+    or (recp and "LIVE HISTORY  /  REC PAUSED" or "LIVE HISTORY  /  RECORDING"))
+
+  -- The retention surface (A7): a live disk-use meter plus the controls that
+  -- bound a long session. Laid out right-to-left from the panel edge so it
+  -- degrades gracefully — the legend below only draws if it still fits.
+  local hy, hbh = head_y + 5, 21
+  local right = bx + bw - 10
+  local function place_r(w)
+    right = right - w
+    local x = right
+    right = right - 6
+    return x
+  end
+
+  -- persist a new budget, apply it immediately (shrinking evicts now), and drop
+  -- the tray caches an eviction may have invalidated. Parked in the past, defer
+  -- eviction to the return-to-live so it can't drop the segment being viewed.
+  local function set_budget(mb)
+    trace.ring.budget_mb = mb
+    cm.require("cm.view").set_history_budget(mb)
+    if not parked then
+      trace.reevict()
+      free_thumbtex(r)
+      r.summary = nil
+    end
+  end
+
+  local xb = place_r(23)
+  if button(i, xb, hy, 23, hbh, "x", { enabled = not scrub.has_loop() }) then
     M.close(ed, false)
+    pal.x_ig_overlay(false)
+    return
+  end
+
+  -- the disk-use meter: fill = retained / budget, warming amber then red as it
+  -- nears the bound; the label pins used/budget and the segment/spill state.
+  right = right - 6
+  local used = stats.retained_bytes or 0
+  local budget = (trace.ring.budget_mb or 1024) * 2^20
+  local frac = budget > 0 and clamp(used / budget, 0, 1) or 0
+  local mw = 156
+  local mx = place_r(mw)
+  local bar_y = head_y + 21
+  pal.x_ig_rect_fill(mx, bar_y, mw, 6, C.lane, 3)
+  local fillc = frac > 0.9 and C.err or (frac > 0.7 and C.restart or C.accent)
+  pal.x_ig_rect_fill(mx, bar_y, math.max(2, mw * frac), 6, fillc, 3)
+  text(mx, head_y + 6, 10, C.dim,
+    ("%s / %s"):format(fmt_bytes(used), fmt_bytes(budget)))
+  local seg = ("%d seg"):format(stats.segs or 0)
+  if (stats.pending or 0) > 0 then seg = seg .. " . spilling " .. stats.pending end
+  local segw = pal.x_ig_text_size(seg, 10, 0)
+  text(mx + mw - segw, head_y + 6, 10, C.faint, seg)
+
+  -- disk-budget knob: [-] value [+]
+  right = right - 8
+  local mb = trace.ring.budget_mb or 1024
+  if button(i, place_r(19), hy, 19, hbh, "+") then set_budget(step_budget(mb, 1)) end
+  local val, vw = fmt_budget(mb), 58
+  local vx = place_r(vw)
+  local vtw = pal.x_ig_text_size(val, 11, 0)
+  text(vx + (vw - vtw) * 0.5, head_y + 8, 11, C.text, val)
+  if button(i, place_r(19), hy, 19, hbh, "-") then set_budget(step_budget(mb, -1)) end
+
+  -- clear: two-click confirm (auto-disarms after 3s); a live clip blocks it
+  right = right - 8
+  if r.confirm_clear and pal.time_ns() - r.confirm_clear > 3e9 then
+    r.confirm_clear = nil
+  end
+  local armed = r.confirm_clear ~= nil
+  if button(i, place_r(58), hy, 58, hbh, armed and "sure?" or "clear",
+            { enabled = not scrub.has_loop(), accent = armed,
+              outline = armed and C.err or nil, px = 11 }) then
+    if armed then
+      r.confirm_clear = nil
+      if parked then scrub.close() end
+      free_thumbtex(r)
+      local ok, err = ed.clear_cache()
+      r.view, r.summary, r.preview, r.open = nil, nil, nil, nil
+      flash(r, ok and "history cleared" or ("clear failed: " .. tostring(err)))
+      pal.x_ig_overlay(false)
+      return
+    end
+    r.confirm_clear = pal.time_ns()
+  end
+
+  -- pause the always-on recorder: the game keeps running but history stops
+  -- growing. Only at the live edge (parked/clip already stop recording).
+  local pz = place_r(78)
+  if button(i, pz, hy, 78, hbh, recp and "resume rec" or "pause rec",
+            { enabled = recp or (not parked and not scrub.has_loop()),
+              accent = recp, px = 11 }) then
+    if recp then
+      trace.set_rec_paused(false) -- reseeds the ring: drop stale tray caches
+      free_thumbtex(r)
+      r.view, r.summary, r.preview = nil, nil, nil
+      flash(r, "recording resumed -- fresh history from here")
+    else
+      trace.set_rec_paused(true)
+      flash(r, "recording paused -- history frozen; resume starts fresh")
+    end
     pal.x_ig_overlay(false)
     return
   end
@@ -673,7 +787,7 @@ function M.draw(ed, ig, i)
   lane(act_y, act_h, "ACTIVITY")
   lane(event_y, event_h, "EVENTS")
   lane(ruler_y, ruler_h, "TIME")
-  draw_legend(bx + 260, head_y + 9)
+  if bx + 260 + 176 < right then draw_legend(bx + 260, head_y + 9) end
 
   pal.x_ig_clip_push(ax, film_y, aw, axis_h)
   draw_previews(r, v, ax, film_y, aw, film_h, hi)
