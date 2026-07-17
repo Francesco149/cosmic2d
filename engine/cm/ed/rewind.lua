@@ -840,7 +840,8 @@ function M.draw(ed, ig, i)
     local pw2, ph2 = math.max(380, tw + 28), 96
     local bh2 = math.min(248, math.max(176, ig.h - 70))
     local px2 = (ig.w - pw2) * 0.5
-    local py2 = math.max(8, ig.h - bh2 - 8 - ph2 - 10)
+    -- above the tray with room for the flash line below the panel
+    local py2 = math.max(8, ig.h - bh2 - 8 - ph2 - 34)
     r.trust_rect = { x = px2, y = py2, w = pw2, h = ph2 }
     if rect_has(r.trust_rect, i) then
       local ui = cm.require("cm.ui")
