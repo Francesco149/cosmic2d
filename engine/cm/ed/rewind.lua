@@ -725,6 +725,11 @@ function M.draw(ed, ig, i)
     ("%s / %s"):format(fmt_bytes(used), fmt_bytes(budget)))
   local seg = ("%d seg"):format(stats.segs or 0)
   if (stats.pending or 0) > 0 then seg = seg .. " . spilling " .. stats.pending end
+  -- the content-addressed project-blob store (§14, D103) is storage the budget
+  -- bar (segment bytes only) doesn't show; name it so total disk use reads true.
+  if (stats.blob_bytes or 0) > 0 then
+    seg = seg .. " . " .. fmt_bytes(stats.blob_bytes) .. " blobs"
+  end
   local segw = pal.x_ig_text_size(seg, 10, 0)
   text(mx + mw - segw, head_y + 6, 10, C.faint, seg)
 

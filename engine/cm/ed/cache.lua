@@ -45,7 +45,13 @@ end
 function M.clear(root, fail)
   local dir = M.dir(root) .. "/history"
   local count, errors = 0, {}
-  for _, name in ipairs(pal.list_dir(dir) or {}) do
+  -- pal.list_dir is a recursive parent-then-children walk; the content-
+  -- addressed blob store (§14, D103) is a subdirectory, so remove in reverse
+  -- (children before their directory) — SDL_RemovePath only unlinks a file or
+  -- an already-empty directory.
+  local names = pal.list_dir(dir) or {}
+  for i = #names, 1, -1 do
+    local name = names[i]
     if not pal.x_remove(dir .. "/" .. name) then
       errors[#errors + 1] = name
     else
