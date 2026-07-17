@@ -202,11 +202,19 @@ Goal: exported desktop games meet basic player expectations.
   project.lua, scaffolded + settings-editable; reads feed the sim only via
   idempotent init or the recorded eval-channel load door, so replays never
   need a machine's saves.)
-- [ ] Prove input recording, rewind, resume, replay, and cross-platform verify
-  with keyboard, mouse, and gamepad records.
+- [x] Prove input recording, rewind, resume, replay, and cross-platform verify
+  with keyboard, mouse, and gamepad records. (D087: `projects/inputproof` +
+  the committed 258-frame `inputproof_a4exit` ring export — all three
+  domains, both save doors, and a scrub rewind/resume seam in one recorded
+  session, byte-exact on Linux and native Windows.)
 
 Exit: controller and keyboard can complete every bundled demo; rebindings and
 save data survive restart; deterministic traces cover all supported inputs.
+**A4 exit walked and closed (D087):** route bots completed the demo by
+keyboard and by virtual SDL controller (identical frame 2688, Linux AND
+native Windows) over the demo's new real pad bindings; a rebind override and
+a written save both survived real restarts; kitcheck + padtest + inputproof
+cover every supported input domain.
 
 ### A5 — genre-neutral runtime ergonomics
 

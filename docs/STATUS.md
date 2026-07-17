@@ -3,13 +3,13 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — player storage shipped (D086); the A4 exit proof next (2026-07-17)
+## Current handoff — A4 CLOSED with the exit proof (D087); A5/A6 begin (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A3 are complete and A4 is five packets in.** A3's full promise holds:
+**A0–A4 are complete.** A3's full promise holds:
 from a fresh archive a user can create (from four starter templates),
 import, rename, relocate, duplicate, archive, delete, edit, play, and
 export projects entirely through the shipped UI. Real SDL controllers
@@ -17,11 +17,45 @@ drive games deterministically (D082 record + D083 discovery), every
 action is player-rebindable across keyboard and pads (D084) — the human
 has since confirmed a physical Switch Pro controller through native
 win32 SDL drives games and rebinding correctly — the Esc menu is the
-full player options surface (D085), and games now have real player
-saves (D086). The rest of A4 (the all-inputs determinism proof), shared
-genre-neutral runtime slices and demos (A5/A6), the complete rewind
-product UI (A7), and the release-candidate pass (A8) remain the open
-alpha gates.
+full player options surface (D085), games have real player saves
+(D086), and the all-inputs determinism proof plus the walked exit
+checklist closed the gate (D087). Shared genre-neutral runtime slices
+and demos (A5/A6), the complete rewind product UI (A7), and the
+release-candidate pass (A8) remain the open alpha gates.
+
+**D087 closes A4 with the exit proof.** `projects/inputproof` is the
+committed all-inputs fixture: keyboard action bits (with pad-button and
+pad-axis bindings ORed into the same v1 bits), the v1 mouse fields,
+the PAD extension, and both D086 save doors in one sim. A render-side
+driver — armed by a recorded eval, inert under verify — fed synthetic
+key/mouse events through the real `cm.input.feed` door, drove a real
+virtual SDL pad, triggered recorded save loads, and walked a scrub
+rewind/resume mid-session; since `trace.rewind` stops a `--record` pin
+by design, the committed artifact is the ring export ("save what just
+happened"), which spans the rewind seam gaplessly.
+`tests/traces/inputproof_a4exit.ctrace` (258 frames from a real
+windowed WSLg session) carries sub-frame key and pad taps, clicks and
+wheel, hot-plug cycles, a threshold-contrast axis sweep, three saves
+(one via the pad-bound action), and two recorded loads — and verifies
+byte-exact on Linux and the staged native Windows executable, where no
+saves, pads, or history exist. The exit checklist walked honestly: the
+bundled demo gained real pad default bindings (documented in
+CONTROLS.md), scripted route bots completed it through the real loop by
+keyboard AND by virtual controller — all 7 coins, both rooms, the spike
+pit, up-jump chains, a flash-jump gap dash — at the identical
+deterministic frame 2688 on Linux and native Windows; a
+`jump -> key:44 + pad:north` rebind override and the recorded session's
+save slot both survived fresh real boots byte-for-byte.
+
+**D087 proof:** Linux selftest **23,767** checks and the staged native
+Windows executable **23,769** on PAL API 19 (no new KATs — the proof is
+the committed trace plus the walked checklist). `nix run .#test` is ALL
+GREEN with the new trace beside every historical trace and all
+pixel/audio goldens; native Windows re-verified inputproof, padtest,
+and kitcheck. `tools/build-windows.sh` refreshed the stage (4 durable
+entries preserved) and Start Menu shortcut. Inspected capture on
+llm-feed: the fixture at the trace's final state, every domain tally
+nonzero.
 
 **D086 closes the player-storage packet, the fifth A4 line.** `cm.save`
 keeps saves at `<pal.user_path()>saves/<save_id>/<profile>/slot<n>.sav`
@@ -572,17 +606,18 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the A4 exit proof** — the last A4 line: prove
-input recording, rewind, resume, replay, and cross-platform verify with
-keyboard, mouse, and gamepad records together. Shape it as one recorded
-session on a fixture that consumes all three input domains (plus a
-mid-session recorded save load, now that D086 exists), exercising
-rewind/resume mid-recording, exported as a committed trace that the
-suite verifies on Linux and the staged native Windows executable. Then
-walk the A4 exit checklist honestly: controller + keyboard completing
-every bundled demo, rebindings and save data surviving restart. After
-that A4 closes and A5/A6 (genre-neutral runtime slices + the demo
-matrix) begin.
+**Exact next packet:** **A5 begins — the first genre-neutral runtime
+slice.** ALPHA.md's rule: implement only after writing each demo naively
+enough to expose its real pain, and the three naive starter templates
+plus the demo already exist. Start by auditing them (plus the A6 demo
+list) for the sharpest shared pain — likely the actor/world +
+query/collision slice or the camera slice (the demo hand-rolls camera
+clamp/lerp math; every template hand-rolls actor tables and overlap
+tests). Define the slice per ALPHA.md §2's contract: deterministic
+state in doc/named buffers, stable iteration, lifetime/reload/snapshot/
+rewind behavior specified, focused selftests plus at least one trace,
+task-based examples, primitives stay opt-out. One slice per packet;
+keep demos naive until a slice genuinely earns its keep.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

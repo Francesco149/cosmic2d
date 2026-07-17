@@ -3739,3 +3739,80 @@ staged native Windows executable, where no saves exist at all — the
 recorded-load channel is cross-platform by construction. Inspected
 capture on llm-feed: the settings general tab with the new save id
 identity field.
+
+## D087 — the A4 exit proof: one recorded session covers every input domain, and A4 closes (A4, 2026-07-17)
+
+**Context.** A4's last line: prove input recording, rewind, resume,
+replay, and cross-platform verify with keyboard, mouse, and gamepad
+records together — then walk the gate's exit checklist honestly.
+D082–D086 proved each mechanism in isolation; what remained was one
+artifact where they all ride the same timeline, plus the gate's product
+claims: a controller and a keyboard completing the bundled demo, and
+rebindings/saves surviving restart.
+
+**Decision.** `projects/inputproof` is the committed all-inputs fixture:
+one sim consuming keyboard action bits (whose actions also declare
+pad-button and pad-axis bindings, so the D084 OR-into-one-bit path is in
+the record), the v1 mouse fields (x/y, buttons, wheel), the PAD
+extension (quantized axes, edges, hot-plug), and both D086 save doors —
+`save.write` as a pure output on an action edge, `save.load` through the
+recorded eval channel. Its driver is render/dev-side in `draw()`, armed
+by a recorded eval (`game.arm_drive`), so it never runs under
+`--verify`/`--frames`/`--headless` and the recorded bytes stay the only
+authority. The driver feeds synthetic key/mouse events through
+`cm.input.feed` — the exact ingestion door PAL events use — drives a
+REAL virtual SDL gamepad through the physical event path (D083), and
+walks `cm.scrub.open`/`seek`/`rewind_here` mid-session. Because
+`trace.rewind` deliberately stops a `--record` pin, the committed
+artifact is a `trace.ring_export` — the product's own "save what just
+happened" door — which spans the rewind seam as one gapless timeline.
+
+**The trace.** `tests/traces/inputproof_a4exit.ctrace`, 258 frames from
+a real windowed WSLg session (windowed so the D086 store binds): held
+keys and a sub-frame key tap, a mouse sweep with left/right clicks and
+wheel steps, two pad hot-plug cycles, a deadzone-passing-but-
+threshold-failing axis deflection contrasted with a full one (the
+"left" action fires only past the D084 threshold), a multi-frame and a
+sub-frame pad south tap, a save via the pad-bound action, a
+keyboard save/load round trip whose EVAL carries the exact bytes, a
+scrub rewind from frame 200 to 185 with play resumed, and — across the
+seam — all three domains in the same frames plus a second save/load
+round trip. The final doc tallies every domain (clicks 1/1, wheel 3,
+taps 1, presses/releases 2/2, plugs 2, axsum 1570, saves 3, loads 2/2,
+level round-tripped to 1).
+
+**Exit checklist.** The bundled demo now declares real pad bindings
+(d-pad/left-stick move, south jump, east hop, west slice, north
+teleport, left-shoulder grapple) beside its keys, documented in
+CONTROLS.md. Scripted route bots drove the REAL loop headlessly through
+`cm.input.feed` and a virtual SDL pad — keyboard mode and controller
+mode each completed the full demo (all 7 coins across both rooms via
+the portal, spike pit crossed, up-jump chains and a flash-jump gap
+dash) at the identical deterministic frame 2688 on Linux, and the
+controller run repeated natively on Windows at the same frame.
+Rebindings survive restart: a `jump -> key:44 + pad:north` override
+saved by session one was the active binding list in a fresh boot.
+Save data survives restart: a fresh windowed session read back slot 1
+with the exact values the recorded session wrote. Deterministic traces
+now cover all supported input domains (kitcheck keyboard+mouse-era,
+padtest gamepad, inputproof everything together).
+
+**Consequences.** A4 is closed: exported desktop games meet the basic
+player expectations the gate named — discoverable pads, rebindable
+actions, options, real saves, and a determinism story that survives all
+of them at once. A5/A6 (genre-neutral runtime slices + the demo/starter
+matrix) are next and begin from the pain the naive demos expose. The
+scratch route bots are deliberately not committed (D081 precedent);
+re-derive from the DECISIONS narrative if needed.
+
+**Proof.** Linux selftest passes **23,767** checks and the staged native
+Windows executable **23,769** on PAL API 19 (no new KATs — the packet's
+proof is the committed trace plus the checklist). `nix run .#test` is
+ALL GREEN with the new 258-frame trace beside every historical trace
+and all pixel/audio goldens. The Linux-recorded inputproof trace
+verifies byte-exact on native Windows (with kitcheck and padtest
+re-confirmed), where no saves, no pads, and no rewind history exist —
+the record carries everything. `tools/build-windows.sh` refreshed the
+Windows stage (4 durable entries preserved) and Start Menu shortcut.
+Inspected capture on llm-feed: the fixture at the trace's final state
+with every domain tally nonzero.
