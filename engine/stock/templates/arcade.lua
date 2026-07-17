@@ -19,18 +19,6 @@ local COOLDOWN = 10           -- frames between shots
 local ROCK = 14               -- rock size (square)
 local START_EVERY = 46        -- frames between rocks at the start
 
--- gamepad (A4): pad 1's dpad or left stick steers, south shoots, start
--- resets — alongside the keyboard. Hardcoded on purpose; the rebinding
--- packet later in A4 replaces this with real bindings.
-local STICK = 40 -- of 127: how far the stick tilts before it counts
-
-local function pad_left()
-  return input.pad_down(1, "dpleft") or input.pad_axis(1, "lx") < -STICK
-end
-local function pad_right()
-  return input.pad_down(1, "dpright") or input.pad_axis(1, "lx") > STICK
-end
-
 local game = {}
 
 local function reset(d)
@@ -41,28 +29,31 @@ local function reset(d)
 end
 
 function game.init()
-  input.map({ { "left", input.key.left, input.key.a },
-              { "right", input.key.right, input.key.d },
-              { "fire", input.key.space },
-              { "reset", input.key.r } })
+  -- each action lists ALL of its default bindings — keys and pad-1 inputs
+  -- feed the same action, and the player can rebind everything from the
+  -- Esc menu's controls page (overrides live in this project's input.dat)
+  input.map({ { "left", input.key.left, input.key.a, "pad:dpleft", "pad:lx-" },
+              { "right", input.key.right, input.key.d, "pad:dpright", "pad:lx+" },
+              { "fire", input.key.space, "pad:south" },
+              { "reset", input.key.r, "pad:start" } })
   local d = state.doc
   if d.x == nil then reset(d) end
 end
 
 function game.step()
   local d = state.doc
-  if input.pressed("reset") or input.pad_pressed(1, "start") then reset(d) end
+  if input.pressed("reset") then reset(d) end
   if d.over then
-    if input.pressed("fire") or input.pad_pressed(1, "south") then reset(d) end
+    if input.pressed("fire") then reset(d) end
     return
   end
   d.t = d.t + 1
-  if input.down("left") or pad_left() then d.x = d.x - SPEED end
-  if input.down("right") or pad_right() then d.x = d.x + SPEED end
+  if input.down("left") then d.x = d.x - SPEED end
+  if input.down("right") then d.x = d.x + SPEED end
   d.x = m.clamp(d.x, 8, W - 8 - SHIP_W)
 
   d.cool = m.max(0, d.cool - 1)
-  if (input.down("fire") or input.pad_down(1, "south")) and d.cool == 0 then
+  if input.down("fire") and d.cool == 0 then
     d.cool = COOLDOWN
     d.shots[#d.shots + 1] = { x = d.x + SHIP_W / 2 - 1, y = H - 22 - SHIP_H }
   end
@@ -127,12 +118,18 @@ function game.draw()
   local hud = "score " .. d.score .. "   lives " .. d.lives
   if (d.best or 0) > 0 then hud = hud .. "   best " .. d.best end
   text.draw(6, 6, hud, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
+  -- the HUD names the LIVE bindings (rebinds included), flavored for the
+  -- device in hand: pad names while a controller is connected, else keys
+  local k = input.pad_connected(1) and "pad" or "key"
   if d.over then
     text.draw(W / 2 - 70, H / 2 - 10,
-              "game over - space flies again",
+              "game over - " .. input.label("fire", k) .. " flies again",
               { r = 0.95, g = 0.75, b = 0.42, a = 1 })
   else
-    text.draw(6, H - 14, "__NAME__ - arrows steer, space shoots, R resets",
+    text.draw(6, H - 14, "__NAME__ - " .. input.label("left", k) .. "/"
+              .. input.label("right", k) .. " steers, "
+              .. input.label("fire", k) .. " shoots, "
+              .. input.label("reset", k) .. " resets",
               { r = 0.95, g = 0.92, b = 0.8, a = 0.55 })
   end
 end

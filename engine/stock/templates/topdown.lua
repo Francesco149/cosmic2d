@@ -27,20 +27,6 @@ local PW = 12                 -- player size (square)
 local SPEED = 1.8
 local DIAG = 0.70710678       -- 1/sqrt(2), a fixed constant on purpose
 
--- gamepad (A4): pad 1's dpad or left stick walks, start resets —
--- alongside the keyboard. Hardcoded on purpose; the rebinding packet
--- later in A4 replaces this with real bindings.
-local STICK = 40 -- of 127: how far the stick tilts before it counts
-
-local function pad_dir()
-  local lx, ly = input.pad_axis(1, "lx"), input.pad_axis(1, "ly")
-  local dx = ((input.pad_down(1, "dpright") or lx > STICK) and 1 or 0)
-           - ((input.pad_down(1, "dpleft") or lx < -STICK) and 1 or 0)
-  local dy = ((input.pad_down(1, "dpdown") or ly > STICK) and 1 or 0)
-           - ((input.pad_down(1, "dpup") or ly < -STICK) and 1 or 0)
-  return dx, dy
-end
-
 local game = {}
 
 local function reset(d)
@@ -52,11 +38,14 @@ local function reset(d)
 end
 
 function game.init()
-  input.map({ { "left", input.key.left, input.key.a },
-              { "right", input.key.right, input.key.d },
-              { "up", input.key.up, input.key.w },
-              { "down", input.key.down, input.key.s },
-              { "reset", input.key.r } })
+  -- each action lists ALL of its default bindings — keys and pad-1 inputs
+  -- feed the same action, and the player can rebind everything from the
+  -- Esc menu's controls page (overrides live in this project's input.dat)
+  input.map({ { "left", input.key.left, input.key.a, "pad:dpleft", "pad:lx-" },
+              { "right", input.key.right, input.key.d, "pad:dpright", "pad:lx+" },
+              { "up", input.key.up, input.key.w, "pad:dpup", "pad:ly-" },
+              { "down", input.key.down, input.key.s, "pad:dpdown", "pad:ly+" },
+              { "reset", input.key.r, "pad:start" } })
   local d = state.doc
   if d.x == nil then reset(d) end
 end
@@ -71,11 +60,10 @@ end
 
 function game.step()
   local d = state.doc
-  if input.pressed("reset") or input.pad_pressed(1, "start") then reset(d) end
+  if input.pressed("reset") then reset(d) end
   local won = d.count == #GEMS
   local dx = (input.down("right") and 1 or 0) - (input.down("left") and 1 or 0)
   local dy = (input.down("down") and 1 or 0) - (input.down("up") and 1 or 0)
-  if dx == 0 and dy == 0 then dx, dy = pad_dir() end
   if won then
     if dx ~= 0 or dy ~= 0 then reset(d) end
     return
@@ -108,10 +96,16 @@ function game.draw()
     end
   end
   pal.quad(d.x, d.y, PW, PW, 0.95, 0.75, 0.42, 1)
+  -- the HUD names the LIVE bindings (rebinds included), flavored for the
+  -- device in hand: pad names while a controller is connected, else keys
+  local k = input.pad_connected(1) and "pad" or "key"
   local msg = d.count == #GEMS and "all gems! move to start over"
-              or ("__NAME__ - arrows walk, R resets - gems " .. d.count
-                  .. "/" .. #GEMS)
-  text.draw(14, H - 34, msg, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
+              or ("__NAME__ - gems " .. d.count .. "/" .. #GEMS)
+  text.draw(14, H - 44, msg, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
+  text.draw(14, H - 30, input.label("up", k) .. "/" .. input.label("left", k)
+            .. "/" .. input.label("down", k) .. "/" .. input.label("right", k)
+            .. " walks, " .. input.label("reset", k) .. " resets",
+            { r = 0.95, g = 0.92, b = 0.8, a = 0.7 })
 end
 
 return game
