@@ -29,8 +29,10 @@ local KNOBS = {
   },
   anim = {
     ring_r = 4.6,      -- walkers' circle radius
-    guy_rate = 0.008,  -- rad/frame around the ring
-    mascot_rate = 0.007,
+    ring_rate = 0.007, -- rad/frame around the ring (ONE rate for both
+    -- walkers: the guy is pinned exactly opposite the mascot — separate
+    -- rates drifted the phase gap and the two eventually overlapped
+    -- (human 2026-07-17: keep the guy, never let him meet the mascot))
     guy_walk_f = 32,   -- frames per walk cycle
     mascot_walk_f = 36,
     idle_f = 120,      -- frames per idle breath cycle
@@ -159,11 +161,11 @@ function game.draw()
   local idle = fig.cycle(chars.mascot_idle, f / ka.idle_f)
   n = n + fig.emit(out, chars.mascot,
                    m4.mul(m4.translate(0, STAGE_H, 0), m4.roty(-0.2)), idle)
-  -- walking mascot + guy sharing the ring, half a turn apart
-  local am = f * ka.mascot_rate
+  -- walking mascot + guy sharing the ring, pinned half a turn apart
+  local am = f * ka.ring_rate
   n = n + fig.emit(out, chars.mascot, ring_root(am, ka.ring_r),
                    fig.cycle(chars.mascot_walk, f / ka.mascot_walk_f))
-  local ag = f * ka.guy_rate + m.pi
+  local ag = am + m.pi
   n = n + fig.emit(out, chars.guy, ring_root(ag, ka.ring_r),
                    fig.cycle(chars.guy_walk, f / ka.guy_walk_f))
   dyn:setstr(0, table.concat(out))
