@@ -4,6 +4,69 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 19) — the distillation phase opens: three slices
+
+Human directive: "distill the 3d primitives into nice engine
+ergonomics", plus check upstream. **The upstream survey came first**
+(f791824..2b885d5): cosmic2d ran its own distillation (A5, D088–D097 —
+cm.box/actor/camera/tween/depth/hud/move, pain-first votes, one slice
+per packet, retrofit proofs with goldens un-recut) and is nearly done
+with alpha polish (gamepads, rebinding, options, saves, input record
+v2). Consequences recorded in **COSMIC3D.md §12**: their process
+adopted verbatim, their module names BANNED from the fork (cm.camera,
+cm.pick, cm.box, ... — our slices are cm.rig / cm.walk), and
+dimension-agnostic slices (tween/hud/move/actor) left for re-merge
+adoption instead of 3D twins. Then the fork's own vote audit and three
+slices, each suite-ALL-GREEN:
+
+- **cm.rig** (D3D-028): the godot FollowCamera rig existed as three
+  byte-identical copies (bounce/openworld/bigworld); extracted with
+  step/view/wish/reset/defaults over the caller's 40-byte cam buffer.
+  Bit-identical: all traces stand; the 17 pixel goldens (fresh-boot
+  demos on CURRENT sources) are the real proof — learned en route
+  that **trace verify is hermetic** (the SNAP carries its code
+  bundle), so trace PASSes pin doc/buffer shapes, not new code.
+- **cm.spr** (D3D-029): rovale's figure→sprite baker promoted
+  verbatim (rasterizer, .spx assets, SPR_STAMP unbumped — the four
+  committed sheets load with zero rasterizes and no rewrite; registry
+  buffer now rc.spr.tex). rovale_tour honestly re-cut: a SNAP bundle
+  resolves dependency modules by PATH when required pre-registration,
+  so deleting projects/rovale/spr.lua broke the old trace's restore
+  (lesson recorded). Drift + RO_BUDGET=32 proofs re-proven.
+- **cm.walk** (D3D-030): cell/snap/heap-A*/raycast as pure functions
+  over a caller grid (walkable stays project policy) + command/step
+  over the module-owned walker buffer layout. rovale retrofitted
+  (world.lua −106 lines); trace un-recut, both pixels byte-identical
+  — the tour's synthetic clicks pin the whole extracted chain.
+
+**Human call landed mid-round: rovale presents SHARP** (look.soft=0,
+§12a) — crisp sprites suit the RO style; N64-preset demos keep the
+VI-soft blit. Composite-only: pixels/trace stand; sharp-vs-soft pair
+pushed to the feed. Also learned: `nix run .#test` snapshots only
+git-TRACKED files — stage new engine files before trusting a run; and
+one suite FAIL was the known concurrent-/tmp/cosmic_selftest collision
+with the cosmic2d agent (clean on re-run, the round-14 signature).
+
+## Exact next step
+
+1. **The distillation continues** (§12 order): the terrain-bake module
+   (rovale world.lua's atlas bake → a cm module + the future editor
+   bake button), then **cm.kin** (the shared collide+jump core across
+   the three diverging player kernels) and the NPC greet slice —
+   design those against all three copies. Billboards stay in cm.spr
+   (decided in D3D-029; a cm.gb quad joins when a non-sprite user
+   votes).
+2. Feed: the sharp-vs-soft pair awaits a look; R18/17-and-earlier
+   questions still open (non-blocking).
+3. rovale growth stays verdict-gated (cliffs, water cycle, a poring,
+   paper-doll, 8-frame walks); proto3d look knobs unchanged.
+
+Post-upstream-merge queue: PAL relative-mouse API now has its record-v2
+prerequisite SHIPPED upstream (D082) — still post-merge; at re-merge,
+retrofit 3D demos onto upstream cm.tween/hud/move/actor before growing
+fork twins. Parked (unchanged): PS1-preset extras; figure EDITOR until
+the human unparks.
+
 ## 2026-07-17 (round 18 playtest) — sheets become assets; four verdicts in
 
 Human played rovale: **"exactly the vibe we would want"**, with four

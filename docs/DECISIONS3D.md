@@ -928,3 +928,35 @@ rasterize lines and no rewrite (stamp/format byte-compatible: the
 files' git status stays clean through a full boot), and both rovale
 pixel goldens compare byte-identical on current sources under pinned
 lavapipe. Full suite ALL GREEN. No visual change — no feed captures.
+
+## D3D-030 — cm.walk: click-to-move pathing goes engine-side (2026-07-17)
+
+The third §12 slice, the second D3D-026 human-logged candidate ("the
+pick ray + walk-grid A* are engine-shaped"). Named cm.walk, NOT
+cm.pick — upstream A5's picker list model owns that name (§12 ban).
+
+- **engine/cm/walk.lua** is pure functions, extracted verbatim from
+  rovale: K.cell / K.snap (ring search) / K.astar (heap A*, 8-dir, no
+  corner cutting) over a caller grid (gw width + a walkable PREDICATE
+  — what makes a cell walkable stays project policy: rovale's water
+  depth/steepness/blocker/deck rules live on in world.lua),
+  K.raycast (the click ray's march+bisect against any sim-legal
+  ground function; the NDC ray construction stays with the camera
+  model that owns it), and K.command/K.step over a caller-named
+  WALKER buffer whose layout the module owns (the cm.rig precedent —
+  ro.player's exact shape: pos/facing/dist-phase odometer/path
+  chain/click marker). Facing octant-snaps only at sprite time, in
+  the caller (cm.spr.oct).
+- **Deliberately NOT here**: walkable-rules builders, screen->ray
+  math, path smoothing/string-pulling, re-path on dynamic blockers,
+  moving obstacles — later cuts on real demo pain (a monster chase
+  is the likely first vote).
+
+**Proof.** rovale retrofitted (world.lua −106 lines, player.lua's
+command/step become delegations, pick() rides K.raycast): the re-cut
+rovale_tour trace verifies PASS un-recut (no module file deleted this
+time — the D3D-029 restore lesson respected), and both pixel goldens
+compare byte-identical on current sources under pinned lavapipe — the
+tour IS synthetic clicks through pick→snap→astar→follow, so the
+pixels pin the whole extracted chain. Full suite ALL GREEN. No visual
+change — no feed captures.
