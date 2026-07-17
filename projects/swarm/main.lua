@@ -17,7 +17,12 @@
 --                 eased draw math (val/wobble) instead of hand-tuned
 --                 offset/alpha formulas re-deriving each t0. cellar and
 --                 the demo keep their naive counters as contrast.
---   PAIN(move):   the aim/axis normalization dance is re-derived yet again.
+--   resolved(move): the stick+key merge, aim chain, and 8-way shot
+--                 normalization moved into cm.move (A5/D097): dir is the
+--                 merged unit-scale vector, the nested face8 chain is the
+--                 aim priority, unit8 evens the diagonal shots. cellar's
+--                 movement block rides dir too; the starter templates
+--                 keep their naive readers as contrast.
 --
 -- Determinism: everything per-frame lives in state.doc — the actor world
 -- is a plain doc subtree, so snapshots/traces/rewind carry it by
@@ -35,6 +40,7 @@ local rand = cm.require("cm.rand")
 local save = cm.require("cm.save")
 local actor = cm.require("cm.actor")
 local tween = cm.require("cm.tween")
+local move = cm.require("cm.move")
 
 local W, H = pal.gfx_size()
 local PW = 10                 -- player square
@@ -107,38 +113,25 @@ function game.step()
   local w = d.world
   actor.tick(w) -- once per step: sweep last frame's dead, run the timers
 
-  -- 8-way movement: stick wins when deflected, else digital keys
-  local ax = input.pad_axis(1, "lx") / 127
-  local ay = input.pad_axis(1, "ly") / 127
-  local dx, dy = ax * SPEED, ay * SPEED
-  if ax == 0 and ay == 0 then
-    local ix = (input.down("right") and 1 or 0) - (input.down("left") and 1 or 0)
-    local iy = (input.down("down") and 1 or 0) - (input.down("up") and 1 or 0)
-    local s = (ix ~= 0 and iy ~= 0) and SPEED * 0.70710678 or SPEED
-    dx, dy = ix * s, iy * s
-  end
-  d.x = m.clamp(d.x + dx, 4, W - 4 - PW)
-  d.y = m.clamp(d.y + dy, 4, H - 4 - PW)
-  -- facing: the right stick aims when deflected, else the move direction
-  -- PAIN(move): another hand-rolled aim/axis dance
-  local rx = input.pad_axis(1, "rx") / 127
-  local ry = input.pad_axis(1, "ry") / 127
-  if rx ~= 0 or ry ~= 0 then
-    d.fx = rx ~= 0 and (rx > 0 and 1 or -1) or 0
-    d.fy = ry ~= 0 and (ry > 0 and 1 or -1) or 0
-  elseif dx ~= 0 or dy ~= 0 then
-    d.fx = dx ~= 0 and (dx > 0 and 1 or -1) or 0
-    d.fy = dy ~= 0 and (dy > 0 and 1 or -1) or 0
-  end
+  -- 8-way movement: cm.move merges the stick (wins when deflected) with
+  -- the digital keys at unit scale; the speed stays ours
+  local mx, my = move.dir(1)
+  d.x = m.clamp(d.x + mx * SPEED, 4, W - 4 - PW)
+  d.y = m.clamp(d.y + my * SPEED, 4, H - 4 - PW)
+  -- facing: the aim chain — right stick wins, else the move direction,
+  -- else the last facing sticks
+  local rx, ry = move.stick(1, "r")
+  d.fx, d.fy = move.face8(rx, ry, move.face8(mx, my, d.fx, d.fy))
 
-  -- shooting: 8-way along the facing, gated by the cooldown timer
+  -- shooting: 8-way along the facing (unit8 evens the diagonals), gated
+  -- by the cooldown timer; aiming implies firing
   local firing = input.down("fire") or rx ~= 0 or ry ~= 0
   if firing and not actor.running(w, "cool") then
     actor.timer(w, "cool", COOLDOWN)
-    local n = (d.fx ~= 0 and d.fy ~= 0) and 0.70710678 or 1
+    local ux, uy = move.unit8(d.fx, d.fy)
     actor.spawn(w, { tag = "shot", x = d.x + PW / 2 - 2, y = d.y + PW / 2 - 2,
                      w = 4, h = 4,
-                     vx = d.fx * BSPEED * n, vy = d.fy * BSPEED * n })
+                     vx = ux * BSPEED, vy = uy * BSPEED })
   end
 
   -- shots fly, die at the walls (despawn marks; next tick sweeps)

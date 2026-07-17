@@ -15,6 +15,9 @@
 --   resolved(depth): the hand-rolled y-sort comparator + draw list moved
 --                 into cm.depth (A5/D095): push base-y keys, stable sort,
 --                 walk back-to-front — ties draw in push order.
+--   resolved(move): the stick-wins-else-digital merge (swarm carried the
+--                 byte-identical block) moved into cm.move (A5/D097):
+--                 dir is the merged unit-scale vector, speed stays ours.
 --
 -- Everything that changes per frame lives in state.doc (snapshots, traces,
 -- rewind stay exact); cm.math sin drives bobs off the sim frame count.
@@ -24,11 +27,11 @@ local m = cm.require("cm.math")
 local box = cm.require("cm.box")
 local depth = cm.require("cm.depth")
 local hud = cm.require("cm.hud")
+local move = cm.require("cm.move")
 
 local W, H = pal.gfx_size()
 local PW, PH = 10, 12         -- player footprint (collision is the base)
 local SPEED = 1.4
-local DIAG = 0.70710678
 
 -- ---- the rooms (static data; nothing here mutates at runtime) ----------
 -- walls: {x,y,w,h} solids. pillars: props with a small collision base and
@@ -128,18 +131,12 @@ function game.step()
   if d.won then return end
   local room = ROOMS[d.room]
 
-  -- movement: the analog stick wins when deflected, else digital keys;
-  -- cm.box.slide is the wall-slide the topdown starter hand-rolls (A5)
-  local ax = input.pad_axis(1, "lx") / 127
-  local ay = input.pad_axis(1, "ly") / 127
-  local dx, dy = ax * SPEED, ay * SPEED
-  if ax == 0 and ay == 0 then
-    local ix = (input.down("right") and 1 or 0) - (input.down("left") and 1 or 0)
-    local iy = (input.down("down") and 1 or 0) - (input.down("up") and 1 or 0)
-    local s = (ix ~= 0 and iy ~= 0) and SPEED * DIAG or SPEED
-    dx, dy = ix * s, iy * s
-  end
-  d.x, d.y = box.slide(d.x, d.y, PW, PH, dx, dy, solids(room, d))
+  -- movement: cm.move.dir merges the stick (wins when deflected) with the
+  -- digital keys at unit scale; cm.box.slide is the wall-slide the topdown
+  -- starter hand-rolls (A5)
+  local mx, my = move.dir(1)
+  d.x, d.y = box.slide(d.x, d.y, PW, PH, mx * SPEED, my * SPEED,
+                       solids(room, d))
 
   -- touch pickups (the key persists across rooms in doc — the A6 line)
   if d.room == "cellar" and not d.has_key
