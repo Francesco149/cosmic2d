@@ -458,6 +458,66 @@ The bundled platformer demo is the worked example (its whole hand-rolled
 camera collapsed into `follow`/`center`/`shake`). Zones/rails, dual-target
 framing, zoom, and smooth room pans are deliberately absent for now.
 
+## Juice: hit pause, flashes, and eased effects (`cm.tween`)
+
+Game feel is mostly short decaying counters: freeze the world for two
+frames on a hit, wash the screen red for a quarter second on death, shake
+on impact, squash on landing. `cm.tween` keeps those as **named effects**
+on any plain doc table — an integer frame countdown that remembers its
+lifetime — and gives you the eased draw math so you never hand-tune
+`alpha = counter / 14 * 0.55` again.
+
+    local tween = cm.require("cm.tween")
+
+    -- arm effects when things happen (in step):
+    tween.play(d, "pause", 2)             -- 2-frame hit pause
+    tween.play(d, "shake", 6, 2.4)        -- 6 frames, peak 2.4 px
+    tween.play(d, "flash", 14, 0.55)      -- 14 frames, peak alpha 0.55
+
+    function game.step()
+      local d = state.doc
+      tween.tick(d)                       -- ONCE per step, top of step
+      if tween.on(d, "pause") then return end   -- world frozen, juice runs
+      ...                                 -- the real sim
+    end
+
+    function game.draw()
+      local d = state.doc
+      local sx, sy = tween.wobble(d, "shake")   -- render-only offset pair
+      ...draw everything at +sx, +sy...
+      local a = tween.val(d, "flash")           -- 0.55 fading to 0
+      if a > 0 then pal.quad(0, 0, W, H, 0.9, 0.25, 0.25, a) end
+    end
+
+The rules:
+
+- `play(o, name, frames [, mag])` arms (or **replaces**) an effect on
+  `o.tw` — plain integers in the doc, so snapshots, traces, and rewind
+  carry every running effect by construction. `mag` is the stored strength
+  `val`/`wobble` default to. `stop`/`clear` end effects early (put `clear`
+  in your reset/room-swap path).
+- `tick(o)` once per step at the top. An effect stays present for exactly
+  `frames` post-tick steps, so `if tween.on(d, "pause") then return end`
+  after `tick` is the whole hit-pause idiom — the tween table keeps
+  ticking through its own freeze, and skipping your world's
+  `actor.tick(w)` freezes actor timers for free.
+- `k(o, name)` is the remaining fraction (1 at the armed frame's draw, 0
+  when done); `val(o, name [, curve])` is `mag * curve(k)` with any
+  `cm.ease` curve **by name** (`"cubic_out"` — names live happily in doc);
+  `mix(o, name, from, to [, curve])` eases between explicit endpoints
+  (slide-ins: `mix(d, "slide", -40, 0, "cubic_out")`). All pure math off
+  the counters — deterministic anywhere.
+- `wobble(o, name)` is the screen-shake offset pair (amplitude `mag * k`,
+  the same idiom as `camera.offset` for screens without a camera). Like
+  the camera's shake, it is presentation: sim logic must never read it.
+- `bob(frame, period, amp)` is the pure looping wobble for item bobs and
+  breathing idles: `tween.bob(state.frame(), 90, 2)` in draw.
+
+The bundled arcade demo (swarm) is the worked example — its hit pause /
+shake / death flash triple is three `play` calls, one `tick`, and two
+draw lines. Sequences/chains, auto-writing field tweens, callbacks, and
+springs are deliberately absent for now.
+
 ## Sound effects and music
 
 Instruments must be uploaded into the simulation bank before use. The demo's
@@ -592,6 +652,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.box` — pure AABB overlap/queries and the lightweight wall slide.
 - `cm.actor` — actor worlds in doc: stable ids, tags, spawn order, timers.
 - `cm.camera` — follow/deadzone, bounds, room cuts, shake, world<->screen.
+- `cm.tween` — named effect counters: hit pause, flashes, shake, eased decay.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.

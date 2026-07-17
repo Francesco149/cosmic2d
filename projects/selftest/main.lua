@@ -639,6 +639,132 @@ local function t_camera()
         "camera: same ops, same canonical bytes")
 end
 
+-- ---- cm.tween: named effect counters + eased presentation (A5/D094) ----
+
+local function t_tween()
+  local tween = cm.require("cm.tween")
+  local ease = cm.require("cm.ease")
+  local m = cm.require("cm.math")
+  local state_m = cm.require("cm.state")
+
+  -- play refusals: name/frames/mag validation
+  local d = {}
+  check(not pcall(tween.play, d, 7, 3), "tween: non-string name refused")
+  check(not pcall(tween.play, d, "x", 1.5), "tween: fractional frames refused")
+  check(not pcall(tween.play, d, "x", -1), "tween: negative frames refused")
+  check(not pcall(tween.play, d, "x", 3, "big"), "tween: non-number mag refused")
+
+  -- arming stores t, t0, and the optional mag on o.tw
+  tween.play(d, "flash", 14, 0.55)
+  check(d.tw.flash.t == 14 and d.tw.flash.t0 == 14 and d.tw.flash.mag == 0.55,
+        "tween: play stores t, t0, mag")
+  tween.play(d, "pause", 2)
+  check(d.tw.pause.mag == nil, "tween: mag stays optional")
+  check(tween.on(d, "flash") and tween.on(d, "pause"), "tween: armed is on")
+  check(not tween.on(d, "shake"), "tween: unarmed is off")
+  check(tween.k(d, "flash") == 1.0, "tween: k is 1 at the armed frame")
+  check(tween.k(d, "shake") == 0.0, "tween: idle k is 0")
+
+  -- re-arming REPLACES (the camera.shake rule): t, t0, and mag all reset
+  tween.play(d, "flash", 8)
+  check(d.tw.flash.t == 8 and d.tw.flash.t0 == 8 and d.tw.flash.mag == nil,
+        "tween: play replaces a running effect wholesale")
+  tween.play(d, "flash", 14, 0.55)
+
+  -- tick: each effect decrements independently; k tracks t/t0 exactly
+  tween.tick(d)
+  check(d.tw.flash.t == 13 and d.tw.pause.t == 1,
+        "tween: tick decrements every effect")
+  check(tween.k(d, "flash") == 13 / 14, "tween: k is the remaining fraction")
+
+  -- the zero frame exists: present (and gating) for exactly n ticks
+  tween.tick(d)
+  check(d.tw.pause.t == 0 and tween.on(d, "pause"),
+        "tween: the zero frame is still on")
+  check(tween.k(d, "pause") == 0.0, "tween: the zero frame's k is 0")
+  tween.tick(d)
+  check(not tween.on(d, "pause"), "tween: one tick after zero it is gone")
+  check(d.tw.pause == nil and d.tw.flash ~= nil,
+        "tween: removal is per-effect")
+
+  -- the pause idiom: play(n) freezes a post-tick gate for exactly n steps
+  local g = {}
+  tween.play(g, "pause", 3)
+  local frozen = 0
+  for _ = 1, 6 do
+    tween.tick(g)
+    if tween.on(g, "pause") then frozen = frozen + 1 end
+  end
+  check(frozen == 3, "tween: play(n) gates exactly n post-tick steps")
+  check(g.tw == nil, "tween: the empty tw table leaves the host")
+
+  -- val: mag * curve(k); linear default; named curves resolve via cm.ease
+  check(tween.val(d, "flash") == 0.55 * (11 / 14),
+        "tween: val is mag * k by default")
+  check(tween.val(d, "flash", "cubic_out")
+          == 0.55 * ease.cubic_out(11 / 14),
+        "tween: val applies a named curve")
+  check(tween.val(d, "gone") == 0.0, "tween: idle val is 0")
+  check(not pcall(tween.val, d, "flash", "no_such_curve"),
+        "tween: unknown curve names error loudly")
+
+  -- mix: from at full, to at rest, eased between; idle returns to
+  local e2 = {}
+  tween.play(e2, "slide", 10)
+  check(tween.mix(e2, "slide", -40, 0) == -40,
+        "tween: mix starts at from")
+  for _ = 1, 5 do tween.tick(e2) end
+  check(tween.mix(e2, "slide", -40, 0) == 0 + (-40 - 0) * 0.5,
+        "tween: mix eases on k")
+  check(tween.mix(e2, "slide", -40, 0, "quad_in")
+          == 0 + (-40 - 0) * ease.quad_in(0.5),
+        "tween: mix applies a named curve")
+  check(tween.mix(e2, "gone", -40, 7) == 7, "tween: idle mix rests at to")
+
+  -- wobble: the exact camera.offset math off the remaining count
+  local w = {}
+  tween.play(w, "shake", 6, 2.4)
+  tween.tick(w)
+  local ox, oy = tween.wobble(w, "shake")
+  local a = 2.4 * 5 / 6
+  check(ox == m.sin(5 * 2.7) * a and oy == m.sin(5 * 3.1 + 2) * a,
+        "tween: wobble is the camera shake idiom")
+  local zx, zy = tween.wobble(w, "gone")
+  check(zx == 0.0 and zy == 0.0, "tween: idle wobble is 0, 0")
+
+  -- bob: pure looping helper — exact sin over a frame period
+  check(tween.bob(0, 90, 2) == 0.0, "tween: bob starts at 0")
+  check(tween.bob(30, 90, 2) == 2 * m.sin(30 * (m.tau / 90)),
+        "tween: bob is amp * sin over the period")
+  check(not pcall(tween.bob, 10, 0, 2), "tween: zero bob period refused")
+
+  -- stop/clear: immediate idle; play(0) is stop
+  tween.play(w, "flash", 5, 1)
+  tween.stop(w, "shake")
+  check(not tween.on(w, "shake") and tween.on(w, "flash"),
+        "tween: stop ends one effect")
+  tween.play(w, "flash", 0)
+  check(w.tw == nil, "tween: play(0) stops and drops the empty table")
+  tween.play(w, "a", 3)
+  tween.play(w, "b", 4)
+  tween.clear(w)
+  check(w.tw == nil, "tween: clear ends everything")
+
+  -- determinism: identical op sequences canonicalize byte-identically
+  local function build()
+    local b = {}
+    tween.play(b, "pause", 2)
+    tween.play(b, "shake", 6, 2.4)
+    tween.play(b, "flash", 14, 0.55)
+    tween.tick(b)
+    tween.stop(b, "pause")
+    tween.tick(b)
+    return b
+  end
+  check(state_m.canon(build()) == state_m.canon(build()),
+        "tween: same ops, same canonical bytes")
+end
+
 -- ---- cm.input: records, edges, snapshot consistency ----
 
 local function t_input()
@@ -8908,6 +9034,7 @@ function game.init()
   t_box()
   t_actor()
   t_camera()
+  t_tween()
   t_snapshot()
   t_buf_poke()
   t_input()
