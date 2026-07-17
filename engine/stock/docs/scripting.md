@@ -195,6 +195,48 @@ directly in the sim stays deterministic — divide by 127 when you want a
 Esc menu's controls page; recordings store the post-deadzone values, so
 retuning never invalidates a trace.
 
+## Movement vectors (`cm.move`)
+
+Every action game re-derives the same movement dance: read the stick,
+fall back to the arrow keys, even out diagonal speed, turn a vector into
+an 8-way facing. `cm.move` is exactly that dance, reading the recorded
+input state — deterministic in the sim by construction:
+
+    local move = cm.require("cm.move")
+
+    -- in your step: one merged unit-scale vector; you supply the speed
+    local mx, my = move.dir(1)
+    d.x, d.y = d.x + mx * SPEED, d.y + my * SPEED
+
+    -- twin-stick aim: the right stick wins, else the move direction,
+    -- else the last facing sticks (nest the calls for the priority)
+    local rx, ry = move.stick(1, "r")
+    d.fx, d.fy = move.face8(rx, ry, move.face8(mx, my, d.fx, d.fy))
+
+    -- shots travel the facing at full speed on diagonals too
+    local ux, uy = move.unit8(d.fx, d.fy)
+    spawn_shot(d, ux * BSPEED, uy * BSPEED)
+
+- `move.dir(pad)` merges pad `pad`'s left stick with the standard
+  `left`/`right`/`up`/`down` actions: the stick verbatim while deflected
+  (analog magnitude, so a full diagonal exceeds length 1 — the classic
+  feel), else the keys with diagonals scaled by `move.DIAG` so 8-way
+  keyboard speed is even. Multiply by your own speed.
+- `move.stick(pad, side)` is the raw stick as -1..1 floats (`"l"` or
+  `"r"`; the recorded quantized axis over 127, nothing re-derived).
+  `move.keys(left, right, up, down)` is the digital half as -1/0/1
+  integers, with custom action names if yours differ.
+- `move.face8(x, y, fx, fy)` takes the per-axis signs of a nonzero
+  vector (cardinals keep a zero component), else returns `fx, fy`
+  untouched — "keep facing where you last moved".
+- `move.unit8(fx, fy)` turns a facing into an 8-way unit vector
+  (diagonals scale by `DIAG`, cardinals pass through).
+
+There are no acceleration/friction envelopes or response curves here —
+platformer velocity handling like the demo's stays yours. The bundled
+arcade demo (swarm) is the worked twin-stick example; the top-down demo
+(cellar) feeds `dir` into `box.slide`.
+
 ## Drawing, cameras, and text
 
 Begin every draw with a clear, then draw back-to-front:
@@ -722,6 +764,7 @@ Handle the "no save" answer and your first run already does the right thing.
 - `cm.tween` — named effect counters: hit pause, flashes, shake, eased decay.
 - `cm.depth` — stable draw-order sorting: y-sorted draw lists, `ysort`.
 - `cm.hud` — anchored HUD text and device-flavored binding labels.
+- `cm.move` — stick+key movement vectors, 8-way facings, even diagonals.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.

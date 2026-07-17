@@ -855,6 +855,130 @@ local function t_depth()
   check(true, "depth: ysort accepts an empty array")
 end
 
+-- ---- cm.move: stick+key merge, 8-way vectors (A5/D097) ----
+
+local function t_move()
+  local move = cm.require("cm.move")
+  local input = cm.require("cm.input")
+  local DIAG = 0.70710678
+
+  check(move.DIAG == DIAG, "move: DIAG is the demos' exact literal")
+
+  -- pure math first: face8 signs, keep-old, cardinal zeros
+  local fx, fy = move.face8(3.2, -0.5, 9, 9)
+  check(fx == 1 and fy == -1, "move: face8 takes per-axis signs")
+  fx, fy = move.face8(-0.01, 0, 9, 9)
+  check(fx == -1 and fy == 0, "move: face8 zero component gives 0 (cardinal)")
+  fx, fy = move.face8(0, 0.7, 9, 9)
+  check(fx == 0 and fy == 1, "move: face8 cardinal up")
+  fx, fy = move.face8(0, 0, -1, 1)
+  check(fx == -1 and fy == 1, "move: face8 zero vector keeps the old facing")
+  check(select("#", move.face8(0, 0)) == 2 and move.face8(0, 0) == nil,
+        "move: face8 passes absent old facing through untouched")
+
+  -- unit8: diagonals scale by DIAG, cardinals and zero pass through
+  local ux, uy = move.unit8(1, 1)
+  check(ux == DIAG and uy == DIAG, "move: unit8 scales diagonals by DIAG")
+  ux, uy = move.unit8(-1, 1)
+  check(ux == -DIAG and uy == DIAG, "move: unit8 keeps signs")
+  ux, uy = move.unit8(0, -1)
+  check(ux == 0 and uy == -1, "move: unit8 passes cardinals through")
+  ux, uy = move.unit8(0, 0)
+  check(ux == 0 and uy == 0, "move: unit8 zero stays zero")
+
+  -- readers ride the real recorded input path
+  input.map({ { "left", input.key.left }, { "right", input.key.right },
+              { "up", input.key.up }, { "down", input.key.down },
+              { "walk_l", input.key.a }, { "walk_r", input.key.d } })
+  input.pad_reset()
+  local function key(sc, down)
+    return { type = "key", scancode = sc, down = down, rep = false }
+  end
+
+  -- keys: ints, cancellation, custom action names
+  input.apply(input.collect({ key(input.key.right, true) }))
+  local ix, iy = move.keys()
+  check(ix == 1 and iy == 0, "move: keys reads right as +x")
+  input.apply(input.collect({ key(input.key.left, true),
+                              key(input.key.up, true) }))
+  ix, iy = move.keys()
+  check(ix == 0 and iy == -1, "move: opposite keys cancel, up is -y")
+  input.apply(input.collect({ key(input.key.right, false),
+                              key(input.key.up, false),
+                              key(input.key.d, true) }))
+  ix, iy = move.keys("walk_l", "walk_r", "up", "down")
+  check(ix == 1 and iy == 0, "move: keys takes custom action names")
+  check(not pcall(move.keys, "nosuch"), "move: keys refuses unmapped actions")
+  input.apply(input.collect({ key(input.key.left, false),
+                              key(input.key.d, false) }))
+
+  -- dir with no pad and no keys: zero
+  local mx, my = move.dir(1)
+  check(mx == 0 and my == 0, "move: dir idle is (0, 0)")
+
+  -- dir digital: single axis at unit, diagonal at exactly DIAG
+  input.apply(input.collect({ key(input.key.right, true) }))
+  mx, my = move.dir(1)
+  check(mx == 1 and my == 0, "move: dir digital cardinal is unit")
+  input.apply(input.collect({ key(input.key.down, true) }))
+  mx, my = move.dir(1)
+  check(mx == DIAG and my == DIAG, "move: dir digital diagonal is DIAG exact")
+
+  -- stick: the recorded quantized axis over 127, exact
+  input.feed({ { type = "pad", pad = 1, connected = true },
+               { type = "padaxis", pad = 1, axis = 0, value = 32767 },
+               { type = "padaxis", pad = 1, axis = 1, value = -32768 } })
+  input.apply(input.sample())
+  local sx, sy = move.stick(1)
+  check(sx == 1.0 and sy == -1.0, "move: full stick deflection is exactly 1")
+  check(input.pad_axis(1, "lx") / 127 == sx,
+        "move: stick is pad_axis over 127, nothing else")
+
+  -- dir: the deflected stick wins over held keys, verbatim analog
+  mx, my = move.dir(1)
+  check(mx == 1.0 and my == -1.0,
+        "move: dir prefers the deflected stick over held keys")
+
+  -- partial deflection stays the exact recorded quantized fraction
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = 20000 },
+               { type = "padaxis", pad = 1, axis = 1, value = 0 } })
+  input.apply(input.sample())
+  local q = input.pad_axis(1, "lx")
+  check(q > 0 and q < 127, "move: partial deflection quantizes mid-range")
+  sx, sy = move.stick(1)
+  check(sx == q / 127 and sy == 0, "move: partial stick is the exact fraction")
+
+  -- right stick reads rx/ry; the left-stick zero falls back to keys
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = 0 },
+               { type = "padaxis", pad = 1, axis = 2, value = 32767 },
+               { type = "padaxis", pad = 1, axis = 3, value = 32767 } })
+  input.apply(input.sample())
+  local rx, ry = move.stick(1, "r")
+  check(rx == 1.0 and ry == 1.0, "move: side 'r' reads the right stick")
+  mx, my = move.dir(1)
+  check(mx == DIAG and my == DIAG,
+        "move: dir ignores the right stick and falls back to keys")
+  check(not pcall(move.stick, 1, "x"), "move: stick refuses a bad side")
+
+  -- the aim chain: right stick wins, else move dir, else old facing
+  fx, fy = move.face8(rx, ry, move.face8(mx, my, 9, 9))
+  check(fx == 1 and fy == 1, "move: aim chain takes the deflected stick")
+  fx, fy = move.face8(0, 0, move.face8(mx, my, 9, 9))
+  check(fx == 1 and fy == 1, "move: aim chain falls back to the move dir")
+  fx, fy = move.face8(0, 0, move.face8(0, 0, -1, 0))
+  check(fx == -1 and fy == 0, "move: aim chain keeps the old facing at rest")
+
+  -- teardown: disconnect through the record so the APPLIED pad state
+  -- clears too, then drop the latch
+  input.feed({ { type = "pad", pad = 1, connected = false } })
+  input.apply(input.sample())
+  check(not input.pad_connected(1), "move: teardown disconnects the pad")
+  input.apply(input.collect({ key(input.key.right, false),
+                              key(input.key.down, false) }))
+  input.pad_reset()
+  check(#input.sample() == 10, "move: the test leaves the pad domain unlatched")
+end
+
 -- ---- cm.hud: anchored HUD text + device-flavored labels (A5/D096) ----
 
 local function t_hud()
@@ -9233,6 +9357,7 @@ function game.init()
   t_input_pad()
   t_input_gpad()
   t_input_bind()
+  t_move()
   t_options()
   t_save()
   t_text()
