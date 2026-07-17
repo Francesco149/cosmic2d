@@ -4235,3 +4235,73 @@ base-y above vs below its base line — hidden behind, then drawn in
 front. The shipped scripting guide gained a depth-sorting section
 beside the juice section. `tools/build-windows.sh` refreshed the
 stage (4 durable entries preserved) and Start Menu shortcut.
+
+## D096 — cm.hud: the runtime-UI slice; the transition slice defers (A5, 2026-07-17)
+
+**Context.** STATUS pointed this packet at the transition slice with
+an honest pain-first audit ordered first. The audit found three
+instant cuts and nothing else: cellar sets `d.room` and teleports to
+the spawn, the demo's `enter_room` cuts the camera with
+cm.camera.center (D092), and the top-down starter is a single room
+with no transition at all — no demo or template hand-rolls a
+fade/wipe/hold anywhere. Three instant cuts are a pattern, not
+boilerplate: there is no duplicated code for a slice to absorb, so
+per A5's own rule the transition slice DEFERS until a demo actually
+hand-rolls one. Runtime-UI is where the votes are: six sites of
+margin/centering arithmetic against `pal.gfx_size()` (the demo's
+`(W - text.measure(title)) // 2` dance; the arcade starter's
+hand-tuned `W/2 - 70` game-over line, brittle the moment the string
+changes), and four copies of the device-flavor label dance
+(`local k = input.pad_connected(1) and "pad" or "key"` +
+`input.label` concatenation in cellar, swarm, arcade, top-down) —
+§2's "runtime UI recipes/components for HUDs" line.
+
+**Decision.** `cm.hud` is render-only — nothing touches doc or
+module state, so draw code calls it freely and determinism holds by
+construction. `place(anchor, dx, dy, tw, th, w, h)` is the pure
+anchor math: nine anchors ("tl" "t" "tr" / "l" "c" "r" / "bl" "b"
+"br") land the block's corresponding point on that screen point,
+insets push INWARD from the named edges (sign-free at corners,
+plain signed shifts on centered axes), and centering floors exactly
+like the demo's hand-rolled `// 2`. `text(anchor, dx, dy, str,
+opts)` is place() over `pal.gfx_size()` + `cm.text.measure`, drawing
+through cm.text with the same opts; multi-line strings place as one
+measured block with each line aligned to the anchor's horizontal
+side, and the call returns the resolved top-left for relative
+badges. `label(action)` absorbs the flavor dance verbatim:
+`input.label(action, "pad")` while pad 1 is connected, else the
+"key" flavor — rebinds show live (D084's contract), and reading pad
+connectivity in draw is the established swarm idiom. Deliberately
+NOT here: panels/legibility bars (one vote — the demo keeps its
+quads), menus, focus/navigation, dialogue, pause screens (zero
+hand-rolled votes; Esc is the engine's menu). The guide documents
+the pause idiom as a doc flag + early return + `hud.text("c", ...)`.
+
+**Consequences.** Two pixel-identical retrofit proofs, both
+draw-only so both committed goldens stand un-recut: the demo's
+three HUD lines (centered title, coins corner, controls line)
+became three `hud.text` calls with the measure dance gone, and
+cellar's bottom message line + both `input.label` sites became
+`hud.text("bl", ...)` + `hud.label` with the `k` computation gone.
+Frame-300 byte compares pass for both; cellar_clear and
+demo_camtour verify unchanged. Swarm and the three starter
+templates keep their naive copies as contrast. PAIN(actor) stays
+marked in cellar, PAIN(move) in swarm; the transition slice waits
+for its first real hand-rolled fade.
+
+**Proof.** Linux selftest passes **23,957** checks (+23 hud KATs:
+all nine anchors over an explicit box, floored odd centering,
+signed center shifts, unknown-anchor/non-number-inset/non-string
+refusals, a br-anchored glyph landing pixel-exact in its cell via
+read_pixels, multi-line centered blocks aligning each line, and the
+label flavor pinned live against real pad-1 connect/reset through
+the record path — leaving the pad domain unlatched) and the staged
+native Windows executable **23,959** on PAL API 19. `nix run
+.#test` is ALL GREEN — every historical trace and all pixel/audio
+goldens unchanged — and both retrofit goldens (cellar_clear,
+demo_camtour) verify byte-exact on native Windows. Inspected
+captures on llm-feed: the demo HUD and cellar message line,
+byte-identical before/after. The shipped scripting guide gained a
+HUD/prompts section beside depth sorting; `tools/build-windows.sh`
+refreshed the stage (4 durable entries preserved) and Start Menu
+shortcut.

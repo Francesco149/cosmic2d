@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth shipped (D088–D095) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth, cm.hud shipped (D088–D096) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,32 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D096 lands the runtime-UI slice — cm.hud — and honestly defers the
+transition slice.** The ordered pain-first audit found the demos'
+transitions are three instant cuts (cellar's d.room swap, the demo's
+cm.camera.center portal cut, the top-down starter's single room) with
+no hand-rolled fade/wipe/hold anywhere — a pattern, not boilerplate —
+so the transition slice waits for its first real vote, logged in the
+ADR. The votes were in runtime UI: six sites of margin/centering
+arithmetic against pal.gfx_size() (the demo's (W - measure) // 2
+title dance; the arcade starter's brittle hand-tuned W/2 - 70) and
+four copies of the pad-else-key label dance. cm.hud is render-only —
+`place` (pure nine-anchor math, inward insets, floored centering),
+`text` (place over gfx_size + cm.text.measure, per-line alignment
+for multi-line blocks, returns the resolved top-left), and `label`
+(input.label flavored by pad-1 connectivity, the D084 contract
+live). Panels/bars (one vote), menus, dialogue, and pause screens
+(zero votes) stay future cuts; the guide documents the pause idiom
+as a doc flag + early return + hud.text("c"). 23 KATs (Linux
+23,957 / native Windows 23,959). Two pixel-identical retrofit
+proofs, both draw-only with both goldens standing un-recut
+(frame-300 byte compares + cellar_clear/demo_camtour verifying
+byte-exact on Linux and native Windows): the demo's three
+HUD lines became three hud.text calls and cellar's message line +
+label sites became hud.text("bl") + hud.label. Swarm and the
+starter templates keep their naive copies as contrast. The shipped
+guide gained a HUD/prompts section beside depth sorting.
 
 **D095 lands the layer/depth slice: cm.depth.** Pure stable
 draw-order sorting over plain tables, nothing touching doc:
@@ -767,24 +793,23 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the transition slice** — but walk the
-pain-first rule honestly first: the demos' transitions today are
-cellar's instant room swap (set d.room, teleport to spawn), the
-demo's portal cut (cm.camera.center at D092), and the top-down
-starter's room step — all instant cuts, none hand-rolls a
-fade/wipe/hold yet. If that audit finds no real duplicated pain
-(three instant cuts are a pattern, not boilerplate), say so in the
-ADR and take **runtime-UI** instead, where the votes are visible:
-every demo hand-rolls HUD strings + game-over/win overlays (swarm's
-game-over screen, cellar's message line, the demo's coin HUD), and
-§2 promises "HUDs, menus, focus/navigation, dialogue, pause". Then
-swarm's PAIN(move) aim/axis dance when the move slice's evidence is
-in. If sim/doc bytes move in a retrofit, the committed re-cut
-vehicle is `tools/trace/replay-driver.lua` + `dump.lua` +
-`strip-eval.lua` (quantize preimages + virtual pad + EVAL strip —
-usage in the headers and PROCESS.md). A6 bundling polish (READMEs,
-thumbnails, release-manifest promotion for cellar/swarm) can
-interleave now that the slices are making the demos concise.
+**Exact next packet:** **the move slice** — swarm's PAIN(move)
+aim/axis normalization dance is the standing marker, and the audit
+should count the other copies honestly first: cellar's
+stick-wins-else-digital movement block, and the three starter
+templates' naive pad stick/dpad readers (hardcoded since D083).
+That's stick+key merging, normalization, and 8-way/analog policy —
+if the copies genuinely agree, absorb exactly that; a retrofit that
+moves sim/doc bytes re-cuts its golden with the committed vehicle
+`tools/trace/replay-driver.lua` + `dump.lua` + `strip-eval.lua`
+(quantize preimages + virtual pad + EVAL strip — usage in the
+headers and PROCESS.md). The transition slice stays deferred until
+a demo actually hand-rolls a fade/wipe/hold (D096's audit). After
+move: the A5 performance-envelope audit (representative
+actor/projectile counts, honest supported envelopes), and A6
+bundling polish (READMEs, thumbnails, release-manifest promotion
+for cellar/swarm) can interleave now that the slices are making the
+demos concise.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
