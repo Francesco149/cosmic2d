@@ -9475,6 +9475,119 @@ local function t_timeline_thumbs()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_timeline_retention()
+  -- A7 retention surface: the recorder-pause gate (the game runs while history
+  -- stops growing; resume reseeds a fresh stream), the exact retained-bytes the
+  -- disk budget bounds, the immediate re-eviction door, and the machine-local
+  -- budget persisted in editor.dat. All observer/chrome policy — never sim
+  -- state, never verified — so the green suite proves no golden byte moved.
+  local trace = cm.require("cm.trace")
+  local view = cm.require("cm.view")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local root = tmproot() .. "/cosmic_selftest_tlret"
+  pal.mkdir(root)
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  trace.ring.kf = 4
+  local b = pal.buf("st.tlret", 8)
+  b:i32(0, 0)
+  local irec = ("\0"):rep(10)
+  local function drive(a, z)
+    for i = a, z do
+      b:i32(0, i * 7)
+      sim:i64(0, f0 + i)
+      trace.record_frame(irec, nil)
+    end
+  end
+
+  -- ---- Phase A: recorder pause freezes the live edge; the game frame advances
+  trace.ring.spill = false
+  trace.ring.seconds = 30           -- roomy: nothing evicts during this phase
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  drive(1, 8)
+  local _, hiA = trace.ring_range()
+  check(hiA == f0 + 8, "retention: recorded up to the live edge")
+  check(trace.set_rec_paused(true) == true and trace.rec_paused(),
+        "retention: pause arms the recorder gate")
+  for i = 9, 14 do                  -- the game keeps running, un-recorded
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)   -- a no-op while paused
+  end
+  local _, hiP = trace.ring_range()
+  check(hiP == f0 + 8, "retention: paused recorder freezes the live edge")
+  check(trace.ring_stats().frames == 8,
+        "retention: no frames captured while paused")
+  check(trace.set_rec_paused(false) == false and not trace.rec_paused(),
+        "retention: resume clears the gate")
+  drive(15, 18)                     -- a fresh contiguous stream from the present
+  local loR, hiR = trace.ring_range()
+  check(hiR == f0 + 18, "retention: resumed recording advances the live edge")
+  check(loR >= f0 + 14,
+        "retention: resume starts fresh (pre-pause history released)")
+
+  -- ---- Phase B: retained_bytes + the immediate re-eviction door ----
+  trace.ring.spill = true
+  trace.ring.seconds = 8 / 60       -- RAM window = 2 segments; older ones demote
+  trace.ring.budget_mb = 64
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  drive(1, 24)                      -- kf=4 → six closed segments spill
+  check(trace.history_drain(), "retention: spill drains")
+  local st = trace.ring_stats()
+  check(st.retained_bytes and st.retained_bytes > 0,
+        "retention: ring_stats reports the budget-bounded retained bytes")
+  local lo_before = trace.ring_range()
+  trace.ring.budget_mb = 0.00001    -- tiny: all but the newest exceed the bound
+  trace.reevict()
+  trace.history_drain()
+  local lo_after = trace.ring_range()
+  check(lo_after > lo_before,
+        "retention: reevict drops the oldest disk segment immediately")
+  check(trace.ring_stats().retained_bytes < st.retained_bytes,
+        "retention: retained bytes shrink after eviction")
+
+  -- ---- Phase C: the machine-local budget round-trips editor.dat ----
+  local save_path = view._access_path
+  local save_budget = view.cfg.history_budget_mb
+  view._access_path = root .. "/editor.dat"
+  pal.x_remove(view._access_path)
+  check(view.budget_mb_ok(2048) == 2048, "retention: budget_mb_ok passes a rung")
+  check(view.budget_mb_ok(1) == 16 and view.budget_mb_ok(1e9) == 65536,
+        "retention: budget_mb_ok clamps to [16, 65536] MB")
+  check(view.budget_mb_ok(1024.7) == 1024 and view.budget_mb_ok("x") == nil
+        and view.budget_mb_ok(0 / 0) == nil,
+        "retention: budget_mb_ok floors numbers and rejects non-numbers/NaN")
+  check(view.set_history_budget(2048) == 2048 and view.cfg.history_budget_mb == 2048,
+        "retention: set_history_budget updates cfg")
+  view.cfg.history_budget_mb = nil
+  view.load_accessibility()
+  check(view.cfg.history_budget_mb == 2048,
+        "retention: budget round-trips through editor.dat")
+  pal.write_file(view._access_path,
+    cm.require("cm.state").canon({ history_budget_mb = "nope" }))
+  view.cfg.history_budget_mb = nil
+  view.load_accessibility()
+  check(view.cfg.history_budget_mb == nil,
+        "retention: a non-number persisted budget is ignored")
+  view._access_path, view.cfg.history_budget_mb = save_path, save_budget
+
+  -- leave a clean ring behind
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  pal.x_remove(root .. "/editor.dat")
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, f0)
+  pal.buf_free("st.tlret")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -9608,6 +9721,7 @@ function game.init()
   t_ed_park()
   t_timeline_summary()
   t_timeline_thumbs()
+  t_timeline_retention()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
