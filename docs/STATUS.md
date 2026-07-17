@@ -4,6 +4,42 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 9) — cm.fig: the figure runtime + the mascot live
+
+The human-chosen direction (see verdicts below): demo 2's character
+work. **cm.fig** (D3D-016) is the D3D-005 model as an engine module:
+figures are DATA (joint-tree parts, each a list of cm.gb shapes), poses
+are sparse per-part channel arrays (euler Ry Rx Rz + translation for
+floating parts + scale for squash), clips are key-pose lists lerped by
+fig.cycle — emission is a pure function of (figure, root, pose), zero
+animation state (the movers precedent). Two transform chains keep
+lighting honest: positions inherit scale down the tree, normals ride a
+rigid twin into gb's new nrmxf. **cm.gb promoted out of bounce**
+(second user, the cm.m4 precedent) and grew G.ball (proto's 6-point
+chunky ball). **projects/figure** is demo 2's seed: the approved mascot
+(teardrop lathe, style-B eyes, floating mitts/boots, antenna star —
+eyeballed faithful vs proto/out/mascot.png) idles on a stage while a
+second mascot waddles the ring against the box guy walking proto's
+verbatim 4-key clip; N64 presentation on; slow orbit camera; no input
+anywhere. Goldens: figure_show.ctrace (300f, verify PASS) +
+figure_show.png (f430). Full suite ALL GREEN from the committed tree;
+3 shots on llm-feed (mascot close-up, the ring golden, guy mid-stride).
+
+## Exact next step
+
+1. Feed questions open (non-blocking): eye size at 320x240, mascot
+   walk read (waddle intended), keep the guy in the showcase?
+2. **Demo 2 continues** (human direction 2026-07-17): grow the figure
+   vocabulary toward the Zelda-ish open world — more mascot clips
+   (turn, hop, wave), a first NPC exchange, or Body-Harvest-style
+   vertex-color terrain (D3D-004) as the openworld ground. Figure
+   EDITOR (vertex pushing) stays parked with the rest of editor
+   distillation until the human unparks it.
+3. proto3d can adopt the look knobs on its next touch.
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 8) — the N64 presentation lands (D3D-015)
 
 Autonomous round (playtest verdicts still pending; course polish stays
@@ -40,7 +76,7 @@ human-approved. Direction chosen by the human for the next round (asked
 directly, 2026-07-17): **figures + mascot — start demo 2's character
 work** (over deepening demo 1 or unparking the editor).
 
-## Exact next step
+## Exact next step (done — see round 9 above)
 
 1. **The rigid-part figure runtime** (D3D-005): joint tree + rigid part
    meshes + per-joint euler keyframes (lerp/stepped), root-only

@@ -344,3 +344,34 @@ already covers the whole frame, HUD included, like real hardware), and
 soft-blitting the ui/editor layer (dev chrome wants sharp text). The
 "mild horizontal smear" strength is fixed in the shader for now — knob
 it only if the human asks after the feel-check.
+
+## D3D-016 — cm.fig: figures are data, poses are frame functions (2026-07-17)
+
+The D3D-005 character model landed as an engine module (new files,
+merge-clean). Shape choices:
+
+- **A figure is cm.fig DATA** (parts on a joint tree, each part a list of
+  cm.gb shapes), compiled by fig.build, emitted by fig.emit as a pure
+  function of (figure, root m4, pose) — no animation state anywhere, the
+  movers precedent: traces/rewind replay figures for free. Clips are key
+  POSE LISTS lerped by fig.cycle (proto walk_pose generalized); the guy's
+  whole walk is still ~10 numbers.
+- **Pose channels are sparse per-part arrays** [rx,ry,rz, tx,ty,tz,
+  sx,sy,sz]: euler rot in the proto order (Ry Rx Rz), translation for
+  Rayman-style floating parts (the mascot's mitts/boots — D3D-005's
+  root-only-translation rule is for humanoid joint chains, floating
+  parts are the sanctioned exception), scale for squash & stretch.
+- **Two transform chains**: positions inherit pose/shape scale down the
+  tree (a squashed body squashes the eyes riding it); normals travel a
+  parallel RIGID chain into gb's new nrmxf — lighting never skews (the
+  D3D-008 player-squash precedent generalized). cm.gb grew G.ball (the
+  proto 6-point chunky ball profile) for all the mascot's round parts;
+  gb itself promoted out of bounce (second user — the cm.m4 precedent).
+- **projects/figure is demo 2's seed**: mascot (idle + walk) + guy
+  (technique proof) circling a stage, zero input. First figure goldens:
+  figure_show.ctrace (300f) + figure_show.png (f430).
+
+Deferred until a character needs them: stepped (non-lerp) tracks,
+texture-swap face strips (the guy's eyes are boxes for now), and any
+foot-slide tuning (cadence knobs only — never IK, that would be
+skinning-adjacent complexity the model forbids).
