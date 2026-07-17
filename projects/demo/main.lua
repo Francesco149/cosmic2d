@@ -77,11 +77,15 @@ function game.init()
   end
 
   input.map({
-    { "left", input.key.left }, { "right", input.key.right },
-    { "up", input.key.up }, { "down", input.key.down },
-    { "jump", input.key.space }, { "hop", input.key.e },
-    { "grapple", input.key.q }, { "teleport", input.key.r },
-    { "attack", input.key.d },
+    { "left", input.key.left, "pad:dpleft", "pad:lx-" },
+    { "right", input.key.right, "pad:dpright", "pad:lx+" },
+    { "up", input.key.up, "pad:dpup", "pad:ly-" },
+    { "down", input.key.down, "pad:dpdown", "pad:ly+" },
+    { "jump", input.key.space, "pad:south" },
+    { "hop", input.key.e, "pad:east" },
+    { "grapple", input.key.q, "pad:lshoulder" },
+    { "teleport", input.key.r, "pad:north" },
+    { "attack", input.key.d, "pad:west" },
   })
 end
 
