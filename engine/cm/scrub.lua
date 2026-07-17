@@ -200,6 +200,17 @@ local function do_load(path)
   M.at, M.shown = rlo, rlo
   M.play, M.speed = rhi > rlo, 1 -- it's a showcase: roll it in real time
   M.play_hold, M.loop_a, M.loop_b = true, nil, nil
+  -- A standalone clip (A7 §14) records its A/B bounds; open on the same range
+  -- and start the same loop (§14: loading reopens on the range without change).
+  local loop = trace.replay_loop and trace.replay_loop()
+  if loop then
+    local la = math.min(math.max(loop.a, rlo), rhi)
+    local lb = math.min(math.max(loop.b, rlo), rhi)
+    if lb < la then la, lb = lb, la end
+    M.loop_a, M.loop_b = la, lb
+    M.at, M.shown = la, la
+    M.play = lb > la
+  end
   reset_play_clock()
   M.irec = nil
 end

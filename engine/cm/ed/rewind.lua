@@ -180,6 +180,48 @@ local function flash(r, msg)
   r.flash = { msg = msg, at = pal.time_ns() }
 end
 
+-- The first free "<name>.ctrace" / "<name> (n).ctrace" under dir (dir created).
+local function free_clip_path(dir, name)
+  pal.mkdir(dir)
+  local path = ("%s/%s.ctrace"):format(dir, name)
+  local n = 1
+  while pal.mtime(path) do
+    path = ("%s/%s (%d).ctrace"):format(dir, name, n); n = n + 1
+  end
+  return path
+end
+
+-- Export the active A/B clip as a standalone .ctrace (A7 §15). Zero-config:
+-- replays/ beside engine/, created on first use, written atomically, then the
+-- folder is revealed. A read-only engine root falls back to the per-user data
+-- root, named honestly rather than writing somewhere surprising. An adopted /
+-- legacy range that cannot be a standalone clip reports the reason (no retry).
+local function export_replay(ed, r, a, b)
+  local base = ((ed.root or "") .. ""):match("([^/\\]+)[/\\]*$") or "clip"
+  base = base:gsub("[^%w%-_]", "_")
+  local name = ("%s-clip-%d-%d"):format(base, a, b)
+  local dir = "replays"
+  local path = free_clip_path(dir, name)
+  local pok, ok, info = pcall(trace.export_clip, a, b, path)
+  if pok and ok == nil then -- refused (adopted/legacy): honest, retry won't help
+    flash(r, "cannot export: " .. tostring(info)); return
+  end
+  if not (pok and ok) and type(pal.user_path) == "function" then
+    local up = pal.user_path() -- engine root read-only: the writable per-user root
+    if up then
+      dir = up .. "replays"
+      path = free_clip_path(dir, name)
+      pok, ok, info = pcall(trace.export_clip, a, b, path)
+    end
+  end
+  if pok and ok then
+    if type(pal.x_path_reveal) == "function" then pal.x_path_reveal(dir) end
+    flash(r, "exported " .. path)
+  else
+    flash(r, "export failed: " .. tostring(info))
+  end
+end
+
 function M.opened(ed)
   return state(ed).open == true
 end
@@ -860,7 +902,9 @@ function M.draw(ed, ig, i)
   end
   if a then
     local ex = place(94)
-    button(i, ex, foot_y, 94, foot_h, "export replay", { enabled = false })
+    if button(i, ex, foot_y, 94, foot_h, "export replay", { accent = true }) then
+      export_replay(ed, r, a, b)
+    end
   end
   if parked then
     local rx = place(92)
