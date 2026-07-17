@@ -732,6 +732,9 @@ function M.tick()
   -- The worker performs file flush + OS sync; this poll never waits and stays
   -- outside the measured simulation interval (PAL API 13 / D073).
   if M.trace then M.trace.history_pump() end
+  -- Fold any on-disk project change (editor save/import/code reload) into the
+  -- content-addressed project manifest (A7 §14); dirty-gated, no-op otherwise.
+  if M.trace and M.trace.manifest_pump then M.trace.manifest_pump() end
 
   if M.game_err or not guarded("game.draw", M.game.draw) then
     -- no game frame to show: dark backdrop (also resets a half-built batch)

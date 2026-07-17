@@ -267,13 +267,17 @@ local function downscale_rgba(src, sw, sh, dw, dh)
   return table.concat(out)
 end
 
--- the one manifest-line spelling: id first frames fbytes + the 4 digest fields.
--- Legacy 4-field lines (pre-A7) decode with no digest and read back as an
--- honest "no summary" gap; hist_scan tolerates both.
+-- the one manifest-line spelling: id first frames fbytes + the 4 digest fields
+-- (D100) + an optional project-manifest hash (D103). Legacy 4-field lines
+-- (pre-A7) decode with no digest and read back as an honest "no summary" gap;
+-- a segment recorded without a project manifest (spill off, empty project)
+-- keeps 8 fields; hist_scan tolerates all three widths.
 local function seg_index_line(seg, fbytes)
   local s = ensure_summary(seg)
-  return ("%d %d %d %d %d %d %d %d\n"):format(seg.id, seg.first, seg.frames,
+  local base = ("%d %d %d %d %d %d %d %d"):format(seg.id, seg.first, seg.frames,
     fbytes, s.sim, s.editor, s.files, s.events)
+  if seg.manifest_hash then base = base .. " " .. seg.manifest_hash end
+  return base .. "\n"
 end
 
 -- ---- the segment ring ----
@@ -309,6 +313,7 @@ local function open_segment(R, first)
   local seg = { id = R.next_id, first = first, kf_bufs = bufs,
                 kf_doct = doct, kf_edoc = R.prev_edoc,
                 bundle = cm.modules(), chunks = {},
+                manifest_hash = R.manifest_hash, -- §14: the tree at this keyframe
                 frames = 0, bytes = 0 }
   R.next_id = R.next_id + 1
   R.segs[#R.segs + 1] = seg
@@ -404,11 +409,111 @@ local function stream_prepare(R, adopted)
   R.stream_id = id
 end
 
+-- ---- the content-addressed project-blob store (A7 §14, D103) ----
+--
+-- A durable store of the project's source+asset file bytes, keyed by their
+-- sha256, so a retained segment can name a *complete* project tree (its
+-- manifest, below) without copying an unchanged sprite/sound/script into every
+-- segment. Observer-only like the rest of the disk tier: it rides M.ring.spill,
+-- so headless / --verify / goldens never walk a tree, hash a file, or write a
+-- blob. Blobs live beside the segments in .ed/history/blobs/<hex>, so
+-- cm.ed.clear_cache removes them with the history they describe.
+
+local function blob_dir(R) return hist_dir(R) .. "/blobs" end
+local function blob_path(R, hash) return blob_dir(R) .. "/" .. hash end
+
+-- store bytes content-addressed; return the hex hash (or nil,err on write
+-- failure — the caller degrades, a missing blob is an honest un-materializable
+-- gap, never a crash). Dedup by construction: an existing blob is never
+-- rewritten, and R.blob_bytes tracks only bytes this store actually wrote.
+local function blob_put_bytes(R, bytes)
+  local hash = pal.sha256(bytes)
+  local path = blob_path(R, hash)
+  if not pal.mtime(path) then
+    pal.mkdir(blob_dir(R))
+    local ok, err = pal.write_file_atomic(path, bytes,
+                          M._write_fail and M._write_fail.blob)
+    if not ok then return nil, err end
+    R.blob_bytes = (R.blob_bytes or 0) + #bytes
+  end
+  return hash
+end
+
+-- ---- the per-segment project manifest (A7 §14, D103) ----
+--
+-- A complete map { relpath -> blob hex } of the project's non-machine files at a
+-- segment's keyframe. §14 keyframe granularity: the tree state at each segment's
+-- first frame, so any retained segment (including an adopted cross-session one)
+-- can materialize the whole project. The manifest is itself content-addressed
+-- (stored as a blob → manifest hash) so unchanged trees dedupe across segments.
+
+-- Walk the live project tree exactly like the release exporter's prune rule:
+-- pal.list_dir already skips dot-directories (.ed/.git), and video.dat/input.dat
+-- are per-machine policy, never project source (D036/D074/D084). Each file is
+-- hashed natively (sha256_file — no Lua read) and stored only when its content
+-- is new. Best-effort per file: an unreadable/unstorable file is simply omitted.
+local function walk_manifest(R)
+  local paths = {}
+  for _, rel in ipairs(pal.list_dir(R.project) or {}) do
+    if rel ~= "video.dat" and rel ~= "input.dat" then
+      local full = R.project .. "/" .. rel
+      local info = pal.x_path_info(full)
+      if info and info.type == "file" and not info.link then
+        local hash = pal.sha256_file(full)
+        if hash then
+          if not pal.mtime(blob_path(R, hash)) then
+            local bytes = pal.read_file(full)
+            if bytes then hash = blob_put_bytes(R, bytes) end
+          end
+          if hash then paths[rel] = hash end
+        end
+      end
+    end
+  end
+  return paths
+end
+
+local function manifest_encode(paths)
+  local rels = {}
+  for rel in pairs(paths) do rels[#rels + 1] = rel end
+  table.sort(rels) -- deterministic bytes → the same tree hashes the same
+  local parts = { pack("<I4", #rels) }
+  for _, rel in ipairs(rels) do
+    parts[#parts + 1] = pack("<s4s4", rel, paths[rel])
+  end
+  return table.concat(parts)
+end
+
+local function manifest_decode(bytes)
+  local n, pos = unpack("<I4", bytes)
+  local paths = {}
+  for _ = 1, n do
+    local rel, hash
+    rel, hash, pos = unpack("<s4s4", bytes, pos)
+    paths[rel] = hash
+  end
+  return paths
+end
+
+-- Recompute R.manifest from the live tree and store it; sets R.manifest_hash
+-- (nil when spill is off / no project / total failure — an honest "no manifest"
+-- the tray and packaging can label). Rides spill so headless never walks a tree.
+local function refresh_manifest(R)
+  if not M.ring.spill or R.project == "" then
+    R.manifest, R.manifest_hash = nil, nil
+    return nil
+  end
+  local paths = walk_manifest(R)
+  local mhash = blob_put_bytes(R, manifest_encode(paths))
+  R.manifest, R.manifest_hash = paths, mhash
+  return mhash
+end
+
 -- the manifest (R6.5): one line per spilled segment ("id first frames
--- fbytes"), appended at spill so boot adoption never has to read the
--- segment blobs themselves. Stale lines (evicted/truncated files) are
--- dropped at scan time by an existence check; a re-spilled id (rewind
--- re-closed the same segment) is deduped last-wins.
+-- fbytes" + the D100 digest + the D103 manifest hash), appended at spill so
+-- boot adoption never has to read the segment blobs themselves. Stale lines
+-- (evicted/truncated files) are dropped at scan time by an existence check; a
+-- re-spilled id (rewind re-closed the same segment) is deduped last-wins.
 local function hist_index(dir)
   return dir .. "/index"
 end
@@ -428,6 +533,9 @@ local function spill_blob(seg)
   w.chunk("HEAD", 1, pack("<I4I4", seg.first, seg.frames))
   local s = ensure_summary(seg)
   w.chunk("SUMM", 1, pack("<I4I4I4I4", s.sim, s.editor, s.files, s.events))
+  if seg.manifest_hash then -- §14: the content-addressed project tree at kf
+    w.chunk("PMAN", 1, pack("<s4", seg.manifest_hash))
+  end
   for _, b in ipairs(seg.kf_bufs) do
     w.chunk("KFBF", 1, pack("<s4s4", b.name, b.bytes))
   end
@@ -615,6 +723,8 @@ local function seg_load(R, seg)
     elseif c.tag == "SUMM" then
       local sim, ed, fi, ev = unpack("<I4I4I4I4", c.payload)
       seg.summary = { sim = sim, editor = ed, files = fi, events = ev }
+    elseif c.tag == "PMAN" then
+      seg.manifest_hash = seg.manifest_hash or unpack("<s4", c.payload)
     elseif c.tag == "KFBF" then
       local name, bytes = unpack("<s4s4", c.payload)
       kf_bufs[#kf_bufs + 1] = { name = name, bytes = bytes }
@@ -663,6 +773,10 @@ local function hist_scan(project)
         e.summary = { sim = tonumber(sim), editor = tonumber(ed),
                       files = tonumber(fi), events = tonumber(ev) }
       end
+      -- optional D103 project-manifest hash (9th field); absent = legacy or
+      -- an empty/spill-off recording, an honest "not materializable" gap.
+      e.manifest_hash =
+        line:match("^%d+ %d+ %d+ %d+ %d+ %d+ %d+ %d+ (%x+)")
       byid[id] = e
     end
   end
@@ -725,7 +839,13 @@ local function hist_adopt(R)
   local names = pal.list_dir(dir)
   for _, n in ipairs(names or {}) do
     local path = dir .. "/" .. n
-    if not keep[path] then pal.x_remove(path) end
+    -- The content-addressed blob store (§14) is reclaimed by gc_blobs' mark-
+    -- sweep against the surviving chain, not by this chain-file wipe — else a
+    -- normal adoption would delete the very blobs its segments reference. Orphan
+    -- blobs (a fork, or a previous crash) fall to gc_blobs at ring_init instead.
+    if n ~= "blobs" and not n:find("^blobs/") and not keep[path] then
+      pal.x_remove(path)
+    end
   end
   if #chain == 0 then return false end
   local lines = {}
@@ -735,12 +855,13 @@ local function hist_adopt(R)
       id = e.id, first = e.first, frames = e.frames, bytes = 0,
       file = e.file, fbytes = e.fbytes, spilled = true, adopted = true,
       summary = e.summary, -- from the manifest, so the tray draws the past
+      manifest_hash = e.manifest_hash, -- §14: adopted history is exportable
     }                      -- without touching a single spilled blob
     R.next_id = math.max(R.next_id, e.id + 1)
-    local s = e.summary
+    local s, mh = e.summary, e.manifest_hash and (" " .. e.manifest_hash) or ""
     if s then
-      lines[#lines + 1] = ("%d %d %d %d %d %d %d %d\n"):format(e.id, e.first,
-        e.frames, e.fbytes, s.sim, s.editor, s.files, s.events)
+      lines[#lines + 1] = ("%d %d %d %d %d %d %d %d%s\n"):format(e.id, e.first,
+        e.frames, e.fbytes, s.sim, s.editor, s.files, s.events, mh)
     else
       lines[#lines + 1] = ("%d %d %d %d\n"):format(e.id, e.first, e.frames,
                                                    e.fbytes)
@@ -798,6 +919,43 @@ evict = function(R)
   end
 end
 
+-- Content-addressed blobs are shared across segments, so they are reclaimed by
+-- mark-and-sweep, not per-segment eviction: at (re)init, mark every retained
+-- segment's manifest (and the file blobs it names) reachable and delete the
+-- rest. This also sweeps orphans a crash left behind, and recomputes the store's
+-- byte total so the disk meter reads true without a per-frame stat. In-session
+-- the store only grows (bounded by distinct file versions saved); the next init
+-- sweeps. Rides spill; a missing/corrupt manifest just keeps its files (safe).
+local function gc_blobs(R)
+  R.blob_bytes = nil
+  if not M.ring.spill or R.project == "" then return end
+  local names = pal.list_dir(blob_dir(R))
+  if not names then return end
+  local keep, mhashes = {}, {}
+  local function mark(mh)
+    if mh and not mhashes[mh] then mhashes[mh] = true; keep[mh] = true end
+  end
+  for _, s in ipairs(R.segs) do mark(s.manifest_hash) end
+  mark(R.manifest_hash) -- the fresh baseline generation
+  for mh in pairs(mhashes) do
+    local mb = pal.read_file(blob_path(R, mh))
+    local ok, paths = pcall(manifest_decode, mb or "")
+    if mb and ok then for _, h in pairs(paths) do keep[h] = true end
+    else keep[mh] = true end -- can't expand it — retain conservatively
+  end
+  local total = 0
+  for _, n in ipairs(names) do
+    local path = blob_dir(R) .. "/" .. n
+    if keep[n] then
+      local info = pal.x_path_info(path)
+      if info and info.type == "file" then total = total + info.size end
+    else
+      pal.x_remove(path)
+    end
+  end
+  R.blob_bytes = total
+end
+
 -- (re)initialize the mirrors from live state and open a fresh segment
 local function ring_init(R)
   R.segs = {}
@@ -821,7 +979,15 @@ local function ring_init(R)
   R.prev_edoc, R.prev_edrev = "", nil
   R.prev_edoc = ed_canon(R) or ""
   R.last_frame = state.frame()
+  -- §14 (D103): capture the project tree as this generation's manifest baseline
+  -- before the first segment snapshots it, then reclaim blobs no retained
+  -- segment (adopted or fresh) still names. Both are no-ops without spill.
+  local ok, err = pcall(refresh_manifest, R)
+  if not ok then pal.log("[trace] project manifest baseline failed: " ..
+                         tostring(err)); R.manifest, R.manifest_hash = nil, nil end
+  R.manifest_dirty = nil
   open_segment(R, R.last_frame + 1)
+  gc_blobs(R)
 end
 
 function M.ring_start(opts)
@@ -919,10 +1085,51 @@ function M.ring_stats()
     if s.spilling or s.spill_queued then pending = pending + 1 end
   end
   local lo, hi = M.ring_range()
+  -- retained_bytes stays segment-only (exactly what evict bounds against the
+  -- budget); blob_bytes is the shared content-addressed project-blob store
+  -- (§14), reported so the disk meter can show total storage honestly. It is a
+  -- running total (blob_put adds, gc_blobs recomputes) — never a per-frame stat.
   return { segs = #R.segs, frames = frames, chunk_bytes = bytes,
            keyframe_bytes = kfbytes, oldest = lo, newest = hi,
            spilled = spilled, pending = pending, disk_bytes = disk_bytes,
-           retained_bytes = retained, pinned = M._rec ~= nil }
+           retained_bytes = retained, blob_bytes = R.blob_bytes or 0,
+           manifest = R.manifest_hash ~= nil, pinned = M._rec ~= nil }
+end
+
+-- ---- project-manifest / blob queries (A7 §14, D103) ----
+-- The read side the tray's files lane and the packaging packet build on: the
+-- live tree map, a segment's keyframe manifest, and content-addressed reads.
+
+-- the live project manifest ({ relpath -> blob hex }) or nil (no spill / project)
+function M.ring_manifest() return M._R and M._R.manifest end
+
+-- the manifest hash a retained segment snapshotted at its keyframe, for the
+-- segment containing frame f — resident, demoted, or adopted cross-session (it
+-- rides the skeleton, so this never loads a blob). nil = a legacy/no-manifest
+-- segment (the packaging packet marks those un-materializable).
+function M.manifest_at(f)
+  local R = M._R
+  if not R then return nil end
+  f = math.floor(f)
+  for _, s in ipairs(R.segs) do
+    if f >= s.first and f < s.first + s.frames then return s.manifest_hash end
+  end
+  return nil
+end
+
+-- raw bytes of a stored blob (file version or manifest), or nil if absent
+function M.blob_get(hash)
+  local R = M._R
+  if not R or not hash then return nil end
+  return pal.read_file(blob_path(R, hash))
+end
+
+-- decode a stored manifest blob into { relpath -> blob hex }, or nil
+function M.manifest_files(hash)
+  local blob = M.blob_get(hash)
+  if not blob then return nil end
+  local ok, paths = pcall(manifest_decode, blob)
+  return ok and paths or nil
 end
 
 -- ---- recording ----
@@ -1056,6 +1263,15 @@ function M.note_save(path, nbytes)
   seg_append(seg, "FSAV",
     pack("<s4I4", tostring(path or ""), math.max(0, math.floor(nbytes or 0))))
   seg.summary = nil
+  R.manifest_dirty = true -- §14: fold the saved bytes into the project manifest
+end
+
+-- The project tree changed on disk (an editor save, import, delete, or observed
+-- external edit) — the next render-phase manifest_pump re-walks and stores it.
+-- Cheap and idempotent; the actual (I/O-bearing) work is deferred out of the
+-- sim step, exactly like history spill.
+function M.mark_project_dirty()
+  if M._R then M._R.manifest_dirty = true end
 end
 
 -- A lifecycle event bit (M.timeline_event.ERROR / .RESTART) at the current
@@ -1114,6 +1330,21 @@ function M.thumb_pump()
   while R.thumb_next <= f do R.thumb_next = R.thumb_next + period end
 end
 
+-- Render/dev tick hook (A7 §14): fold on-disk project changes into the manifest
+-- when something marked it dirty. Deferred out of record_frame so the sim step
+-- never walks/hashes/writes; the manifest a segment carries is therefore its
+-- keyframe-granular tree, caught up within a frame of the save. Best-effort:
+-- a failed walk keeps the previous manifest and logs. No-op without spill.
+function M.manifest_pump()
+  local R = M._R
+  if not R or not R.manifest_dirty then return end
+  if not M.ring.spill or R.project == "" then R.manifest_dirty = nil; return end
+  R.manifest_dirty = nil
+  local ok, err = pcall(refresh_manifest, R)
+  if not ok then pal.log("[trace] project manifest update failed: " ..
+                         tostring(err)) end
+end
+
 -- called when hot reload swapped modules mid-session
 function M.on_code_change(changed_names)
   local R = M._R
@@ -1129,6 +1360,7 @@ function M.on_code_change(changed_names)
     parts[#parts + 1] = pack("<s4s4s4", m.name, m.path, m.source)
   end
   seg_append(R.segs[#R.segs], "EPOC", table.concat(parts))
+  R.manifest_dirty = true -- reloaded code came from disk; refresh the manifest
   pal.log("[trace] code epoch: " .. table.concat(names, ", "))
 end
 
@@ -1148,10 +1380,13 @@ local function write_trace(path, project, kf, first_i)
     if i > first_i then
       w.chunk("KEYF", 1, state.encode_snapshot(s.kf_bufs, s.kf_doct))
     end
-    -- FSAV/MARK/THMB are history chrome (activity, lifecycle, previews), not
-    -- replay state; a standalone clip's own indexes are the packaging packet.
+    -- FSAV/MARK/THMB/PMAN are history chrome (activity, lifecycle, previews,
+    -- the project-manifest hash), not replay state; a standalone clip's own
+    -- bundled manifest + blobs are the next packaging packet, so an exported
+    -- .ctrace stays byte-identical to before (goldens hold).
     for _, c in ipairs(s.chunks) do
-      if c.tag ~= "FSAV" and c.tag ~= "MARK" and c.tag ~= "THMB" then
+      if c.tag ~= "FSAV" and c.tag ~= "MARK" and c.tag ~= "THMB"
+         and c.tag ~= "PMAN" then
         w.chunk(c.tag, 1, c.payload)
       end
     end
@@ -1296,6 +1531,7 @@ function M.ring_load(path)
   R.next_id = #segs + 1
   R.last_frame = f0 + frames -- the loaded newest; exits rewind to rebase
   R.prev, R.prev_doc, R.prev_doc_hash = {}, nil, nil
+  R.manifest, R.manifest_hash, R.manifest_dirty = nil, nil, nil -- foreign tree
   M._R = R
   pal.log(("[trace] replay loaded: %s (%d frames)"):format(path, frames))
   return f0, f0 + frames
