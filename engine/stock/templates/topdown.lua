@@ -27,6 +27,20 @@ local PW = 12                 -- player size (square)
 local SPEED = 1.8
 local DIAG = 0.70710678       -- 1/sqrt(2), a fixed constant on purpose
 
+-- gamepad (A4): pad 1's dpad or left stick walks, start resets —
+-- alongside the keyboard. Hardcoded on purpose; the rebinding packet
+-- later in A4 replaces this with real bindings.
+local STICK = 40 -- of 127: how far the stick tilts before it counts
+
+local function pad_dir()
+  local lx, ly = input.pad_axis(1, "lx"), input.pad_axis(1, "ly")
+  local dx = ((input.pad_down(1, "dpright") or lx > STICK) and 1 or 0)
+           - ((input.pad_down(1, "dpleft") or lx < -STICK) and 1 or 0)
+  local dy = ((input.pad_down(1, "dpdown") or ly > STICK) and 1 or 0)
+           - ((input.pad_down(1, "dpup") or ly < -STICK) and 1 or 0)
+  return dx, dy
+end
+
 local game = {}
 
 local function reset(d)
@@ -57,10 +71,11 @@ end
 
 function game.step()
   local d = state.doc
-  if input.pressed("reset") then reset(d) end
+  if input.pressed("reset") or input.pad_pressed(1, "start") then reset(d) end
   local won = d.count == #GEMS
   local dx = (input.down("right") and 1 or 0) - (input.down("left") and 1 or 0)
   local dy = (input.down("down") and 1 or 0) - (input.down("up") and 1 or 0)
+  if dx == 0 and dy == 0 then dx, dy = pad_dir() end
   if won then
     if dx ~= 0 or dy ~= 0 then reset(d) end
     return

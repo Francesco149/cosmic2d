@@ -19,6 +19,18 @@ local COOLDOWN = 10           -- frames between shots
 local ROCK = 14               -- rock size (square)
 local START_EVERY = 46        -- frames between rocks at the start
 
+-- gamepad (A4): pad 1's dpad or left stick steers, south shoots, start
+-- resets — alongside the keyboard. Hardcoded on purpose; the rebinding
+-- packet later in A4 replaces this with real bindings.
+local STICK = 40 -- of 127: how far the stick tilts before it counts
+
+local function pad_left()
+  return input.pad_down(1, "dpleft") or input.pad_axis(1, "lx") < -STICK
+end
+local function pad_right()
+  return input.pad_down(1, "dpright") or input.pad_axis(1, "lx") > STICK
+end
+
 local game = {}
 
 local function reset(d)
@@ -39,18 +51,18 @@ end
 
 function game.step()
   local d = state.doc
-  if input.pressed("reset") then reset(d) end
+  if input.pressed("reset") or input.pad_pressed(1, "start") then reset(d) end
   if d.over then
-    if input.pressed("fire") then reset(d) end
+    if input.pressed("fire") or input.pad_pressed(1, "south") then reset(d) end
     return
   end
   d.t = d.t + 1
-  if input.down("left") then d.x = d.x - SPEED end
-  if input.down("right") then d.x = d.x + SPEED end
+  if input.down("left") or pad_left() then d.x = d.x - SPEED end
+  if input.down("right") or pad_right() then d.x = d.x + SPEED end
   d.x = m.clamp(d.x, 8, W - 8 - SHIP_W)
 
   d.cool = m.max(0, d.cool - 1)
-  if input.down("fire") and d.cool == 0 then
+  if (input.down("fire") or input.pad_down(1, "south")) and d.cool == 0 then
     d.cool = COOLDOWN
     d.shots[#d.shots + 1] = { x = d.x + SHIP_W / 2 - 1, y = H - 22 - SHIP_H }
   end

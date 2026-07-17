@@ -26,6 +26,18 @@ local PW, PH = 12, 16                  -- player size
 local RUN, AIR = 0.6, 0.35             -- ground/air acceleration
 local MAXVX, GRAV, JUMP = 2.6, 0.28, -5.6
 
+-- gamepad (A4): pad 1's dpad or left stick runs, south jumps, start
+-- resets — alongside the keyboard. Hardcoded on purpose; the rebinding
+-- packet later in A4 replaces this with real bindings.
+local STICK = 40 -- of 127: how far the stick tilts before it counts
+
+local function pad_left()
+  return input.pad_down(1, "dpleft") or input.pad_axis(1, "lx") < -STICK
+end
+local function pad_right()
+  return input.pad_down(1, "dpright") or input.pad_axis(1, "lx") > STICK
+end
+
 local game = {}
 
 local function reset(d)
@@ -63,16 +75,17 @@ end
 
 function game.step()
   local d = state.doc
-  if input.pressed("reset") then reset(d) end
+  if input.pressed("reset") or input.pad_pressed(1, "start") then reset(d) end
+  local jump_pressed = input.pressed("jump") or input.pad_pressed(1, "south")
   if d.won then
-    if input.pressed("jump") then reset(d) end
+    if jump_pressed then reset(d) end
     return
   end
   local a = d.grounded and RUN or AIR
-  if input.down("left") then d.vx = m.max(d.vx - a, -MAXVX)
-  elseif input.down("right") then d.vx = m.min(d.vx + a, MAXVX)
+  if input.down("left") or pad_left() then d.vx = m.max(d.vx - a, -MAXVX)
+  elseif input.down("right") or pad_right() then d.vx = m.min(d.vx + a, MAXVX)
   else d.vx = d.vx * (d.grounded and 0.78 or 0.98) end
-  if input.pressed("jump") and d.grounded then d.vy = JUMP end
+  if jump_pressed and d.grounded then d.vy = JUMP end
   d.vy = m.min(d.vy + GRAV, 6)
   d.grounded = false
   move_axis(d, d.vx, 0)
