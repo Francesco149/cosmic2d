@@ -4,6 +4,21 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 14 playtest 2) — boulder tops are solid
+
+Human: **"if i jump on top of a boulder sometimes I can phase into
+it"** — otherwise good. Root cause: openworld's vertical pass only
+knew the heightfield; the side clamps rightly ignore squeezed
+overlaps (D3D-009), so a fall entering a collider through its TOP
+face never clamped anywhere. Fix = the bounce box-top rule ported
+into the landing plane: g raises to any collider top under the feet
+(feet-at-or-above pre-move, EPS on every f32 test per D3D-010);
+walking off the top exceeds k.snap and becomes an ordinary fall.
+Drop test settles exactly at the box top; boulders (and stumps) are
+now standable perches. All 11 traces + 12 pixels replayed
+unregenerated (no golden route ever crosses a collider top
+airborne). Suite ALL GREEN; perch shot on the feed.
+
 ## 2026-07-17 (round 14 playtest) — boulders cut to ten, dirt only
 
 Human on round 14: **"lower the amount of boulders. put them on dirt
