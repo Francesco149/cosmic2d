@@ -494,3 +494,49 @@ openworld_swim.png (f300 mid-pond). Same round, the figure showcase:
 one shared anim.ring_rate pins the box guy exactly opposite the ring
 mascot (per-walker rates drifted the gap; human: keep the guy, never
 let him overlap the mascot) — figure_show goldens re-recorded/re-shot.
+
+## D3D-020 — the first NPC + the proximity exchange (2026-07-17)
+
+Demo 2's Zelda-ish beat (the STATUS next-step list's first option,
+taken autonomously): the world gets an inhabitant who ACKNOWLEDGES
+you. The pond watcher — a color-variant mascot on the pond's east
+bank — turns to face an approaching player, waves, chimes, and speaks
+a HUD line.
+
+- **Color variants over new figures**: cm.mascot.build(overrides)
+  casts palette variants of the one approved figure (coral body/teal
+  mitts vs the player's teal/coral; the antenna star stays gold — the
+  species mark, not the individual's). The part tree and all clips
+  work on any variant because poses address parts by name. A brand-new
+  NPC figure would have needed its own approval round; a recolor of
+  the locked-in mascot inherits the verdict.
+- **The exchange is radius + hysteresis**: greet begins inside
+  knobs.npc.greet_r, ends outside exit_r (a boundary hoverer can't
+  machine-gun the chime). The facing EASES toward the player (and back
+  home after) so the turn reads as a turn, not a snap.
+- **Sim state is one named buffer** (ow.npc): eased yaw, the
+  greet-start frame stored as frame+1 (0 stays the not-greeting
+  sentinel even for a frame-0 greet), and the greet count (dialog
+  lines rotate per greeting). The wave pose and the typewriter reveal
+  are pure functions of (buffer, frame) — the zero-animation-state
+  rule extends to the exchange.
+- **The wave clip lives engine-side** (cm.mascot.wave, frame-driven —
+  a waver stands still, so no distance phase). Draft lesson: the mitt
+  must sweep ABOVE the head silhouette; held beside it, it reads as an
+  ear at 320x240.
+- **Dialog is HUD text**, centered on the full line so the typewriter
+  reveal doesn't slide, typed at type_f frames/char. No text-box art
+  yet — whether the exchange wants a proper bubble/portrait is a feed
+  question for the human.
+- **The chime reuses bounce's fm-bell** at its fanfare note (a
+  human-heard preset in a new snd slot) rather than drafting a new
+  synth patch nobody has approved.
+
+Fallout: knobs.npc grows the doc tree and sfx-greet.ins grows
+snd.bank, so both openworld traces re-recorded (the D3D-019/round-11
+precedents); tour/swim pngs re-shot (the NPC is new world content;
+the HUD tris counter moved). New goldens: openworld_npc.ctrace (480f
+demo(4): approach, chime edge, turn ease, hold-and-stand) +
+openworld_npc.png (f311: wave out-sweep, the full first line typed).
+All three traces drift-proven; figure goldens byte-identical through
+the cm.mascot builder refactor. Suite ALL GREEN.

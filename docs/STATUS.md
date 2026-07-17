@@ -4,6 +4,42 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 12) — the pond watcher: first NPC + the exchange
+
+Demo 2's Zelda-ish beat (D3D-020). **cm.mascot.build(overrides)** casts
+color variants of the locked-in mascot (figure goldens verified
+byte-pure through the refactor) and **cm.mascot.wave** is the greeting
+clip (mitt sweeping ABOVE the head silhouette — the first draft read as
+an ear). **The pond watcher** (openworld/npc.lua): a coral/teal variant
+on the pond's east bank; inside greet_r it eases its facing to you,
+waves, rings bounce's fm-bell (new snd slot), and a dialog line types
+out on the HUD (3 lines rotating per greet); past exit_r (hysteresis)
+it settles back toward the pond. Sim state = ONE buffer (ow.npc: yaw,
+greet-start frame+1, greet count); wave/dialog are pure functions of
+(buffer, frame). demo(4) = walk from the spawn bowl and STAND for the
+exchange (route holds at its last waypoint, hop suppressed while held).
+Goldens: openworld_npc.ctrace (480f) + .png (f311, out-sweep + full
+line); tour/swim re-recorded (knobs.npc + snd.bank) and re-shot (new
+world content + the HUD tris counter). Suite ALL GREEN; 3 shots on the
+feed (exchange wide, wave close, the greet framing).
+
+## Exact next step
+
+1. Feed questions open (non-blocking): does the exchange beat land
+   (turn + wave + chime + typewriter)? dialog tone ok? does the NPC
+   want a real text box/name tag instead of the bare HUD line? Plus
+   round 11's: splash in-game listen, half-sunk swim read, jump read,
+   band colors + fog at 320x240, eye size at 320x240.
+2. **Demo 2 grows** (unchanged menu, minus the NPC): scatter
+   props/collectibles to give the wander a goal, water polish
+   (shoreline read, swim-out splash), more exchange depth (the NPC
+   walking its own little route, multi-line dialog pages), or a second
+   NPC elsewhere. Figure EDITOR stays parked until the human unparks.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 11 playtest, second pass) — breaststroke
 
 Human on the crawl draft: **"the arms move together front to back and
@@ -57,7 +93,7 @@ mid-pond); openworld_tour re-recorded (doc grew the swim knobs) +
 re-shot (the pond entered the f1290 framing). Suite ALL GREEN; 3 shots
 on the feed (swim Q: does the half-sunk float read?).
 
-## Exact next step
+## Exact next step (done — see round 12 above)
 
 1. Feed questions open (non-blocking): the splash sizzle needs an
    in-game listen, the half-sunk swim read, jump read, band colors +
