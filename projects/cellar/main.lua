@@ -11,8 +11,9 @@
 --   PAIN(depth):  the y-sort comparator + rebuilt draw list every frame is
 --                 boilerplate every top-down game needs.
 --   resolved(query/move): this file's hand-rolled overlap loops and the
---                 axis-at-a-time wall slide moved into cm.box (A5/D090) —
---                 swarm and the demo keep their naive copies as contrast.
+--                 axis-at-a-time wall slide moved into cm.box (A5/D090);
+--                 the demo keeps its naive copy as contrast (swarm's
+--                 moved into cm.actor at D091).
 --
 -- Everything that changes per frame lives in state.doc (snapshots, traces,
 -- rewind stay exact); cm.math sin drives bobs off the sim frame count.

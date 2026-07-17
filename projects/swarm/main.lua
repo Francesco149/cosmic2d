@@ -1,31 +1,34 @@
--- swarm — the naive one-screen arcade mini-demo (A6). Twin-stick-ish
--- arena shooter: waves of chasers pour in from the edges, you kite and
--- shoot until they get you, then you restart instantly and chase the
--- high score. Waves/timers, many lightweight actors, projectiles and
--- overlap tests, juice (hit pause / shake / flash), score + a PERSISTED
--- high score through the D086 boot door — the whole A6 arcade checklist,
--- written DELIBERATELY NAIVELY; the hand-rolled blocks are pain markers
--- for the A5 slices:
+-- swarm — the one-screen arcade mini-demo (A6). Twin-stick-ish arena
+-- shooter: waves of chasers pour in from the edges, you kite and shoot
+-- until they get you, then you restart instantly and chase the high
+-- score. Waves/timers, many lightweight actors, projectiles and overlap
+-- tests, juice (hit pause / shake / flash), score + a PERSISTED high
+-- score through the D086 boot door — the whole A6 arcade checklist.
 --
---   PAIN(actor):  two swap-remove pools (enemies, shots) — cheap, but ids
---                 are unstable and every system re-walks raw arrays.
---   PAIN(query):  the AABB overlap loop, copy number FOUR in this repo.
+--   resolved(actor/query): the two swap-remove pools, the hand-rolled
+--                 overlap loops (copy four), and the cooldown/wave
+--                 countdowns moved into cm.actor (A5/D091): one world in
+--                 doc, tags "enemy"/"shot", stable ids, spawn-order
+--                 iteration, world timers. cellar and the demo keep
+--                 their naive tables as contrast.
 --   PAIN(effect): hit pause, screen shake, and the death flash are three
 --                 hand-tuned doc counters plus draw-side offset math.
 --   PAIN(move):   the aim/axis normalization dance is re-derived yet again.
 --
--- Determinism: everything per-frame lives in state.doc; spawns come from
--- cm.rand (the PRNG is sim state, so runs replay bit-for-bit); the shake
--- offset is render-only math off the sim frame count, never the PRNG.
--- The high score is read ONCE in init under the reload-idempotence
--- contract (absent-fill only) — the trace SNAP carries the result — and
--- written back as a pure output on death.
+-- Determinism: everything per-frame lives in state.doc — the actor world
+-- is a plain doc subtree, so snapshots/traces/rewind carry it by
+-- construction; spawns come from cm.rand (the PRNG is sim state, so runs
+-- replay bit-for-bit); the shake offset is render-only math off the sim
+-- frame count, never the PRNG. The high score is read ONCE in init under
+-- the reload-idempotence contract (absent-fill only) — the trace SNAP
+-- carries the result — and written back as a pure output on death.
 local state = cm.require("cm.state")
 local input = cm.require("cm.input")
 local text = cm.require("cm.text")
 local m = cm.require("cm.math")
 local rand = cm.require("cm.rand")
 local save = cm.require("cm.save")
+local actor = cm.require("cm.actor")
 
 local W, H = pal.gfx_size()
 local PW = 10                 -- player square
@@ -40,9 +43,9 @@ local game = {}
 local function reset(d)
   d.x, d.y = W / 2 - PW / 2, H / 2 - PW / 2
   d.fx, d.fy = 1, 0            -- facing (last nonzero move dir)
-  d.cool = 0
-  d.enemies, d.shots = {}, {}
-  d.wave, d.until_wave = 0, 30
+  d.world = actor.world()      -- enemies + shots, one world in doc
+  actor.timer(d.world, "wave", 30)
+  d.wave = 0
   d.score = 0
   d.over = false
   d.pause, d.shake, d.flash = 0, 0, 0
@@ -68,24 +71,19 @@ function game.init()
   end
 end
 
--- PAIN(query): copy number four of this exact loop
-local function hits(x, y, w, h, e, s)
-  return x < e.x + s and x + w > e.x and y < e.y + s and y + h > e.y
-end
-
 local function spawn_wave(d)
   d.wave = d.wave + 1
   local n = 3 + d.wave * 2
   for _ = 1, n do
-    -- PAIN(actor): raw table append; edge picked from the sim PRNG
+    -- edge picked from the sim PRNG; the world assigns the stable id
     local side = rand.range(0, 3)
-    local e
-    if side == 0 then e = { x = rand.range(0, W - ESIZE), y = -ESIZE }
-    elseif side == 1 then e = { x = rand.range(0, W - ESIZE), y = H }
-    elseif side == 2 then e = { x = -ESIZE, y = rand.range(0, H - ESIZE) }
-    else e = { x = W, y = rand.range(0, H - ESIZE) } end
-    e.speed = 0.4 + d.wave * 0.05 + rand.range(0, 19) * 0.01
-    d.enemies[#d.enemies + 1] = e
+    local x, y
+    if side == 0 then x, y = rand.range(0, W - ESIZE), -ESIZE
+    elseif side == 1 then x, y = rand.range(0, W - ESIZE), H
+    elseif side == 2 then x, y = -ESIZE, rand.range(0, H - ESIZE)
+    else x, y = W, rand.range(0, H - ESIZE) end
+    actor.spawn(d.world, { tag = "enemy", x = x, y = y, w = ESIZE, h = ESIZE,
+                           speed = 0.4 + d.wave * 0.05 + rand.range(0, 19) * 0.01 })
   end
 end
 
@@ -98,8 +96,11 @@ function game.step()
     if input.pressed("fire") then reset(d) end -- instant restart
     return
   end
-  -- juice: hit pause freezes the world for a beat (render still runs)
+  -- juice: hit pause freezes the world for a beat (render still runs);
+  -- returning before tick also freezes every actor timer — pause for free
   if d.pause > 0 then d.pause = d.pause - 1 return end
+  local w = d.world
+  actor.tick(w) -- once per step: sweep last frame's dead, run the timers
 
   -- 8-way movement: stick wins when deflected, else digital keys
   local ax = input.pad_axis(1, "lx") / 127
@@ -125,28 +126,24 @@ function game.step()
     d.fy = dy ~= 0 and (dy > 0 and 1 or -1) or 0
   end
 
-  -- shooting: 8-way along the facing
-  d.cool = m.max(0, d.cool - 1)
+  -- shooting: 8-way along the facing, gated by the cooldown timer
   local firing = input.down("fire") or rx ~= 0 or ry ~= 0
-  if firing and d.cool == 0 then
-    d.cool = COOLDOWN
+  if firing and not actor.running(w, "cool") then
+    actor.timer(w, "cool", COOLDOWN)
     local n = (d.fx ~= 0 and d.fy ~= 0) and 0.70710678 or 1
-    d.shots[#d.shots + 1] = { x = d.x + PW / 2 - 2, y = d.y + PW / 2 - 2,
-                              vx = d.fx * BSPEED * n, vy = d.fy * BSPEED * n }
+    actor.spawn(w, { tag = "shot", x = d.x + PW / 2 - 2, y = d.y + PW / 2 - 2,
+                     w = 4, h = 4,
+                     vx = d.fx * BSPEED * n, vy = d.fy * BSPEED * n })
   end
 
-  -- shots fly, die at the walls; PAIN(actor): swap-remove pool
-  for i = #d.shots, 1, -1 do
-    local s = d.shots[i]
+  -- shots fly, die at the walls (despawn marks; next tick sweeps)
+  for s in actor.each(w, "shot") do
     s.x, s.y = s.x + s.vx, s.y + s.vy
-    if s.x < 0 or s.x > W or s.y < 0 or s.y > H then
-      d.shots[i] = d.shots[#d.shots]
-      d.shots[#d.shots] = nil
-    end
+    if s.x < 0 or s.x > W or s.y < 0 or s.y > H then actor.despawn(w, s) end
   end
 
   -- chasers home axis-at-a-time (no sqrt, no trig — naive and exact)
-  for _, e in ipairs(d.enemies) do
+  for e in actor.each(w, "enemy") do
     local ex, ey = d.x - e.x, d.y - e.y
     local aex = ex < 0 and -ex or ex
     local aey = ey < 0 and -ey or ey
@@ -158,45 +155,37 @@ function game.step()
   end
 
   -- shot x enemy overlaps: kill, score, juice
-  for si = #d.shots, 1, -1 do
-    local s = d.shots[si]
-    for ei = #d.enemies, 1, -1 do
-      local e = d.enemies[ei]
-      if hits(s.x, s.y, 4, 4, e, ESIZE) then
-        d.enemies[ei] = d.enemies[#d.enemies]
-        d.enemies[#d.enemies] = nil
-        d.shots[si] = d.shots[#d.shots]
-        d.shots[#d.shots] = nil
-        d.score = d.score + 10
-        d.pause = 2          -- juice: a 2-frame hit pause
-        d.shake = 6
-        break
-      end
+  for s in actor.each(w, "shot") do
+    local e = actor.hit(w, "enemy", s.x, s.y, s.w, s.h)
+    if e then
+      actor.despawn(w, e)
+      actor.despawn(w, s)
+      d.score = d.score + 10
+      d.pause = 2          -- juice: a 2-frame hit pause
+      d.shake = 6
     end
   end
 
   -- an enemy reaches you: run over
-  for _, e in ipairs(d.enemies) do
-    if hits(d.x, d.y, PW, PW, e, ESIZE) then
-      d.over = true
-      d.flash = 14
-      d.shake = 18
-      if d.score > d.hiscore then
-        d.hiscore = d.score
-        -- pure output (D086): result deliberately ignored; on replay the
-        -- disabled store no-ops and the sim never hears about it
-        save.write(1, { hiscore = d.hiscore })
-      end
-      return
+  if actor.hit(w, "enemy", d.x, d.y, PW, PW) then
+    d.over = true
+    d.flash = 14
+    d.shake = 18
+    if d.score > d.hiscore then
+      d.hiscore = d.score
+      -- pure output (D086): result deliberately ignored; on replay the
+      -- disabled store no-ops and the sim never hears about it
+      save.write(1, { hiscore = d.hiscore })
     end
+    return
   end
 
-  -- waves: a breather, then the next one pours in
-  if #d.enemies == 0 then
-    d.until_wave = (d.until_wave or BREATHER) - 1
-    if d.until_wave <= 0 then
+  -- waves: a breather timer arms when the field empties, spawns on expiry
+  if actor.count(w, "enemy") == 0 then
+    if actor.expired(w, "wave") then
       spawn_wave(d)
-      d.until_wave = BREATHER
+    elseif not actor.running(w, "wave") then
+      actor.timer(w, "wave", BREATHER)
     end
   end
 end
@@ -209,10 +198,10 @@ function game.draw()
   local sy = d.shake > 0 and m.sin(t * 3.1 + 2) * d.shake * 0.4 or 0
   pal.begin_frame(0.07, 0.07, 0.10, 1)
   pal.quad(2 + sx, 2 + sy, W - 4, H - 4, 0.10, 0.10, 0.14, 1)
-  for _, s in ipairs(d.shots) do
+  for s in actor.each(d.world, "shot") do
     pal.quad(s.x + sx, s.y + sy, 4, 4, 0.95, 0.9, 0.55, 1)
   end
-  for _, e in ipairs(d.enemies) do
+  for e in actor.each(d.world, "enemy") do
     pal.quad(e.x + sx, e.y + sy, ESIZE, ESIZE, 0.85, 0.3, 0.35, 1)
     pal.quad(e.x + 2 + sx, e.y + 2 + sy, ESIZE - 4, ESIZE - 4, 0.6, 0.15, 0.2, 1)
   end
