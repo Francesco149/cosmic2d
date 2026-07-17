@@ -19,6 +19,7 @@ local input = cm.require("cm.input")
 local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
+local rig = cm.require("cm.rig")
 local world = cm.require("world")
 local player = cm.require("player")
 local npc = cm.require("npc")
@@ -174,9 +175,7 @@ function game.init()
   cam = cb
   if cam:f32(0) == 0 and cam:f32(8) == 0 then -- virgin: behind the facing
     local px, py, pz = player.pos()
-    cam:f32(0, player.yaw() + m.pi)
-    cam:f32(8, state.doc.knobs.cam.dist)
-    cam:f32(12, px); cam:f32(16, py); cam:f32(20, pz)
+    rig.reset(cam, state.doc.knobs.cam, px, py, pz, player.yaw())
   end
 
   input.map({
@@ -300,104 +299,18 @@ local function build_ctl()
     side = (input.down("right") and 1 or 0) + (input.down("left") and -1 or 0)
     jump_pressed = input.pressed("jump")
   end
-  local wishx, wishz = 0, 0
-  if fwd ~= 0 or side ~= 0 then
-    local yaw = cam:f32(0)
-    local fx, fz = -m.sin(yaw), -m.cos(yaw)
-    wishx = fx * fwd + (-fz) * side
-    wishz = fz * fwd + fx * side
-    local wl = m.sqrt(wishx * wishx + wishz * wishz)
-    if wl > 1e-4 then wishx, wishz = wishx / wl, wishz / wl
-    else wishx, wishz = 0, 0 end
-  end
+  local wishx, wishz = rig.wish(cam, fwd, side)
   return { wishx = wishx, wishz = wishz, jump_pressed = jump_pressed }
-end
-
-local function angdiff(target, from) -- shortest arc, (-pi, pi]
-  return m.atan2(m.sin(target - from), m.cos(target - from))
-end
-
--- orbit-follow camera: the bounce copy of the godot FollowCamera (see the
--- header comment there for the model; behavior identical)
-local function cam_step()
-  local kc = state.doc.knobs.cam
-  local px, py, pz = player.pos()
-  local yaw, pitch, dist = cam:f32(0), cam:f32(4), cam:f32(8)
-  local hold, rec = cam:f32(24), cam:f32(36)
-
-  local w = input.wheel()
-  if w ~= 0 then
-    dist = m.clamp(dist - w * kc.wheel_step, kc.min_dist, kc.max_dist)
-  end
-
-  local mx, my = input.mouse()
-  local manual = false
-  if input.button_down(1) or input.button_down(3) then
-    local dx, dy = mx - cam:f32(28), my - cam:f32(32)
-    if dx ~= 0 or dy ~= 0 then
-      yaw = yaw - dx * kc.mouse_yaw
-      pitch = m.clamp(pitch + dy * kc.mouse_pitch, kc.pitch_min, kc.pitch_max)
-      manual = true
-    end
-  end
-  cam:f32(28, mx); cam:f32(32, my)
-
-  local kyaw = (input.down("cam_l") and kc.orbit or 0)
-             + (input.down("cam_r") and -kc.orbit or 0)
-  local kpitch = (input.down("cam_u") and -kc.key_pitch or 0)
-              + (input.down("cam_d") and kc.key_pitch or 0)
-  if kyaw ~= 0 or kpitch ~= 0 then
-    yaw = yaw + kyaw
-    pitch = m.clamp(pitch + kpitch, kc.pitch_min, kc.pitch_max)
-    manual = true
-  end
-
-  if manual then
-    hold = kc.hold_frames
-    rec = 0
-  end
-
-  if input.pressed("recenter") then rec = 1 end
-  if rec == 1 then
-    local target = player.yaw() + m.pi
-    yaw = yaw + angdiff(target, yaw) * kc.recenter_lerp
-    pitch = pitch * (1 - kc.recenter_lerp)
-    if m.abs(angdiff(target, yaw)) < 0.01 and m.abs(pitch) < 0.01 then
-      yaw, pitch, rec = target, 0, 0
-    end
-  end
-
-  local vx, _, vz = player.vel()
-  local hspeed = m.sqrt(vx * vx + vz * vz)
-  if rec == 0 and hold <= 0 and kc.yaw_follow > 0 and hspeed > kc.min_speed then
-    local behind = m.atan2(-vx, -vz)
-    local da = angdiff(behind, yaw)
-    -- running INTO the camera pins 'behind' exactly opposite the yaw, and
-    -- because input is camera-relative the ease can never win — both
-    -- rotate together, the shortest arc's sign flips with float noise and
-    -- the camera VIBRATES (human playtest 2026-07-17). Inside the back
-    -- cone hold instead: backing up runs at the screen, the classic read;
-    -- sideways runs (|da| ~ pi/2) still circle. D3D-018.
-    if m.abs(da) < m.pi - kc.back_cone then
-      yaw = yaw + da * kc.yaw_follow * kc.yaw_lerp
-    end
-  end
-  hold = m.max(0, hold - 1)
-
-  local fx = cam:f32(12) + (px - cam:f32(12)) * kc.pos_lerp
-  local fy = cam:f32(16) + (py - cam:f32(16)) * kc.pos_lerp
-  local fz = cam:f32(20) + (pz - cam:f32(20)) * kc.pos_lerp
-
-  cam:f32(0, m.fmod(yaw, m.tau)); cam:f32(4, pitch); cam:f32(8, dist)
-  cam:f32(12, fx); cam:f32(16, fy); cam:f32(20, fz)
-  cam:f32(24, hold); cam:f32(36, rec)
 end
 
 function game.step()
   player.step(build_ctl(), npc.boxes()) -- NPCs are solid (pre-step boxes)
   npc.step() -- after the player: the exchange reads this step's position
   stars.step() -- likewise: pickup tests run on this step's position
-  cam_step()
+  -- the orbit-follow rig (cm.rig, D3D-028): orbit/focus state in ow.cam
+  local px, py, pz = player.pos()
+  local vx, _, vz = player.vel()
+  rig.step(cam, state.doc.knobs.cam, px, py, pz, vx, vz, player.yaw())
   -- feel telemetry: --eval "_G.DBG=10" prints the track every N frames
   if DBG and state.frame() % (tonumber(DBG) or 10) == 0 then
     local px, py, pz = player.pos()
@@ -429,17 +342,8 @@ function game.draw()
   pal.x_view3d()
   pal.x_tris(0, skybuf, 2, 0, 0)
 
-  local kc = state.doc.knobs.cam
-  local yaw, pitch, dist = cam:f32(0), cam:f32(4), cam:f32(8)
-  local fx, fy, fz = cam:f32(12), cam:f32(16), cam:f32(20)
-  local h = kc.height * dist / kc.dist
-  local e0 = m.atan2(h, dist)
-  local R = m.sqrt(dist * dist + h * h)
-  local elev = m.clamp(e0 + pitch, -1.4, 1.4)
-  local hr = m.cos(elev) * R
-  local view = m4.lookat(fx + m.sin(yaw) * hr, fy + m.sin(elev) * R,
-                         fz + m.cos(yaw) * hr,
-                         fx, fy + kc.look_h, fz, 0, 1, 0)
+  -- camera position derives from the orbit state (cm.rig.view, render-class)
+  local view = rig.view(cam, state.doc.knobs.cam)
   local proj = m4.persp(FOVY, W / H, ZN, ZF)
   local fog = world.fog
   pal.x_view3d{
