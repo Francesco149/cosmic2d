@@ -4305,3 +4305,68 @@ byte-identical before/after. The shipped scripting guide gained a
 HUD/prompts section beside depth sorting; `tools/build-windows.sh`
 refreshed the stage (4 durable entries preserved) and Start Menu
 shortcut.
+
+## D097 — cm.move: the movement-input slice (A5, 2026-07-17)
+
+**Context.** The exact-next-packet audit (D096's handoff) counted
+the movement-input copies honestly. Swarm's PAIN(move) marker names
+the aim/axis dance; cellar carries a byte-identical
+stick-wins-else-digital movement block (analog left stick over 127,
+else digital -1/0/1 keys with the diagonal scaled by the shared
+literal 0.70710678); swarm additionally hand-rolls the 8-way facing
+sign dance (right stick wins, else the move direction, else keep)
+and the diagonal shot-normalization factor. The starter templates'
+"naive pad readers" named in the old handoff no longer exist — D084
+replaced them with real default bindings — but the top-down starter
+still hand-rolls the digital half (ix/iy + DIAG). That is two full
+copies of the merge, three of the digital half, and one of the
+facing/unit dance: §2's "input plumbing" exit line has its votes.
+
+**Decision.** `cm.move` is policy over recorded input state plus
+pure math — no module state, no buffers, nothing touching doc, so
+sim callers stay deterministic by construction. `stick(pad, side)`
+returns the recorded quantized axes over 127, exact (the wire value
+is the authority; 0 means inside the deadzone). `keys(l, r, u, d)`
+is the digital pair from four action names (defaults
+left/right/up/down), opposites cancelling. `dir(pad)` is the merged
+unit-scale vector the two copies agreed on verbatim: the left stick
+raw while deflected (analog magnitude — a full diagonal exceeds
+length 1, exactly like the demos), else keys with diagonals scaled
+by DIAG; the caller multiplies its own speed. `face8(x, y, fx, fy)`
+takes per-axis signs of a nonzero vector (cardinals keep a zero
+component) else passes the old facing through — nesting the call is
+the aim priority chain. `unit8(fx, fy)` scales a diagonal facing by
+DIAG for even shot speed. `DIAG` is exported as the demos' exact
+shared literal 0.70710678 — absorbing the agreed constant, not
+"improving" it, keeps retrofits bit-identical. Deliberately NOT
+here: acceleration/friction envelopes, response curves, radial
+clamping, dashes, buffered jumps — the platformer demo's velocity
+handling stays its own until a slice earns its votes.
+
+**Consequences.** Swarm's whole marked region collapses (merge →
+dir, aim dance → nested face8, shot factor → unit8); cellar's block
+becomes dir feeding box.slide. Both retrofits are bit-exact — the
+unit-scale reorder only commutes IEEE multiplies and sign flips —
+so BOTH committed goldens stand un-recut: swarm_runs (1,346 frames)
+and cellar_clear (556 frames) verify byte-exact on Linux and native
+Windows with no doc bytes moved. The starter templates keep their
+naive digital readers as contrast (the A5 rule). No visual surface
+changed, so there are no new captures. The A5 slice list from §2 is
+now fully either shipped (box, actor, camera, tween, depth, hud,
+move) or honestly deferred (transition, per D096); what remains of
+A5 is the performance-envelope audit.
+
+**Proof.** Linux selftest passes **23,991** checks (+34 move KATs:
+face8 signs/cardinals/keep-old/nil-pass-through, unit8 exactness at
+every sign pair, keys cancellation and custom names,
+unmapped-action refusal, dir idle/cardinal/exact-DIAG-diagonal,
+stick exactness against the real recorded pad path at full and
+partial deflection, stick-over-keys priority, right-stick blindness
+in dir, bad-side refusal, and the applied-state teardown leaving
+the pad domain unlatched) and the staged native Windows executable
+**23,993** on PAL API 19. `nix run .#test` is ALL GREEN — every
+historical trace and all pixel/audio goldens unchanged, both
+retrofit goldens verifying un-recut on both platforms. The shipped
+scripting guide gained a movement section beside Gamepads;
+`tools/build-windows.sh` refreshed the stage (4 durable entries
+preserved) and Start Menu shortcut.

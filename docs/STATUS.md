@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth, cm.hud shipped (D088–D096) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth, cm.hud, cm.move shipped (D088–D097) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,30 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D097 lands the movement-input slice: cm.move.** The audit counted
+the copies honestly: swarm's PAIN(move) aim/axis dance, cellar's
+byte-identical stick-wins-else-digital block, the top-down starter's
+digital half — and the old handoff's "three starter templates' naive
+pad readers" no longer exist (D084 already replaced them with real
+default bindings). cm.move is policy over recorded input plus pure
+math, nothing touching doc: `stick` (quantized axes over 127, exact),
+`keys` (digital -1/0/1 from action names, opposites cancel), `dir`
+(the merged unit-scale vector — analog verbatim when deflected, else
+keys with diagonals scaled by the demos' exact shared DIAG literal;
+callers multiply their own speed), `face8` (per-axis-sign facing,
+keep-last fallback; nested calls are the aim priority chain), and
+`unit8` (even 8-way shot speed). 34 KATs (Linux 23,991 / native
+Windows 23,993). Both retrofits are bit-exact — the unit-scale
+reorder only commutes IEEE multiplies and sign flips — so BOTH
+committed goldens stand un-recut: swarm_runs (1,346 frames) and
+cellar_clear (556 frames) verify byte-exact on Linux and native
+Windows with no doc bytes moved. The starter templates keep their
+naive digital readers as contrast. The shipped guide gained a
+movement section beside Gamepads. With this, every §2 A5 slice is
+shipped (box, actor, camera, tween, depth, hud, move) or honestly
+deferred (transition, per D096); A5's remaining line is the
+performance-envelope audit.
 
 **D096 lands the runtime-UI slice — cm.hud — and honestly defers the
 transition slice.** The ordered pain-first audit found the demos'
@@ -793,23 +817,23 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the move slice** — swarm's PAIN(move)
-aim/axis normalization dance is the standing marker, and the audit
-should count the other copies honestly first: cellar's
-stick-wins-else-digital movement block, and the three starter
-templates' naive pad stick/dpad readers (hardcoded since D083).
-That's stick+key merging, normalization, and 8-way/analog policy —
-if the copies genuinely agree, absorb exactly that; a retrofit that
-moves sim/doc bytes re-cuts its golden with the committed vehicle
+**Exact next packet:** **the A5 performance-envelope audit** — the
+last open A5 line: measure representative actor/projectile counts
+through the real loop (swarm's cm.actor world is the vehicle; scale
+its waves headlessly and time stepped frames on both platforms),
+find where the fixed 60 Hz step budget breaks, and write the honest
+supported envelope into the shipped guide — an alpha promise, not a
+benchmark brag. Watch the known cost D092 logged while there: doc
+re-canonicalization per frame (~3.5KB/frame with a moving camera)
+is part of the envelope story. After that, A6 bundling polish
+(READMEs/welcome notes for cellar and swarm, picker thumbnails,
+release-manifest promotion so both ship in the public archives, and
+the puzzle/board recipe gap audit) closes out the demo matrix. The
+transition slice stays deferred until a demo actually hand-rolls a
+fade/wipe/hold (D096's audit); a future retrofit that moves sim/doc
+bytes re-cuts its golden with the committed vehicle
 `tools/trace/replay-driver.lua` + `dump.lua` + `strip-eval.lua`
-(quantize preimages + virtual pad + EVAL strip — usage in the
-headers and PROCESS.md). The transition slice stays deferred until
-a demo actually hand-rolls a fade/wipe/hold (D096's audit). After
-move: the A5 performance-envelope audit (representative
-actor/projectile counts, honest supported envelopes), and A6
-bundling polish (READMEs, thumbnails, release-manifest promotion
-for cellar/swarm) can interleave now that the slices are making the
-demos concise.
+(usage in the headers and PROCESS.md).
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
