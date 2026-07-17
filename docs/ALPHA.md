@@ -313,11 +313,18 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   timeline sources. Dragging a replay into any editor view opens/fits/loops it;
   dismissing it restores the untouched live ring and present rather than
   adopting the replay's future.
-- [ ] Generalize the history store and additive `.ctrace` packaging around the
+- [~] Generalize the history store and additive `.ctrace` packaging around the
   same segment + content-addressed project-blob model. A new clip is standalone:
   exact A state through inclusive B, editor state, code, **all project source
   and assets**, file epochs, events, previews, metadata, and captured audio when
   available. Legacy traces remain readable and clearly dependency-bound.
+  D103 landed the store foundation: a content-addressed project-blob store
+  (`.ed/history/blobs`) and a per-segment project manifest (the complete tree at
+  each keyframe, deduplicated), persisted through spill and recovered on
+  adoption — so any retained range, **including an adopted cross-session one, is
+  now materialization-ready**. The `.ctrace` clip that embeds that manifest +
+  blobs, and `ring_load` materializing the tree into a replay workspace, are the
+  next packet.
 - [ ] Export a selected clip atomically to a timestamped file in `replays/`
   beside `engine/`, then reveal/select it in Explorer/the platform file manager;
   offer an actionable writable-location path when the engine root is read-only.

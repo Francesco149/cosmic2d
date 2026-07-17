@@ -4720,3 +4720,88 @@ recorded byte. Inspected captures on llm-feed: the tray recording (meter, budget
 knob, pause/clear), a near-full amber meter with `clear` armed to `sure?`, and
 the REC PAUSED state with `resume rec`. `tools/build-windows.sh` refreshed the
 stage and Start Menu shortcut.
+
+## D103 — the content-addressed project-blob store + per-segment manifest (A7 §14, 2026-07-17)
+
+**Context.** The A7 information/retention layers (D100–D102) are done, so the
+open A7 line is `ALPHA.md` §A7's packaging item: "generalize the history store
+and additive `.ctrace` packaging around the same segment + content-addressed
+project-blob model … a new clip is standalone." `REWIND.md` §14 is the design.
+Its load-bearing prerequisite is the store itself: history currently carries the
+project's *code* (each segment's `bundle = cm.modules()`) but not its assets —
+only their save *lengths* via `FSAV`. Until a retained segment can name the
+COMPLETE project tree, no clip is self-contained and adopted cross-session
+history stays unexportable (the R6.5 "no bundle" limit). This packet builds that
+foundation; clip packaging, `ring_load` materialization, export UX, and the
+crash drop are the follow-ups it unlocks.
+
+**Decision.**
+- **The blob store.** A content-addressed store under
+  `.ed/history/blobs/<sha256hex>`: `blob_put_bytes` hashes bytes and writes the
+  file only if absent (dedup by construction), tracking `R.blob_bytes`. It rides
+  `M.ring.spill`, so every headless path (goldens, traces, `--verify`,
+  `--frames`, `--win` composite captures) never walks a tree, hashes a file, or
+  writes a blob — the whole feature is gated exactly like disk history.
+- **The manifest.** A per-segment `{ relpath -> blob hex }` snapshot of the
+  project's non-machine files at the segment's keyframe (§14 granularity). The
+  baseline is a pruned tree walk at `ring_init` (`pal.list_dir` already skips
+  dot-dirs; `video.dat`/`input.dat` excluded like the release exporter), files
+  hashed natively (`sha256_file`, read only to store a genuinely new blob). The
+  manifest is itself content-addressed (stored as a blob → `manifest_hash`), so
+  an unchanged tree dedupes to ONE manifest across every segment. It evolves via
+  a render-phase `manifest_pump` when `note_save` (editor save) or
+  `on_code_change` (disk reload) sets `R.manifest_dirty` — **deferred out of
+  `record_frame`** exactly like spill, so the sim step never does file I/O.
+- **Persistence + adoption.** `seg_index_line` gains an optional 9th
+  manifest-hash field; `spill_blob` writes a `PMAN` chunk; `seg_load` reads it;
+  `hist_scan`/`hist_adopt` recover it (tolerating 4/8/9-field lines). So adopted
+  cross-session history carries each segment's manifest hash and is
+  materialization-ready — the R6.5 limit is lifted at the data layer.
+- **GC + accounting.** Blobs are shared, so they are reclaimed by
+  mark-and-sweep, not per-segment eviction: `gc_blobs` at `ring_init` marks
+  every retained segment's manifest (and the files it names) reachable and
+  deletes the rest (also sweeping crash orphans), recomputing `R.blob_bytes` so
+  the disk meter reads true with no per-frame stat. `hist_adopt`'s chain-wipe
+  skips the blob subtree (GC owns it), and `cache.clear` removes the history
+  listing depth-first (the store is a subtree; `SDL_RemovePath` only unlinks a
+  file or an empty directory). The rewind head names the store ("N seg . X
+  blobs") beside — not inside — the budget bar, which still bounds only the
+  evictable segment bytes.
+- **Read side.** `ring_manifest`, `manifest_at`, `blob_get`, `manifest_files`
+  are the queries the tray's files lane and the packaging packet build on.
+
+**Observer discipline.** `PMAN` is history chrome, stripped from exported
+`.ctrace` like `FSAV`/`MARK`/`THMB` (the clip carrying its own manifest+blobs is
+the next packet), so an exported clip is byte-identical to before. The manifest
+never enters a named buffer, snapshot, or the verifier. Everything gates on
+spill. Net: **no sim/doc/recorded byte moves** — every historical trace and
+pixel/audio golden is byte-identical.
+
+**Scope, named honestly.** This is the store + manifest only. Deferred to the
+follow-up packets and logged: `.ctrace` clips that embed the manifest + blobs;
+`ring_load` materializing the tree into an isolated replay workspace; the
+`replays/` export UX; the crash-report drop; adopted-history preview recovery
+(the durable `THMB` scan). External (non-editor) file changes mid-session are
+folded at the next generation's baseline, not live — the manifest tracks
+editor-mediated saves/reloads precisely and re-walks the whole tree on any dirty
+mark. Intra-segment materialization precision (a file change mid-segment) is
+keyframe-granular by §14 design.
+
+**Revisit.** Full manifest walks at boot re-hash the whole tree; a
+(path,mtime,size)→hash cache would skip unchanged files if a large-asset project
+makes boot cost show. Blobs GC at `ring_init` only — an in-session GC-on-evict
+would keep a very long single session's store tighter if a demo needs it.
+
+**Proof.** Linux selftest **24,049** on PAL API 19 (24 new KATs in
+`t_project_blobs`: baseline manifest scope + machine-file exclusion, entry =
+content hash + exact blob round-trip, dedup to one blob, save advancing the
+manifest while a closed keyframe keeps its own, later segments carrying the
+advance, spill→adopt recovering + decoding each segment's manifest hash,
+`gc_blobs` sweeping an orphan and keeping a referenced blob, the meter counting
+the store, an exported clip with no PMAN, `cache.clear` removing the subtree
+depth-first, and a spill-off session capturing no manifest). `nix run .#test`
+ALL GREEN — every historical trace and pixel/audio golden byte-identical. A real
+windowed `smoke --edit` session created 21 blobs with 9-field index lines all
+sharing one manifest hash (unchanged tree = dedup). Inspected capture on
+llm-feed: the rewind tray head reading `90.2 KB / 1.00 GB · 3 seg · 177.2 KB
+blobs`.

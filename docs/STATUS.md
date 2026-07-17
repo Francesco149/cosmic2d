@@ -3,13 +3,14 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101) and the disk-budget/retention surface (D102) are in (2026-07-17)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), and the §14 project-blob store foundation (D103) are in (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A4 are complete.** A3's full promise holds:
+**A0–A6 are complete; A7's information/retention layers and its §14
+project-blob store foundation are in.** A3's full promise holds:
 from a fresh archive a user can create (from four starter templates),
 import, rename, relocate, duplicate, archive, delete, edit, play, and
 export projects entirely through the shipped UI. Real SDL controllers
@@ -25,6 +26,57 @@ and the three-family demo matrix — demo (side-view), cellar (top-down),
 swarm (arcade) — ships in the public archives with READMEs, thumbnails,
 and export proofs. The complete rewind product UI (A7) and the
 release-candidate pass (A8) are the open alpha gates.
+
+**D103 lands the A7 §14 foundation: the content-addressed project-blob
+store + per-segment project manifest.** History carried the project's
+*code* (each segment's `bundle`) but not its assets — only their save
+*lengths* via `FSAV` — so no clip was self-contained and adopted
+cross-session history couldn't export (the R6.5 "no bundle" limit). Now
+every history generation records a complete, deduplicated map of the
+project tree so any retained segment can name **all project source and
+assets**. `cm.trace` gained: a content-addressed blob store under
+`.ed/history/blobs/<sha256>` (write-once dedup, rides `M.ring.spill` so
+headless/verify/goldens never walk a tree or write a blob); a per-segment
+project manifest `{relpath → blob}` — the tree at each keyframe (§14
+granularity), baseline-walked at `ring_init` (pruned like the release
+exporter; `video.dat`/`input.dat` excluded), itself content-addressed so
+an unchanged tree dedupes to one manifest across every segment, evolved by
+a render-phase `manifest_pump` when `note_save`/`on_code_change` marks it
+dirty (deferred out of `record_frame` like spill); persistence via an
+optional 9th index-line field + a `PMAN` chunk that `hist_scan`/
+`hist_adopt` recover, so **adopted cross-session history is now
+materialization-ready**; and `gc_blobs`, a `ring_init` mark-and-sweep that
+reclaims unreferenced blobs (and crash orphans) and recomputes the store's
+byte total. `hist_adopt`'s chain-wipe skips the blob subtree (GC owns it);
+`cache.clear` now removes history depth-first (the store is a subtree). The
+rewind head names the store (`N seg · X blobs`) beside — not inside — the
+budget bar, which still bounds only evictable segment bytes. `PMAN` is
+stripped from exported `.ctrace` (like `FSAV`/`MARK`/`THMB`), the manifest
+never enters a buffer/snapshot/verifier, and every path gates on spill, so
+**no sim/doc/recorded byte moved**: Linux selftest **24,049** / native
+Windows **24,051** on PAL API 19 (24 new KATs in `t_project_blobs`),
+`nix run .#test` ALL GREEN with every historical trace and pixel/audio
+golden byte-identical. A real windowed `smoke --edit` session created 21
+blobs with 9-field index lines all sharing one manifest hash (unchanged
+tree = dedup). Inspected capture on llm-feed: the rewind tray head reading
+`90.2 KB / 1.00 GB · 3 seg · 177.2 KB blobs`. Read side for the tray/
+packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
+`manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
+Menu shortcut.
+
+**Exact next packet:** **A7 §14, continued — the standalone `.ctrace`
+clip.** The store + manifest foundation is in, so the next step is
+**packaging**: extend the `.ctrace` export path (`write_trace`) to embed
+the segment's manifest at A + every blob the range through inclusive B
+needs (manifest at A, file epochs, all project source and assets) so a
+clip is self-contained, and extend `ring_load` to materialize that tree
+into an isolated replay workspace (the parked write-wall keeps it
+ephemeral). Adopted history becomes exportable (it's materialization-ready
+now). That unlocks the **`replays/` export UX** (atomic write + reveal in
+the file manager) and the **crash-report drop** (the ERROR marker +
+`ring_locator`/`hist_locator` are in place). The **immutable-source /
+drag-in replay** line is the other open A7 item. See `ALPHA.md` §A7 and
+`REWIND.md` §14–16 for the full checklist.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's
@@ -59,17 +111,6 @@ clear drops state + previews and keeps unsaved session/journals; dedup
 project blobs and captured-audio recovery ride the §14 packaging packet
 (not claimed here). Standing revisit trigger logged: history *preserved*
 across a recording pause votes a gapped-timeline / seam-keyframe packet.
-
-**Exact next packet:** **A7, continued — pick up the packaging-adjacent
-line.** With the tray's information + retention layers done, the load-
-bearing next step is the **standalone clip package** (ALPHA §A7: the
-content-addressed project-blob generalization — extend `FSAV` to carry a
-blob hash and fold in the D101 `THMB` durable chunks + D100 digest so a
-clip is self-contained and adopted cross-session history recovers), which
-then unlocks **atomic clip export to `replays/`** and the **crash-report
-drop** (the ERROR marker + `ring_locator`/`hist_locator` are already in
-place). The **immutable-source / drag-in replay** line is the other open
-A7 item. See ALPHA §A7 for the full remaining checklist.
 
 **D101 fills the rewind tray's PREVIEWS lane: presented-frame
 previews (`THMB`).** The film lane read "NO PRESENTED-FRAME PREVIEWS
