@@ -739,6 +739,66 @@ Headless runs, captures, and replay verifies see a disabled store (`nil` plus
 a reason), so test runs and recordings never depend on one machine's saves.
 Handle the "no save" answer and your first run already does the right thing.
 
+## Recipe: a puzzle or board game
+
+Puzzles need no module the engine does not already ship — a board game is
+a plain doc table, pressed edges, and pure functions. The whole shape:
+
+    local state = cm.require("cm.state")
+    local input = cm.require("cm.input")
+    local hud   = cm.require("cm.hud")
+    local rand  = cm.require("cm.rand")
+
+    local COLS, ROWS, CELL = 8, 8, 18
+
+    local function idx(x, y) return (y - 1) * COLS + x end
+
+    function game.init()
+      input.map({ { "left", input.key.left, "pad:dpleft" },
+                  { "right", input.key.right, "pad:dpright" },
+                  { "up", input.key.up, "pad:dpup" },
+                  { "down", input.key.down, "pad:dpdown" },
+                  { "act", input.key.space, "pad:south" } })
+      local d = state.doc
+      if d.grid == nil then
+        d.grid = {}
+        for i = 1, COLS * ROWS do d.grid[i] = rand.range(1, 4) end
+        d.cx, d.cy = 1, 1
+        d.moves = 0
+      end
+    end
+
+- **The board is one flat doc array** of numbers or short strings
+  (`d.grid[idx(x, y)]`), so every rule is a pure read over it and
+  snapshots, traces, and rewind carry the whole game by construction.
+  One array, not nested tables — cheaper for the recorder, and `ipairs`
+  order is your iteration contract.
+- **A turn is a pressed edge.** In `step`, `input.pressed("left")` moves
+  the cursor; `input.pressed("act")` applies ONE board mutation, then a
+  pure scan decides matches/wins. Between presses nothing in doc changes,
+  and unchanged frames cost the recorder nothing — turn-based games sit
+  about as far inside the performance envelope as it is possible to sit.
+- **Undo is a doc list.** Push the reverse of each move (or a small copy
+  of what changed) onto `d.undo` and pop it on the undo action — it
+  rewinds with everything else. While developing you also get the
+  editor's whole-timeline scrub for free.
+- **Place the board with `hud.place`.** With `W, H = pal.gfx_size()`,
+  `hud.place("c", 0, 0, COLS * CELL, ROWS * CELL, W, H)` returns the
+  centered top-left; cell to pixel is `ox + (x - 1) * CELL`. Mouse
+  picking is the same line inverted over `input.mouse()` — floor-divide,
+  then bounds-check.
+- **Deals and shuffles use `cm.rand`**, so a shuffled board replays
+  bit-for-bit. Slide/pop/land flourishes are `cm.tween` effects — the
+  authoritative grid snaps instantly in doc; only the drawing eases.
+- **Progress goes through `cm.save`** (best times, solved levels), with
+  the same boot-load shape as any other game.
+
+There is no dedicated grid/match module, and deliberately so: every
+puzzle's rules differ, and the shared parts — state, edges, anchoring,
+undo, randomness — are already the modules above. The one genre this
+recipe does not cover is real-time board juice like falling-block chains;
+`cm.tween` plus an actor world covers what the bundled demos needed.
+
 ## The performance envelope
 
 The engine records everything, always: the rewind ring re-canonizes your
