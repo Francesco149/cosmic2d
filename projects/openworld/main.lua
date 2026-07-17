@@ -22,6 +22,7 @@ local gb = cm.require("cm.gb")
 local world = cm.require("world")
 local player = cm.require("player")
 local npc = cm.require("npc")
+local stars = cm.require("stars")
 local audio = cm.require("audio")
 
 local W, H = pal.gfx_size()
@@ -77,6 +78,14 @@ local KNOBS = {
     blend_f = 14,  -- idle->wave blend-in frames
     type_f = 2,    -- frames per typed dialog character
   },
+  stars = { -- the wander's goal (stars.lua)
+    r = 1.3,        -- pickup radius (3D, vs the mascot's center)
+    hover = 0.9,    -- rest height above the ground
+    pop = 14,       -- pickup ghost: expand-and-fade frames
+    banner = 140,   -- ALL-STARS banner frames
+    spin = 0.05,    -- spin, rad/frame (render-class)
+    bob = 0.16, bob_f = 80, -- hover bob amplitude (u) / period (frames)
+  },
   look = { -- the N64 presentation (D3D-003/015, render-class)
     quant = 5,
     soft = 1,
@@ -128,19 +137,23 @@ function game.init()
   if d.demo == nil then d.demo = 0 end
   if d.demo_t0 == nil then d.demo_t0 = 0 end
   if d.demo_wp == nil then d.demo_wp = 1 end
+  d.stars = d.stars or 0   -- stars collected, all time
+  d.star_t = d.star_t or 0 -- ALL-STARS banner countdown
 
   world.build()
   player.init()
   npc.init()
+  stars.init()
   audio.init()
   build_sky()
 
-  -- dyn: per-frame figure + shadow verts (render-class scratch; two
-  -- mascots + two blob shadows)
-  local ok, db = pcall(pal.buf, "rc.ow.dyn", 2800 * 72)
+  -- dyn: per-frame figure + shadow + star verts (render-class scratch;
+  -- two mascots + two blob shadows + the star field worst-case)
+  local dyn_size = (2800 + stars.max_tris()) * 72
+  local ok, db = pcall(pal.buf, "rc.ow.dyn", dyn_size)
   if not ok then
     pal.buf_free("rc.ow.dyn")
-    db = pal.buf("rc.ow.dyn", 2800 * 72)
+    db = pal.buf("rc.ow.dyn", dyn_size)
   end
   dyn = db
 
@@ -172,7 +185,9 @@ end
 -- console: game.demo(1) = the autoplay tour — walk the scenic ring around
 -- the spawn bowl forever (screenshots and the golden trace); game.demo(3)
 -- = the pond crossing (the swim regime on show); game.demo(4) = walk to
--- the pond watcher and stand for the exchange; any real press takes back
+-- the pond watcher and stand for the exchange; game.demo(5) = the star
+-- sweep — collect all ten stars (ring, banks, the mid-pond swim), end
+-- standing by the watcher; any real press takes back
 function game.demo(on)
   local d = state.doc
   if on and on ~= 0 then
@@ -210,17 +225,29 @@ local ROUTE_NPC = {
   { 64, 71 }, { 58, 71 }, { 55.4, 72.0 },
 }
 
+-- demo(5): the star sweep — every leg is a demo(1)/demo(3) leg or its
+-- reverse (all verified on the carved terrain): the ring's seven stars,
+-- down the west bank, swim the pond star, out the east bank, finish on
+-- the watcher's star (the greet fires; the fanfare is the show)
+local ROUTE_STARS = {
+  { 76, 72 }, { 90, 74 }, { 102, 88 }, { 88, 102 }, { 64, 100 },
+  { 40, 92 }, { 26, 80 }, { 34, 74 }, { 31, 62 }, { 42, 64 },
+  { 56, 68 }, { 55.4, 72.0 },
+}
+
+local HOLD_LAST = { [4] = true, [5] = true } -- these routes end standing
+
 local function route_ctl()
   local d = state.doc
   local px, _, pz = player.pos()
   local route = d.demo == 3 and ROUTE_SWIM or d.demo == 4 and ROUTE_NPC
-    or ROUTE
+    or d.demo == 5 and ROUTE_STARS or ROUTE
   local wp = route[d.demo_wp]
   local dx, dz = wp[1] - px, wp[2] - pz
   local dist = m.sqrt(dx * dx + dz * dz)
   if dist < 0.8 then
-    if d.demo == 4 and d.demo_wp == #route then -- arrived: stand for the
-      return { wishx = 0, wishz = 0, jump_pressed = false } -- exchange
+    if HOLD_LAST[d.demo] and d.demo_wp == #route then -- arrived: stand
+      return { wishx = 0, wishz = 0, jump_pressed = false }
     end
     d.demo_wp = d.demo_wp % #route + 1
     wp = route[d.demo_wp]
@@ -352,13 +379,15 @@ end
 function game.step()
   player.step(build_ctl())
   npc.step() -- after the player: the exchange reads this step's position
+  stars.step() -- likewise: pickup tests run on this step's position
   cam_step()
   -- feel telemetry: --eval "_G.DBG=10" prints the track every N frames
   if DBG and state.frame() % (tonumber(DBG) or 10) == 0 then
     local px, py, pz = player.pos()
     local vx, vy, vz = player.vel()
-    print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f g=%.3f yaw=%.2f"):format(
-      state.frame(), px, py, pz, vx, vy, vz, world.ground(px, pz), cam:f32(0)))
+    print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f g=%.3f yaw=%.2f stars=%d"):format(
+      state.frame(), px, py, pz, vx, vy, vz, world.ground(px, pz), cam:f32(0),
+      state.doc.stars))
   end
 end
 
@@ -400,19 +429,36 @@ function game.draw()
     pal.x_tris(s.tex, world.vbuf, s.count, s.off, 0)
   end
 
-  -- the figures (opaque), then the blend pass: blob shadows, then the
-  -- water plane LAST so it tints everything sunk below it
+  -- the figures + stars (opaque), then the blend pass: blob shadows,
+  -- star pop ghosts, then the water plane LAST so it tints everything
+  -- sunk below it
   local out = {}
-  local nfig = player.emit(out) + npc.emit(out)
+  local frame = state.frame()
+  local nfig = player.emit(out) + npc.emit(out) + stars.emit(out, frame)
   local nsh = player.emit_shadow(out) + npc.emit_shadow(out)
+  local nfx = stars.emit_fx(out, frame)
   dyn:setstr(0, table.concat(out))
   pal.x_tris(0, dyn, nfig, 0, 0)
   pal.x_tris(world.tex.shadow, dyn, nsh, nfig * 72, 4)
+  pal.x_tris(0, dyn, nfx, (nfig + nsh) * 72, 4)
   pal.x_tris(0, world.vbuf, world.water.count, world.water.off, 4)
 
   local st = pal.frame_stats()
-  local frame = state.frame()
   text.draw(3, 3, ("openworld  %d tris  frame %d"):format(st.tris or 0, frame))
+  -- the star counter, top-right (gold once complete)
+  local got, total = stars.count()
+  local hud = ("stars %d/%d"):format(got, total)
+  text.draw(W - text.measure(hud) - 3, 3, hud,
+            got >= total and { r = 1, g = 0.85, b = 0.35, a = 1 } or nil)
+  -- the ALL-STARS banner, fading out (the bounce CLEAR banner read)
+  local d = state.doc
+  if d.star_t > 0 then
+    local kb = d.knobs.stars.banner
+    local a = m.min(1, 3 * d.star_t / kb)
+    local msg = "ALL THE STARS!"
+    text.draw((W - text.measure(msg)) // 2, H // 2 - 20, msg,
+              { r = 1, g = 0.85, b = 0.35, a = a })
+  end
   -- the exchange line, typing out (centered on the FULL line so the text
   -- doesn't slide while it reveals)
   local line, nch = npc.dialog()

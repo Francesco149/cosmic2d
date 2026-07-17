@@ -18,6 +18,7 @@ local SFX = {
   -- note is a buzz — the human's "low pitch laser"); vel still scales
   { "greet", "sfx-greet", 76 }, -- the NPC's hello: bounce's fm-bell ding
   -- at its fanfare note (a human-heard preset, not a new synth draft)
+  { "coin", "sfx-coin", 74 }, -- star pickup: bounce's coin, same note
 }
 local by_name = {}
 
@@ -37,6 +38,16 @@ end
 function M.sfx(name, vel)
   local s = by_name[name]
   if s then snd.on(s.slot, s.note, vel or 110) end
+end
+
+-- all-stars fanfare: a bell major triad on the greet slot (bounce's goal
+-- fanfare voicing — one frame, three voices)
+function M.fanfare()
+  local s = by_name.greet
+  if not s then return end
+  snd.on(s.slot, 76, 105)
+  snd.on(s.slot, 80, 100)
+  snd.on(s.slot, 83, 110)
 end
 
 return M
