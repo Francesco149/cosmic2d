@@ -20,10 +20,10 @@
 -- rewind stay exact); cm.math sin drives bobs off the sim frame count.
 local state = cm.require("cm.state")
 local input = cm.require("cm.input")
-local text = cm.require("cm.text")
 local m = cm.require("cm.math")
 local box = cm.require("cm.box")
 local depth = cm.require("cm.depth")
+local hud = cm.require("cm.hud")
 
 local W, H = pal.gfx_size()
 local PW, PH = 10, 12         -- player footprint (collision is the base)
@@ -227,19 +227,19 @@ function game.draw()
     end
   end
 
-  -- HUD: live binding labels, device-flavored (the D084 contract)
-  local k = input.pad_connected(1) and "pad" or "key"
+  -- HUD: live binding labels, device-flavored via cm.hud (the D084
+  -- contract); the bottom-anchored message line rides cm.hud too
   local msg
   if d.won then
-    msg = "you took the gem! " .. input.label("reset", k) .. " starts over"
+    msg = "you took the gem! " .. hud.label("reset") .. " starts over"
   elseif d.room == "cellar" and room.door.locked and not d.door_open
          and near_door(room, d) then
-    msg = d.has_key and (input.label("act", k) .. " unlocks the door")
+    msg = d.has_key and (hud.label("act") .. " unlocks the door")
           or "locked - find the key"
   else
     msg = d.room .. " - " .. (d.has_key and "key in hand" or "find the key")
   end
-  text.draw(12, H - 16, msg, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
+  hud.text("bl", 12, 8, msg, { r = 0.95, g = 0.92, b = 0.8, a = 0.9 })
   if d.has_key and not d.won then
     pal.quad(W - 18, H - 17, 6, 6, 0.95, 0.85, 0.3, 1)
   end

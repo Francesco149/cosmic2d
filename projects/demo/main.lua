@@ -14,8 +14,8 @@
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local input = cm.require("cm.input")
-local text = cm.require("cm.text")
 local gfx = cm.require("cm.gfx")
+local hud = cm.require("cm.hud")
 local camera = cm.require("cm.camera")
 local level = cm.require("level")
 local player = cm.require("player")
@@ -183,14 +183,14 @@ function game.draw()
   pal.quad(0, 0, W, 13, 0.05, 0.04, 0.08, 0.4)
   pal.quad(0, H - 12, W, 12, 0.05, 0.04, 0.08, 0.45)
   local title = level.current == "town" and "COZY TOWN" or "OVERWORLD"
-  text.draw((W - text.measure(title)) // 2, 3, title,
-            { r = 1, g = 0.92, b = 0.7, a = 0.97 })
+  hud.text("t", 0, 3, title, { r = 1, g = 0.92, b = 0.7, a = 0.97 })
   local n = 0
   for _ in pairs(level.collected()) do n = n + 1 end
-  text.draw(4, 3, ("coins %d"):format(n), { r = 1, g = 0.9, b = 0.4, a = 0.97 })
-  text.draw(4, H - 10,
-            "arrows  space:jump  e:hop  q:grapple  r:teleport  ->  walk into a door",
-            { r = 0.92, g = 0.9, b = 0.82, a = 0.95 })
+  hud.text("tl", 4, 3, ("coins %d"):format(n),
+           { r = 1, g = 0.9, b = 0.4, a = 0.97 })
+  hud.text("bl", 4, 2,
+           "arrows  space:jump  e:hop  q:grapple  r:teleport  ->  walk into a door",
+           { r = 0.92, g = 0.9, b = 0.82, a = 0.95 })
 end
 
 return game
