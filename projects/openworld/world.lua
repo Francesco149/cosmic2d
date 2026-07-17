@@ -154,7 +154,9 @@ local function build_data()
   -- the trace-locked collider list). Same lesson inside each loop: every
   -- draw happens BEFORE the accept test so placement survives rule edits.
   --
-  -- Boulders keep to the high bands (h >= 3.8): every verified demo route
+  -- Boulders keep to the dirt/rock band only (h 4.2..6.5), at most TEN
+  -- (human verdict 2026-07-17: the h>=3.8 draft put 42 of them across the
+  -- upper grass too — too many, wrong ground). Every verified demo route
   -- leg stays h <= 3.3, so their colliders — world-bounds boxes per
   -- D3D-011, the visual rotates inside — cannot touch a golden trace.
   W.boulders, W.pebbles, W.flowers = {}, {}, {}
@@ -168,7 +170,7 @@ local function build_data()
     local ng = 5 + xs32(sb) % 3
     local sh = 0.88 + (xs32(sb) % 25) / 100.0 -- shade jitter
     local h = terr.sample(t, x, z)
-    if h >= 3.8 and h <= 7.5 then
+    if #W.boulders < 10 and h >= 4.2 and h <= 6.5 then
       W.boulders[#W.boulders + 1] = { x = x, z = z, y = h - 0.18,
         n = ng, r0 = r0, r1 = r0 * 0.62, h = hh, yaw = yaw, sh = sh }
       W.colliders[#W.colliders + 1] =
