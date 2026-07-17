@@ -244,7 +244,7 @@ function M.close(ed, force)
   end
   if scrub.paused() then scrub.close() end
   r.open, r.gesture, r.preview = nil, nil, nil
-  r.summary = nil
+  r.summary, r.crash, r.fit_crash = nil, nil, nil
   free_thumbtex(r) -- release the preview lane's GPU textures
   return true
 end
@@ -278,13 +278,58 @@ function M.drop_clip(ed, path)
   return true
 end
 
--- Esc is deliberately layered: clip first, tray/past second.
+-- A7 §16: a .ccrash dropped into an editor view opens the crashed minute. The
+-- report names an exact history stream + last-committed frame; trace.crash_resolve
+-- matches it against the LIVE ring by identity (never by wall time). On a match
+-- we park at the crash, loop the safe pre-roll (up to 60s ending at the last
+-- committed frame), and mark the failed next-frame boundary. A missing/evicted/
+-- foreign tail explains the identity it wanted rather than guessing. Unlike a
+-- clip this resolves the live source in place — no stash, no mounted workspace —
+-- so export-the-pre-roll and resume-here stay available.
+function M.drop_crash(ed, path)
+  local r = state(ed)
+  -- A crash focus reads the LIVE ring, but a mounted clip has stashed it aside;
+  -- eject first (mirrors drop_clip's already-time-travelling guard).
+  if scrub.is_clip() then
+    r.open = true
+    flash(r, "eject the replay clip before opening a crash report")
+    return false
+  end
+  local report, rerr = cm.require("cm.crash").read(path)
+  if not report then
+    r.open = true
+    flash(r, "unreadable crash report: " .. tostring(rerr))
+    return false
+  end
+  -- Future §16: a report may embed its own history tail; today's .ccrash carries
+  -- only the locator, so resolve the local stream. (When embedded tails land,
+  -- route report.tail through scrub.open_clip exactly like a standalone clip.)
+  local plan, why = trace.crash_resolve(report)
+  if not plan then
+    r.open = true
+    flash(r, "can't open crash: " .. tostring(why))
+    return false
+  end
+  if not scrub.paused() then scrub.open() end
+  scrub.set_loop(plan.a, plan.b) -- parks at A and rolls the pre-roll forward
+  r.open, r.fit_crash = true, true
+  r.crash = { committed = plan.committed, attempted = plan.attempted,
+              kind = plan.kind, report_id = plan.report_id,
+              a = plan.a, b = plan.b }
+  r.view, r.summary, r.preview = nil, nil, nil
+  flash(r, ("crash: %s -- looping the %s before frame %d")
+    :format(plan.kind, fmt_duration(plan.b - plan.a + 1), plan.committed))
+  return true
+end
+
+-- Esc is deliberately layered: clip/loop first, tray/past second.
 function M.escape(ed)
   local r = state(ed)
   if scrub.has_loop and scrub.has_loop() then
     scrub.clear_loop()
     r.preview = nil
-    flash(r, "clip cleared -- Esc again returns to live")
+    flash(r, (r.crash and "crash loop cleared" or "clip cleared")
+             .. " -- Esc again returns to live")
     return true
   end
   if r.open or scrub.paused() then
@@ -567,6 +612,21 @@ local function draw_events(summary, v, ax, y, aw, h, i)
   end
 end
 
+-- A7 §16: the failed next-frame boundary — a bold wall drawn just after the
+-- last committed (last safe) frame. When the crash sits at the live edge (the
+-- same-session case) it pins to the panel's right edge; the label sits to its
+-- left so it stays inside the tray.
+local function draw_crash(cr, v, ax, y, aw, h)
+  if not cr then return end
+  local xb = clamp(x_at(v, cr.attempted, ax, aw), ax, ax + aw)
+  pal.x_ig_line(xb, y, xb, y + h, C.err, 2.5)
+  local label = "CRASH"
+  local tw = pal.x_ig_text_size(label, 10, 0)
+  local tx = clamp(xb - tw - 7, ax, ax + aw - tw)
+  pal.x_ig_rect_fill(tx - 4, y + 2, tw + 8, 15, 0x2a1016f0, 4)
+  text(tx, y + 4, 10, C.err, label)
+end
+
 local function draw_range(a, b, v, ax, y, aw, h)
   if not a then return end
   local xa, xb = x_at(v, a, ax, aw), x_at(v, b, ax, aw)
@@ -678,13 +738,25 @@ function M.draw(ed, ig, i)
       { start = lo, span = math.max(M.MIN_SPAN, hi - lo) }, lo, hi)
     r.fit_clip = nil
   end
+  -- A crash focus fits the pre-roll plus the boundary just past it, so the whole
+  -- crashed minute reads at a glance instead of the ten-minute default.
+  if r.fit_crash and r.crash and lo then
+    local cr = r.crash
+    local pad = math.max(2, (cr.b - cr.a) * 0.06)
+    r.view = M.clamp_view(
+      { start = cr.a - pad, span = math.max(M.MIN_SPAN,
+                                            (cr.attempted - cr.a) + pad * 2) },
+      lo, hi)
+    r.fit_crash = nil
+  end
 
   pal.x_ig_overlay(true)
 
   -- The collapsed entrance remains useful at all times: retained duration,
-  -- a live recording dot, and a parked/paused/clip state that reads at a glance.
+  -- a live recording dot, and a parked/paused/clip/crash state at a glance.
   local pill_label
   if clip then pill_label = scrub.has_loop() and "CLIP A/B" or "CLIP"
+  elseif r.crash then pill_label = "CRASH"
   elseif scrub.has_loop and scrub.has_loop() then pill_label = "A/B LOOP"
   elseif parked then pill_label = "PARKED"
   elseif recp then pill_label = "REC PAUSED"
@@ -699,7 +771,7 @@ function M.draw(ed, ig, i)
   pal.x_ig_rect_fill(pill.x, pill.y, pill.w, pill.h,
     r.open and 0x393456f5 or (pill_hov and C.button_hot or 0x262238ee), 8)
   pal.x_ig_circle_fill(pill.x + 11, pill.y + ph * 0.5, 3.5,
-    recp and C.restart or (parked and C.code or C.live))
+    r.crash and C.err or (recp and C.restart or (parked and C.code or C.live)))
   text(pill.x + 20, pill.y + 6, px,
     r.open and C.text or (recp and C.restart or (parked and C.code or C.dim)),
     pill_label)
@@ -746,9 +818,12 @@ function M.draw(ed, ig, i)
   apply_gestures(r, i, v, lo, hi, ax, film_y, aw, axis_h)
 
   local stats = trace.ring_stats() or {}
-  text(bx + 14, head_y + 9, 12, C.text, clip and "REPLAY" or "REWIND")
-  text(bx + 79, head_y + 9, 11, clip and C.eval or C.dim,
+  text(bx + 14, head_y + 9, 12, C.text,
+    clip and "REPLAY" or (r.crash and "CRASH") or "REWIND")
+  text(bx + 79, head_y + 9, 11,
+    clip and C.eval or (r.crash and C.err) or C.dim,
     clip and "REPLAY CLIP  /  EPHEMERAL -- Esc restores live"
+    or r.crash and ("CRASH  /  %s -- Esc restores live"):format(r.crash.kind)
     or parked and "LIVE HISTORY  /  PARKED"
     or (recp and "LIVE HISTORY  /  REC PAUSED" or "LIVE HISTORY  /  RECORDING"))
 
@@ -905,6 +980,9 @@ function M.draw(ed, ig, i)
     pal.x_ig_line(xp, film_y, xp, film_y + axis_h, C.playhead, 1.5)
     pal.x_ig_circle_fill(xp, ruler_y, 4.5, C.playhead)
   end
+  if r.crash and not clip then
+    draw_crash(r.crash, v, ax, film_y, aw, axis_h) -- the failed-frame wall, on top
+  end
   pal.x_ig_clip_pop()
 
   -- Transport. Buttons are deliberately compact; the timeline itself is the
@@ -962,7 +1040,7 @@ function M.draw(ed, ig, i)
     if button(i, rx, foot_y, 92, foot_h, "resume here",
               { accent = true, enabled = not a }) then
       scrub.rewind_here()
-      r.open = nil
+      r.open, r.crash = nil, nil
       pal.x_ig_overlay(false)
       return
     end
@@ -988,12 +1066,19 @@ function M.draw(ed, ig, i)
   end
 
   if a then
-    local msg = ("CLIP  A %d  /  B %d  /  %s   --   Esc clears clip")
-      :format(a, b, fmt_duration(b - a + 1))
+    local msg, bg, fg
+    if r.crash then
+      msg = ("CRASH PRE-ROLL  A %d .. B %d (last safe frame)  --  Esc clears the loop")
+        :format(a, b)
+      bg, fg = 0x3a1620ee, C.err
+    else
+      msg = ("CLIP  A %d  /  B %d  /  %s   --   Esc clears clip")
+        :format(a, b, fmt_duration(b - a + 1))
+      bg, fg = 0x244237ee, C.accent
+    end
     local mw = pal.x_ig_text_size(msg, 11, 0)
-    pal.x_ig_rect_fill(ax + (aw - mw) * 0.5 - 10, film_y + 5,
-      mw + 20, 22, 0x244237ee, 6)
-    text(ax + (aw - mw) * 0.5, film_y + 10, 11, C.accent, msg)
+    pal.x_ig_rect_fill(ax + (aw - mw) * 0.5 - 10, film_y + 5, mw + 20, 22, bg, 6)
+    text(ax + (aw - mw) * 0.5, film_y + 10, 11, fg, msg)
   end
 
   if summary and summary.missing then

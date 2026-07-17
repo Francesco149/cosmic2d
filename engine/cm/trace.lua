@@ -1066,6 +1066,67 @@ function M.hist_locator(project)
            frame = e.first + e.frames - 1 }
 end
 
+-- The safe pre-roll a crash focus loops: up to one minute at the fixed 60 Hz
+-- ending at the last committed frame (A7 §16).
+M.CRASH_PREROLL = M.CRASH_PREROLL or 60 * 60
+
+local function short_stream(id)
+  id = tostring(id or "")
+  return #id <= 14 and id or (id:sub(1, 12) .. "..")
+end
+
+-- A7 §16: resolve a dropped crash report against the live/adopted history by
+-- EXACT identity — the report's history stream + last-committed frame must
+-- match the live ring; we never guess from wall-clock time. Returns a focus
+-- plan (the pre-roll A/B bounds ending at the last committed frame, plus the
+-- failed next-frame boundary) or nil + an honest reason naming the stream it
+-- wanted versus what is retained locally. This only reads the ring; the tray
+-- (cm.ed.rewind.drop_crash) parks and loops the plan. A future report that
+-- embeds its own history tail is opened as a clip instead (never reaches here).
+function M.crash_resolve(report, preroll)
+  report = report or {}
+  local stream = tostring(report.history_stream or "")
+  local committed = math.tointeger(report.committed_frame)
+  if stream == "" or not committed or committed < 0 then
+    return nil, "the crash report names no durable history " ..
+                "(a headless run or a boot-time failure)"
+  end
+  local loc = M.ring_locator()
+  if not loc or loc.stream == "" then
+    return nil, "no local recorded history to resolve the crash against"
+  end
+  if loc.stream ~= stream then
+    return nil, ("this crash is from another recording (%s); the live " ..
+                 "history is %s"):format(short_stream(stream),
+                                         short_stream(loc.stream))
+  end
+  local lo, hi = M.ring_range()
+  if not lo then
+    return nil, "no local recorded history to resolve the crash against"
+  end
+  if committed < lo then
+    return nil, ("the crashed moment was evicted -- history is retained " ..
+                 "only from frame %d (the crash was at frame %d)")
+                :format(lo, committed)
+  end
+  -- The crash lies in the past; clamp defensively so a stale over-count can't
+  -- push the focus past the live edge.
+  committed = math.min(committed, hi)
+  preroll = math.max(1, math.floor(preroll or M.CRASH_PREROLL))
+  local attempted = math.tointeger(report.attempted_frame)
+  if not attempted or attempted < committed then attempted = committed + 1 end
+  return {
+    stream = stream,
+    committed = committed,
+    attempted = attempted, -- the failed next-frame boundary (never committed)
+    a = math.max(lo, committed - preroll + 1), -- pre-roll start (up to 60s)
+    b = committed,                             -- inclusive: the last safe frame
+    lo = lo, hi = hi,
+    kind = tostring(report.error_kind or "error"),
+    report_id = tostring(report.report_id or ""),
+  }
+end
+
 function M.ring_stats()
   local R = M._R
   if not R then return nil end

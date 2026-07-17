@@ -421,6 +421,13 @@ function M.filter_events(events)
       -- project mounts, and Esc layering restores the live session. Never a
       -- project asset (a .ctrace is a recording, not source/art).
       cm.require("cm.ed.rewind").drop_clip(M, e.path)
+    elseif e.type == "drop" and M.doc and e.path
+           and e.path:lower():match("%.ccrash$") then
+      -- A7 §16: a crash report dropped anywhere in the editor opens the crashed
+      -- minute — the tray resolves the report's history stream/frame against the
+      -- live history, loops the safe pre-roll, and marks the failed boundary.
+      -- Also chrome, never a project asset (a .ccrash is a diagnostic).
+      cm.require("cm.ed.rewind").drop_crash(M, e.path)
     elseif e.type == "drop" and M.doc then
       -- an OS file dropped on the window: over an assets window = add to
       -- project (EDITOR.md §12.5); over a map window = add + PLACE at the
