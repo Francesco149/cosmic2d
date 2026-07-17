@@ -395,3 +395,106 @@ to demo 2 (open world) and the terrain system:
   and `../slopstudio-projects/docs/research-3d/video-study/*lethal-company/STUDY.md`
   (cheap post-processing stack = distinctive look; low-res-and-upscale as an
   aesthetic).
+
+## 10. The streaming world — sketch + measurements (2026-07-17, round 17)
+
+The §8e directive engineered: stream a huge world with entities everywhere,
+stress-tested by a glider. Sketched BEFORE code, on top of a headless
+measurement soak (below). New cartridge: **projects/bigworld** (openworld
+and its goldens stay frozen as the content demo).
+
+### The decisive move: ground is a pure function; chunks are render-class
+
+The PAL re-uploads every submitted 3D vertex every frame (`x_tris` memcpys
+into one accumulator; there is no retained GPU geometry). So "streaming"
+splits cleanly into two problems, and neither is sim state:
+
+1. **The sim never needs chunks.** bigworld's height at any world lattice
+   vertex is a PURE FUNCTION `hfn(seed, vx, vz)` (the openworld fbm shape,
+   world-coordinate vnoise — no stored grid). `T.sample` generalizes to a
+   function-backed variant: compute the tile's 3 corner lattice heights on
+   demand (~3 µs, measured) and interpolate triangle-exact as today. The
+   player, every entity, and every trace can stand ANYWHERE in a world of
+   any size with zero resident terrain state. Consequences:
+   - No per-chunk named sim buffers; snapshots/traces carry nothing
+     terrain-ish. **A golden trace spans chunk boundaries trivially** —
+     the §8e question dissolves: traces pin player/entity buffers only,
+     and chunk paging is pinned by pixel goldens instead.
+   - The honesty test writes itself: replay the same trace under a
+     DIFFERENT chunk radius / gen budget (render knobs) — byte-identical,
+     because the sim never sees chunks.
+2. **Chunks exist only as render-class buffers.** Chunk = 16×16 tiles
+   (32 u square, 512 terrain tris, ~1 ms to generate — measured). Resident
+   ring around the camera in `rc.bw.c<x>_<z>` named buffers (rc. is
+   snapshot-excluded), generated under a per-frame budget (1–2 chunks/frame
+   keeps 60 fps while gliding), evicted past the radius (buffer churn
+   measured free). Per-frame submit = distance-culled resident set; at
+   fog_end ≈ 110 u that is ~9×9 chunks ≈ 40 k tris ≈ 2–5 ms on lavapipe
+   (measured) — inside budget, laughable on real GPUs. Prop scatter is
+   per-chunk deterministic (world-seed + chunk-coord streams, the D3D-022
+   draw-before-accept rule), so a chunk regenerates byte-identically on
+   every visit; props whose AABBs must collide are derived from the same
+   pure streams ON DEMAND by the sim (chunk-local collider query), not
+   stored.
+
+### Entities at scale: promote/demote, one buffer, closed-form far state
+
+Finite-huge world (first target: 512×512 tiles = 1024 u square — 64×64
+chunks) with **N ≈ 4000 entities in ONE named sim buffer** (fixed slots,
+32–48 B: ~128–192 KB — snapshot-friendly; the openworld npc-list pattern
+does NOT scale to thousands of per-entity module tables). Placement at
+init from world-seed streams (deterministic).
+
+- **Far entities are (route, phase), nothing else.** A far entity's
+  position is a closed-form function of its fixed route and a phase
+  field — advancing it k frames is `phase += rate * k`, O(1) and EXACT.
+  So far entities need no per-frame update at all: "update-or-don't"
+  collapses to don't, with a closed-form catch-up whenever someone looks.
+  Trajectories are identical regardless of schedule — determinism cannot
+  depend on scheduling, by construction (no hash order anywhere).
+- **Near entities get promoted** (deterministic distance test + hysteresis
+  against the player, sim state only): a promoted slot runs the full
+  interactive kernel — ground glue, walk clip, solidity, greets (the
+  D3D-020/023/024 machinery, capped to the handful of near slots).
+  Demotion re-anchors phase to the nearest route point. Interaction radii
+  all sit far inside the promote radius, so far entities never interact.
+- **The full-population distance scan measured 0.47 ms at 4 k** (0.66
+  µs/slot with f32 reads) — affordable every frame at this scale; chunk
+  bucketing is the known upgrade if entity counts go 16 k+ (scan measured
+  1.9 ms there).
+- Draw: only near/mid entities emit figures; far ones cull at fog (or a
+  cheap prism LOD if the read wants density).
+
+### The glider (the stress instrument)
+
+Deploy while airborne (hold jump), fast lateral (~25–30 u/s, 4–5× run),
+slow fall (~2 u/s), banked visual. One new player-buffer field (deployed
+flag); otherwise a movement regime like swim (D3D-019). Crossing a chunk
+row per second loads ~9–11 chunks ≈ 11 ms amortized over 60 frames —
+the gen budget holds; pop-in hides behind fog + a prefetch ring.
+
+### Measured budgets (headless lavapipe, 4-core WSL2 box, SHARED and noisy
+— treat as ballparks; quiet-window medians)
+
+| what | cost |
+|---|---|
+| pure ground sample (worst-case 4 lattice corners) | ~3.7 µs/call |
+| chunk gen 16×16 tiles (512 tris, 36 KB) | ~1.0 ms |
+| chunk gen 32×32 tiles (2048 tris, 144 KB) | ~3.7 ms |
+| chunk gen 64×64 tiles (8192 tris, 576 KB) | ~15 ms |
+| entity slot update (read+trig+write, one big buffer) | ~0.66 µs/slot |
+| distance scan, 16 k slots | ~1.9 ms |
+| named-buffer churn (create+set+free 147 KB) | ~0.01 ms |
+| x_tris submit+present, 8 k tris | ~0.1 ms med |
+| x_tris submit+present, 33 k tris | ~1.5 ms med |
+| x_tris submit+present, 66 k tris | ~2.8 ms med |
+| x_tris submit+present, 131 k tris | ~13 ms med |
+| x_tris submit+present, 262 k tris | ~45 ms med (19 MB/frame upload) |
+
+PAL verdict: **no PAL changes needed for round 1** — named buffers have no
+count ceiling (linked list), churn is free, and the real ceiling is the
+per-frame re-upload (keep the submitted set ≤ ~50 k tris on lavapipe).
+The candidate engine-ergonomics finding this demo exists to prove or
+refute: a retained-GPU-geometry PAL API (upload a chunk once, draw by
+handle). Deferred until the demo shows the submit cost biting on a real
+scene — measure in-demo first.
