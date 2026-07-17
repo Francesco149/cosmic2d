@@ -50,6 +50,10 @@ bin/cosmic projects/smoke --headless --frames 120 --shot /tmp/shot.png
 bin/cosmic projects/selftest --headless --frames 1       # 22k engine checks
 bin/cosmic <proj> --headless --frames N --record t.ctrace  # capture a trace
 bin/cosmic <proj> --verify t.ctrace  # golden runner: byte-exact replay, exit 0/1
+# re-cut a committed golden after an INTENDED sim/doc change (D093/D094):
+# tools/trace/replay-driver.lua replays the old trace's pad records against
+# a fresh boot while recording; dump.lua and strip-eval.lua (host lua) are
+# the honesty diff and the input-only publish step — headers show usage
 bin/cosmic projects/smoke --headless --frames N --eval "game.demo(1)" \
   --shot /tmp/s.png     # --eval queues a console line for frame 1 (recorded
                         # as an EVAL chunk) — drives demos/knobs headlessly
