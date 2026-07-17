@@ -60,7 +60,9 @@ local KNOBS = {
   bake = {
     budget = 8, -- terrain tiles baked per draw frame (render-class)
   },
-  look = { quant = 5, soft = 1 },
+  -- RO preset: sharp present (human 2026-07-17 — crisp sprites suit the
+  -- style; the soft VI blit stays for the N64-preset demos)
+  look = { quant = 5, soft = 0 },
 }
 
 local cam, dyn, skybuf, uibuf

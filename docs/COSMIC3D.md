@@ -709,3 +709,12 @@ ray must not squat it). Consequences for the 3D fork:
 Editor windows (terrain paint/bake, figure vertex-pushing, sheet
 preview) stay parked until the human unparks the editor; the modules
 above are their runtime substrate.
+
+### §12a. RO preset presents sharp (human, 2026-07-17)
+
+"For the ragnarok demo, disable the soft VI filter — that's more
+appropriate for that art style": rovale runs KNOBS.look.soft = 0
+(quant/dither stay). The soft blit remains the N64-preset default
+(bounce/openworld/bigworld unchanged). Composite-only, so the internal
+pixel goldens stand byte-identical; the committed tour trace stands
+(hermetic bundle). Sharp-vs-soft comparison pushed to the feed.

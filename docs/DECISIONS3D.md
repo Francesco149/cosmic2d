@@ -881,9 +881,12 @@ for the process survey and the full audit).
   (2D follow/bounds/shake) since our fork; §12 bans fork modules from
   squatting upstream names so the post-1.0 re-merge stays clean.
 
-**Proof.** The extraction is bit-identical: all TEN committed traces
-(bounce demo/lap/tour, openworld tour/swim/npc/stars/meet, bigworld
-tour/glide) verify PASS UNREGENERATED against the retrofitted
-cartridges, and the full suite (pixels + selftest included) runs ALL
-GREEN with no golden re-cut. No visual surface changed — no new feed
-captures (the D097 precedent).
+**Proof.** The full suite runs ALL GREEN with no golden re-cut. Read
+honestly (learned mid-round): a trace SNAP carries its CODE BUNDLE
+(trace.lua restores it on verify), so trace verify is hermetic against
+Lua source edits — the ten trace PASSes pin buffer/doc shapes, not the
+new code path. The bit-identity proof is the SEVENTEEN pixel goldens:
+each replays its demo from a fresh boot on CURRENT sources — the whole
+route through cm.rig's step/wish/view decides every frame's framing —
+and all compare byte-exact on pinned lavapipe. No visual surface
+changed — no new feed captures (the D097 precedent).
