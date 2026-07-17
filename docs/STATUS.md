@@ -4,6 +4,18 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 14 playtest) — boulders cut to ten, dirt only
+
+Human on round 14: **"lower the amount of boulders. put them on dirt
+patches only and only place down like 10"** — otherwise "it looks
+good". Applied: the boulder scatter accepts only the dirt/rock band
+(h 4.2..6.5, the gray-brown ground — no more upper-grass rocks) and
+caps at TEN (42 -> 10; same stream, draws still precede the accept
+test). Flowers/pebbles untouched. Colliders 137 -> 105, still all off
+the verified routes: all 7 traces replayed unregenerated; the four
+openworld pngs re-shot (distant boulders sat in every hill framing).
+Suite ALL GREEN; verdict shot on the feed.
+
 ## 2026-07-17 (round 14) — props: the bands become places
 
 Autonomous round (no new feed verdicts; water polish + exchange depth
@@ -24,12 +36,12 @@ collision with another repo's suite on this machine; clean on re-run.)
 
 ## Exact next step
 
-1. Feed questions open (non-blocking): R14's — do the flower heads
-   read as flowers or confetti at 320x240? boulder gray ok? density
-   thicker/thinner/more bands? Plus R13's (star read, completion
-   beat, persist collection?), R12's (exchange read, dialog tone,
-   text box vs bare HUD line) and R11's (splash in-game listen,
-   half-sunk swim read, jump read, band colors + fog, eye size).
+1. Feed questions open (non-blocking): R14 answered ("looks good"
+   after the boulder cut — see the playtest entry above). Still open:
+   R13's (star read, completion beat, persist collection?), R12's
+   (exchange read, dialog tone, text box vs bare HUD line) and R11's
+   (splash in-game listen, half-sunk swim read, jump read, band
+   colors + fog, eye size).
 2. **Demo 2 grows** (menu, minus stars + first props): water polish
    (shoreline read, swim-out splash), more exchange depth (the NPC
    walking its own little route, multi-line dialog pages,
