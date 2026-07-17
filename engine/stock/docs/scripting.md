@@ -739,6 +739,57 @@ Headless runs, captures, and replay verifies see a disabled store (`nil` plus
 a reason), so test runs and recordings never depend on one machine's saves.
 Handle the "no save" answer and your first run already does the right thing.
 
+## The performance envelope
+
+The engine records everything, always: the rewind ring re-canonizes your
+whole `state.doc` on every frame in which anything in it changed. That is
+what makes rewind, traces, and crash replay free at the game-code level —
+and it is the cost that sets the honest actor budget. Your own logic is
+almost never the limit: `cm.actor` steps 8,000 chasers with overlap
+queries in under 3 ms, but recording a doc that holds 8,000 moving tables
+costs ~70 ms more. The measured envelope, from a swarm-shaped world
+(every actor moving every frame, worst case) on the 2026 reference
+desktop (Ryzen 9 5900X), Linux and native Windows within noise of each
+other:
+
+| moving doc actors | whole frame, typical | spikes (p95 / worst) | verdict |
+| ---: | ---: | ---: | :--- |
+| 250 | ~2.5 ms | 4 / 6 ms | lots of headroom |
+| 500 | ~5 ms | 8 / 10 ms | comfortable |
+| 1,000 | ~10 ms | 15 / 27 ms | the edge — occasional dropped frames |
+| 2,000 | ~20 ms | 27 / 37 ms | over the 16.7 ms budget |
+
+The supported alpha envelope is **about 500 live, moving, doc-carried
+actors** — comfortable 60 Hz with room left for your own logic and a real
+GPU frame. A thousand mostly works but spends the whole budget on a slow
+machine. The bundled demos sit far inside it (swarm's biggest waves are
+a few dozen actors).
+
+What the cost actually tracks — and how to stay fast when you grow:
+
+- **Total doc size, not motion.** If any field changes in a frame, that
+  frame re-canonizes everything in doc (~9 µs per small table on the
+  reference machine). One moving camera plus 5,000 parked actor tables
+  still pays for 5,000 tables every frame. Keep doc holding what must
+  rewind, not everything you ever computed.
+- **Bulk numeric state belongs in named buffers.** A `pal.buf` records as
+  a compact binary delta on the C side — thousands of particles or bullets
+  in packed `f32`/`i16` slots cost a tiny fraction of the same data as
+  doc tables, and they snapshot and rewind identically. Doc for dozens to
+  hundreds of rich actors; buffers for thousands of simple ones.
+- **Render-only flourish stays out of doc.** Sparks, floating numbers,
+  and screen-shake offsets that decide nothing can live in module locals
+  or derive from `cm.tween` counters — they cost the recorder nothing.
+- **Memory scales the same way.** Every changed frame retains one canon
+  copy of doc in the in-RAM ring; a huge doc mutating for minutes holds
+  hundreds of megabytes of history. The buffer rules above are also the
+  memory fix.
+
+To measure your own game, open the F3 performance overlay while it runs
+in the editor (it is disabled only in exported player builds): the "sim"
+number includes the recorder, so the gap between it and what your own
+`step` plausibly does is the recorder tax growing with your doc.
+
 ## Determinism checklist
 
 - Change simulation only in `init`/`step`; keep `draw` side-effect free.
