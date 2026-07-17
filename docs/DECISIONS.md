@@ -4370,3 +4370,65 @@ retrofit goldens verifying un-recut on both platforms. The shipped
 scripting guide gained a movement section beside Gamepads;
 `tools/build-windows.sh` refreshed the stage (4 durable entries
 preserved) and Start Menu shortcut.
+
+## D098 — the A5 performance-envelope audit (A5, 2026-07-17)
+
+**Context.** A5's last open line: measure representative
+actor/projectile counts through the real loop and write an honest
+supported envelope into the shipped guide — an alpha promise, not a
+benchmark brag. D092 had already logged the suspect: the always-on
+ring recorder re-canons the whole doc on any changed frame
+(record_frame hashes first, then `state.doc_bytes()` — the delta
+granularity is the WHOLE doc, so cost tracks total doc size, not
+how much moved). The bundled demos are too small to find the wall
+(swarm's biggest waves are a few dozen actors), so the audit needed
+a scaled vehicle.
+
+**Decision.** `projects/perfgauge` is the dev-tree-only audit
+vehicle (never bundled): a swarm-shaped world — cm.actor chasers
+held at a staircase of populations (100..8,000) by edge respawns
+from the sim PRNG, a deterministic bouncing bot for the player, a
+rotating 8-way shooter keeping projectiles and `actor.hit` queries
+in frame, everything in doc so the recorder pays its real cost.
+Observation is dev-side only: `pal.time_ns()` samples in
+module-local rings (never doc, deciding nothing) split each frame
+into step (the game's own work), post (step end → draw start: snd +
+advance + ring record — the recorder tax), draw, and whole tick;
+each level warms up 120 frames and measures 480, logging
+avg/p50/p95/max. The sim stays bit-deterministic; the printed
+numbers are the observation. Run capped (`--headless --frames
+4200`) so the loop free-runs — uncapped interactive headless sleeps
+16 ms/tick and poisons the tick metric.
+
+**Consequences.** The measured truth (Ryzen 9 5900X reference
+desktop; Linux under WSL2 and native Windows within noise of each
+other, luaheap byte-identical across platforms): game logic is
+essentially never the limit — cm.actor steps 8,000 chasers with
+overlap queries in under 3 ms — while the recorder tax is ~9 µs per
+small doc table per changed frame and dominates everything. Whole-
+frame typicals: 500 actors ~5 ms (comfortable), 1,000 ~10 ms with
+p95 ~15/max ~27 (the edge), 2,000 ~20 ms (broken). The in-RAM ring
+also retains one canon copy of doc per changed frame — 1.1 GB of
+Lua heap at n=8,000 — so memory scales with the same rule. The
+shipped guide gained "The performance envelope" before the
+determinism checklist: the supported alpha envelope is **about 500
+live moving doc-carried actors**, with the honest cost model (total
+doc size, not motion), the named-buffer escape hatch for bulk
+numeric state (`buf_delta1` C-side deltas), the render-only rule
+for flourish, and the F3 overlay as the self-serve gauge. A5 is now
+fully closed: every §2 slice shipped or honestly deferred
+(transition, D096), the audit line done. Revisit triggers: a real
+game needing >500 rich doc actors votes for a recorder-side
+per-subtree delta (or doc-canon caching); if that lands, re-run
+perfgauge and raise the guide's envelope honestly.
+
+**Proof.** Both platforms ran the full staircase through the real
+loop (`bin/cosmic` and the staged `cosmic.exe`, 4,200 frames each);
+the per-level tables are in the ADR's numbers above and reproduce
+with the committed fixture. No sim-visible engine bytes changed —
+the packet adds a dev-tree project and guide prose — and `nix run
+.#test` is ALL GREEN: selftest unchanged at **23,991** Linux /
+**23,993** native Windows on PAL API 19, every historical trace and
+all pixel/audio goldens byte-identical. `tools/build-windows.sh`
+refreshed the stage (4 durable entries preserved) and Start Menu
+shortcut.

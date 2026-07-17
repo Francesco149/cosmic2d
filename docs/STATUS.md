@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth, cm.hud, cm.move shipped (D088–D097) (2026-07-17)
+## Current handoff — A4 closed (D087), A5 closed (D098); A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth, cm.hud, cm.move, the perf envelope shipped (D088–D098) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,33 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D098 closes A5 with the performance-envelope audit.** The vehicle
+is `projects/perfgauge` (dev-tree only, never bundled): a
+swarm-shaped cm.actor world held at a staircase of populations
+(100..8,000) around a deterministic bouncing bot, with a rotating
+8-way shooter keeping projectiles and hit queries in frame —
+everything in doc, so the always-on ring recorder pays its real
+cost. Observation is dev-side module-local `pal.time_ns()` rings
+(step / post / draw / tick, avg/p50/p95/max per level); the sim
+stays bit-deterministic. The measured truth on the Ryzen 9 5900X
+reference desktop (Linux and native Windows within noise, luaheap
+byte-identical): game logic is not the limit — cm.actor steps 8,000
+chasers with overlap queries in under 3 ms — but record_frame's
+whole-doc hash+canon on any changed frame costs ~9 µs per small doc
+table, so 500 moving doc actors is ~5 ms/frame (comfortable), 1,000
+is the edge (p95 ~15 ms, max ~27), and 2,000 breaks the 16.7 ms
+budget; the in-RAM ring retains a canon copy per changed frame
+(1.1 GB heap at n=8,000), so memory follows the same rule. The
+shipped guide gained "The performance envelope" before the
+determinism checklist: **~500 live moving doc-carried actors** is
+the supported alpha envelope, cost tracks total doc size (not
+motion), bulk numeric state belongs in named buffers (C-side
+deltas), flourish stays render-only, F3 is the self-serve gauge.
+Revisit trigger logged: a real game needing more votes for a
+recorder-side per-subtree delta, then perfgauge re-runs and the
+envelope rises honestly. With this, **A5 is closed** — every §2
+slice shipped or honestly deferred (transition, D096).
 
 **D097 lands the movement-input slice: cm.move.** The audit counted
 the copies honestly: swarm's PAIN(move) aim/axis dance, cellar's
@@ -817,18 +844,20 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the A5 performance-envelope audit** — the
-last open A5 line: measure representative actor/projectile counts
-through the real loop (swarm's cm.actor world is the vehicle; scale
-its waves headlessly and time stepped frames on both platforms),
-find where the fixed 60 Hz step budget breaks, and write the honest
-supported envelope into the shipped guide — an alpha promise, not a
-benchmark brag. Watch the known cost D092 logged while there: doc
-re-canonicalization per frame (~3.5KB/frame with a moving camera)
-is part of the envelope story. After that, A6 bundling polish
-(READMEs/welcome notes for cellar and swarm, picker thumbnails,
-release-manifest promotion so both ship in the public archives, and
-the puzzle/board recipe gap audit) closes out the demo matrix. The
+**Exact next packet:** **A6 bundling polish** — the demo matrix's
+remaining lines: READMEs/welcome notes for cellar and swarm
+(controls, concepts, file tour, modification prompts, starter-
+template provenance — the demo has one to match), picker thumbnails
+and metadata for both, release-manifest promotion so cellar and
+swarm ship in the public archives (with the clean-machine matrix
+re-proving the new members), headless state/pixel smoke coverage
+that doesn't turn the demos into brittle exhaustive goldens, and
+the puzzle/board recipe gap audit (write the recipe against the
+shipped slices; add a fourth demo only if it reveals a materially
+different shared capability). The A5 revisit trigger stays logged
+in D098: a real game needing >500 rich doc actors votes for a
+recorder-side per-subtree delta, then `projects/perfgauge` re-runs
+and the guide's envelope rises honestly. The
 transition slice stays deferred until a demo actually hand-rolls a
 fade/wipe/hold (D096's audit); a future retrofit that moves sim/doc
 bytes re-cuts its golden with the committed vehicle
