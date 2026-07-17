@@ -21,6 +21,7 @@ local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local world = cm.require("world")
 local player = cm.require("player")
+local npc = cm.require("npc")
 local audio = cm.require("audio")
 
 local W, H = pal.gfx_size()
@@ -67,6 +68,14 @@ local KNOBS = {
     walk_ref = 2.2, -- ground speed where the walk clip fully takes over
     idle_f = 120,   -- frames per idle breath cycle
     swim_tilt = 0.30, -- forward pitch while swimming (the paddle read)
+  },
+  npc = { -- the pond watcher's exchange (D3D-020)
+    greet_r = 4.2, -- come this close and the exchange begins
+    exit_r = 5.6,  -- ...and it ends this far out (hysteresis: no chime spam)
+    turn = 0.10,   -- facing ease toward the player / back home
+    wave_f = 44,   -- frames per wave cycle
+    blend_f = 14,  -- idle->wave blend-in frames
+    type_f = 2,    -- frames per typed dialog character
   },
   look = { -- the N64 presentation (D3D-003/015, render-class)
     quant = 5,
@@ -122,14 +131,16 @@ function game.init()
 
   world.build()
   player.init()
+  npc.init()
   audio.init()
   build_sky()
 
-  -- dyn: per-frame mascot + shadow verts (render-class scratch)
-  local ok, db = pcall(pal.buf, "rc.ow.dyn", 1400 * 72)
+  -- dyn: per-frame figure + shadow verts (render-class scratch; two
+  -- mascots + two blob shadows)
+  local ok, db = pcall(pal.buf, "rc.ow.dyn", 2800 * 72)
   if not ok then
     pal.buf_free("rc.ow.dyn")
-    db = pal.buf("rc.ow.dyn", 1400 * 72)
+    db = pal.buf("rc.ow.dyn", 2800 * 72)
   end
   dyn = db
 
@@ -160,7 +171,8 @@ end
 
 -- console: game.demo(1) = the autoplay tour — walk the scenic ring around
 -- the spawn bowl forever (screenshots and the golden trace); game.demo(3)
--- = the pond crossing (the swim regime on show); any real press takes back
+-- = the pond crossing (the swim regime on show); game.demo(4) = walk to
+-- the pond watcher and stand for the exchange; any real press takes back
 function game.demo(on)
   local d = state.doc
   if on and on ~= 0 then
@@ -191,14 +203,25 @@ local ROUTE_SWIM = {
   { 56, 68 }, { 42, 64 }, { 31, 62 }, { 34, 74 }, { 52, 76 },
 }
 
+-- demo(4): the exchange — walk west from the spawn bowl to the pond
+-- watcher's bank and STAND (the route holds at its last waypoint instead
+-- of wrapping; no periodic hop while held, the dialog is the show)
+local ROUTE_NPC = {
+  { 64, 71 }, { 58, 71 }, { 55.4, 72.0 },
+}
+
 local function route_ctl()
   local d = state.doc
   local px, _, pz = player.pos()
-  local route = d.demo == 3 and ROUTE_SWIM or ROUTE
+  local route = d.demo == 3 and ROUTE_SWIM or d.demo == 4 and ROUTE_NPC
+    or ROUTE
   local wp = route[d.demo_wp]
   local dx, dz = wp[1] - px, wp[2] - pz
   local dist = m.sqrt(dx * dx + dz * dz)
   if dist < 0.8 then
+    if d.demo == 4 and d.demo_wp == #route then -- arrived: stand for the
+      return { wishx = 0, wishz = 0, jump_pressed = false } -- exchange
+    end
     d.demo_wp = d.demo_wp % #route + 1
     wp = route[d.demo_wp]
     dx, dz = wp[1] - px, wp[2] - pz
@@ -328,6 +351,7 @@ end
 
 function game.step()
   player.step(build_ctl())
+  npc.step() -- after the player: the exchange reads this step's position
   cam_step()
   -- feel telemetry: --eval "_G.DBG=10" prints the track every N frames
   if DBG and state.frame() % (tonumber(DBG) or 10) == 0 then
@@ -376,11 +400,11 @@ function game.draw()
     pal.x_tris(s.tex, world.vbuf, s.count, s.off, 0)
   end
 
-  -- the mascot (opaque), then the blend pass: blob shadow, then the water
-  -- plane LAST so it tints everything sunk below it
+  -- the figures (opaque), then the blend pass: blob shadows, then the
+  -- water plane LAST so it tints everything sunk below it
   local out = {}
-  local nfig = player.emit(out)
-  local nsh = player.emit_shadow(out)
+  local nfig = player.emit(out) + npc.emit(out)
+  local nsh = player.emit_shadow(out) + npc.emit_shadow(out)
   dyn:setstr(0, table.concat(out))
   pal.x_tris(0, dyn, nfig, 0, 0)
   pal.x_tris(world.tex.shadow, dyn, nsh, nfig * 72, 4)
@@ -389,6 +413,13 @@ function game.draw()
   local st = pal.frame_stats()
   local frame = state.frame()
   text.draw(3, 3, ("openworld  %d tris  frame %d"):format(st.tris or 0, frame))
+  -- the exchange line, typing out (centered on the FULL line so the text
+  -- doesn't slide while it reveals)
+  local line, nch = npc.dialog()
+  if line then
+    text.draw((W - text.measure(line)) // 2, H - 26, line:sub(1, nch),
+              { r = 1, g = 0.95, b = 0.72, a = 0.95 })
+  end
   if state.doc.demo ~= 0 then
     local msg = "AUTOPLAY * press any key"
     text.draw((W - text.measure(msg)) // 2, 14, msg,

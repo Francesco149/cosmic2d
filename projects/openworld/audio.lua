@@ -16,6 +16,8 @@ local SFX = {
   { "splash", "sfx-splash", 84 }, -- fixed-clock noise ops: the hiss (12k)
   -- + plosh (2.8k) don't track the note (a note-clocked LFSR at a low
   -- note is a buzz — the human's "low pitch laser"); vel still scales
+  { "greet", "sfx-greet", 76 }, -- the NPC's hello: bounce's fm-bell ding
+  -- at its fanfare note (a human-heard preset, not a new synth draft)
 }
 local by_name = {}
 
