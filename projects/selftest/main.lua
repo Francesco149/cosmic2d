@@ -9762,6 +9762,176 @@ local function t_project_blobs()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_standalone_clip()
+  -- A7 §14: the standalone .ctrace clip. export_clip packs an inclusive A..B
+  -- range as a SELF-CONTAINED replay — exact state through B plus the complete
+  -- project tree at A (MFST + one BLOB per referenced file version) — and
+  -- materialize_clip writes that tree into an isolated ephemeral workspace with
+  -- no dependency on this session's blob store. Legacy/plain exports stay
+  -- byte-identical (goldens hold); the whole surface rides ring.spill.
+  local trace = cm.require("cm.trace")
+  local chunk = cm.require("cm.chunk")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local save_ws = trace._workspace_root
+  local root = tmproot() .. "/cosmic_selftest_clip"
+  local wsroot = tmproot() .. "/cosmic_selftest_clipws"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  local function wipe_ws()
+    local ns = pal.x_list_dir_all and pal.x_list_dir_all(wsroot) or {}
+    for i = #ns, 1, -1 do pal.x_remove(wsroot .. "/" .. ns[i]) end
+    pal.x_remove(wsroot)
+  end
+  wipe_hist(); wipe_ws()
+
+  -- a real project tree; hero.spr gets a second version mid-recording so the
+  -- clip's range spans two manifests (proves it carries every needed version).
+  local main_src, readme = "return {}\n", "read me\n"
+  local hero1, hero2 = ("HERO"):rep(9), ("EDIT"):rep(9)
+  pal.write_file(root .. "/main.lua", main_src)
+  pal.mkdir(root .. "/art")
+  pal.write_file(root .. "/art/hero.spr", hero1)
+  pal.write_file(root .. "/readme.txt", readme)
+  pal.write_file(root .. "/video.dat", "MACHINE") -- excluded from the manifest
+  pal.write_file(root .. "/input.dat", "MACHINE") -- excluded from the manifest
+
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  local b = pal.buf("st.clip", 8)
+  b:i32(0, 0)
+  local irec = ("\0"):rep(10)
+  local function drive(a, z)
+    for i = a, z do
+      b:i32(0, i * 7); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+    end
+  end
+
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  drive(1, 8) -- frames on the baseline (hero v1) manifest
+  local hero1_hash = trace.ring_manifest()["art/hero.spr"]
+  pal.write_file(root .. "/art/hero.spr", hero2) -- an editor save mid-recording
+  trace.note_save("art/hero.spr", #hero2)
+  trace.manifest_pump()
+  drive(9, 16) -- newer segments snapshot the hero v2 manifest
+  local hero2_hash = trace.ring_manifest()["art/hero.spr"]
+  check(hero1_hash ~= hero2_hash, "clip: the save advanced the manifest")
+
+  -- ---- export the inclusive A..B range as a standalone clip ----
+  local A, B = f0 + 2, f0 + 14 -- A in the v1 range, B in the v2 range
+  local clip = root .. "/range.ctrace"
+  local ok = trace.export_clip(A, B, clip)
+  check(ok, "clip: export_clip writes a standalone .ctrace over A..B")
+
+  local mfst_n, loop, fram_n = 0, nil, 0
+  local blob_hashes, dup = {}, false
+  for _, c in ipairs(chunk.read(pal.read_file(clip) or "", "CTRC")) do
+    if c.tag == "MFST" then mfst_n = mfst_n + 1 end
+    if c.tag == "FRAM" then fram_n = fram_n + 1 end
+    if c.tag == "PMAN" then check(false, "clip: standalone clip must not carry PMAN") end
+    if c.tag == "BLOB" then
+      local h = string.unpack("<s4s4", c.payload)
+      if blob_hashes[h] then dup = true end
+      blob_hashes[h] = true
+    end
+    if c.tag == "LOOP" then local a, z = string.unpack("<I4I4", c.payload)
+      loop = { a = a, b = z } end
+  end
+  check(mfst_n == 1 and fram_n > 0,
+        "clip: the clip embeds exactly one project manifest plus its frames")
+  check(loop and loop.a == A and loop.b == B,
+        "clip: LOOP records the exact A/B bounds for reopening")
+
+  -- dedup: one BLOB per DISTINCT content hash across the range's manifests
+  -- (main.lua + readme.txt shared, hero has two versions) = 4.
+  local want = {}
+  for _, mh in ipairs({ trace.manifest_at(A), trace.manifest_at(B) }) do
+    for _, h in pairs(trace.manifest_files(mh)) do want[h] = true end
+  end
+  local nwant, nhave = 0, 0
+  for h in pairs(want) do nwant = nwant + 1; check(blob_hashes[h],
+    "clip: every referenced file version ships as a blob") end
+  for _ in pairs(blob_hashes) do nhave = nhave + 1 end
+  check(not dup and nhave == nwant and nwant == 4,
+        "clip: exactly one content-addressed blob per distinct version (dedup)")
+  check(blob_hashes[hero1_hash] and blob_hashes[hero2_hash],
+        "clip: both hero versions ride the range (A's tree + B's tree)")
+
+  -- ---- materialize the clip's tree into an isolated workspace ----
+  trace._workspace_root = wsroot
+  local ws, mloop = trace.materialize_clip(clip)
+  check(ws and ws:find(wsroot, 1, true) == 1,
+        "clip: materialize_clip writes under the ephemeral workspace root")
+  check(mloop and mloop.a == A and mloop.b == B,
+        "clip: materialize_clip recovers the A/B loop bounds")
+  check(pal.read_file(ws .. "/main.lua") == main_src
+        and pal.read_file(ws .. "/readme.txt") == readme,
+        "clip: the workspace holds the project source byte-for-byte")
+  check(pal.read_file(ws .. "/art/hero.spr") == hero1,
+        "clip: a nested asset materializes at its A-frame version (v1)")
+  check(not pal.mtime(ws .. "/video.dat") and not pal.mtime(ws .. "/input.dat"),
+        "clip: machine files never enter the materialized tree")
+
+  -- a second clip of the same tree reuses/replaces cleanly; the workspace root
+  -- keeps at most one materialized tree (ephemeral).
+  local ws2 = trace.materialize_clip(clip)
+  check(ws2 == ws, "clip: an identical clip maps to the same content-named workspace")
+  local tops = {}
+  for _, n in ipairs(pal.list_dir(wsroot) or {}) do
+    tops[(n:match("^[^/]+"))] = true
+  end
+  local ntop = 0; for _ in pairs(tops) do ntop = ntop + 1 end
+  check(ntop == 1, "clip: the workspace root retains a single ephemeral tree")
+
+  -- ---- a plain export carries no standalone chunks (goldens hold) ----
+  local plain = root .. "/plain.ctrace"
+  trace.ring_export(plain)
+  local std = false
+  for _, c in ipairs(chunk.read(pal.read_file(plain) or "", "CTRC")) do
+    if c.tag == "MFST" or c.tag == "BLOB" or c.tag == "LOOP" then std = true end
+  end
+  check(not std, "clip: a plain ring_export embeds no MFST/BLOB/LOOP")
+
+  -- ---- honest refusals (name the missing capability, never crash) ----
+  -- adopted cross-session range: its opening segment carries no code bundle.
+  drive(17, 24); trace.history_drain()
+  trace.ring_start({ project = root }) -- reboot: the retained chain adopts
+  local alo = trace.ring_range()
+  local ok_ad, why_ad = trace.export_clip(alo, alo + 1, root .. "/x.ctrace")
+  check(not ok_ad and why_ad and why_ad:find("adopted"),
+        "clip: export of an adopted range names the missing bundle, not a crash")
+
+  -- spill-off (legacy / headless) history has no project manifest.
+  trace.ring.spill = false
+  sim:i64(0, f0); trace.ring_start({ project = root })
+  for i = 1, 8 do b:i32(0, i); sim:i64(0, f0 + i); trace.record_frame(irec, nil) end
+  local lo2, hi2 = trace.ring_range()
+  local ok_lg, why_lg = trace.export_clip(lo2, hi2, root .. "/y.ctrace")
+  check(not ok_lg and why_lg and why_lg:find("manifest"),
+        "clip: export of manifest-less history names the legacy limit")
+
+  -- leave a clean tree + ring behind
+  wipe_hist(); wipe_ws()
+  for _, n in ipairs({ "main.lua", "art/hero.spr", "art", "readme.txt",
+      "video.dat", "input.dat", "range.ctrace", "plain.ctrace" }) do
+    pal.x_remove(root .. "/" .. n)
+  end
+  trace._workspace_root = save_ws
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, f0)
+  pal.buf_free("st.clip")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -9897,6 +10067,7 @@ function game.init()
   t_timeline_thumbs()
   t_timeline_retention()
   t_project_blobs()
+  t_standalone_clip()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
