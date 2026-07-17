@@ -572,6 +572,143 @@ local function t_input_pad()
   check(#input.sample() == 10, "pad: reset returns the sampler to bare v1")
 end
 
+-- ---- gamepad discovery (A4/D083): device->slot policy + the SDL path ----
+
+local function t_input_gpad()
+  local input = cm.require("cm.input")
+  input.pad_reset()
+
+  -- first-connected claims the lowest free slot
+  input.feed({ { type = "gpad", id = 101, connected = true },
+               { type = "gpad", id = 102, connected = true } })
+  input.apply(input.sample())
+  check(input.pad_connected(1) and input.pad_connected(2)
+        and not input.pad_connected(3),
+        "gpad: first-connected devices claim slots 1 then 2")
+
+  -- device events route through the id->slot assignment
+  input.feed({ { type = "gpadbtn", id = 102, button = 0, down = true },
+               { type = "gpadaxis", id = 101, axis = 0, value = 32767 } })
+  input.apply(input.sample())
+  check(input.pad_down(2, "south") and not input.pad_down(1, "south"),
+        "gpad: buttons route by device id")
+  check(input.pad_axis(1, "lx") == 127 and input.pad_axis(2, "lx") == 0,
+        "gpad: axes route by device id")
+
+  -- events for a device that never got a slot are dropped
+  input.feed({ { type = "gpadbtn", id = 999, button = 1, down = true } })
+  input.apply(input.sample())
+  check(not input.pad_down(1, "east") and not input.pad_down(2, "east"),
+        "gpad: unassigned device events drop")
+
+  -- disconnect frees the slot; the next device claims the lowest free one
+  input.feed({ { type = "gpad", id = 101, connected = false } })
+  input.apply(input.sample())
+  check(not input.pad_connected(1) and input.pad_connected(2),
+        "gpad: disconnect frees exactly its slot")
+  input.feed({ { type = "gpad", id = 103, connected = true } })
+  input.apply(input.sample())
+  check(input.pad_connected(1),
+        "gpad: a later device claims the lowest free slot")
+
+  -- a fifth device is ignored (all slots taken) and its events leak nowhere
+  input.feed({ { type = "gpad", id = 104, connected = true },
+               { type = "gpad", id = 105, connected = true },
+               { type = "gpad", id = 106, connected = true },
+               { type = "gpadbtn", id = 106, button = 3, down = true } })
+  input.apply(input.sample())
+  check(input.pad_connected(3) and input.pad_connected(4),
+        "gpad: four devices fill the four slots")
+  check(not (input.pad_down(1, "north") or input.pad_down(2, "north")
+             or input.pad_down(3, "north") or input.pad_down(4, "north")),
+        "gpad: a fifth device is ignored while slots are full")
+
+  -- reconnect of a still-registered id resets its slot in place
+  input.feed({ { type = "gpadbtn", id = 103, button = 2, down = true } })
+  input.feed({ { type = "gpad", id = 103, connected = true } })
+  input.apply(input.sample())
+  check(input.pad_connected(1) and not input.pad_down(1, "west"),
+        "gpad: reconnect resets its slot in place")
+
+  -- neutralize (editor focus loss): axes zero, buttons/connectivity stay
+  input.feed({ { type = "gpadaxis", id = 103, axis = 1, value = -32768 },
+               { type = "gpadbtn", id = 103, button = 9, down = true } })
+  input.pad_neutralize()
+  input.apply(input.sample())
+  check(input.pad_axis(1, "ly") == 0 and input.pad_down(1, "lshoulder")
+        and input.pad_connected(1),
+        "gpad: neutralize zeroes axes only")
+
+  -- leave the applied pad state neutral for the rest of the suite (the
+  -- starter templates poll pad 1 now): disconnect everything, roll two
+  -- records through for the release edges, then unlatch
+  input.feed({ { type = "gpad", id = 102, connected = false },
+               { type = "gpad", id = 103, connected = false },
+               { type = "gpad", id = 104, connected = false },
+               { type = "gpad", id = 105, connected = false } })
+  input.apply(input.sample())
+  input.apply(input.sample())
+  input.pad_reset()
+  check(#input.sample() == 10, "gpad: reset unlatches the domain")
+
+  -- ---- the real SDL path: a virtual pad rides the exact pipeline a
+  -- physical controller does (attach -> PAL open -> poll_events -> feed).
+  -- Skipped loudly where the host cannot init the SDL gamepad subsystem.
+  local vid = pal.x_pad_virtual()
+  if not vid then
+    pal.log("[selftest] virtual gamepads unavailable; skipping SDL KATs")
+    return
+  end
+  local function pump_feed()
+    pal.x_events_pump()
+    local evs = pal.poll_events()
+    input.feed(evs)
+    return evs
+  end
+  local saw
+  for _, e in ipairs(pump_feed()) do
+    if e.type == "gpad" and e.id == vid and e.connected then saw = true end
+  end
+  check(saw, "gpad/sdl: attach arrives as a connected gpad event")
+  local listed
+  for _, p in ipairs(pal.pad_list()) do
+    if p.id == vid then listed = type(p.name) == "string" end
+  end
+  check(listed, "gpad/sdl: pad_list names the attached pad")
+  input.apply(input.sample())
+  check(input.pad_connected(1), "gpad/sdl: the attached pad claimed slot 1")
+
+  pal.x_pad_virtual_button(vid, input.pad_btn.south, true)
+  pal.x_pad_virtual_axis(vid, input.pad_ax.rt, 32767)
+  pump_feed()
+  input.apply(input.sample())
+  check(input.pad_pressed(1, "south"),
+        "gpad/sdl: a virtual button press reads back by SDL number")
+  check(input.pad_axis(1, "rt") == 127,
+        "gpad/sdl: a virtual axis reads back quantized")
+
+  pal.x_pad_virtual_button(vid, input.pad_btn.south, false)
+  pump_feed()
+  input.apply(input.sample())
+  check(input.pad_released(1, "south"), "gpad/sdl: the release edge lands")
+
+  -- pad_sync (the project-boot path) adopts what is connected right now
+  input.pad_reset()
+  input.pad_sync()
+  input.apply(input.sample())
+  check(input.pad_connected(1), "gpad/sdl: pad_sync adopts the live pad")
+
+  check(pal.x_pad_virtual_remove(vid) == true, "gpad/sdl: detach accepted")
+  pump_feed()
+  input.apply(input.sample())
+  check(not input.pad_connected(1), "gpad/sdl: detach lands as a disconnect")
+
+  -- back to byte-identical v1 for the rest of the suite
+  input.apply(input.sample())
+  input.pad_reset()
+  check(#input.sample() == 10, "gpad/sdl: the suite leaves the domain unlatched")
+end
+
 -- ---- cm.text: glyph pixels land exactly in their cell ----
 
 local function t_text()
@@ -4625,6 +4762,8 @@ local function t_project_templates()
   end
   state.doc = saved_doc
   input.defs, input.bit_of = saved_defs, saved_bits
+  input.pad_reset() -- the templates poll pad 1 (A4), which latches the
+                    -- live pad domain; later suites expect bare v1
   rm_dir()
 end
 
@@ -7632,6 +7771,7 @@ function game.init()
   t_buf_poke()
   t_input()
   t_input_pad()
+  t_input_gpad()
   t_text()
   t_repl()
   t_ui()
