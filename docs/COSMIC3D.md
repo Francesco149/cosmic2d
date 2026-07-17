@@ -709,12 +709,18 @@ ray must not squat it). Consequences for the 3D fork:
    diverge, so no owned layout — and it can't resize a persistent
    buffer, dodging the D3D-031 trap); all three kernels retrofitted,
    whole-trajectory FRAM byte-identity + pixels + traces un-recut. The
-   **NPC greet slice** (greet radius + hysteresis, facing ease, typed
-   line, hold across openworld/rovale/bigworld) is the remaining half.
+   **NPC greet slice DEFERRED** (D3D-033, human call): audited against
+   all three copies, the exchange grammar is shared but the state
+   encoding, hold policy, movement model and render all diverge, and the
+   greet's heart is entity-list/timer management = upstream cm.actor's
+   territory — so the demo copies stay as merge bait and retrofit onto
+   cm.actor at re-merge, not a fork cm.greet we'd unwind. With cm.kin
+   built and the greet deferred, the slice roadmap is **complete**
+   pending the editor unpark.
 
 Editor windows (terrain paint/bake, figure vertex-pushing, sheet
 preview) stay parked until the human unparks the editor; the modules
-above are their runtime substrate.
+above (cm.rig / spr / walk / atlas / kin) are their runtime substrate.
 
 ### §12a. RO preset presents sharp (human, 2026-07-17)
 

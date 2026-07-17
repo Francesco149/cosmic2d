@@ -40,30 +40,40 @@ divergent paths reproduce exactly (mover carry+mantle+box-top+kill;
 swim+heightfield+dyncol; glider+chunk streams). Net −213 lines across
 the demos. No knob/doc/visual change — no feed captures.
 
+**Greet half — DEFERRED** (human call, same round; D3D-033). Audited
+against all three copies (openworld/rovale/bigworld): they share the
+exchange grammar but diverge in state-encoding, hold policy, movement
+model (incl. bigworld's closed-form circles), and render (figure clips
+vs sprite rows); the only clean-shared code is thin peripheral pure-math
+(facing-ease ×3, wave-clip-blend ×2, dialog typing ×2). The greet's
+heart is entity-list/timer management = upstream **cm.actor**'s
+territory, so per §12 the three demo copies stay as merge bait and
+retrofit onto cm.actor at re-merge, rather than a fork cm.greet we'd
+unwind. **With cm.kin built and the greet deferred, the §12 distillation
+slice roadmap is complete** (cm.rig / spr / walk / atlas / kin all
+stand) pending the human's editor unpark.
+
 ## Exact next step
 
-1. **§12 slice 5's other half: the NPC greet slice.** greet radius +
-   hysteresis, facing ease, typed line, hold — extracted from the 2–3
-   copies: **openworld/npc.lua** (the pond watcher + meadow wanderer),
-   **rovale/npc.lua** (the three ambling greeters), **bigworld/ents.lua**
-   (the near-entity greet kernel). Design against all three; it may
-   shrink further at re-merge when upstream **cm.actor** lands (stable
-   ids/tags/timers), so keep the dimension-agnostic parts demo-side as
-   merge bait (§12) and extract only the 3D-shaped greet geometry
-   (radius/facing/hold as pure functions of a caller buffer + frame).
-   Same discipline as cm.kin: touch no persistent-buffer SIZE in an
-   un-recut retrofit (D3D-031), prove with pixels-on-current-sources +
-   traces un-recut (+ the FRAM-chunk whole-trajectory diff if in doubt).
-   After it, `audio.lua`'s 4 sfx copies stay deferred (thin, §12) and
-   the distillation phase is complete pending the editor unpark.
+1. **The distillation phase is complete pending the editor unpark**
+   (human-gated). When unparked, the parked editor windows — terrain
+   paint + a cm.atlas bake button, figure vertex-push, sheet preview —
+   build on the shipped runtime substrate (cm.rig/spr/walk/atlas/kin).
+   Until then, ungated autonomous work: **rovale growth stays
+   verdict-gated** (cliffs — the GND sharp-edge model, the sprite-
+   depth-pull question; water texture cycle + vertex wave; a hopping
+   poring; paper-doll hat/held-item layers; 8-frame walks), and the
+   thin singles stay deferred (audio.lua's 4 sfx copies; a facing-ease
+   helper if a 4th user appears — §12/D3D-033).
 2. Feed: the sharp-vs-soft pair (round 19) still awaits a look; R18/17-
    and-earlier questions open (non-blocking).
-3. rovale growth stays verdict-gated (cliffs, water cycle, a poring,
-   paper-doll, 8-frame walks); proto3d look knobs unchanged.
+3. proto3d look knobs unchanged.
 
 Post-upstream-merge queue unchanged: PAL relative-mouse API + record v2
-(prerequisite SHIPPED upstream, D082). Parked: PS1-preset extras;
-figure EDITOR until the human unparks.
+(prerequisite SHIPPED upstream, D082); at re-merge, retrofit the NPC
+greet copies onto upstream cm.actor (D3D-033) and the 3D demos onto
+cm.tween/hud/move. Parked: PS1-preset extras; figure EDITOR until the
+human unparks.
 
 ## 2026-07-17 (round 20) — the distillation continues: cm.atlas (the terrain bake)
 

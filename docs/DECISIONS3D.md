@@ -1103,6 +1103,66 @@ upgraded to whole-trajectory frame identity.**
   the SNAP bundle — compare FRAM chunks, or use `--verify` / pixels.)
 
 Net −213 lines across the three demos; the triplicated core is one
-source of truth now. The **NPC greet slice** (§12's other half —
-greet radius + hysteresis, facing ease, typed line, hold across
-openworld/rovale/bigworld) is the next packet.
+source of truth now.
+
+## D3D-033 — the NPC greet slice DEFERS to the re-merge (2026-07-17)
+
+§12 slice 5's other half, designed against all three copies (openworld
+`npc.lua` — the pond watcher + meadow wanderer; rovale `npc.lua` — the
+three ambling greeters; bigworld `ents.lua` — the near-entity kernel of
+a ~4000-strong closed-form population) and then **deferred** (human
+call, 2026-07-17). This is a legitimate §12 outcome — the worked
+precedent is upstream's D096 transition slice: a candidate that, on
+audit, finds no *agreed* form to absorb defers rather than inventing one
+the re-merge would unwind.
+
+**The audit.** All three share the exchange GRAMMAR — a proximity greet
+with `greet_r`/`exit_r` hysteresis, a facing ease, a typed line, a hold
+— but diverge in every concrete axis:
+
+| axis | openworld/npc | rovale/npc | bigworld/ents |
+|---|---|---|---|
+| "greeting" encoded as | `gstart > gend` (two frame+1 edges) | a `u32` greet-start flag ≠ 0 | a `mode` enum (0 far/1 armed/2 greeted) + `since < hold` |
+| hold policy | watcher holds till exit; wanderer holds `k.hold` then walks on | holds till exit (no timeout) | holds `k.hold` then resumes, re-arms past `exit_r` |
+| movement | explicit waypoint route + the D3D-024 stop_r wait | explicit waypoint route | CLOSED-FORM circular route, `phase_off` absorbs the pause |
+| render | figure clip-blend (walk↔wave off the greet edges) | SPRITE-SHEET rows (baked wave frames) | figure clip-blend |
+| dialog | typed HUD line | typed HUD line | none (mass entities don't speak) |
+
+The hysteresis state machine — the part that *feels* most duplicated —
+has three genuinely incompatible encodings tied to three different
+persistent buffer layouts (`ow.npc` 36B, `ro.npc<i>` 32B, `bw.ents`
+48B/slot + `bw.near`); there is no common pure form to lift without
+forcing an encoding on all three. What IS mechanically identical is thin
+peripheral pure-math: the facing ease `fmod(yaw + shortarc·turn, tau)`
+(3 copies), the wave-clip-blend edge weights `wb/vb/wavephase` off
+`blend_f`/`wave_f` (2 copies — openworld+bigworld; rovale picks sprite
+rows instead), and the dialog typing `min(#line, since // type_f)` (2
+copies). A `cm.greet` of only those primitives would NOT contain the
+greet's actual logic — a weak slice.
+
+**Why defer, not build.** The greet's heart is entity-list management —
+stable ids, per-actor timers, the promote/demote lifecycle — which is
+exactly what upstream **cm.actor** (A5: "stable ids/tags/timers — our
+NPC lists") is positioned to host. §12's standing rule: *don't build 3D
+twins of dimension-agnostic slices; keep the demo copies as merge bait
+and retrofit onto the upstream module at re-merge, rather than onto a
+fork invention we would then unwind.* The greet exchange is
+dimension-agnostic (proximity, hysteresis, typed line, facing ease all
+read identically in 2D), so the three copies stay as-is until cm.actor
+lands, then retrofit onto it. (Contrast cm.kin, D3D-032: the player
+collide+jump core has NO upstream twin in the A5 list, so building it
+was safe — the precise distinction §12 draws.)
+
+**Deliberately NOT extracted now** (revisit at re-merge): the greet
+hysteresis/timer state machine, the hold policies, the three movement
+models, the wave render (figure clip-blend vs sprite rows), the typed
+dialog, the D3D-024 solidity boxes. If any of the thin pure-math
+primitives (facing ease especially, used 3×+) later hurts a *fourth*
+user, it earns a home then — likely a `cm.math`/`cm.fig` helper rather
+than a `cm.greet` module.
+
+No code changed this packet — an audit + a logged decision. With cm.kin
+built and the greet deferred, the §12 distillation slice roadmap is
+complete pending the human's editor unpark (the parked terrain-paint /
+figure-vertex / sheet-preview windows, whose runtime substrate — cm.rig
+/ spr / walk / atlas / kin — now all stands).
