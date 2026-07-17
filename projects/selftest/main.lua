@@ -9287,6 +9287,99 @@ local function t_ed_park()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_timeline_summary()
+  -- A7 §12: the persisted per-segment activity/event digest lets the tray draw
+  -- demoted, spilled, and adopted cross-session history without decoding a
+  -- single frame of state. It is observer-only — no golden or committed trace
+  -- byte moves (proven by the suite staying green) — so this just pins the
+  -- summary round-trip and the four lanes.
+  local trace = cm.require("cm.trace")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local root = tmproot() .. "/cosmic_selftest_tlsum"
+  pal.mkdir(root)
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  trace.ring.kf = 4
+  trace.ring.seconds = 8 / 60 -- RAM window = 2 segments; older ones demote
+  trace.ring.spill = true
+  trace.ring.budget_mb = 64
+  local E = trace.timeline_event
+  local b = pal.buf("st.tlsum", 8)
+  b:i32(0, 0)
+  trace.ring_start({ project = root })
+  local irec = ("\0"):rep(10)
+  -- 20 frames = segments 1..5 closed+spilled, 6 open empty. Segment 1 carries a
+  -- save; segment 2 an error; a late frame in the resident tail carries both a
+  -- save (the exact-path files lane) and a restart.
+  for i = 1, 20 do
+    b:i32(0, i * 7)          -- sim state moves every frame
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+    if i == 3 then trace.note_save("art/hero.spr", 100) end
+    if i == 6 then trace.note_event(E.ERROR) end
+    if i == 18 then
+      trace.note_save("maps/room.map", 250)
+      trace.note_event(E.RESTART)
+    end
+  end
+  check(trace.history_drain(), "timeline summary: spill drains")
+
+  -- The resident tail still renders exactly, including the late save/restart.
+  local tail = trace.ring_timeline(f0 + 17, f0 + 20, 4)
+  local tail_files, tail_restart = false, false
+  for _, d in ipairs(tail.data) do
+    tail_files = tail_files or d.files > 0
+    tail_restart = tail_restart or (d.events & E.RESTART) ~= 0
+  end
+  check(not tail.missing and tail_files and tail_restart,
+        "timeline summary: resident tail draws files + restart from chunks")
+
+  -- Reboot at the same counter: the chain adopts as skeletons with NO chunks,
+  -- so every lane below comes from the persisted manifest digest alone.
+  trace.ring_start({ project = root })
+  local alo, ahi = trace.ring_range()
+  check(ahi == f0 + 20, "timeline summary: adopted the spilled tail")
+  local tl = trace.ring_timeline(alo, ahi, 20)
+  local sim_hit, files_hit, save_hit, err_hit = false, false, false, false
+  for _, d in ipairs(tl.data) do
+    sim_hit = sim_hit or d.sim > 0
+    files_hit = files_hit or d.files > 0
+    save_hit = save_hit or (d.events & E.SAVE) ~= 0
+    err_hit = err_hit or (d.events & E.ERROR) ~= 0
+  end
+  check(not tl.missing, "timeline summary: adopted history has no missing gap")
+  check(sim_hit and files_hit and save_hit and err_hit,
+        "timeline summary: adopted digest carries sim/files/save/error")
+
+  -- Legacy (pre-A7) manifest lines carry only the first four fields; those
+  -- segments adopt with no digest and honestly read back as a missing gap.
+  local ipath = root .. "/.ed/history/index"
+  local raw = pal.read_file(ipath) or ""
+  local legacy = {}
+  for line in raw:gmatch("[^\n]+") do
+    legacy[#legacy + 1] = line:match("^(%d+ %d+ %d+ %d+)") or line
+  end
+  pal.write_file(ipath, table.concat(legacy, "\n") .. "\n")
+  trace.ring_start({ project = root })
+  local llo, lhi = trace.ring_range()
+  local ltl = trace.ring_timeline(llo, lhi, 20)
+  check(ltl.missing, "timeline summary: legacy 4-field lines report the gap")
+
+  -- leave a clean ring behind
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, f0)
+  pal.buf_free("st.tlsum")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -9418,6 +9511,7 @@ function game.init()
   t_ed_pick()
   t_ed_winview()
   t_ed_park()
+  t_timeline_summary()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
