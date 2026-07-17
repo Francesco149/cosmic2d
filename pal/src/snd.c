@@ -157,6 +157,15 @@ static struct {
    * bank + the PCM hash (goldens) are never touched — the full mix is still
    * what gets hashed, only the device push is filtered. */
   bool mute_music, mute_sfx;
+  /* device-output volume gains (A4/D085): 0..128, 128 = unity. Exactly the
+   * mute's contract generalized — pure live policy on the device copy, never
+   * the hashed mix. music/sfx gain the sim bank by the same slot categories
+   * (uncategorized slots 48..63 ride master only); master scales the whole
+   * device output in the callback, the editor bank included. Atomics: master
+   * is read on the audio thread. */
+  SDL_AtomicInt gain_master, gain_music, gain_sfx;
+  int16_t devtap[SND_FRAME * 2]; /* the last device-pushed frame (x_snd_dev_tap
+                                    — the headless KAT seam for the gain math) */
 
   /* pcm-hash accumulator (test harness, not state) */
   uint64_t hash;
@@ -446,22 +455,23 @@ static void bank_render(SndBank *b, int32_t *acc, int n) {
 }
 
 /* like bank_render, but renders each voice ONCE (voice state advances once)
- * into `full` (always — this is what gets hashed) and into `dev` (only when
- * that voice's slot category isn't muted). Used for the live device push when
- * a mute is on; `full` stays the true mix so the PCM golden is unchanged. */
+ * into `full` (always — this is what gets hashed) and into `dev` gained by
+ * its slot category (0 = the mute, 128 = unity; uncategorized slots 48..63
+ * stay at unity — master-only). Used for the live device push whenever the
+ * output policy is non-neutral; `full` stays the true mix so the PCM golden
+ * is unchanged. */
 static void bank_render_dev(SndBank *b, int32_t *full, int32_t *dev, int n,
-                            bool mute_music, bool mute_sfx) {
+                            int gmusic, int gsfx) {
   static int32_t scr[SND_FRAME * 2];
   for (int i = 0; i < SND_VOICES; i++) {
     if (!b->voice[i].active) continue;
     int slot = b->voice[i].slot & 63;
     memset(scr, 0, sizeof(int32_t) * (size_t)n * 2);
     voice_render(&b->patch[slot], &b->voice[i], scr, n);
-    bool muted = (slot >= 32 && slot <= 47) ? mute_music
-                 : (slot < 32 ? mute_sfx : false);
+    int g = (slot >= 32 && slot <= 47) ? gmusic : (slot < 32 ? gsfx : 128);
     for (int j = 0; j < n * 2; j++) {
       full[j] += scr[j];
-      if (!muted) dev[j] += scr[j];
+      dev[j] += (int32_t)((int64_t)scr[j] * g >> 7);
     }
   }
   b->hdr->frame++;
@@ -618,8 +628,11 @@ static void SDLCALL audio_cb(void *ud, SDL_AudioStream *stream,
         voice_render(&S.ed_patch[S.ed_voice[i].slot & 63], &S.ed_voice[i],
                      acc, n);
 
+    /* master volume (A4/D085): the last stage before the device — covers
+     * the sim fifo AND the editor audition bank ("how loud is the app") */
+    int gm = SDL_GetAtomicInt(&S.gain_master);
     for (int i = 0; i < n * 2; i++) {
-      int32_t v = acc[i] >> SND_MIX_SHIFT;
+      int32_t v = (int32_t)((int64_t)acc[i] * gm >> 7) >> SND_MIX_SHIFT;
       out[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
     }
     SDL_PutAudioStreamData(stream, out, n * 4);
@@ -668,13 +681,17 @@ static int l_snd_render(lua_State *L) {
   if (!sim_bank(&b, false)) return 0;
   static int32_t acc[SND_FRAME * 2];
   memset(acc, 0, sizeof acc);
-  /* a live device mute renders a category-filtered copy for the device only;
-   * `acc` (hashed below) stays the full mix, so goldens are byte-identical. */
-  bool split = S.dev_up && (S.mute_music || S.mute_sfx);
+  /* a non-neutral output policy (mute or category gain) renders a filtered
+   * copy for the device only; `acc` (hashed below) stays the full mix, so
+   * goldens are byte-identical. The split runs headless too — x_snd_dev_tap
+   * is the KAT seam — only the fifo push needs the device. */
+  int gmusic = S.mute_music ? 0 : SDL_GetAtomicInt(&S.gain_music);
+  int gsfx = S.mute_sfx ? 0 : SDL_GetAtomicInt(&S.gain_sfx);
+  bool split = gmusic != 128 || gsfx != 128;
   static int32_t devacc[SND_FRAME * 2];
   if (split) {
     memset(devacc, 0, sizeof devacc);
-    bank_render_dev(&b, acc, devacc, SND_FRAME, S.mute_music, S.mute_sfx);
+    bank_render_dev(&b, acc, devacc, SND_FRAME, gmusic, gsfx);
   } else {
     bank_render(&b, acc, SND_FRAME);
   }
@@ -691,18 +708,15 @@ static int l_snd_render(lua_State *L) {
   }
   S.hash = h;
   S.hashed_frames++;
-  if (S.dev_up) {
-    if (split) {
-      static int16_t dtap[SND_FRAME * 2];
-      for (int i = 0; i < SND_FRAME * 2; i++) {
-        int32_t v = devacc[i] >> SND_MIX_SHIFT;
-        dtap[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
-      }
-      fifo_push(dtap);
-    } else {
-      fifo_push(S.tap);
+  if (split) {
+    for (int i = 0; i < SND_FRAME * 2; i++) {
+      int32_t v = devacc[i] >> SND_MIX_SHIFT;
+      S.devtap[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
     }
+  } else {
+    memcpy(S.devtap, S.tap, sizeof S.devtap);
   }
+  if (S.dev_up) fifo_push(S.devtap);
   return 0;
 }
 
@@ -713,6 +727,33 @@ static int l_x_snd_mute(lua_State *L) {
   S.mute_music = lua_toboolean(L, 1);
   S.mute_sfx = lua_toboolean(L, 2);
   return 0;
+}
+
+/* pal.x_snd_gain(master, music, sfx): device-output volume, 0..128 each
+ * (128 = unity), clamped. The options-menu knobs (A4/D085). music/sfx scale
+ * the sim bank's voice categories on the device copy (composing with the
+ * editor's monitor mutes; slots 48..63 ride master only); master scales the
+ * whole device output in the callback, editor bank included. Never touches
+ * the sim bank, the full mix, or the PCM hash — render/dev, never sim. */
+static int l_x_snd_gain(lua_State *L) {
+  lua_Integer g[3];
+  for (int i = 0; i < 3; i++) {
+    g[i] = luaL_checkinteger(L, i + 1);
+    if (g[i] < 0) g[i] = 0;
+    if (g[i] > 128) g[i] = 128;
+  }
+  SDL_SetAtomicInt(&S.gain_master, (int)g[0]);
+  SDL_SetAtomicInt(&S.gain_music, (int)g[1]);
+  SDL_SetAtomicInt(&S.gain_sfx, (int)g[2]);
+  return 0;
+}
+
+/* pal.x_snd_dev_tap() -> the last DEVICE-pushed sim frame's PCM: the full
+ * mix through the live output policy (mutes + music/sfx gains, pre-master).
+ * Equals x_snd_tap when the policy is neutral. The headless KAT seam. */
+static int l_x_snd_dev_tap(lua_State *L) {
+  lua_pushlstring(L, (const char *)S.devtap, sizeof S.devtap);
+  return 1;
 }
 
 /* pal.snd_hash() -> hash (i64), frames — the PCM golden accumulator */
@@ -844,7 +885,9 @@ static const luaL_Reg snd_funcs[] = {
     {"snd_render", l_snd_render},
     {"snd_hash", l_snd_hash},
     {"x_snd_mute", l_x_snd_mute},
+    {"x_snd_gain", l_x_snd_gain},
     {"x_snd_tap", l_x_snd_tap},
+    {"x_snd_dev_tap", l_x_snd_dev_tap},
     {"x_snd_start", l_x_snd_start},
     {"x_snd_ed_patch", l_x_snd_ed_patch},
     {"x_snd_ed_on", l_x_snd_ed_on},
@@ -853,5 +896,11 @@ static const luaL_Reg snd_funcs[] = {
     {NULL, NULL}};
 
 void pal_snd_lua_register(lua_State *L) {
+  /* gains reset to unity per VM, like the boot-time mute clear: device state
+   * outlives the VM, but a fresh project must start audible; the per-project
+   * store re-applies the player's volumes right after (cm.view.load_video) */
+  SDL_SetAtomicInt(&S.gain_master, 128);
+  SDL_SetAtomicInt(&S.gain_music, 128);
+  SDL_SetAtomicInt(&S.gain_sfx, 128);
   luaL_setfuncs(L, snd_funcs, 0); /* into the pal table at the stack top */
 }

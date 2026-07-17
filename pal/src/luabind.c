@@ -479,6 +479,25 @@ static int l_x_window_size(lua_State *L) {
   return 2;
 }
 
+/* pal.x_display_size() -> dw, dh | nil : desktop size of the display the
+ * window currently occupies (the options menu derives window-size candidates
+ * that actually FIT the screen, A4/D085). nil when SDL has no display —
+ * callers must keep a static fallback. Headless offscreen video may report a
+ * virtual display; harmless, since only the live options menu consumes this.
+ * Render/dev only, never sim. */
+static int l_x_display_size(lua_State *L) {
+  SDL_DisplayID d =
+      G.win ? SDL_GetDisplayForWindow(G.win) : SDL_GetPrimaryDisplay();
+  const SDL_DisplayMode *m = d ? SDL_GetDesktopDisplayMode(d) : NULL;
+  if (!m || m->w < 1 || m->h < 1) {
+    lua_pushnil(L);
+    return 1;
+  }
+  lua_pushinteger(L, m->w);
+  lua_pushinteger(L, m->h);
+  return 2;
+}
+
 /* pal.x_window_icon(png) -> true | nil,error : decode a project-owned PNG and
  * apply it to the live OS window. Decode even in headless mode so release and
  * selftest validation see the same bytes; only the final SDL call is skipped.
@@ -2273,6 +2292,7 @@ static const luaL_Reg pal_funcs[] = {
     {"gfx_init", l_gfx_init},
     {"gfx_size", l_gfx_size},
     {"x_window_size", l_x_window_size},
+    {"x_display_size", l_x_display_size},
     {"x_window_icon", l_x_window_icon},
     {"x_fov", l_x_fov},
     {"x_set_window_size", l_x_set_window_size},

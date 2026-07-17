@@ -657,6 +657,9 @@ binary incompatible, in either direction (D015).
 | `pal.pad_list()` | input | API v18: currently connected gamepads `{id=,name=}` (SDL instance ids, ascending = connect order); the project-boot reseed source since SDL only announces hot-plug as events |
 | `pal.x_pad_virtual()` / `x_pad_virtual_remove(id)` / `x_pad_virtual_button(id,btn,down)` / `x_pad_virtual_axis(id,axis,v)` / `x_events_pump()` | dev | API v18: attach/poke/detach a virtual standard-layout SDL gamepad and drain SDL synchronously — the headless test vehicle; virtual pads ride the exact event path physical controllers do |
 | events `{type="gpad", id, connected}` / `{type="gpadbtn", id, button, down}` / `{type="gpadaxis", id, axis, value}` | input | API v18: device-level gamepad events (SDL standard numbering, raw i16 axes); the PAL opens/closes devices on hot-plug, `cm.input.feed` owns id→slot policy |
+| `pal.x_snd_gain(master,music,sfx)` | render/dev | API v19: device-output volume, 0..128 each (128 unity), clamped. music/sfx gain the sim bank's voice categories (music 32..47, sfx 0..31; 48..63 master-only) on the **device copy** only, composing with the editor's monitor mutes; master scales the whole callback output, editor bank included. The full mix / PCM hash / goldens never hear any of it |
+| `pal.x_snd_dev_tap()` | dev/test | API v19: the last device-pushed sim frame's PCM (the full mix through mutes + category gains, pre-master) — equals `x_snd_tap` under a neutral policy; the headless KAT seam for the gain math |
+| `pal.x_display_size()` → `dw,dh` or `nil` | render/dev | API v19: desktop size of the display the window occupies — the options menu derives window-size candidates that fit the screen; nil when SDL has no display (callers keep a static fallback) |
 | `pal.watch_add(path)` | dev | crash-parachute reload list |
 
 ### PAL API v2 additions (M1)
