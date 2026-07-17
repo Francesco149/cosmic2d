@@ -345,6 +345,16 @@ vs the tile scene and what closed it (`proto/out/ro2.png`, scene `ro2`):
   architecture is geometry with hard edges. Human verdict: the three demo
   looks (graybox platformer, openworld, RO) are visually sufficient.
 
+## 8d. Mascot lock-in (2026-07-17)
+
+Human verdict on the round-9 figure showcase (`projects/figure`, cm.fig
+runtime): **"it looks good. the stylized design helps the bounce and
+animations feel more natural"** — the stylized design (lathe teardrop body,
+Rayman floating mitts/boots, antenna star, style-B eyes) is **locked in as
+the engine mascot**. The figure runtime's animation read is approved with
+it. Remaining round-9 feed questions (eye size at 320×240, keep the box guy
+in the showcase) stay open, non-blocking.
+
 ## 9. Body Harvest techniques (from ../body-harvest decomp, see notes there)
 
 An N64 open-world game whose whole huge terrain fits 4MB — directly relevant

@@ -25,17 +25,22 @@ anywhere. Goldens: figure_show.ctrace (300f, verify PASS) +
 figure_show.png (f430). Full suite ALL GREEN from the committed tree;
 3 shots on llm-feed (mascot close-up, the ring golden, guy mid-stride).
 
+## Verdict landed (2026-07-17, human): the mascot is locked in
+
+**"it looks good. the stylized design helps the bounce and animations
+feel more natural"** — the stylized mascot design is the ENGINE MASCOT
+now (recorded in COSMIC3D.md §8d). Animation read approved. Still open,
+non-blocking: eye size at 320x240, keep the box guy in the showcase.
+
 ## Exact next step
 
-1. Feed questions open (non-blocking): eye size at 320x240, mascot
-   walk read (waddle intended), keep the guy in the showcase?
-2. **Demo 2 continues** (human direction 2026-07-17): grow the figure
+1. **Demo 2 continues** (human direction 2026-07-17): grow the figure
    vocabulary toward the Zelda-ish open world — more mascot clips
    (turn, hop, wave), a first NPC exchange, or Body-Harvest-style
    vertex-color terrain (D3D-004) as the openworld ground. Figure
    EDITOR (vertex pushing) stays parked with the rest of editor
    distillation until the human unparks it.
-3. proto3d can adopt the look knobs on its next touch.
+2. proto3d can adopt the look knobs on its next touch.
 
 Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
 record v2. Parked (unchanged): PS1-preset extras.
