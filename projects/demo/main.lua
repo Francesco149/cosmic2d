@@ -16,6 +16,7 @@ local state = cm.require("cm.state")
 local input = cm.require("cm.input")
 local text = cm.require("cm.text")
 local gfx = cm.require("cm.gfx")
+local camera = cm.require("cm.camera")
 local level = cm.require("level")
 local player = cm.require("player")
 local fx = cm.require("fx")
@@ -49,8 +50,6 @@ local KNOBS = {
   feel = { squash = 0.55, squash_t = 0.16, stretch = 0.4, stretch_t = 0.12 },
 }
 
-local cam
-
 function game.init()
   local d = state.doc
   d.knobs = d.knobs or {}
@@ -69,12 +68,11 @@ function game.init()
   audio.init()
   audio.bgm(level.current)
 
-  cam = pal.buf("demo.cam", 32)
-  if cam:f32(0) == 0 and cam:f32(4) == 0 then
-    local px, py = player.center()
-    cam:f32(0, m.clamp(px - W / 2, 0, level.pw - W))
-    cam:f32(4, m.clamp(py - H / 2, 0, level.ph - H))
-  end
+  -- the camera lives in doc (cm.camera): rewind/traces carry it for free
+  local fresh = d.cam == nil
+  d.cam = d.cam or camera.new()
+  camera.bounds(d.cam, 0, 0, level.pw, level.ph)
+  if fresh then camera.center(d.cam, player.center()) end
 
   input.map({
     { "left", input.key.left, "pad:dpleft", "pad:lx-" },
@@ -110,10 +108,9 @@ local function enter_room(room)
   level.reset(room)
   player.warp(level.spawn.x, level.spawn.y)
   audio.bgm(room)
-  -- snap the camera to the arrival so the swap doesn't whip-pan
-  local px, py = player.center()
-  cam:f32(0, m.clamp(px - W / 2, 0, level.pw - W))
-  cam:f32(4, m.clamp(py - H / 2, 0, level.ph - H))
+  -- cut the camera to the arrival so the swap doesn't whip-pan
+  camera.bounds(state.doc.cam, 0, 0, level.pw, level.ph)
+  camera.center(state.doc.cam, player.center())
 end
 
 local function room_logic()
@@ -135,6 +132,7 @@ local function room_logic()
   for _, h in ipairs(level.hazards) do
     if overlap(px, py, pw, ph, h.x, h.y, h.w, h.h) then
       audio.sfx("hit")
+      camera.shake(state.doc.cam, 3, 18)
       player.warp(level.spawn.x, level.spawn.y)
       return
     end
@@ -143,17 +141,13 @@ end
 
 local function cam_step()
   local kc = state.doc.knobs.cam
+  local c = state.doc.cam
+  camera.tick(c)
+  -- smoothed facing lookahead: our field on the cam table (passes through)
+  c.look = m.lerp(c.look or 0, player.facing() * kc.look, kc.look_lerp)
   local px, py = player.center()
-  local look = cam:f32(8)
-  look = look + (player.facing() * kc.look - look) * kc.look_lerp
-  local cx, cy = cam:f32(0), cam:f32(4)
-  cx = cx + (px + look - W / 2 - cx) * kc.lerp
-  local err = py - (cy + H / 2)
-  if err > kc.dead then cy = cy + (err - kc.dead) * kc.lerp_y
-  elseif err < -kc.dead then cy = cy + (err + kc.dead) * kc.lerp_y end
-  cam:f32(0, m.clamp(cx, 0, level.pw - W))
-  cam:f32(4, m.clamp(cy, 0, level.ph - H))
-  cam:f32(8, look)
+  camera.follow(c, px, py, { lerp = kc.lerp, lerp_y = kc.lerp_y,
+                             dead_y = kc.dead, ox = c.look })
 end
 
 function game.step()
@@ -175,8 +169,8 @@ function game.draw()
   level.sync() -- rebuild all room-derived caches after a parked-state restore
   pal.begin_frame(0.07, 0.08, 0.12, 1)
   level.grade() -- per-room mood grade over the whole composite (render-only)
-  local camx, camy = cam:f32(0), cam:f32(4)
-  gfx.camera(camx, camy)          -- set the camera before the parallax bg
+  -- set the camera (shake included) before the parallax bg
+  local camx, camy = camera.apply(state.doc.cam)
   level.draw_bg(camx, camy)
 
   gfx.layer(1)
