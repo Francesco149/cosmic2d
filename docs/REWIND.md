@@ -401,6 +401,15 @@ frames through inclusive B, and records the intended loop bounds as metadata.
 Loading that artifact therefore opens on the same range and starts the same
 loop without changing its contents.
 
+**Built (D104), live ranges.** `write_trace`'s standalone mode emits `MFST`
+(the manifest at A), one `BLOB` per file version any in-range segment references
+(deduped by content hash), and `LOOP` (A/B) — additive under the CTRC container,
+so plain exports and legacy goldens are byte-identical. `M.export_clip(a,b,path)`
+is the door; `ring_load` reads those chunks and materializes the tree into an
+isolated ephemeral workspace (`M.replay_workspace`), `M.materialize_clip` the
+non-destructive preview. Adopted-range export (its SNAP needs a reconstructed
+code bundle) and captured-audio embedding are the remaining §14 work.
+
 ## 15. Export UX
 
 The **Export replay** button exists when A/B is selected. Its zero-config
@@ -410,6 +419,13 @@ clip duration. Publication is atomic. Only after success does the engine reveal
 and select the file in Explorer/the platform file manager (falling back to
 opening the folder). A read-only engine root produces an actionable choose-a-
 writable-folder path rather than silently writing somewhere surprising.
+
+**Built (D104).** The button runs `export_clip` into `replays/`
+(`<project>-clip-<A>-<B>.ctrace`, free-suffixed, atomic) and reveals the folder;
+a read-only engine root falls back to `<user_path>replays/`, named in the flash.
+`scrub.do_load` reads `trace.replay_loop()` and opens the replay on that range
+with the loop armed. A wall-clock name (needs a PAL date door) and
+select-the-exact-file reveal are the remaining refinements.
 
 The trace artifact is the recording/showcase master. Direct image sequence,
 video, or separate audio exports come only after this artifact is stable; they

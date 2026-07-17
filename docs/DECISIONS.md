@@ -4805,3 +4805,92 @@ windowed `smoke --edit` session created 21 blobs with 9-field index lines all
 sharing one manifest hash (unchanged tree = dedup). Inspected capture on
 llm-feed: the rewind tray head reading `90.2 KB / 1.00 GB · 3 seg · 177.2 KB
 blobs`.
+
+## D104 — the standalone `.ctrace` clip: embed the project tree + materialize (A7 §14/§15, 2026-07-18)
+
+**Context.** D103 built the store + per-segment manifest, so every retained
+range (live or adopted) can name a COMPLETE project tree without copying an
+unchanged file into every segment. This packet spends that: `ALPHA.md` §A7's
+packaging line — "a new clip is standalone … all project source and assets" —
+and `REWIND.md` §14 (self-contained clips) / §15 (export UX). The two mechanisms
+are (a) an export path that embeds the tree in the `.ctrace`, and (b) a load path
+that materializes it into an isolated workspace.
+
+**Decision.**
+- **Format (additive, skip-tolerant).** A standalone clip is a normal CTRC
+  (HEAD/SNAP/KEYF/FRAM/EVAL/EPOC/TAIL — unchanged) plus three chunks: `MFST` (the
+  manifest at A — `{ relpath -> blob }`, decodable without the store), one `BLOB`
+  per referenced file version across the range (`pack("<s4s4", hash, bytes)`;
+  content-addressed so already deduped — the union of every in-range segment's
+  manifest, so a file saved mid-range ships every version needed through B), and
+  `LOOP` (the A/B bounds). Legacy readers skip unknown tags; legacy `.ctrace`
+  goldens simply lack them.
+- **`write_trace` gains a standalone mode.** A new trailing `last_i, standalone`
+  pair; a plain call (`record_stop`, `ring_export`) passes neither, so its bytes
+  are **identical to before** (goldens hold — the format is purely additive under
+  an opt-in flag). `M.export_clip(a, b, path)` is the live-range door: SNAP at
+  A's keyframe, whole segments through B's, the embedded tree, `LOOP=(a,b)`. It
+  is segment-aligned (the clip's frame span ⊇ [A,B]; the loop pins the exact
+  bounds) and **names the missing capability** for an adopted opening segment (no
+  code bundle) or a legacy/spill-off one (no manifest) instead of crashing —
+  §14's compatibility-check discipline.
+- **`ring_load` materializes.** It reads `MFST`/`BLOB`/`LOOP`, writes the tree
+  into an **isolated ephemeral replay workspace** — a fixed per-user root
+  (`<user_path>replay-workspaces/<manifest-hash>/`, well outside any project),
+  named by the manifest's content hash so identical clips share one dir and it
+  sweeps siblings so a session leaves at most one behind. It records
+  `R.workspace`/`R.replay_loop`; the parked write wall (R6c) already keeps any
+  browsing ephemeral. `M.materialize_clip(path)` is the same core exposed as a
+  read-only primitive that materializes WITHOUT touching the live ring/state —
+  the drag-in preview path and what the round-trip KAT exercises.
+- **Export UX (§15).** The rewind tray's "export replay" button (live whenever an
+  A/B clip is selected) runs `export_clip` into `replays/` beside `engine/`
+  (engine-root-relative, created on first use, atomic write), then reveals the
+  folder via `pal.x_path_reveal`. A read-only engine root falls back to
+  `<user_path>replays/` and the flash names where it landed; an adopted/legacy
+  range flashes the reason with no pointless retry. Filenames are
+  `<project>-clip-<A>-<B>.ctrace` with a ` (n)` free-suffix. `scrub.do_load`
+  reads `trace.replay_loop()` and opens the replay on that range with the loop
+  armed (§14: loading reopens on the same range and loop).
+
+**Observer discipline.** Everything rides `M.ring.spill` (the tree only exists
+when history spills) and is opt-in at the write side, so **no sim/doc/recorded
+byte moves**: every historical trace and pixel/audio golden is byte-identical.
+The workspace is dev chrome under `user_path`, never a project or a buffer.
+
+**Reveal reveals a directory, not a file.** `pal.x_path_reveal` shows the
+`replays/` folder — §15's "falling back to opening the folder." Selecting the
+exact file (Windows `explorer /select,`) is a later native refinement, not a
+blocker. Wall-clock filenames (§15 wants export time) wait for a PAL date door;
+the frame-range name is the deterministic identity for now.
+
+**Scope, named honestly.** Live-range standalone export ships (the flagship
+flow: spot it, A/B it, export it). Deferred, logged:
+- **Adopted-range standalone export.** The tree is captured (adopted segments
+  carry `manifest_hash`), but the SNAP needs a code bundle its session never
+  spilled. Reconstructing it (host engine `cm.*` + the manifest's project `.lua`
+  sources) is its own packet; today the button/`export_clip` refuse honestly.
+- **Editor-mount-on-drag-in.** `ring_load` materializes `R.workspace` and
+  `M.materialize_clip` previews it, but pointing the asset browser (`ed.root`) at
+  the workspace and restoring live on dismiss is the immutable-source / drag-in
+  A7 line.
+- **Crash-report drop** (§16) still owns the one-minute pre-roll open.
+
+**Revisit.** Whole-tree BLOB embedding copies every referenced version into the
+clip; a very large-asset project would want a shared sidecar or selective
+inclusion. Mid-range asset *imports* (vs saves) ride the same `manifest_dirty`
+path but are keyframe-granular by §14 design.
+
+**Proof.** Linux selftest **24,069** on PAL API 19 (20 new KATs in
+`t_standalone_clip`: exactly one `MFST` + frames, `LOOP` = exact A/B, one `BLOB`
+per distinct version across two manifests (dedup = 4), both hero versions ride
+the range, `materialize_clip` writing every source/asset at its A-frame version
+into the workspace seam, machine files excluded, an identical clip reusing the
+one content-named workspace, a plain `ring_export` carrying no MFST/BLOB/LOOP,
+and adopted + spill-off ranges refusing with a named reason). `nix run .#test`
+ALL GREEN — every historical trace and pixel/audio golden byte-identical. A
+scripted `ring_load` of a real `export_clip` clip materialized the full tree
+under `user_path` with the A-frame asset version and the exact `LOOP` bounds
+recovered; the engine-root `replays/` write landed. Inspected capture on
+llm-feed: `smoke --edit` parked with an A/B clip and the live "export replay"
+button.

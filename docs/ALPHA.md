@@ -322,12 +322,23 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   (`.ed/history/blobs`) and a per-segment project manifest (the complete tree at
   each keyframe, deduplicated), persisted through spill and recovered on
   adoption — so any retained range, **including an adopted cross-session one, is
-  now materialization-ready**. The `.ctrace` clip that embeds that manifest +
-  blobs, and `ring_load` materializing the tree into a replay workspace, are the
-  next packet.
-- [ ] Export a selected clip atomically to a timestamped file in `replays/`
+  now materialization-ready**. D104 landed the clip: `write_trace`'s standalone
+  mode embeds `MFST` (the tree at A) + one `BLOB` per referenced file version +
+  `LOOP` (the A/B bounds) — additive, so a plain export stays byte-identical;
+  `M.export_clip` is the live-range door; `ring_load` materializes the tree into
+  an isolated ephemeral replay workspace and `M.materialize_clip` previews it
+  without touching the ring. Remaining under this item: **adopted-range**
+  standalone export (tree captured; the SNAP bundle-reconstruction is its own
+  packet — refused honestly today) and captured-audio embedding.
+- [~] Export a selected clip atomically to a timestamped file in `replays/`
   beside `engine/`, then reveal/select it in Explorer/the platform file manager;
   offer an actionable writable-location path when the engine root is read-only.
+  D104: the tray's "export replay" button writes `<project>-clip-<A>-<B>.ctrace`
+  (free-suffixed) atomically to `replays/` beside `engine/` and reveals the
+  folder; a read-only engine root falls back to `<user_path>replays/`, named in
+  the flash. Deferred: a wall-clock name (needs a PAL date door) and
+  select-the-exact-file reveal (needs `explorer /select,` and has no portable
+  Linux twin) — the folder reveal is §15's stated fallback.
 - [ ] Make structured crash reports locate an exact history stream/frame. A
   drop opens and loops up to one minute before the crash, preferring an embedded
   tail and otherwise resolving local retained history; evicted/missing tails

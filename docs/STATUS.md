@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), and the §14 project-blob store foundation (D103) are in (2026-07-17)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), the §14 project-blob store foundation (D103), and the standalone `.ctrace` clip (D104) are in (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -25,7 +25,48 @@ checklist closed the gate (D087). **A5 and A6 are also complete**
 and the three-family demo matrix — demo (side-view), cellar (top-down),
 swarm (arcade) — ships in the public archives with READMEs, thumbnails,
 and export proofs. The complete rewind product UI (A7) and the
-release-candidate pass (A8) are the open alpha gates.
+release-candidate pass (A8) are the open alpha gates. **D104 turns the §14
+foundation into a standalone clip: an exported `.ctrace` now carries its whole
+project tree and materializes on load.**
+
+**D104 turns the §14 foundation into the standalone `.ctrace` clip.** The
+store + manifest made every retained range name a complete project tree;
+this packages that into a self-contained clip and materializes it on load.
+`write_trace` gained a **standalone mode**: after the state chunks it embeds
+`MFST` (the project tree at A — `{relpath → blob}`, decodable without the
+store), one `BLOB` per file version any in-range segment's manifest names
+(content-addressed, so the union is already deduped — a file saved mid-range
+ships every version through B), and `LOOP` (the A/B bounds). It is purely
+additive under an opt-in flag, so `record_stop`/`ring_export` stay
+byte-identical (goldens hold). **`M.export_clip(a, b, path)`** is the
+live-range door: SNAP at A's keyframe, whole segments through B's, the
+embedded tree; it names the missing capability honestly for an adopted
+(no bundle) or legacy (no manifest) opening segment instead of crashing.
+**`ring_load`** reads those chunks and **materializes the tree into an
+isolated ephemeral replay workspace** (`<user_path>replay-workspaces/<manifest
+hash>/`, swept to one per session; the parked write wall keeps browsing
+ephemeral), recording `R.workspace`/`R.replay_loop`; **`M.materialize_clip`**
+is the same core as a non-destructive read primitive (the drag-in preview).
+The rewind tray's **"export replay"** button (live whenever an A/B clip is
+selected) writes `<project>-clip-<A>-<B>.ctrace` atomically to `replays/`
+beside `engine/` (read-only root → `<user_path>replays/`, named in the flash)
+and reveals the folder; `scrub.do_load` reads `replay_loop()` and opens a
+loaded clip on its range with the loop armed. Everything rides `ring.spill`
+and is opt-in on the write side, so **no sim/doc/recorded byte moved**: Linux
+selftest **24,069** / native Windows **24,071** on PAL API 19 (20 new KATs in
+`t_standalone_clip`), `nix run .#test` ALL GREEN with every historical trace
+and pixel/audio golden byte-identical; native Windows re-verified
+`smoke_kitcheck` (830 frames). A scripted `ring_load` of a real `export_clip`
+clip materialized the full tree under `user_path` with the A-frame asset
+version and exact `LOOP` bounds; the engine-root `replays/` write landed.
+Inspected capture on llm-feed: `smoke --edit` parked with an A/B clip and the
+live "export replay" button. `tools/build-windows.sh` refreshed the stage
+(4 durable entries) and Start Menu shortcut. **Deferred, named honestly:**
+adopted-range standalone export (tree captured, but the SNAP needs a
+reconstructed code bundle — its own packet), captured-audio embedding, the
+editor-mount-on-drag-in (mount `ed.root` on the workspace + restore live on
+dismiss — the immutable-source A7 line), a wall-clock filename (needs a PAL
+date door), and select-the-exact-file reveal.
 
 **D103 lands the A7 §14 foundation: the content-addressed project-blob
 store + per-segment project manifest.** History carried the project's
@@ -64,19 +105,27 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **A7 §14, continued — the standalone `.ctrace`
-clip.** The store + manifest foundation is in, so the next step is
-**packaging**: extend the `.ctrace` export path (`write_trace`) to embed
-the segment's manifest at A + every blob the range through inclusive B
-needs (manifest at A, file epochs, all project source and assets) so a
-clip is self-contained, and extend `ring_load` to materialize that tree
-into an isolated replay workspace (the parked write-wall keeps it
-ephemeral). Adopted history becomes exportable (it's materialization-ready
-now). That unlocks the **`replays/` export UX** (atomic write + reveal in
-the file manager) and the **crash-report drop** (the ERROR marker +
-`ring_locator`/`hist_locator` are in place). The **immutable-source /
-drag-in replay** line is the other open A7 item. See `ALPHA.md` §A7 and
-`REWIND.md` §14–16 for the full checklist.
+**Exact next packet:** **A7 — the immutable-source / drag-in replay line
+(REWIND.md §14, ALPHA §A7 line 6).** D104 made `ring_load` materialize a
+clip's project tree into `R.workspace` and `M.materialize_clip` preview it
+without touching the ring — so the next step is the **consumer**: dragging a
+`.ctrace` into any editor view opens/fits/loops it (the LOOP bounds already
+apply on load) **and mounts its materialized workspace** — point the asset
+browser / `ed.root` at `R.workspace` so the editor and asset windows browse
+the clip's bundled project, with the **parked write wall keeping edits
+ephemeral**; dismissing (Esc layering) restores the untouched live ring +
+present + the real project root rather than adopting the replay's future.
+`cm.ed` reads `ed.root` for every asset door (`ed/kit.lua`, `ed/launcher.lua`,
+`ed/cache.lua`), so the mount is a scoped root swap guarded by the existing
+`ed.parked` wall. Two adjacent A7 items to pick up alongside or next:
+**adopted-range standalone export** (reconstruct the SNAP code bundle from the
+adopted segment's manifest `.lua` sources + the host engine `cm.*`, so
+`export_clip` stops refusing adopted ranges), and the **crash-report drop**
+(§16 — the `.ccrash` `CCRP` container, ERROR marker, and
+`ring_locator`/`hist_locator` are all in place; a drop opens+loops the minute
+before the crash, preferring an embedded tail else the resolved local stream).
+Captured-audio embedding and a wall-clock clip filename (needs a PAL date door)
+are smaller follow-ups. See `ALPHA.md` §A7 and `REWIND.md` §14–16.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's
