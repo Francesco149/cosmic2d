@@ -20,50 +20,63 @@ local fig = cm.require("cm.fig")
 
 local M = select(2, ...) or {}
 
-local body_c = { 0.28, 0.60, 0.62 }  -- deep teal
-local belly_c = { 0.94, 0.90, 0.78 } -- cream
-local mitt_c = { 0.95, 0.52, 0.38 }  -- coral
-local dark = { 0.10, 0.09, 0.13 }
-local white = { 0.97, 0.97, 0.95 }
-local star_c = { 1.00, 0.85, 0.35 }
+-- the locked-in palette; M.build takes sparse overrides so a cartridge can
+-- cast COLOR VARIANTS (an NPC that reads as "another one of them" without
+-- ever being mistaken for the player) — the part tree and every clip below
+-- work on any variant because poses address parts by name
+M.colors = {
+  body = { 0.28, 0.60, 0.62 },  -- deep teal
+  belly = { 0.94, 0.90, 0.78 }, -- cream
+  mitt = { 0.95, 0.52, 0.38 },  -- coral
+  dark = { 0.10, 0.09, 0.13 },
+  white = { 0.97, 0.97, 0.95 },
+  star = { 1.00, 0.85, 0.35 },
+}
 
 -- eye style B from the pupil study (proto g_mstyle, human-picked)
 local EYE_W, EYE_H, PUP_W, PUP_H = 0.17, 0.24, 0.11, 0.13
 
-M.fig = fig.build({ parts = {
-  { name = "base", joint = { 0, 0.95, 0 } }, -- bob (ty) + lean (rz) live here
-  { name = "body", parent = "base", shapes = { -- squash (s) lives here
-    { kind = "lathe", col = body_c, n = 12, -- teardrop, fatter at the bottom
-      prof = { 0, -0.95, 0.55, -0.80, 0.82, -0.38, 0.80, 0.10,
-               0.60, 0.55, 0.30, 0.85, 0, 0.98 } },
-    { kind = "ball", col = belly_c, r = 1, n = 10, -- belly patch, tucked low
-      at = { 0, -0.48, 0.20 }, scale = { 0.46, 0.38, 0.50 } },
-    { kind = "ball", col = white, r = 1, n = 8, -- eyes
-      at = { -0.26, 0.28, 0.62 }, scale = { EYE_W, EYE_H, 0.10 } },
-    { kind = "ball", col = white, r = 1, n = 8,
-      at = { 0.26, 0.28, 0.62 }, scale = { EYE_W, EYE_H, 0.10 } },
-    { kind = "ball", col = dark, r = 1, n = 6, -- pupils, slight right glance
-      at = { -0.23, 0.26, 0.74 }, scale = { PUP_W, PUP_H, 0.05 } },
-    { kind = "ball", col = dark, r = 1, n = 6,
-      at = { 0.29, 0.26, 0.74 }, scale = { PUP_W, PUP_H, 0.05 } },
-    { kind = "ball", col = dark, r = 1, n = 6, -- mouth
-      at = { 0, 0.02, 0.80 }, scale = { 0.13, 0.05, 0.04 } },
-  } },
-  { name = "ant", parent = "body", joint = { 0, 0.90, 0 }, shapes = {
-    { kind = "prism", col = dark, n = 5, r0 = 0.035, r1 = 0.025, h = 0.45 },
-    { kind = "ball", col = star_c, r = 0.16, n = 6, at = { 0, 0.55, 0 } },
-  } },
-  { name = "hand_l", parent = "base", shapes = {
-    { kind = "ball", col = mitt_c, r = 0.22, n = 8 } } },
-  { name = "hand_r", parent = "base", shapes = {
-    { kind = "ball", col = mitt_c, r = 0.22, n = 8 } } },
-  { name = "foot_l", parent = "base", shapes = {
-    { kind = "ball", col = mitt_c, r = 0.24, n = 8,
-      scale = { 1.1, 0.72, 1.35 } } } },
-  { name = "foot_r", parent = "base", shapes = {
-    { kind = "ball", col = mitt_c, r = 0.24, n = 8,
-      scale = { 1.1, 0.72, 1.35 } } } },
-} })
+function M.build(over)
+  local c = {}
+  for k, v in pairs(M.colors) do c[k] = v end
+  for k, v in pairs(over or {}) do c[k] = v end
+  return fig.build({ parts = {
+    { name = "base", joint = { 0, 0.95, 0 } }, -- bob (ty) + lean (rz) live here
+    { name = "body", parent = "base", shapes = { -- squash (s) lives here
+      { kind = "lathe", col = c.body, n = 12, -- teardrop, fatter at the bottom
+        prof = { 0, -0.95, 0.55, -0.80, 0.82, -0.38, 0.80, 0.10,
+                 0.60, 0.55, 0.30, 0.85, 0, 0.98 } },
+      { kind = "ball", col = c.belly, r = 1, n = 10, -- belly patch, tucked low
+        at = { 0, -0.48, 0.20 }, scale = { 0.46, 0.38, 0.50 } },
+      { kind = "ball", col = c.white, r = 1, n = 8, -- eyes
+        at = { -0.26, 0.28, 0.62 }, scale = { EYE_W, EYE_H, 0.10 } },
+      { kind = "ball", col = c.white, r = 1, n = 8,
+        at = { 0.26, 0.28, 0.62 }, scale = { EYE_W, EYE_H, 0.10 } },
+      { kind = "ball", col = c.dark, r = 1, n = 6, -- pupils, slight right glance
+        at = { -0.23, 0.26, 0.74 }, scale = { PUP_W, PUP_H, 0.05 } },
+      { kind = "ball", col = c.dark, r = 1, n = 6,
+        at = { 0.29, 0.26, 0.74 }, scale = { PUP_W, PUP_H, 0.05 } },
+      { kind = "ball", col = c.dark, r = 1, n = 6, -- mouth
+        at = { 0, 0.02, 0.80 }, scale = { 0.13, 0.05, 0.04 } },
+    } },
+    { name = "ant", parent = "body", joint = { 0, 0.90, 0 }, shapes = {
+      { kind = "prism", col = c.dark, n = 5, r0 = 0.035, r1 = 0.025, h = 0.45 },
+      { kind = "ball", col = c.star, r = 0.16, n = 6, at = { 0, 0.55, 0 } },
+    } },
+    { name = "hand_l", parent = "base", shapes = {
+      { kind = "ball", col = c.mitt, r = 0.22, n = 8 } } },
+    { name = "hand_r", parent = "base", shapes = {
+      { kind = "ball", col = c.mitt, r = 0.22, n = 8 } } },
+    { name = "foot_l", parent = "base", shapes = {
+      { kind = "ball", col = c.mitt, r = 0.24, n = 8,
+        scale = { 1.1, 0.72, 1.35 } } } },
+    { name = "foot_r", parent = "base", shapes = {
+      { kind = "ball", col = c.mitt, r = 0.24, n = 8,
+        scale = { 1.1, 0.72, 1.35 } } } },
+  } })
+end
+
+M.fig = M.build()
 
 -- squash s -> the volume-ish scale triple (proto: 1/sqrt(s), s, 1/sqrt(s))
 function M.sq(s)
@@ -138,6 +151,27 @@ M.swim = {
   M.pose(0.03, 0.00, 1.03,                           -- kick: legs snap closed,
          { -0.52, -0.40, 0.32 }, { 0.52, -0.40, 0.32 },  -- arms recover under
          { -0.26, -0.92, -0.46 }, { 0.26, -0.92, -0.46 }, 0.02),
+}
+
+-- wave: the greeting (demo 2's NPC exchange). Right mitt held high beside
+-- the head sweeping out-and-in twice per cycle (the second sweep varies so
+-- it never reads mechanical), left mitt resting, feet planted at the idle
+-- stance, a light bob + lean into the raised side, antenna countering.
+-- Frame-driven (frames since the greet began / a wave_f knob), not
+-- distance-driven — the waver is standing still.
+M.wave = {
+  M.pose(0.02, -0.06, 1.02,                          -- sweep out
+         { -0.85, -0.45, 0.10 }, { 1.28, 1.05, 0.05 },
+         { -0.34, -0.90, 0.18 }, { 0.34, -0.90, 0.18 }, -0.10),
+  M.pose(0.05, -0.02, 1.04,                          -- sweep in, over the head
+         { -0.88, -0.42, 0.12 }, { 0.55, 1.30, 0.15 },
+         { -0.34, -0.90, 0.18 }, { 0.34, -0.90, 0.18 }, 0.08),
+  M.pose(0.02, -0.06, 1.02,                          -- out again
+         { -0.86, -0.44, 0.10 }, { 1.24, 1.08, 0.05 },
+         { -0.34, -0.90, 0.18 }, { 0.34, -0.90, 0.18 }, -0.06),
+  M.pose(0.04, -0.03, 1.03,                          -- in, a touch lower
+         { -0.88, -0.42, 0.12 }, { 0.62, 1.24, 0.12 },
+         { -0.34, -0.90, 0.18 }, { 0.34, -0.90, 0.18 }, 0.10),
 }
 
 return M
