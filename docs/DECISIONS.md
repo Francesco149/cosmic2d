@@ -4962,3 +4962,74 @@ same-session clip, dropped it through the real `drop_clip` door — the tray sho
 the live session with `ed.root` restored, the live ring range intact, and play
 resumed. Inspected captures on llm-feed: the mounted clip tray and the
 restored-live editor.
+
+## D106 — crash reports as timeline entry points: the .ccrash drop (A7 §16, 2026-07-18)
+
+**Context.** D067 froze the `.ccrash` `CCRP` container (its `HEAD` names the exact
+project / history-stream / last-committed / attempted-frame tuple, D067), D100 added
+the timeline **error** marker, and D103's `ring_locator`/`hist_locator` resolve a
+stream+frame. `ALPHA.md` §A7 line 9 and `REWIND.md` §16 want the payoff: dropping a
+crash report onto any editor view **opens the crashed minute** — fit the safe
+pre-roll ending at the last committed frame, mark the failed next-frame boundary, and
+loop it — resolving the referenced history by identity, never by wall-clock time.
+D105's drag-in plumbing (`filter_events` routing, the tray, Esc layering) is the
+chassis this reuses.
+
+**Decision.**
+- **`cm.trace.crash_resolve(report[, preroll])` — identity, never time.** A read-only
+  resolver over the live ring: the report's `history_stream` **and**
+  `committed_frame` must match `ring_locator()` and fall inside `ring_range()`. It
+  returns a focus plan — `a = max(lo, committed − preroll + 1)` (the safe pre-roll,
+  up to `CRASH_PREROLL = 60·60` = one minute at 60 Hz), `b = committed` (inclusive:
+  the last safe frame), `attempted = committed + 1` (the failed boundary) — or `nil`
+  + an honest reason: a stream-less/`-1` report is "no durable history"; a **foreign
+  stream** names both ids ("another recording"); a frame below the retained low edge
+  is "evicted". A stale over-count past the live edge clamps to it. Nothing here
+  mutates the ring.
+- **`cm.ed.rewind.drop_crash(ed, path)` — the live source in place, not a clip.**
+  Unlike D105's clip drop, a crash focus resolves the **live** ring (no stash, no
+  mounted workspace), so it just `scrub.open()`s + `scrub.set_loop(a, b)`s and records
+  `r.crash = { committed, attempted, kind, … }`. Because it never leaves the live
+  source, **export-the-pre-roll and resume-here stay available** (§16's "inspect,
+  export the pre-roll, or resume the last safe frame and retry"). It refuses while a
+  clip has the ring stashed (eject first) and names an unreadable report or a failed
+  resolution in the tray flash rather than guessing.
+- **The tray marks the crash.** `.ccrash` routes in `filter_events` beside `.ctrace`.
+  The tray gains **CRASH** mode — a red pill/head/subtitle naming the error kind, a
+  `fit_crash` view over the pre-roll + boundary, a bold red **CRASH** boundary wall
+  (`draw_crash`) drawn just after the last committed frame (pinned to the panel edge
+  in the same-session case where the crash sits at the live edge), and a crash-tinted
+  "CRASH PRE-ROLL A .. B (last safe frame)" range label. Esc layering is D105's,
+  reworded: first clears the loop and keeps the crash view, second returns to live
+  (`M.close` clears `r.crash`).
+- **Embedded tail deferred, honestly.** §16 prefers an embedded history tail, then a
+  local match. Today's container carries **only the locator**, so the shipping path is
+  the exact local-stream/frame resolution; when a report embeds its own tail it will
+  route through `scrub.open_clip` exactly like a standalone clip (the code names this).
+
+**Scope, named honestly.** The **contained-error, same-or-continued session** case
+ships (the live/adopted stream is in the ring). Cross-process native-failure
+next-launch synthesis, an **embedded crash tail**, and the trust prompt before
+executing an untrusted bundle (shared with D105) remain their own packets. The digest
+already carries D100's error marker; `draw_crash` is the explicit boundary the report
+names, independent of whether the digest bit survived.
+
+**Proof.** Linux selftest **24,125** / native Windows **24,127** on PAL API 19 (22 new
+KATs, no PAL API bump — this is Lua observer/chrome over frozen D067 records).
+`t_crash_resolve`: an exact
+match returns `[committed−preroll+1 .. committed]` + boundary `committed+1`; the
+pre-roll clamps to the retained low edge; a foreign stream / evicted frame /
+stream-less report are each refused with their honest reason; a committed frame past
+the live edge clamps. `t_crash_focus` drives the real `drop_crash → escape → escape`
+lifecycle headlessly: a matching `.ccrash` parks the **live** ring in place (never a
+clip, never stashed), loops the pre-roll, and marks the boundary; a foreign report
+never parks; Esc #1 clears the loop but keeps the crash view; Esc #2 returns to live
+with the ring range byte-intact. `nix run .#test` ALL GREEN — every historical trace
+and pixel/audio golden byte-identical (no sim/doc/recorded byte moved; the resolver
+only reads the ring). Windowed WSLg fixture: `smoke --edit` armed a driver that
+published a real `.ccrash` from the live locator and dropped it through `drop_crash` —
+the tray entered CRASH mode looping the pre-roll with the red boundary wall; a
+scripted Esc cleared the loop, parked on the last safe frame, and lit "resume here".
+Inspected captures on llm-feed: the crashed-minute loop and the Esc-cleared inspect
+state. (`--win` capture is headless so spill is off; the fixture forces a stream
+identity for the offscreen shot — real windowed sessions record with spill on.)

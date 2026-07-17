@@ -290,8 +290,9 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   asset saves/imports, restarts/session boundaries, errors, and crashes without
   requiring state reconstruction to draw the timeline. Current/live/retention
   markers, input transitions, code epochs, asset saves, restarts, session
-  boundaries, and contained errors draw from the persisted digest (D100);
-  asset *imports* and the crash-focus source await their packets.
+  boundaries, and contained errors draw from the persisted digest (D100); a
+  dropped crash report draws its own failed-frame boundary wall (D106). Asset
+  *imports* remain the last marker awaiting a packet.
 - [x] Visible disk budget/use, retention controls, pause/clear, and recovery
   behavior across state, thumbnails, audio, and deduplicated project blobs;
   long sessions remain bounded and understandable. (D102: the tray head is a
@@ -344,10 +345,16 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   the flash. Deferred: a wall-clock name (needs a PAL date door) and
   select-the-exact-file reveal (needs `explorer /select,` and has no portable
   Linux twin) — the folder reveal is §15's stated fallback.
-- [ ] Make structured crash reports locate an exact history stream/frame. A
+- [~] Make structured crash reports locate an exact history stream/frame. A
   drop opens and loops up to one minute before the crash, preferring an embedded
   tail and otherwise resolving local retained history; evicted/missing tails
-  explain the failed identity instead of guessing by time.
+  explain the failed identity instead of guessing by time. (D106: dropping a
+  `.ccrash` routes in `filter_events` beside `.ctrace`; `trace.crash_resolve`
+  matches the report's stream+frame against the live/adopted ring by identity and
+  returns the pre-roll bounds; `rewind.drop_crash` parks the live source in place,
+  loops the safe pre-roll, and draws the failed-frame boundary — export-the-pre-roll
+  and resume-here stay live. Remaining: an **embedded tail** in the container and
+  cross-process native-failure next-launch synthesis.)
 - [ ] Export recording-friendly image/video/frame/audio paths only after the
   replay artifact is stable; avoid embedding a full video editor.
 

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), the §14 project-blob store foundation (D103), the standalone `.ctrace` clip (D104), and the drag-in replay consumer (D105) are in (2026-07-18)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), the §14 project-blob store foundation (D103), the standalone `.ctrace` clip (D104), the drag-in replay consumer (D105), and the crash-report drop (D106) are in — A7 now reaches its full exit (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -30,6 +30,46 @@ release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
 materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
+
+**D106 lands the crash-report drop (A7 §16) — the last A7 timeline source.**
+A `.ccrash` dropped into any editor view now opens the crashed minute. It routes in
+`cm.ed.filter_events` beside `.ctrace` (a report is a diagnostic, never a project
+asset). **`cm.trace.crash_resolve(report)`** matches the report's frozen D067 locator
+— `history_stream` **and** last-committed frame — against the live/adopted ring **by
+identity, never by wall time**, and returns the safe pre-roll plan: `a = max(lo,
+committed − 60·60 + 1)` (up to one minute), `b = committed` (the last safe frame),
+`attempted = committed + 1` (the failed boundary). A stream-less report, a **foreign**
+stream (both ids named), or a frame below the retained low edge (evicted) is refused
+with that exact reason — never guessed. **`cm.ed.rewind.drop_crash`** resolves the
+**live source in place** — no stash, no mounted workspace, unlike D105's clip — so it
+`scrub.open()`s + `set_loop`s the pre-roll and records `r.crash`; because the ring is
+never left, **export-the-pre-roll and resume-here stay available** (§16's inspect /
+export / resume-the-last-safe-frame-and-retry). The tray gains a **CRASH** mode: red
+pill/head/subtitle naming the error kind, a `fit_crash` view, a bold red **CRASH**
+boundary wall (`draw_crash`) just after the last committed frame (pinned to the panel
+edge in the same-session case where the crash sits at the live edge), and a
+crash-tinted "CRASH PRE-ROLL A .. B (last safe frame)" label. Esc layering is D105's:
+first clears the loop and keeps the crash view, second returns to live (`M.close`
+clears `r.crash`). **No sim/doc/recorded byte moved** (the resolver only reads the
+ring; the tray is chrome over frozen D067 records — no PAL API bump): Linux selftest
+**24,125** / native Windows **24,127** on PAL API 19 (22 new KATs across
+`t_crash_resolve` — exact match /
+low-edge clamp / foreign-stream + evicted + stream-less refusals / past-edge clamp —
+and `t_crash_focus` — the real `drop_crash → escape → escape` lifecycle: a matching
+`.ccrash` parks the live ring **in place** (never a clip, never stashed) and loops the
+pre-roll; a foreign report never parks; Esc #1 clears the loop keeping the crash view;
+Esc #2 returns to live with the ring range byte-intact), `nix run .#test` ALL GREEN
+with every historical trace and pixel/audio golden byte-identical. Windowed WSLg
+fixture: `smoke --edit` armed a driver that published a real `.ccrash` from the live
+locator and dropped it through `drop_crash` — CRASH mode looping the pre-roll with the
+red boundary wall; a scripted Esc cleared the loop, parked on the last safe frame, and
+lit "resume here". Inspected captures on llm-feed: the crashed-minute loop and the
+Esc-cleared inspect state. `tools/build-windows.sh` refreshed the stage (4 durable
+entries) and Start Menu shortcut. **Deferred, named honestly:** the `.ccrash` container
+carries only the locator today, so an **embedded crash tail** (route it through
+`open_clip` like a clip) and **cross-process native-failure next-launch synthesis** are
+their own packets; the trust prompt before executing an untrusted bundle (shared with
+D105) stays open.
 
 **D105 lands the immutable-source / drag-in replay line (A7 §13).** D104 made
 `ring_load` materialize a clip's tree into `R.workspace` but nothing consumed
@@ -148,28 +188,29 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **A7 — the crash-report drop (REWIND.md §16, ALPHA §A7
-line 9).** The drag-in consumer (D105) now opens any dropped `.ctrace` as a
-non-destructive editor clip, so the crash drop is the natural next source kind:
-a dropped `.ccrash` should **open + loop the minute before the crash**, fit up
-to 60s ending at the last committed frame, mark the failed next-frame boundary,
-and start the safe pre-roll as an A/B loop — preferring an embedded tail else
-resolving the local retained stream by identity (never guessing by timestamp;
-an evicted/foreign tail explains the failed identity). The pieces are in place:
-the `.ccrash` `CCRP` container + frozen `HEAD` (report id / project / stream id
-/ last-committed / attempted frame / code epoch / error kind / log path, D067),
-the timeline **error** marker (D100), and `ring_locator`/`hist_locator` (D103)
-for stream/frame resolution. The drop path can reuse D105's `scrub.open_clip` /
-`drop_clip` plumbing (route `.ccrash` in `cm.ed.filter_events` beside `.ctrace`)
-if the crash embeds a tail; otherwise it resolves the live/adopted history and
-seeks. Two adjacent A7 items to pick up alongside or next: the **trust prompt**
-before executing an untrusted clip bundle (D105 runs clip code with the
-open-a-project trust boundary; §13 wants the UI to say so first), and
+**Exact next packet:** **A7 — the trust prompt before executing an untrusted
+bundle (REWIND.md §13, ALPHA §A7).** With the crash drop in, A7 reaches its
+stated exit: a user can spot a high-activity moment, seek / A/B-loop / export it,
+drag a standalone replay into a fresh editor and poke around its bundled project,
+dismiss back to the untouched live session, and reach the preceding minute from a
+crash report — all while understanding storage use. The remaining A7 items are
+refinements. The clearest and most shippable-alpha-relevant is the **trust
+prompt**: both D105's clip mount and D106's crash focus execute a bundle's game
+code with the **same trust boundary as opening a project**, and §13 requires the
+UI to *say so* before running an untrusted (dragged-in / downloaded) bundle. The
+packet: a confirm gate in `scrub.do_load(editor_clip)` / `drop_crash`'s
+mount-and-run path (a modal or tray affordance — "this replay contains code; run
+it?"), remembered per bundle-hash for the session, that a same-session self-export
+skips (it's your own code). Then the honestly-deferred siblings, in rough order:
 **adopted-range standalone export** (reconstruct the SNAP code bundle from the
-adopted segment's manifest `.lua` sources + the host engine `cm.*`, so
-`export_clip` stops refusing adopted ranges). Captured-audio embedding and a
-wall-clock clip filename (needs a PAL date door) are smaller follow-ups. See
-`ALPHA.md` §A7 and `REWIND.md` §13/§16.
+adopted segment's manifest `.lua` sources + host engine `cm.*`, so `export_clip`
+stops refusing adopted ranges), an **embedded crash tail** in the `.ccrash`
+container (route it through `open_clip` like a clip — closes the §16 "prefer
+embedded" path), **captured-audio embedding**, a **wall-clock clip filename**
+(needs a PAL date door), and cross-process **native-failure next-launch
+synthesis**. Once A7's refinements are done or deferred, **A8** (documentation,
+accessibility, release candidate — ALPHA §A8) is the open gate. See `ALPHA.md`
+§A7/§A8 and `REWIND.md` §13/§16.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's

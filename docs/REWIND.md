@@ -492,3 +492,23 @@ The contained-error path flushes the open segment before publishing and never
 records the partially mutated throwing step. The later A7 packets still own
 the one-minute pin/embed policy, native-failure next-launch synthesis, crash
 timeline source, drop/view/loop UI, and graceful missing-tail explanation.
+
+**Built (D106), the crash drop.** A `.ccrash` dropped into any editor view opens
+the crashed minute. It routes in `cm.ed.filter_events` beside `.ctrace` (a report
+is a diagnostic, never a project asset). `cm.trace.crash_resolve(report)` matches
+the report's `history_stream` **and** last-committed frame against the live/adopted
+ring — by identity, never by wall time — and returns the pre-roll plan: `a =
+max(lo, committed − 60·60 + 1)` (up to one minute), `b = committed` (the last safe
+frame), `attempted = committed + 1` (the failed boundary). A stream-less report, a
+**foreign** stream (both ids named), or a frame below the retained low edge
+(evicted) is refused with that exact reason rather than guessed. `cm.ed.rewind.
+drop_crash` resolves the **live source in place** — no stash, no mounted workspace,
+unlike the §13 clip — so it `scrub.open()`s + `set_loop`s the pre-roll and records
+`r.crash`; because the ring is never left, **export-the-pre-roll and resume-here
+stay available** (inspect, export, or resume the last safe frame and retry). The
+tray enters CRASH mode: a red pill/head naming the error kind, a bold **CRASH**
+boundary wall drawn just after the last committed frame, and a "CRASH PRE-ROLL A ..
+B (last safe frame)" range label. Esc layering is §13's: first clears the loop and
+keeps the crash view, second returns to live. Still open: the container carries only
+the locator today, so the **embedded-tail** path (route it through `open_clip` like
+a clip) and cross-process native-failure next-launch synthesis are their own packets.
