@@ -269,7 +269,7 @@ static void map_mouse(float wx, float wy, PalEvent *ev) {
   ev->wy = wy;
 }
 
-static void pump_events(void) {
+void pal_pump_events(void) {
   SDL_Event e;
   while (SDL_PollEvent(&e)) {
     /* the imgui host sees every event too (no-op until it initializes);
@@ -306,6 +306,46 @@ static void pump_events(void) {
     case SDL_EVENT_MOUSE_WHEEL:
       push_event(
           (PalEvent){.type = PAL_EV_WHEEL, .x = e.wheel.x, .y = e.wheel.y});
+      break;
+    /* gamepad hot-plug (A4): the PAL owns SDL_Gamepad open/close so device
+     * lifetime survives Lua VM reboots like the window does; everything
+     * else — slot assignment, deadzones, recording — is Lua policy
+     * (cm.input). Instance ids are SDL's, monotonically increasing per
+     * connect, so ascending id = connect order. */
+    case SDL_EVENT_GAMEPAD_ADDED: {
+      SDL_JoystickID id = e.gdevice.which;
+      if (!SDL_GetGamepadFromID(id)) {
+        SDL_Gamepad *pad = SDL_OpenGamepad(id);
+        if (!pad) {
+          pal_log("gamepad %u open failed: %s", (unsigned)id, SDL_GetError());
+          break;
+        }
+        pal_log("gamepad %u connected: %s", (unsigned)id,
+                SDL_GetGamepadName(pad));
+      }
+      push_event((PalEvent){.type = PAL_EV_PAD, .a = (int)id, .down = true});
+      break;
+    }
+    case SDL_EVENT_GAMEPAD_REMOVED: {
+      SDL_JoystickID id = e.gdevice.which;
+      SDL_Gamepad *pad = SDL_GetGamepadFromID(id);
+      if (pad) SDL_CloseGamepad(pad);
+      pal_log("gamepad %u disconnected", (unsigned)id);
+      push_event((PalEvent){.type = PAL_EV_PAD, .a = (int)id, .down = false});
+      break;
+    }
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+    case SDL_EVENT_GAMEPAD_BUTTON_UP:
+      push_event((PalEvent){.type = PAL_EV_PAD_BTN,
+                            .a = (int)e.gbutton.which,
+                            .b = e.gbutton.button,
+                            .down = e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN});
+      break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+      push_event((PalEvent){.type = PAL_EV_PAD_AXIS,
+                            .a = (int)e.gaxis.which,
+                            .b = e.gaxis.axis,
+                            .v = e.gaxis.value});
       break;
     case SDL_EVENT_DROP_FILE: {
       /* an OS file dropped onto the window: the R4 asset-pick add path.
@@ -392,6 +432,11 @@ int main(int argc, char **argv) {
     }
     pal_log("no display; using offscreen video driver");
   }
+  /* Gamepads (A4). Non-fatal: a keyboard-only machine or a CI container
+   * without input devices still runs everything else; pal.pad_list() just
+   * stays empty. Virtual pads (the headless test vehicle) need it too. */
+  if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD))
+    pal_log("gamepad subsystem unavailable: %s", SDL_GetError());
 
   fixup_cwd();
 
@@ -411,7 +456,7 @@ int main(int argc, char **argv) {
   }
 
   while (!G.quit) {
-    pump_events();
+    pal_pump_events();
     if (G.error_state)
       error_frame();
     else

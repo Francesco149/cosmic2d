@@ -11,7 +11,7 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 17 /* v17: unpruned recursive listing (delete) */
+#define PAL_VERSION_API 18 /* v18: gamepad discovery/hot-plug + virtual pads */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -40,12 +40,19 @@ typedef enum {
   PAL_EV_WHEEL,
   PAL_EV_TEXT,
   PAL_EV_DROP, /* an OS file drag-dropped onto the window (R4 asset add) */
+  PAL_EV_PAD,  /* gamepad (dis)connected (A4): a = SDL joystick instance id,
+                  down = connected. The PAL opens/closes the SDL_Gamepad on
+                  hot-plug; device->slot policy lives in Lua (cm.input). */
+  PAL_EV_PAD_BTN,  /* a = instance id, b = SDL_GamepadButton, down */
+  PAL_EV_PAD_AXIS, /* a = instance id, b = SDL_GamepadAxis, v = raw i16 */
 } PalEventType;
 
 typedef struct {
   PalEventType type;
-  int a;       /* key: scancode | button: index */
-  bool down;   /* key/button */
+  int a;       /* key: scancode | button: index | pad: SDL instance id */
+  int b;       /* pad: SDL standard gamepad button/axis number */
+  int v;       /* pad axis: raw SDL value (-32768..32767) */
+  bool down;   /* key/button/pad */
   bool repeat; /* key */
   float x, y;       /* motion/button: game-space (FOV) px | wheel: scroll */
   float ui_x, ui_y; /* motion/button: ui-canvas px (editor chrome hit-test) */
@@ -212,6 +219,10 @@ extern Pal G;
 
 /* main.c */
 void pal_log(const char *fmt, ...);
+/* drain SDL's queue into G.events now (the loop does this once per tick;
+ * pal.x_events_pump lets the selftest observe virtual-pad hot-plug and
+ * input synchronously — dev/test only). */
+void pal_pump_events(void);
 /* Finish the dev/io worker before process teardown. Normal engine quit/crash
  * drains from Lua so it can consume completion status; this is the native
  * last-resort barrier for an early or parachute exit. */

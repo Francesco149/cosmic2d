@@ -972,11 +972,124 @@ static int l_poll_events(lua_State *L) {
       lua_pushnumber(L, e->wy);
       lua_setfield(L, -2, "wy");
       break;
+    /* gamepad events (A4): DEVICE-level shapes keyed by SDL instance id.
+     * cm.input.feed translates them through its live device->slot policy
+     * into the slot-level pad/padbtn/padaxis state the records carry. */
+    case PAL_EV_PAD:
+      lua_pushstring(L, "gpad");
+      lua_setfield(L, -2, "type");
+      lua_pushinteger(L, e->a);
+      lua_setfield(L, -2, "id");
+      lua_pushboolean(L, e->down);
+      lua_setfield(L, -2, "connected");
+      break;
+    case PAL_EV_PAD_BTN:
+      lua_pushstring(L, "gpadbtn");
+      lua_setfield(L, -2, "type");
+      lua_pushinteger(L, e->a);
+      lua_setfield(L, -2, "id");
+      lua_pushinteger(L, e->b);
+      lua_setfield(L, -2, "button");
+      lua_pushboolean(L, e->down);
+      lua_setfield(L, -2, "down");
+      break;
+    case PAL_EV_PAD_AXIS:
+      lua_pushstring(L, "gpadaxis");
+      lua_setfield(L, -2, "type");
+      lua_pushinteger(L, e->a);
+      lua_setfield(L, -2, "id");
+      lua_pushinteger(L, e->b);
+      lua_setfield(L, -2, "axis");
+      lua_pushinteger(L, e->v);
+      lua_setfield(L, -2, "value");
+      break;
     }
     lua_rawseti(L, -2, i + 1);
   }
   G.event_count = 0;
   return 1;
+}
+
+/* pal.pad_list() -> { {id=, name=}, ... } — currently connected gamepads,
+ * SDL device order (instance ids ascend by connect). The boot-time reseed
+ * source: SDL only announces hot-plug EVENTS, so a fresh VM (project
+ * switch, parachute reboot) queries what is already attached instead of
+ * waiting for events that will never re-fire. Live-input class. */
+static int l_pad_list(lua_State *L) {
+  int count = 0;
+  SDL_JoystickID *ids = SDL_GetGamepads(&count);
+  lua_createtable(L, count, 0);
+  for (int i = 0; i < count; i++) {
+    lua_createtable(L, 0, 2);
+    lua_pushinteger(L, (lua_Integer)ids[i]);
+    lua_setfield(L, -2, "id");
+    const char *name = SDL_GetGamepadNameForID(ids[i]);
+    lua_pushstring(L, name ? name : "gamepad");
+    lua_setfield(L, -2, "name");
+    lua_rawseti(L, -2, i + 1);
+  }
+  SDL_free(ids);
+  return 1;
+}
+
+/* pal.x_pad_virtual() -> instance id | nil,err — attach a virtual SDL
+ * gamepad (full standard button/axis set). Dev/test only: the headless
+ * vehicle for discovery/hot-plug KATs and recorded gamepad traces —
+ * virtual devices ride the exact SDL event path physical ones do. */
+static int l_x_pad_virtual(lua_State *L) {
+  SDL_VirtualJoystickDesc desc;
+  SDL_INIT_INTERFACE(&desc);
+  desc.type = SDL_JOYSTICK_TYPE_GAMEPAD;
+  desc.naxes = SDL_GAMEPAD_AXIS_COUNT;
+  desc.nbuttons = SDL_GAMEPAD_BUTTON_COUNT;
+  SDL_JoystickID id = SDL_AttachVirtualJoystick(&desc);
+  if (!id) {
+    lua_pushnil(L);
+    lua_pushstring(L, SDL_GetError());
+    return 2;
+  }
+  lua_pushinteger(L, (lua_Integer)id);
+  return 1;
+}
+
+static int l_x_pad_virtual_remove(lua_State *L) {
+  lua_pushboolean(
+      L, SDL_DetachVirtualJoystick((SDL_JoystickID)luaL_checkinteger(L, 1)));
+  return 1;
+}
+
+/* the joystick behind an attached virtual pad; it exists once the PAL's
+ * hot-plug open has run (pump after attach, then poke) */
+static SDL_Joystick *virtual_joy(lua_State *L) {
+  SDL_JoystickID id = (SDL_JoystickID)luaL_checkinteger(L, 1);
+  SDL_Joystick *joy = SDL_GetJoystickFromID(id);
+  if (!joy) luaL_error(L, "virtual pad %d is not open (pump first?)", (int)id);
+  return joy;
+}
+
+/* pal.x_pad_virtual_button(id, button, down) — SDL standard numbering; the
+ * change reaches poll_events at the next pump */
+static int l_x_pad_virtual_button(lua_State *L) {
+  lua_pushboolean(L, SDL_SetJoystickVirtualButton(
+                         virtual_joy(L), (int)luaL_checkinteger(L, 2),
+                         lua_toboolean(L, 3)));
+  return 1;
+}
+
+/* pal.x_pad_virtual_axis(id, axis, value) — raw -32768..32767 */
+static int l_x_pad_virtual_axis(lua_State *L) {
+  lua_pushboolean(L, SDL_SetJoystickVirtualAxis(
+                         virtual_joy(L), (int)luaL_checkinteger(L, 2),
+                         (Sint16)luaL_checkinteger(L, 3)));
+  return 1;
+}
+
+/* pal.x_events_pump() — drain SDL into the PAL queue immediately (dev/test:
+ * lets a KAT observe a virtual-pad change without waiting a tick) */
+static int l_x_events_pump(lua_State *L) {
+  (void)L;
+  pal_pump_events();
+  return 0;
 }
 
 /* pal.x_remove(path): delete a file (or empty dir). The R6 history
@@ -2187,6 +2300,12 @@ static const luaL_Reg pal_funcs[] = {
     {"tex_free", l_tex_free},
     {"blit32", l_blit32},
     {"poll_events", l_poll_events},
+    {"pad_list", l_pad_list},
+    {"x_pad_virtual", l_x_pad_virtual},
+    {"x_pad_virtual_remove", l_x_pad_virtual_remove},
+    {"x_pad_virtual_button", l_x_pad_virtual_button},
+    {"x_pad_virtual_axis", l_x_pad_virtual_axis},
+    {"x_events_pump", l_x_events_pump},
     {"x_reboot", l_x_reboot},
     {"x_folder_dialog", l_x_folder_dialog},
     {"x_folder_dialog_poll", l_x_folder_dialog_poll},
