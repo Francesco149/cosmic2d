@@ -845,3 +845,45 @@ fixes), the two decision-shaped ones recorded:
   changes (sim untouched except the sfx call site, which the demo path
   reproduces identically); both pixels re-shot deliberately; the
   RO_BUDGET honesty cmp re-proven; suite ALL GREEN.
+
+## D3D-028 — cm.rig: the orbit-follow camera slice opens the distillation phase (2026-07-17)
+
+The §8f/§12 distillation phase's first slice, cut the upstream-A5 way
+(votes counted, byte-identical extraction, goldens un-recut — see §12
+for the process survey and the full audit).
+
+- **The vote**: bounce, openworld and bigworld carried the godot
+  FollowCamera rig as three copies whose MATH was byte-identical (only
+  comments differed) — angdiff, the orbit/focus step (wheel zoom,
+  drag-look, cam_* keys, recenter, yaw-follow with the D3D-018 back
+  cone), the camera-relative wish rotation, the virgin-buffer seed,
+  and the draw-side eye derivation. The D3D-018 vibration fix had to
+  be applied three times; that is the pain the slice absorbs.
+- **cm.rig** (engine/cm/rig.lua, new file — merge-clean) owns the
+  40-byte f32 buffer LAYOUT but never the buffer: the cartridge names
+  it (bounce.cam/ow.cam/bw.cam all stand), seeds it via R.reset, steps
+  it via `R.step(cam, kc, px, py, pz, vx, vz, tyaw)` — target position
+  /horizontal velocity/facing passed in, so the module knows no player
+  — and draws through `R.view(cam, kc)` (the view matrix; projection
+  and fog stay the caller's) + `R.wish(cam, fwd, side)` (the
+  camera-relative unit wish). Knobs stay project-owned under
+  doc.knobs.cam (each demo tunes its feel); `R.defaults()` hands a new
+  cartridge the approved openworld values. Input contract documented:
+  mouse wheel/drag + "cam_l/r/u/d" + "recenter" actions, all
+  record-backed. No module state, no own buffers — traces, snapshots
+  and rewind carry the rig by construction (and the rig dodges
+  upstream D092's doc-recanon cost by living in an f32 buffer; §12).
+- **Deliberately NOT here**: collision/occlusion zoom, rails, shoulder
+  offsets, cinematic splines, the RO fixed-orbit camera (rovale's is a
+  different, simpler animal — it stays put until a second RO-style
+  cartridge votes).
+- **The name is cm.rig, not cm.camera**: upstream A5 shipped cm.camera
+  (2D follow/bounds/shake) since our fork; §12 bans fork modules from
+  squatting upstream names so the post-1.0 re-merge stays clean.
+
+**Proof.** The extraction is bit-identical: all TEN committed traces
+(bounce demo/lap/tour, openworld tour/swim/npc/stars/meet, bigworld
+tour/glide) verify PASS UNREGENERATED against the retrofitted
+cartridges, and the full suite (pixels + selftest included) runs ALL
+GREEN with no golden re-cut. No visual surface changed — no new feed
+captures (the D097 precedent).
