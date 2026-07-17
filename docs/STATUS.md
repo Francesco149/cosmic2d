@@ -4,6 +4,42 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 10) — openworld: cm.terr + the mascot goes playable
+
+On the lock-in verdict, demo 2 proper began. **cm.terr** (D3D-017) is
+the heightfield ground: per-vertex height grid, banded jittered vertex
+colors + detail mottle + unlit water plane (proto scene_openworld
+verbatim-ish; the proto sky constants turned out ABGR — the openworld
+sky is BLUE), T.sample triangle-exact against T.emit's diagonal so the
+sim walks the rendered mesh, T.vnoise integer-hash noise (no libm).
+**cm.mascot**: the mascot def + clips promoted engine-side on their
+second user (figure re-exports; its goldens verified byte-identical).
+**projects/openworld**: the mascot runs/jumps over the heightfield with
+bounce's feel-approved kernel (terrain landings, k.snap downhill glue,
+tree-trunk AABBs under the D3D-009/010 clamp rules), walk clip on a
+DISTANCE phase (sim f32, no foot slide), idle->walk blended by ground
+speed with live squash/stretch multiplied into the clip's body scale,
+slope-tilted blob shadow, the bounce follow camera. demo(1) walks a
+verified grass-band waypoint ring around the spawn bowl. Goldens:
+openworld_tour.ctrace (1000f, verify PASS, drift-proven) +
+openworld_tour.png (f1290, the pond crossing). Full suite ALL GREEN
+from the committed tree; 3 shots on llm-feed.
+
+## Exact next step
+
+1. Feed questions open (non-blocking): jump read on the mascot, band
+   colors + fog at 320x240, block-or-allow deep-water wading; plus
+   round 9's leftovers (eye size, keep the guy in the showcase).
+2. **Demo 2 grows**: pick from — a first NPC (cm.fig guy or a second
+   mascot) with a proximity exchange (the Zelda-ish beat), more mascot
+   clips (turn/hop/wave for the exchange), water polish (swim-or-block
+   + shoreline read), or scatter props/collectibles to give the wander
+   a goal. Figure EDITOR stays parked until the human unparks it.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 9) — cm.fig: the figure runtime + the mascot live
 
 The human-chosen direction (see verdicts below): demo 2's character
@@ -32,7 +68,7 @@ feel more natural"** — the stylized mascot design is the ENGINE MASCOT
 now (recorded in COSMIC3D.md §8d). Animation read approved. Still open,
 non-blocking: eye size at 320x240, keep the box guy in the showcase.
 
-## Exact next step
+## Exact next step (done — see round 10 above)
 
 1. **Demo 2 continues** (human direction 2026-07-17): grow the figure
    vocabulary toward the Zelda-ish open world — more mascot clips

@@ -375,3 +375,46 @@ Deferred until a character needs them: stepped (non-lerp) tracks,
 texture-swap face strips (the guy's eyes are boxes for now), and any
 foot-slide tuning (cadence knobs only — never IK, that would be
 skinning-adjacent complexity the model forbids).
+
+## D3D-017 — cm.terr heightfield + the mascot goes playable (2026-07-17)
+
+Round 10, on the mascot lock-in verdict (COSMIC3D.md §8d). Demo 2's
+ground and its hero, in one cartridge (projects/openworld):
+
+- **cm.terr is a per-VERTEX height grid** (smooth hills, no cliffs) —
+  the Body-Harvest openworld look from proto scene_openworld: banded
+  jittered vertex colors (band noise hashes the shared vertex, so seams
+  agree across tiles), one y-flattened normal per tile, a neutral detail
+  mottle multiplied over the palette, an unlit alpha-blended water plane
+  (proto light_vertex's zero-normal rule, honored by terr's own vert —
+  gb.vert would ambient-tint it). The per-corner GND tile model with
+  auto cliff walls (D3D-006) remains the editor-era asset; RO cliffs
+  grow out of this module when demo 3 needs them.
+- **T.sample is triangle-exact against T.emit**: both split tiles on the
+  NW->SE diagonal, so the walk surface IS the rendered mesh — the
+  colliders-are-the-sim-truth rule carried to terrain. Heights are plain
+  Lua data from T.vnoise (integer-hash value noise, pure IEEE, no libm):
+  deterministic worlds with zero stored bytes.
+- **Terrain movement = the bounce kernel, ground swapped**: land when
+  integrated y reaches world.ground(x,z); while grounded and not rising,
+  a k.snap window glues downhill walks to the slope (bigger drops become
+  real falls, so walk-offs still read). Tree trunks are the only side
+  colliders — D3D-009/010 clamp rules unchanged. No mantle (nothing to
+  mantle), no kill plane (terrain everywhere; world edges clamp).
+- **Playable-figure animation rule**: NO animation state. The walk clip
+  runs on a DISTANCE phase (one sim f32 — feet cannot slide at any
+  speed); idle runs on the frame counter; draw blends idle->walk by
+  ground speed, multiplies the live squash/stretch factor into the
+  clip's own body-scale channel, and adds run lean on the base joint.
+  Composition happens in the POSE (fig.mix output), never in the figure.
+- **cm.mascot**: the locked-in mascot def + clips promoted engine-side
+  on its second user (figure re-exports it; figure_show goldens verified
+  byte-identical). The engine now ships its mascot as a module.
+- **The scatter PRNG draws before the accept test** (world.lua trees):
+  placement stays replayable no matter how accept rules evolve — the
+  same discipline as named-buffer layouts.
+
+Known-open (asked on the feed): deep water is wade-able (no swim/block
+rule yet); tree canopies have no collision (trunks only). Goldens:
+openworld_tour.ctrace (1000f ring tour, drift-proven) +
+openworld_tour.png (f1290 pond crossing).
