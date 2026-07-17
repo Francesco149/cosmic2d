@@ -276,16 +276,19 @@ inspection at the near end and the full retained stream at the far end.
 Seeking remains bounded by the existing one-second segment keyframes and decode
 LRU; preview/activity queries use indexes and must not decode frame state.
 
-**Implementation status (2026-07-16).** The editor tray, camera, wall-clocked
+**Implementation status (2026-07-17).** The editor tray, camera, wall-clocked
 1×/2×/4×/8× transport, live-ring click seeking, inclusive A/B playback, and
-layered Esc/F4 persistence are built. Until the segment indexes in §12 land,
-the activity/event lanes use a read-only summary of already-resident FRAM/EDOC
-streams; they never reconstruct state or load a demoted disk skeleton just to
-paint chrome, and uncovered older history is labelled as missing. The preview
-lane explicitly reports that no presented-frame samples exist. Persistent
-multi-resolution summaries, `THMB` records, project-file epochs, full event
-coverage, immutable foreign/crash sources, standalone packaging, and export
-remain later A7 packets.
+layered Esc/F4 persistence are built. The activity/event lanes now draw the
+**whole retained window** — resident segments exactly from their chunk streams,
+and demoted, spilled, and adopted cross-session segments coarsely from a
+persisted per-segment digest (D100, §12 below); drawing the tray still never
+reconstructs state or loads a spilled blob. The files lane and the
+save/error/restart markers are live. `missing` is now reserved for genuine
+pre-A7 legacy segments (a 4-field manifest with no digest). The preview lane
+still explicitly reports that no presented-frame samples exist. Multi-resolution
+sub-segment buckets, `THMB` records, the content-addressed project-file
+blob/epoch store, immutable foreign/crash sources, standalone packaging, and
+export remain later A7 packets.
 
 ## 11. Exact pointer grammar and persistence
 
@@ -315,20 +318,33 @@ cancel/complete state; closing the tray cannot orphan a half-published file.
 The recorder already sees every FRAM/EDOC delta. A7 adds observer-only summary
 data to each segment:
 
-- per frame: changed bytes for named sim buffers, sim doc, editor doc, and
-  project files, plus event bits;
-- multi-resolution max buckets in the segment index for cheap zoomed-out
-  rendering;
-- a `THMB` sample near each minute boundary, encoded after the compositor has
-  produced the frame the user actually saw;
-- optional frame-aligned audio blocks for replay/showcase playback. Legacy
-  traces without them remain viewable and are labelled silent.
+- **Built (D100).** A coarse per-segment digest `{ sim, editor, files, events }`
+  — the max single-frame changed bytes for named sim buffers+doc, the editor
+  doc, and project files (asset saves + code epochs), plus the OR of that
+  segment's event bits. It is `summarize_segment`'s fold of the chunk stream,
+  computed at spill (and after a rewind truncation), and persisted twice inside
+  the existing atomic segment+manifest pair: a `SUMM` chunk in the segment blob
+  and four extra fields on the manifest line, so cross-session adoption reads
+  digests without touching a blob. Two tiny observer chunks feed the events the
+  chunk stream did not already carry: `FSAV` (an editor asset save — path +
+  published byte size) lights the files lane + a save marker; `MARK` carries a
+  lifecycle bit (error, restart). `ring_timeline` renders resident segments
+  exactly and chunk-less segments from the digest; `missing` means a genuine
+  pre-A7 4-field manifest line.
+- **Deferred.** Multi-resolution max buckets *within* a segment for per-frame
+  detail when zoomed into old un-scrubbed history (single-resolution today);
+  `FSAV` carrying a content-addressed blob hash, not just a length; a `THMB`
+  sample near each minute boundary, encoded after the compositor has produced
+  the frame the user actually saw; optional frame-aligned audio blocks for
+  replay/showcase playback (legacy traces without them stay viewable, labelled
+  silent).
 
 These records never enter named buffers or the sim doc and verification ignores
-them. The disk budget counts segments, thumbnails, audio, and uniquely retained
-project blobs. Evicting old segments reference-counts/garbage-collects blobs
-that no retained frame can reach. Preview capture may skip a sample under load;
-it may never stall or alter a sim step to hit an exact timestamp.
+them; `FSAV`/`MARK` are also stripped from exported `.ctrace` clips. The disk
+budget counts segments, thumbnails, audio, and uniquely retained project blobs.
+Evicting old segments reference-counts/garbage-collects blobs that no retained
+frame can reach. Preview capture may skip a sample under load; it may never
+stall or alter a sim step to hit an exact timestamp.
 
 ## 13. Timeline sources, not destructive ring replacement
 

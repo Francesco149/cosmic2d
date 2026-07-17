@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 (D087), A5 (D098), and A6 (D099) closed; A7 (rewind/replay product UI) is the open gate (2026-07-17)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate, first information-layer packet landed (D100, 2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -25,6 +25,44 @@ and the three-family demo matrix — demo (side-view), cellar (top-down),
 swarm (arcade) — ships in the public archives with READMEs, thumbnails,
 and export proofs. The complete rewind product UI (A7) and the
 release-candidate pass (A8) are the open alpha gates.
+
+**D100 lands the first A7 information-layer packet: the persisted
+timeline summary index.** The rewind tray's activity/event lanes read
+only resident chunk streams, so demoted/spilled/adopted history drew
+blank ("OLDER LEGACY ACTIVITY HAS NO SUMMARY INDEX"), the files lane
+was dead, and only input/code/eval/session events existed. Now every
+closed segment carries a coarse observer-only digest —
+`{ sim, editor, files, events }`: the max single-frame changed bytes
+for named sim buffers+doc / editor doc / project files (asset saves +
+code epochs) and the OR of its event bits. `summarize_segment` folds
+the chunk stream at spill (and after a rewind truncation); it persists
+twice inside the existing atomic segment+manifest pair — a `SUMM`
+chunk in the segment blob and four extra manifest fields — so
+cross-session **adoption reads digests from the manifest alone, never
+touching a spilled blob**. Manifest parsing became per-line and
+tolerates legacy 4-field lines (they read back as an honest missing
+gap, now the ONLY thing `missing` means). `ring_timeline` composes:
+resident segments render exactly from chunks (per-frame maxes, precise
+event frames), chunk-less segments coarsely from the digest (max
+envelope across the segment's width, event bits at its leading bin);
+seeking an old segment materializes its chunks and silently upgrades
+it to exact. Two tiny observer chunks carry the events the stream did
+not already hold: `FSAV` (an editor asset save — path + published byte
+size; `cm.ed.kit`'s save door emits it) lights the files lane + a
+**save** marker, and `MARK` carries a lifecycle bit — `enter_error`
+marks **error** before the crash flush, `reset_game` marks **restart**.
+Both are ignored by state reconstruction and `verify`, and are stripped
+from exported `.ctrace` clips. The tray gained the three markers (red
+error, amber restart, teal save) with a hover tooltip naming a bin's
+events, and the files lane now draws. Everything is observer-only, so
+**no sim/doc byte moved**: Linux selftest **23,997** on PAL API 19 (6
+new KATs in `t_timeline_summary`), `nix run .#test` ALL GREEN with
+every historical trace and pixel/audio golden byte-identical.
+`FSAV` stores only the byte length for now (the content-addressed blob
+store is the §14 packaging packet) and the digest is single-resolution
+per segment (multi-resolution buckets deferred, logged). Inspected
+capture on llm-feed: the tray over a 210-frame session with the
+populated files lane and save/error/restart markers.
 
 **D099 closes A6 with the bundling packet — no sim-visible byte
 moved.** Every bundled demo carries the A6 welcome note (controls,
@@ -871,25 +909,29 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **A7 — the rewind/replay product UI.** The
-foundation (persistent tray, scrub grammar, wall-clocked transport:
-D065/D066/D074) and the store's durability rework (D073) are done;
-the open lines in ALPHA.md §A7 are the timeline's information layer
-and the replay artifact. The natural first packet is **timeline
-markers + activity envelope**: persisted per-segment activity/event
-indexes (sim vs editor vs project-file deltas, input transitions,
-code epochs, asset saves, restarts/session boundaries, errors)
-drawable without any state reconstruction, then the roughly
-once-a-minute presented-frame thumbnails. After that: disk
-budget/retention surfaces, immutable timeline sources with
-drag-in replay files, the standalone clip package (the
-content-addressed project-blob generalization), atomic clip export
-to `replays/`, and crash-report drops. Standing revisit triggers:
->500 rich doc actors votes the recorder per-subtree delta (D098,
-re-run perfgauge); a hand-rolled fade/wipe/hold votes the
-transition slice in (D096); a sim/doc-moving demo retrofit re-cuts
-its golden with `tools/trace/replay-driver.lua` + `dump.lua` +
-`strip-eval.lua` (usage in the headers and PROCESS.md).
+**Exact next packet:** **A7 — the rewind/replay product UI, continued.**
+The foundation (persistent tray, scrub grammar, wall-clocked
+transport: D065/D066/D074), the store's durability rework (D073),
+and now the **timeline information layer** (D100 — the persisted
+per-segment activity/event digest; the activity envelope +
+save/error/restart/session markers draw the whole retained window
+including adopted cross-session history) are done. The natural next
+packet is the **presented-frame thumbnails** (`THMB`): capture a
+small compositor-output sample near each minute boundary as
+observer-only media so the PREVIEWS lane fills (it currently draws
+"NO PRESENTED-FRAME PREVIEWS"), decimating at wide zoom, never
+re-running the sim. After that: disk budget/retention surfaces,
+immutable timeline sources with drag-in replay files, the standalone
+clip package (the content-addressed project-blob generalization,
+which also extends `FSAV` to carry a blob hash), atomic clip export
+to `replays/`, and crash-report drops (the ERROR marker + ring
+locator are already in place). Standing revisit triggers: >500 rich
+doc actors votes the recorder per-subtree delta (D098, re-run
+perfgauge); a game needing per-frame detail in adopted history votes
+multi-resolution sub-segment digest buckets (D100); a hand-rolled
+fade/wipe/hold votes the transition slice in (D096); a sim/doc-moving
+demo retrofit re-cuts its golden with `tools/trace/replay-driver.lua`
++ `dump.lua` + `strip-eval.lua` (usage in the headers and PROCESS.md).
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,

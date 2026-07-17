@@ -4499,3 +4499,72 @@ and launcher spot-checked). `tools/build-windows.sh` refreshed the
 stage (4 durable entries preserved) and Start Menu shortcut.
 Inspected captures on llm-feed: the picker with both new thumbnail
 tiles and the gap-audit gridtoy running.
+
+## D100 — the persisted timeline summary index: the A7 information layer (A7, 2026-07-17)
+
+**Context.** A7's foundation (persistent tray, scrub grammar, wall-clocked
+transport) is built, but the tray's activity/event lanes read only *resident*
+chunk streams. Demoted, spilled, and adopted cross-session segments have no
+chunks in RAM, so the tray drew them blank and printed "OLDER LEGACY ACTIVITY
+HAS NO SUMMARY INDEX"; the files lane was dead (never populated); and only
+input/code/eval/session events existed. The `ALPHA.md` §A7 lines call for a
+log-scaled sim/editor/project-file envelope and named markers (asset saves,
+restarts, errors) drawable *without state reconstruction*. That needs a
+persisted per-segment summary, the enabling infrastructure the thumbnail packet
+also rides.
+
+**Decision.** Give every closed segment a coarse, observer-only digest —
+`{ sim, editor, files, events }`: the max single-frame changed bytes for named
+sim buffers+doc, the editor doc, and project files (asset saves + code epochs),
+and the OR of that segment's event bits. (1) `summarize_segment` folds a
+segment's chunk stream into the digest at spill (and after a rewind
+truncation); it is what lets the whole retained window draw. (2) It persists two
+ways, both inside the existing atomic segment+manifest pair write: a `SUMM`
+chunk in the segment blob (portable/self-describing) and four extra
+whitespace-delimited fields on the manifest line (so cross-session **adoption
+reads digests from the manifest alone, never touching a spilled blob**).
+Manifest parsing became per-line and tolerates legacy 4-field lines, which read
+back as an honest "no summary" gap. (3) `ring_timeline` composes: resident
+segments still render *exactly* from chunks (per-frame maxes, precise event
+frames); chunk-less segments with a digest render *coarsely* (the segment's max
+envelope painted across its visible width, event bits at its leading bin);
+`missing` is set only for pre-A7 segments with neither. Seeking an old segment
+materializes its chunks through the existing LRU, so it silently upgrades to
+exact. (4) Two tiny observer chunks carry the events with no state footprint:
+`FSAV` (an editor asset save — path + published size; the bytes belong to the
+later blob packet) lights the **files** lane and a **save** marker;
+`MARK` carries a lifecycle bit. `cm.ed.kit`'s save door emits `FSAV`;
+`cm.main.enter_error` marks **error** before the crash flush; `reset_game` marks
+**restart**. All are ignored by state reconstruction and by `verify`, and are
+stripped from exported `.ctrace` clips (a clip's own activity index is the §14
+packaging packet). (5) The tray gained the three markers (red error, amber
+restart, teal save) with a hover tooltip that names the events in a bin, and the
+previously-dead files lane now draws.
+
+**Consequences.** The tray is honest across its full zoom range and across
+restarts: ten minutes of history — including the previous session — shows its
+activity envelope and named markers without decoding a frame. The digest is
+single-resolution per segment: zooming *into* old, un-scrubbed history is
+coarse-but-honest (max envelope, not per-frame), which is acceptable because
+scrubbing there makes it resident and exact. `FSAV` stores only the byte
+*length* for now; the content-addressed blob store and multi-resolution
+sub-segment buckets are deferred to the packaging packet (§14) and logged as
+revisits. No sim/doc byte moved, so every committed trace and pixel golden
+stands byte-for-byte.
+
+**Revisit.** A game needing per-frame detail in adopted history votes the
+multi-resolution segment index (§12); the clip/replay packaging packet extends
+`FSAV` to carry a blob hash and folds the digest into standalone clips; input
+markers at exact segment boundaries want the per-segment last-input carried in
+the digest if the coarse INPUT bit proves too lossy.
+
+**Proof.** Linux selftest **23,997** on PAL API 19 (6 new KATs in
+`t_timeline_summary`: the digest round-trips through spill→demote and
+through a cross-session reboot/adopt with sim/files/save/error all lit, the
+resident tail still draws files+restart exactly, and a legacy 4-field manifest
+reports the missing gap). `nix run .#test` is ALL GREEN — every historical
+trace verifies byte-exact and all pixel/audio goldens match, proving the
+information layer moved no recorded byte. Inspected capture on llm-feed: the
+tray over a 210-frame session with the populated files lane and the
+save/error/restart markers; previews honestly report none (the thumbnail
+packet). `tools/build-windows.sh` refreshed the stage and Start Menu shortcut.
