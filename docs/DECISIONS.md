@@ -3921,3 +3921,62 @@ native Windows executable **23,797**. `nix run .#test` is ALL GREEN —
 the re-cut cellar golden and every historical trace and pixel/audio
 golden pass — and the cellar golden re-verifies byte-exact on native
 Windows. `tools/build-windows.sh` refreshed the stage and shortcut.
+
+## D091 — cm.actor: the actor/world slice (A5, 2026-07-17)
+
+**Context.** After cm.box (D090), the loudest remaining PAIN vote was
+PAIN(actor): swarm ran two swap-remove pools with unstable ids and
+re-walked raw arrays per system; cellar keeps parallel ad-hoc prop/item
+tables with hand-invented string ids. The A5 contract asks for stable
+ids, spawn/despawn, deterministic iteration, tags/groups, timers, and a
+documented snapshot/rewind story — as a composable module, not an ECS.
+
+**Decision.** `cm.actor` is bookkeeping over ONE plain doc subtree
+(`actor.world()`, stored in `state.doc`): no module state, no buffers,
+no state participant, no callbacks — canon, snapshots, traces, rewind,
+and hot reload carry a world by construction. Ids are integers assigned
+ascending and never reused; the world's single list stays sorted by id
+(spawn appends, the sweep preserves order), so `get` is a binary search
+and there is no id map to rebuild and no hash order anywhere near
+iteration. Iteration (`each`/`count`/`first`/`hit`) is always spawn
+order; actors spawned during a pass are visited later in that same
+pass. `despawn` only MARKS: every query skips the corpse immediately
+and the next `tick` removes it, so despawning inside your own loop is
+safe. `tick(w)` — once per step — sweeps then counts down integer frame
+timers on the world and every live actor (`timer`/`running`/`time`;
+`expired` is true exactly on the zero frame; the pairs walk decrements
+each key independently, so hash order cannot matter). Tags are one
+string field realizing groups; `hit` is first-in-spawn-order strict-edge
+overlap (cm.box semantics) over a tag, with rect-less actors never
+hittable. Deliberately NOT here: components/systems, multi-tags,
+parent/child, spatial indexes, z/depth, effects — later slices earn
+those from demo pain, per §2's composable-module rule.
+
+**Consequences.** Swarm is the retrofit proof: enemies and shots became
+tags in one world, the overlap loops became `actor.hit`, and the
+cooldown/wave countdowns became world timers (returning before `tick`
+during the hit pause freezes the world's clocks for free — the pause
+counter itself stays PAIN(effect) beside PAIN(move), which this slice
+leaves deliberately naive). The visible rules are unchanged, but
+iteration order is now pinned to spawn order where the naive
+swap-remove order was incidental, so the golden was honestly re-cut
+rather than claimed bit-identical (cellar's D090 claim), and it
+verifies byte-exact on both platforms. Cellar and the platformer demo
+keep their naive actor tables as contrast for the next slices.
+
+**Proof.** Linux selftest passes **23,836** checks (+41 actor KATs:
+ascending stable ids, spawn/despawn refusals, spawn-order iteration
+with mid-pass spawn/despawn, tag filtering, corpse invisibility and
+order-preserving sweep, binary-search get after compaction, strict-edge
+hit including dead-skip and rect-less actors, the full timer lifecycle
+on actors and the world, and same-ops-same-canon-bytes) and the staged
+native Windows executable ****23,838**** on PAL API 19. `nix run
+.#test` is ALL GREEN — the re-cut `swarm_runs.ctrace` (1,346 frames:
+a three-wave twin-stick fight to 120, death with the hiscore write, an
+instant pad restart, a short second life, best retained) beside every
+historical trace and all pixel/audio goldens. The trace verifies
+byte-exact on Linux and the staged native Windows executable. The
+shipped scripting guide gained an actors section beside cm.box.
+`tools/build-windows.sh` refreshed the stage and shortcut. Inspected
+captures on llm-feed: wave-2 mid-fight and the settled game over with
+best retained.

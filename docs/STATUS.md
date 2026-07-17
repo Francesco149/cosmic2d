@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box shipped (D088–D090) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor shipped (D088–D091) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,28 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D091 lands the actor/world slice: cm.actor.** Bookkeeping over one
+plain doc subtree — ascending never-reused ids over a single id-sorted
+list (get is a binary search; no id map to rebuild, no hash order
+anywhere near iteration), spawn-order iteration with mark-now/
+sweep-at-tick despawn (safe inside your own loop), one string tag as
+the group key, first-in-spawn-order strict-edge `hit` (cm.box
+semantics), and integer frame timers on the world or any actor with an
+exact expiry frame. No module state, no buffers, no participant, no
+callbacks: snapshots, canon, traces, and rewind carry worlds by
+construction — and it is deliberately NOT an ECS (§2's composable-
+module rule). 41 KATs (Linux 23,836 / native Windows 23,838). Swarm is
+the retrofit proof: pools, overlap loops, and countdowns collapsed into
+the slice with the visible rules unchanged; iteration is now pinned to
+spawn order where swap-remove order was incidental, so the golden was
+honestly re-cut rather than claimed bit-identical — 1,346 frames driven
+by a virtual twin-stick pad (a three-wave fight to 120, death with the
+hiscore write, an instant pad restart, a short second life, best
+retained) verifying byte-exact on Linux and native Windows. Cellar and
+the demo keep their naive actor tables as contrast; PAIN(effect) and
+PAIN(move) stay marked for their slices. The shipped guide documents
+the module beside cm.box.
 
 **D090 lands the first A5 slice: cm.box.** Pure AABB ergonomics over
 plain keyed rects — strict-edge overlap (rect + 8-number forms),
@@ -647,16 +669,15 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the actor/world slice** — the loudest
-remaining PAIN vote (swarm's two swap-remove pools with unstable ids
-and O(shots×enemies) walks; cellar's parallel prop/item tables with
-hand-invented string ids). Design it per the A5 contract: stable ids,
-spawn/despawn, deterministic iteration order, tags/groups, timers, and
-a documented snapshot/rewind story — plain doc trees so canon/replay
-work by construction, a composable module (NOT a full ECS, per §2),
-KATs plus a trace, and ONE demo retrofit (swarm is the natural proof)
-with the others left naive as contrast. After that: the camera slice
-(the platformer demo hand-rolls clamp/lerp), then tween/effect and
+**Exact next packet:** **the camera slice** — the platformer demo
+hand-rolls its follow/clamp camera math, and §2's camera line asks for
+follow, bounds, coordinate conversion, pixel snap, shake, and simple
+transitions. Design it per the A5 contract: deterministic state in
+doc/named buffers, KATs plus a trace, task-based defaults with the
+primitives still open, and ONE demo retrofit (the platformer demo is
+the natural proof) with the others left naive as contrast. After that:
+tween/effect (swarm's pause/shake/flash counters are the standing
+PAIN(effect) vote, cellar's bobs and the demo's juice add theirs), then
 runtime-UI. A6 bundling polish (READMEs, thumbnails, release-manifest
 promotion for cellar/swarm) can interleave once slices make the demos
 concise.
