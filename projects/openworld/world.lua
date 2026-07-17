@@ -77,6 +77,21 @@ local function build_data()
       terr.hset(t, x, z, base * base * 20.0 - 1.0)
     end
   end
+  -- the pond (D3D-019): the fbm floors at -1.0, so no basin is deeper
+  -- than ankle water — scoop the noise's own deepest basin into a real
+  -- pond so the swim regime has somewhere to live. Smooth radial bowl
+  -- (quartic falloff), untouched outside PR; the tour route's nearest
+  -- leg passes ~11u out.
+  local PX, PZ, PR, PD = 42.0, 64.0, 9.0, 2.2
+  for z = 0, N do
+    for x = 0, N do
+      local dx, dz = x * TILE - PX, z * TILE - PZ
+      local q = 1.0 - (dx * dx + dz * dz) / (PR * PR)
+      if q > 0 then
+        terr.hset(t, x, z, terr.hget(t, x, z) - PD * q * q)
+      end
+    end
+  end
   W.terr = t
 
   -- spawn: the grass-band spot nearest the world center (deterministic)

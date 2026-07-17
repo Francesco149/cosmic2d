@@ -37,6 +37,13 @@ local KNOBS = {
     coyote = 6, buffer = 5, turn = 0.25,
     snap = 0.45,  -- downhill glue window (walk-offs bigger than this fall)
     stride = 2.0, -- world units per walk cycle (the distance-driven phase)
+    -- deep water swims (D3D-019); depth <= swim_depth stays wading
+    swim_depth = 1.05,  -- water deeper than this under the feet = swim
+    float_depth = 0.95, -- the feet ride this far below the surface
+    swim_speed = 3.4, swim_accel = 16, swim_fric = 8,
+    buoy = 24,     -- buoyancy spring to the float line (the surface bob)
+    wdrag = 3.5,   -- vertical water drag (settles the bob)
+    paddle = 0.55, -- paddle-hop launch, fraction of the jump's v0
   },
   cam = { -- the godot FollowCamera/CameraTuning knob set (bounce values,
           -- pulled back a touch: the mascot is bigger than the cube)
@@ -59,6 +66,7 @@ local KNOBS = {
     squash_frames = 10, lean = 0.12,
     walk_ref = 2.2, -- ground speed where the walk clip fully takes over
     idle_f = 120,   -- frames per idle breath cycle
+    swim_tilt = 0.30, -- forward pitch while swimming (the paddle read)
   },
   look = { -- the N64 presentation (D3D-003/015, render-class)
     quant = 5,
@@ -151,8 +159,8 @@ function game.init()
 end
 
 -- console: game.demo(1) = the autoplay tour — walk the scenic ring around
--- the spawn bowl forever (screenshots and the golden trace); any real
--- press takes back
+-- the spawn bowl forever (screenshots and the golden trace); game.demo(3)
+-- = the pond crossing (the swim regime on show); any real press takes back
 function game.demo(on)
   local d = state.doc
   if on and on ~= 0 then
@@ -175,15 +183,24 @@ local ROUTE = {
   { 40, 92 }, { 26, 80 }, { 34, 74 }, { 54, 78 },
 }
 
+-- demo(3): the pond crossing — walk the east bank in (splash), swim the
+-- deep bowl (the periodic hop becomes a paddle stroke mid-pond), climb
+-- the west bank out, loop the north rim home. Every waypoint verified
+-- walkable/swimmable against the carved terrain.
+local ROUTE_SWIM = {
+  { 56, 68 }, { 42, 64 }, { 31, 62 }, { 34, 74 }, { 52, 76 },
+}
+
 local function route_ctl()
   local d = state.doc
   local px, _, pz = player.pos()
-  local wp = ROUTE[d.demo_wp]
+  local route = d.demo == 3 and ROUTE_SWIM or ROUTE
+  local wp = route[d.demo_wp]
   local dx, dz = wp[1] - px, wp[2] - pz
   local dist = m.sqrt(dx * dx + dz * dz)
   if dist < 0.8 then
-    d.demo_wp = d.demo_wp % #ROUTE + 1
-    wp = ROUTE[d.demo_wp]
+    d.demo_wp = d.demo_wp % #route + 1
+    wp = route[d.demo_wp]
     dx, dz = wp[1] - px, wp[2] - pz
     dist = m.sqrt(dx * dx + dz * dz)
   end

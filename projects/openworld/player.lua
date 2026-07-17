@@ -8,6 +8,16 @@
 -- bounce clamp rules (pre-move side decides the face, EPS side tests,
 -- D3D-009/010) apply unchanged.
 --
+-- Deep water swims (D3D-019). The regime is DERIVED, never stored: water
+-- deeper than k.swim_depth under the feet + feet below the surface. While
+-- swimming: buoyancy springs y to the float line (k.buoy) against water
+-- drag (k.wdrag) — it settles with a small bob — horizontal motion runs
+-- the swim numbers, and a buffered jump press is a paddle hop (enough to
+-- read as a stroke and to help mantle the bank). Shallower water is plain
+-- wading. The shore exit is the ordinary landing snap: as the ground
+-- rises past the swim threshold the regime drops out and the next step
+-- lands on the bank — no transition state anywhere.
+--
 -- Animation: no animation state — the walk clip is driven by a DISTANCE
 -- phase (sim state, so feet never slide at any speed), idle by the frame
 -- counter, and draw blends idle->walk by ground speed, then multiplies the
@@ -64,6 +74,14 @@ function M.yaw()
   return buf:f32(O.yaw)
 end
 
+-- the swim regime (D3D-019), derived from the buffer — never stored
+function M.swimming()
+  local k = state.doc.knobs.move
+  local x, y, z = buf:f32(O.x), buf:f32(O.y), buf:f32(O.z)
+  return world.water_y - world.ground(x, z) > k.swim_depth
+     and y < world.water_y
+end
+
 local function approach(v, target, step)
   if v < target then return m.min(v + step, target) end
   return m.max(v - step, target)
@@ -100,19 +118,26 @@ function M.step(ctl)
 
   local EPS = 1e-3
 
+  -- the swim regime at the step's start (see the header): pure derivation
+  local wy = world.water_y
+  local swim = wy - world.ground(x, z) > k.swim_depth and y < wy
+
   -- horizontal: accelerate toward the wish direction, brake to a stop
   local wx, wz = ctl.wishx, ctl.wishz
   local moving = wx ~= 0 or wz ~= 0
   if moving then
-    local a = (grounded and k.accel or k.air_accel) * DT
-    vx = approach(vx, wx * k.speed, a)
-    vz = approach(vz, wz * k.speed, a)
+    local a = (swim and k.swim_accel or grounded and k.accel
+               or k.air_accel) * DT
+    local sp = swim and k.swim_speed or k.speed
+    vx = approach(vx, wx * sp, a)
+    vz = approach(vz, wz * sp, a)
     local target = m.atan2(wx, wz)
     local d = target - yaw
     d = m.atan2(m.sin(d), m.cos(d))
     yaw = yaw + d * k.turn
   else
-    local f = (grounded and k.fric or k.air_fric) * DT
+    local f = (swim and k.swim_fric or grounded and k.fric
+               or k.air_fric) * DT
     vx = approach(vx, 0, f)
     vz = approach(vz, 0, f)
   end
@@ -125,12 +150,22 @@ function M.step(ctl)
     jbuf, coyote = 0, 0
     grounded = false
     audio.sfx("jump", 96)
+  elseif jbuf > 0 and swim then -- the paddle hop
+    vy = v0 * k.paddle
+    jbuf = 0
+    audio.sfx("jump", 72)
   end
   jbuf = m.max(0, jbuf - 1)
   coyote = m.max(0, coyote - 1)
 
-  -- gravity: rise slope while ascending, heavier fall, terminal clamp
-  vy = vy - (vy > 0 and g_rise or g_rise * k.fall_mul) * DT
+  if swim then
+    -- buoyancy spring to the float line + water drag: settle with a bob
+    vy = vy + (wy - k.float_depth - y) * k.buoy * DT
+    vy = vy - vy * k.wdrag * DT
+  else
+    -- gravity: rise slope while ascending, heavier fall, terminal clamp
+    vy = vy - (vy > 0 and g_rise or g_rise * k.fall_mul) * DT
+  end
   vy = m.max(vy, -k.fall_max)
 
   -- collide x then z against the tree trunks (bounce clamp rules: face
@@ -191,12 +226,19 @@ function M.step(ctl)
   y = ny
   grounded = landed
 
+  -- entry splash: the swim regime flipped on across this step (fell in,
+  -- or walked off a deep bank) — a derived edge, no stored state
+  if not swim and wy - g > k.swim_depth and y < wy then
+    audio.sfx("splash", m.min(127, (70 - vy * 5) // 1))
+    swim = true
+  end
+
   squash_t = m.max(0, squash_t - 1)
 
-  -- the walk-cycle phase advances with GROUND DISTANCE (no foot sliding);
-  -- k.stride = world units per full cycle
+  -- the walk-cycle phase advances with GROUND DISTANCE (no foot sliding)
+  -- or while paddling; k.stride = world units per full cycle
   local hspeed = m.sqrt(vx * vx + vz * vz)
-  if grounded then
+  if grounded or swim then
     phase = (phase + hspeed * DT / k.stride) % 1
   end
 
@@ -231,9 +273,12 @@ function M.emit(out)
                        fig.cycle(mascot.walk, buf:f32(O.phase)), blend)
 
   -- live squash & stretch (the bounce cube math) composed onto the clip's
-  -- own body-scale channel
+  -- own body-scale channel; swimming stays neutral — the surface bob and
+  -- the tilt carry the read, airborne stretch would gong on every bob
+  local swim = M.swimming()
   local s = 1.0
-  if not grounded then
+  if swim then -- neutral
+  elseif not grounded then
     s = 1 + feel.stretch * m.min(1, m.abs(vy) / feel.vref)
   elseif buf:f32(O.squash_t) > 0 then
     s = 1 - buf:f32(O.squash_amt) * (buf:f32(O.squash_t) / feel.squash_frames)
@@ -242,6 +287,7 @@ function M.emit(out)
   local body = pose.body
   body[7], body[8], body[9] = body[7] * sx, body[8] * sy, body[9] * sz
   pose.base[1] = pose.base[1] + buf:f32(O.lean) -- forward pitch into the run
+  if swim then pose.base[1] = pose.base[1] + feel.swim_tilt end
 
   local root = m4.mul(m4.translate(x, y, z), m4.roty(buf:f32(O.yaw)))
   return fig.emit(out, mascot.fig, root, pose)

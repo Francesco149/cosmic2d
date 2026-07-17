@@ -13,6 +13,7 @@ local M = select(2, ...) or {}
 local SFX = {
   { "jump", "sfx-jump", 64 },
   { "land", "sfx-land", 55 },
+  { "splash", "sfx-splash", 48 },
 }
 local by_name = {}
 
