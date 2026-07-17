@@ -12,6 +12,7 @@ local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local gb = cm.require("cm.gb")
 local m4 = cm.require("cm.m4")
+local kin = cm.require("cm.kin")
 local level = cm.require("level")
 local movers = cm.require("movers")
 local audio = cm.require("audio")
@@ -57,17 +58,6 @@ function M.yaw()
   return buf:f32(O.yaw)
 end
 
-local function approach(v, target, step)
-  if v < target then return m.min(v + step, target) end
-  return m.max(v - step, target)
-end
-
-local function overlaps(b, x, y, z, hw, hh)
-  return x + hw > b[1] and x - hw < b[4]
-     and y + hh > b[2] and y < b[5]
-     and z + hw > b[3] and z - hw < b[6]
-end
-
 -- ctl: wishx/wishz (camera-relative unit move vector or 0,0),
 --      jump_pressed (edge)
 function M.step(ctl)
@@ -78,9 +68,7 @@ function M.step(ctl)
 
   -- the fixed-apex jump curve (D029): apex height jump_h units reached in
   -- apex_t frames sets rise gravity + takeoff impulse; falls are heavier.
-  local apex_t = m.max(k.jump_apex_t, 1.0)
-  local g_rise = 2.0 * k.jump_h * 3600.0 / (apex_t * apex_t)
-  local v0 = 2.0 * k.jump_h * 60.0 / apex_t
+  local g_rise, v0 = kin.jump_curve(k.jump_h, k.jump_apex_t)
 
   local x, y, z = buf:f32(O.x), buf:f32(O.y), buf:f32(O.z)
   local vx, vy, vz = buf:f32(O.vx), buf:f32(O.vy), buf:f32(O.vz)
@@ -91,7 +79,7 @@ function M.step(ctl)
   local squash_amt = buf:f32(O.squash_amt)
   local lean = buf:f32(O.lean)
 
-  local EPS = 1e-3
+  local EPS = kin.EPS
 
   -- moving platforms: this step collides against the post-step boxes
   -- (frame+1 = what draw shows); a grounded player whose feet sit on a
@@ -116,121 +104,57 @@ function M.step(ctl)
   end
 
   -- horizontal: accelerate toward the wish direction, brake to a stop
-  local wx, wz = ctl.wishx, ctl.wishz
-  local moving = wx ~= 0 or wz ~= 0
-  if moving then
-    local a = (grounded and k.accel or k.air_accel) * DT
-    vx = approach(vx, wx * k.speed, a)
-    vz = approach(vz, wz * k.speed, a)
-    -- turn toward the input heading, shortest arc
-    local target = m.atan2(wx, wz)
-    local d = target - yaw
-    d = m.atan2(m.sin(d), m.cos(d))
-    yaw = yaw + d * k.turn
-  else
-    local f = (grounded and k.fric or k.air_fric) * DT
-    vx = approach(vx, 0, f)
-    vz = approach(vz, 0, f)
-  end
+  local accel = grounded and k.accel or k.air_accel
+  local fric = grounded and k.fric or k.air_fric
+  vx, vz, yaw = kin.run(vx, vz, yaw, ctl.wishx, ctl.wishz, k.speed, accel, fric, k.turn)
 
-  -- jump: buffered press + coyote window
-  if ctl.jump_pressed then jbuf = k.buffer end
-  if grounded then coyote = k.coyote end
-  if jbuf > 0 and coyote > 0 then
-    vy = v0
-    jbuf, coyote = 0, 0
-    grounded = false
-    audio.sfx("jump", 96)
-  end
-  jbuf = m.max(0, jbuf - 1)
-  coyote = m.max(0, coyote - 1)
+  -- jump: buffered press + coyote window (no swim regime in bounce)
+  local jvy, evt
+  jvy, jbuf, coyote, grounded, evt = kin.jump(jbuf, coyote, grounded,
+    ctl.jump_pressed, k.buffer, k.coyote, v0, false)
+  if jvy then vy = jvy end
+  if evt == "jump" then audio.sfx("jump", 96) end
 
   -- gravity: rise slope while ascending, heavier fall, terminal clamp
-  vy = vy - (vy > 0 and g_rise or g_rise * k.fall_mul) * DT
+  vy = kin.gravity(vy, g_rise, k.fall_mul)
   vy = m.max(vy, -k.fall_max)
 
-  -- collide axis-by-axis against the level AABBs. The clamp face comes
-  -- from WHICH SIDE THE PLAYER WAS ON pre-move, never from the velocity
-  -- sign: velocity zeroes on the first hit, and a sign-based clamp then
-  -- snapped later overlaps to the wrong face — walking into a
-  -- narrower-than-the-player pocket teleported across the far box.
-  -- A pre-move overlap on the same axis (squeezed) clamps nothing here;
-  -- another axis or the next frame resolves it.
-  --
-  -- EPS: the side tests MUST tolerate float noise. A clamp stores
-  -- face-hw in the f32 buffer; (face-hw)+hw can round PAST the face, and
-  -- an exact test then reads the flush player as "squeezed" — one frame
-  -- later it is sliding INTO the box (the stair phase-through / one-axis
-  -- pillar bug). 1e-3 is far above f32 noise, far below a frame of motion.
-  -- (EPS is defined above the mover carry.)
-  --
-  -- C = static level boxes + the movers' post-step boxes: movers land,
-  -- clamp, and mantle exactly like level geometry (walking into a docked
-  -- lift mantles you onto it).
+  -- collide axis-by-axis against the level AABBs (the D3D-009/010 clamp,
+  -- in cm.kin now). C = static level boxes + the movers' post-step boxes:
+  -- movers land, clamp, and mantle exactly like level geometry (walking
+  -- into a docked lift mantles you onto it).
   local C = {}
   for i, b in ipairs(level.colliders) do C[i] = b end
   for _, b in ipairs(mnew) do C[#C + 1] = b end
 
-  -- mantle: a blocked step whose top is within step_h of the feet lifts
-  -- the player instead (stairs are WALKED, jumps are for gaps) — if the
-  -- body fits standing there. Grounded only: no mid-air wall-climbing.
-  local function mantle_top(b, px_, pz_)
-    if not grounded then return nil end
-    local lift = b[5] - y
-    if lift <= 0 or lift > k.step_h then return nil end
-    for _, o in ipairs(C) do
-      if overlaps(o, px_, b[5] + EPS, pz_, hw, hh) then return nil end
-    end
-    return b[5]
-  end
+  -- mantle: a blocked step within step_h of the feet lifts you instead
+  -- (stairs are WALKED) if the body fits standing there. Grounded only:
+  -- pass nil airborne so there is no mid-air wall-climbing; the probe
+  -- raises the working feet (cy threads through both axes).
+  local mantle = grounded and function(b, px, pz, cy)
+    return kin.mantle_top(b, C, px, pz, cy, hw, hh, k.step_h)
+  end or nil
 
   local nx = x + vx * DT
-  for _, b in ipairs(C) do
-    if overlaps(b, nx, y, z, hw, hh) then
-      if x + hw <= b[1] + EPS or x - hw >= b[4] - EPS then
-        local top = mantle_top(b, nx, z)
-        if top then
-          y = top -- step up, keep the run
-        elseif x + hw <= b[1] + EPS then
-          nx = b[1] - hw
-          vx = 0
-        else
-          nx = b[4] + hw
-          vx = 0
-        end
-      end
-    end
-  end
+  nx, vx, y = kin.slide(C, true, nx, y, z, x, vx, hw, hh, mantle)
   x = nx
   local nz = z + vz * DT
-  for _, b in ipairs(C) do
-    if overlaps(b, x, y, nz, hw, hh) then
-      if z + hw <= b[3] + EPS or z - hw >= b[6] - EPS then
-        local top = mantle_top(b, x, nz)
-        if top then
-          y = top
-        elseif z + hw <= b[3] + EPS then
-          nz = b[3] - hw
-          vz = 0
-        else
-          nz = b[6] + hw
-          vz = 0
-        end
-      end
-    end
-  end
+  nz, vz, y = kin.slide(C, false, x, y, nz, z, vz, hw, hh, mantle)
   z = nz
+
+  -- vertical vs the box tops (land) and bottoms (bonk) — the bounce ground
+  -- truth (an axis-aligned world; ow/bw land on a heightfield instead, so
+  -- this pass stays in the demo; cm.kin only hands over the land squash).
   local ny = y + vy * DT
   local landed = false
   for _, b in ipairs(C) do
-    if overlaps(b, x, ny, z, hw, hh) then
+    if kin.overlaps(b, x, ny, z, hw, hh) then
       if vy <= 0 and y >= b[5] - EPS then -- feet were at/above: land
         ny = b[5]
         landed = true
-        -- a real landing (not the grounded re-collide, ~0.7/frame) squashes
-        if vy < -2 then
-          squash_amt = feel.squash * m.min(1, -vy / feel.vref)
-          squash_t = feel.squash_frames
+        local sa, st = kin.land_squash(vy, feel.squash, feel.vref, feel.squash_frames)
+        if sa then -- a real landing (not the ~0.7/frame grounded re-collide)
+          squash_amt, squash_t = sa, st
           audio.sfx("land", m.min(127, (64 - vy * 4) // 1))
         end
         vy = 0
@@ -258,8 +182,7 @@ function M.step(ctl)
 
   -- lean into the run (proto's lean param, here pitch toward the heading)
   local hspeed = m.sqrt(vx * vx + vz * vz)
-  local ltarget = feel.lean * m.min(1, hspeed / k.speed)
-  lean = lean + (ltarget - lean) * 0.2
+  lean = kin.lean(lean, hspeed, feel.lean, k.speed)
 
   buf:f32(O.x, x); buf:f32(O.y, y); buf:f32(O.z, z)
   buf:f32(O.vx, vx); buf:f32(O.vy, vy); buf:f32(O.vz, vz)

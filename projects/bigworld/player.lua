@@ -21,6 +21,7 @@ local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
+local kin = cm.require("cm.kin")
 local fig = cm.require("cm.fig")
 local mascot = cm.require("cm.mascot")
 local world = cm.require("world")
@@ -80,17 +81,6 @@ function M.swimming()
      and y < world.water_y
 end
 
-local function approach(v, target, step)
-  if v < target then return m.min(v + step, target) end
-  return m.max(v - step, target)
-end
-
-local function overlaps(b, x, y, z, hw, hh)
-  return x + hw > b[1] and x - hw < b[4]
-     and y + hh > b[2] and y < b[5]
-     and z + hw > b[3] and z - hw < b[6]
-end
-
 -- ctl: wishx/wishz (camera-relative unit move vector or 0,0),
 --      jump_pressed (edge)
 -- dyncol: extra AABBs that move (the near entities — main passes
@@ -102,9 +92,7 @@ function M.step(ctl, dyncol)
   local hw, hh = k.cw / 2, k.ch
 
   -- the fixed-apex jump curve (D029, bounce's numbers)
-  local apex_t = m.max(k.jump_apex_t, 1.0)
-  local g_rise = 2.0 * k.jump_h * 3600.0 / (apex_t * apex_t)
-  local v0 = 2.0 * k.jump_h * 60.0 / apex_t
+  local g_rise, v0 = kin.jump_curve(k.jump_h, k.jump_apex_t)
 
   local x, y, z = buf:f32(O.x), buf:f32(O.y), buf:f32(O.z)
   local vx, vy, vz = buf:f32(O.vx), buf:f32(O.vy), buf:f32(O.vz)
@@ -116,8 +104,6 @@ function M.step(ctl, dyncol)
   local lean = buf:f32(O.lean)
   local phase = buf:f32(O.phase)
   local glide = buf:f32(O.glide) == 1.0
-
-  local EPS = 1e-3
 
   -- the swim regime at the step's start: pure derivation
   local wy = world.water_y
@@ -138,54 +124,35 @@ function M.step(ctl, dyncol)
     audio.sfx("jump", 60)
   end
 
-  -- horizontal: accelerate toward the wish direction, brake to a stop
+  -- horizontal: the glider builds speed along the FACING (the wish only
+  -- steers, slower); otherwise cm.kin runs the regime (swim/ground/air).
   local wx, wz = ctl.wishx, ctl.wishz
-  local moving = wx ~= 0 or wz ~= 0
   if glide then
-    -- deployed: speed builds along the FACING; the wish only steers.
-    -- No wish = hold course (the fast-travel read: point and soar).
-    if moving then
-      local target = m.atan2(wx, wz)
-      local d = target - yaw
+    -- deployed: no wish = hold course (the fast-travel read: point and soar)
+    if wx ~= 0 or wz ~= 0 then
+      local d = m.atan2(wx, wz) - yaw
       d = m.atan2(m.sin(d), m.cos(d))
       yaw = yaw + m.clamp(d, -k.glide_turn, k.glide_turn)
     end
     local fx, fz = m.sin(yaw), m.cos(yaw)
     local a = k.glide_accel * DT
-    vx = approach(vx, fx * k.glide_speed, a)
-    vz = approach(vz, fz * k.glide_speed, a)
-  elseif moving then
-    local a = (swim and k.swim_accel or grounded and k.accel
-               or k.air_accel) * DT
-    local sp = swim and k.swim_speed or k.speed
-    vx = approach(vx, wx * sp, a)
-    vz = approach(vz, wz * sp, a)
-    local target = m.atan2(wx, wz)
-    local d = target - yaw
-    d = m.atan2(m.sin(d), m.cos(d))
-    yaw = yaw + d * k.turn
+    vx = kin.approach(vx, fx * k.glide_speed, a)
+    vz = kin.approach(vz, fz * k.glide_speed, a)
   else
-    local f = (swim and k.swim_fric or grounded and k.fric
-               or k.air_fric) * DT
-    vx = approach(vx, 0, f)
-    vz = approach(vz, 0, f)
+    local accel = swim and k.swim_accel or grounded and k.accel or k.air_accel
+    local fric = swim and k.swim_fric or grounded and k.fric or k.air_fric
+    local sp = swim and k.swim_speed or k.speed
+    vx, vz, yaw = kin.run(vx, vz, yaw, wx, wz, sp, accel, fric, k.turn)
   end
 
-  -- jump: buffered press + coyote window
-  if jump_pressed then jbuf = k.buffer end
-  if grounded then coyote = k.coyote end
-  if jbuf > 0 and coyote > 0 then
-    vy = v0
-    jbuf, coyote = 0, 0
-    grounded = false
-    audio.sfx("jump", 96)
-  elseif jbuf > 0 and swim then -- the paddle hop
-    vy = v0 * k.paddle
-    jbuf = 0
-    audio.sfx("jump", 72)
-  end
-  jbuf = m.max(0, jbuf - 1)
-  coyote = m.max(0, coyote - 1)
+  -- jump: buffered press + coyote window; a swim press is the paddle hop.
+  -- (jump_pressed was consumed above if it toggled the glider.)
+  local jvy, evt
+  jvy, jbuf, coyote, grounded, evt = kin.jump(jbuf, coyote, grounded,
+    jump_pressed, k.buffer, k.coyote, v0, swim, k.paddle)
+  if jvy then vy = jvy end
+  if evt == "jump" then audio.sfx("jump", 96)
+  elseif evt == "paddle" then audio.sfx("jump", 72) end
 
   if swim then
     -- buoyancy spring to the float line + water drag: settle with a bob
@@ -193,72 +160,40 @@ function M.step(ctl, dyncol)
     vy = vy - vy * k.wdrag * DT
   elseif glide then
     -- deployed: the fall flattens toward the glide sink rate
-    vy = approach(vy, -k.glide_fall, k.glide_grav * DT)
+    vy = kin.approach(vy, -k.glide_fall, k.glide_grav * DT)
   else
-    -- gravity: rise slope while ascending, heavier fall, terminal clamp
-    vy = vy - (vy > 0 and g_rise or g_rise * k.fall_mul) * DT
+    vy = kin.gravity(vy, g_rise, k.fall_mul) -- rise slope / heavier fall
   end
   vy = m.max(vy, -k.fall_max)
 
   -- collide x then z against the near prop colliders + the near entities
-  -- (bounce clamp rules: face from the pre-move side, EPS side tests,
-  -- squeezed overlaps clamp nothing) and clamp to the world edge.
+  -- (the D3D-009/010 clamp, in cm.kin) and clamp to the world edge.
   -- boxes_near derives from the pure per-chunk streams — the sim's
-  -- colliders exist wherever the player is, resident or not.
+  -- colliders exist wherever the player is, resident or not (one call,
+  -- shared by both sweeps and the ground-top raise below).
   local sx, sz = world.size()
-  local GROUPS = { world.boxes_near(x, z), dyncol or {} }
+  local near = world.boxes_near(x, z)
 
   local nx = m.clamp(x + vx * DT, 2, sx - 2)
-  for _, C in ipairs(GROUPS) do
-    for _, b in ipairs(C) do
-      if overlaps(b, nx, y, z, hw, hh) then
-        if x + hw <= b[1] + EPS then
-          nx = b[1] - hw
-          vx = 0
-        elseif x - hw >= b[4] - EPS then
-          nx = b[4] + hw
-          vx = 0
-        end
-      end
-    end
-  end
+  nx, vx = kin.slide(near, true, nx, y, z, x, vx, hw, hh)
+  nx, vx = kin.slide(dyncol or {}, true, nx, y, z, x, vx, hw, hh)
   x = nx
   local nz = m.clamp(z + vz * DT, 2, sz - 2)
-  for _, C in ipairs(GROUPS) do
-    for _, b in ipairs(C) do
-      if overlaps(b, x, y, nz, hw, hh) then
-        if z + hw <= b[3] + EPS then
-          nz = b[3] - hw
-          vz = 0
-        elseif z - hw >= b[6] - EPS then
-          nz = b[6] + hw
-          vz = 0
-        end
-      end
-    end
-  end
+  nz, vz = kin.slide(near, false, x, y, nz, z, vz, hw, hh)
+  nz, vz = kin.slide(dyncol or {}, false, x, y, nz, z, vz, hw, hh)
   z = nz
 
-  -- vertical vs the heightfield + collider tops (the box-top landing
-  -- rule, feet-at-or-above only, EPS per D3D-010)
+  -- vertical vs the heightfield + collider tops (kin.ground_top: the
+  -- box-top landing rule, feet-at-or-above, EPS per D3D-010)
   local g = world.ground(x, z)
-  for _, C in ipairs(GROUPS) do
-    for _, b in ipairs(C) do
-      if b[5] > g and y >= b[5] - EPS
-         and x + hw > b[1] + EPS and x - hw < b[4] - EPS
-         and z + hw > b[3] + EPS and z - hw < b[6] - EPS then
-        g = b[5]
-      end
-    end
-  end
+  g = kin.ground_top(near, g, x, y, z, hw)
+  g = kin.ground_top(dyncol or {}, g, x, y, z, hw)
   local ny = y + vy * DT
   local landed = false
   if ny <= g then
-    -- a real landing (not the grounded re-collide) squashes; a glide
-    -- landing squashes softer (the sink rate is gentle by design)
-    if vy < -2 then
-      squash_amt = feel.squash * m.min(1, -vy / feel.vref)
-      squash_t = feel.squash_frames
+    local sa, st = kin.land_squash(vy, feel.squash, feel.vref, feel.squash_frames)
+    if sa then -- a real landing (a glide touchdown is gentle by design)
+      squash_amt, squash_t = sa, st
       audio.sfx("land", m.min(127, (64 - vy * 4) // 1))
     end
     ny = g
@@ -289,8 +224,7 @@ function M.step(ctl, dyncol)
   end
 
   -- lean into the run (forward pitch on the mascot base)
-  local ltarget = feel.lean * m.min(1, hspeed / k.speed)
-  lean = lean + (ltarget - lean) * 0.2
+  lean = kin.lean(lean, hspeed, feel.lean, k.speed)
 
   buf:f32(O.x, x); buf:f32(O.y, y); buf:f32(O.z, z)
   buf:f32(O.vx, vx); buf:f32(O.vy, vy); buf:f32(O.vz, vz)
