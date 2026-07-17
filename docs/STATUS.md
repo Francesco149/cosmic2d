@@ -4,6 +4,44 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 13) — stars: the wander gets a goal
+
+Autonomous round (no new feed verdicts; water polish + exchange depth
+stay gated). **projects/openworld/stars.lua** (D3D-021): ten gold
+stars — the mascot's antenna species mark as a spinning, bobbing
+G.ball — on verified spots (seven ring waypoints, both swim banks, one
+FLOATING mid-pond as the swim reward, one beside the pond watcher).
+Bounce's pickups pattern: ow.stars timer buffer, stays-collected, pop
+ghosts, coin sfx (bounce preset, new slot), all ten = bell-triad
+fanfare + fading ALL THE STARS banner; stars n/10 HUD counter. Rest
+height DERIVED per use (module tables reassign on hot reload — never
+bake). demo(5) = the star sweep over verified legs, ending on the
+watcher's star so fanfare + greet + dialog land in one beat. Goldens:
+openworld_stars.ctrace (1900f, drift-proven) + .png (f1740 banner);
+all three openworld traces re-recorded (knobs.stars + snd.bank) and
+re-shot (stars in every framing). Suite ALL GREEN; 3 shots on the
+feed.
+
+## Exact next step
+
+1. Feed questions open (non-blocking): do the stars read at 320x240
+   (size/color vs the grass)? does the completion beat land (fanfare
+   + banner over the greet)? should collection persist across
+   sessions (it resets with the doc today)? Plus round 12's (exchange
+   read, dialog tone, text box vs bare HUD line) and round 11's
+   (splash in-game listen, half-sunk swim read, jump read, band
+   colors + fog, eye size).
+2. **Demo 2 grows** (menu, minus stars): water polish (shoreline
+   read, swim-out splash), more exchange depth (the NPC walking its
+   own little route, multi-line dialog pages, star-count-aware
+   lines), a second NPC elsewhere, or first props beyond trees
+   (rocks/flowers on the bands). Figure EDITOR stays parked until the
+   human unparks.
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras.
+
 ## 2026-07-17 (round 12) — the pond watcher: first NPC + the exchange
 
 Demo 2's Zelda-ish beat (D3D-020). **cm.mascot.build(overrides)** casts
@@ -23,7 +61,7 @@ line); tour/swim re-recorded (knobs.npc + snd.bank) and re-shot (new
 world content + the HUD tris counter). Suite ALL GREEN; 3 shots on the
 feed (exchange wide, wave close, the greet framing).
 
-## Exact next step
+## Exact next step (done — see round 13 above)
 
 1. Feed questions open (non-blocking): does the exchange beat land
    (turn + wave + chime + typewriter)? dialog tone ok? does the NPC

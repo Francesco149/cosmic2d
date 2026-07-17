@@ -540,3 +540,46 @@ demo(4): approach, chime edge, turn ease, hold-and-stand) +
 openworld_npc.png (f311: wave out-sweep, the full first line typed).
 All three traces drift-proven; figure goldens byte-identical through
 the cm.mascot builder refactor. Suite ALL GREEN.
+
+## D3D-021 — stars: the wander gets a goal (2026-07-17)
+
+Round 13, autonomous (the STATUS menu's verdict-free option — water
+polish and exchange depth stay gated on open feed questions). The
+open world's first collectible loop: ten gold stars scattered over
+the terrain, a counter, and an all-collected fanfare.
+
+- **The collectible IS the species mark**: the same gold chunky ball
+  (G.ball n=6, cm.mascot's star color) the mascot wears on its
+  antenna — no new shape language, and the pond watcher's "that star
+  on your antenna" line was already pointing at it. Spin reads
+  through facet lighting (the lathe is revolution-symmetric; its
+  6-segment facets are not).
+- **The bounce pickups pattern verbatim-ish** (its second user):
+  per-item timers in one named buffer (ow.stars), the 0 / pop..1 /
+  -1 encoding, stays-collected (the bounce playtest lesson: timed
+  respawn reads as a bug), pop ghosts + spin/bob render-class, coin
+  sfx on a new slot from bounce's human-heard preset, fanfare = the
+  bell triad on the existing greet slot (no new synth drafts).
+- **Placement rides the verified routes**: seven stars on the
+  demo(1) ring waypoints, two on the demo(3) swim banks, one beside
+  the pond watcher's stand spot — every spot's height sampled on the
+  carved terrain before it went in. The mid-pond star floats at a
+  pinned y just above the water (the swim regime's reward); every
+  other star derives ground + hover per use, never baked at init
+  (the module table is reassigned on hot reload — baked state would
+  vanish).
+- **The come-on star moved off spawn**: the natural first spot
+  (71,71) IS the spawn cell — a star there self-collects at boot in
+  every session and golden. It sits a leg down the ring instead.
+- **demo(5), the star sweep**, chains only verified legs (ring +
+  swim routes and their reverses) and ends standing on the watcher's
+  star, so the fanfare, the greet chime, and the dialog overlap in
+  one closing beat — the golden covers pickup, swim-collect,
+  completion, and the exchange in a single trace.
+
+Fallout: knobs.stars + doc counters grow the doc tree and
+sfx-coin.ins grows snd.bank, so all three openworld traces
+re-recorded and re-shot (stars entered every framing; the tour now
+reads 7/10 mid-lap, the npc golden collects the watcher's star). New
+goldens: openworld_stars.ctrace (1900f, drift-proven) + .png (f1740:
+banner + gold 10/10 counter + the exchange). Suite ALL GREEN.
