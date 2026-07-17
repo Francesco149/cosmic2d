@@ -154,9 +154,28 @@ end
 -- changes through here, so the mutation and the save live in one place. Native
 -- editor accessibility is user-wide and has its separate store below.
 
+-- `_video_path` is a selftest seam (like `_access_path` below); production
+-- always derives from the booted project root.
 local function video_path()
+  if M._video_path then return M._video_path end
   local a = cm.main and cm.main.args
   return (a and a.project) and (a.project .. "/video.dat") or nil
+end
+
+-- video.dat contributors (A4/D085): video.dat is THE per-project machine-
+-- local options store, and other modules own knobs that belong in it (the
+-- volume knobs + project-declared options live in cm.options). A contributor
+-- is { save = fn() -> flat table fragment, load = fn(t|nil) }: save fragments
+-- merge into the canonical table; load runs on every load_video — with the
+-- parsed table, or nil when the file is missing/unreadable — so adopting and
+-- resetting-to-defaults are one path and a project switch never leaks knobs.
+M._contrib = M._contrib or {}
+function M.video_contrib(name, save, load)
+  M._contrib[name] = { save = save, load = load }
+end
+
+local function contrib_load(t)
+  for _, c in pairs(M._contrib) do c.load(t) end
 end
 
 -- Editor legibility is a user preference, not a project setting. Keep it in
@@ -218,12 +237,62 @@ function M.save_video()
   if not path then return end -- headless / before boot wired args: nothing to do
   local t = { ui_scale = M.cfg.ui_scale, fullscreen = M.fullscreen,
               win_w = M.win_w, win_h = M.win_h }
+  for _, c in pairs(M._contrib) do
+    for k, v in pairs(c.save() or {}) do t[k] = v end
+  end
   local ok, err = pal.write_file_atomic(path, cm.require("cm.state").canon(t),
                                         M._save_fail)
   if not ok then
     pal.log(("[video] save FAILED %s: %s"):format(path, tostring(err)))
   end
   return ok, err
+end
+
+-- Windowed-size candidates for the options menu (A4/D085): sizes the ladder
+-- FILLS with no letterbox — whole multiples of a FOV ≤ the project reference
+-- (both the 16:9 reference itself and its 4:3-capped sibling, e.g. 480x270 →
+-- 360x270; see M.ladder) — that actually FIT the given desktop. Pure: KAT'd
+-- against fixed desktops. Scales start at 2 (1x of a 270-line game is a
+-- stamp); when nothing at 2x+ fits the tiny display, 1x candidates step in,
+-- and the smallest FOV at 1x is the unconditional floor. Largest 8 keep the
+-- list menu-sized. nil/absent desktop (headless, no SDL display) → the
+-- classic static four, unchanged from M8.6.
+M.FALLBACK_SIZES = { { 720, 540 }, { 960, 540 }, { 1440, 1080 }, { 1920, 1080 } }
+
+function M.size_candidates(dw, dh)
+  local c = M.cfg
+  local fovs = { { c.ref_w, c.ref_h } }
+  local w43 = (c.ref_h * 4) // 3
+  if w43 * 3 == c.ref_h * 4 and w43 < c.ref_w then
+    fovs[#fovs + 1] = { w43, c.ref_h }
+  end
+  if type(dw) ~= "number" or type(dh) ~= "number" or dw < 1 or dh < 1 then
+    local out = {}
+    for i, s in ipairs(M.FALLBACK_SIZES) do out[i] = { s[1], s[2] } end
+    return out
+  end
+  local out = {}
+  local function collect(smin, smax)
+    for s = smin, smax do
+      for _, f in ipairs(fovs) do
+        local w, h = f[1] * s, f[2] * s
+        if w <= dw and h <= dh then out[#out + 1] = { w, h } end
+      end
+    end
+  end
+  collect(2, 12)
+  if #out == 0 then collect(1, 1) end
+  if #out == 0 then
+    local f = fovs[#fovs] -- nothing fits at all: the smallest FOV at 1x
+    out[1] = { f[1], f[2] }
+  end
+  table.sort(out, function(a, b)
+    local aa, ba = a[1] * a[2], b[1] * b[2]
+    if aa ~= ba then return aa < ba end
+    return a[1] < b[1]
+  end)
+  while #out > 8 do table.remove(out, 1) end -- keep the LARGEST 8
+  return out
 end
 
 -- pick a windowed preset (the options menu): leave fullscreen first — SDL
@@ -252,12 +321,17 @@ function M.load_video()
   if cw and cw > 0 then M.win_w, M.win_h = cw, ch end
   local path = video_path()
   local bytes = path and pal.read_file(path)
-  if not bytes then return end
+  if not bytes then
+    contrib_load(nil)
+    return
+  end
   local ok, t = pcall(cm.require("cm.state").parse, bytes)
   if not ok or type(t) ~= "table" then
     pal.log("[video] " .. tostring(path) .. " unreadable; using defaults")
+    contrib_load(nil)
     return
   end
+  contrib_load(t)
   if type(t.ui_scale) == "number" and t.ui_scale >= 1 and t.ui_scale <= 8 then
     M.cfg.ui_scale = t.ui_scale
   end

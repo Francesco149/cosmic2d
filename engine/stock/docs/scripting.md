@@ -181,7 +181,9 @@ Buttons and axes use SDL's standard gamepad layout (`input.pad_btn`,
 `dpup/dpdown/dpleft/dpright`; the axes are `lx/ly/rx/ry/lt/rt`. Axis values
 arrive already deadzoned and quantized to whole numbers, so using them
 directly in the sim stays deterministic — divide by 127 when you want a
--1..1 float.
+-1..1 float. Players tune the deadzone and the axis press threshold on the
+Esc menu's controls page; recordings store the post-deadzone values, so
+retuning never invalidates a trace.
 
 ## Drawing, cameras, and text
 
@@ -324,6 +326,36 @@ for game SFX. Play a tracker song with:
 Sequencing and audio stepping are handled by the engine. Sound is deterministic
 simulation: trigger it in `step`, not `draw`.
 
+## The options menu
+
+Every game gets the Esc menu for free: fullscreen, window sizes that fit the
+player's display, UI scale, master/music/SFX volume, the controls page
+(rebinding plus stick deadzone and press-threshold knobs), and quit. All of it
+is per-player, per-machine policy — volumes change what the speakers hear,
+never the simulated mix, so recordings and replays are untouched; every choice
+persists in the project's `video.dat`/`input.dat` (never exported).
+
+Add game-specific settings to the same menu with `cm.options`:
+
+    local options = cm.require("cm.options")
+
+    options.add({ id = "shake", label = "screen shake",
+                  kind = "toggle", default = true })
+    options.add({ id = "zoom", kind = "slider", min = 1, max = 8,
+                  default = 2, on_change = function(v) ... end })
+    options.add({ id = "filter", kind = "choice",
+                  choices = { "clean", "crt" } })
+
+    if options.get("shake") then ... end -- read it in draw, not step
+
+Declare options in `init`; values persist automatically beside the volume
+knobs, and stored values survive even if a version skips the declaration.
+These are LIVE settings for presentation choices — read them in `draw` or
+apply them via `on_change`. A setting that changes gameplay belongs in
+`state.doc` (where it is recorded) instead, or it will break replay.
+`options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
+are the scripted doors to the same knobs.
+
 ## Determinism checklist
 
 - Change simulation only in `init`/`step`; keep `draw` side-effect free.
@@ -346,6 +378,7 @@ simulation: trigger it in `step`, not `draw`.
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
+- `cm.options` — the Esc menu: game-declared settings, volume doors.
 - `cm.palette` / `cm.grade` — palette data and render-only color grading.
 - `cm.rand` / `cm.math` / `cm.ease` — deterministic helpers.
 

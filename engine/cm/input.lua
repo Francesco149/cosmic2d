@@ -120,8 +120,27 @@ end
 
 -- how far a bound stick axis must deflect (quantized, of 127) to count as
 -- "down". Live-side policy like the deadzone: recorded action bits bake it
--- in, so retuning never touches replay.
-M.axis_threshold = M.axis_threshold or 40
+-- in, so retuning never touches replay. Player knob (A4/D085): set through
+-- set_axis_threshold, persisted beside the rebinds in input.dat.
+M.DEF_AXIS_THRESHOLD = 40
+M.axis_threshold = M.axis_threshold or M.DEF_AXIS_THRESHOLD
+
+-- the knob setters (the options menu / project code): clamp to sane ranges,
+-- return the applied value. Call save_binds() to persist — the knobs live in
+-- the same machine-local store as the rebind overrides.
+function M.set_axis_threshold(v)
+  v = math.floor(tonumber(v) or M.DEF_AXIS_THRESHOLD)
+  if v < 1 then v = 1 elseif v > 127 then v = 127 end
+  M.axis_threshold = v
+  return v
+end
+
+function M.set_deadzone(v)
+  v = math.floor(tonumber(v) or M.DEF_DEADZONE)
+  if v < 0 then v = 0 elseif v > 32000 then v = 32000 end
+  M.deadzone = v
+  return v
+end
 
 local AXIS_DIR = { ["+"] = 1, ["-"] = -1 }
 
@@ -308,11 +327,20 @@ end
 function M.load_binds(project_root)
   M._binds_path = project_root and (project_root .. "/input.dat") or nil
   M._overrides = {}
+  -- the knobs reset to code defaults first: switching projects must never
+  -- leak the previous store's tuning
+  M.deadzone, M.axis_threshold = M.DEF_DEADZONE, M.DEF_AXIS_THRESHOLD
   local bytes = M._binds_path and pal.read_file(M._binds_path)
   if bytes then
     local ok, t = pcall(state_mod().parse, bytes)
     if ok and type(t) == "table" and t.schema == 1
        and type(t.actions) == "table" then
+      -- the tuning knobs (A4/D085) ride the same schema additively: absent
+      -- in old stores (defaults), non-numbers ignored, values clamped
+      if type(t.deadzone) == "number" then M.set_deadzone(t.deadzone) end
+      if type(t.axis_threshold) == "number" then
+        M.set_axis_threshold(t.axis_threshold)
+      end
       for name, list in pairs(t.actions) do
         if type(name) == "string" and type(list) == "table" then
           local o = {}
@@ -342,7 +370,14 @@ function M.save_binds(fail)
   for name, list in pairs(M._overrides) do
     actions[name] = table.move(list, 1, #list, 1, {})
   end
-  local bytes = state_mod().canon({ schema = 1, actions = actions })
+  -- knobs persist only when off their defaults: an untouched player never
+  -- freezes today's defaults against a future engine retune
+  local bytes = state_mod().canon({
+    schema = 1, actions = actions,
+    deadzone = M.deadzone ~= M.DEF_DEADZONE and M.deadzone or nil,
+    axis_threshold = M.axis_threshold ~= M.DEF_AXIS_THRESHOLD
+                     and M.axis_threshold or nil,
+  })
   local ok, err = pal.write_file_atomic(M._binds_path, bytes, fail)
   if not ok then
     pal.log(("[input] save FAILED %s: %s"):format(M._binds_path, tostring(err)))
@@ -550,11 +585,12 @@ function M.feed(events)
   end
 end
 
--- Deadzone, live-side policy (an options knob later in A4) — NEVER part of
--- the record or the sim: records store post-deadzone quantized values, so
--- retuning it can't invalidate a trace. Default tracks XInput's stick
--- deadzone recommendation.
-M.deadzone = M.deadzone or 8000
+-- Deadzone, live-side policy (a player knob since A4/D085, set_deadzone
+-- above) — NEVER part of the record or the sim: records store post-deadzone
+-- quantized values, so retuning it can't invalidate a trace. Default tracks
+-- XInput's stick deadzone recommendation.
+M.DEF_DEADZONE = 8000
+M.deadzone = M.deadzone or M.DEF_DEADZONE
 
 -- Quantize one raw SDL axis (-32768..32767; triggers use 0..32767) to the
 -- wire's -127..127. Integer math only, exact on every platform: values at

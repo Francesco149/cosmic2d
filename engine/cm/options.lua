@@ -1,12 +1,18 @@
--- cm.options — the video/options menu (M8.6, D036). Sets resolution / UI scale
--- / fullscreen DIRECTLY, which the resize ladder can't cover: a borderless or
--- fullscreen window can't be drag-resized (human ask 2026-06-28). Toggled by
--- Esc; available in play AND editor. The controls page (A4/D084) is the
--- player-facing rebind surface: every action the project defines lists its
--- live bindings as chips; clicking one (or +) arms a capture that binds the
--- next key or pad input, stealing it from any other action that held it.
--- Rebinds persist per project + per user in <project>/input.dat through
--- cm.input's binding store — live-side policy only, never a sim input.
+-- cm.options — the player options menu (M8.6/D036, grown at A4/D085). Sets
+-- window size (display-fitted candidates) / UI scale / fullscreen DIRECTLY,
+-- which the resize ladder can't cover: a borderless or fullscreen window
+-- can't be drag-resized (human ask 2026-06-28); owns the master/music/sfx
+-- volume knobs (device-output gains — the deterministic mix and audio
+-- goldens never hear them) and hosts project-declared options (M.add).
+-- Toggled by Esc; available in play AND editor. The controls page (A4/D084)
+-- is the player-facing rebind surface: every action the project defines
+-- lists its live bindings as chips; clicking one (or +) arms a capture that
+-- binds the next key or pad input, stealing it from any other action that
+-- held it; its stick knobs (deadzone / press threshold, D085) tune the live
+-- axis policy. Rebinds + stick knobs persist per project + per user in
+-- <project>/input.dat through cm.input's binding store; volumes + custom
+-- options ride <project>/video.dat through cm.view's contributor hook —
+-- all of it live-side policy only, never a sim input.
 --
 -- Dev/render class: it drives only the viewport (cm.view + the PAL window
 -- control), never sim state. It draws on whatever target is current — the ui
@@ -22,6 +28,161 @@ M.on = M.on or false
 M.page = M.page or "main" -- "main" | "controls"
 M.arm = nil -- capture armed: { action=, index=1..n to replace, nil appends }
 M.note = nil -- transient status line on the controls page
+M._dirty = nil -- a knob changed: persist once the drag/click releases
+
+-- ---- the volume knobs (A4/D085) ----
+-- Player-facing percents 0..100 (100 = unity), applied to the PAL's device-
+-- output gains (0..128) — pure live policy on what the DEVICE hears: the
+-- deterministic mix, the PCM hash, and every audio golden are untouched by
+-- construction (pal/src/snd.c). music/sfx follow the sim bank's slot
+-- categories (music 32..47, sfx 0..31); master scales the whole output.
+-- Persisted per project in video.dat through the contributor below.
+
+M.vol = M.vol or { master = 100, music = 100, sfx = 100 }
+
+local function apply_vol()
+  if pal.x_snd_gain then
+    pal.x_snd_gain(M.vol.master * 128 // 100, M.vol.music * 128 // 100,
+                   M.vol.sfx * 128 // 100)
+  end
+end
+
+local function vol_clamp(v)
+  v = math.floor(tonumber(v) or 100)
+  if v < 0 then v = 0 elseif v > 100 then v = 100 end
+  return v
+end
+
+-- set_vol("master"|"music"|"sfx", 0..100): the UI and project code door —
+-- applies live and persists (through the video.dat store).
+function M.set_vol(kind, v)
+  if M.vol[kind] == nil then error("unknown volume: " .. tostring(kind), 2) end
+  M.vol[kind] = vol_clamp(v)
+  apply_vol()
+  view.save_video()
+  return M.vol[kind]
+end
+
+-- ---- project-declared options (A4/D085) ----
+-- cm.options.add{ id=, label=, kind="toggle"|"slider"|"choice", default=,
+--   min=, max=, step=, choices={...}, on_change=fn } appends a knob to the
+-- Esc menu's main page. Values are LIVE POLICY ONLY (render/dev class, like
+-- every knob here): a setting the sim reads belongs in the doc tree where it
+-- is recorded — reading these from step() is a determinism bug. Values
+-- persist per project + per machine in video.dat's `custom` table; entries
+-- for ids no project code declares stay inert in the store (version skew or
+-- a hot reload must not eat a player's choices, the input.dat rule).
+
+M.defs = M.defs or {} -- ordered declarations
+M._custom = M._custom or {} -- id -> stored value (declared AND inert ids)
+
+local function opt_valid(d, v)
+  if d.kind == "toggle" then return type(v) == "boolean" end
+  if d.kind == "slider" then
+    return type(v) == "number" and v >= d.min and v <= d.max
+  end
+  for _, c in ipairs(d.choices) do if v == c then return true end end
+  return false
+end
+
+function M.add(decl)
+  assert(type(decl) == "table" and type(decl.id) == "string"
+         and decl.id ~= "", "options.add: id required")
+  local kind = decl.kind or "toggle"
+  local d = { id = decl.id, label = decl.label or decl.id, kind = kind,
+              on_change = decl.on_change }
+  if kind == "toggle" then
+    d.default = decl.default == true
+  elseif kind == "slider" then
+    d.min = tonumber(decl.min) or 0
+    d.max = tonumber(decl.max) or 100
+    d.step = tonumber(decl.step)
+    assert(d.min < d.max, "options.add: min must be < max")
+    d.default = tonumber(decl.default) or d.min
+  elseif kind == "choice" then
+    assert(type(decl.choices) == "table" and #decl.choices > 0,
+           "options.add: choices required")
+    d.choices = table.move(decl.choices, 1, #decl.choices, 1, {})
+    d.default = decl.default ~= nil and decl.default or d.choices[1]
+  else
+    error("options.add: unknown kind " .. tostring(kind), 2)
+  end
+  assert(opt_valid(d, d.default), "options.add: default out of range")
+  -- redeclare replaces in place (hot reload); a stored value that no longer
+  -- validates falls back to the new default but stays in the store untouched
+  -- until the next explicit change
+  local at = #M.defs + 1
+  for i, e in ipairs(M.defs) do if e.id == d.id then at = i end end
+  M.defs[at] = d
+  return d
+end
+
+-- get(id) -> the live value (stored when valid, else the declared default)
+function M.get(id)
+  for _, d in ipairs(M.defs) do
+    if d.id == id then
+      local v = M._custom[id]
+      if v ~= nil and opt_valid(d, v) then return v end
+      return d.default
+    end
+  end
+  error("unknown option: " .. tostring(id), 2)
+end
+
+-- set(id, v): validates, applies (on_change), persists
+function M.set(id, v)
+  for _, d in ipairs(M.defs) do
+    if d.id == id then
+      if not opt_valid(d, v) then
+        error(("bad value for option %s: %s"):format(id, tostring(v)), 2)
+      end
+      M._custom[id] = v
+      if d.on_change then d.on_change(v) end
+      view.save_video()
+      return v
+    end
+  end
+  error("unknown option: " .. tostring(id), 2)
+end
+
+-- the video.dat fragment: volumes at 100% are omitted (an untouched player
+-- never freezes a default), custom carries every stored id — declared or
+-- inert — as plain scalars only
+view.video_contrib("options", function()
+  local custom
+  for id, v in pairs(M._custom) do
+    local t = type(v)
+    if t == "boolean" or t == "number" or t == "string" then
+      custom = custom or {}
+      custom[id] = v
+    end
+  end
+  return {
+    vol_master = M.vol.master ~= 100 and M.vol.master or nil,
+    vol_music = M.vol.music ~= 100 and M.vol.music or nil,
+    vol_sfx = M.vol.sfx ~= 100 and M.vol.sfx or nil,
+    custom = custom,
+  }
+end, function(t)
+  M.vol = { master = 100, music = 100, sfx = 100 }
+  M._custom = {}
+  if type(t) == "table" then
+    for _, k in ipairs({ "master", "music", "sfx" }) do
+      local v = t["vol_" .. k]
+      if type(v) == "number" then M.vol[k] = vol_clamp(v) end
+    end
+    if type(t.custom) == "table" then
+      for id, v in pairs(t.custom) do
+        local tv = type(v)
+        if type(id) == "string"
+           and (tv == "boolean" or tv == "number" or tv == "string") then
+          M._custom[id] = v
+        end
+      end
+    end
+  end
+  apply_vol()
+end)
 
 local KEY_ESC, KEY_DEL = 41, 76
 -- keys the capture refuses: the menu's own grammar and engine chrome. Del
@@ -32,11 +193,6 @@ local RESERVED = {
   [53] = "` is the console key",
   [KEY_DEL] = "del removes a binding",
 }
--- windowed presets (window px). Chosen so the ladder FILLS the window with no
--- letterbox — i.e. W,H are whole multiples of a FOV ≤ the 480×270 reference:
--- 720×540→360×270@2, 960×540→480×270@2, 1440×1080→360×270@4, 1920×1080→480×270@4
--- (a 4:3 + a 16:9 at each of the two heights). See cm.view.ladder.
-local SIZES = { { 720, 540 }, { 960, 540 }, { 1440, 1080 }, { 1920, 1080 } }
 local UI_SCALES = { 1, 2, 3 }
 
 function M.toggle(on)
@@ -133,21 +289,38 @@ local function do_capture()
   end
 end
 
+-- one volume slider row: live-applies while dragging, persists on release
+local function vol_slider(kind)
+  local v, changed = ui.slider(kind, M.vol[kind], 0, 100,
+                               { id = "vol_" .. kind, fmt = "%d%%" })
+  if changed then
+    M.vol[kind] = vol_clamp(v)
+    apply_vol()
+    M._dirty = M._dirty or {}
+    M._dirty.video = true
+  end
+end
+
 local function main_page()
   local st = ui.style
   local SW, SH = view.surface_size()
-  local w, h = 184, 154
+  local w = math.min(220, SW - 12)
+  local h = math.min(252, SH - 12)
   local x, y = (SW - w) // 2, (SH - h) // 2
   ui.begin_panel("options", x, y, w, h, { title = "options" })
+  ui.begin_scroll("knobs", h - 76) -- the fixed rows below stay reachable
 
   local fs, fsc = ui.checkbox("fullscreen  (alt+enter)", view.fullscreen)
   if fsc then view.toggle_fullscreen(fs) end
 
+  -- window sizes that FIT the desktop this window is on (A4/D085); the
+  -- static classic four when SDL reports no display
   ui.label("window size", { color = st.text_dim })
-  for r = 1, #SIZES, 2 do
+  local sizes = view.size_candidates(pal.x_display_size())
+  for r = 1, #sizes, 2 do
     ui.row({ 1, 1 })
-    for c = r, math.min(r + 1, #SIZES) do
-      local s = SIZES[c]
+    for c = r, math.min(r + 1, #sizes) do
+      local s = sizes[c]
       if ui.button(s[1] .. "x" .. s[2], { id = "sz" .. c }) then
         view.set_window_size(s[1], s[2]) -- leaves fullscreen + persists
       end
@@ -164,6 +337,41 @@ local function main_page()
     end
   end
 
+  ui.label("volume", { color = st.text_dim })
+  vol_slider("master")
+  vol_slider("music")
+  vol_slider("sfx")
+
+  -- knobs the project declared (options.add); values are live render policy
+  if #M.defs > 0 then
+    ui.label("game options", { color = st.text_dim })
+    for _, d in ipairs(M.defs) do
+      local v = M.get(d.id)
+      local nv, changed
+      if d.kind == "toggle" then
+        nv, changed = ui.checkbox(d.label, v, { id = "opt:" .. d.id })
+      elseif d.kind == "slider" then
+        nv, changed = ui.slider(d.label, v, d.min, d.max,
+                                { id = "opt:" .. d.id, step = d.step })
+      else -- choice: one button cycles
+        ui.row({ 1, 1 })
+        ui.label(d.label, { color = st.text_dim })
+        if ui.button(tostring(v), { id = "opt:" .. d.id }) then
+          local at = 1
+          for i, c in ipairs(d.choices) do if c == v then at = i end end
+          nv, changed = d.choices[at % #d.choices + 1], true
+        end
+      end
+      if changed then
+        M._custom[d.id] = nv
+        if d.on_change then d.on_change(nv) end
+        M._dirty = M._dirty or {}
+        M._dirty.video = true
+      end
+    end
+  end
+
+  ui.end_scroll()
   if ui.button("controls...") then
     M.page = "controls"
     M.note = nil
@@ -177,11 +385,35 @@ local function main_page()
   ui.end_panel()
 end
 
+-- the stick tuning knobs (A4/D085): percent views over the raw values —
+-- UI display converts fresh each frame, the store keeps the exact raw int.
+-- Deadzone shapes the QUANTIZED values entering new records (D082: recorded
+-- values are authoritative, so retuning never invalidates a trace); the
+-- press threshold is how far a bound axis must deflect to count as down.
+local function stick_knobs()
+  local dz, dzc = ui.slider("stick deadzone",
+                            input.deadzone * 100 // 32767, 0, 75,
+                            { id = "deadzone", fmt = "%d%%" })
+  if dzc then
+    input.set_deadzone(dz * 32767 // 100)
+    M._dirty = M._dirty or {}
+    M._dirty.binds = true
+  end
+  local th, thc = ui.slider("stick press at",
+                            math.floor(input.axis_threshold * 100 / 127 + 0.5),
+                            1, 100, { id = "axisthr", fmt = "%d%%" })
+  if thc then
+    input.set_axis_threshold(math.max(1, th * 127 // 100))
+    M._dirty = M._dirty or {}
+    M._dirty.binds = true
+  end
+end
+
 local function controls_page()
   local st = ui.style
   local SW, SH = view.surface_size()
   local w = math.min(300, SW - 12)
-  local h = math.min(240, SH - 12)
+  local h = math.min(252, SH - 12)
   local x, y = (SW - w) // 2, (SH - h) // 2
   ui.begin_panel("controls", x, y, w, h, { title = "controls" })
 
@@ -189,11 +421,12 @@ local function controls_page()
   local conflicted = {}
   for _, cf in ipairs(input.conflicts()) do conflicted[cf.bind] = true end
 
+  local knob_h = 36 -- the two stick sliders under the action list
   if #names == 0 then
     ui.label("this project defines no actions", { color = st.text_dim })
-    ui.space(h - 96)
+    ui.space(h - 60 - knob_h)
   else
-    ui.begin_scroll("acts", h - 92)
+    ui.begin_scroll("acts", h - 56 - knob_h)
     for _, name in ipairs(names) do
       -- a * marks actions running on player overrides instead of defaults
       ui.label(input.overridden(name) and (name .. " *") or name,
@@ -224,6 +457,7 @@ local function controls_page()
     end
     ui.end_scroll()
   end
+  stick_knobs()
 
   ui.separator()
   if M.arm then
@@ -250,6 +484,17 @@ local function controls_page()
   ui.end_panel()
 end
 
+-- persist knob changes once per gesture: sliders fire every drag frame, so
+-- writes wait for the widget release (ui.active clears). Runs even after the
+-- menu closes, so an Esc mid-drag still lands the save.
+local function flush_dirty()
+  if not M._dirty or ui.active then return end
+  local d = M._dirty
+  M._dirty = nil
+  if d.video then view.save_video() end
+  if d.binds then save() end
+end
+
 function M.frame()
   -- Esc walks the grammar one step at a time: open the menu, cancel an
   -- armed capture, leave the controls page, close the menu.
@@ -268,6 +513,7 @@ function M.frame()
       M.toggle(false)
     end
   end
+  flush_dirty()
   if not M.on then return end
   ui.capture_mouse() -- clicks land on the menu, not the game/world beneath
   ui.capture_keys() -- ...and held keys don't drive the game behind the menu
