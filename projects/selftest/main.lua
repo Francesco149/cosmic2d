@@ -9380,6 +9380,101 @@ local function t_timeline_summary()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_timeline_thumbs()
+  -- A7 §11: the presented-frame previews (THMB). Observer-only like the digest
+  -- — captured only in live windowed sessions (gated on spill), never verified,
+  -- stripped from exported clips — so the green suite proves no golden byte
+  -- moved. This pins capture/query, decimation, demotion survival, the export
+  -- strip, and the headless capture gate.
+  local trace = cm.require("cm.trace")
+  local chunk = cm.require("cm.chunk")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local save_period = trace.thumb_period
+  local root = tmproot() .. "/cosmic_selftest_tlthumb"
+  pal.mkdir(root)
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  trace.ring.kf = 4
+  trace.ring.seconds = 8 / 60 -- RAM window = 2 segments; older ones demote
+  trace.ring.spill = true
+  trace.ring.budget_mb = 64
+  trace.thumb_period = 6
+  local b = pal.buf("st.tlthumb", 8)
+  b:i32(0, 0)
+  trace.ring_start({ project = root })
+  local irec = ("\0"):rep(10)
+
+  -- a synthetic flat 160x92 FOV; thumb_dims height-normalizes it to 46 and the
+  -- aspect gives width 80. Captured directly (no GPU) at two frames.
+  local sw, sh, dw, dh = 160, 92, 80, 46
+  local fov = ("\xAB\xCD\xEF\xFF"):rep(sw * sh)
+  for i = 1, 12 do
+    b:i32(0, i * 7)
+    sim:i64(0, f0 + i)
+    trace.record_frame(irec, nil)
+    if i == 2 or i == 11 then trace.thumb_capture(fov, sw, sh) end
+  end
+
+  local lo, hi = trace.ring_range()
+  local all = trace.ring_thumbs(lo, hi, 16)
+  check(#all == 2, "previews: both captured previews are queryable")
+  check(all[1].frame == f0 + 2 and all[2].frame == f0 + 11,
+        "previews: entries carry their exact capture frame, frame-sorted")
+  check(all[1].w == dw and all[1].h == dh,
+        "previews: thumb_dims height-normalizes 160x92 to 80x46")
+  local pix, pw, ph = pal.png_read(all[1].png)
+  check(pix and pw == dw and ph == dh and #pix == dw * dh * 4,
+        "previews: the stored PNG decodes to the preview dimensions")
+  check(#trace.ring_thumbs(lo, hi, 1) == 1,
+        "previews: ring_thumbs decimates to the requested max")
+
+  -- Demotion drops a segment's resident chunks but seg.thumb is a RAM index
+  -- that survives, so previews still draw across the whole retained window.
+  check(trace.history_drain(), "previews: spill drains")
+  check(#trace.ring_thumbs(lo, hi, 16) == 2,
+        "previews: previews survive demotion of their segment")
+
+  -- Exported clips strip THMB (history chrome, not replay state).
+  local clip = root .. "/clip.ctrace"
+  check(trace.ring_export(clip), "previews: ring exports")
+  local has_thmb = false
+  for _, c in ipairs(chunk.read(pal.read_file(clip), "CTRC")) do
+    if c.tag == "THMB" then has_thmb = true end
+  end
+  check(not has_thmb, "previews: THMB is stripped from an exported clip")
+
+  -- The headless/CI gate: thumb_pump reads a pixel only when ring.thumbs is set
+  -- (the live-window condition) — this is why goldens and traces never carry one.
+  local read_called = false
+  local real_read, real_size = pal.read_pixels, pal.gfx_size
+  local save_thumbs = trace.ring.thumbs
+  pal.read_pixels = function() read_called = true; return fov end
+  pal.gfx_size = function() return sw, sh end
+  trace.ring.thumbs = false
+  trace.thumb_pump()
+  check(not read_called, "previews: thumb_pump is a no-op when ring.thumbs is off")
+  trace.ring.thumbs = true
+  trace.thumb_pump()
+  check(read_called, "previews: thumb_pump captures in a live (thumbs-on) session")
+  pal.read_pixels, pal.gfx_size = real_read, real_size
+  trace.ring.thumbs = save_thumbs
+
+  for _, n in ipairs(pal.list_dir(root .. "/.ed/history") or {}) do
+    pal.x_remove(root .. "/.ed/history/" .. n)
+  end
+  pal.x_remove(clip)
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  trace.thumb_period = save_period
+  sim:i64(0, f0)
+  pal.buf_free("st.tlthumb")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -9512,6 +9607,7 @@ function game.init()
   t_ed_winview()
   t_ed_park()
   t_timeline_summary()
+  t_timeline_thumbs()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
