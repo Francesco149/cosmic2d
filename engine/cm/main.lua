@@ -434,6 +434,14 @@ function M.boot()
   -- the project's fixed FOV, so goldens + captures stay byte-stable (render-only,
   -- D036). cm.view writes video.dat back on any options-menu change.
   if not args.headless and not args.frames then M.view.load_video() end
+  -- the player's rebind overrides (<project>/input.dat, A4/D084) follow the
+  -- same rule: machine-local live policy, adopted only by interactive
+  -- windowed sessions — headless/verify/captures keep the code-declared
+  -- defaults, so goldens and trace verifies never depend on a local store
+  -- (the recorded action bits are authoritative either way).
+  if not args.headless and not args.frames then
+    M.input.load_binds(args.project)
+  end
   cm.require("cm.rand").ensure_seeded(proj.seed or 0x70657474616e3264)
 
   -- R6.5 (D055): a live session CONTINUES the project's past stream —

@@ -84,10 +84,14 @@ M.inp.gx = M.inp.gx or -1000 -- backfill across a hot reload onto an old snapsho
 M.inp.gy = M.inp.gy or -1000
 M.inp.wx = M.inp.wx or -1000 -- raw window px (the ig canvas space, v7)
 M.inp.wy = M.inp.wy or -1000
+M.inp.pads = M.inp.pads or {} -- this tick's raw pad-family events (A4/D084):
+-- the rebind capture reads these, so it sees presses even while cap_pads
+-- keeps them from the game
 M.ui_space = M.ui_space or false -- cm.view pushes this each frame
 
 M.cap_mouse = M.cap_mouse or false -- filters applied to THIS tick's events
 M.cap_keys = M.cap_keys or false
+M.cap_pads = M.cap_pads or false
 
 -- ---- internals (rebuilt every frame; plain locals are fine) ----
 
@@ -207,6 +211,7 @@ end
 function M.frame(events)
   local i = M.inp
   i.clicked, i.released, i.keys = {}, {}, {}
+  i.pads = {}
   i.wheel = 0
   i.text = ""
   M.ticks = M.ticks + 1
@@ -235,6 +240,19 @@ function M.frame(events)
     elseif e.type == "wheel" then
       i.wheel = i.wheel + e.dy
       if M.cap_mouse then pass = false end
+    elseif e.type == "padbtn" or e.type == "gpadbtn" then
+      -- the key rule extended to pads (A4/D084): captured button DOWNS
+      -- never reach the game, releases always pass (no stuck buttons)
+      i.pads[#i.pads + 1] = e
+      if e.down and M.cap_pads then pass = false end
+    elseif e.type == "padaxis" or e.type == "gpadaxis" then
+      -- axes have no release edge to protect; capture swallows them whole
+      -- (the capturer neutralizes live axes itself, like the editor's
+      -- focus-loss rule)
+      i.pads[#i.pads + 1] = e
+      if M.cap_pads then pass = false end
+    elseif e.type == "pad" or e.type == "gpad" then
+      i.pads[#i.pads + 1] = e -- hot-plug always passes: physical reality
     end
     if pass then out[#out + 1] = e end
   end
@@ -246,6 +264,7 @@ function M.frame(events)
   focus_drawn = false
   M.force_keys = false
   M.force_mouse = false
+  M.force_pads = false
   return out
 end
 
@@ -265,6 +284,7 @@ function M.frame_end()
   M.over_panel = over_panel -- readable next tick (editor world tools)
   M.cap_mouse = over_panel or M.active ~= nil or M.force_mouse
   M.cap_keys = M.focus ~= nil or M.force_keys
+  M.cap_pads = M.force_pads
 
   local want_text = M.focus ~= nil
   if want_text ~= M.text_on then
@@ -283,6 +303,14 @@ end
 -- the mouse everywhere, not just over their panels (brush on the world)
 function M.capture_mouse()
   M.force_mouse = true
+end
+
+-- engine overlays call this each frame while pad input must not drive the
+-- game beneath them (the options menu, A4/D084): pad button downs are
+-- swallowed (releases pass), axis events are swallowed. Raw pad events
+-- stay readable in M.inp.pads for the rebind capture.
+function M.capture_pads()
+  M.force_pads = true
 end
 
 function M.blur()

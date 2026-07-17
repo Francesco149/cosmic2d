@@ -331,8 +331,9 @@ end
 
 -- Enumerate the saved project exactly as it will be published. pal.list_dir
 -- prunes dot-directories, so `.ed` (and other tool state like `.git`) never
--- enters a duplicate or archive; machine-local `video.dat` is excluded by
--- name (D036/D074). Links are refused rather than followed or flattened.
+-- enters a duplicate or archive; machine-local `video.dat` and the player's
+-- rebind store `input.dat` are excluded by name (D036/D074/D084). Links are
+-- refused rather than followed or flattened.
 local function collect_tree(fs, source, verb)
   local names, err = fs.list(source)
   if not names then
@@ -341,7 +342,7 @@ local function collect_tree(fs, source, verb)
   table.sort(names)
   local dirs, files = {}, {}
   for _, rel in ipairs(names) do
-    if rel ~= "video.dat" then
+    if rel ~= "video.dat" and rel ~= "input.dat" then
       local full = join(source, rel)
       local info, ierr = fs.info(full)
       if not info then

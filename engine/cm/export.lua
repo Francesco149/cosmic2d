@@ -203,8 +203,10 @@ local function collect(ctx, checked)
   local project_prefix = "projects/" .. ctx.slug
   add_tree(ctx, ctx.project_root, project_prefix, function(rel)
     -- .ed and other dot-directories are pruned by pal.list_dir. video.dat is
-    -- per-machine viewport policy, never project source (D036/D074).
-    return rel ~= "video.dat" and not rel:match("^%.ed/")
+    -- per-machine viewport policy and input.dat the player's rebind store
+    -- (D036/D074/D084) — never project source.
+    return rel ~= "video.dat" and rel ~= "input.dat"
+           and not rel:match("^%.ed/")
   end)
 
   if ctx.target == "linux" then

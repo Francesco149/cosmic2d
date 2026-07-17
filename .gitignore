@@ -24,6 +24,10 @@
 # fullscreen — cm.view.save_video); machine-local, like knobs.dat / map.dat
 /projects/*/video.dat
 
+# per-machine player rebinds (the options menu's controls page, A4/D084 —
+# cm.input.save_binds); machine-local like video.dat
+/projects/*/input.dat
+
 # the editor shell's per-project session + undo journals (R3, D050):
 # unsaved-persists state is per-machine, never in the repo
 .ed/

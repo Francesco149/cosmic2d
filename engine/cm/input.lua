@@ -60,8 +60,14 @@ local M = select(2, ...) or {}
 
 local pack = string.pack
 
-M.defs = M.defs or {} -- array of {name=, keys={scancode,...}}
+M.defs = M.defs or {} -- array of {name=, binds=, canon=, defaults=} (below)
 M.bit_of = M.bit_of or {} -- name -> bit index (0-based)
+-- user rebinds (A4/D084): action name -> array of canonical binding strings,
+-- replacing that action's code-declared defaults. Loaded from the project's
+-- machine-local input.dat (video.dat class: interactive sessions only, never
+-- exported), mutated by the options-menu rebind UI. Lives on M so a hot
+-- reload keeps the player's bindings.
+M._overrides = M._overrides or {}
 local live_keys = {} -- scancode -> true while physically held
 local live_tap = {} -- scancodes that saw a down event this frame
 local live_mx, live_my = 0.0, 0.0
@@ -100,26 +106,323 @@ end
 
 -- ---- map definition ----
 
--- define("jump", {44, 82}): appends an action (bit = order of first
--- definition); redefining an existing name just rebinds its keys
-function M.define(name, keys)
+-- Bindings (A4/D084): an action holds a LIST of bindings, each a keyboard
+-- key, a pad button, or a pad axis direction, all feeding the same v1
+-- action bit at sample() time — pure live-side policy, so rebinding can
+-- never invalidate a trace (D082 planned exactly this). A binding is a
+-- raw scancode number or a descriptor string; the canonical forms are
+--   "key:<scancode>"       keyboard (numbers normalize to this)
+--   "pad:<button>"         pad 1 standard button, e.g. "pad:south"
+--   "pad:<axis><+|->"      pad 1 axis past the threshold, e.g. "pad:lx-"
+--   "pad<2|3|4>:..."       the same, pinned to another pad slot
+-- Buttons/axes use the SDL names in M.pad_btn / M.pad_ax (numbers 0..31
+-- are accepted for buttons and canonicalize to the name when one exists).
+
+-- how far a bound stick axis must deflect (quantized, of 127) to count as
+-- "down". Live-side policy like the deadzone: recorded action bits bake it
+-- in, so retuning never touches replay.
+M.axis_threshold = M.axis_threshold or 40
+
+local AXIS_DIR = { ["+"] = 1, ["-"] = -1 }
+
+-- reverse name tables for canonicalization + labels (filled after the
+-- constant tables at the bottom of the module, at load time)
+local btn_name, ax_name = {}, {}
+
+-- parse one binding (number or descriptor string) -> {k="key", sc=} |
+-- {k="btn", pad=, btn=} | {k="ax", pad=, ax=, dir=}. Errors name the
+-- binding so a bad store entry / rebind call is loud.
+local function parse_bind(bind, lvl)
+  lvl = (lvl or 2) + 1
+  if type(bind) == "number" then
+    local sc = math.floor(bind)
+    if sc < 0 or sc > 511 then error("bad scancode: " .. bind, lvl) end
+    return { k = "key", sc = sc }
+  end
+  if type(bind) ~= "string" then
+    error("bad binding: " .. tostring(bind), lvl)
+  end
+  local kind, rest = bind:match("^(%l+%d?):(.+)$")
+  if kind == "key" then
+    local sc = rest:match("^%d+$") and math.tointeger(rest)
+    if not sc or sc > 511 then error("bad binding: " .. bind, lvl) end
+    return { k = "key", sc = sc }
+  end
+  local padn = kind == "pad" and 1 or kind and kind:match("^pad([1-4])$")
+  if padn then
+    padn = math.tointeger(padn)
+    local ax, dir = rest:match("^(%l+)([%+%-])$")
+    if ax and M.pad_ax[ax] then
+      return { k = "ax", pad = padn, ax = M.pad_ax[ax], dir = AXIS_DIR[dir] }
+    end
+    local btn = M.pad_btn[rest]
+    if not btn and rest:match("^%d+$") then
+      btn = math.tointeger(rest)
+      if btn > 31 then btn = nil end
+    end
+    if btn then return { k = "btn", pad = padn, btn = btn } end
+  end
+  error("bad binding: " .. bind, lvl)
+end
+
+local function canon_bind(b)
+  if b.k == "key" then return "key:" .. b.sc end
+  local prefix = b.pad == 1 and "pad:" or ("pad" .. b.pad .. ":")
+  if b.k == "btn" then return prefix .. (btn_name[b.btn] or b.btn) end
+  return prefix .. ax_name[b.ax] .. (b.dir > 0 and "+" or "-")
+end
+
+-- the active bindings for one def: the user override when one exists,
+-- else the code-declared defaults. def.binds = parsed, def.canon = the
+-- matching canonical strings. A malformed override entry is skipped with
+-- a log line (the store is machine-local data, never fatal).
+local function apply_binds(def)
+  local src = M._overrides[def.name] or def.defaults
+  def.binds, def.canon = {}, {}
+  for _, c in ipairs(src) do
+    local ok, b = pcall(parse_bind, c)
+    if ok then
+      def.binds[#def.binds + 1] = b
+      def.canon[#def.canon + 1] = canon_bind(b)
+    else
+      pal.log(("[input] dropping bad binding %q on %s")
+              :format(tostring(c), def.name))
+    end
+  end
+end
+
+-- define("jump", {44, 82, "pad:south"}): appends an action (bit = order of
+-- first definition); redefining an existing name just rebinds it. The list
+-- is the action's DEFAULT bindings; a user override, when present, wins.
+function M.define(name, binds)
+  -- validate every binding BEFORE touching the map: a bad descriptor must
+  -- not leave a half-defined action behind its error
+  local defaults = {}
+  for _, b in ipairs(binds) do
+    defaults[#defaults + 1] = canon_bind(parse_bind(b, 2))
+  end
   if M.bit_of[name] == nil then
     if #M.defs >= 32 then error("action map full (32 actions max)", 2) end
     M.bit_of[name] = #M.defs
-    M.defs[#M.defs + 1] = { name = name, keys = {} }
+    M.defs[#M.defs + 1] = { name = name }
   end
   local def = M.defs[M.bit_of[name] + 1]
-  def.keys = {}
-  for _, sc in ipairs(keys) do def.keys[#def.keys + 1] = sc end
+  def.defaults = defaults
+  apply_binds(def)
 end
 
--- map{ {"jump", 44}, {"left", 80, 4}, ... } — array form so action order
--- (and therefore record bit layout) is deterministic
+-- map{ {"jump", 44}, {"left", 80, 4, "pad:dpleft"}, ... } — array form so
+-- action order (and therefore record bit layout) is deterministic
 function M.map(list)
   for _, row in ipairs(list) do
-    local keys = table.move(row, 2, #row, 1, {})
-    M.define(row[1], keys)
+    local binds = table.move(row, 2, #row, 1, {})
+    M.define(row[1], binds)
   end
+end
+
+local function def_of(name, lvl)
+  local i = M.bit_of[name]
+  if i == nil then error("unknown action: " .. tostring(name), (lvl or 2) + 1) end
+  return M.defs[i + 1]
+end
+
+-- the action's active bindings as canonical strings (a copy)
+function M.bindings(name)
+  local c = def_of(name).canon
+  return table.move(c, 1, #c, 1, {})
+end
+
+-- the action's code-declared defaults as canonical strings (a copy)
+function M.default_bindings(name)
+  local def = def_of(name)
+  return table.move(def.defaults, 1, #def.defaults, 1, {})
+end
+
+function M.overridden(name)
+  return M._overrides[def_of(name).name] ~= nil
+end
+
+-- rebind(name, {binds}) replaces the action's bindings as a user override;
+-- rebind(name, nil) drops the override and returns to the defaults. Call
+-- save_binds() to persist. Duplicate bindings within the list collapse.
+function M.rebind(name, binds)
+  local def = def_of(name)
+  if binds == nil then
+    M._overrides[name] = nil
+  else
+    local o, seen = {}, {}
+    for _, b in ipairs(binds) do
+      local c = canon_bind(parse_bind(b, 2))
+      if not seen[c] then
+        seen[c] = true
+        o[#o + 1] = c
+      end
+    end
+    M._overrides[name] = o
+  end
+  apply_binds(def)
+end
+
+-- bindings claimed by two or more actions, for the rebind UI's conflict
+-- marks: a sorted array of { bind = canon, actions = {name, ...} } (the
+-- actions in bit order). The API deliberately ALLOWS overloads — context-
+-- dependent actions sharing a key is a real pattern — so conflict handling
+-- is surfacing, not refusal.
+function M.conflicts()
+  local users = {}
+  for _, def in ipairs(M.defs) do
+    local seen = {}
+    for _, c in ipairs(def.canon or {}) do
+      if not seen[c] then
+        seen[c] = true
+        users[c] = users[c] or {}
+        users[c][#users[c] + 1] = def.name
+      end
+    end
+  end
+  local out = {}
+  for c, actions in pairs(users) do
+    if #actions >= 2 then out[#out + 1] = { bind = c, actions = actions } end
+  end
+  table.sort(out, function(a, b) return a.bind < b.bind end)
+  return out
+end
+
+-- ---- binding stores (A4/D084) ----
+-- Project code declares the defaults (input.map above); the player's
+-- overrides persist in <project>/input.dat — machine-local video.dat-class
+-- state: adopted only by interactive windowed sessions, atomic replacement,
+-- never part of exports/duplicates/archives, and never a sim input (the
+-- recorded action bits are). Store shape (cm.state canon):
+--   { schema = 1, actions = { [name] = { "key:44", "pad:south", ... } } }
+-- Overrides for actions the project no longer defines stay in the store
+-- inert (a hot reload or version skew must not eat a player's bindings).
+
+local function state_mod()
+  return cm and cm.require and cm.require("cm.state")
+end
+
+-- adopt the store for this session (project boot). Missing file = defaults;
+-- a malformed file or entry is logged and ignored, never fatal, and stays
+-- on disk untouched until the next explicit save.
+function M.load_binds(project_root)
+  M._binds_path = project_root and (project_root .. "/input.dat") or nil
+  M._overrides = {}
+  local bytes = M._binds_path and pal.read_file(M._binds_path)
+  if bytes then
+    local ok, t = pcall(state_mod().parse, bytes)
+    if ok and type(t) == "table" and t.schema == 1
+       and type(t.actions) == "table" then
+      for name, list in pairs(t.actions) do
+        if type(name) == "string" and type(list) == "table" then
+          local o = {}
+          for _, c in ipairs(list) do
+            if type(c) == "string" and pcall(parse_bind, c) then
+              o[#o + 1] = canon_bind(parse_bind(c))
+            else
+              pal.log(("[input] %s: dropping bad binding %q on %s")
+                      :format(M._binds_path, tostring(c), name))
+            end
+          end
+          M._overrides[name] = o
+        end
+      end
+    else
+      pal.log("[input] " .. M._binds_path .. " unreadable; using default bindings")
+    end
+  end
+  for _, def in ipairs(M.defs) do apply_binds(def) end
+end
+
+-- persist the overrides (atomic). `fail` is the injectable test seam of
+-- pal.write_file_atomic. Returns true or nil, error (already logged).
+function M.save_binds(fail)
+  if not M._binds_path then return nil, "no binding store this session" end
+  local actions = {}
+  for name, list in pairs(M._overrides) do
+    actions[name] = table.move(list, 1, #list, 1, {})
+  end
+  local bytes = state_mod().canon({ schema = 1, actions = actions })
+  local ok, err = pal.write_file_atomic(M._binds_path, bytes, fail)
+  if not ok then
+    pal.log(("[input] save FAILED %s: %s"):format(M._binds_path, tostring(err)))
+  end
+  return ok, err
+end
+
+-- normalize one raw pad event (slot or device shape, from cm.ui's raw pad
+-- stream) into a capturable binding for the rebind UI. Buttons on ANY pad
+-- capture as pad-1 bindings — the store is player-one policy; pinning
+-- pads 2..4 stays an API affair. An axis captures once its quantized
+-- deflection reaches 64 (well past axis_threshold, so stick noise and
+-- resting drift cannot bind). Returns the canonical string or nil.
+function M.bind_of_pad_event(e)
+  if (e.type == "padbtn" or e.type == "gpadbtn") and e.down
+     and type(e.button) == "number" and e.button >= 0 and e.button <= 31 then
+    return canon_bind({ k = "btn", pad = 1, btn = e.button })
+  end
+  if (e.type == "padaxis" or e.type == "gpadaxis")
+     and type(e.axis) == "number" and e.axis >= 0 and e.axis <= 5 then
+    local q = M.quantize_axis(e.value)
+    if q >= 64 or q <= -64 then
+      return canon_bind({ k = "ax", pad = 1, ax = e.axis,
+                          dir = q > 0 and 1 or -1 })
+    end
+  end
+  return nil
+end
+
+-- ---- binding display strings (honest HUD/UI names) ----
+
+local AXIS_LABEL = {
+  lx = { "stick left", "stick right" }, ly = { "stick up", "stick down" },
+  rx = { "rstick left", "rstick right" }, ry = { "rstick up", "rstick down" },
+  lt = { "ltrigger", "ltrigger" }, rt = { "rtrigger", "rtrigger" },
+}
+local BTN_LABEL = {
+  dpup = "dpad up", dpdown = "dpad down",
+  dpleft = "dpad left", dpright = "dpad right",
+}
+
+-- one binding -> a short player-facing name: keys through the real
+-- scancode name ("Space", "Left"; "key N" where the host can't say), pads
+-- through the positional SDL vocabulary ("south", "dpad left",
+-- "stick left"; pads 2..4 prefix their number, "p2 south").
+function M.bind_label(bind)
+  local b = type(bind) == "table" and bind or parse_bind(bind, 2)
+  if b.k == "key" then
+    local n = pal.scancode_name and pal.scancode_name(b.sc)
+    if n and n ~= "" then return n end
+    return "key " .. b.sc
+  end
+  local s
+  if b.k == "ax" then
+    s = AXIS_LABEL[ax_name[b.ax]][b.dir > 0 and 2 or 1]
+  else
+    local name = btn_name[b.btn]
+    s = name and (BTN_LABEL[name] or name) or ("pad #" .. b.btn)
+  end
+  if b.pad ~= 1 then s = "p" .. b.pad .. " " .. s end
+  return s
+end
+
+-- label(name) -> every active binding joined with "/"; label(name, "key")
+-- or label(name, "pad") -> the first binding of that kind (falling back to
+-- the first of any kind), for compact HUD lines that follow the device the
+-- player is holding. "unbound" when the action has no bindings.
+function M.label(name, kind)
+  local def = def_of(name)
+  if #def.binds == 0 then return "unbound" end
+  if kind then
+    local want_key = kind == "key"
+    for _, b in ipairs(def.binds) do
+      if (b.k == "key") == want_key then return M.bind_label(b) end
+    end
+    return M.bind_label(def.binds[1])
+  end
+  local parts = {}
+  for i, b in ipairs(def.binds) do parts[i] = M.bind_label(b) end
+  return table.concat(parts, "/")
 end
 
 -- action names in bit order (trace headers store this)
@@ -273,8 +576,25 @@ end
 function M.sample()
   local bits = 0
   for i, def in ipairs(M.defs) do
-    for _, sc in ipairs(def.keys) do
-      if live_keys[sc] or live_tap[sc] then
+    for _, b in ipairs(def.binds or {}) do
+      local on
+      if b.k == "key" then
+        on = live_keys[b.sc] or live_tap[b.sc]
+      elseif b.k == "btn" then
+        local p = live_pads[b.pad]
+        -- taps included here, cleared below by the PAD encode (any live
+        -- pad implies the latched domain), so the bit and the recorded
+        -- pad entry always agree within one record
+        on = p and (p.held | p.tap) & (1 << b.btn) ~= 0
+      else -- axis direction past the threshold, on the quantized value
+        local p = live_pads[b.pad]
+        if p then
+          local q = M.quantize_axis(p.ax[b.ax + 1])
+          on = b.dir > 0 and q >= M.axis_threshold
+               or b.dir < 0 and q <= -M.axis_threshold
+        end
+      end
+      if on then
         bits = bits | (1 << (i - 1))
         break
       end
@@ -562,5 +882,9 @@ M.pad_btn = {
 
 -- SDL3 standard gamepad axis numbers (SDL_GamepadAxis) = the wire order
 M.pad_ax = { lx = 0, ly = 1, rx = 2, ry = 3, lt = 4, rt = 5 }
+
+-- reverse lookups for canonical strings + labels (locals near the top)
+for name, n in pairs(M.pad_btn) do btn_name[n] = name end
+for name, n in pairs(M.pad_ax) do ax_name[n] = name end
 
 return M
