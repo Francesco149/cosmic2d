@@ -418,3 +418,28 @@ Known-open (asked on the feed): deep water is wade-able (no swim/block
 rule yet); tree canopies have no collision (trunks only). Goldens:
 openworld_tour.ctrace (1000f ring tour, drift-proven) +
 openworld_tour.png (f1290 pond crossing).
+
+## D3D-018 — yaw-follow holds inside the back cone (2026-07-17)
+
+Human playtest (openworld): "the camera is vibrating when i walk
+backwards". Root cause, reproduced frame-exact with the new demo(2)
+backup soak: walking INTO the camera pins the yaw-follow target
+('behind' the velocity heading) exactly opposite the current yaw; the
+shortest-arc easing's sign then flips with float noise every frame
+(yaw alternated 3.18/3.20), and because input is CAMERA-RELATIVE the
+ease can never win — camera and wish rotate together, so the pole is
+self-sustaining. The godot original (FollowCamera.cs, the feel
+reference) has the same unguarded LerpAngle — a latent rig bug, not a
+porting error.
+
+Rule: **inside kc.back_cone (default 0.35 rad) of straight-into-the-
+camera, yaw-follow HOLDS** — backing up runs at the screen (the classic
+third-person read); sideways runs (|angdiff| ~ pi/2) keep the approved
+circling. Manual look / recenter unaffected. Applied to both rig copies
+(bounce + openworld — the rig promotes engine-side on its third user).
+
+Fallout: bounce_tour.png re-shot (deliberate): the tour's near-reversal
+leg (off the goal tower, back west) now enters the cone, so the camera
+eases differently and the f1920 framing rotated; the sim path is
+byte-identical (world-space route steering), the frame still pins the
+ferry carry. All traces + every other pixel golden unchanged.

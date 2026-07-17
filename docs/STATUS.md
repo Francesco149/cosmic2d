@@ -4,6 +4,21 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 10 playtest) — verdicts + the backwards-camera fix
+
+Human played openworld: **"the mascot reads well and the openworld demo
+feels smooth"** — round 10's two big questions (mascot jump/walk read,
+terrain feel) land positive. One bug: **"the camera is vibrating when i
+walk backwards"** — the yaw-follow pole (D3D-018). Reproduced with the
+new openworld demo(2) backup soak (cam yaw alternated 3.18/3.20 every
+frame), fixed in BOTH rig copies (bounce too — same latent bug, present
+in the godot original as well): yaw-follow now holds inside
+kc.back_cone (0.35 rad) of straight-into-the-camera; sideways circling
+untouched. bounce_tour.png re-shot (deliberate — the tour's reversal
+leg enters the cone, framing rotated; sim path byte-identical, still
+pins the ferry). Suite ALL GREEN. Still open on the feed: band
+colors/fog at 320x240, deep-water wading, eye size, keep the guy.
+
 ## 2026-07-17 (round 10) — openworld: cm.terr + the mascot goes playable
 
 On the lock-in verdict, demo 2 proper began. **cm.terr** (D3D-017) is

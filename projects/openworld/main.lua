@@ -51,6 +51,8 @@ local KNOBS = {
     key_pitch = 0.025,
     pitch_min = -0.6, pitch_max = 0.95,
     recenter_lerp = 0.25, hold_frames = 42,
+    back_cone = 0.35, -- heading within this of straight-INTO-the-camera
+                      -- pauses yaw-follow (the vibration fix, D3D-018)
   },
   feel = {
     stretch = 0.32, squash = 0.42, vref = 12,
@@ -204,7 +206,10 @@ local function build_ctl()
     end
   end
   local fwd, side, jump_pressed
-  if d.demo ~= 0 then
+  if d.demo == 2 then -- backup soak: walk INTO the camera forever (the
+    -- yaw-follow pole — regression walk for the vibration fix)
+    fwd, side, jump_pressed = -1, 0, false
+  elseif d.demo ~= 0 then
     return route_ctl()
   else
     fwd = (input.down("up") and 1 or 0) + (input.down("down") and -1 or 0)
@@ -282,7 +287,16 @@ local function cam_step()
   local hspeed = m.sqrt(vx * vx + vz * vz)
   if rec == 0 and hold <= 0 and kc.yaw_follow > 0 and hspeed > kc.min_speed then
     local behind = m.atan2(-vx, -vz)
-    yaw = yaw + angdiff(behind, yaw) * kc.yaw_follow * kc.yaw_lerp
+    local da = angdiff(behind, yaw)
+    -- running INTO the camera pins 'behind' exactly opposite the yaw, and
+    -- because input is camera-relative the ease can never win — both
+    -- rotate together, the shortest arc's sign flips with float noise and
+    -- the camera VIBRATES (human playtest 2026-07-17). Inside the back
+    -- cone hold instead: backing up runs at the screen, the classic read;
+    -- sideways runs (|da| ~ pi/2) still circle. D3D-018.
+    if m.abs(da) < m.pi - kc.back_cone then
+      yaw = yaw + da * kc.yaw_follow * kc.yaw_lerp
+    end
   end
   hold = m.max(0, hold - 1)
 
