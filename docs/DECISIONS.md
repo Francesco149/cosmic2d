@@ -3816,3 +3816,35 @@ the record carries everything. `tools/build-windows.sh` refreshed the
 Windows stage (4 durable entries preserved) and Start Menu shortcut.
 Inspected capture on llm-feed: the fixture at the trace's final state
 with every domain tally nonzero.
+
+## D088 — the cellar: naive-first mini-demos before A5 slices (A5/A6, 2026-07-17)
+
+**Context.** A4 closed with D087; A5 (genre-neutral runtime slices) and
+A6 (the bundled demo matrix) begin together. A5's own iron rule is
+"implement only after writing each demo naively enough to expose its
+real pain" — and the top-down and arcade families' bundled proofs did
+not exist yet, so the first A5 act is an A6 act: write the naive demos
+and let them hurt.
+
+**Decision.** `projects/cellar` is the top-down action mini-demo, one
+readable file, deliberately naive. It covers the complete A6 line:
+analog-stick movement (quantized ints over 127) beside digital keys
+with axis-at-a-time wall sliding, touch pickups, an act-press unlock
+gated on the key — the pickup that persists across rooms in doc — a
+latching pressure plate opening the vault gate, y-sorted pillar/player
+drawing with a deterministic comparator, and doorway room transitions.
+Every hand-rolled block carries a `PAIN(actor|query|depth|move)` marker
+naming the A5 slice that should absorb it; the AABB overlap loop's
+third copy in this repo (demo, topdown template, cellar) is the
+evidence the query slice wants. The project stays dev-tree-only
+(manifest-asserted absent from editor/play shapes) until the A6
+bundling packet brings README/thumbnail/metadata polish.
+
+**Proof.** `tests/traces/cellar_clear.ctrace`: a 556-frame full clear —
+key, unlock, portal, plate, gate, gem, win — driven through the real
+loop by a virtual SDL pad's analog stick, recorded with committed code
+and verifying byte-exact on Linux and the staged native Windows
+executable. `nix run .#test` is ALL GREEN with the new trace beside
+every historical trace and all pixel/audio goldens; selftest counts are
+unchanged (no engine surface changed). Inspected captures on llm-feed:
+boot, the vault mid-clear, and the win state.

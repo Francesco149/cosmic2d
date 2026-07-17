@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 CLOSED with the exit proof (D087); A5/A6 begin (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — the cellar shipped (D088) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,20 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D088 opens A5/A6 the pain-first way.** A5's rule is naive demos
+before slices, and two of the three family proofs didn't exist. The
+first is in: `projects/cellar`, the one-file top-down action mini-demo
+— analog + digital movement with wall sliding, touch pickups, the
+key-gated act-press door (the pickup persists across rooms in doc), a
+latching pressure plate opening the vault gate, deterministic y-sorted
+drawing, and doorway transitions. Every hand-rolled block carries a
+`PAIN(actor|query|depth|move)` marker naming the A5 slice that should
+absorb it (the AABB overlap loop is now on its third copy in the repo —
+that's the evidence). Dev-tree only until the A6 bundling packet;
+`tests/traces/cellar_clear.ctrace` (556 frames, a full clear driven by
+a virtual pad's analog stick) verifies on Linux and native Windows, the
+suite is ALL GREEN, and boot/vault/win captures are on llm-feed.
 
 **D087 closes A4 with the exit proof.** `projects/inputproof` is the
 committed all-inputs fixture: keyboard action bits (with pad-button and
