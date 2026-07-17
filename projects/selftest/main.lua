@@ -10170,6 +10170,221 @@ local function t_clip_lifecycle()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_crash_resolve()
+  -- A7 §16: crash_resolve matches a dropped report to the live ring by EXACT
+  -- identity (history stream + last-committed frame) and returns the safe
+  -- pre-roll bounds ending at that frame plus the failed next-frame boundary.
+  -- It never guesses by wall time: a foreign stream / evicted frame / stream-
+  -- less report is refused with an honest reason.
+  local trace = cm.require("cm.trace")
+  local sim = pal.buf("cm.sim", 64)
+  local realf0 = sim:i64(0)
+  -- a high base so "a frame below the retained range" is a valid, non-negative
+  -- frame (the eviction case must not collide with the stream-less <0 case)
+  local base = realf0 + 100000
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local root = tmproot() .. "/cosmic_selftest_crashres"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  wipe_hist()
+  pal.write_file(root .. "/main.lua", "return {}\n")
+
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  local b = pal.buf("st.crashres", 8)
+  local irec = ("\0"):rep(10)
+  sim:i64(0, base)
+  trace.ring_start({ project = root })
+  for i = 1, 40 do
+    b:i32(0, i * 5); sim:i64(0, base + i); trace.record_frame(irec, nil)
+  end
+  trace.history_drain()
+  local lo, hi = trace.ring_range()
+  local stream = trace.ring_locator().stream
+  check(stream ~= "" and lo == base and hi == base + 40,
+        "crash-res: the live ring has a durable stream over base..base+40")
+
+  -- an exact match: committed mid-stream, a short pre-roll
+  local committed = base + 30
+  local plan = trace.crash_resolve(
+    { history_stream = stream, committed_frame = committed,
+      attempted_frame = committed + 1, error_kind = "sim.step" }, 10)
+  check(plan and plan.b == committed and plan.a == committed - 9,
+        "crash-res: the pre-roll is [committed-preroll+1 .. committed]")
+  check(plan.attempted == committed + 1,
+        "crash-res: the failed next-frame boundary is committed+1")
+  check(plan.kind == "sim.step", "crash-res: the plan carries the error kind")
+
+  -- the pre-roll clamps to the retained low edge, never before frame lo
+  local plan2 = trace.crash_resolve(
+    { history_stream = stream, committed_frame = lo + 2 }, 60 * 60)
+  check(plan2 and plan2.a == lo and plan2.b == lo + 2,
+        "crash-res: the pre-roll clamps to the retained low edge")
+  check(plan2.attempted == lo + 3,
+        "crash-res: attempted defaults to committed+1 when the report omits it")
+
+  -- a foreign stream: refused with an honest reason, never guessed by time
+  local bad, why = trace.crash_resolve(
+    { history_stream = "hs1-0000dead0000beef0000dead0000beef",
+      committed_frame = committed })
+  check(not bad and why and why:find("another recording"),
+        "crash-res: a foreign stream is refused, not guessed by time")
+
+  -- a frame below the retained range: refused as evicted, honestly
+  local ev, evwhy = trace.crash_resolve(
+    { history_stream = stream, committed_frame = lo - 5 })
+  check(not ev and evwhy and evwhy:find("evicted"),
+        "crash-res: a frame below the retained range reports eviction")
+
+  -- no durable history named in the report (headless / boot failure): refused
+  local nd, ndwhy = trace.crash_resolve(
+    { history_stream = "", committed_frame = -1 })
+  check(not nd and ndwhy and ndwhy:find("no durable history"),
+        "crash-res: an empty stream / -1 frame is unresolvable")
+
+  -- a committed frame past the live edge clamps to it (a stale over-count can
+  -- never push the focus past the present)
+  local plan3 = trace.crash_resolve(
+    { history_stream = stream, committed_frame = hi + 100 }, 10)
+  check(plan3 and plan3.b == hi and plan3.committed == hi
+        and plan3.attempted == hi + 1,
+        "crash-res: a committed frame past the live edge clamps to it")
+
+  wipe_hist()
+  pal.x_remove(root .. "/main.lua")
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, realf0)
+  pal.buf_free("st.crashres")
+  trace.ring_start({ project = "selftest" })
+end
+
+local function t_crash_focus()
+  -- A7 §16 integration: drive the REAL crash-report drop lifecycle headlessly.
+  -- rewind.drop_crash reads a .ccrash, resolves it against the LIVE ring by
+  -- identity, parks + loops the safe pre-roll, and marks the failed boundary --
+  -- WITHOUT stashing the live ring (unlike a clip). Esc layering clears the loop
+  -- first, then returns to live. A foreign report never parks. This pins the
+  -- state machine; the imgui tray is chrome (verified windowed).
+  local trace = cm.require("cm.trace")
+  local scrub = cm.require("cm.scrub")
+  local ed = cm.require("cm.ed")
+  local view = cm.require("cm.view")
+  local crash = cm.require("cm.crash")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+
+  local save_after = cm.main.after_restore
+  local save_on, save_doc, save_root = ed.on, ed.doc, ed.root
+  local save_mode = view.mode
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  cm.main.after_restore = function() end
+
+  local root = tmproot() .. "/cosmic_selftest_crashfocus"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  wipe_hist()
+  pal.write_file(root .. "/main.lua", "return {}\n")
+
+  ed.launch(root)
+  check(ed.on and ed.root == root, "crash-focus: editor launched on the project")
+
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  local b = pal.buf("st.crashfocus", 8)
+  local irec = ("\0"):rep(10)
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  for i = 1, 40 do
+    b:i32(0, i * 5); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+  end
+  trace.history_drain()
+  local lo, hi = trace.ring_range()
+  local stream = trace.ring_locator().stream
+  local r = ed.g.rw or {} -- the tray's chrome state (drop_crash creates it)
+
+  local function write_ccrash(name, o)
+    local path = root .. "/" .. name
+    pal.write_file(path, crash.encode(o))
+    return path
+  end
+
+  -- ---- a foreign report never parks the live session ----
+  local foreign = write_ccrash("foreign.ccrash", {
+    report_id = "cr1-foreign", project_path = root, project_name = "cf",
+    history_stream = "hs1-1111face1111face1111face1111face",
+    committed_frame = hi - 3, attempted_frame = hi - 2, error_kind = "sim.step" })
+  check(not cm.require("cm.ed.rewind").drop_crash(ed, foreign),
+        "crash-focus: a foreign-stream report is refused")
+  check(not scrub.paused() and not (ed.g.rw and ed.g.rw.crash),
+        "crash-focus: a refused crash never parks and sets no focus")
+
+  -- ---- a matching report opens the crashed minute as an A/B loop ----
+  local committed = hi - 4
+  local report = write_ccrash("boom.ccrash", {
+    report_id = "cr1-boom", project_path = root, project_name = "cf",
+    history_stream = stream, committed_frame = committed,
+    attempted_frame = committed + 1, code_epoch = 0, error_kind = "sim.step",
+    traceback = "attempt to index a nil value", log_path = "" })
+  check(cm.require("cm.ed.rewind").drop_crash(ed, report),
+        "crash-focus: a matching report opens the crash focus")
+  r = ed.g.rw
+  check(scrub.paused() and not scrub.is_clip(),
+        "crash-focus: the live source is parked in place, NOT opened as a clip")
+  check(not trace.has_stash(),
+        "crash-focus: the live ring is resolved in place, never stashed")
+  local la, lb = scrub.loop_range()
+  check(la == lo and lb == committed,
+        "crash-focus: the pre-roll loops [retained-lo .. last committed frame]")
+  check(r.crash and r.crash.committed == committed
+        and r.crash.attempted == committed + 1 and r.crash.kind == "sim.step",
+        "crash-focus: the tray marks the failed next-frame boundary")
+
+  -- ---- Esc #1 clears the loop but keeps the crash view ----
+  cm.require("cm.ed.rewind").escape(ed)
+  check(not scrub.has_loop() and scrub.paused() and r.crash,
+        "crash-focus: Esc clears the loop but stays in the crash view")
+
+  -- ---- Esc #2 returns to live, focus dismissed, ring intact ----
+  cm.require("cm.ed.rewind").escape(ed)
+  check(not scrub.paused() and not scrub.on,
+        "crash-focus: a second Esc returns to the live session")
+  check(not (ed.g.rw and ed.g.rw.crash),
+        "crash-focus: the crash focus is dismissed on close")
+  local rlo, rhi = trace.ring_range()
+  check(rlo == lo and rhi == hi,
+        "crash-focus: the live ring range is exactly what it was")
+
+  wipe_hist()
+  pal.x_remove(root .. "/main.lua")
+  for _, n in ipairs({ "foreign.ccrash", "boom.ccrash" }) do
+    pal.x_remove(root .. "/" .. n)
+  end
+  ed.on, ed.doc, ed.root = save_on, save_doc, save_root
+  ed.parked, ed.g.stash = false, nil
+  ed.g.root_stash, ed.g.root_stashed = nil, nil
+  if ed.g.rw then ed.g.rw.crash, ed.g.rw.open = nil, nil end
+  view.mode = save_mode
+  cm.main.after_restore = save_after
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  sim:i64(0, f0)
+  pal.buf_free("st.crashfocus")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -10308,6 +10523,8 @@ function game.init()
   t_standalone_clip()
   t_clip_nondestructive()
   t_clip_lifecycle()
+  t_crash_resolve()
+  t_crash_focus()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
