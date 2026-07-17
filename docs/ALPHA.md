@@ -292,9 +292,13 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   markers, input transitions, code epochs, asset saves, restarts, session
   boundaries, and contained errors draw from the persisted digest (D100);
   asset *imports* and the crash-focus source await their packets.
-- [ ] Visible disk budget/use, retention controls, pause/clear, and recovery
+- [x] Visible disk budget/use, retention controls, pause/clear, and recovery
   behavior across state, thumbnails, audio, and deduplicated project blobs;
-  long sessions remain bounded and understandable.
+  long sessions remain bounded and understandable. (D102: the tray head is a
+  control — a live disk-use meter, a persisted disk-budget knob, pause-recorder,
+  and a two-click clear that drops state + previews and resumes cleanly.
+  Dedup-blob and captured-audio *recovery* ride the §14 packaging packet, named
+  honestly rather than claimed.)
 - [x] Implement the exact live-history scrub grammar: click seeks; left-drag
   selects an inclusive A/B range and loops it; Esc clears the loop/clip mode;
   Esc again closes rewind immediately. Active clips cannot disappear through

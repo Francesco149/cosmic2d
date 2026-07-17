@@ -4641,3 +4641,82 @@ verifies byte-exact and all pixel/audio goldens match, proving the preview layer
 moved no recorded byte. Inspected capture on llm-feed: the tray over a ~320-frame
 `smoke --edit` session with the PREVIEWS lane populated by one game-FOV thumbnail
 per segment. `tools/build-windows.sh` refreshed the stage and Start Menu shortcut.
+
+## D102 — the rewind tray's disk-budget / retention surface (A7, 2026-07-17)
+
+**Context.** D100/D101 finished the A7 information layer — the tray now draws the
+activity/event lanes and presented-frame previews across the whole retained
+window. `ALPHA.md` §A7 line 4 is next: "visible disk budget/use, retention
+controls, pause/clear, and recovery behavior … long sessions remain bounded and
+understandable." The tray's head already printed a read-only `used / budget · N
+segments`; the machinery to bound history existed (`M.ring.budget_mb` drives
+`evict`; `cm.ed.clear_cache` removes `.ed/history` + `ring_reset`s while
+preserving unsaved session/journals). This packet turns that readout into a
+control.
+
+**The contiguous-ring constraint.** `record_frame` requires `f ==
+R.last_frame + 1`; a gap triggers `ring_reset` (history rotates, present
+reseeds). So "pause recording while the game keeps running" cannot seamlessly
+resume — the sim advanced during the pause. The alternatives are: (a) freeze the
+game too (that is already the transport play/pause = scrub park, and it preserves
+history); or (b) keep playing and, on resume, start fresh. Park already covers
+(a), so the only non-redundant recorder pause is (b): **pause = keep playing,
+history freezes and stays scrubbable; resume = a fresh contiguous stream from the
+present, the pre-pause history released.** `hist_adopt` makes this automatic —
+after a pause the present no longer matches the on-disk tail, so no chain adopts,
+the abandoned files are wiped, and `ring_init` starts a fresh generation. This is
+the DVR "single continuous file" behavior expressed through our single-stream
+ring.
+
+**Decision.**
+- **`cm.trace`.** `M.ring.rec_paused` gates `record_frame` (transient session
+  state, default off, never persisted — so headless/verify/goldens never see
+  it); `set_rec_paused(false)` calls `ring_reset` to reseed. `ring_stats` gains
+  `retained_bytes = sum(fbytes or bytes)`, exactly what `evict` bounds, so the
+  meter reads true. `reevict()` re-runs eviction now, so shrinking the budget
+  drops the oldest segment files the same frame.
+- **`cm.view` + `cm.main`.** The disk budget is machine-local editor policy like
+  the D074 scaling: `set_history_budget` rides `editor.dat`, `budget_mb_ok`
+  clamps to [16, 65536] MB, and boot adopts the persisted value onto the ring
+  after spill/thumbs. Unset keeps `cm.trace`'s default; a non-number is ignored.
+- **`cm.ed.rewind`.** The head carries a live disk-use **meter** (bar fill =
+  `retained/budget`, warming amber past 70% then red past 90%; label = used/budget
+  + segment/spill state), a **disk-budget knob** (`-`/`+` over a round-MB ladder,
+  persisted immediately; eviction deferred while parked so a viewed past can't
+  vanish), a **pause rec** toggle, and a two-click **clear** (`clear` → `sure?`,
+  auto-disarms after 3s) that runs the tested `ed.clear_cache` door and frees the
+  preview textures. REC PAUSED reads on the collapsed pill and the head status;
+  the legend only draws when it still fits left of the control cluster (graceful
+  at narrow widths / high chrome scale). `fmt_budget` uses `%g` so a console-set
+  fractional budget can't crash the header.
+
+**Recovery scope, named honestly.** Clear drops retained state + previews (RAM
+segments, `.ed/history` blobs incl. `THMB`, the tray's decoded textures) and
+resumes recording next frame; unsaved session/journals are deliberately kept.
+Deduplicated project blobs and captured audio recovery are **not** yet real —
+they arrive with the §14 packaging packet — so this packet does not claim them.
+
+**Consequences.** A long session is now bounded and understandable from inside
+the tool: the meter shows where storage goes and colors as it fills, the budget
+knob is the durable bound, pause stops growth while you keep playing, and clear
+reclaims now. All observer/chrome policy: no sim/doc/recorded byte moves, so
+every trace and pixel/audio golden is byte-identical.
+
+**Revisit.** Resume-from-pause releasing the pre-pause history is the honest cost
+of the single contiguous ring; a user who wants history *preserved* across a
+recording pause votes a gapped-timeline / seam-keyframe packet (segments either
+side of a recorded gap, seek clamped to available frames). The RAM residency
+window (`M.ring.seconds`) stays a console knob, not a second surfaced control,
+until a demo needs it.
+
+**Proof.** Linux selftest **24,025** on PAL API 19 (17 new KATs in
+`t_timeline_retention`: the paused recorder freezes the live edge while the game
+frame advances and resume starts a fresh stream; `retained_bytes` is reported;
+`reevict` drops the oldest disk segment immediately and shrinks the total;
+`budget_mb_ok` clamps/floors/rejects; the budget round-trips `editor.dat` with a
+non-number ignored). `nix run .#test` is ALL GREEN — every historical trace and
+all pixel/audio goldens byte-identical, proving the retention surface moved no
+recorded byte. Inspected captures on llm-feed: the tray recording (meter, budget
+knob, pause/clear), a near-full amber meter with `clear` armed to `sure?`, and
+the REC PAUSED state with `resume rec`. `tools/build-windows.sh` refreshed the
+stage and Start Menu shortcut.

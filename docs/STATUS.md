@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the timeline information layer (activity digest D100 + presented-frame previews D101) is in (2026-07-17)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101) and the disk-budget/retention surface (D102) are in (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -25,6 +25,51 @@ and the three-family demo matrix — demo (side-view), cellar (top-down),
 swarm (arcade) — ships in the public archives with READMEs, thumbnails,
 and export proofs. The complete rewind product UI (A7) and the
 release-candidate pass (A8) are the open alpha gates.
+
+**D102 turns the rewind tray's storage readout into a control — the A7
+disk-budget / retention surface (ALPHA §A7 line 4).** The head's
+read-only `used / budget · N segments` becomes: a live **disk-use
+meter** (bar fill = `retained/budget`, warming amber past 70% then red
+past 90%; `ring_stats` gained `retained_bytes = sum(fbytes or bytes)`,
+exactly what `evict` bounds, so it reads true), a persisted **disk-budget
+knob** (`-`/`+` over a round-MB ladder; machine-local editor policy that
+rides `editor.dat` beside the D074 scaling via
+`cm.view.set_history_budget`, adopted onto the ring at boot;
+`trace.reevict()` drops the oldest segment files the same frame a shrink
+lands, deferred while parked so a viewed past can't vanish), a **pause
+rec** toggle (`M.ring.rec_paused` gates `record_frame` — the game keeps
+playing while history stops growing; because the ring is one contiguous
+stream and the sim advanced during the pause, resume reseeds a fresh
+stream from the present via `ring_reset`, and `hist_adopt` finds no
+matching tail so the pre-pause files are wiped — an honest session
+boundary, DVR-style), and a two-click **clear** (`clear` → `sure?`,
+auto-disarms 3s) that runs the tested `ed.clear_cache` door and frees the
+preview textures. `REC PAUSED` reads on the collapsed pill and head; the
+legend only draws when it still fits left of the cluster. Everything is
+observer/chrome policy — `rec_paused` is transient (default off, never
+persisted), so headless/verify/goldens never see it and **no sim/doc/
+recorded byte moved**: Linux selftest **24,025** / native Windows
+**24,027** on PAL API 19 (17 new KATs in `t_timeline_retention`),
+`nix run .#test` ALL GREEN with every historical trace and pixel/audio
+golden byte-identical; native re-verified `smoke_kitcheck` (830 frames).
+Inspected captures on llm-feed: the tray recording (meter/knob/pause/
+clear), a near-full amber meter with clear armed to `sure?`, and the
+`REC PAUSED` state with `resume rec`. Recovery names its scope honestly:
+clear drops state + previews and keeps unsaved session/journals; dedup
+project blobs and captured-audio recovery ride the §14 packaging packet
+(not claimed here). Standing revisit trigger logged: history *preserved*
+across a recording pause votes a gapped-timeline / seam-keyframe packet.
+
+**Exact next packet:** **A7, continued — pick up the packaging-adjacent
+line.** With the tray's information + retention layers done, the load-
+bearing next step is the **standalone clip package** (ALPHA §A7: the
+content-addressed project-blob generalization — extend `FSAV` to carry a
+blob hash and fold in the D101 `THMB` durable chunks + D100 digest so a
+clip is self-contained and adopted cross-session history recovers), which
+then unlocks **atomic clip export to `replays/`** and the **crash-report
+drop** (the ERROR marker + `ring_locator`/`hist_locator` are already in
+place). The **immutable-source / drag-in replay** line is the other open
+A7 item. See ALPHA §A7 for the full remaining checklist.
 
 **D101 fills the rewind tray's PREVIEWS lane: presented-frame
 previews (`THMB`).** The film lane read "NO PRESENTED-FRAME PREVIEWS
@@ -948,21 +993,13 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **A7 — the rewind/replay product UI, continued.**
-The foundation (persistent tray, scrub grammar, wall-clocked
-transport: D065/D066/D074), the store's durability rework (D073), and
-the whole **timeline information layer** are now done: the persisted
-per-segment activity/event digest (D100 — the sim/editor/files
-envelope + save/error/restart/session markers draw the whole retained
-window including adopted cross-session history) and the
-presented-frame previews (D101 — the PREVIEWS lane draws game-FOV
-thumbnails, one per segment). The natural next packet is the
-**disk budget / retention surface**: the tray already shows
-`used / budget · N segments`, so make it a *control* — visible
-disk use with pause/clear and retention knobs, and a bounded,
-understandable long session (`ALPHA.md` §A7 line 4; `cm.ed.clear_cache`
-+ the budget-eviction path already exist to build on). After that:
-immutable timeline sources with drag-in replay files, the standalone
+**A7 roadmap context** (the live next-packet pointer is at the top of
+this file). The foundation (persistent tray, scrub grammar, wall-clocked
+transport: D065/D066/D074), the store's durability rework (D073), the
+**timeline information layer** (D100 activity/event digest + D101
+presented-frame previews), and the **disk-budget / retention surface**
+(D102 — the tray head is now a control) are all done. What remains in
+A7: immutable timeline sources with drag-in replay files, the standalone
 clip package (the content-addressed project-blob generalization,
 which extends `FSAV` to carry a blob hash and folds in the D101
 `THMB` durable chunks + D100 digest for adopted/cross-session
