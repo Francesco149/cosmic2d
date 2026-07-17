@@ -3980,3 +3980,65 @@ shipped scripting guide gained an actors section beside cm.box.
 `tools/build-windows.sh` refreshed the stage and shortcut. Inspected
 captures on llm-feed: wave-2 mid-fight and the settled game over with
 best retained.
+
+## D092 — cm.camera: the camera slice (A5, 2026-07-17)
+
+**Context.** After cm.box (D090) and cm.actor (D091), the next §2 slice
+was the camera: the platformer demo hand-rolled follow/deadzone/clamp
+math over an f32 buffer in `cam_step`, snapped the room swap by hand in
+`enter_room`, and §2's camera line asks for follow, bounds, coordinate
+conversion, pixel snap, shake, and simple transitions.
+
+**Decision.** `cm.camera` is math over ONE plain doc table (extra
+fields pass through, exactly like cm.box rects — the demo parks its
+smoothed lookahead there): no module state, no buffers, so canon,
+snapshots, traces, and rewind carry a camera by construction. The
+camera is its top-left corner plus view size (`new()` defaults to
+`pal.gfx_size()`); every motion door ends clamped to optional world
+bounds, and a bounds axis smaller than the view centers over it
+instead of jittering between clamp edges. `follow(c, x, y, o)` eases
+the view CENTER per axis — `lerp`/`lerp_y` over the error beyond
+`dead`/`dead_y` (defaults 1 and 0 = snap), `ox`/`oy` offsetting the
+target for lookahead (smoothing stays the caller's one-line lerp).
+`center` is the cut — the simple transition for init/room swaps/
+respawns. `shake(c, mag, frames)` arms integer doc counters ticked by
+`tick(c)` once per step; the wobble is render-only cm.math sin off the
+remaining count with linear fade (the swarm idiom — never the PRNG),
+read by `offset`/`apply`. `to_world`/`to_screen` convert through the
+UNSHAKEN camera so mouse aim stays deterministic while the view
+wobbles. `apply` hands the shaken top-left to cm.gfx (parallax layers;
+`gfx.pixel_snap` keeps the whole-pixel rasterization policy).
+Deliberately NOT here: zones/rails, dual-target framing, zoom, smooth
+room pans — later slices earn those from real demo pain.
+
+**Consequences.** The platformer demo is the retrofit proof: the
+buffer camera and both hand-rolled snap sites collapsed into
+bounds/center/follow with the exact same knobs, and the spike pit now
+arms a real shake. The retrofit is sim-identical — the full A4 route
+bot still completes at the exact frame 2688 — but the camera moving
+into doc means the recorder re-canons the demo's whole doc every
+frame: demo traces cost ~3.5KB/frame where the buffer camera paid ~1KB
+(swarm/cellar already pay this for their moving doc state). Revisit
+trigger: if committed traces or long sessions grow painful, a recorder
+packet owes doc subtree deltas; the module design does not change.
+Cellar and swarm keep their naive/absent cameras as contrast for the
+remaining slices (tween/effect is the loudest standing vote).
+
+**Proof.** Linux selftest passes **23,873** checks (+37 camera KATs:
+FOV/explicit construction, exact center/cut clamping, immediate bounds
+clamp and small-span centering, the exact demo lerp math, deadzone
+hold/excess/symmetry, per-axis knobs, lookahead offset, clamped
+follow, every shake refusal, countdown/fade/removal/rearm/zero-clears,
+offset determinism, shake-excluded conversion round trip, apply with
+and without shake, and same-ops-same-canon-bytes) and the staged
+native Windows executable **23,875** on PAL API 19. `nix run .#test`
+is ALL GREEN — the new `tests/traces/demo_camtour.ctrace` (2,068
+frames by virtual pad: the town run with lookahead, an up-jump chain
+through the y deadzone, the portal cut, a deliberate dive into the
+spikes with the shake and warp, the recovery, and the proper pit jump
+to a coin) beside every historical trace and all pixel/audio goldens.
+The trace verifies byte-exact on Linux and native Windows. The shipped
+scripting guide gained a camera section beside cm.box/cm.actor.
+`tools/build-windows.sh` refreshed the stage and shortcut. Inspected
+captures on llm-feed: the town run mid-lookahead and the mid-shake
+spike-pit frame.

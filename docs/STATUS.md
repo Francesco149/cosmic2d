@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor shipped (D088–D091) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera shipped (D088–D092) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,32 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D092 lands the camera slice: cm.camera.** Math over one plain doc
+table (extra fields pass through — the demo parks its smoothed
+lookahead there): follow easing the view center with per-axis lerp +
+deadzone and ox/oy lookahead offsets, world bounds clamping every
+motion door (small rooms center instead of jittering), `center` as
+the cut for init/room swaps/respawns, shake as integer doc counters
+ticked once per step with the render-only sin wobble off the
+remaining count (the swarm idiom — never the PRNG), world<->screen
+conversion through the unshaken camera (mouse aim stays
+deterministic while the view wobbles), and `apply` handing the
+shaken top-left to cm.gfx's parallax layers (`gfx.pixel_snap` keeps
+rasterization policy). 37 KATs (Linux 23,873 / native Windows
+23,875). The platformer demo is the retrofit proof: its f32-buffer
+camera and both hand-rolled snap sites collapsed into
+bounds/center/follow with identical knobs, the spike pit arms a real
+shake, and the retrofit is sim-identical — the A4 route bot still
+completes at the exact frame 2688. The committed
+`tests/traces/demo_camtour.ctrace` (2,068 frames by virtual pad:
+town run with lookahead, an up-jump chain through the y deadzone,
+the portal cut, a deliberate spike dive with shake + warp, recovery,
+the proper pit jump) verifies byte-exact on Linux and native
+Windows. Known cost logged for a future recorder packet: the camera
+moving in doc re-canons the demo's whole doc per frame (~3.5KB/frame
+vs ~1KB before); swarm/cellar already pay this. Guide section
+shipped beside cm.box/cm.actor.
 
 **D091 lands the actor/world slice: cm.actor.** Bookkeeping over one
 plain doc subtree — ascending never-reused ids over a single id-sorted
@@ -669,18 +695,21 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the camera slice** — the platformer demo
-hand-rolls its follow/clamp camera math, and §2's camera line asks for
-follow, bounds, coordinate conversion, pixel snap, shake, and simple
-transitions. Design it per the A5 contract: deterministic state in
-doc/named buffers, KATs plus a trace, task-based defaults with the
-primitives still open, and ONE demo retrofit (the platformer demo is
-the natural proof) with the others left naive as contrast. After that:
-tween/effect (swarm's pause/shake/flash counters are the standing
-PAIN(effect) vote, cellar's bobs and the demo's juice add theirs), then
-runtime-UI. A6 bundling polish (READMEs, thumbnails, release-manifest
-promotion for cellar/swarm) can interleave once slices make the demos
-concise.
+**Exact next packet:** **the tween/effect slice** — the standing
+PAIN(effect) votes: swarm's hit pause / shake / death flash as three
+hand-tuned doc counters with render-only offset math, cellar's sim-
+frame bobs, and the demo's fx/feel juice (squash/stretch timers in
+fx.lua). Design it per the A5 contract: deterministic counters in
+doc (cm.actor timers and cm.camera shake are the established shape),
+render-only presentation math, `cm.ease` already exists as the pure
+curve library — the slice likely composes it over doc-counter
+lifetimes rather than inventing new state. KATs plus a trace,
+task-based defaults with primitives open, ONE demo retrofit (swarm
+is the loudest vote) with the others left naive as contrast. After
+that: layer/depth (cellar's y-sort comparator is the PAIN(depth)
+vote), transition, then runtime-UI. A6 bundling polish (READMEs,
+thumbnails, release-manifest promotion for cellar/swarm) can
+interleave once slices make the demos concise.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
