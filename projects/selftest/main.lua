@@ -3491,6 +3491,231 @@ local function t_input_bind()
   check(#input.sample() == 10, "bind: the suite leaves the domain unlatched")
 end
 
+-- ---- the options packet (A4/D085): knobs, size candidates, stores ----
+
+local function t_options()
+  local input = cm.require("cm.input")
+  local view = cm.require("cm.view")
+  local options = cm.require("cm.options")
+
+  -- the stick knob setters clamp and floor
+  check(input.set_deadzone(-100) == 0 and input.set_deadzone(50000) == 32000
+        and input.set_deadzone(9000.9) == 9000,
+        "options: set_deadzone clamps to 0..32000")
+  check(input.set_axis_threshold(0) == 1
+        and input.set_axis_threshold(500) == 127
+        and input.set_axis_threshold(64) == 64,
+        "options: set_axis_threshold clamps to 1..127")
+
+  -- a retuned deadzone shapes quantization through the module knob
+  input.set_deadzone(0)
+  check(input.quantize_axis(32767) == 127 and input.quantize_axis(1) == 0,
+        "options: a zero deadzone maps the full range")
+  input.set_deadzone(8000)
+
+  -- a retuned threshold moves the live axis->bit boundary exactly
+  input.pad_reset()
+  input.load_binds(nil)
+  input.map({ { "left", input.key.left, "pad:lx-" } })
+  local L = 1 << input.bit_of.left
+  local function bits()
+    return (string.unpack("<I4", input.sample()))
+  end
+  input.set_axis_threshold(80)
+  input.feed({ { type = "pad", pad = 1, connected = true },
+               { type = "padaxis", pad = 1, axis = 0, value = -15801 } })
+  check(bits() & L == 0,
+        "options: the old threshold deflection no longer fires at 80")
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = -23602 } })
+  check(bits() & L ~= 0, "options: quantized -80 fires threshold 80 exactly")
+  input.feed({ { type = "padaxis", pad = 1, axis = 0, value = -23601 } })
+  check(bits() & L == 0, "options: quantized -79 stays under threshold 80")
+  input.feed({ { type = "pad", pad = 1, connected = false } })
+  input.pad_reset()
+
+  -- the knobs ride input.dat additively: non-defaults persist, defaults
+  -- are omitted (an untouched player never freezes today's defaults),
+  -- malformed values are ignored, and every load resets first
+  local root = tmproot() .. "/cosmic_selftest_options"
+  pal.x_remove(root .. "/input.dat")
+  pal.x_remove(root)
+  pal.mkdir(root)
+  pal.write_file(root .. "/input.dat", state.canon({
+    schema = 1, actions = {}, deadzone = 12000, axis_threshold = 60,
+  }))
+  input.load_binds(root)
+  check(input.deadzone == 12000 and input.axis_threshold == 60,
+        "options: stored stick knobs adopt on load")
+  input.set_deadzone(input.DEF_DEADZONE)
+  input.set_axis_threshold(70)
+  check(input.save_binds() == true, "options: the knob save publishes")
+  local t = state.parse(pal.read_file(root .. "/input.dat"))
+  check(t.axis_threshold == 70 and t.deadzone == nil,
+        "options: only off-default knobs enter the store")
+  pal.write_file(root .. "/input.dat", state.canon({
+    schema = 1, actions = {}, deadzone = "wide", axis_threshold = 9000,
+  }))
+  input.load_binds(root)
+  check(input.deadzone == input.DEF_DEADZONE and input.axis_threshold == 127,
+        "options: malformed knobs are ignored, numeric ones clamp")
+  input.load_binds(nil)
+  check(input.deadzone == input.DEF_DEADZONE
+        and input.axis_threshold == input.DEF_AXIS_THRESHOLD,
+        "options: a store-less load resets the knobs")
+  pal.x_remove(root .. "/input.dat")
+
+  -- size candidates: ladder-filling sizes that FIT the given desktop
+  local saved_ref = { view.cfg.ref_w, view.cfg.ref_h }
+  view.cfg.ref_w, view.cfg.ref_h = 480, 270
+  local function has(list, w, h)
+    for _, s in ipairs(list) do if s[1] == w and s[2] == h then return true end end
+    return false
+  end
+  local c = view.size_candidates(nil)
+  check(#c == 4 and has(c, 720, 540) and has(c, 960, 540)
+        and has(c, 1440, 1080) and has(c, 1920, 1080),
+        "options: no display -> the classic static four")
+  c = view.size_candidates(1920, 1080)
+  check(has(c, 720, 540) and has(c, 960, 540) and has(c, 1440, 1080)
+        and has(c, 1920, 1080),
+        "options: a 1080p desktop keeps the classic four")
+  for i = 2, #c do
+    check(c[i - 1][1] * c[i - 1][2] <= c[i][1] * c[i][2],
+          "options: candidates sort ascending by area")
+  end
+  c = view.size_candidates(1366, 768)
+  check(#c == 2 and has(c, 720, 540) and has(c, 960, 540),
+        "options: a small laptop drops every size that cannot fit")
+  c = view.size_candidates(3840, 2160)
+  check(#c == 8 and c[#c][1] == 3840 and c[#c][2] == 2160,
+        "options: a 4K desktop caps at the largest eight")
+  for _, s in ipairs(c) do
+    check(s[1] <= 3840 and s[2] <= 2160, "options: every candidate fits")
+  end
+  c = view.size_candidates(500, 400)
+  check(#c == 2 and has(c, 360, 270) and has(c, 480, 270),
+        "options: a tiny display falls back to 1x sizes")
+  c = view.size_candidates(200, 150)
+  check(#c == 1 and c[1][1] == 360 and c[1][2] == 270,
+        "options: the smallest FOV at 1x is the unconditional floor")
+  view.cfg.ref_w, view.cfg.ref_h = 960, 540
+  c = view.size_candidates(1920, 1080)
+  check(#c == 2 and has(c, 1440, 1080) and has(c, 1920, 1080),
+        "options: a 960x540-family project derives ITS multiples")
+  view.cfg.ref_w, view.cfg.ref_h = saved_ref[1], saved_ref[2]
+
+  -- the headless display query keeps its contract: nil, or a real size
+  local dw, dh = pal.x_display_size()
+  check(dw == nil or (math.type(dw) == "integer" and dw >= 1
+        and math.type(dh) == "integer" and dh >= 1),
+        "options: x_display_size is nil or a positive size")
+
+  -- project-declared options: declaration validation
+  local saved_defs, saved_custom = options.defs, options._custom
+  options.defs, options._custom = {}, {}
+  check(not pcall(options.add, { id = "x", kind = "warp" })
+        and not pcall(options.add, { id = "", kind = "toggle" })
+        and not pcall(options.add, { id = "x", kind = "choice" })
+        and not pcall(options.add,
+                      { id = "x", kind = "slider", min = 5, max = 1 })
+        and not pcall(options.add, { id = "x", kind = "slider", min = 0,
+                                     max = 10, default = 99 }),
+        "options: invalid declarations refuse loudly")
+  check(#options.defs == 0, "options: refusals leave no half declaration")
+  local fired
+  options.add({ id = "shake", kind = "toggle", default = true })
+  options.add({ id = "zoom", kind = "slider", min = 1, max = 8, default = 2,
+                on_change = function(v) fired = v end })
+  options.add({ id = "style", kind = "choice",
+                choices = { "clean", "crt" } })
+  check(options.get("shake") == true and options.get("zoom") == 2
+        and options.get("style") == "clean",
+        "options: declared defaults answer get()")
+  check(not pcall(options.get, "nope") and not pcall(options.set, "nope", 1),
+        "options: unknown ids are loud")
+  check(not pcall(options.set, "zoom", 99)
+        and not pcall(options.set, "style", "neon"),
+        "options: set refuses out-of-range values")
+
+  -- volumes + custom values round-trip the REAL video.dat save/load
+  local vroot = tmproot() .. "/cosmic_selftest_video"
+  pal.x_remove(vroot .. "/video.dat")
+  pal.x_remove(vroot .. "/editor.dat")
+  pal.x_remove(vroot)
+  pal.mkdir(vroot)
+  view._video_path = vroot .. "/video.dat"
+  local saved_access = view._access_path
+  view._access_path = vroot .. "/editor.dat" -- hermetic accessibility
+  -- load_video adopts view knobs too: keep the suite's live view intact
+  local saved_view = { ui_scale = view.cfg.ui_scale,
+                       editor_scale = view.cfg.editor_scale,
+                       chrome_scale = view.cfg.chrome_scale,
+                       access_auto = view.cfg.access_auto,
+                       access_resolved = view.access_resolved,
+                       win_w = view.win_w, win_h = view.win_h,
+                       fullscreen = view.fullscreen }
+  local saved_vol = options.vol
+  options.vol = { master = 100, music = 100, sfx = 100 }
+
+  check(options.set_vol("music", 40) == 40
+        and options.set_vol("master", 250) == 100
+        and options.set_vol("sfx", -3) == 0,
+        "options: set_vol clamps to 0..100")
+  check(not pcall(options.set_vol, "voice", 5),
+        "options: unknown volumes are loud")
+  options.set("zoom", 5)
+  check(fired == 5, "options: set fires on_change")
+  t = state.parse(pal.read_file(vroot .. "/video.dat"))
+  check(t.vol_music == 40 and t.vol_sfx == 0 and t.vol_master == nil,
+        "options: only off-default volumes enter video.dat")
+  check(t.custom.zoom == 5 and t.custom.shake == nil,
+        "options: only touched custom values enter video.dat")
+
+  -- a crafted store: foreign ids stay inert through load AND resave,
+  -- malformed volumes fall back, numeric ones clamp
+  pal.write_file(vroot .. "/video.dat", state.canon({
+    ui_scale = 2, win_w = 960, win_h = 540,
+    vol_music = 900, vol_sfx = "loud",
+    custom = { zoom = 3, zebra = 5, style = "neon", bad = { 1 } },
+  }))
+  options.vol = { master = 1, music = 2, sfx = 3 } -- junk: load must reset
+  view.load_video()
+  check(options.vol.master == 100 and options.vol.music == 100
+        and options.vol.sfx == 100,
+        "options: volumes clamp and reset through a crafted load")
+  check(options.get("zoom") == 3,
+        "options: a stored custom value answers get()")
+  check(options.get("style") == "clean",
+        "options: a stored value failing validation yields the default")
+  view.save_video()
+  t = state.parse(pal.read_file(vroot .. "/video.dat"))
+  check(t.custom.zebra == 5 and t.custom.style == "neon",
+        "options: undeclared/invalid custom ids stay inert in the store")
+  check(t.custom.bad == nil, "options: non-scalar custom values drop")
+
+  -- redeclare (hot reload): value kept when valid, defaulted when not
+  options.add({ id = "zoom", kind = "slider", min = 4, max = 8, default = 4 })
+  check(options.get("zoom") == 4,
+        "options: a redeclared range falls back to its new default")
+
+  -- restore the suite's state
+  view._video_path, view._access_path = nil, saved_access
+  view.cfg.ui_scale = saved_view.ui_scale
+  view.cfg.editor_scale = saved_view.editor_scale
+  view.cfg.chrome_scale = saved_view.chrome_scale
+  view.cfg.access_auto = saved_view.access_auto
+  view.access_resolved = saved_view.access_resolved
+  view.win_w, view.win_h = saved_view.win_w, saved_view.win_h
+  view.fullscreen = saved_view.fullscreen
+  options.defs, options._custom, options.vol =
+    saved_defs, saved_custom, saved_vol
+  if pal.x_snd_gain then pal.x_snd_gain(128, 128, 128) end
+  pal.x_remove(vroot .. "/video.dat")
+  pal.x_remove(vroot .. "/editor.dat")
+  pal.x_remove(vroot)
+  pal.x_remove(root)
+end
+
 local function t_project_settings()
   local project = cm.require("cm.project")
   local src = [==[
@@ -6219,6 +6444,78 @@ local function t_snd()
   sg.sweep, sg.sweep_ms = -24, 80 -- drop two octaves over 80 ms
   local dropd = render_note(sg, 69, 6)
   check(flat ~= dropd, "snd sweep: a pitch sweep alters the PCM")
+
+  -- A4/D085: device-output gains are pure output policy — the hashed mix
+  -- (and with it every audio golden and trace) never hears them; only the
+  -- device copy does, in exact integer math. x_snd_dev_tap is the seam.
+  for _ = 1, 40 do pal.snd_render() end -- every earlier release tails out
+  check(pal.x_snd_tap():find("[^%z]") == nil, "snd gain: bank starts silent")
+  local gp = { type = "fm", alg = 7, ops = { { wave = "sine", level = 90,
+              a = 1, d = 400, s = 220, r = 20 } } }
+  snd.patch(5, gp)  -- sfx category (slots 0..31)
+  snd.patch(40, gp) -- music category (slots 32..47)
+  snd.patch(60, gp) -- uncategorized (48..63): rides master only
+
+  -- neutral policy: the device copy IS the mix
+  local gv = snd.on(5, 60, 100)
+  pal.snd_render()
+  check(pal.x_snd_dev_tap() == pal.x_snd_tap(),
+        "snd gain: a neutral policy pushes the mix itself")
+
+  -- the full mix is untouched by ANY gain: snapshot the bank, render
+  -- neutral, restore, render gained — byte-identical tap, gained device
+  local gbank = pal.buf("snd.bank", 8208)
+  local snap = gbank:str(0, 8208)
+  pal.snd_render()
+  local ref_tap = pal.x_snd_tap()
+  gbank:setstr(0, snap)
+  pal.x_snd_gain(128, 128, 64)
+  pal.snd_render()
+  check(pal.x_snd_tap() == ref_tap,
+        "snd gain: the hashed mix is byte-identical under a gain")
+  local dev = pal.x_snd_dev_tap()
+  check(dev ~= ref_tap, "snd gain: the device copy is gained")
+  local half_exact = true
+  for i = 1, #ref_tap - 1, 2 do
+    local s = string.unpack("<i2", ref_tap, i)
+    local d = string.unpack("<i2", dev, i)
+    -- gain 64 of 128 composes with the mix shift into acc>>3: exactly
+    -- floor division by two of the unclamped tap, both signs
+    if d ~= s // 2 then half_exact = false; break end
+  end
+  check(half_exact, "snd gain: half gain is exactly one arithmetic shift")
+  snd.off(gv)
+  for _ = 1, 30 do pal.snd_render() end
+
+  -- category selection: music gain 0 silences ONLY music, device-side only
+  pal.x_snd_gain(128, 0, 128)
+  local mv = snd.on(40, 64, 100)
+  pal.snd_render()
+  check(pal.x_snd_tap():find("[^%z]") ~= nil
+        and pal.x_snd_dev_tap():find("[^%z]") == nil,
+        "snd gain: music gain 0 silences music on the device only")
+  snd.off(mv)
+  for _ = 1, 30 do pal.snd_render() end
+
+  -- uncategorized slots ride master only: category gains never touch them
+  pal.x_snd_gain(128, 0, 0)
+  local uv = snd.on(60, 64, 100)
+  pal.snd_render()
+  check(pal.x_snd_dev_tap() == pal.x_snd_tap()
+        and pal.x_snd_tap():find("[^%z]") ~= nil,
+        "snd gain: uncategorized slots pass category gains at unity")
+  snd.off(uv)
+  for _ = 1, 30 do pal.snd_render() end
+
+  -- out-of-range gains clamp (0..128), never error
+  pal.x_snd_gain(-5, 999, 300)
+  local cv = snd.on(40, 60, 100)
+  pal.snd_render()
+  check(pal.x_snd_dev_tap() == pal.x_snd_tap(),
+        "snd gain: out-of-range gains clamp (999 = unity)")
+  snd.off(cv)
+  for _ = 1, 30 do pal.snd_render() end
+  pal.x_snd_gain(128, 128, 128)
 end
 
 local function t_ins()
@@ -8009,6 +8306,7 @@ function game.init()
   t_input_pad()
   t_input_gpad()
   t_input_bind()
+  t_options()
   t_text()
   t_repl()
   t_ui()
