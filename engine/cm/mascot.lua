@@ -117,4 +117,24 @@ M.walk = {
          { -0.34, -0.62, 0.04 }, { 0.34, -0.90, 0.10 }, 0.10),
 }
 
+-- swim: alternate mitt strokes (reach forward near the surface, pull back
+-- low) over a boot flutter kick, rolling into each stroke (rz), a glide
+-- stretch between strokes; antenna trails the roll. The rider (openworld
+-- player) adds the forward paddle pitch on base rx — keys keep rx clear.
+-- Driven by the same distance phase as walk: one cycle = one L+R stroke.
+M.swim = {
+  M.pose(0.02, 0.10, 1.03,                           -- L reach / R pull
+         { -0.78, -0.16, 0.66 }, { 0.86, -0.60, -0.40 },
+         { -0.30, -0.84, -0.42 }, { 0.30, -1.00, -0.26 }, -0.14),
+  M.pose(0.06, 0.00, 1.06,                           -- glide (stretched)
+         { -0.84, -0.38, 0.16 }, { 0.84, -0.38, 0.16 },
+         { -0.32, -0.94, -0.34 }, { 0.32, -0.94, -0.34 }, 0.06),
+  M.pose(0.02, -0.10, 1.03,                          -- R reach / L pull
+         { -0.86, -0.60, -0.40 }, { 0.78, -0.16, 0.66 },
+         { -0.30, -1.00, -0.26 }, { 0.30, -0.84, -0.42 }, 0.14),
+  M.pose(0.06, 0.00, 1.06,                           -- glide
+         { -0.84, -0.38, 0.16 }, { 0.84, -0.38, 0.16 },
+         { -0.32, -0.94, -0.34 }, { 0.32, -0.94, -0.34 }, -0.06),
+}
+
 return M

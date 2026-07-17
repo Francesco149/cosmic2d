@@ -267,15 +267,18 @@ function M.emit(out)
   local grounded = buf:f32(O.grounded) == 1.0
   local f = state.frame()
 
+  -- swimming trades the walk clip for the swim stroke on the same
+  -- distance phase; floating still breathes through the idle blend
+  local swim = M.swimming()
   local hspeed = m.sqrt(vx * vx + vz * vz)
   local blend = m.min(1, hspeed / feel.walk_ref)
   local pose = fig.mix(fig.cycle(mascot.idle, f / feel.idle_f),
-                       fig.cycle(mascot.walk, buf:f32(O.phase)), blend)
+                       fig.cycle(swim and mascot.swim or mascot.walk,
+                                 buf:f32(O.phase)), blend)
 
   -- live squash & stretch (the bounce cube math) composed onto the clip's
   -- own body-scale channel; swimming stays neutral — the surface bob and
   -- the tilt carry the read, airborne stretch would gong on every bob
-  local swim = M.swimming()
   local s = 1.0
   if swim then -- neutral
   elseif not grounded then
