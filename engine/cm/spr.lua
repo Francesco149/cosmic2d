@@ -1,18 +1,29 @@
--- spr — the figure->sprite bake goes live (COSMIC3D.md §11, the §5 loop):
--- render a cm.fig figure through a tiny deterministic Lua rasterizer into
--- an 8-direction x N-row sprite sheet at load time — model once, use as 3D
--- (demos 1/2) or billboard (this demo), zero external art, CC0 by
--- construction. proto bake_guy_sprite is the reference framing (3/4 view
--- camera, transparent target, nearest).
+-- cm.spr — the figure->sprite baker (COSMIC3D.md §11's §5 loop: model a
+-- cm.fig figure ONCE, use it as 3D or billboard — zero external art, CC0
+-- by construction). Born in projects/rovale (D3D-026/027); promoted
+-- engine-side as a §12 distillation slice, human-logged in D3D-026 ("any
+-- cartridge, any figure"). D3D-029. Rasterizes any figure through a tiny
+-- deterministic Lua rasterizer into an 8-direction x N-row sheet; proto
+-- bake_guy_sprite is the reference framing (3/4 camera, transparent
+-- target, nearest).
 --
--- Everything here is RENDER-CLASS: sheets are textures + pixel caches in
--- rc. buffers (a hot reload re-uploads instead of re-rasterizing; a stamp
--- mismatch rebakes). The sim never reads sprites — it stores x/z/facing,
--- and draw picks a sheet cell from (facing - camera yaw).
+-- Sheets are ASSETS (the D3D-027 verdict): S.bake loads the committed
+-- <project>/spr/sheet<slot>.spx (RLE, stamped) and only rasterizes +
+-- best-effort rewrites on a miss — bake is a button, the result is a
+-- file. Everything here is RENDER-CLASS: textures registered in the
+-- rc.spr.tex buffer (freed generationally across reloads). The sim never
+-- reads sprites — it stores x/z/facing; draw picks a sheet cell from
+-- (facing - camera yaw) via S.oct.
 --
--- Billboard rules (docs/research-3d/ro-render-recipe.md): upright quad
--- Y-faced to the camera, nearest + alpha-test always, unlit but tinted by
--- the ground shadow at the feet (0.7 + 0.3*sh, the Rebuild env formula).
+-- Billboard rules (docs/research-3d/ro-render-recipe.md + D3D-027):
+-- quads span camera right x camera up (feet-anchored — full size at any
+-- pitch), nearest + alpha-test always, unlit but tinted by the ground
+-- shadow at the feet (0.7 + 0.3*sh, the Rebuild env formula).
+--
+-- Deliberately NOT here (later cuts earn them from real pain): per-sheet
+-- cell sizes / bake cameras (every user shares CW/CH/DIRS and the proto
+-- framing — varying them needs a per-sheet stamp scheme), paper-doll
+-- layers, palette dyes, row specs beyond {keys, t} lists.
 
 local m = cm.require("cm.math")
 local m4 = cm.require("cm.m4")
@@ -150,11 +161,11 @@ local function spx_decode(bytes, w, h, rows)
   return px, fvm / 1e6
 end
 
--- sheet texture registry (free old generation across reloads)
+-- sheet texture registry (free old generation across reloads); 16 slots
 local idbuf
 local function reg_tex(slot, id)
   if not idbuf then
-    idbuf = pal.buf("rc.ro.sprtex", 4 * 9)
+    idbuf = pal.buf("rc.spr.tex", 4 * 17)
     local nold = idbuf:u32(0)
     for i = 1, nold do pal.tex_free(idbuf:u32(4 * i)) end
     idbuf:u32(0, 0)

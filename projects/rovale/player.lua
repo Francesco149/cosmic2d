@@ -12,7 +12,7 @@
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local world = cm.require("world")
-local spr = cm.require("spr")
+local spr = cm.require("cm.spr")
 local mascot = cm.require("cm.mascot")
 
 local P = select(2, ...) or {}

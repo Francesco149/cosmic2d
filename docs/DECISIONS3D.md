@@ -890,3 +890,41 @@ each replays its demo from a fresh boot on CURRENT sources — the whole
 route through cm.rig's step/wish/view decides every frame's framing —
 and all compare byte-exact on pinned lavapipe. No visual surface
 changed — no new feed captures (the D097 precedent).
+
+## D3D-029 — cm.spr: the figure→sprite baker promoted engine-side (2026-07-17)
+
+The second §12 slice: the human-logged D3D-026 candidate ("the sprite
+baker wants to be cm.spr — any cartridge, any figure").
+
+- **projects/rovale/spr.lua moved verbatim to engine/cm/spr.lua** (git
+  mv — merge-clean new file): the deterministic Lua rasterizer, the
+  proto bake camera, the 8-yaw × N-row sheet layout, S.oct, the
+  camera-facing billboard + decal emitters, and the whole .spx asset
+  contract (RLE format, SPR_STAMP=2 — deliberately UNBUMPED so every
+  committed sheet stays valid). The one behavioral change: the sheet
+  texture registry buffer is rc.spr.tex (16 slots) instead of
+  rc.ro.sprtex (render-class — excluded from traces/goldens by the rc.
+  rule). `spx_path` already derives from the running project
+  (`<project>/spr/sheet<slot>.spx`), so any cartridge gets its own
+  committed sheet assets for free; rovale's three requires flip to
+  cm.require("cm.spr").
+- **Deliberately NOT here**: per-sheet cell sizes / bake cameras
+  (varying them needs a per-sheet stamp scheme — a later cut when a
+  second sheet SHAPE exists), paper-doll layers, palette dyes. The
+  billboard/decal emitters stay in cm.spr rather than cm.gb: they are
+  the sprite draw half (sheet fv/DIRS aware); a generic camera-facing
+  quad joins cm.gb when a non-sprite user votes.
+- **The trace was honestly re-cut** (the upstream cm.actor precedent):
+  a trace SNAP's bundle references dependency modules by path when a
+  restored parent requires them before their own bundle registration,
+  so deleting projects/rovale/spr.lua broke the OLD trace's restore —
+  a fact about bundle restore worth knowing, now recorded. The new
+  rovale_tour.ctrace (1000f, same synthetic-click tour) verifies PASS,
+  survives a deliberate drift probe, and re-verifies BYTE-IDENTICAL
+  under _G.RO_BUDGET=32 (the §10-style honesty proof re-proven).
+
+**Proof.** The four committed .spx sheets load through cm.spr with ZERO
+rasterize lines and no rewrite (stamp/format byte-compatible: the
+files' git status stays clean through a full boot), and both rovale
+pixel goldens compare byte-identical on current sources under pinned
+lavapipe. Full suite ALL GREEN. No visual change — no feed captures.

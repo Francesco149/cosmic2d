@@ -21,7 +21,7 @@ local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local world = cm.require("world")
-local spr = cm.require("spr")
+local spr = cm.require("cm.spr")
 local player = cm.require("player")
 local npc = cm.require("npc")
 local audio = cm.require("audio")
@@ -84,7 +84,7 @@ end
 
 -- console: re-rasterize every sprite sheet and rewrite the committed
 -- .spx assets (after editing the mascot/variants/bake camera; bump
--- SPR_STAMP in spr.lua for changes that must invalidate other checkouts)
+-- SPR_STAMP in cm/spr.lua for changes that must invalidate other checkouts)
 function game.rebake_sprites()
   player.init(true)
   npc.init(true)
