@@ -665,3 +665,44 @@ layout changed — all four openworld traces re-recorded (drift-proven)
 and their pixels re-shot; the wanderer stands in the stars f1740
 framing. New goldens: openworld_meet.ctrace (900f) + .png (f690,
 face-to-face wave with the full line). Suite ALL GREEN.
+
+## D3D-024 — solid NPCs: dynamic colliders through the player's passes (2026-07-17)
+
+Human on R15, same day: **"make the npcs solid so I can't walk through
+them."** The first MOVING colliders in openworld (bounce's movers were
+pure functions of the frame; NPC positions are buffer state).
+
+- **npc.boxes() derives the AABBs per step-call from the sim buffers**
+  — the boxes ride the wanderer for free, nothing is stored. D3D-011
+  holds for round bodies too: the box sits INSIDE the visual (body
+  lathe max r 0.82 -> hw 0.575 at cw 1.15), so brushing past reads
+  fair, never invisible-wall.
+- **player.step grew a dyncol parameter** and its three collision
+  passes (x clamp, z clamp, box-top landing) iterate
+  { world.colliders, dyncol } — one mechanism, no special cases: NPCs
+  block flush, a 1.9u jump clears a 1.7u body, and an NPC head is a
+  perch (the box-top rule from the boulder fix applies unchanged).
+  Boxes are read pre-npc.step (one sim frame behind the draw, 0.04u
+  at amble speed) — keeping the player->npc step order the exchange
+  depends on beats chasing same-frame boxes.
+- **Solidity cuts both ways**: a walker whose next step would close
+  inside stop_r on the player WAITS — direction-aware (moving away
+  never freezes), so it reads as queuing and resumes the moment you
+  step aside. Without this, a solid player is a body the wanderer
+  visibly clips through; with it, blocking its path is a tiny
+  interaction. Greet (4.2) fires long before stop_r (1.6), so the
+  usual encounter is still hello-first.
+- **Proven headless before any golden moved**: route-driven plow test
+  pins the player at exactly hw+npc_hw from center; a drop settles at
+  ground+ch on the head; a parked player freezes the wanderer at
+  stop_r and releases it on walk-away.
+
+Fallout: knobs.npc grew cw/ch/stop_r (doc change) — all five
+openworld traces re-recorded + drift-proven. No golden route enters
+an NPC box, so all five pixel goldens passed UNREGENERATED — the
+suite's own proof that solidity changed nothing it shouldn't. Lesson
+banked from the round: never `git checkout` a file to strip a drift
+probe while it carries uncommitted work — trim the probe line
+instead (sed '$ d'); the probe-append/checkout habit silently
+reverted the player's collision edits once and only the re-verify
+caught it.

@@ -355,6 +355,24 @@ the engine mascot**. The figure runtime's animation read is approved with
 it. Remaining round-9 feed questions (eye size at 320×240, keep the box guy
 in the showcase) stay open, non-blocking.
 
+## 8e. Demo 2 sufficiency + the streaming-world direction (2026-07-17)
+
+Human verdict after the round-15/16 NPC work: demo 2's open-world slice
+is **"sufficient for now unless there's other things that might
+translate to engine ergonomics that we haven't tried for this genre"**
+— and the named candidate is exactly that: **streaming a HUGE world
+with entities everywhere**, plus the logic to efficiently update (or
+not update) entities far from the player. If that needs engine
+ergonomics we don't have, we try it. Prerequisite named by the human:
+**a fast-travel method (a glider) to stress-test streaming speed**.
+Direction accepted — demo 2 pivots from content rounds to the
+streaming/entity-scale stress demo; the Body Harvest notes (§9) and
+cm.terr are the starting points. Open engine questions it will force:
+chunked terrain generation/paging under determinism (named buffers per
+chunk?), entity LOD/update scheduling as a sim-legal pattern (no
+hash-order iteration), collider set swapping, and whether golden
+traces can span chunk boundaries.
+
 ## 9. Body Harvest techniques (from ../body-harvest decomp, see notes there)
 
 An N64 open-world game whose whole huge terrain fits 4MB — directly relevant

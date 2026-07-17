@@ -4,6 +4,52 @@ Living handoff doc. Update at session/milestone end. (Reset at the fork;
 cosmic2d's own status history lives in the upstream repo and
 `history/STATUS-2026-07.md`.)
 
+## 2026-07-17 (round 16) — solid NPCs + the streaming-world directive
+
+Two human messages landed. **"make the npcs solid so I can't walk
+through them"** (D3D-024): npc.boxes() derives D3D-011 AABBs from the
+sim buffers each step (boxes ride the wanderer), player.step grew a
+dyncol param, and all three collision passes run { world.colliders,
+dyncol } — NPCs clamp flush like trunks, a jump clears them, heads
+are perches (box-top rule). Both ways: a walker that would close
+inside stop_r on the player WAITS (direction-aware) — queues, never
+plows. Headless proofs: pinned at exactly hw+npc_hw, drop settles at
+ground+ch, blocked wanderer parks at stop_r. knobs.npc grew
+cw/ch/stop_r -> all five openworld traces re-recorded + drift-proven;
+no golden route touches a box, so all five pixels passed
+UNREGENERATED. Suite ALL GREEN; totem shot on the feed. (Process
+lesson in D3D-024: sed the drift probe off, never git-checkout a
+file carrying uncommitted work.)
+
+Second: **the open-world demo is sufficient for now** — next up is
+engine-ergonomics territory: **streaming a huge world with entities
+everywhere** (efficient update-or-don't scheduling for far entities),
+stress-tested via **a glider fast-travel**. Recorded as COSMIC3D.md
+§8e; demo 2 pivots from content rounds to the streaming stress demo.
+
+## Exact next step
+
+1. **The streaming-world stress demo** (human direction, §8e). Sketch
+   before code: chunked cm.terr paging (deterministic per-chunk gen,
+   named buffers per chunk vs regenerate-on-load), entity population
+   at scale (thousands; the NPC-list pattern won't iterate them all
+   per frame), an update-scheduling pattern that stays sim-legal
+   (distance rings? fixed round-robin budget? never hash-order), the
+   glider (fast lateral speed + slow fall; stresses chunk load rate),
+   and what a golden trace even pins across chunk boundaries. Expect
+   PAL questions (buffer count/size ceilings, upload throughput) —
+   measure first with a headless soak.
+2. Feed questions open (non-blocking): R15/16's (walk-up greet beat,
+   wanderer palette, solid-feel ok?), R13's (star read, completion
+   beat, persist collection?), R12's (exchange read, dialog tone,
+   text box vs HUD line), R11's (splash listen, swim read, jump read,
+   band colors + fog, eye size).
+3. proto3d can adopt the look knobs on its next touch (unchanged).
+
+Post-upstream-merge queue (unchanged): PAL relative-mouse API + input
+record v2. Parked (unchanged): PS1-preset extras; figure EDITOR until
+the human unparks.
+
 ## 2026-07-17 (round 15) — the meadow wanderer: a second NPC, walking
 
 Autonomous round (no new feed verdicts; water polish + exchange depth
@@ -26,7 +72,7 @@ back to camera). Goldens: openworld_meet.ctrace (900f, drift-proven) +
 re-recorded (knobs.npc + ow.npc layout) + pixels re-shot (the wanderer
 stands in the stars framing). Suite ALL GREEN; 3 shots on the feed.
 
-## Exact next step
+## Exact next step (done — see round 16 above)
 
 1. Feed questions open (non-blocking): R15's (does the walk-up greet
    beat land? wanderer palette read at 320x240? should walkers dodge
