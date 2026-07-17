@@ -4042,3 +4042,75 @@ scripting guide gained a camera section beside cm.box/cm.actor.
 `tools/build-windows.sh` refreshed the stage and shortcut. Inspected
 captures on llm-feed: the town run mid-lookahead and the mid-shake
 spike-pit frame.
+
+## D093 — LAYR v2: per-layer map parallax (2026-07-17)
+
+**Context.** The human reported the demo's backdrop tilemap does not
+parallax. MAPS.md §2 always reserved the slot ("LAYR: named layers
+with parallax factors"), cm.gfx.layer has carried per-layer camera
+multipliers since M-series, and cm.camera.apply (D092) already hands
+the camera to "the parallax layers" — but map layers had no factor
+and `draw_places` drew everything at world speed, so every placed
+backdrop was welded to the ground.
+
+**Decision.** LAYR grows a v2: per layer, `f par_x, f par_y` after
+the name (1 = world speed, 0.5 = half-speed backdrop, 0 = screen-
+fixed; doc fields `par_x`/`par_y`, nil = 1). The FLGS idiom governs
+canonicality: v2 is written ONLY when some layer's parallax differs
+from 1, so an all-world-speed map keeps its exact v1 bytes and no
+historical map, mapstate buffer canon, or committed trace moves.
+`draw_places` applies the factors per layer through `cm.gfx.layer`
+(pixel_snap keeps the rounding policy), culls each layer against the
+layer-effective camera, and restores the world layer afterwards; an
+all-world-speed map never touches gfx.layer, keeping the caller's
+translation byte-authoritative. Parallax is presentation ONLY:
+colliders, markers, and named refs stay world-space (the guide says
+to keep collider-carrying placements on world-speed layers). The map
+window's layer panel gained a **par** row editing the active layer's
+pair, journaled like every other layer edit; the editor canvas always
+shows authored positions. The demo is the retrofit: both rooms'
+backdrop layers ride par_x = 0.5 (par_y stays 1 — the rooms are
+shallow and the hill horizon is authored against the room bottom).
+
+**The bundle split-brain found on the way.** Re-cutting the demo
+trace exposed a latent trap: `cm.restore_bundle` re-executes any
+module whose source hash differs from the trace bundle, passing the
+registry table as `prev` — but a module that ignores it (`local M =
+{}` + `return M`) gets its result COPIED into the held table once,
+after which its functions write fields into a table nobody reads.
+Verify then crashes confusingly (level.pw nil at camera.bounds)
+instead of reporting an honest divergence. All five demo modules now
+adopt the passed table (`local M = select(2, ...) or {}`) exactly
+like engine modules, and the shipped scripting guide documents the
+idiom as the module contract. The engine loader is unchanged — the
+copy semantics are inherent to Lua closures, so the contract is the
+fix.
+
+**Consequences.** Maps that never use parallax are byte-identical
+forever (the conditional-version rule is now the established shape
+for additive LAYR fields). The demo's town/overworld maps re-encoded
+with the backdrop factor, so `tests/traces/demo_camtour.ctrace` was
+honestly re-cut: parallax is render-only, so the old trace's own
+2,068 input records replayed against a fresh boot of the current
+demo reproduce the identical tour (the driver proved the old SNAP
+doc equals the fresh-boot doc byte-for-byte; the only buffer delta
+is the mapstate's 16-byte LAYR v2 growth), and the old trace's one
+EVAL — the inert driver-arm — is honestly absent from the input-only
+re-cut. Editing project sources still invalidates that project's
+committed traces (bundle hash drift); the select-idiom makes the
+failure an honest divergence report instead of a crash. Revisit
+trigger: a foreground `fg` interleave layer and per-layer tint stay
+future LAYR fields; wrapping/repeating backdrops stay a game-side
+pattern until a demo demands them.
+
+**Proof.** Linux selftest passes **23,878** checks (+5: the LAYR v2
+parallax round trip with 1-stays-nil normalization, legacy v1 read,
+and the canonical-version rule in all three directions) and the
+staged native Windows executable **23,880** on PAL API 19. `nix run
+.#test` is ALL GREEN — the re-cut demo_camtour (verified byte-exact
+on Linux AND native Windows) beside every other historical trace and
+all pixel/audio goldens, which pins that all-world-speed canon never
+moved. Inspected captures on llm-feed: the camera-x=400 before/after
+pair (the hill mass hanging back at half speed) and the layer panel
+showing the backdrop's 0.5/1. `tools/build-windows.sh` refreshed the
+stage (4 durable entries preserved) and Start Menu shortcut.

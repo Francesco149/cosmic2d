@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera shipped (D088–D092) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax shipped (D088–D093) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,32 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D093 lands per-layer map parallax (LAYR v2) — the human's "backdrop
+doesn't parallax" report.** Map layers carry `par_x`/`par_y` factors
+(nil = 1); `draw_places` draws each layer at its own `cm.gfx.layer`
+depth culled by the layer-effective camera, restoring the world layer
+after — and never touches gfx.layer for an all-world-speed map. The
+FLGS idiom governs the codec: LAYR v2 (the pair after each name) is
+written only when some factor differs from 1, so every parallax-free
+map keeps exact v1 bytes and no historical canon or trace moved
+(pinned by KATs + the green suite). The map window's layer panel
+gained a journaled **par** row; parallax is presentation-only
+(colliders/markers/refs stay world-space) and the guide documents it.
+The demo retrofit puts both backdrops at par_x 0.5 (par_y 1 — shallow
+rooms, horizon authored against the room bottom), and demo_camtour
+was honestly re-cut by replaying its own 2,068 input records against
+a fresh boot (old SNAP doc == fresh-boot doc byte-for-byte; the one
+recorded EVAL was the inert driver-arm, absent from the input-only
+re-cut) — verified byte-exact on Linux and native Windows (23,878 /
+23,880). On the way, a latent trap fell: bundle re-execution of a
+`local M = {}` project module split-brains its state (functions
+write a table nobody reads — verify crashed instead of diverging);
+all five demo modules now adopt the loader's table
+(`select(2, ...)`), and the scripting guide pins that idiom as the
+module contract. Known cost: editing a project's sources still
+invalidates its committed traces (bundle hash drift) — the idiom
+makes that an honest divergence report, not a crash.
 
 **D092 lands the camera slice: cm.camera.** Math over one plain doc
 table (extra fields pass through — the demo parks its smoothed
