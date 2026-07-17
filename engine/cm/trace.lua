@@ -71,7 +71,7 @@ local pack, unpack = string.pack, string.unpack
 -- (whole oldest segment files evicted past it). The seconds window is
 -- RAM residency, not the history bound, once spill is on.
 M.ring = M.ring or { seconds = 30, kf = 60, spill = false, budget_mb = 1024,
-                      thumbs = false }
+                      thumbs = false, rec_paused = false }
 
 -- A7 §11 presented-frame previews (THMB): about one game-FOV thumbnail every
 -- this many recorded frames. Console-tunable; read live by thumb_pump. The
@@ -843,6 +843,32 @@ function M.ring_reset()
   ring_init(R)
 end
 
+-- Recorder pause (A7 retention surface). Pausing freezes the always-on ring
+-- so a long session stops consuming RAM/disk while the game keeps playing; the
+-- retained history stays fully scrubbable meanwhile. Because the ring is a
+-- single contiguous stream and the sim advanced during the pause, RESUME
+-- reseeds from the present into a fresh stream — an honest session boundary,
+-- the same rotation clear_cache/ring_reset perform. Transient session state
+-- (never persisted, default off), so headless/verify/goldens never see it.
+function M.set_rec_paused(on)
+  on = on and true or false
+  if M.ring.rec_paused == on then return on end
+  M.ring.rec_paused = on
+  if not on and M._R then M.ring_reset() end -- resume: fresh stream from now
+  return on
+end
+
+function M.rec_paused()
+  return M.ring.rec_paused == true
+end
+
+-- Re-run eviction now (used when the disk budget knob shrinks): oldest segment
+-- files drop immediately so the meter reflects the new bound the same frame.
+-- A no-op with spill off or no live ring; pinned/in-flight segments are safe.
+function M.reevict()
+  if M._R and evict then evict(M._R) end
+end
+
 function M.ring_range()
   local R = M._R
   if not R or #R.segs == 0 then return nil end
@@ -878,10 +904,11 @@ function M.ring_stats()
   local R = M._R
   if not R then return nil end
   local frames, bytes, kfbytes = 0, 0, 0
-  local spilled, pending, disk_bytes = 0, 0, 0
+  local spilled, pending, disk_bytes, retained = 0, 0, 0, 0
   for _, s in ipairs(R.segs) do
     frames = frames + s.frames
     bytes = bytes + s.bytes
+    retained = retained + (s.fbytes or s.bytes) -- exactly what evict bounds
     if s.kf_bufs then -- demoted skeletons keep no keyframe in RAM (R6b)
       for _, b in ipairs(s.kf_bufs) do kfbytes = kfbytes + #b.bytes end
     end
@@ -895,7 +922,7 @@ function M.ring_stats()
   return { segs = #R.segs, frames = frames, chunk_bytes = bytes,
            keyframe_bytes = kfbytes, oldest = lo, newest = hi,
            spilled = spilled, pending = pending, disk_bytes = disk_bytes,
-           pinned = M._rec ~= nil }
+           retained_bytes = retained, pinned = M._rec ~= nil }
 end
 
 -- ---- recording ----
@@ -923,6 +950,11 @@ end
 function M.record_frame(input_record, evals)
   local R = M._R
   if not R then return end
+  -- Recorder paused (A7 retention surface): the game keeps running and
+  -- presenting, but the always-on ring stops growing and the live edge holds.
+  -- last_frame stays frozen; set_rec_paused reseeds a fresh contiguous stream
+  -- on resume (the sim advanced while paused, so history cannot continue).
+  if M.ring.rec_paused then return end
   local f = state.frame()
   if f ~= R.last_frame + 1 then
     pal.log(("[trace] sim frame %d after %d: out-of-band restore, ring reset")
