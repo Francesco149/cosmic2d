@@ -364,6 +364,24 @@ cannot accidentally become project state. Replay code has the same trust
 boundary as opening a project and the UI must say so before executing an
 untrusted bundle.
 
+**Built (D105), drag-in replay files.** Dropping a `.ctrace` into any editor
+view opens it as a non-destructive editor clip. The stash is coarse — one table
+swap rather than a polymorphic source object: `cm.trace.stash_live` parks the
+live ring (`M._R`) aside and clears it so the clip's destructive `ring_load`
+lands in a fresh ring; the live ring's on-disk files stay untouched because
+recording is dormant while parked. `cm.scrub.open_clip` snapshots the live
+present, stashes, loads the clip, mounts its `replay_workspace()` as the editor
+root (`cm.ed.mount_replay` — a scoped `M.root` swap under the parked write wall,
+so the asset browser / launcher / cache browse the clip's bundled project
+ephemerally), and enters replay on the recorded A/B `LOOP`. Dismissal
+(`close_clip`, reached by Esc layering or the tray's **eject clip**) restores the
+present state, the live ring, the editor doc, and the real project root — never
+`rewind_here`-adopting the replay. The tray marks it **REPLAY CLIP / EPHEMERAL**
+and disables the live-only retention/adopt controls while a clip owns the ring.
+Still open: the **trust prompt** before executing an untrusted bundle, and the
+live-history / crash-focus source kinds as first-class objects (today live scrub
+already stashes/restores via park; crash focus is §16).
+
 ## 14. One logical history/replay format, self-contained clips
 
 History remains a directory store and a replay remains one `.ctrace` file, but

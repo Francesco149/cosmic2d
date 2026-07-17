@@ -309,10 +309,15 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
 - [ ] Extend that dismissal guard to export progress and dropped-replay modes
   when those modes exist. Export progress is guarded now; dropped replay awaits
   its mode.
-- [ ] Give live history, replay files, and crash-focused views immutable
+- [~] Give live history, replay files, and crash-focused views immutable
   timeline sources. Dragging a replay into any editor view opens/fits/loops it;
   dismissing it restores the untouched live ring and present rather than
-  adopting the replay's future.
+  adopting the replay's future. (D105: the **replay-file** drag-in ships — a
+  dropped `.ctrace` opens a non-destructive editor clip, mounts its bundled
+  project as the editor root under the parked write wall, and Esc/eject restores
+  the untouched live ring + present + real root without adopting. Live history
+  already stashes/restores via park; the **crash-focus** source and a
+  trust-prompt before executing an untrusted bundle remain open.)
 - [~] Generalize the history store and additive `.ctrace` packaging around the
   same segment + content-addressed project-blob model. A new clip is standalone:
   exact A state through inclusive B, editor state, code, **all project source

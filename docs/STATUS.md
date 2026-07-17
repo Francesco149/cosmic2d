@@ -3,14 +3,15 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), the §14 project-blob store foundation (D103), and the standalone `.ctrace` clip (D104) are in (2026-07-18)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is the open gate; the information layer (D100/D101), the disk-budget/retention surface (D102), the §14 project-blob store foundation (D103), the standalone `.ctrace` clip (D104), and the drag-in replay consumer (D105) are in (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
 runtime, infinite-canvas editor, deterministic rewind core, audio stack,
 two-room platformer demo, and clean Windows/Linux distributions are working.
-**A0–A6 are complete; A7's information/retention layers and its §14
-project-blob store foundation are in.** A3's full promise holds:
+**A0–A6 are complete; A7's information/retention layers, its §14
+project-blob store foundation, the standalone clip, and the drag-in replay
+consumer are in.** A3's full promise holds:
 from a fresh archive a user can create (from four starter templates),
 import, rename, relocate, duplicate, archive, delete, edit, play, and
 export projects entirely through the shipped UI. Real SDL controllers
@@ -25,9 +26,51 @@ checklist closed the gate (D087). **A5 and A6 are also complete**
 and the three-family demo matrix — demo (side-view), cellar (top-down),
 swarm (arcade) — ships in the public archives with READMEs, thumbnails,
 and export proofs. The complete rewind product UI (A7) and the
-release-candidate pass (A8) are the open alpha gates. **D104 turns the §14
-foundation into a standalone clip: an exported `.ctrace` now carries its whole
-project tree and materializes on load.**
+release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
+materialize into the drag-in consumer: dropping a `.ctrace` into any editor
+view opens it as a non-destructive replay clip, mounts its bundled project, and
+Esc/eject restores the untouched live session.**
+
+**D105 lands the immutable-source / drag-in replay line (A7 §13).** D104 made
+`ring_load` materialize a clip's tree into `R.workspace` but nothing consumed
+it. Now a dropped `.ctrace` (routed in `cm.ed.filter_events`, never to
+`add_dropped`) opens a **non-destructive editor clip**. The §13 stash is coarse
+— one table swap, not a source object: **`cm.trace.stash_live`** parks the live
+ring (`M._R`) aside and clears it so the clip's destructive `ring_load` lands in
+a fresh ring (the live ring's on-disk files stay untouched — recording is
+dormant while parked); **`restore_live`** swaps it back and sweeps the ephemeral
+workspace. **`cm.scrub.open_clip`** queues a chrome-phase `do_load(editor_clip)`
+that snapshots the live present, stashes, loads the clip, **mounts
+`replay_workspace()` as `ed.root`** (`cm.ed.mount_replay` — a scoped `M.root`
+swap in `ed.g`, guarded by the parked write wall, so the asset browser / launcher
+/ cache browse the clip's bundled project ephemerally), and enters replay on the
+recorded A/B `LOOP` — forcing the first `apply` so the editor parks immediately.
+**`close_clip`** (Esc layering or the tray's **eject clip**) restores the present
+state (`state.restore`, no init — the live game resumes exactly where it was),
+the live ring, the editor doc, and the real project root — never
+`rewind_here`-adopting. The tray marks it **REPLAY CLIP / EPHEMERAL** with a
+**CLIP** pill, disables the live-only retention (budget/clear/pause) + adopt-y
+footer (export/resume-here/bring-back) while a clip owns the ring, and refuses a
+clip drop while already time-travelling (so the present snapshot is never a past
+frame). **No sim/doc/recorded byte moved** (opt-in write side from D104, pure
+stash/restore here): Linux selftest **24,103** / native Windows **24,105** on
+PAL API 19 (34 new KATs across
+`t_clip_nondestructive` — the live ring survives a clip open/dismiss
+byte-for-byte, the workspace is swept, the root swap is scoped/reversible — and
+`t_clip_lifecycle` — the real `open_clip → scrub.frame → close` mount+restore
+lifecycle, which caught the editor not parking on clip open), `nix run .#test`
+ALL GREEN with every historical trace and pixel/audio golden byte-identical.
+Windowed WSLg fixture: `smoke --edit` exported a same-session clip, dropped it
+through the real `drop_clip` door (tray in REPLAY CLIP mode, A/B looping, greyed
+retention controls, `ed.root` mounted to the 20-file materialized workspace),
+then ejected back to the live session with the root restored, the live ring
+range intact, and play resumed. Inspected captures on llm-feed: the mounted clip
+tray and the restored-live editor. **Deferred, named honestly:** a **trust
+prompt** before executing an untrusted clip bundle (the UI marks it a replay but
+runs its code with the open-a-project trust boundary today); a legacy /
+non-standalone clip opens the timeline but mounts no workspace (it has none);
+the **crash-focus** source (§16) and **adopted-range** standalone export (D104)
+stay their own packets.
 
 **D104 turns the §14 foundation into the standalone `.ctrace` clip.** The
 store + manifest made every retained range name a complete project tree;
@@ -105,27 +148,28 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **A7 — the immutable-source / drag-in replay line
-(REWIND.md §14, ALPHA §A7 line 6).** D104 made `ring_load` materialize a
-clip's project tree into `R.workspace` and `M.materialize_clip` preview it
-without touching the ring — so the next step is the **consumer**: dragging a
-`.ctrace` into any editor view opens/fits/loops it (the LOOP bounds already
-apply on load) **and mounts its materialized workspace** — point the asset
-browser / `ed.root` at `R.workspace` so the editor and asset windows browse
-the clip's bundled project, with the **parked write wall keeping edits
-ephemeral**; dismissing (Esc layering) restores the untouched live ring +
-present + the real project root rather than adopting the replay's future.
-`cm.ed` reads `ed.root` for every asset door (`ed/kit.lua`, `ed/launcher.lua`,
-`ed/cache.lua`), so the mount is a scoped root swap guarded by the existing
-`ed.parked` wall. Two adjacent A7 items to pick up alongside or next:
+**Exact next packet:** **A7 — the crash-report drop (REWIND.md §16, ALPHA §A7
+line 9).** The drag-in consumer (D105) now opens any dropped `.ctrace` as a
+non-destructive editor clip, so the crash drop is the natural next source kind:
+a dropped `.ccrash` should **open + loop the minute before the crash**, fit up
+to 60s ending at the last committed frame, mark the failed next-frame boundary,
+and start the safe pre-roll as an A/B loop — preferring an embedded tail else
+resolving the local retained stream by identity (never guessing by timestamp;
+an evicted/foreign tail explains the failed identity). The pieces are in place:
+the `.ccrash` `CCRP` container + frozen `HEAD` (report id / project / stream id
+/ last-committed / attempted frame / code epoch / error kind / log path, D067),
+the timeline **error** marker (D100), and `ring_locator`/`hist_locator` (D103)
+for stream/frame resolution. The drop path can reuse D105's `scrub.open_clip` /
+`drop_clip` plumbing (route `.ccrash` in `cm.ed.filter_events` beside `.ctrace`)
+if the crash embeds a tail; otherwise it resolves the live/adopted history and
+seeks. Two adjacent A7 items to pick up alongside or next: the **trust prompt**
+before executing an untrusted clip bundle (D105 runs clip code with the
+open-a-project trust boundary; §13 wants the UI to say so first), and
 **adopted-range standalone export** (reconstruct the SNAP code bundle from the
 adopted segment's manifest `.lua` sources + the host engine `cm.*`, so
-`export_clip` stops refusing adopted ranges), and the **crash-report drop**
-(§16 — the `.ccrash` `CCRP` container, ERROR marker, and
-`ring_locator`/`hist_locator` are all in place; a drop opens+loops the minute
-before the crash, preferring an embedded tail else the resolved local stream).
-Captured-audio embedding and a wall-clock clip filename (needs a PAL date door)
-are smaller follow-ups. See `ALPHA.md` §A7 and `REWIND.md` §14–16.
+`export_clip` stops refusing adopted ranges). Captured-audio embedding and a
+wall-clock clip filename (needs a PAL date door) are smaller follow-ups. See
+`ALPHA.md` §A7 and `REWIND.md` §13/§16.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's

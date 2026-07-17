@@ -4894,3 +4894,71 @@ under `user_path` with the A-frame asset version and the exact `LOOP` bounds
 recovered; the engine-root `replays/` write landed. Inspected capture on
 llm-feed: `smoke --edit` parked with an A/B clip and the live "export replay"
 button.
+
+## D105 — the drag-in replay clip: mount its project, restore live (A7 §13, 2026-07-18)
+
+**Context.** D104 made `ring_load` materialize a clip's project tree into
+`R.workspace` and `M.materialize_clip` preview it, but nothing *consumed* it:
+`ALPHA.md` §A7 line 6 and `REWIND.md` §13 want a dropped `.ctrace` to open as an
+**immutable timeline source** — the tray opens/fits/loops it and the editor
+browses its bundled project, while dismissal restores the untouched live session
+rather than adopting the replay's future. This is the drag-in consumer.
+
+**Decision.**
+- **Coarse §13 stash, not a source interface.** §13's ideal is a polymorphic
+  timeline-source object; this ships its mechanism as one table swap. `cm.trace`
+  gains `stash_live` / `restore_live` / `has_stash`: the live ring (`M._R`) is
+  parked into `M._stashed_live` and `M._R` cleared so the clip's *destructive*
+  `ring_load` lands in a fresh ring; restore swaps the live ring back and sweeps
+  the replay workspace. The live ring's on-disk segment/blob files are never
+  touched while stashed — recording is dormant (the sim is frozen/parked), so
+  nothing spills, evicts, or GCs meanwhile. It refuses to double-stash.
+- **`cm.scrub` editor-clip mode.** `open_clip(path)` queues a chrome-phase
+  `do_load(path, editor_clip=true)` that (1) `state.snapshot()`s the live present,
+  (2) `stash_live()`s, (3) `ring_load`s the clip, (4) mounts `replay_workspace()`
+  as the editor root, and (5) enters replay on the recorded A/B `LOOP` — forcing
+  the first `apply` so the editor parks immediately (the ephemeral write wall + the
+  clip's own editor doc). `close_clip` is the non-adopting dismiss: unmount root,
+  `state.restore` the present (no init — the live game resumes stepping exactly
+  where it was), `restore_live`, `ed.unpark(false)`. `M.close` routes to it via
+  `is_clip()`. A failed load restores live and drops the snapshot honestly.
+- **`cm.ed` scoped root swap.** `mount_replay(ws)` / `unmount_replay()` stash and
+  restore `M.root` in `ed.g` (ephemeral, never captured), so every asset door
+  (`ed.kit` / `launcher` / `cache`, the assets window's glob) browses the clip's
+  materialized project; the parked wall keeps edits ephemeral. A dropped `.ctrace`
+  routes to the tray, never to `add_dropped` (a recording is not source/art).
+- **`cm.ed.rewind` clip UX.** `drop_clip` opens the tray and fits the clip; a
+  **REPLAY CLIP / EPHEMERAL** header + **CLIP** pill mark it. The live-only
+  retention controls (budget / clear / pause rec) and the adopt-y footer (export
+  replay / resume here / bring back) all disable while a clip owns the ring; an
+  explicit **eject clip** button restores live beside the Esc layering (clip →
+  tray). Dropping a clip while already time-travelling is refused so the present
+  snapshot is never a past frame.
+
+**Scope, named honestly.** Live-range replay files ship the full drag-in.
+Deferred, logged: the **adopted-range** standalone export still needs its SNAP
+bundle reconstructed (D104); **crash-report drop** (§16) still owns the
+one-minute pre-roll open; a legacy/non-standalone clip opens the timeline but
+mounts no workspace (it has none). The clip's game code executes on load with the
+same trust boundary as opening a project (§13); the UI marks it a replay but does
+not yet gate an untrusted bundle behind a prompt — a follow-up.
+
+**Proof.** Linux selftest **24,103** on PAL API 19 (34 new KATs).
+`t_clip_nondestructive`: `stash_live` parks the live ring, `ring_load` lands the
+clip in a fresh one (its own keyframe-aligned range through B, workspace, A/B
+loop), `restore_live` swaps it back **byte-for-byte** (range, manifest hash,
+`ring_export` bytes) and sweeps the workspace; double-stash + empty-restore
+refuse; the `mount_replay`/`unmount_replay` swap is scoped, idempotent, and
+reversible. `t_clip_lifecycle` drives the real editor `open_clip -> scrub.frame
+-> close` lifecycle headlessly (stubbing `after_restore` so it doesn't re-enter
+the selftest) and pins the mount + non-adopting restore of present/ring/doc/root
+— it caught the editor failing to park on clip open (the write wall was inert),
+now forced. `nix run .#test` ALL GREEN — every historical trace and pixel/audio
+golden byte-identical (the packet moves no recorded byte: opt-in write side from
+D104, pure stash/restore here). Windowed WSLg fixture: `smoke --edit` exported a
+same-session clip, dropped it through the real `drop_clip` door — the tray showed
+**REPLAY CLIP / EPHEMERAL**, the A/B loop looping, the greyed retention controls,
+`ed.root` mounted to the materialized 20-file workspace — then ejected back to
+the live session with `ed.root` restored, the live ring range intact, and play
+resumed. Inspected captures on llm-feed: the mounted clip tray and the
+restored-live editor.
