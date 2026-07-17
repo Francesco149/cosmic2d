@@ -4182,3 +4182,56 @@ Inspected capture on llm-feed: frame 938 of the re-cut golden,
 mid-death-flash with the shake visibly offsetting the arena. The
 shipped scripting guide gained a juice section beside cm.camera.
 `tools/build-windows.sh` refreshed the stage and Start Menu shortcut.
+
+## D095 — cm.depth: the layer/depth slice (A5, 2026-07-17)
+
+**Context.** The standing PAIN(depth) vote: cellar rebuilds a draw
+list of pillars + player every frame and sorts it with a hand-rolled
+comparator (base y, then x, then kind — every tiebreak written by
+hand because hash order must never draw). §2's "layers/depth sorting
+… without forcing a scene graph" line; the parallax half already
+shipped as cm.gfx.layer + the map's LAYR factors (D092/D093), so
+this slice is the within-layer ordering only.
+
+**Decision.** `cm.depth` is pure functions over plain tables — no
+module state, no buffers, no scene graph, no callbacks, and nothing
+touches doc (draw-order only). `push(l, key, item)` appends an
+explicit sort key (a finite number, typically the feet/base y; NaN
+refused because it breaks ordering totality) with YOUR item passed
+through untouched — a table, a string tag, anything but nil.
+`sort(l)` is ascending by key with EQUAL KEYS KEEPING PUSH ORDER:
+the seq decoration makes the comparator a total order, so the sorted
+result is unique under ANY sort algorithm — determinism by
+construction rather than by trusting table.sort's tie behavior.
+"Pushed later draws later (on top)" is the tie rule. `each(l)` walks
+back-to-front yielding i, item, key; `clear(l)` empties for reuse
+(the box.hits pattern). `ysort(items [, field])` is the one-liner
+for an array already carrying a numeric field (default "y"): a
+stable in-place ascending sort refusing missing/NaN fields by index.
+Deliberately NOT here: scene graphs, z properties on drawables,
+layer registries, draw callbacks, culling.
+
+**Consequences.** Cellar is the retrofit proof (the only vote —
+swarm and the demo don't y-sort): the PAIN(depth) block became
+push/sort/each with the player as a plain "player" string item. The
+tie rule changed from the hand comparator's x-then-kind to push
+order, but the room data has no equal base ys, so the retrofit is
+pixel-identical (frame-300 byte compare old vs new draw code) and
+draw-only — no doc bytes moved, so the committed cellar_clear golden
+stands un-recut and verifies unchanged. PAIN(actor) stays marked in
+cellar; PAIN(move) stays marked in swarm for the move slice.
+
+**Proof.** Linux selftest passes **23,934** checks (+20 depth KATs:
+push refusals for string/nil/NaN keys and nil items, ascending order
+with mixed item types and unmutated pass-through, key reporting,
+tie stability by push order, idempotent re-sort, empty/single lists,
+negative/float keys, and ysort's stability/custom-field/refusals/
+empty-array contract) and the staged native Windows executable
+**23,936** on PAL API 19. `nix run .#test` is ALL GREEN — the
+un-recut cellar_clear.ctrace verifies byte-exact on Linux AND native
+Windows beside every historical trace and all pixel/audio goldens.
+Inspected montage on llm-feed: the same pillar with the player's
+base-y above vs below its base line — hidden behind, then drawn in
+front. The shipped scripting guide gained a depth-sorting section
+beside the juice section. `tools/build-windows.sh` refreshed the
+stage (4 durable entries preserved) and Start Menu shortcut.

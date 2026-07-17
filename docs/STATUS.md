@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween shipped (D088–D094) (2026-07-17)
+## Current handoff — A4 closed (D087); A5/A6 running — cellar, swarm, cm.box, cm.actor, cm.camera, map parallax, cm.tween, cm.depth shipped (D088–D095) (2026-07-17)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -22,6 +22,27 @@ full player options surface (D085), games have real player saves
 checklist closed the gate (D087). Shared genre-neutral runtime slices
 and demos (A5/A6), the complete rewind product UI (A7), and the
 release-candidate pass (A8) remain the open alpha gates.
+
+**D095 lands the layer/depth slice: cm.depth.** Pure stable
+draw-order sorting over plain tables, nothing touching doc:
+`push(l, key, item)` takes an explicit finite sort key (the
+feet/base y; NaN refused) with any non-nil item passing through
+untouched, `sort` ascends by key with equal keys keeping push order
+— the seq decoration makes the comparator a TOTAL order, so the
+result is unique under any sort algorithm and hash order can never
+draw — `each` walks back-to-front yielding the key too, `clear`
+reuses, and `ysort(items[, field])` is the stable in-place
+one-liner for arrays already carrying a numeric field. No scene
+graph, no z properties, no callbacks, no culling. 20 KATs (Linux
+23,934 / native Windows 23,936). Cellar is the retrofit proof (the
+only vote): the PAIN(depth) comparator + rebuilt list became
+push/sort/each, pixel-identical (frame-300 byte compare) and
+draw-only — no doc bytes moved, so the committed golden stands
+un-recut, verifying byte-exact on Linux and native Windows.
+PAIN(actor) stays marked in cellar, PAIN(move) in swarm. The
+shipped guide gained a depth-sorting section; the llm-feed montage
+shows the same pillar hiding then revealing the player across its
+base line.
 
 **D094 lands the tween/effect slice: cm.tween.** Named decaying
 effects on any plain doc table (the reserved `tw` key): `play` arms
@@ -746,23 +767,24 @@ fixtures reject the same wrong-type selections. `nix run .#test` is ALL GREEN at
 Windows demo exports both build. Inspected 1280×800 captures show the complete
 release tab and chooser at 100% canvas zoom.
 
-**Exact next packet:** **the layer/depth slice** — the standing
-PAIN(depth) vote: cellar rebuilds and sorts a draw list of pillars +
-player every frame with a hand-rolled y-sort comparator (base y,
-then x, then kind — ties broken deterministically because hash order
-must never draw). Design it per the A5 contract: a pure deterministic
-sort/draw-order helper (plain data in, stable explicit tiebreaks —
-no scene graph, per §2's "layers/depth sorting without forcing a
-scene graph"), KATs pinning comparator totality and tie stability,
-ONE retrofit (cellar is the only vote — swarm and the demo don't
-y-sort) with its golden honestly re-cut if doc bytes move (the committed
-re-cut vehicle is `tools/trace/replay-driver.lua` + `dump.lua` +
-`strip-eval.lua`: quantize preimages + virtual pad + EVAL strip —
-usage in the headers and PROCESS.md). After that: transition, then
-runtime-UI, then swarm's
-PAIN(move) aim/axis dance when the move slice's evidence is in. A6
-bundling polish (READMEs, thumbnails, release-manifest promotion
-for cellar/swarm) can interleave once slices make the demos concise.
+**Exact next packet:** **the transition slice** — but walk the
+pain-first rule honestly first: the demos' transitions today are
+cellar's instant room swap (set d.room, teleport to spawn), the
+demo's portal cut (cm.camera.center at D092), and the top-down
+starter's room step — all instant cuts, none hand-rolls a
+fade/wipe/hold yet. If that audit finds no real duplicated pain
+(three instant cuts are a pattern, not boilerplate), say so in the
+ADR and take **runtime-UI** instead, where the votes are visible:
+every demo hand-rolls HUD strings + game-over/win overlays (swarm's
+game-over screen, cellar's message line, the demo's coin HUD), and
+§2 promises "HUDs, menus, focus/navigation, dialogue, pause". Then
+swarm's PAIN(move) aim/axis dance when the move slice's evidence is
+in. If sim/doc bytes move in a retrofit, the committed re-cut
+vehicle is `tools/trace/replay-driver.lua` + `dump.lua` +
+`strip-eval.lua` (quantize preimages + virtual pad + EVAL strip —
+usage in the headers and PROCESS.md). A6 bundling polish (READMEs,
+thumbnails, release-manifest promotion for cellar/swarm) can
+interleave now that the slices are making the demos concise.
 
 **Native Windows developer handoff is now automatic.** The canonical
 `tools/build-windows.sh` path cross-builds the complete development tree,
