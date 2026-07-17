@@ -82,8 +82,18 @@ Load engine and project modules through the reload-aware loader:
     local state = cm.require("cm.state") -- engine/cm/state.lua
     local player = cm.require("player")  -- <project>/player.lua
 
-Project modules return ordinary Lua tables. Avoid top-level simulation changes:
-put them in `init` or `step` so reload and replay have an explicit boundary.
+Start every module by ADOPTING the module table the loader passes in,
+exactly like the engine's own modules:
+
+    local M = select(2, ...) or {}
+    -- ... define fields and functions on M ...
+    return M
+
+A fresh `local M = {}` looks equivalent but splits the module's brain on
+reload: replays and hot reload re-execute changed sources against the
+table other modules already hold, and functions from a fresh table write
+fields your callers never see. Avoid top-level simulation changes: put
+them in `init` or `step` so reload and replay have an explicit boundary.
 
 ## State that rewinds
 
@@ -257,6 +267,14 @@ Draw its visuals with the world layer active:
 
     gfx.layer(1)
     map.draw_places(room, camera_x, camera_y)
+
+A map layer can carry per-layer PARALLAX factors (the map window's layer
+panel, `par` — 1 = world speed, 0.5 = a half-speed backdrop, 0 =
+screen-fixed). `draw_places` applies them for you: such layers draw
+through their own `gfx.layer` depth, culled against the layer-effective
+camera, and the world layer is restored afterwards. Parallax is
+presentation only — colliders, markers, and named refs stay world-space,
+so keep collider-carrying placements on world-speed layers.
 
 Markers are in `room.doc.markers` in file order. Custom marker fields authored
 in the inspector are returned as a table by `map.extras(marker)`:

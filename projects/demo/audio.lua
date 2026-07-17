@@ -6,7 +6,7 @@
 local ins = cm.require("cm.ins")
 local snd = cm.require("cm.snd")
 
-local M = {}
+local M = select(2, ...) or {} -- adopt the module table (survives bundle re-execution)
 
 -- ORDERED (no hash-order dependence — the determinism rule): slot i gets
 -- SFX[i]. { key, ins file, trigger note }

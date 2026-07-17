@@ -58,7 +58,7 @@ local ease = cm.require("cm.ease")
 local level = cm.require("level")
 local fx = cm.require("fx")
 
-local M = {}
+local M = select(2, ...) or {} -- adopt the module table (survives bundle re-execution)
 
 local DT = 1.0 / 60.0
 local TAU = 6.28318530717958623200

@@ -3,7 +3,7 @@
 -- live-reload pillar). Deterministic from constants, but NEVER from cm.rand:
 -- module top-levels and game.init must not touch the sim PRNG stream.
 
-local M = {}
+local M = select(2, ...) or {} -- adopt the module table (survives bundle re-execution)
 
 -- a constant-seeded LCG for art noise (decorative variety, not sim state)
 function M.lcg(seed)

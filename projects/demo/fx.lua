@@ -13,7 +13,7 @@ local rand = cm.require("cm.rand")
 local ease = cm.require("cm.ease")
 local state = cm.require("cm.state")
 
-local M = {}
+local M = select(2, ...) or {} -- adopt the module table (survives bundle re-execution)
 
 local DT = 1.0 / 60.0
 local NPART = 256
