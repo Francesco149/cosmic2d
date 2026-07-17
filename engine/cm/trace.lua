@@ -1508,6 +1508,9 @@ local function write_trace(path, project, kf, first_i, last_i, standalone)
   pal.log(("[trace] wrote %s: %d frames, %d bytes%s")
           :format(path, frames, #blob,
                   ok and "" or " (WRITE FAILED: " .. tostring(err) .. ")"))
+  -- A7 §13 trust: a trace this session wrote is this session's own code, so
+  -- dragging it back in never prompts (defined with the trust set below).
+  if ok then M._trust_written(blob) end
   return ok, frames
 end
 
@@ -1789,6 +1792,75 @@ function M.materialize_clip(path)
   local ws = materialize_workspace(mfst_bytes, blobmap)
   if not ws then return nil, "no per-user workspace root available" end
   return ws, loop
+end
+
+-- ---- clip trust identity (A7 §13) ----
+--
+-- Opening a replay executes its bundled code with the same trust boundary as
+-- opening a project, and §13 requires the UI to SAY SO before running an
+-- untrusted (dragged-in / downloaded) bundle. Identity is the code a replay of
+-- the clip can ever execute — the SNAP bundle plus every EPOC revision, in
+-- file order, hashed over module name + source only (recorded paths are
+-- machine-local noise) — computed without executing anything. The session
+-- trust set is transient chrome policy: never persisted, never near
+-- sim/doc/buffers, seeded by write_trace (a trace this session wrote is this
+-- session's own code, so a same-session self-export never prompts) and grown
+-- only by an explicit user confirm at the drag-in door.
+
+local trusted_clips = {}
+
+-- the code-identity core over an in-memory CTRC blob; nil, reason when the
+-- bytes cannot be a replay at all (bad container / no SNAP / no bundle).
+local function code_hash_of_blob(blob)
+  local ok, chunks = pcall(chunk.read, blob, "CTRC")
+  if not ok then return nil, "not a .ctrace: " .. tostring(chunks) end
+  local parts, seen_snap = {}, false
+  for _, c in ipairs(chunks) do
+    if c.tag == "SNAP" and c.version == 1 and not seen_snap then
+      seen_snap = true
+      local s = state.parse_snapshot(c.payload)
+      if not s.code then return nil, "trace SNAP has no code bundle" end
+      for _, fl in ipairs(s.code) do
+        parts[#parts + 1] = pack("<s4s4", fl.name, fl.source)
+      end
+    elseif c.tag == "EPOC" and c.version == 1 and seen_snap then
+      local n, pos = unpack("<I4", c.payload)
+      for _ = 1, n do
+        local name, _fpath, source
+        name, _fpath, source, pos = unpack("<s4s4s4", c.payload, pos)
+        parts[#parts + 1] = pack("<s4s4", name, source)
+      end
+    end
+  end
+  if not seen_snap then return nil, "trace has no SNAP chunk" end
+  return pal.sha256(table.concat(parts))
+end
+
+-- sha256 identity of every byte of code a replay of this clip can execute,
+-- or nil, reason. Reads the file; runs nothing.
+function M.clip_code_hash(path)
+  local blob, err = pal.read_file(path)
+  if not blob then return nil, "can't read clip: " .. tostring(err) end
+  return code_hash_of_blob(blob)
+end
+
+function M.clip_trusted(hash)
+  return hash ~= nil and trusted_clips[hash] == true
+end
+
+function M.trust_clip(hash)
+  if hash then trusted_clips[hash] = true end
+end
+
+-- test seam: forget every session trust (a fresh process starts empty)
+function M._trust_reset() trusted_clips = {} end
+
+-- write_trace calls this with the blob it just wrote: this session's own code
+-- is trusted by construction. Never an error path — trust is best-effort
+-- chrome (a failed hash only means a prompt later).
+function M._trust_written(blob)
+  local h = code_hash_of_blob(blob)
+  if h then trusted_clips[h] = true end
 end
 
 -- ---- non-destructive foreign-source open (A7 §13) ----

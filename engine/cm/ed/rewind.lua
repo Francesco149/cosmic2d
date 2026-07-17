@@ -245,6 +245,7 @@ function M.close(ed, force)
   if scrub.paused() then scrub.close() end
   r.open, r.gesture, r.preview = nil, nil, nil
   r.summary, r.crash, r.fit_crash = nil, nil, nil
+  r.trust, r.trust_rect = nil, nil
   free_thumbtex(r) -- release the preview lane's GPU textures
   return true
 end
@@ -271,10 +272,51 @@ function M.drop_clip(ed, path)
                              or "leave the timeline before opening a clip")
     return false
   end
+  -- §13 trust: opening a clip RUNS its bundled code with the open-a-project
+  -- boundary, so the UI says so first. Identify the code without executing
+  -- anything; a clip this session already trusts — its own exports are
+  -- pre-trusted by write_trace, and a confirmed drop stays trusted — opens
+  -- directly, anything else parks a pending prompt at the tray. Nothing is
+  -- stashed, mounted, or run until the user confirms (trust_run).
+  local hash, herr = trace.clip_code_hash(path)
+  if not hash then
+    r.open = true
+    flash(r, "not a replay clip: " .. tostring(herr))
+    return false
+  end
+  if not trace.clip_trusted(hash) then
+    r.open = true
+    r.trust = { path = path, hash = hash,
+                name = path:match("([^/\\]+)$") or path }
+    flash(r, "this replay contains code -- confirm to run it")
+    return false
+  end
+  r.trust = nil
   scrub.open_clip(path)
   r.open, r.fit_clip = true, true
   r.view, r.summary, r.preview = nil, nil, nil
   flash(r, "opening replay clip -- Esc twice returns to live")
+  return true
+end
+
+-- Confirm the pending trust prompt: remember the clip's code identity for the
+-- rest of the session and re-enter the drop door (now trusted, it opens).
+function M.trust_run(ed)
+  local r = state(ed)
+  local t = r.trust
+  if not t then return false end
+  r.trust = nil
+  trace.trust_clip(t.hash)
+  return M.drop_clip(ed, t.path)
+end
+
+-- Dismiss the pending trust prompt; the clip's code never ran and its
+-- identity stays untrusted (a later drop asks again).
+function M.trust_cancel(ed)
+  local r = state(ed)
+  if not r.trust then return false end
+  r.trust = nil
+  flash(r, "replay not opened -- its code never ran")
   return true
 end
 
@@ -313,6 +355,7 @@ function M.drop_crash(ed, path)
   if not scrub.paused() then scrub.open() end
   scrub.set_loop(plan.a, plan.b) -- parks at A and rolls the pre-roll forward
   r.open, r.fit_crash = true, true
+  r.trust = nil -- a pending clip prompt is stale; its code still never ran
   r.crash = { committed = plan.committed, attempted = plan.attempted,
               kind = plan.kind, report_id = plan.report_id,
               a = plan.a, b = plan.b }
@@ -322,9 +365,14 @@ function M.drop_crash(ed, path)
   return true
 end
 
--- Esc is deliberately layered: clip/loop first, tray/past second.
+-- Esc is deliberately layered: trust prompt first, clip/loop second,
+-- tray/past third.
 function M.escape(ed)
   local r = state(ed)
+  if r.trust then
+    M.trust_cancel(ed)
+    return true
+  end
   if scrub.has_loop and scrub.has_loop() then
     scrub.clear_loop()
     r.preview = nil
@@ -369,6 +417,7 @@ function M.owns_pointer(ed, i)
   local scale = cm.require("cm.view").cfg.chrome_scale or 1
   local vi = chrome.virtual_input(i, scale)
   return r.gesture ~= nil or rect_has(r.rect, vi) or rect_has(r.pill, vi)
+         or rect_has(r.trust_rect, vi)
 end
 
 local function nice_step(span, width)
@@ -776,6 +825,43 @@ function M.draw(ed, ig, i)
     r.open and C.text or (recp and C.restart or (parked and C.code or C.dim)),
     pill_label)
   if pill_hov and i.clicked[1] and lo then M.toggle(ed) end
+
+  -- §13 trust prompt: a dropped clip whose code identity this session hasn't
+  -- trusted parks here — nothing was stashed, mounted, or run. Drawn before
+  -- the no-history early-out so the question is never invisible, floating
+  -- above the tray so the live timeline stays readable behind the decision.
+  if r.trust then
+    local t = r.trust
+    local title = "UNTRUSTED REPLAY"
+    local msg = ("%s contains code; opening it runs that code"):format(t.name)
+    local note = "trusted for the rest of this session -- Esc cancels"
+    local tw = math.max(pal.x_ig_text_size(msg, 11, 0),
+                        pal.x_ig_text_size(note, 10, 0))
+    local pw2, ph2 = math.max(380, tw + 28), 96
+    local bh2 = math.min(248, math.max(176, ig.h - 70))
+    local px2 = (ig.w - pw2) * 0.5
+    local py2 = math.max(8, ig.h - bh2 - 8 - ph2 - 10)
+    r.trust_rect = { x = px2, y = py2, w = pw2, h = ph2 }
+    if rect_has(r.trust_rect, i) then
+      local ui = cm.require("cm.ui")
+      ui.force_keys, ui.force_mouse = true, true
+    end
+    pal.x_ig_rect_fill(px2, py2, pw2, ph2, C.panel, 10)
+    pal.x_ig_rect(px2, py2, pw2, ph2, C.restart, 1, 10)
+    pal.x_ig_circle_fill(px2 + 18, py2 + 15, 3.5, C.restart)
+    text(px2 + 28, py2 + 9, 12, C.restart, title)
+    text(px2 + 14, py2 + 31, 11, C.text, msg)
+    text(px2 + 14, py2 + 48, 10, C.faint, note)
+    if button(i, px2 + pw2 - 190, py2 + ph2 - 30, 86, 22, "cancel",
+              { px = 11 }) then
+      M.trust_cancel(ed)
+    elseif button(i, px2 + pw2 - 98, py2 + ph2 - 30, 86, 22, "run clip",
+                  { accent = true, outline = C.restart, px = 11 }) then
+      M.trust_run(ed)
+    end
+  else
+    r.trust_rect = nil
+  end
 
   if not r.open or not lo then
     r.rect = nil
