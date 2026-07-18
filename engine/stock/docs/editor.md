@@ -103,6 +103,11 @@ drop intermediate displayed frames so the transport remains on time. A/B
 selection stays inclusive and loops until Esc clears it; Esc again returns to
 the live present.
 
+The tray's disk-use meter shows retained history against your budget. The
+notch on the track marks 90% of the budget; when the fill passes it the
+used/budget label gains a leading **!** — both read without color, beside
+the exact numbers.
+
 ## Playing and mouse capture
 
 Clicking into a game window focuses it — focused means playing, and your
@@ -121,7 +126,10 @@ all release it, and it re-engages when you click back in.
 - **Right-click** — spawn menu (over an editing sprite/tilemap canvas the
   right button paints/erases instead — spawn from elsewhere or the launcher).
   **Middle-drag** / **wheel** — pan and zoom.
-- **Ctrl+S** — save the focused window's file.
+- **Ctrl+S** — save the focused window's file. A window with unsaved work
+  marks its title bar with a dot **and** a trailing `*` on the title (the
+  state never rides color alone); **reset** beside them reverts to the
+  saved file.
 - **Ctrl+Z / Ctrl+Y** — undo / redo (per asset; journals normally survive a
   restart, but source saves remain the durable boundary).
 - **Esc** — release the current tool / view lock.

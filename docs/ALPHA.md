@@ -393,9 +393,10 @@ Goal: validate the whole promise, not isolated subsystems.
   keyboard-complete. D129: reduced flash/shake ship as user-wide Esc-menu
   toggles enforced at the engine's render-only effect doors
   (camera.offset / tween.wobble / tween.flash) with
-  options.shake_scale/flash_scale for hand-rolled effects. Remaining:
-  editor keyboard gaps (focus-cycle/close), non-color-only polish on the
-  rewind meter + unsaved dot.)
+  options.shake_scale/flash_scale for hand-rolled effects. D130: the
+  unsaved dot gains the title's trailing `*` and the rewind disk meter a
+  90% notch + `!` label — no chrome state reads by color alone.
+  Remaining: editor keyboard gaps (focus-cycle/close).)
 - [x] Add independent machine-local sizing for canvas-window text/content and
   fixed chrome (including rewind), with 1080p-compatible defaults and automatic
   SDL-DPI/4K scaling. The broader keyboard/focus/player accessibility gate above

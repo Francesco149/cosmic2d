@@ -6500,3 +6500,32 @@ per-effect floor or a stronger setting; a "reduce motion" ask beyond
 shake (parallax, camera lerp) is its own packet; a game hand-rolling
 shake that ignores `shake_scale()` is a docs/review issue, not an engine
 gate.
+
+## D130 — non-color-only chrome: the unsaved title mark and the disk meter's notch + "!" (2026-07-19)
+
+**Context.** The A8 accessibility line's remaining polish (named in D128):
+two chrome states that read by color alone — a window's unsaved state was
+one amber dot, and the rewind tray's disk-use meter warned only by
+warming its fill amber then red.
+
+**Decision.** (1) A dirty window's title now carries a trailing ` *`
+beside the dot (the universal editor convention), computed from the same
+`kind.dirty` read the dot and reset chip already share. (2) The meter's
+threshold rule extracted pure and KAT'd — `rewind.meter_zone(frac)` →
+`ok`/`warm` (>0.7)/`near` (>0.9), garbage reads ok — and the fill color,
+a permanent 90% notch on the track, and the label's near-state leading
+`!` (drawn in the error color, but the glyph is the cue) all derive from
+it, so the color and non-color cues cannot drift. The exact used/budget
+numbers stay pinned beside both. Warm stays color-plus-fill-fraction
+only: it is informational, not an alarm; the notch marks where the alarm
+begins.
+
+**Proof.** Linux selftest **24,630** (4 new meter_zone KATs); suite ALL
+GREEN, goldens byte-identical (editor chrome only, headless never draws
+the tray into goldens with a staged budget). Inspected captures on
+llm-feed: `main.lua *` + dot + reset in a live smoke session; the tray at
+a staged 95% budget with the red fill past the notch and the `!` label.
+
+**Revisit triggers.** A pattern-fill or shape change on the meter if a
+report says the notch is too subtle; the same non-color audit for any new
+chrome that gains a threshold color.

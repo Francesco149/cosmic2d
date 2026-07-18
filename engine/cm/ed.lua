@@ -1204,12 +1204,16 @@ local function draw_win(ig, win, zi)
   -- header: title label (never a drag handle — EDITOR.md §4) + unsaved dot
   local tpx = math.max(4, 12 * z)
   local title = kind and kind.title(win) or win.kind
+  local dirty = kind and kind.dirty and kind.dirty(win, M)
+  -- unsaved is never color-only (D130): the amber dot is backed by the
+  -- title's trailing mark, so the state reads at any palette or acuity
+  if dirty then title = title .. " *" end
   pal.x_ig_clip_push(x, y, w, math.min(hdr, h))
   pal.x_ig_text(x + 8 * z, y + (hdr - tpx) * 0.45,
                 tpx, focused and C.title or C.title_dim, title, 0)
   pal.x_ig_clip_pop()
   local hdr_right = x + w - 6 * z -- right edge available to header extras
-  if kind and kind.dirty and kind.dirty(win, M) then
+  if dirty then
     pal.x_ig_circle_fill(x + w - 10 * z, y + hdr * 0.5, 3.5 * z, C.unsaved)
     hdr_right = x + w - 16 * z
     -- the reset-to-saved button (EDITOR.md §6 — itself an undoable edit)

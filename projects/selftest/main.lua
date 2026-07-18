@@ -9293,8 +9293,20 @@ local function t_ed_park()
         "rewind tray: summary splits sim and editor activity")
   check(input_event, "rewind tray: summary marks input transitions")
 
-  -- Inclusive loop playback shows A, then every frame through B, then wraps.
+  -- The disk-use meter's threshold rule (D130): one pure function feeds the
+  -- fill color AND the non-color cues (notch + "!" label), so they agree.
   local rewind = cm.require("cm.ed.rewind")
+  check(rewind.meter_zone(0) == "ok" and rewind.meter_zone(0.7) == "ok",
+        "rewind meter: ok through the warm threshold inclusive")
+  check(rewind.meter_zone(0.71) == "warm" and rewind.meter_zone(0.9) == "warm",
+        "rewind meter: warm past 0.7 through 0.9 inclusive")
+  check(rewind.meter_zone(0.91) == "near" and rewind.meter_zone(1.0) == "near",
+        "rewind meter: near past 0.9")
+  check(rewind.meter_zone(nil) == "ok" and rewind.meter_zone(0 / 0) == "ok"
+          and rewind.meter_zone("full") == "ok",
+        "rewind meter: garbage reads ok")
+
+  -- Inclusive loop playback shows A, then every frame through B, then wraps.
   rewind.open(ed)
   scrub.open()
   local clock = 0

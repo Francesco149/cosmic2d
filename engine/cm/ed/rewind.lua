@@ -38,6 +38,16 @@ local function fmt_budget(mb)
   return ("%g MB"):format(mb) -- %g: robust to a console-set fractional budget
 end
 
+-- meter_zone(frac) -> "ok" | "warm" | "near": the disk-use meter's pure
+-- threshold rule (KAT'd), shared by the fill color AND the non-color cues
+-- (D130) — warming past 0.7, near the bound past 0.9. Garbage reads ok.
+function M.meter_zone(frac)
+  if type(frac) ~= "number" or frac ~= frac then return "ok" end
+  if frac > 0.9 then return "near" end
+  if frac > 0.7 then return "warm" end
+  return "ok"
+end
+
 local C = {
   panel = 0x191726fa, panel2 = 0x211e32ff, lane = 0x151321ff,
   edge = 0x4a4370ff, edge_hot = 0x6a60a0ff,
@@ -1004,10 +1014,17 @@ function M.draw(ed, ig, i)
   local mx = place_r(mw)
   local bar_y = head_y + 21
   pal.x_ig_rect_fill(mx, bar_y, mw, 6, C.lane, 3)
-  local fillc = frac > 0.9 and C.err or (frac > 0.7 and C.restart or C.accent)
+  local zone = M.meter_zone(frac)
+  local fillc = zone == "near" and C.err
+                or (zone == "warm" and C.restart or C.accent)
   pal.x_ig_rect_fill(mx, bar_y, math.max(2, mw * frac), 6, fillc, 3)
-  text(mx, head_y + 6, 10, C.dim,
-    ("%s / %s"):format(fmt_bytes(used), fmt_bytes(budget)))
+  -- non-color cues (D130): the near-limit threshold is a notch on the
+  -- track — fill past the notch reads at any palette — and past it the
+  -- label carries a leading "!" beside the exact numbers
+  pal.x_ig_rect_fill(mx + mw * 0.9 - 1, bar_y - 2, 2, 10, C.dim, 0)
+  text(mx, head_y + 6, 10, zone == "near" and C.err or C.dim,
+    ("%s%s / %s"):format(zone == "near" and "! " or "",
+                         fmt_bytes(used), fmt_bytes(budget)))
   local seg = ("%d seg"):format(stats.segs or 0)
   if (stats.pending or 0) > 0 then seg = seg .. " . spilling " .. stats.pending end
   -- the content-addressed project-blob store (§14, D103) is storage the budget
