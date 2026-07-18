@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session fixed two docs-reader/launcher UX bugs and filled the two named searchable-reference gaps (common failures + compatibility policy); the prior A8 packet was D110's in-engine documentation search (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session made the docs reader's code blocks syntax-highlighted + copyable (per-block chip + copy-page) and fixed the home-list over-scroll flicker (D111); prior A8 packets were two docs-UX fixes + two reference sections, and D110's in-engine documentation search (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,8 +31,41 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18) — two docs-UX bug fixes + two searchable-reference
-sections (A8), all on both platforms.** Human-reported bugs, both editor chrome,
+**This session (2026-07-18) — D111 makes the docs reader's code blocks
+syntax-highlighted + copyable and clamps the home-list over-scroll (A8), on both
+platforms.** Three docs-reader gaps, two human-reported, all pure editor chrome —
+no sim/doc/recorded byte moved:
+- **No copy in the reader.** A per-block hover **copy chip** (sticky to the scroll
+  band) writes that block's dedented source via `pal.x_clipboard`; a header **copy
+  page** button writes the whole doc as plain, un-marked text (headings/bullets/
+  inline markup flattened to shown text via the reader's own `parse_inline`). Both
+  flash "copied" on the wall clock. Full glyph-precise **prose drag-select** stays
+  deferred (the reader wraps mixed inline runs — its own packet); `src` (raw markdown
+  in a code editor with real selection) remains the escape hatch.
+- **The home doc-list over-scrolled** ("scroll past the bottom flickers one frame and
+  flicks back"). `M.wheel` clamped only at 0, so a wheel past the end set `scroll >
+  maxscroll` for one frame — drawn before `draw`'s own end-of-frame clamp snapped it
+  back. It now also clamps against last frame's measured `win._maxscroll`, so no
+  over-scrolled frame is ever drawn.
+- **Code blocks now syntax-highlight.** New **pure `cm.docs.code_blocks(src)`** groups
+  the reader's code lines into blocks (built ON `line_kinds` so ranges agree with what's
+  drawn; `lang` guessed lua vs a shell/command `text` block; `text` = the dedented
+  source for the clipboard). `draw_doc` threads the **`cm.ed.lex`** lua carry within a
+  block and draws colored spans in the code editor's exact palette
+  (kw/str/num/com over a lavender base); a `text` block stays base face, so
+  `bin/cosmic … --edit` is never mis-read as a lua comment.
+
+Proof: Linux selftest **24,225** / native Windows **24,227** on PAL API 19 (7 new
+`t_docs` KATs), `nix run .#test` ALL GREEN, every trace + pixel/audio golden
+byte-identical. `tools/build-windows.sh` refreshed the stage (4 durable entries) and
+Start Menu shortcut. Headless `smoke --edit` captures inspected on llm-feed: the
+`scripting.md` `project.lua` block highlighted with a `copy` chip + `copy page`
+button; the `getting-started.md` `bin/cosmic` block staying plain; the home doc-list
+scrolled past the end sitting flush (no over-scroll gap). `engine/stock/docs/editor.md`
+documents copy + highlighting. See DECISIONS `D111`.
+
+**Prior A8 session (2026-07-18) — two docs-UX bug fixes + two searchable-reference
+sections.** Human-reported bugs, both editor chrome,
 no sim/doc/recorded byte moved:
 - **Multi-line code blocks rendered only their first line as code.** The shipped
   guides use 4-space *indented* code blocks (zero fences), and the help reader's
@@ -391,10 +424,11 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 Menu shortcut.
 
 **Exact next packet:** **continue A8 (ALPHA §A8).** The searchable reference now
-has its substrate (D110), the readable rendering path is correct (this session),
+has its substrate (D110), the readable rendering path is correct and the reader is
+**polished** — code blocks syntax-highlight + copy, home scroll clamps (D111) —
 and all five named reference topics are *present and findable*: modules (task
 sections + the one-line index), the project schema (Project shape), determinism
-(the checklist), **common failures** and **compatibility policy** (this session).
+(the checklist), **common failures** and **compatibility policy**.
 The A8 checkbox stays `[ ]` on one honest gap — **per-module reference depth**:
 the 20-line "Small module reference" is still an index, and several `cm.*`
 (`cm.tmap`, `cm.anim`/`cm.sprite`, `cm.palette`/`cm.grade`, `cm.rand`/`cm.math`/
@@ -408,13 +442,15 @@ the 20-line "Small module reference" is still an index, and several `cm.*`
    an orientation page into the guided **create → modify code/art/map/audio →
    play/debug/rewind → export** path, driven and verified through the shipped UI
    (also the spine of the later fresh-user pass).
-A cheap immediate follow-up is **in-doc Ctrl+F find** in the reader (the `text.lua`
-find model; the shell already routes Ctrl+F to `kind_call("find")`, so `M.find` on
-the help kind drops in) — now that the reader renders code correctly, find is the
-next reader nicety. Deferred A7 refinements (captured-audio embedding, a
+The remaining cheap reader nicety is **in-doc Ctrl+F find** (the `text.lua` find
+model; the shell already routes Ctrl+F to `kind_call("find")`, so `M.find` on the
+help kind drops in). Deferred: **full prose drag-select** (glyph-precise selection
+across wrapped inline runs — the real "copy any text" packet; D111 shipped per-block
++ copy-page copy instead) and D110's launcher content-search / result keyboard-nav /
+span-precise highlight. Deferred A7 refinements (captured-audio embedding, a
 wall-clock clip filename, asset-import markers, native-failure next-launch synthesis,
 an embedded-tail size budget) stay available if a real use votes one up. See
-`ALPHA.md` §A8, DECISIONS `D110`.
+`ALPHA.md` §A8, DECISIONS `D111`/`D110`.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's

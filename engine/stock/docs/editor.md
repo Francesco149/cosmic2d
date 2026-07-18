@@ -58,6 +58,10 @@ reader); a `#section` link jumps to that heading. The header **◀ ▶** — or 
 mouse back/forward buttons — walk your history, **docs** returns to search, and
 **src** opens the raw markdown in a code editor (which has its own Ctrl+F find).
 
+Code blocks are **syntax-highlighted** and **copyable**: hover a block for its
+**copy** button (it copies that block's source), or press **copy page** in the
+header to put the whole doc on the clipboard as plain text.
+
 ## Text and UI size
 
 Click the **Aa** pill beside the canvas zoom percentage. **Canvas windows**

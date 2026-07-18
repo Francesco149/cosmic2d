@@ -5317,3 +5317,61 @@ llm-feed: the home searching `save` (22 ranked hits spanning `scripting.md` + th
 `getting-started.md` (stale "remaining alpha work" line fixed) and `editor.md`
 (a "Reading and searching the docs" section) document it. `tools/build-windows.sh`
 refreshed the stage (4 durable entries) and Start Menu shortcut.
+
+## D111 — docs reader: highlight + copy code, clamp the home scroll (A8, 2026-07-18)
+
+**Context.** The D061 reader renders the shipped guides but three things were
+missing, two of them human-reported: **no copy** ("being able to copy text from the
+docs is pretty important"), the **home list over-scrolled** ("scroll past the bottom
+makes it flicker for one frame and flick back"), and code blocks were flat green with
+**no syntax highlighting**. All three are editor chrome over static markdown.
+
+**Decision — one pure index, three reader changes.**
+- **`cm.docs.code_blocks(src)`** (pure, KAT-pinned) groups the reader's code lines
+  into contiguous **blocks**, built ON `line_kinds` so a block's range always agrees
+  with what's drawn (the ``` markers are `fence`, so they bracket a run without
+  joining it). Each block is `{lo, hi, lang, text}`: `lang` guessed **lua** (the
+  guides' default) or **text** (a shell/command sample the lua lexer would mis-color —
+  detected by a path-command/known-tool first token, e.g. `bin/cosmic …`), `text` the
+  **dedented** source ready for the clipboard. A false `text` only skips highlighting;
+  a false `lua` only mis-colors a shell line — both safe.
+- **Syntax highlighting.** `draw_doc` maps each code line to its block, threads the
+  **`cm.ed.lex`** lua carry within a block (multi-line strings/comments), and draws
+  colored spans in the **code editor's exact palette** (`kw`/`str`/`num`/`com` over a
+  lavender base) so a sample reads the same in the reader as in the editor. A `text`
+  block stays base face — so `bin/cosmic … --edit` is never read as a lua comment.
+- **Copy.** A per-block hover **copy chip** (sticky to the scroll band, so it stays
+  reachable on a tall block) writes the block's dedented source via **`pal.x_clipboard`**
+  (dev-class: headless returns `""`, never sim input); a header **copy page** button
+  writes the whole doc as **plain, un-marked text** (headings/bullets/inline markup
+  flattened to the *shown* text via the reader's own `parse_inline`). Both flash
+  `copied` on the wall clock (the editor redraws every frame, so no journal touch).
+  Full drag-select of prose stays deferred — the reader wraps mixed inline runs, so
+  glyph-precise selection is its own packet; `src` (raw markdown in a code editor with
+  real selection) remains the escape hatch.
+- **Scroll clamp.** `M.wheel` clamped only at 0, never at the top, so a wheel past the
+  end set `scroll > maxscroll` for one frame — drawn before `draw`'s own end-of-frame
+  clamp snapped it back (the flicker). It now also clamps against last frame's measured
+  **`win._maxscroll`** (stable frame-to-frame for a static view; `scroll` resets to 0
+  on navigate, so the value is always fresh before a wheel can fire), so no
+  over-scrolled frame is ever drawn.
+
+**No sim/doc/recorded byte moves** — pure Lua chrome + a pure module; the copy chip's
+feedback fields and `_maxscroll` are canon-legal scalars/transients on the (uncaptured
+for rewind) editor window. Every trace and pixel/audio golden is byte-identical.
+
+**Revisit triggers / deferred, named honestly.** **Full prose selection** (glyph-precise
+drag-select + copy across wrapped inline runs) is the real "copy any text" packet;
+today's answer is per-block copy + copy-page + `src`. A **fenced-block language tag**
+would beat the first-token heuristic if the guides ever fence (they use indented blocks
+today). **In-doc Ctrl+F find** (D110's deferral) is still the cheap next reader nicety.
+
+**Proof.** Linux selftest **24,225** / native Windows **24,227** on PAL API 19 (7 new
+`t_docs` KATs — block ranges over the `km` fixture, dedented text with nested indent +
+interior blank, fenced body verbatim, `bin/…` → text vs plain lua → lua). `nix run
+.#test` ALL GREEN with every historical trace and pixel/audio golden byte-identical.
+Headless `smoke --edit` captures inspected on llm-feed: `scripting.md`'s `project.lua`
+block highlighted with a `copy` chip and the `copy page` button; `getting-started.md`'s
+`bin/cosmic` block staying plain; the home doc-list scrolled past the end sitting flush
+(no over-scroll gap). `engine/stock/docs/editor.md` documents copy + highlighting.
+`tools/build-windows.sh` refreshed the stage (4 durable entries) and Start Menu shortcut.
