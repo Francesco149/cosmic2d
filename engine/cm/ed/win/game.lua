@@ -150,6 +150,18 @@ function M.constrain(win, part, r0, ww, wh, ctrl)
   return W * s + M.PAD_W, th * s + M.PAD_H
 end
 
+-- pure (KAT'd): the blit scale for a well scale `s` under the machine Aa
+-- scale `ds`. Snaps to the intended DESIGN multiple (s/ds) when that is
+-- (float noise of) an integer, clamped to the largest integer the well
+-- actually fits — so the game blit is a crisp, Aa-invariant multiple.
+-- Returns (scale, exact); a non-integer intent passes through unsnapped.
+function M.blit_scale(s, ds)
+  local sn = s / (ds or 1)
+  local r = math.floor(sn + 0.5)
+  if r < 1 or math.abs(sn - r) >= 0.002 then return s, false end
+  return math.max(1, math.min(r, math.floor(s + 0.01))), true
+end
+
 function M.draw(win, ctx)
   -- letterbox the target into a rounded filler well, preserving aspect —
   -- the image sits inside a margin so it never touches the panel's
@@ -163,10 +175,15 @@ function M.draw(win, ctx)
   local s = math.min(aw / tw, ah / th)
   -- pixel-perfect (D054): when the scale lands on (float noise of) an
   -- integer — 100% canvas zoom, window a multiple of the res — snap the
-  -- scale and the origin to exact px so the game reads 1:1 crisp
-  local r = math.floor(s + 0.5)
-  local exact = r >= 1 and math.abs(s - r) < 0.002
-  if exact then s = r end
+  -- scale and the origin to exact px so the game reads 1:1 crisp.
+  -- The machine-local Aa scale (cam.display_scale) is CHROME sizing, not
+  -- game zoom: divide it out before the integer test, so a CTRL-snapped
+  -- window stays a crisp, constant-size integer blit at any text size
+  -- (the well grows with the chrome; the image does not follow it). If
+  -- the intended multiple no longer fits a shrunken well (Aa below 1),
+  -- fall back to the largest integer that does.
+  local exact
+  s, exact = M.blit_scale(s, cm.require("cm.ed.cam").display_scale)
   local dw, dh = tw * s, th * s
   local ix = ctx.cx + m + (aw - dw) * 0.5
   local iy = ctx.cy + m + (ah - dh) * 0.5

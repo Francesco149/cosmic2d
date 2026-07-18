@@ -764,6 +764,14 @@ function M.draw(win, ctx)
   local sh = ctx.cy + ctx.ch - 4 * z - topy
   local results
   if win.path == "" then
+    -- the home lists' heights all scale with px: anchor the scroll across
+    -- a zoom/Aa change the same way the doc view does (px ratio is exact
+    -- here — every row height is a px multiple)
+    local sl0 = M.sel_state(win)
+    if sl0.hpx and sl0.hpx ~= px and (win.scroll or 0) > 0 then
+      win.scroll = win.scroll * (px / sl0.hpx)
+    end
+    sl0.hpx = px
     local fh = px * 1.9
     pal.x_ig_rect_fill(x0, topy, maxw, fh, COL.field, 5 * z)
     if (win.q or "") == "" then
@@ -891,7 +899,17 @@ function M.draw(win, ctx)
     local L = sl.L
     if not L or sl.k_src ~= src or sl.k_w ~= maxw or sl.k_px ~= px
        or sl.k_z ~= z then
+      -- a reflow of the SAME doc (canvas zoom, Aa scale, window resize)
+      -- keeps the view anchored: scroll is content-space px, so it must
+      -- scale with the content height — else zooming visibly scrolls the
+      -- doc. (The class guard: any window keeping a raw px scroll over
+      -- zoom-scaled content needs this; winview's world-unit scroll and
+      -- the console's row scroll are immune by construction.)
+      local oldh = (L and sl.k_src == src) and L.contenth or nil
       L = layout_doc(src, maxw, px, z)
+      if oldh and oldh > 0 and L.contenth > 0 and (win.scroll or 0) > 0 then
+        win.scroll = win.scroll * (L.contenth / oldh)
+      end
       sl.L, sl.rows = L, L.rows
       sl.k_src, sl.k_w, sl.k_px, sl.k_z = src, maxw, px, z
       sl.a, sl.b, sl.drag = nil, nil, nil -- a reflow drops the selection

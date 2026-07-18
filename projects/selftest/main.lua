@@ -11235,6 +11235,37 @@ local function t_help_keys()
         "help.sb: the knob maps linearly over the track")
 end
 
+-- the game window's Aa-invariant pixel-perfect blit (the human's report:
+-- raising the global text size blurred the game by its factor). blit_scale
+-- snaps to the DESIGN multiple s/ds, clamped to what the well fits.
+local function t_game_blit()
+  local game = cm.require("cm.ed.win.game")
+  local function bs(s, ds) local r, e = game.blit_scale(s, ds) return r, e end
+  local r, e = bs(2.0, 1)
+  check(r == 2 and e == true, "game.blit: ds=1 integer snaps as before")
+  r, e = bs(2.0004, 1)
+  check(r == 2 and e == true, "game.blit: float noise of an integer snaps")
+  r, e = bs(2.4, 1)
+  check(r == 2.4 and e == false, "game.blit: a free resize passes through")
+  r, e = bs(2.5, 1.25)
+  check(r == 2 and e == true,
+        "game.blit: Aa 1.25 over a 2x window stays a crisp 2x")
+  r, e = bs(3.75, 1.25)
+  check(r == 3 and e == true,
+        "game.blit: Aa 1.25 over a 3x window stays a crisp 3x")
+  r, e = bs(1.25, 1.25)
+  check(r == 1 and e == true, "game.blit: Aa 1.25 over a 1x window stays 1x")
+  r, e = bs(1.5, 0.75)
+  check(r == 1 and e == true,
+        "game.blit: Aa 0.75 falls back to the largest fitting integer")
+  r, e = bs(0.6, 0.75)
+  check(r == 0.6 and e == false,
+        "game.blit: a sub-1x design multiple never snaps")
+  r, e = bs(2.5, 1)
+  check(r == 2.5 and e == false,
+        "game.blit: 2.5x at Aa 1 is a real non-integer, not a snap target")
+end
+
 -- ---- the 3D fork modules (merged 2026-07-18): KATs to the same bar as
 -- the 2d slices. cm.m4 / cm.kin / cm.walk / cm.rig are pure math (rig
 -- reads record-backed input, neutral in this cartridge); the render-class
@@ -11765,6 +11796,7 @@ function game.init()
   t_docs()
   t_help_sel()
   t_help_keys()
+  t_game_blit()
   t_m4()
   t_kin()
   t_walk()

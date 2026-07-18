@@ -5907,3 +5907,51 @@ reach it (the widget needs the live imgui host, which the headless
 selftest never boots); proven both ways with a scripted draw-hook
 driver — open/type/close/reopen read `[stale query]` before the fix and
 `[]` after.
+
+## D122 — sprite new-file door; zoom-anchored reader scroll; Aa-invariant game blit (2026-07-18)
+
+Three human reports against the editor surface, all chrome — no
+sim/doc/recorded byte moved.
+
+**The sprite window can now create a sprite.** The unbound state showed
+only "drag a .spr from an assets window" (a stale comment claimed a path
+field that never existed). It now uses the kit's `pathfield` — the
+tmap/music new-file prompt: forced `.spr` extension, prefilled unique
+auto-name, Enter creates, an existing path offers open/overwrite/cancel
+— and the kit's existing `fresh` door supplies the 32x32 starter doc; a
+brand-new sprite opens in edit mode. Zero new machinery: the affordance
+was one wiring gap.
+
+**Zooming no longer scrolls the docs.** The reader keeps `win.scroll`
+in content-space px while every content height scales with the font px
+(canvas zoom × Aa scale) — so a zoom re-laid the doc under an unscaled
+scroll and the view visibly drifted. On any reflow of the SAME doc the
+scroll now rescales by the content-height ratio (exact — the layout is
+linear in px), and the home lists do the same by px ratio. **The class
+guard, named:** a window that keeps a raw pixel scroll over
+zoom-scaled content must anchor it across reflows; `winview`'s
+world-unit scroll (assets) and the console's row scroll are immune by
+construction — new scrolling windows should use one of those models,
+and the reader's ratio anchor is the pattern when they can't.
+
+**The game blit ignores the Aa scale.** `cam.display_scale` multiplies
+every canvas window's screen rect, so raising the text size turned a
+CTRL-snapped 2x game window into a 2.5x (blurry) or 3x (resized) blit —
+the D054 pixel-perfect snap tested the SCREEN scale. The new pure
+`game.blit_scale(s, ds)` divides the Aa scale out first: the snap
+targets the DESIGN multiple, clamped to the largest integer the well
+fits (an Aa below 1 falls back rather than overflowing), so the game
+image is a crisp, constant-size integer multiple at any text size — the
+chrome grows around it, the pixels do not. Free (non-snapped) resizes
+pass through unchanged, and `ed.g.grect` mouse remapping follows the
+recorded scale automatically.
+
+Proof: Linux selftest **24,471 → 24,480** (9 `t_game_blit` KATs across
+both Aa directions, noise, fallback, and pass-through); `nix run .#test`
+ALL GREEN, goldens untouched. The reader anchor and the sprite door are
+imgui-host behavior (no headless-selftest reach): one scripted
+`smoke --edit` driver proved all three live — scroll 800 → 1200 tracking
+contenth ×1.5 exactly across a mid-run Aa flip, the pathfield's bind
+door yielding a fresh 32x32 single-layer doc, and `grect.s == 2` for a
+2x window at Aa 1.5. Captures inspected on llm-feed (the prefilled
+new-sprite prompt). `win-sprite.md` documents the door.

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **D121 lands the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D122 fixes three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,27 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18, continued) — D121: reader scroll ergonomics +
+**This session (2026-07-18, continued) — D122: three human reports.** (1) The
+unbound sprite window only said "drag a .spr" — it now runs the kit
+`pathfield` (prefilled unique name, Enter creates via the existing `fresh`
+32x32 door, open/overwrite/cancel on collisions; a new sprite opens in edit
+mode) — one wiring gap, zero new machinery; `win-sprite.md` documents it.
+(2) Zooming scrolled the docs: the reader keeps a content-space px scroll
+while content heights scale with px, so a reflow drifted the view — the
+scroll now rescales by the exact content-height ratio (home lists by px
+ratio). The CLASS guard is named in D122: raw-px scrolls must anchor across
+reflows; winview's world-unit scroll and the console's row scroll are immune
+by construction. (3) The Aa text scale blurred/resized the game blit: the
+D054 snap tested the screen scale, which display_scale multiplies — the new
+pure `game.blit_scale(s, ds)` snaps the DESIGN multiple instead, clamped to
+what the well fits, so the game stays a crisp constant multiple at any text
+size. Proof: Linux selftest **24,480** (9 t_game_blit KATs) / native Windows
+**24,482**; suite ALL GREEN, goldens untouched; one scripted `smoke --edit`
+driver proved all three live (scroll 800→1200 tracking contenth ×1.5 across
+a mid-run Aa flip; the bind door yielding a fresh 32x32; grect.s == 2 at
+Aa 1.5); the new-sprite prompt capture inspected on llm-feed.
+
+**Same session, earlier — D121: reader scroll ergonomics +
 launcher doc-section search.** Three human asks, all editor chrome, no
 sim/doc/recorded byte moved: (1) the reader's paint-only scrollbar became a
 control — the gutter right of the text band is its hit zone (disjoint from

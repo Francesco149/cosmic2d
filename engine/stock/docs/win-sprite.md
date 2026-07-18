@@ -4,6 +4,10 @@ Paint a pixel sprite; define animation clips in the paired **animation** window.
 
 ## Workflow
 
+0. A fresh (unbound) sprite window is the **new sprite** door: type a path —
+   a unique name is prefilled — and Enter creates a 32x32 sprite there (an
+   existing path offers open / overwrite / cancel). Or drag any `.spr` in
+   from an assets window.
 1. Toggle **edit** (header) to paint; the view lock lights up so wheel/pan act
    on the sprite, not the canvas.
 2. Pick a tool, pick a color (or eyedrop one from anywhere on screen), paint.

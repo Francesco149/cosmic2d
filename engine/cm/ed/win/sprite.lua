@@ -335,10 +335,16 @@ end
 
 function M.draw(win, ctx)
   local ed = ctx.ed
+  -- unbound: the kit's new-file prompt (forced .spr, overwrite-aware) —
+  -- the kit's fresh door starts a 32x32 doc; a brand-new sprite opens
+  -- editable (the tmap model)
   if win.path == "" then
-    pal.x_ig_text(ctx.cx + 8 * ctx.z, ctx.cy + 8 * ctx.z,
-                  math.max(4, 12 * ctx.z), COL.dim,
-                  "no sprite bound — drag a .spr from an assets window", 0)
+    local was = win.path
+    A.pathfield(win, ed, ctx, {
+      ext = "spr", default = "art/",
+      label = "no sprite bound — drag a .spr here, or type a path:",
+    })
+    if win.path ~= was then win.edit = true end
     return
   end
   local a, p = open_asset(ed, win.path)
