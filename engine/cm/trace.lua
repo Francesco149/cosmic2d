@@ -1515,11 +1515,12 @@ local function reconstruct_bundle(R, seg)
   return out
 end
 
--- serialize segments first_i..last_i as a CTRC blob and write it. `standalone`
+-- serialize segments first_i..last_i into a CTRC blob (no I/O). `standalone`
 -- (a { a, b } loop-bounds table) additionally embeds the clip's complete project
 -- tree so it materializes on load with no dependency on this session's store; its
 -- optional `bundle` overrides the SNAP code (an adopted range's reconstruction).
-local function write_trace(path, project, kf, first_i, last_i, standalone)
+-- Split out of write_trace so a crash report can embed the same bytes in memory.
+local function build_trace_blob(project, kf, first_i, last_i, standalone)
   local R = M._R
   last_i = last_i or #R.segs
   local w = chunk.writer("CTRC")
@@ -1567,14 +1568,19 @@ local function write_trace(path, project, kf, first_i, last_i, standalone)
       end
     end
   end
-  local blob = w.result()
+  return w.result(), frames
+end
+
+-- serialize a range as a CTRC blob and write it atomically. A7 §13 trust: a trace
+-- this session wrote is this session's own code, so dragging it back in never
+-- prompts (the trust set is seeded below).
+local function write_trace(path, project, kf, first_i, last_i, standalone)
+  local blob, frames = build_trace_blob(project, kf, first_i, last_i, standalone)
   local ok, err = pal.write_file_atomic(path, blob,
                          M._write_fail and M._write_fail.trace)
   pal.log(("[trace] wrote %s: %d frames, %d bytes%s")
           :format(path, frames, #blob,
                   ok and "" or " (WRITE FAILED: " .. tostring(err) .. ")"))
-  -- A7 §13 trust: a trace this session wrote is this session's own code, so
-  -- dragging it back in never prompts (defined with the trust set below).
   if ok then M._trust_written(blob) end
   return ok, frames
 end
@@ -1608,16 +1614,12 @@ function M.ring_export(path)
   return write_trace(path, R.project, ring_kf(), first_i)
 end
 
--- Export the inclusive A..B range as a STANDALONE .ctrace (A7 §14): the exact
--- state through B plus the complete project tree (all source + assets) at A, so
--- the clip materializes its own project on load with no dependency on this
--- session's blob store. Segment-aligned: the SNAP is A's keyframe and whole
--- segments through B's are written (the LOOP metadata pins the exact A/B).
--- Returns ok, frames | nil, reason. A live range uses its own segment bundle; an
--- adopted cross-session range (no spilled bundle) reconstructs one from its
--- captured manifest + the host engine. Only legacy pre-manifest history — or a
--- store whose blobs were evicted — still refuses, named honestly, never crashed.
-function M.export_clip(a, b, path)
+-- Segment-align an inclusive A..B live range for a standalone clip: clamp into
+-- the retained window, find the covering segments, and (for an adopted range with
+-- no spilled bundle) reconstruct the SNAP code. Returns { first_i, last_i, a, b,
+-- bundle } or nil + an honest reason (legacy/spill-off history, evicted blobs).
+-- Shared by export_clip (writes a file) and crash_tail_bytes (embeds in memory).
+local function resolve_clip_range(a, b)
   local R = M._R
   local lo, hi = M.ring_range()
   if not lo then return nil, "no history to export" end
@@ -1646,8 +1648,44 @@ function M.export_clip(a, b, path)
         "store — cannot reconstruct the clip's code"
     end
   end
-  return write_trace(path, R.project, ring_kf(), first_i, last_i,
-                     { a = a, b = b, bundle = recon })
+  return { first_i = first_i, last_i = last_i, a = a, b = b, bundle = recon }
+end
+
+-- Export the inclusive A..B range as a STANDALONE .ctrace (A7 §14): the exact
+-- state through B plus the complete project tree (all source + assets) at A, so
+-- the clip materializes its own project on load with no dependency on this
+-- session's blob store. Segment-aligned: the SNAP is A's keyframe and whole
+-- segments through B's are written (the LOOP metadata pins the exact A/B).
+-- Returns ok, frames | nil, reason. A live range uses its own segment bundle; an
+-- adopted cross-session range (no spilled bundle) reconstructs one from its
+-- captured manifest + the host engine. Only legacy pre-manifest history — or a
+-- store whose blobs were evicted — still refuses, named honestly, never crashed.
+function M.export_clip(a, b, path)
+  local pl, why = resolve_clip_range(a, b)
+  if not pl then return nil, why end
+  return write_trace(path, M._R.project, ring_kf(), pl.first_i, pl.last_i,
+                     { a = pl.a, b = pl.b, bundle = pl.bundle })
+end
+
+-- A7 §16: the safe pre-roll ending at the crash's last committed frame, packed as
+-- a self-contained standalone-clip blob (the same bytes export_clip writes, but in
+-- memory). A .ccrash embeds this so a report opened on ANOTHER machine — or after
+-- the local tail is evicted — still carries its timeline; the drop stages it and
+-- opens it through the trust-gated clip door. Best-effort: nil + reason for
+-- legacy/spill-off/adopted-evicted history (the drop then falls back to the
+-- local-stream match). `preroll` defaults to CRASH_PREROLL (up to one minute).
+function M.crash_tail_bytes(committed, preroll)
+  local lo, hi = M.ring_range()
+  if not lo then return nil, "no history to embed" end
+  committed = math.max(lo, math.min(math.floor(committed or hi), hi))
+  preroll = math.max(1, math.floor(preroll or M.CRASH_PREROLL))
+  local pl, why = resolve_clip_range(math.max(lo, committed - preroll + 1),
+                                     committed)
+  if not pl then return nil, why end
+  local blob, frames = build_trace_blob(M._R.project, ring_kf(),
+    pl.first_i, pl.last_i, { a = pl.a, b = pl.b, bundle = pl.bundle })
+  M._trust_written(blob) -- our own code this session: a self-drop never prompts
+  return blob, frames
 end
 
 -- Quit/crash durability boundary (R6.5/D067): spill the open segment so the
@@ -1728,6 +1766,39 @@ local function materialize_workspace(mfst_bytes, blobmap)
   pal.log(("[trace] replay workspace: %s (%d files%s)"):format(ws, written,
           missing > 0 and (", %d unmaterializable"):format(missing) or ""))
   return ws
+end
+
+-- overridable for tests via M._crash_tail_root; else a per-user sibling of the
+-- replay workspaces.
+local function crash_tail_root()
+  if M._crash_tail_root then return M._crash_tail_root end
+  if type(pal.user_path) ~= "function" then return nil end
+  local base = pal.user_path()
+  return base and (base .. "crash-tails")
+end
+
+-- A7 §16: stage a crash report's embedded history tail (standalone-clip bytes) as
+-- a .ctrace file so the SAME trust-gated clip door (clip_code_hash / open_clip)
+-- opens it exactly like a dragged-in replay. Content-named + swept so at most one
+-- staged tail survives. nil + reason if there is no tail or no per-user root.
+function M.write_crash_tail(bytes)
+  if type(bytes) ~= "string" or bytes == "" then
+    return nil, "the crash report embeds no history tail"
+  end
+  local root = crash_tail_root()
+  if not root then return nil, "no per-user path to stage the crash tail" end
+  local name = pal.sha256(bytes) .. ".ctrace"
+  pal.mkdir(root)
+  for _, n in ipairs(pal.list_dir(root) or {}) do
+    local top = n:match("^[^/]+")
+    if top and top ~= name then remove_tree_at(root .. "/" .. top) end
+  end
+  local path = root .. "/" .. name
+  local ok, err = pal.write_file_atomic(path, bytes)
+  if not ok then
+    return nil, "staging the crash tail failed: " .. tostring(err)
+  end
+  return path
 end
 
 -- load a .ctrace as the ring (replay playback, M5): the live ring is

@@ -261,7 +261,11 @@ end
 -- mid-frame); it stashes the live ring/present and mounts the clip's bundled
 -- project. We open the tray now and fit the view to the clip once its range is
 -- live (fit_clip). Esc layering (clip -> tray) restores the untouched session.
-function M.drop_clip(ed, path)
+-- `crash`, when given (an embedded crash tail, §16), flavors the opened clip:
+-- the tray marks the failed next-frame boundary over the ephemeral clip instead
+-- of a plain REPLAY CLIP. It rides r.trust through the prompt so trust_run can
+-- re-supply it after a confirm.
+function M.drop_clip(ed, path, crash)
   local r = state(ed)
   -- Opening a clip snapshots the live present; refuse while already time-
   -- travelling (parked / another clip) so we never capture a past frame as
@@ -277,7 +281,9 @@ function M.drop_clip(ed, path)
   -- anything; a clip this session already trusts — its own exports are
   -- pre-trusted by write_trace, and a confirmed drop stays trusted — opens
   -- directly, anything else parks a pending prompt at the tray. Nothing is
-  -- stashed, mounted, or run until the user confirms (trust_run).
+  -- stashed, mounted, or run until the user confirms (trust_run). A crash tail
+  -- rides the same gate: a report from this session opens directly, a foreign
+  -- one prompts, exactly like any bundled code (§16).
   local hash, herr = trace.clip_code_hash(path)
   if not hash then
     r.open = true
@@ -286,28 +292,40 @@ function M.drop_clip(ed, path)
   end
   if not trace.clip_trusted(hash) then
     r.open = true
-    r.trust = { path = path, hash = hash,
+    r.trust = { path = path, hash = hash, crash = crash,
                 name = path:match("([^/\\]+)$") or path }
-    flash(r, "this replay contains code -- confirm to run it")
+    flash(r, crash and "this crash tail contains code -- confirm to run it"
+                    or "this replay contains code -- confirm to run it")
     return false
   end
   r.trust = nil
   scrub.open_clip(path)
   r.open, r.fit_clip = true, true
   r.view, r.summary, r.preview = nil, nil, nil
-  flash(r, "opening replay clip -- Esc twice returns to live")
+  if crash then
+    -- The clip carries its own A/B (the pre-roll bounds); a/b fill lazily from
+    -- the loop range once it's live. attempted = the failed next-frame boundary.
+    r.crash = { committed = crash.committed, attempted = crash.attempted,
+                kind = crash.kind, report_id = crash.report_id }
+    r.fit_crash = true
+    flash(r, ("crash tail: %s -- Esc twice returns to live")
+      :format(tostring(crash.kind or "error")))
+  else
+    flash(r, "opening replay clip -- Esc twice returns to live")
+  end
   return true
 end
 
 -- Confirm the pending trust prompt: remember the clip's code identity for the
--- rest of the session and re-enter the drop door (now trusted, it opens).
+-- rest of the session and re-enter the drop door (now trusted, it opens). A
+-- crash-tail prompt re-supplies its crash flavor so the clip still opens as CRASH.
 function M.trust_run(ed)
   local r = state(ed)
   local t = r.trust
   if not t then return false end
   r.trust = nil
   trace.trust_clip(t.hash)
-  return M.drop_clip(ed, t.path)
+  return M.drop_clip(ed, t.path, t.crash)
 end
 
 -- Dismiss the pending trust prompt; the clip's code never ran and its
@@ -320,16 +338,44 @@ function M.trust_cancel(ed)
   return true
 end
 
--- A7 §16: a .ccrash dropped into an editor view opens the crashed minute. The
--- report names an exact history stream + last-committed frame; trace.crash_resolve
--- matches it against the LIVE ring by identity (never by wall time). On a match
--- we park at the crash, loop the safe pre-roll (up to 60s ending at the last
--- committed frame), and mark the failed next-frame boundary. A missing/evicted/
--- foreign tail explains the identity it wanted rather than guessing. Unlike a
--- clip this resolves the live source in place — no stash, no mounted workspace —
--- so export-the-pre-roll and resume-here stay available.
+-- A7 §16: a .ccrash dropped into an editor view opens the crashed minute. Two
+-- paths, prefer-embedded first (D109): if the report EMBEDS its one-minute tail
+-- (a self-contained clip), stage it and open it through the trust-gated clip door
+-- — the only path that works for a report from another machine / an evicted local
+-- tail, and it prompts before running a foreign bundle (D107). Otherwise the
+-- locator-only path (D106): trace.crash_resolve matches the report's exact history
+-- stream + last-committed frame against the LIVE ring by identity (never by wall
+-- time), parks in place, loops the safe pre-roll (up to 60s ending at the last
+-- committed frame), and marks the failed next-frame boundary — no stash, no mount,
+-- so export-the-pre-roll and resume-here stay available. A missing/evicted/foreign
+-- locator explains the identity it wanted rather than guessing.
 function M.drop_crash(ed, path)
   local r = state(ed)
+  local report, rerr = cm.require("cm.crash").read(path)
+  if not report then
+    r.open = true
+    flash(r, "unreadable crash report: " .. tostring(rerr))
+    return false
+  end
+  -- §16: prefer an embedded history tail. A report may carry its own one-minute
+  -- pre-roll as a self-contained clip; stage it and open it through the SAME
+  -- trust-gated clip door (a foreign one prompts, this session's own does not),
+  -- flavored CRASH so the tray marks the failed boundary. This is the only path
+  -- that works for a report from another machine / an evicted local tail. A
+  -- locator-only report falls through to the live-stream match below (which
+  -- keeps resume-here — the clip is ephemeral and non-adoptable by contract).
+  if report.tail and report.tail ~= "" then
+    local tpath, twhy = trace.write_crash_tail(report.tail)
+    if tpath then
+      return M.drop_clip(ed, tpath, {
+        committed = report.committed_frame, attempted = report.attempted_frame,
+        kind = report.error_kind, report_id = report.report_id })
+    end
+    -- staging failed (headless / no per-user path): the report still names a
+    -- locator, so fall through to the local-stream match rather than refusing.
+    pal.log("[rewind] crash tail not staged (" .. tostring(twhy)
+            .. "); resolving the local stream")
+  end
   -- A crash focus reads the LIVE ring, but a mounted clip has stashed it aside;
   -- eject first (mirrors drop_clip's already-time-travelling guard).
   if scrub.is_clip() then
@@ -337,15 +383,6 @@ function M.drop_crash(ed, path)
     flash(r, "eject the replay clip before opening a crash report")
     return false
   end
-  local report, rerr = cm.require("cm.crash").read(path)
-  if not report then
-    r.open = true
-    flash(r, "unreadable crash report: " .. tostring(rerr))
-    return false
-  end
-  -- Future §16: a report may embed its own history tail; today's .ccrash carries
-  -- only the locator, so resolve the local stream. (When embedded tails land,
-  -- route report.tail through scrub.open_clip exactly like a standalone clip.)
   local plan, why = trace.crash_resolve(report)
   if not plan then
     r.open = true
@@ -787,9 +824,14 @@ function M.draw(ed, ig, i)
       { start = lo, span = math.max(M.MIN_SPAN, hi - lo) }, lo, hi)
     r.fit_clip = nil
   end
+  -- A crash tail opened as a clip (§16) carries its pre-roll bounds in its own
+  -- loop; the report named only the failed frame, so adopt a/b once it's live.
+  if r.crash and not r.crash.a and scrub.has_loop and scrub.has_loop() then
+    r.crash.a, r.crash.b = scrub.loop_range()
+  end
   -- A crash focus fits the pre-roll plus the boundary just past it, so the whole
   -- crashed minute reads at a glance instead of the ten-minute default.
-  if r.fit_crash and r.crash and lo then
+  if r.fit_crash and r.crash and r.crash.a and lo then
     local cr = r.crash
     local pad = math.max(2, (cr.b - cr.a) * 0.06)
     r.view = M.clamp_view(
@@ -804,8 +846,8 @@ function M.draw(ed, ig, i)
   -- The collapsed entrance remains useful at all times: retained duration,
   -- a live recording dot, and a parked/paused/clip/crash state at a glance.
   local pill_label
-  if clip then pill_label = scrub.has_loop() and "CLIP A/B" or "CLIP"
-  elseif r.crash then pill_label = "CRASH"
+  if r.crash then pill_label = scrub.has_loop() and "CRASH A/B" or "CRASH"
+  elseif clip then pill_label = scrub.has_loop() and "CLIP A/B" or "CLIP"
   elseif scrub.has_loop and scrub.has_loop() then pill_label = "A/B LOOP"
   elseif parked then pill_label = "PARKED"
   elseif recp then pill_label = "REC PAUSED"
@@ -905,14 +947,20 @@ function M.draw(ed, ig, i)
   apply_gestures(r, i, v, lo, hi, ax, film_y, aw, axis_h)
 
   local stats = trace.ring_stats() or {}
+  -- A crash tail (§16) opens as an ephemeral clip, so it reads CRASH TAIL; a
+  -- local in-place crash focus reads CRASH. Both take precedence over REPLAY.
+  local sub
+  if r.crash then
+    sub = ((clip and "CRASH TAIL  /  %s -- Esc restores live")
+           or "CRASH  /  %s -- Esc restores live"):format(r.crash.kind)
+  elseif clip then sub = "REPLAY CLIP  /  EPHEMERAL -- Esc restores live"
+  elseif parked then sub = "LIVE HISTORY  /  PARKED"
+  else sub = recp and "LIVE HISTORY  /  REC PAUSED"
+                   or "LIVE HISTORY  /  RECORDING" end
   text(bx + 14, head_y + 9, 12, C.text,
-    clip and "REPLAY" or (r.crash and "CRASH") or "REWIND")
+    r.crash and "CRASH" or (clip and "REPLAY") or "REWIND")
   text(bx + 79, head_y + 9, 11,
-    clip and C.eval or (r.crash and C.err) or C.dim,
-    clip and "REPLAY CLIP  /  EPHEMERAL -- Esc restores live"
-    or r.crash and ("CRASH  /  %s -- Esc restores live"):format(r.crash.kind)
-    or parked and "LIVE HISTORY  /  PARKED"
-    or (recp and "LIVE HISTORY  /  REC PAUSED" or "LIVE HISTORY  /  RECORDING"))
+    r.crash and C.err or (clip and C.eval) or C.dim, sub)
 
   -- The retention surface (A7): a live disk-use meter plus the controls that
   -- bound a long session. Laid out right-to-left from the panel edge so it
@@ -1067,7 +1115,7 @@ function M.draw(ed, ig, i)
     pal.x_ig_line(xp, film_y, xp, film_y + axis_h, C.playhead, 1.5)
     pal.x_ig_circle_fill(xp, ruler_y, 4.5, C.playhead)
   end
-  if r.crash and not clip then
+  if r.crash then
     draw_crash(r.crash, v, ax, film_y, aw, axis_h) -- the failed-frame wall, on top
   end
   pal.x_ig_clip_pop()

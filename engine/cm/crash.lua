@@ -55,6 +55,11 @@ function M.encode(o)
   end
   if o.evals ~= nil then w.chunk("EVAL", 1, encode_evals(o.evals)) end
   if o.logs ~= nil then w.chunk("LOGS", 1, tostring(o.logs)) end
+  -- A7 §16: the embedded history tail — a self-contained standalone-clip blob of
+  -- the safe pre-roll. Additive, so a locator-only report (no tail) is byte-
+  -- identical to before. Opened as a trust-gated crash clip on drop; when absent
+  -- the drop falls back to matching the local recorded stream.
+  if o.tail ~= nil and o.tail ~= "" then w.chunk("CLIP", 1, tostring(o.tail)) end
   return w.result()
 end
 
@@ -80,6 +85,8 @@ function M.decode(blob)
       out.evals = decode_evals(c.payload)
     elseif c.tag == "LOGS" and c.version == 1 then
       out.logs = c.payload
+    elseif c.tag == "CLIP" and c.version == 1 then
+      out.tail = c.payload -- A7 §16: the embedded standalone-clip history tail
     end
   end
   if not saw_head then error("crash report has no supported HEAD chunk", 0) end
@@ -170,6 +177,16 @@ function M.capture(kind, traceback, context)
     local ok, got = pcall(main.trace.ring_locator)
     if ok then locator = got end
   end
+  -- A7 §16: when the ring named a durable tail, embed the safe pre-roll as a
+  -- self-contained clip so a report opened on ANOTHER machine (or after the local
+  -- tail is evicted) still carries its timeline. Best-effort: a legacy/spill-off/
+  -- mid-unwind ring embeds nothing and the drop falls back to the local match.
+  local tail
+  if locator and locator.stream and locator.stream ~= ""
+     and main and main.trace and main.trace.crash_tail_bytes then
+    local ok, bytes = pcall(main.trace.crash_tail_bytes, locator.frame)
+    if ok and type(bytes) == "string" and bytes ~= "" then tail = bytes end
+  end
   local attempt = context.attempt or (main and main.attempt) or {}
   local project = main and main.args and main.args.project or ""
   local name = main and main.proj and main.proj.name or ""
@@ -184,6 +201,7 @@ function M.capture(kind, traceback, context)
     traceback = traceback or "",
     input_record = attempt.input,
     evals = attempt.evals,
+    tail = tail,
   }, context.test)
 end
 
