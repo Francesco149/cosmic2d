@@ -5620,3 +5620,57 @@ Deferred, named honestly: demo adoption (human feel gate), an
 editor-shell capture policy (games under `--edit` — today only the Esc
 menu releases), and pointer-lock UX niceties (sensitivity option in the
 menu) if a real game votes them in.
+
+## D117 — figures go baked: shape bakes + the x_figverts C loop (PAL v22, 2026-07-18)
+
+The human's report: "3-4 NPCs on screen tank bigworld from 240 to ~80
+fps". Measured: ONE posed mascot cost **1.84 ms/frame** of Lua — the
+immediate gb emitters re-derive profile trig, matrix-chain per quad,
+temp tables, and a string.pack per vertex, ~1000 tris per figure, every
+figure, every frame. Player + 4 near NPCs ≈ 9 ms — exactly the tank.
+
+**The shape bake.** gb gains bake_lathe/ball/prism/gbox: each runs the
+immediate emitter's exact loop ONCE, recording every vertex's LOCAL
+inputs (position/uv exactly as fed to xfp, one normal slot per distinct
+xfn call) in the exact emit order, plus `emit_baked` — the only
+per-frame work: transform each normal slot + light it (the vert()
+expressions verbatim), transform each position (the m4.apply expression
+verbatim), pack. Same doubles through the same expressions in the same
+order = the same bytes. fig.emit caches bakes per shape table (weak
+keys, render-class — derived pure data, no sim byte anywhere near it).
+Lua-only this is 1.84 → 1.27 ms; the win is capped by per-vertex pack
+overhead.
+
+**The C loop (v22).** `pal.x_figverts(blob, nv, xf, nxf, sun, ambient,
+col, alpha)` — the bake rides an anonymous pal buffer (64B/vertex of
+packed doubles) and the transform+light+pack loop runs in C, mirroring
+the Lua reference in double precision and expression order
+(m4.apply/applydir dots, vert() lighting, cm.math clamp/max semantics,
+floor-to-byte), returning the 24B lit vertex stream for x_tris. The Lua
+loop STAYS as the reference and the host-loaded/fake-pal fallback;
+emit_baked dispatches. **1.84 → 0.188 ms per figure (~10x)**; end to
+end the openworld meet's draw (3 figures + stars + world) fell **7.81 →
+2.53 ms** and the bigworld tour draws at ~3.5 ms — the 4-NPC worst case
+now adds ~0.8 ms of figures instead of ~7.4.
+
+**Proof — the strongest form, three ways.** (1) A scripted byte-compare
+of a full posed mascot: baked path vs the pre-change immediate loop —
+70,128 bytes IDENTICAL. (2) 14 new KATs (`t_figverts`): C bytes == Lua
+reference bytes across all four shape kinds under a deforming xf with
+rigid nxf (the squash case), tri-count agreement, blob build, oversized
+nv + out-of-range alpha refusals — Linux selftest **24,391** / native
+Windows **24,393**. (3) `nix run .#test` ALL GREEN with every pixel
+golden byte-identical and every trace PASS — no re-cut anywhere.
+
+**Deliberately NOT here.** The immediate emitters stay for one-shot
+callers (world build, level geometry — they emit once into static
+buffers, no per-frame pain). Star/pickup fields still emit immediate
+per frame (openworld stars ride gb.lathe directly) — the next profile
+vote can move them onto bakes with the same discipline. LE-host
+assumption documented on the C door (matches the PAL's existing
+targets). A GPU-side matrix/lighting path (true instancing) stays a
+post-alpha idea; the C loop already leaves figures ~2% of frame.
+
+**Revisit triggers.** A figure-heavy scene (>20 near figures) votes for
+per-figure segment batching (one x_tris per figure instead of per
+shape); an editor figure-preview window reuses emit_baked as-is.

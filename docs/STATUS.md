@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **this session merged the cosmic3d fork back into mainline (D114) and executed its entire post-merge queue**: 3D-module KATs to the 2d bar, the cm.actor/hud/move retrofits with honest re-cuts (D115), and the relative-mouse + MREL record packet (D116, PAL API 21). The 3D documentation pass is deferred to a mechanical session (handoff notes below). Prior A8 packets: D110–D113 (docs search/reference/reader polish) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **this session merged the cosmic3d fork back into mainline (D114) and executed its entire post-merge queue**: 3D-module KATs to the 2d bar, the cm.actor/hud/move retrofits with honest re-cuts (D115), the relative-mouse + MREL record packet (D116), and — after the human's "NPCs tank bigworld 240→80fps" report — the baked-figure pipeline + x_figverts C loop (D117, PAL API 22): **1.84 → 0.188 ms per figure, byte-identical, all goldens un-recut**. The 3D documentation pass is deferred to a mechanical session (handoff notes below). Prior A8 packets: D110–D113 (docs search/reference/reader polish) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -86,6 +86,22 @@ Esc/eject restores the untouched live session.**
    staged (4 durable entries) + Start Menu shortcut; rovale_tour +
    openworld_meet verify PASS on native Windows; bounce/rovale/meet captures
    inspected on llm-feed.
+
+6. **Baked figures (D117, PAL API 22) — the human's fps report.** One posed
+   mascot cost 1.84 ms/frame of Lua (immediate emitters re-derive trig +
+   matrix chains + pack per vertex, ~1000 tris); 4 near NPCs + player ≈ 9 ms
+   = the 240→80 tank. gb.bake_{lathe,ball,prism,gbox} record each shape's
+   local vertex stream once (exact expressions, exact order); emit_baked
+   transforms+lights+packs — and `pal.x_figverts` (v22) runs that loop in C
+   off an anonymous-buffer blob, double-precision mirroring the Lua
+   reference (which stays as the fallback). **1.84 → 0.188 ms/figure
+   (~10×)**; openworld meet draw 7.81 → 2.53 ms; bigworld tour ~3.5 ms.
+   Proof, three ways: a 70,128-byte posed-mascot byte-compare vs the
+   pre-change path IDENTICAL; 14 t_figverts KATs (C == Lua across all four
+   kinds under deforming-xf/rigid-nxf, refusals) — Linux **24,391** / native
+   Windows **24,393**; suite ALL GREEN, every pixel golden byte-identical,
+   no re-cut. Stars/pickups still emit immediate (next profile vote); the
+   immediate emitters stay for one-shot world builds.
 
 **Deferred to a mechanical documentation session (Opus) — the 3D docs pass.**
 Scope: per-module reference sections in `engine/stock/docs/scripting.md` for

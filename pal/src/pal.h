@@ -11,10 +11,12 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 21 /* v21: relative mouse — x_mouse_capture +
-                              motion rel deltas (the cosmic3d captured-
-                              cursor look); v20: the cosmic3d merge — 3D
-                              retro pipeline (x_view3d/x_tris) + retro
+#define PAL_VERSION_API 22 /* v22: x_figverts — the baked-figure
+                              transform+light loop in C (byte-identical
+                              to the cm.gb Lua reference); v21: relative
+                              mouse — x_mouse_capture + motion rel
+                              deltas; v20: the cosmic3d merge — 3D retro
+                              pipeline (x_view3d/x_tris) + retro
                               presentation (x_grade quant=, x_soft VI
                               blit); the fork numbered these v15/v16,
                               which collide with mainline v15–v19 (pads,

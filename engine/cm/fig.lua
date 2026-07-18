@@ -96,6 +96,32 @@ function F.cycle(keys, t)
   return F.mix(keys[k % n + 1], keys[(k + 1) % n + 1], ft - k)
 end
 
+-- render-class bake cache: shape table -> its recorded local-space vertex
+-- stream (weak keys — a dropped figure frees its bakes; a hot reload of
+-- this module starts clean). Shapes are static per figure, so this is
+-- derived pure data, never sim state.
+local BAKES = setmetatable({}, { __mode = "k" })
+
+local function bake_of(p, s)
+  local bk = BAKES[s]
+  if not bk then
+    if s.kind == "gbox" then
+      bk = gb.bake_gbox(s.size, s.center or { 0, 0, 0 }, s.uvs)
+    elseif s.kind == "prism" then
+      bk = gb.bake_prism(s.n, s.r0, s.r1, s.h, s.caps)
+    elseif s.kind == "lathe" then
+      bk = gb.bake_lathe(s.prof, s.n)
+    elseif s.kind == "ball" then
+      bk = gb.bake_ball(s.r, s.n)
+    else
+      error(("fig: part '%s': unknown shape kind '%s'")
+            :format(p.name, tostring(s.kind)))
+    end
+    BAKES[s] = bk
+  end
+  return bk
+end
+
 -- emit a posed figure under root (an m4). Returns tris emitted.
 -- Internals: two transform chains per part — worldp carries pose scale
 -- (positions), worldn stays rigid (normals/lighting). Shape-level at/scale
@@ -129,20 +155,10 @@ function F.emit(out, fg, root, pose, alpha)
         xf = m4.mul(xf, m4.scale(s.scale[1], s.scale[2], s.scale[3]))
       end
       local a = s.alpha or alpha
-      if s.kind == "gbox" then
-        ntris = ntris + gb.gbox(out, xf, s.size, s.center or { 0, 0, 0 },
-                                s.col, s.uvs, nxf)
-      elseif s.kind == "prism" then
-        ntris = ntris + gb.prism(out, xf, s.n, s.r0, s.r1, s.h, s.col,
-                                 s.caps, nxf)
-      elseif s.kind == "lathe" then
-        ntris = ntris + gb.lathe(out, xf, s.prof, s.n, s.col, a, nxf)
-      elseif s.kind == "ball" then
-        ntris = ntris + gb.ball(out, xf, s.r, s.n, s.col, a, nxf)
-      else
-        error(("fig: part '%s': unknown shape kind '%s'")
-              :format(p.name, tostring(s.kind)))
-      end
+      -- baked fast path (gb.emit_baked): geometry recorded once, per
+      -- frame is transform+light+pack only — byte-identical to the
+      -- immediate emitters (the pixel goldens pin it)
+      ntris = ntris + gb.emit_baked(out, xf, nxf, bake_of(p, s), s.col, a)
     end
   end
   return ntris

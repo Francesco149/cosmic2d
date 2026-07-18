@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <math.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -733,6 +734,84 @@ static int l_x_mouse_capture(lua_State *L) {
     }
   }
   lua_pushboolean(L, G.mouse_captured);
+  return 1;
+}
+
+/* pal.x_figverts(blob, nv, xf, nxf, sun, ambient, col[, alpha]) -> bytes :
+ * the baked-figure transform+light+pack loop (cm.gb.emit_baked) in C — the
+ * per-frame cost of a posed figure (v22). blob = 64 bytes per vertex of
+ * packed doubles (lx,ly,lz, nlx,nly,nlz, u,v; cm.gb builds it at bake
+ * time); returns nv 24-byte lit vertices for x_tris. Every operation
+ * mirrors the Lua reference (gb.emit_baked) in double precision and
+ * expression order — m4.apply/applydir dots, the vert() sun/ambient
+ * lighting, cm.math clamp/max semantics, floor-to-byte — so the output is
+ * byte-IDENTICAL (pinned by a selftest KAT and the standing pixel
+ * goldens). LE hosts only, like the rest of the PAL. Render-class: reads
+ * only its arguments, owns nothing. */
+static int l_x_figverts(lua_State *L) {
+  BufView *bv = checkview_at(L, 1);
+  lua_Integer nv = luaL_checkinteger(L, 2);
+  luaL_checktype(L, 3, LUA_TTABLE);
+  luaL_checktype(L, 4, LUA_TTABLE);
+  luaL_checktype(L, 5, LUA_TTABLE);
+  luaL_checktype(L, 6, LUA_TTABLE);
+  luaL_checktype(L, 7, LUA_TTABLE);
+  lua_Integer a8i = luaL_optinteger(L, 8, 255);
+  if (nv < 0 || (size_t)nv * 64 > bv->b->size)
+    return luaL_error(L, "x_figverts: blob too small (nv=%I size=%I)", nv,
+                      (lua_Integer)bv->b->size);
+  if (a8i < 0 || a8i > 255)
+    return luaL_error(L, "x_figverts: alpha out of range");
+  double xf[16], nxf[16], sun[3], amb[3], col[3];
+  for (int i = 0; i < 16; i++) {
+    lua_rawgeti(L, 3, i + 1);
+    xf[i] = lua_tonumber(L, -1);
+    lua_rawgeti(L, 4, i + 1);
+    nxf[i] = lua_tonumber(L, -1);
+    lua_pop(L, 2);
+  }
+  for (int i = 0; i < 3; i++) {
+    lua_rawgeti(L, 5, i + 1);
+    sun[i] = lua_tonumber(L, -1);
+    lua_rawgeti(L, 6, i + 1);
+    amb[i] = lua_tonumber(L, -1);
+    lua_rawgeti(L, 7, i + 1);
+    col[i] = lua_tonumber(L, -1);
+    lua_pop(L, 3);
+  }
+  uint8_t a8 = (uint8_t)a8i;
+  luaL_Buffer lb;
+  char *out = luaL_buffinitsize(L, &lb, (size_t)nv * 24);
+  const uint8_t *src = bv->b->data;
+  for (lua_Integer i = 0; i < nv; i++) {
+    double d[8]; /* lx ly lz nlx nly nlz u v */
+    memcpy(d, src + i * 64, 64);
+    double nx = nxf[0] * d[3] + nxf[4] * d[4] + nxf[8] * d[5];
+    double ny = nxf[1] * d[3] + nxf[5] * d[4] + nxf[9] * d[5];
+    double nz = nxf[2] * d[3] + nxf[6] * d[4] + nxf[10] * d[5];
+    double li = -(nx * sun[0] + ny * sun[1] + nz * sun[2]);
+    if (!(li > 0)) li = 0; /* math.max(0, li) */
+    uint8_t rgb[3];
+    for (int c = 0; c < 3; c++) {
+      double r = col[c] * (amb[c] + li);
+      if (r < 0) r = 0; /* cm.math clamp order */
+      if (r > 1) r = 1;
+      rgb[c] = (uint8_t)floor(r * 255.0);
+    }
+    float f[5];
+    f[0] = (float)(xf[0] * d[0] + xf[4] * d[1] + xf[8] * d[2] + xf[12]);
+    f[1] = (float)(xf[1] * d[0] + xf[5] * d[1] + xf[9] * d[2] + xf[13]);
+    f[2] = (float)(xf[2] * d[0] + xf[6] * d[1] + xf[10] * d[2] + xf[14]);
+    f[3] = (float)d[6];
+    f[4] = (float)d[7];
+    char *o = out + i * 24;
+    memcpy(o, f, 20);
+    o[20] = (char)rgb[0];
+    o[21] = (char)rgb[1];
+    o[22] = (char)rgb[2];
+    o[23] = (char)a8;
+  }
+  luaL_pushresultsize(&lb, (size_t)nv * 24);
   return 1;
 }
 
@@ -2415,6 +2494,7 @@ static const luaL_Reg pal_funcs[] = {
     {"x_grade", l_x_grade},
     {"x_soft", l_x_soft},
     {"x_mouse_capture", l_x_mouse_capture},
+    {"x_figverts", l_x_figverts},
     {"x_capture", l_x_capture},
     {"x_capture_read", l_x_capture_read},
     {"x_clipboard", l_x_clipboard},

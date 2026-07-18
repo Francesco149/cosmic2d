@@ -11497,6 +11497,45 @@ local function t_input_mrel()
   check(exts(rec)[2] == nil, "mrel: reset ends the domain")
 end
 
+local function t_figverts()
+  local gb = cm.require("cm.gb")
+  local m4 = cm.require("cm.m4")
+  -- the C door (pal.x_figverts) must reproduce the Lua reference loop
+  -- byte-for-byte — same doubles, same expression order — across every
+  -- shape kind, under a deforming xf with a rigid nxf (the squash case)
+  local xf = m4.mul(m4.mul(m4.translate(1.5, 2.5, -3.5), m4.rotx(0.7)),
+                    m4.scale(1.2, 0.8, 1.0))
+  local nxf = m4.mul(m4.roty(0.4), m4.rotx(-0.2))
+  local col = { 0.83, 0.51, 0.32 }
+  local shapes = {
+    { name = "lathe", bk = gb.bake_lathe({ 0, -1, 0.5, -0.5, 0.7, 0.3,
+                                           0, 1 }, 12), alpha = 200 },
+    { name = "ball", bk = gb.bake_ball(0.8, 10) },
+    { name = "prism", bk = gb.bake_prism(6, 0.5, 0.34, 1.05, 3) },
+    { name = "gbox", bk = gb.bake_gbox({ 1, 2, 0.5 }, { 0, 1, 0 }, 0.7) },
+  }
+  for _, s in ipairs(shapes) do
+    local bk = s.bk
+    local ref = { nv = bk.nv, ns = bk.ns, pos = bk.pos, uv = bk.uv,
+                  ni = bk.ni, nrm = bk.nrm, lit = {}, blob = false }
+    local o1, o2 = {}, {}
+    local n1 = gb.emit_baked(o1, xf, nxf, ref, col, s.alpha)
+    local n2 = gb.emit_baked(o2, xf, nxf, bk, col, s.alpha)
+    check(bk.blob and bk.blob ~= false, "figverts: " .. s.name .. " built a blob")
+    check(n1 == n2 and n1 > 0, "figverts: " .. s.name .. " tri counts agree")
+    check(table.concat(o1) == table.concat(o2),
+          "figverts: " .. s.name .. " C bytes == Lua reference bytes")
+  end
+  -- refusals: an undersized blob and an out-of-range alpha error loudly
+  local bk = shapes[1].bk
+  check(not pcall(pal.x_figverts, bk.blob, bk.nv + 1, xf, nxf,
+                  gb.sun, gb.ambient, col, 255),
+        "figverts: oversized nv refused")
+  check(not pcall(pal.x_figverts, bk.blob, bk.nv, xf, nxf,
+                  gb.sun, gb.ambient, col, 300),
+        "figverts: out-of-range alpha refused")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -11597,6 +11636,7 @@ function game.init()
   t_walk()
   t_rig()
   t_input_mrel()
+  t_figverts()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
