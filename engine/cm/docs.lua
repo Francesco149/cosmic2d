@@ -153,6 +153,57 @@ function M.line_kinds(src)
   return kind, lines, n
 end
 
+-- group the reader's code lines into contiguous BLOCKS so it can
+-- syntax-highlight them and offer a per-block "copy". A block is a maximal run
+-- of "code" lines from line_kinds (an indented block, or a fenced body — the
+-- ``` markers are "fence", so they bracket a run without joining it). Each:
+--   { lo, hi,   -- 1-based inclusive source line range (body lines only)
+--     lang,     -- "lua" (the guides' default) or "text" (a shell/plain sample
+--               --   the lua lexer would mis-color), guessed from the 1st line
+--     text }    -- the dedented block source (exactly what the reader shows),
+--               --   ready for the clipboard
+-- Pure; KAT-pinned. Built ON line_kinds so the ranges always agree with what
+-- the reader draws. The lang guess only has to catch the guides' few command
+-- samples: a false "text" just skips highlighting (safe), a false "lua" only
+-- mis-colors a shell line.
+local CMD = { cd = true, nix = true, make = true, git = true, sudo = true,
+              sh = true, bash = true, ls = true, cp = true, mv = true,
+              rm = true, mkdir = true, curl = true, export = true }
+local function guess_lang(first)
+  first = first:gsub("^%s+", "")
+  if first:sub(1, 1) == "$" then return "text" end
+  local w = first:match("^([%w._/%-]+)")           -- the line's first token
+  if not w then return "lua" end
+  if w:find("/", 1, true) then return "text" end   -- bin/cosmic, ./run, tools/x
+  if CMD[w] then return "text" end
+  return "lua"
+end
+
+function M.code_blocks(src)
+  local kind, lines, n = M.line_kinds(src)
+  local blocks = {}
+  local ln = 1
+  while ln <= n do
+    if kind[ln] == "code" then
+      local lo = ln
+      while ln <= n and kind[ln] == "code" do ln = ln + 1 end
+      local hi = ln - 1
+      local body, first = {}, nil
+      for l = lo, hi do
+        local d = (lines[l] or ""):gsub("^    ", "")     -- as the reader dedents
+        body[#body + 1] = d
+        if not first and d:match("%S") then first = d end
+      end
+      blocks[#blocks + 1] = { lo = lo, hi = hi,
+                              lang = guess_lang(first or ""),
+                              text = table.concat(body, "\n") }
+    else
+      ln = ln + 1
+    end
+  end
+  return blocks
+end
+
 function M.section_at(secs, line)
   local owner
   for _, s in ipairs(secs) do
