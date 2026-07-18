@@ -6105,9 +6105,9 @@ it was saved at (auto-DPI change, monitor move, cross-machine) was
 silently wrong — canon bytes depending on machine-local state with no
 reconciliation. Now each game window carries the Aa it was laid out at
 (**`win.aa`**, captured — an explicit layout stamp): any mismatch, live
-or at load, rescales the image area by old/new, **center-anchored** (the
-window stays put relative to its neighbors instead of growing rightward
-/downward), restamps, and touches the doc like a resize. Crisp integer
+or at load, rescales the image area by old/new (size only since
+follow-up 3 — the top-left corner is Aa-invariant like every other
+window's), restamps, and touches the doc like a resize. Crisp integer
 design multiples recompute EXACTLY (`fw*k/ds`) so repeated flips never
 accumulate float drift — a 1 → 1.5 → 1 round trip restores the doc rect
 bit-for-bit (KAT'd + proven live). Pre-stamp sessions adopt the current
@@ -6188,3 +6188,23 @@ reads s=3.0000 integer-exact (was: world 2.0 = screen 2.5, never
 crisp). With this, every place that reasons about game-window
 crispness — the blit snap, the rect reconcile, the CTRL snap — speaks
 the same unit: the screen design multiple.
+
+**Same-day follow-up 3 (the human): the game window's top-left corner
+must not move on an Aa change.** D125 center-anchored the win.aa rect
+reconcile (splitting the size delta across both edges to soften
+neighbor drift). The human's taste call is the opposite and simpler:
+every OTHER window's x,y is Aa-invariant — windows never shift relative
+to each other on a font-size change — so the one window that slid
+around was the game window itself. The reconcile is now SIZE ONLY:
+`aa_rect` returns just (w2, h2), the shell leaves w.x/w.y untouched,
+and the window resizes in place from its corner. The size change
+relative to neighbors is inherent (that is the Aa opt-out working); the
+position change was not. Supersedes the center-anchor sentence in the
+main D125 entry. Proof: t_game_aa re-pinned (size-only return, corner
+semantics; count holds at Linux **24,523** / native **24,525**); live
+Aa 1 → 1.5 → 1 flip holds the game window at x=40,y=40 exactly through
+both hops while its rect round-trips 866x514 ↔ 582x354 bit-exact and
+the neighbor note window never moves; suite ALL GREEN, goldens
+byte-identical. (The viewport-center CAMERA anchor from D125 is
+untouched — that one maps ALL windows uniformly and cannot change their
+relative layout.)

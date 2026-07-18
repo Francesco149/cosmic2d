@@ -11321,18 +11321,19 @@ end
 
 -- the per-window Aa stamp reconcile (D125): image area scales by old/new
 -- (screen footprint constant), crisp integer design multiples recompute
--- exactly (no drift across repeated flips), center-anchored
+-- exactly (no drift across repeated flips). SIZE ONLY — the top-left
+-- corner is Aa-invariant like every other window's (follow-up 3)
 local function t_game_aa()
   local game = cm.require("cm.ed.win.game")
   local PW, PH = game.PAD_W, game.PAD_H
   local th = 240
   -- a crisp 2x 426-wide window laid out at Aa 1 moves to Aa 1.5
   local w0, h0 = 426 * 2 + PW, 240 * 2 + PH
-  local w1, h1, dx, dy = game.aa_rect(w0, h0, 1, 1.5, th)
+  local w1, h1, extra = game.aa_rect(w0, h0, 1, 1.5, th)
   check(w1 == 426 * 2 / 1.5 + PW and h1 == 240 * 2 / 1.5 + PH,
         "game.aa: the image area rescales by aa0/ds, pads untouched")
-  check(dx == (w0 - w1) * 0.5 and dy == (h0 - h1) * 0.5,
-        "game.aa: the rescale is center-anchored")
+  check(extra == nil,
+        "game.aa: size only — no position offsets (the corner stays put)")
   local w2, h2 = game.aa_rect(w1, h1, 1.5, 1, th)
   check(w2 == w0 and h2 == h0,
         "game.aa: a round trip restores the exact rect")
@@ -11343,8 +11344,8 @@ local function t_game_aa()
   local wb = game.aa_rect(100 + PW, 90 + PH, 1, 2, th)
   check(wb == 100 / 2 + PW,
         "game.aa: a non-integer design multiple rescales plainly")
-  local wc, hc, dxc, dyc = game.aa_rect(w0, h0, 1, 1, th)
-  check(wc == w0 and hc == h0 and dxc == 0 and dyc == 0,
+  local wc, hc = game.aa_rect(w0, h0, 1, 1, th)
+  check(wc == w0 and hc == h0,
         "game.aa: equal scales are the exact identity")
 end
 

@@ -1488,8 +1488,11 @@ function M.frame()
         if not w.aa then
           w.aa = ds -- pre-stamp sessions: adopt, never rescale blind
         elseif w.aa ~= ds then
-          local nw, nh, dx, dy = gk.aa_rect(w.w, w.h, w.aa, ds, th)
-          w.x, w.y, w.w, w.h, w.aa = w.x + dx, w.y + dy, nw, nh, ds
+          -- size only: the top-left corner is Aa-invariant like every
+          -- other window's (follow-up 3 — the one window shifting read
+          -- as unnatural)
+          w.w, w.h = gk.aa_rect(w.w, w.h, w.aa, ds, th)
+          w.aa = ds
           M.touch()
         end
       end

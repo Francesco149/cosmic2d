@@ -149,9 +149,11 @@ end
 -- aa0/ds so the SCREEN footprint stays constant (the pads keep their
 -- chrome-scaled world size); a rect that encodes a crisp integer design
 -- multiple is recomputed exactly as fw*k/ds so repeated flips never
--- accumulate float drift; the change is center-anchored. Returns
--- (w2, h2, dx, dy) — dx/dy are the position offsets that keep the window
--- center put. This replaces D123's process-global edge detector: the
+-- accumulate float drift. Returns (w2, h2) ONLY — the top-left corner is
+-- deliberately untouched (D125 follow-up 3, the human's call): every
+-- other window's x,y is Aa-invariant, so the game window's must be too —
+-- it resizes in place from its corner instead of being the one window
+-- that shifts. This replaces D123's process-global edge detector: the
 -- per-window stamp (win.aa) also heals a session opened at a DIFFERENT
 -- Aa than it was saved at (boot / cross-machine), which the live-only
 -- detector silently missed.
@@ -169,8 +171,7 @@ function M.aa_rect(w, h, aa0, ds, th)
     local f = aa0 / ds
     w2, h2 = iw * f, ih * f
   end
-  w2, h2 = w2 + M.PAD_W, h2 + M.PAD_H
-  return w2, h2, (w - w2) * 0.5, (h - h2) * 0.5
+  return w2 + M.PAD_W, h2 + M.PAD_H
 end
 
 -- pure (KAT'd): the CTRL-resize snap — land the window on an exact

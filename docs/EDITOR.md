@@ -141,9 +141,12 @@ teidraw's source; they are taste-approved by construction):
   it was laid out at (`win.aa`, captured) and any mismatch — a live change, or
   a session opened at a different Aa than it was saved at — rescales its image
   area by old/new (crisp integer design multiples recompute exactly, so
-  repeated flips never drift), center-anchored, restamps, and touches the doc
-  like a resize (D123/D125). Reconciliation is skipped while parked: the past
-  renders as recorded, and the present heals on unpark.
+  repeated flips never drift), restamps, and touches the doc like a resize
+  (D123/D125). The top-left corner never moves (follow-up 3, the human's
+  call): every other window's x,y is Aa-invariant, so the game window
+  resizes in place from its corner rather than being the one window that
+  shifts relative to its neighbors. Reconciliation is skipped while parked:
+  the past renders as recorded, and the present heals on unpark.
 
 ## 4. Windows
 
