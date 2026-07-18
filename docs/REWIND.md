@@ -435,8 +435,19 @@ loop without changing its contents.
 so plain exports and legacy goldens are byte-identical. `M.export_clip(a,b,path)`
 is the door; `ring_load` reads those chunks and materializes the tree into an
 isolated ephemeral workspace (`M.replay_workspace`), `M.materialize_clip` the
-non-destructive preview. Adopted-range export (its SNAP needs a reconstructed
-code bundle) and captured-audio embedding are the remaining §14 work.
+non-destructive preview.
+
+**Built (D108), adopted ranges.** An adopted cross-session segment spills its
+state keyframe but never its live code bundle (R6.5), so its clip's SNAP had no
+code and `export_clip` refused it. `reconstruct_bundle` now rebuilds that bundle
+from the segment's captured manifest — every project `.lua` at its **frozen**
+source from the content-addressed store (never the current disk) — plus the host
+engine `@boot`/`cm.*` from this install, exactly as adopted-history rewind already
+resolves code (§3). `export_clip` reconstructs when the opening segment lacks a
+bundle and requires the manifest either way, so a cross-session range is a full
+standalone clip; only legacy pre-manifest / spill-off history still refuses. The
+write side stays byte-identical for live/plain exports (the SNAP-code override is
+inert there). **Captured-audio embedding** is the remaining §14 work.
 
 ## 15. Export UX
 

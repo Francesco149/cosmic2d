@@ -5089,3 +5089,68 @@ dropped a foreign-process `.ctrace` through the real `drop_clip` door — the pr
 parked over the still-recording live tray; a scripted `trust_run` opened it as the
 normal REPLAY CLIP with the identity trusted thereafter. Inspected captures on
 llm-feed: the pending prompt and the confirmed clip.
+
+## D108 — adopted-range standalone export: reconstruct the SNAP bundle (A7 §14, 2026-07-18)
+
+**Context.** D103/D104 made every retained range — live or adopted cross-session —
+name a COMPLETE project tree (the per-segment manifest + content-addressed blob
+store), and `M.export_clip` packaged a live range into a standalone `.ctrace`. But
+it **refused an adopted range**: an adopted segment's *state* keyframe spills
+(KFBF/KFDC), yet its live *code bundle* (`cm.modules()`) never did (R6.5 — adopted
+sessions' code was RAM-only), so the clip's SNAP had no `CODE` chunk and
+`ring_load` would reject it. This was the one place the shipped UI still refused
+something the §14 foundation already paid for — `ALPHA.md` §A7 named it the exact
+next packet. The manifest already froze every project `.lua` source at the
+keyframe; the missing piece was reconstructing a bundle from it.
+
+**Decision.**
+- **`reconstruct_bundle(R, seg)`** rebuilds a `cm.modules()`-shaped bundle for a
+  no-bundle segment from two sources, mirroring how browsing adopted history
+  already resolves code (REWIND.md §3, "resume into an adopted frame keeps the
+  current engine"):
+  - **Project side, from the captured tree.** Every manifest `.lua` that maps to a
+    legal project module name (`mod_name_of_rel`: the inverse of boot.lua's
+    `module_path` — `main.lua`→`main`, `player/weapons.lua`→`player.weapons`, the
+    special `project.lua`→`@project`; `cm.*`-derived and illegal names skipped
+    since they could never be project modules), carried at its **captured source**
+    read from the content-addressed store — **never the current disk**, which may
+    have been edited since that session.
+  - **Engine side, from this install.** `@boot` + every `cm.*` module from the
+    running session's `cm.modules()`. The adopted engine code was never captured;
+    the host engine is the same install, exactly as adopted-history rewind already
+    assumes. `@project` is taken from the manifest (project data), not here.
+  - Name-sorted for deterministic SNAP bytes. Returns nil (→ honest refusal) when
+    the manifest or its blobs were GC-evicted from the store.
+- **`write_trace` gains an optional SNAP-code override** on its `standalone` table
+  (`standalone.bundle`). A plain/live export passes none, so its bytes are
+  **byte-identical to before** (goldens hold — the change is inert on every
+  existing path). `export_clip` now requires the manifest first (a clip is always
+  standalone; legacy/spill-off history still refuses honestly), then reconstructs
+  the bundle only when the opening segment lacks one, else uses the segment's own.
+- **The UI is unchanged.** `export_replay`'s "export replay" button already routed
+  refusals to a flash; now an adopted range simply exports. A same-session
+  self-export of a reconstructed clip **auto-trusts** through the D107 path
+  (`write_trace` → `_trust_written`), so dragging cross-session history back in
+  never prompts.
+
+**Observer discipline.** Pure read side (manifest + store + `cm.modules()`); no
+buffer, snapshot, or verifier ever sees the reconstruction, and the live/plain
+export paths are provably untouched — so **no sim/doc/recorded byte moves**.
+
+**Revisit triggers.** The reconstruction trusts the host engine to match the
+adopted session's engine (true for same-install cross-session history; an engine
+upgrade between sessions is the documented adopted-history limitation, not new
+here). Captured-audio embedding and a wall-clock clip filename stay their own §14
+refinements.
+
+**Proof.** Linux selftest **24,155** / native Windows **24,157** on PAL API 19 (6
+new adopted-range KATs in `t_standalone_clip`, no PAL API bump — pure Lua). The
+KATs create a genuine adopted cross-session range (record → spill → drain → reboot
+→ adopt), edit `main.lua` on disk after the keyframe, and prove: the opening
+segment truly carries no live bundle; `export_clip` now succeeds; the SNAP's
+reconstructed bundle carries the project's `main` at its **captured** source (not
+the mutated disk) plus the host `@boot`/`cm.*`; the clip is standalone (MFST +
+LOOP) and **materializes its captured tree on load**; and it has a valid, trusted
+D107 code identity (self-export). The legacy (spill-off, no-manifest) refusal
+stays. `nix run .#test` ALL GREEN — every historical trace and pixel/audio golden
+byte-identical.

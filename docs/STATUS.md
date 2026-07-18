@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is at its full exit; the information layer (D100/D101), retention surface (D102), §14 blob-store foundation (D103), standalone clip (D104), drag-in consumer (D105), crash-report drop (D106), and the untrusted-bundle trust prompt (D107) are in — the remaining A7 items are honestly-named refinement packets (2026-07-18)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is at its full exit; the information layer (D100/D101), retention surface (D102), §14 blob-store foundation (D103), standalone clip (D104), drag-in consumer (D105), crash-report drop (D106), the untrusted-bundle trust prompt (D107), and adopted-range standalone export (D108) are in — the remaining A7 items are honestly-named refinement packets (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -30,6 +30,46 @@ release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
 materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
+
+**D108 closes adopted-range standalone export (A7 §14) — the last place the
+shipped UI still refused something §14 already paid for.** An adopted
+cross-session segment spills its state keyframe but never its live code bundle
+(R6.5 — adopted sessions' code was RAM-only), so its clip's SNAP had no `CODE`
+chunk and `export_clip` refused a cross-session range with "adopted … is the next
+step". The manifest already froze every project `.lua` source at the keyframe, so
+the missing piece was a bundle. **`reconstruct_bundle(R, seg)`** rebuilds a
+`cm.modules()`-shaped bundle from two sources, mirroring how adopted-history rewind
+already resolves code (REWIND §3): the **project side** is every manifest `.lua`
+that maps to a legal module name (`mod_name_of_rel` — the inverse of boot.lua's
+`module_path`: `main.lua`→`main`, `project.lua`→`@project`; `cm.*`/illegal names
+skipped), carried at its **captured** source from the content-addressed store —
+**never the current disk**, which may have been edited since; the **engine side**
+is `@boot` + every `cm.*` from this install (the adopted engine was never
+captured — same-install assumption, the documented adopted limitation, not new
+here). Name-sorted for deterministic SNAP bytes; nil (→ honest refusal) when the
+manifest/blobs were GC-evicted. **`write_trace` gained an optional SNAP-code
+override** (`standalone.bundle`) that is **inert on every live/plain path** (those
+pass none), so their bytes stay byte-identical; **`export_clip`** now requires the
+manifest first (a clip is always standalone — legacy/spill-off still refuses),
+reconstructs only when the opening segment lacks a bundle, and otherwise uses the
+segment's own. The **UI is unchanged** — the "export replay" button already routed
+refusals to a flash, so an adopted range now simply exports; a same-session
+self-export of a reconstructed clip **auto-trusts** (D107's `_trust_written`), so
+dragging cross-session history back in never prompts. Pure read side (manifest +
+store + `cm.modules()`), **no sim/doc/recorded byte moved**: Linux selftest
+**24,155** / native Windows **24,157** on PAL API 19 (6 new adopted-range KATs in
+`t_standalone_clip` — the opening segment truly carries no live bundle; export now
+succeeds; the SNAP's reconstructed bundle carries the project `main` at its
+captured source *not the mutated disk* + the host `@boot`/`cm.trace`; the clip is
+standalone and **materializes its captured tree on load**; it has a valid, trusted
+D107 code identity; the legacy spill-off refusal stays), `nix run .#test` ALL GREEN
+with every historical trace and pixel/audio golden byte-identical. The KATs create
+a genuine adopted range end-to-end (record → spill → drain → reboot → adopt →
+export → materialize) against a real on-disk project tree. `tools/build-windows.sh`
+refreshed the stage (4 durable entries) and Start Menu shortcut. **Deferred, named
+honestly:** captured-audio embedding and a wall-clock clip filename (needs a PAL
+date door) stay their own §14 refinements; the embedded crash tail (D106) is the
+other open A7 item.
 
 **D107 lands the trust prompt before running an untrusted replay bundle (A7
 §13) — the deferral D105/D106 both named.** Opening a dragged-in clip executes its
@@ -221,26 +261,25 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **A7 — adopted-range standalone export (REWIND.md §14,
-ALPHA §A7).** With the trust prompt in, A7's exit story is complete AND honest
-about foreign code: spot a moment, seek / A/B-loop / export it, drag a standalone
-replay into a fresh editor (confirming its code the first time), poke around its
-bundled project, dismiss back to the untouched live session, and reach the
-preceding minute from a crash report — all while understanding storage use. The
-remaining A7 items are the honestly-deferred refinements, in rough order:
-**adopted-range standalone export** first — it is the only place the shipped UI
-still *refuses* something the §14 foundation already paid for (the adopted
-segment's project manifest is captured, but its SNAP needs a code bundle
-reconstructed from the manifest's `.lua` sources + the host engine `cm.*`, so
-`export_clip` stops refusing adopted ranges and "export replay" works on
-cross-session history). Then the **embedded crash tail** in the `.ccrash`
-container (route it through the gated `open_clip` door like a clip — closes the
-§16 "prefer embedded" path and inherits D107's prompt for free),
-**captured-audio embedding**, a **wall-clock clip filename** (needs a PAL date
-door), and cross-process **native-failure next-launch synthesis**. Any of these
-can also be judged deferred-past-alpha on its merits — at that point **A8**
-(documentation, accessibility, release candidate — ALPHA §A8) is the open gate.
-See `ALPHA.md` §A7/§A8 and `REWIND.md` §13/§14/§16.
+**Exact next packet:** **A7 — the embedded crash tail (REWIND.md §16, ALPHA §A7),
+or judge A7 done and open A8.** With adopted-range export in (D108), A7's whole
+exit story now works AND is honest about foreign code: spot a moment, seek /
+A/B-loop / export it — **live or adopted cross-session** — drag a standalone replay
+into a fresh editor (confirming its code the first time), poke around its bundled
+project, dismiss back to the untouched live session, and reach the preceding minute
+from a crash report, all while understanding storage use. The remaining A7 items
+are the honestly-deferred refinements, in rough order: the **embedded crash tail**
+in the `.ccrash` container first — D106 resolves a crash against *local* history
+by identity, but a report from another machine (or after the local tail was
+evicted) carries no timeline; embedding the one-minute tail and routing it through
+the gated `open_clip` door like a clip closes §16's "prefer embedded" path and
+inherits D107's trust prompt for free. Then **captured-audio embedding** (the last
+§14 clip content), a **wall-clock clip filename** (needs a PAL date door), asset
+**imports** as a timeline marker, and cross-process **native-failure next-launch
+synthesis**. Any of these can reasonably be judged deferred-past-alpha on its
+merits — at that point **A8** (documentation, accessibility, release candidate —
+ALPHA §A8) is the open gate, and the alpha's remaining weight is there. See
+`ALPHA.md` §A7/§A8 and `REWIND.md` §14/§16.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's

@@ -336,9 +336,11 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   `LOOP` (the A/B bounds) — additive, so a plain export stays byte-identical;
   `M.export_clip` is the live-range door; `ring_load` materializes the tree into
   an isolated ephemeral replay workspace and `M.materialize_clip` previews it
-  without touching the ring. Remaining under this item: **adopted-range**
-  standalone export (tree captured; the SNAP bundle-reconstruction is its own
-  packet — refused honestly today) and captured-audio embedding.
+  without touching the ring. D108 closed **adopted-range** standalone export:
+  `reconstruct_bundle` rebuilds the SNAP code from the segment's captured manifest
+  (project `.lua` at its frozen source) + the host engine `cm.*`, so `export_clip`
+  no longer refuses a cross-session range — only legacy pre-manifest / spill-off
+  history does. Remaining under this item: **captured-audio embedding**.
 - [~] Export a selected clip atomically to a timestamped file in `replays/`
   beside `engine/`, then reveal/select it in Explorer/the platform file manager;
   offer an actionable writable-location path when the engine root is read-only.
