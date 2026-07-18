@@ -6116,7 +6116,8 @@ reconciles skip while parked: the past renders as recorded, the present
 heals one frame after unpark. An Aa change also cancels an in-flight
 camera ease (its endpoints predate the new mapping).
 
-Proof: Linux selftest **24,501 → 24,518** (17 new KATs: `t_game_fov`
+Proof: Linux selftest **24,501 → 24,518** / native Windows **24,520**
+(17 new KATs: `t_game_fov`
 owner/last-sized/design/out-of-range, `t_game_aa` footprint/center/
 round-trip/crisp-recompute/identity, `t_cam_aa` center invariance both
 directions); `nix run .#test` ALL GREEN, every trace and pixel/audio
