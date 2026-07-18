@@ -32,11 +32,24 @@
 -- sampling, and connect/disconnect appears in the record purely as entry
 -- presence at a frame boundary.
 --
+-- Extension tag 2 = MREL, the frame's relative mouse motion (the v21
+-- captured-cursor look; the cosmic3d merge):
+--   i16 LE dx, i16 LE dy — whole internal pixels this frame (the live
+--   sampler carries the float remainder, so slow motion is never lost).
+-- Emitted every sample once capture_mouse() has been used this session
+-- (the _pad_live model), so a capture-free session stays byte-identical
+-- to before. Applying ANY record zeroes the deltas first — a record
+-- without MREL means "no relative motion", so v1 replays read (0,0).
+-- Capture itself (pal.x_mouse_capture) is live-side chrome policy like
+-- device identity: replay never re-captures, the recorded deltas are the
+-- authority.
+--
 -- Applied v1 state lives in the "cm.input" named buffer (32 bytes, layout
 -- below) — pressed/released derive from cur vs prev bits, so snapshots and
 -- trace verify see identical edges to live play.
 --   [0] u32 cur bits | [4] u32 prev bits | [8] i16 mx | [10] i16 my
---   [12] u8 buttons | [13] u8 prev buttons | [14] i8 wheel | rest reserved
+--   [12] u8 buttons | [13] u8 prev buttons | [14] i8 wheel
+--   [16] i16 rel dx | [18] i16 rel dy (MREL, v21) | rest reserved
 --
 -- Applied pad state lives in the "cm.input.pad" named buffer (96 bytes,
 -- 4 slots x 24-byte stride), created only by a PAD-carrying record or a
@@ -73,6 +86,12 @@ local live_tap = {} -- scancodes that saw a down event this frame
 local live_mx, live_my = 0.0, 0.0
 local live_buttons = 0
 local wheel_carry = 0.0
+-- relative-mouse accumulation (MREL, v21): float game-px deltas gather
+-- here between samples; sample() emits whole pixels and carries the
+-- remainder (the wheel_carry model). M._mrel_live is the domain latch —
+-- capture_mouse() sets it and sample() then emits the MREL extension
+-- every record (zeros included) for the rest of the session.
+local rel_carry_x, rel_carry_y = 0.0, 0.0
 -- live pad registry: slot (1..4) -> { held = u32, tap = u32, ax = {6 raw
 -- i16} }. Populated by feed()'s pad events. M._pad_live is the domain
 -- latch: once any pad has ever been part of a record this engine run,
@@ -523,6 +542,8 @@ function M.feed(events)
       end
     elseif e.type == "motion" then
       live_mx, live_my = e.x, e.y
+      rel_carry_x = rel_carry_x + (e.rx or 0)
+      rel_carry_y = rel_carry_y + (e.ry or 0)
     elseif e.type == "button" then
       live_mx, live_my = e.x, e.y
       local bit = 1 << ((e.button - 1) & 7)
@@ -671,6 +692,20 @@ function M.sample()
     local payload = pack("<I1", n) .. table.concat(parts)
     rec = rec .. pack("<I1I1", 1, #payload) .. payload
   end
+
+  -- the MREL extension (v21): whole game-px relative motion, remainder
+  -- carried. Drained even while the domain is dormant so a later capture
+  -- never inherits stale motion.
+  local rdx = rel_carry_x >= 0 and math.floor(rel_carry_x)
+              or -math.floor(-rel_carry_x)
+  local rdy = rel_carry_y >= 0 and math.floor(rel_carry_y)
+              or -math.floor(-rel_carry_y)
+  rel_carry_x = rel_carry_x - rdx
+  rel_carry_y = rel_carry_y - rdy
+  if M._mrel_live then
+    rec = rec .. pack("<I1I1i2i2", 2, 4, iclamp(rdx, -32768, 32767),
+                      iclamp(rdy, -32768, 32767))
+  end
   return rec
 end
 
@@ -768,6 +803,10 @@ function M.apply(record)
   b:u8(13, b:u8(12)) -- prev buttons
   b:u8(12, buttons)
   b:i8(14, wheel)
+  -- relative motion is a per-frame DELTA: every record resets it, an MREL
+  -- extension below then overwrites — so a v1 replay always reads (0,0)
+  b:i16(16, 0)
+  b:i16(18, 0)
   -- v2 extensions: `u8 tag, u8 len, payload` until the record ends. Unknown
   -- tags are skipped; broken framing errors. Pad state changes IFF a PAD
   -- extension is present — a bare v1 record leaves it untouched.
@@ -785,6 +824,11 @@ function M.apply(record)
     if tag == 1 then
       if pads then error("duplicate pad extension in input record", 2) end
       pads = record:sub(pos + 2, fin)
+    elseif tag == 2 then
+      if len ~= 4 then error("bad MREL extension in input record", 2) end
+      local rdx, rdy = string.unpack("<i2i2", record, pos + 2)
+      b:i16(16, rdx)
+      b:i16(18, rdy)
     end
     pos = fin + 1
   end
@@ -816,6 +860,31 @@ end
 function M.mouse()
   local b = buf()
   return b:i16(8), b:i16(10)
+end
+
+-- record-backed relative mouse motion this frame (whole internal px; the
+-- captured-cursor look's input). (0,0) unless an MREL-carrying record
+-- applied — so v1 traces and capture-free sessions read no motion.
+function M.mouse_rel()
+  local b = buf()
+  return b:i16(16), b:i16(18)
+end
+
+-- Live-side capture door (chrome policy, the device-identity model):
+-- flips the OS relative-mouse mode via pal.x_mouse_capture (a headless
+-- run stays uncaptured — deltas simply never arrive) and latches the
+-- MREL domain so every later record carries the extension. Sim code
+-- reads mouse_rel(), never the capture state.
+function M.capture_mouse(on)
+  M._mrel_live = true
+  if pal.x_mouse_capture then pal.x_mouse_capture(on and true or false) end
+end
+
+-- Boot-path reset beside pad_sync (cm.main): fresh project, fresh domain.
+function M.mrel_reset()
+  rel_carry_x, rel_carry_y = 0.0, 0.0
+  M._mrel_live = nil
+  if pal.x_mouse_capture then pal.x_mouse_capture(false) end
 end
 
 function M.button_down(n)

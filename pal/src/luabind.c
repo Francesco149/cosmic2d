@@ -717,6 +717,25 @@ static int l_x_soft(lua_State *L) {
   return 0;
 }
 
+/* pal.x_mouse_capture(on) -> captured : relative mouse mode (v21). While
+ * on, the OS cursor hides and stops moving; motion events keep delivering
+ * real rx/ry deltas (the captured-cursor look). Live-side chrome policy —
+ * a headless run has no window and stays uncaptured; sim code must read
+ * the RECORDED deltas (cm.input.mouse_rel), never this state. Call with
+ * no argument to query without changing. */
+static int l_x_mouse_capture(lua_State *L) {
+  if (!lua_isnoneornil(L, 1)) {
+    bool on = lua_toboolean(L, 1);
+    if (G.win) {
+      if (G.mouse_captured != on)
+        SDL_SetWindowRelativeMouseMode(G.win, on);
+      G.mouse_captured = on;
+    }
+  }
+  lua_pushboolean(L, G.mouse_captured);
+  return 1;
+}
+
 static int l_begin_frame(lua_State *L) {
   check_gfx(L);
   pal_gfx_begin((float)luaL_optnumber(L, 1, 0), (float)luaL_optnumber(L, 2, 0),
@@ -1023,6 +1042,10 @@ static int l_poll_events(lua_State *L) {
       lua_setfield(L, -2, "x");
       lua_pushnumber(L, e->y);
       lua_setfield(L, -2, "y");
+      lua_pushnumber(L, e->rx);
+      lua_setfield(L, -2, "rx");
+      lua_pushnumber(L, e->ry);
+      lua_setfield(L, -2, "ry");
       lua_pushnumber(L, e->ui_x);
       lua_setfield(L, -2, "ui_x");
       lua_pushnumber(L, e->ui_y);
@@ -2391,6 +2414,7 @@ static const luaL_Reg pal_funcs[] = {
     {"x_compose", l_x_compose},
     {"x_grade", l_x_grade},
     {"x_soft", l_x_soft},
+    {"x_mouse_capture", l_x_mouse_capture},
     {"x_capture", l_x_capture},
     {"x_capture_read", l_x_capture_read},
     {"x_clipboard", l_x_clipboard},

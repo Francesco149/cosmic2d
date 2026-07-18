@@ -11398,6 +11398,22 @@ local function t_rig()
   rig.step(cam, kc, 0, 0, 0, 0, 0, 0)
   check(near(cam:f32(0), m.pi, 1e-9) and cam:f32(4) == 0 and cam:f32(36) == 0,
         "rig.step recenter snaps and clears when converged")
+  -- captured-cursor look (v21): an applied MREL record steers the orbit
+  -- with the drag-look knobs; a v1 record afterwards is inert
+  mem = {}
+  local v1 = string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+  input.apply(v1 .. string.pack("<I1I1i2i2", 2, 4, 10, 4))
+  rig.step(cam, kc, 0, 0, 0, 0, 0, 0)
+  check(near(cam:f32(0), -10 * kc.mouse_yaw, 1e-6)
+        and near(cam:f32(4), 4 * kc.mouse_pitch, 1e-6)
+        and cam:f32(24) == kc.hold_frames - 1,
+        "rig.step mouse-look from the recorded MREL deltas")
+  mem = {}
+  input.apply(v1)
+  rig.step(cam, kc, 0, 0, 0, 0, 0, 0)
+  check(cam:f32(0) == 0 and cam:f32(4) == 0,
+        "rig.step v1 record moves nothing")
+
   -- wish: camera-relative unit vector from orbit yaw
   mem = {}
   local wx, wz = rig.wish(cam, 1, 0)
@@ -11417,6 +11433,68 @@ local function t_rig()
   local vx2, vy2, vz2 = cm.require("cm.m4").apply(V, ex, ey, ez)
   check(near(vx2, 0, 1e-3) and near(vy2, 0, 1e-3) and near(vz2, 0, 1e-3),
         "rig.view maps the derived eye to the origin")
+end
+
+local function t_input_mrel()
+  local input = cm.require("cm.input")
+  -- extension walk (the apply() framing): tag -> payload, for asserting
+  -- what a record does and does not carry
+  local function exts(rec)
+    local out, pos = {}, 11
+    while pos <= #rec do
+      local tag, len = rec:byte(pos), rec:byte(pos + 1)
+      out[tag] = rec:sub(pos + 2, pos + 1 + len)
+      pos = pos + 2 + len
+    end
+    return out
+  end
+  local function motion(rx, ry)
+    return { type = "motion", x = 0, y = 0, rx = rx, ry = ry }
+  end
+
+  -- dormant domain: relative motion arrives but no capture was ever asked
+  -- for — the record carries no MREL and applied deltas stay zero
+  input.mrel_reset()
+  local rec = input.collect({ motion(5.0, 2.0) })
+  check(exts(rec)[2] == nil, "mrel: dormant domain emits no extension")
+  input.apply(rec)
+  local dx, dy = input.mouse_rel()
+  check(dx == 0 and dy == 0, "mrel: dormant domain reads (0,0)")
+
+  -- capture latches the domain; deltas floor to whole px, remainder carried
+  input.capture_mouse(true) -- headless: no OS capture, the latch still arms
+  rec = input.collect({ motion(3.7, -1.2) })
+  local p = exts(rec)[2]
+  check(p and #p == 4, "mrel: captured domain emits the 4-byte extension")
+  input.apply(rec)
+  dx, dy = input.mouse_rel()
+  check(dx == 3 and dy == -1, "mrel: whole-px deltas apply")
+  -- carries (0.7, -0.2) + (0.5, 0) -> emits (1, 0), keeps (0.2, -0.2)
+  input.apply(input.collect({ motion(0.5, 0) }))
+  dx, dy = input.mouse_rel()
+  check(dx == 1 and dy == 0, "mrel: fractional carry completes")
+
+  -- a still frame still carries the extension (zeros), and a bare v1
+  -- record resets the applied delta — replayed v1 traces read no motion
+  input.apply(input.collect({}))
+  dx, dy = input.mouse_rel()
+  check(dx == 0 and dy == 0, "mrel: still frame applies (0,0)")
+  input.apply(input.collect({ motion(9.0, 9.0) }))
+  input.apply(string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0))
+  dx, dy = input.mouse_rel()
+  check(dx == 0 and dy == 0, "mrel: a v1 record zeroes the delta")
+
+  -- malformed MREL errors loudly; an unknown tag is skipped
+  local v1 = string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+  check(not pcall(input.apply, v1 .. string.pack("<I1I1i1i2", 2, 3, 1, 1)),
+        "mrel: malformed extension refused")
+  check(pcall(input.apply, v1 .. string.pack("<I1I1I4", 9, 4, 0)),
+        "mrel: unknown tag skipped")
+
+  -- reset drops the latch: records go extension-free again
+  input.mrel_reset()
+  rec = input.collect({ motion(2.0, 2.0) })
+  check(exts(rec)[2] == nil, "mrel: reset ends the domain")
 end
 
 function game.init()
@@ -11518,6 +11596,7 @@ function game.init()
   t_kin()
   t_walk()
   t_rig()
+  t_input_mrel()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

@@ -419,6 +419,9 @@ function M.boot()
   -- must never inherit a previous project's pad latch, A4/D083). Live-side;
   -- headless/verify machines without controllers stay byte-identical to v1.
   M.input.pad_sync()
+  -- same fresh-session rule for the relative-mouse domain (v21): release
+  -- any OS capture and drop the MREL latch before the project's first frame
+  M.input.mrel_reset()
   M.ui = cm.require("cm.ui")
   M.repl = cm.require("cm.repl")
   M.console = cm.require("cm.console")

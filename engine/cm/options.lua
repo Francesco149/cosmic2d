@@ -203,6 +203,10 @@ function M.toggle(on)
   end
   M.page = "main"
   M.arm, M.note = nil, nil
+  -- the menu needs the OS cursor: opening releases a captured mouse (v21).
+  -- Chrome policy only — the game re-captures with its own next
+  -- capture_mouse(true) once the menu closes.
+  if M.on and pal.x_mouse_capture then pal.x_mouse_capture(false) end
 end
 
 -- persist the rebinds now; a failure names itself on the panel AND summons

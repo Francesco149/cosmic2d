@@ -11,12 +11,15 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 20 /* v20: the cosmic3d merge — 3D retro pipeline
-                              (x_view3d/x_tris) + retro presentation (x_grade
-                              quant=, x_soft VI blit); the fork numbered these
-                              v15/v16, which collide with mainline v15–v19
-                              (pads, folder chooser, exe identity, volume
-                              gains + display size — v19) */
+#define PAL_VERSION_API 21 /* v21: relative mouse — x_mouse_capture +
+                              motion rel deltas (the cosmic3d captured-
+                              cursor look); v20: the cosmic3d merge — 3D
+                              retro pipeline (x_view3d/x_tris) + retro
+                              presentation (x_grade quant=, x_soft VI
+                              blit); the fork numbered these v15/v16,
+                              which collide with mainline v15–v19 (pads,
+                              folder chooser, exe identity, volume gains
+                              + display size — v19) */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -64,6 +67,9 @@ typedef struct {
   bool down;   /* key/button/pad */
   bool repeat; /* key */
   float x, y;       /* motion/button: game-space (FOV) px | wheel: scroll */
+  float rx, ry;     /* motion: relative delta in game-space px (v21) — real
+                       even while the cursor is captured (x_mouse_capture)
+                       and the absolute position is frozen */
   float ui_x, ui_y; /* motion/button: ui-canvas px (editor chrome hit-test) */
   float wx, wy;     /* motion/button: raw window px (ig canvas hit-test, v7) */
   char text[PAL_EV_TEXT_MAX]; /* text: utf-8, NUL-terminated */
@@ -152,6 +158,9 @@ typedef struct {
   bool gfx_up;
   bool headless;
   int iw, ih, scale; /* internal target size, initial window scale */
+  bool mouse_captured; /* relative mouse mode (pal.x_mouse_capture, v21);
+                          live-side chrome policy — never read by sim code
+                          (the recorded MREL deltas are the authority) */
   SDL_Window *win;
   SDL_GPUDevice *dev;
   SDL_GPUTexture *target; /* game render target (iw x ih RGBA8) — the FOV */

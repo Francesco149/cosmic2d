@@ -291,6 +291,11 @@ void pal_pump_events(void) {
     case SDL_EVENT_MOUSE_MOTION: {
       PalEvent ev = {.type = PAL_EV_MOTION};
       map_mouse(e.motion.x, e.motion.y, &ev);
+      /* relative deltas scale by the game viewport like the absolute pair;
+       * while captured (v21) the absolute position freezes but these stay
+       * real — the captured-cursor look's input */
+      ev.rx = e.motion.xrel / G.lay_s;
+      ev.ry = e.motion.yrel / G.lay_s;
       push_event(ev);
       break;
     }

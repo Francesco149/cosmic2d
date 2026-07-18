@@ -95,6 +95,17 @@ function R.step(cam, kc, px, py, pz, vx, vz, tyaw)
   end
   cam:f32(28, mx); cam:f32(32, my)
 
+  -- captured-cursor look (v21): the recorded MREL deltas, same knobs as
+  -- drag-look. (0,0) unless the cartridge armed input.capture_mouse — so
+  -- this is inert for drag-look games and every historical trace, and
+  -- replay/verify reproduce a captured session from the record alone.
+  local rdx, rdy = input.mouse_rel()
+  if rdx ~= 0 or rdy ~= 0 then
+    yaw = yaw - rdx * kc.mouse_yaw
+    pitch = m.clamp(pitch + rdy * kc.mouse_pitch, kc.pitch_min, kc.pitch_max)
+    manual = true
+  end
+
   -- cam_* actions as the right stick (godot HandleManualRotation signs:
   -- push right -> swing right = yaw -=, down -> camera lifts = pitch +=)
   local kyaw = (input.down("cam_l") and kc.orbit or 0)
