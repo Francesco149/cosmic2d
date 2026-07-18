@@ -82,8 +82,8 @@ world-space.
 ## Placing assets
 
 Drag a `.spr` / `.png` / `.tm` from the assets window (or drop a file) onto the
-map to place it. Any other asset (a `.song`, `.ins`, …) places as a **named
-ref** — a code handle at a position. A missing asset draws a magenta
+map to place it. Any other asset (a `.song`, `.ins`, …) places as a
+**named ref** — a code handle at a position. A missing asset draws a magenta
 checkerboard so a broken reference is loud, not silent.
 
 Next: [Using the editor](engine/stock/docs/editor.md) ·

@@ -153,8 +153,9 @@ page, and their overrides persist per machine in the project's `input.dat`
     input.label("jump", "key")    -- first keyboard binding: "Space"
     input.label("jump", "pad")    -- first pad binding: "south"
 
-`input.bindings(name)` returns the active binding list, `input.rebind(name,
-list)` overrides it from code (`nil` restores defaults), and
+`input.bindings(name)` returns the active binding list,
+`input.rebind(name, list)` overrides it from code (`nil` restores
+defaults), and
 `input.conflicts()` reports inputs bound to several actions — legal, but
 the controls page marks them.
 
@@ -291,10 +292,11 @@ render code. Load clips and choose a zero-based frame from sim time:
 Use that frame to select a source rectangle in `gfx.sprite`. Map placements
 with an animation name do this automatically in `cm.map.draw_places`.
 
-- A clip is `{ name, loop = "loop"|"once"|"pingpong", frames = { { frame=,
-  dur= }, ... } }` — `frame` indexes the baked strip (zero-based), `dur` is
-  ticks at 60 Hz. `anim.duration(clip)` is one forward play-through in
-  ticks; "pingpong" bounces without holding the endpoints twice.
+- A clip is `{ name, loop, frames = { { frame=, dur= }, ... } }` — `loop`
+  is `"loop"`, `"once"`, or `"pingpong"`; `frame` indexes the baked strip
+  (zero-based), `dur` is ticks at 60 Hz. `anim.duration(clip)` is one
+  forward play-through in ticks; "pingpong" bounces without holding the
+  endpoints twice.
 - Two timing anchors. **Cosmetic**: `elapsed = state.frame() - t0`
   recomputed each draw, nothing stored, never snapshotted. **Sim-bound**:
   the controller keeps its start frame in its own named buffer and calls
@@ -957,8 +959,8 @@ the sim-safe replacements.
 
 ## Making a 3D game (the retro pipeline)
 
-Everything above is the 2D path. cosmic2d also ships a fixed **retro-3D
-pipeline** — an N64/PS1/Ragnarok-Online-flavored triangle renderer with a
+Everything above is the 2D path. cosmic2d also ships a fixed
+**retro-3D pipeline** — an N64/PS1/Ragnarok-Online-flavored triangle renderer with a
 handful of Lua modules on top. If you are making a 2D game you can skip to
 [the performance envelope](#the-performance-envelope); nothing below is
 needed. If you want 3D, this is the whole supported surface, and it mirrors
@@ -1111,8 +1113,9 @@ a fresh flat 16-number array (or, for `apply`, three numbers).
     local wx, wy, wz = m4.apply(root, lx, ly, lz)            -- transform a point
 
 - Builders: `m4.ident()`, `m4.translate(x,y,z)`, `m4.scale(x,y,z)`,
-  `m4.rotx(a)`/`m4.roty(a)`/`m4.rotz(a)` (radians), `m4.lookat(ex,ey,ez,
-  ax,ay,az, ux,uy,uz)`, and `m4.persp(fovy_deg, aspect, znear, zfar)` (fovy
+  `m4.rotx(a)`/`m4.roty(a)`/`m4.rotz(a)` (radians),
+  `m4.lookat(ex,ey,ez, ax,ay,az, ux,uy,uz)`, and
+  `m4.persp(fovy_deg, aspect, znear, zfar)` (fovy
   is in **degrees**). `m4.mul(a, b)` composes (a·b).
 - `m4.apply(t, x,y,z)` transforms a **point** (with translation) → `x,y,z`;
   `m4.applydir(t, x,y,z)` transforms a **direction** (no translation, for
@@ -1144,8 +1147,8 @@ lights every vertex as `col * (ambient + max(0, -N·sun))` using its
     pal.x_tris(tex.stone, dyn, n, 0, 0)
 
 - Textures: `gb.load_textures(idbuf_name)` (re)creates the six 64x64 material
-  checkers + a shadow blob, returning `{ grass, stone, wood, dirt, metal,
-  accent, shadow }` → texture id. It frees the previous generation's ids
+  checkers + a shadow blob, returning a name → texture id table
+  (`grass/stone/wood/dirt/metal/accent/shadow`). It frees the previous generation's ids
   (kept in the `rc.` buffer you name) first, so it is hot-reload safe.
 - Low-level: `gb.vert(x,y,z, u,v, col, nx,ny,nz [,alpha])` packs one lit
   24-byte vertex; `gb.quad(out, a,b,c,d, col, nx,ny,nz [,alpha])` and
@@ -1154,8 +1157,9 @@ lights every vertex as `col * (ambient + max(0, -N·sun))` using its
 - Shape emitters append packed strings to `out` and return the triangle
   count: `gb.gbox(out, xf, size, center, col [, uvs [, rot]])`,
   `gb.prism(out, xf, n, r0, r1, h, col [, caps [, nrmxf]])` (an extruded
-  n-gon; `caps` bit 0 = top, bit 1 = bottom), `gb.lathe(out, xf, prof, n,
-  col [, alpha [, nrmxf]])` (revolves a flat `{r,y, r,y, …}` profile around
+  n-gon; `caps` bit 0 = top, bit 1 = bottom),
+  `gb.lathe(out, xf, prof, n, col [, alpha [, nrmxf]])`
+  (revolves a flat `{r,y, r,y, …}` profile around
   Y), and `gb.ball(out, xf, R, n, col [, alpha [, nrmxf]])`. `xf` is an `m4`
   (or `nil` for identity); `uvs` scales texel density.
 
@@ -1166,10 +1170,11 @@ light + pack it per frame — in C when the PAL supports it:
     local bk = gb.bake_prism(6, 0.5, 0.34, 1.0, 3)  -- once: record local space
     n = n + gb.emit_baked(out, xf, nxf, bk, { 0.6, 0.6, 0.7 })  -- per frame
 
-`gb.bake_gbox(size, center [, uvs])`, `gb.bake_prism(n, r0, r1, h [,
-caps])`, `gb.bake_lathe(prof, n)`, and `gb.bake_ball(R, n)` return a bake
-record (local vertices, in emit order). `gb.emit_baked(out, xf, nxf, bk, col
-[, alpha])` is the per-frame emitter: it uses `pal.x_figverts` (PAL 22) to
+`gb.bake_gbox(size, center [, uvs])`, `gb.bake_prism(n, r0, r1, h [, caps])`,
+`gb.bake_lathe(prof, n)`, and `gb.bake_ball(R, n)` return a bake
+record (local vertices, in emit order).
+`gb.emit_baked(out, xf, nxf, bk, col [, alpha])`
+is the per-frame emitter: it uses `pal.x_figverts` (PAL 22) to
 run the transform/light/pack loop in C — ~10× cheaper than the immediate
 emitters and **byte-identical** to them — and falls back to Lua on an older
 PAL. `cm.fig` drives this for you; reach for it directly only for your own
@@ -1179,8 +1184,9 @@ rigid transform for normals, so lighting ignores the squash.)
 ## Heightfield terrain (`cm.terr`)
 
 `cm.terr` is the world surface: a grid of per-vertex heights that emits a
-lit triangle mesh AND answers exact height queries, so **one height grid is
-both what you see and what you walk on**. The sim reads heights via
+lit triangle mesh AND answers exact height queries, so
+**one height grid is both what you see and what you walk on**.
+The sim reads heights via
 `terr.sample`; `draw` emits the mesh via `terr.emit`.
 
     local terr = cm.require("cm.terr")
@@ -1212,9 +1218,10 @@ both what you see and what you walk on**. The sim reads heights via
 - `terr.emit(out, t, opts)` appends the lit mesh and returns the tri count;
   `opts.bands` is a required ordered `{ upper_height, {r,g,b} }` color ramp,
   plus optional `jitter`, `seed`, `sun`, `amb`, `flat_y`, and `ox`/`oz`
-  (lattice offset, for chunked worlds). `terr.emit_water(out, t, y, col,
-  alpha [, step [, ox, oz]])` adds a flat water plane; `terr.load_detail
-  (idbuf_name)` makes a neutral detail texture (id in an `rc.` buffer).
+  (lattice offset, for chunked worlds).
+  `terr.emit_water(out, t, y, col, alpha [, step [, ox, oz]])` adds a
+  flat water plane; `terr.load_detail(idbuf_name)` makes a neutral
+  detail texture (id in an `rc.` buffer).
 - `terr.vnoise(seed, x, y, cell)` and `terr.hash(seed, ix, iy)` are the
   deterministic noise primitives for procedural heights. For a **streaming**
   world with no stored grid, `terr.sample_fn(hfn, tile, wx, wz)` samples the
@@ -1353,11 +1360,13 @@ is cached as a committed `.spx` asset.
   unless `force`. Cells are `spr.CW × spr.CH` (40×52); the sheet is
   `spr.DIRS` (8) columns wide.
 - `spr.oct(face_ang, cam_yaw)` picks the sheet column (0..7) for a world
-  facing seen from the camera yaw. `spr.billboard(out, sheet, x, y, z, h,
-  col, row, tint, cam_yaw, cam_pitch)` emits a fully camera-facing quad (feet
+  facing seen from the camera yaw.
+  `spr.billboard(out, sheet, x, y, z, h, col, row, tint, cam_yaw, cam_pitch)`
+  emits a fully camera-facing quad (feet
   at `x,y,z`, height `h`, `tint` a grayscale ground-shadow factor) — draw
-  with `x_tris` flags 3 (alpha-test + nearest). `spr.decal(out, x, y, z, r,
-  rr, gg, bb, aa)` is a flat ground quad (blob shadow, click marker) — draw
+  with `x_tris` flags 3 (alpha-test + nearest).
+  `spr.decal(out, x, y, z, r, rr, gg, bb, aa)`
+  is a flat ground quad (blob shadow, click marker) — draw
   with flag 4.
 
 ## The camera rig (`cm.rig`)
@@ -1428,11 +1437,13 @@ can never accidentally resize a persistent buffer mid-session).
 - Movement: `kin.run(vx, vz, yaw, wx, wz, speed, accel, fric, turn)`,
   `kin.gravity(vy, g_rise, fall_mul)`, `kin.jump(...)` (returns the new `vy`
   plus updated jump-buffer/coyote/grounded and a `"jump"`/`"paddle"` event),
-  `kin.jump_curve(jump_h, apex_t) -> g_rise, v0`, `kin.approach(v, target,
-  step)`, and `kin.lean(lean, hspeed, amount, speed)`.
+  `kin.jump_curve(jump_h, apex_t) -> g_rise, v0`,
+  `kin.approach(v, target, step)`, and
+  `kin.lean(lean, hspeed, amount, speed)`.
 - Collision (against a plain list of `{x0,y0,z0,x1,y1,z1}` boxes you build):
-  `kin.overlaps(box, x, y, z, hw, hh)`, `kin.slide(list, xaxis, cx, cy, cz,
-  p0, v, hw, hh [, mantle])` (one swept axis; returns the clamped axis
+  `kin.overlaps(box, x, y, z, hw, hh)`,
+  `kin.slide(list, xaxis, cx, cy, cz, p0, v, hw, hh [, mantle])`
+  (one swept axis; returns the clamped axis
   position, the new velocity, and the new y), `kin.mantle_top(...)`,
   `kin.ground_top(list, g, x, y, z, hw)` (raise the ground to a box top —
   heightfield landing), and `kin.land_squash(vy, squash, vref, frames)`.
@@ -1472,9 +1483,10 @@ The walker buffer layout `cm.walk` owns (f32/u32, size `40 + path_max*4`):
   the ray from the sim camera so clicks replay deterministically.
 - The grid is the caller's `(gw, walkable)` pair — `gw` cells per side and a
   `walkable(cx, cz) -> bool` predicate you derive once from slope/water/
-  blockers. `walk.cell(gw, wx, wz)` maps world→cell, `walk.snap(gw, ok, cx,
-  cz, r)` finds the nearest walkable cell, and `walk.astar(gw, ok, sx, sz,
-  gx, gz)` is heap A* (8-way, no corner cutting) returning a cell-index list.
+  blockers. `walk.cell(gw, wx, wz)` maps world→cell,
+  `walk.snap(gw, ok, cx, cz, r)` finds the nearest walkable cell, and
+  `walk.astar(gw, ok, sx, sz, gx, gz)` is heap A* (8-way, no corner
+  cutting) returning a cell-index list.
 - `walk.command(buf, path_max, gw, walkable, wx, wz, snap_r, marker_ttl)`
   does snap+A* and writes the chain into the walker (returns whether a path
   exists); `walk.step(buf, gw, speed, turn)` follows it (eases facing, decays
@@ -1493,18 +1505,17 @@ costs ~70 ms more. The measured envelope, from a swarm-shaped world
 desktop (Ryzen 9 5900X), Linux and native Windows within noise of each
 other:
 
-| moving doc actors | whole frame, typical | spikes (p95 / worst) | verdict |
-| ---: | ---: | ---: | :--- |
-| 250 | ~2.5 ms | 4 / 6 ms | lots of headroom |
-| 500 | ~5 ms | 8 / 10 ms | comfortable |
-| 1,000 | ~10 ms | 15 / 27 ms | the edge — occasional dropped frames |
-| 2,000 | ~20 ms | 27 / 37 ms | over the 16.7 ms budget |
+    moving doc actors   typical frame   spikes (p95/worst)   verdict
+                  250         ~2.5 ms          4 /  6 ms     lots of headroom
+                  500           ~5 ms          8 / 10 ms     comfortable
+                1,000          ~10 ms         15 / 27 ms     the edge - occasional drops
+                2,000          ~20 ms         27 / 37 ms     over the 16.7 ms budget
 
-The supported alpha envelope is **about 500 live, moving, doc-carried
-actors** — comfortable 60 Hz with room left for your own logic and a real
-GPU frame. A thousand mostly works but spends the whole budget on a slow
-machine. The bundled demos sit far inside it (swarm's biggest waves are
-a few dozen actors).
+The supported alpha envelope is
+**about 500 live, moving, doc-carried actors** — comfortable 60 Hz with
+room left for your own logic and a real GPU frame. A thousand mostly
+works but spends the whole budget on a slow machine. The bundled demos
+sit far inside it (swarm's biggest waves are a few dozen actors).
 
 What the cost actually tracks — and how to stay fast when you grow:
 
@@ -1575,8 +1586,9 @@ could not reproduce. The symptom, the cause, and the fix:
   trig — both are seeded and deterministic.
 
 - **The frame budget breaks as the world grows.** Per-frame history cost tracks
-  total `state.doc` size, not motion — about **500 live, moving, doc-carried
-  actors** is the supported alpha envelope. Move bulk numeric state into named
+  total `state.doc` size, not motion — about
+  **500 live, moving, doc-carried actors** is the supported alpha
+  envelope. Move bulk numeric state into named
   buffers, keep flourish render-only, and watch the F3 gauge. See
   [the performance envelope](#the-performance-envelope).
 

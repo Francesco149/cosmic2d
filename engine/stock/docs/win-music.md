@@ -16,16 +16,16 @@ instruments you designed in the synth.
 The strip shows the whole song — patterns placed as **clips** on per-track lanes.
 It has its **own view**, like the roll: **wheel** zooms its time axis,
 **middle-drag** pans (both axes), and you can **drag its bottom edge to resize**
-the panel taller/shorter. Lanes keep a fixed readable height and **scroll
-vertically** when a song has many tracks. Click a clip to drill into its pattern
+the panel taller/shorter. Lanes keep a fixed readable height and
+**scroll vertically** when a song has many tracks. Click a clip to drill into its pattern
 below; drag to move it, its right edge to stretch it, **ctrl+drag** to place a
 linked copy.
 
 ## The roll grammar
 
 - **press empty** adds a note (at the last-used length, grid-snapped)
-- **drag** a note moves it · **drag its right edge** resizes · a **motionless
-  click** on a note deletes it
+- **drag** a note moves it · **drag its right edge** resizes ·
+  a **motionless click** on a note deletes it
 - **ctrl** = fine ticks (off the grid) · **ctrl+drag** a note duplicates it
 
 ## Keys

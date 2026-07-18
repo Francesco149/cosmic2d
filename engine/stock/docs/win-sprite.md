@@ -29,8 +29,9 @@ end, then move the mouse to bow the line and click to lay it (esc cancels).
 - **left-click paints the primary color, right-click the secondary** — the two
   swatches sit at the bottom of the tool rail; **x** swaps them, and a
   right-click on either the rail swatch or a palette swatch sets the secondary.
-- **hold shift** and click with the pen/eraser to draw a **straight line from
-  the last pixel you painted** (a preview line shows first).
+- **hold shift** and click with the pen/eraser to draw a
+  **straight line from the last pixel you painted** (a preview line
+  shows first).
 
 ## Colors & palettes
 

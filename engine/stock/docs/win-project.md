@@ -23,8 +23,10 @@ The **player files** tab selects:
 - one or more non-empty project **license/notice** text files.
 
 Type a project-relative path or press **choose** for a fuzzy list of suitable
-files already in the project. Drop an OS file anywhere in the editor to import
-it first; images become project PNGs. Every row validates the saved bytes live,
+files already in the project. Write a missing controls/credits/license file
+from scratch in a code window (an unbound **open file…** window's new-file
+field creates it), or drop an OS file anywhere in the editor to import it;
+images become project PNGs. Every row validates the saved bytes live,
 and the complete export check appears at the bottom. Unsafe paths, missing or
 empty files, binary text, non-PNG icons, and non-square icons stay visible as
 specific errors and cannot be saved.

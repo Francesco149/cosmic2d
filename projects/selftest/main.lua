@@ -11054,6 +11054,28 @@ local function t_docs()
         "docs.search: 'compatibility' finds the compatibility policy")
   check(shipped_finds("diverges", "scripting.md"),
         "docs.search: 'diverges' finds the common-failures section")
+  -- the D127 A8 walkthrough: getting-started must carry the guided path and
+  -- stay findable by its own promises (create/play/rewind/draw/build)
+  check(shipped_finds("first game", "getting-started.md"),
+        "docs.search: 'first game' finds the getting-started walkthrough")
+  check(shipped_finds("walkthrough", "getting-started.md"),
+        "docs.search: 'walkthrough' finds getting-started")
+  check(shipped_finds("build a player", "getting-started.md"),
+        "docs.search: 'build a player' finds the export step")
+  local gs
+  for _, d in ipairs(live) do if d.name == "getting-started.md" then gs = d end end
+  check(gs ~= nil, "docs.list: getting-started.md ships")
+  if gs then
+    for _, want in ipairs({ "Create a project", "Play it", "Rewind",
+        "Change the code", "Draw your hero", "Lay out a room",
+        "Give it a sound", "Name it and build a player" }) do
+      local found = false
+      for _, s in ipairs(docs.sections(gs.src)) do
+        if s.title:find(want, 1, true) then found = true break end
+      end
+      check(found, "getting-started: the '" .. want .. "' step is a section")
+    end
+  end
   -- the A8 searchable-reference bar: every supported cm.* lands a scripting.md
   -- hit whose SECTION heading names the module (tolerant of retitles that keep
   -- the module name in the heading — the D110 loop: what is written must be
@@ -11073,6 +11095,41 @@ local function t_docs()
   end
   check(#docs.search("zzq_not_a_real_token_xyz") == 0,
         "docs.search: an absent token finds nothing in the shipped docs")
+  -- the reader has NO markdown-table renderer (human report, D127: pipe
+  -- rows render as wrapped prose, unaligned). The one shipped table was
+  -- reformatted as an aligned indented block. Until a real table layout
+  -- exists, no shipped doc may carry '|'-row tables — use a 4-space
+  -- indented block (mono, aligned, copyable) instead.
+  for _, d in ipairs(live) do
+    local has_table = false
+    local k2, l2, n2 = docs.line_kinds(d.src)
+    for j = 1, n2 do
+      if k2[j] == "text" and l2[j]:match("^%s*|.+|%s*$") then
+        has_table = true
+        break
+      end
+    end
+    check(not has_table, "docs: " .. d.name .. " carries no markdown table "
+          .. "rows (the reader cannot render them; use an indented block)")
+    -- the reader's inline parser is PER SOURCE LINE (help.parse_inline):
+    -- a **bold** or `code` span crossing a line break renders its markers
+    -- literally (human report, D127 — asterisks visible in the reader).
+    -- Pin the authoring contract: every prose line balances its markers.
+    local bad
+    for j = 1, n2 do
+      if k2[j] == "text" then
+        local _, stars = l2[j]:gsub("%*%*", "")
+        local _, ticks = l2[j]:gsub("`", "")
+        if stars % 2 == 1 or ticks % 2 == 1 then
+          bad = j
+          break
+        end
+      end
+    end
+    check(bad == nil, "docs: " .. d.name .. " line " .. tostring(bad)
+          .. " has an unbalanced **/` span (the reader parses inline "
+          .. "markup per line; rewrap so spans do not cross lines)")
+  end
 end
 
 -- the help reader's drag-selection row model (D112): pure pick/x/extract math

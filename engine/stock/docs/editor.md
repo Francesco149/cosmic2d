@@ -18,11 +18,13 @@ switch can proceed.
   needed by player builds. Project-file validation is live; Ctrl+S merges into
   the shared `project.lua` working copy and saves it atomically. **build/export**
   makes the matching Linux/Windows player archive with progress and cancellation.
-- **code editor** — a project file in a syntax-lit editor. `.md` docs (like
-  this one) get headings, links, and code spans; Ctrl+click a link to follow
-  it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and redo. Journals normally preserve
-  undo across restarts, but are still cache data rather than a durability
-  guarantee.
+- **code editor** — a project file in a syntax-lit editor. An unbound
+  window is both the file picker and the **new file** door: type a path and
+  Enter creates it (typed text extensions are kept; a bare name becomes
+  `.lua`). `.md` docs (like this one) get headings, links, and code spans;
+  Ctrl+click a link to follow it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and
+  redo. Journals normally preserve undo across restarts, but are still cache
+  data rather than a durability guarantee.
 - **sprite editor** (+ **animation**) — paint frames, define clips.
 - **map editor** — collider chains, one-ways, and markers (spawns, portals,
   props). **tilemap** — a grid of tiles placed as one object.
@@ -35,9 +37,9 @@ switch can proceed.
 ## The launcher (Ctrl+Space)
 
 Press **Ctrl+Space** anywhere for a fuzzy command palette — one field over
-**everything**: open any asset or doc, spawn any window kind by name, or **pan
-to** any open window (it centers the window at your current zoom, fitting down
-only if it overflows). The highlighted result shows a live **preview** — an
+**everything**: open any asset or doc, spawn any window kind by name, or
+**pan to** any open window (it centers the window at your current zoom,
+fitting down only if it overflows). The highlighted result shows a live **preview** — an
 image thumbnail, a map schematic, or a code/doc excerpt. **↑↓** move · **enter**
 opens · **esc** closes.
 
@@ -52,8 +54,9 @@ page without leaving the keyboard.
 This window is a rendered documentation reader. Spawn it from the right-click
 menu, or press the **?** on any window's title bar for that window's guide.
 
-Its home — the **docs** button in the header — is a **search field over every
-shipped doc**. Type a module (`cm.actor`), a task ("draw a map"), or any term,
+Its home — the **docs** button in the header — is a
+**search field over every shipped doc**. Type a module (`cm.actor`), a
+task ("draw a map"), or any term,
 and it lists ranked hits across the whole documentation set, each naming the
 **doc**, the **section**, and a one-line snippet. Click a hit to open that doc
 scrolled to the section (the landed-on line lights briefly). An empty field
@@ -115,7 +118,9 @@ all release it, and it re-engages when you click back in.
 
 - **Ctrl+Space** — the launcher (find/open anything, pan to a window).
 - **F4** — open/close rewind (an active A/B clip requires Esc first).
-- **Right-click** — spawn menu. **Middle-drag** / **wheel** — pan and zoom.
+- **Right-click** — spawn menu (over an editing sprite/tilemap canvas the
+  right button paints/erases instead — spawn from elsewhere or the launcher).
+  **Middle-drag** / **wheel** — pan and zoom.
 - **Ctrl+S** — save the focused window's file.
 - **Ctrl+Z / Ctrl+Y** — undo / redo (per asset; journals normally survive a
   restart, but source saves remain the durable boundary).

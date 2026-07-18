@@ -375,8 +375,12 @@ reach the preceding minute from a crash report while understanding storage use.
 
 Goal: validate the whole promise, not isolated subsystems.
 
-- [ ] In-engine Getting Started completes create → modify code/art/map/audio →
-  play/debug/rewind → export, using only shipped UI.
+- [x] In-engine Getting Started completes create → modify code/art/map/audio →
+  play/debug/rewind → export, using only shipped UI. (D127: getting-started.md
+  is the guided "Your first game" path, every step executed by a scripted UI
+  tape against a fresh scaffold through to a published player archive; the
+  tape also found and fixed the chooser Enter leak, dead right-button paint,
+  and the missing new-text-file door.)
 - [x] Searchable public API/task reference covers every supported module,
   project schema, determinism rules, common failures, and compatibility policy.
   (D110 substrate; D111–D113 reader; D119 the 3D modules; D120 per-module

@@ -6269,3 +6269,78 @@ if a real game needs finer grants (per-window wish, capture in an
 unfocused-but-watched window), that votes a capture policy surface. If a
 player reports "the mouse vanished" in PLAYER mode, the Esc-menu line
 may need an on-screen first-capture toast there too.
+
+## D127 — the in-engine Getting Started walkthrough, verified by driving the shipped UI (2026-07-18)
+
+**Context.** ALPHA §A8's first box: "In-engine Getting Started completes
+create → modify code/art/map/audio → play/debug/rewind → export, using
+only shipped UI." `getting-started.md` was an orientation page; nothing
+had ever *walked* the whole promise in one sitting. The packet's method
+was the point: script the walkthrough against the real editor with a
+synthetic input tape (`pal.x_ig_event`'s documented capture-mode door +
+a `pal.poll_events` wrapper), and treat every place the tape could not
+proceed through shipped UI as a finding, not a wording problem.
+
+**The walkthrough.** `getting-started.md` now carries "Your first game":
+create (picker → the four-starter chooser → platformer), play (focus =
+playing), rewind (F4 → park → resume-here → Esc back), change the code
+(launcher → main.lua → Ctrl+F find/replace → Ctrl+S → live hot reload),
+draw a sprite and draw it from `gfx.sprite`/`gfx.texture`, author a map
+marker (`maps/room.map`, label `goal`) and read it via `map.use` +
+`room.doc.markers`, make a sound (synth new-file door → the stock
+`sfx-jump` preset → `ins.upload` + `snd.on` in `step`), then name the
+project and **build a player** (settings → player files → build/export →
+atomic archive + SHA-256). Every step was executed as written by the
+tape; the walkthrough project (`hello-hopper`) went end-to-end from the
+"+ New project" click to a published `hello-hopper-0-1-0-linux.tar.gz`
+(from the built release archive — the dev tree carries no portable
+runtime and its preflight names that honestly). 12 new t_docs KATs pin
+the walkthrough sections + findability ("first game", "walkthrough",
+"build a player").
+
+**Three real defects the tape found, all fixed at class level:**
+
+1. **Enter on "+ New project" instantly scaffolded a blank project.**
+   The grid's opening Enter was still in the frame's key batch when the
+   chooser's name field spawned focused (`enter=true`) and `kb_row`
+   defaulted to "create" — same-frame submit, chooser never seen. The
+   action now carries `swallow = true` for its opening frame (the
+   keyboard-modal class rule: the press that OPENS a modal must not
+   activate its default action).
+2. **Right-button content affordances were dead** — win-sprite.md's
+   documented secondary paint and tmap's rmb-erase. `interact` runs
+   BEFORE `draw`, so an unconditional right press armed the spawn-menu
+   pend (`g.rpend`), which gates `hot_id()`; the kind never saw
+   `clicked[3]`, and a still right-click over an editing sprite opened
+   the spawn menu. New `kind.takes_right(win, ed)` claim: sprite and
+   tmap (edit mode, content body below the header) keep the press, the
+   pend never arms, hot survives, and the header/other windows keep the
+   menu. editor.md documents the exception.
+3. **A from-scratch text file could not be created in-editor** — the
+   unbound code window was a picker over existing files only, so the
+   export step's controls/credits/license had no authoring door (D122's
+   sprite-window class, one wiring gap). The kit `pathfield` gained
+   `opts.exts` (a set of keepable extensions; a bare name still gets the
+   forced default) + a root-dir ("" ) auto-name prefill, and the text
+   picker now runs it above the file list: typed `.md/.txt/.json/.glsl`
+   kept, bare names become `.lua`. `open_asset`'s no-`fresh` path
+   (empty bytes + journaled baseline) already handled a missing file.
+
+**Also verified (not changed):** the occlusion rule (an overlapped
+window's widgets are inert — the walkthrough now tells users to lay out
+windows), the D125/D126 park/derive behaviors under the tape, live hot
+reload in a real WSLg window (`[reload]` + the new JUMP in the running
+sim, state preserved), and the release-archive export preflight/progress/
+SHA surface end-to-end headless.
+
+**Proof.** Linux selftest **24,545** (12 new); `nix run .#test` ALL
+GREEN, every golden byte-identical (editor chrome + docs only). The
+8-frame walkthrough montage, the new-file door, the right-paint fix, and
+the rendered walkthrough are on llm-feed. ALPHA §A8's walkthrough box is
+ticked.
+
+**Revisit triggers.** If a second window kind ever wants right-button
+content gestures, it adds `takes_right` — if a kind wants finer-than-
+content claims (per-sub-rect), that votes a hit-region surface. The tape
+driver (scratchpad `drive.lua`) is session tooling; if a third session
+rebuilds it, commit a `tools/drive/` version with the proof recipes.
