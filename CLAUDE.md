@@ -66,6 +66,11 @@ default windows-side save dir. Resolve it like this:
   chains (slopes) + freehand placements + markers as `.map` assets,
   tilemaps demoted to placeable `.tm` objects, the map/tilemap windows,
   the CTRL-snap grammar.
+- **COSMIC3D.md** — the retro-3D pipeline (merged from the cosmic3d
+  fork, D114): x_view3d/x_tris, the N64/RO presentation presets,
+  figures + the sprite bake, cm.{m4,rig,kin,walk,spr,atlas,gb,terr,
+  fig,mascot}, the 3D demo projects. Fork-era ADRs: **DECISIONS3D.md**
+  (closed namespace); fork history: `history/STATUS-3D-2026-07.md`.
 - *(moved at R0)* GAME.md / STORY.md / maps → `../cosmic2d-game/docs/`;
   PROCART.md → `../cosmic2d-demos/docs/`.
 - **DECISIONS.md** — append-only ADR log; binding choices + revisit triggers.

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session gave the docs reader TRUE drag-selection + Ctrl+C copy and unified multi-line code blocks into single panels (D112), then made the whole reader retained-mode after the human reported a 60→42 fps drop: layout once, paint the visible band — `help.draw` 14.7 → 0.10 ms/frame (D113); prior A8 packets: D111's highlight/copy/scroll-clamp, two docs-UX fixes + two reference sections, D110's search (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **this session merged the cosmic3d fork back into mainline (D114) and executed its entire post-merge queue**: 3D-module KATs to the 2d bar, the cm.actor/hud/move retrofits with honest re-cuts (D115), and the relative-mouse + MREL record packet (D116, PAL API 21). The 3D documentation pass is deferred to a mechanical session (handoff notes below). Prior A8 packets: D110–D113 (docs search/reference/reader polish) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,93 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18) — D112 gives the docs reader true drag-selection +
+**This session (2026-07-18) — the cosmic3d merge (D114) + its post-merge queue
+(D115/D116).** Five packets, committed separately with their own proofs:
+
+1. **The merge (D114).** `../cosmic3d` (97 commits, fork point f791824) merged
+   into main. Two textual conflicts only (the fork was built merge-first):
+   `pal.h`'s PAL_VERSION_API — both sides bumped from 14 independently, so the
+   fork's 3D API (its v15/v16) renumbered to **v20** — and STATUS (mainline
+   kept; the fork's history archived at `history/STATUS-3D-2026-07.md`). Two
+   silent traps a naive merge would have taken: the fork's CLAUDE.md/README
+   rewrote the repo identity (kept cosmic2d's, README notes the 3D
+   capability). Lands: x_view3d/x_tris + x_grade quant= + x_soft in the PAL
+   (lazy — a pure-2D session's frame path is byte-identical), retro shaders,
+   ten cm.* modules, the `"rc."` render-class buffer-domain exclusion in
+   state.sim_buffer (D3D-012), six dev-tree demos (NOT release-staged; the
+   manifests can't leak them), 12 traces + 14 pixels (glob-discovered),
+   `proto/`, COSMIC3D.md + DECISIONS3D.md (closed ADR namespace). Proof: suite
+   ALL GREEN with every 2d golden byte-identical AND all fork goldens passing
+   on pinned lavapipe.
+2. **3D KATs (the validation-bar gap).** The fork shipped ZERO selftest KATs
+   (goldens/FRAM-identity only). 119 new checks — t_m4 (rotation/lookat/persp
+   conventions), t_kin (the D3D-009/010 clamp rules, D029 jump, mantle,
+   ground_top), t_walk (A* + no-corner-cut, raycast, a real walker buffer),
+   t_rig (fake-f32-accessor rig: follow/back-cone/recenter/wish/view), and
+   the rc. domain pins in t_ed_domain. 24,246 → 24,365. Render-class emitters
+   (gb/terr/spr/atlas/fig/mascot) stay golden-pinned — the cm.gfx precedent.
+3. **cm.hud + cm.move retrofit (D115), goldens UN-RECUT.** All 13 HUD
+   measure/center dances → hud.text anchors (the typed-dialog lines keep
+   full-line no-slide centering via hud.place); the three digital fwd/side
+   blocks → move.keys behind a move.stick merge — live pads now steer the 3D
+   demos; every golden stood byte-identical (traces carry zero axes).
+4. **cm.actor retrofit (D115), goldens honestly RE-CUT.** openworld + rovale
+   NPC lists (per-NPC buffers + hot-reload dances) → one `d.npc` actor.world
+   each; greet encodings stay per-demo (D3D-033: they cannot unify — cm.actor
+   absorbs the LIST management). **bigworld exempted deliberately**: its 4000
+   closed-form slots ARE its §10 answer; doc actors would break it. **cm.tween
+   DEFERS** (the D096 precedent): the 3D juice counters live inside persistent
+   f32 player/pickup buffer layouts — a migration would deduplicate nothing.
+   Doc shape moved → six traces re-recorded from their own eval-armed autoplay
+   (dump-proven zero input records), seven pixels re-shot on lavapipe,
+   landmarks inspected (the meet, stars 10/10, greets + typed lines). Known
+   cost, D092's class: ~2.4KB/frame doc re-canon while 2–3 NPCs walk.
+5. **Relative mouse + MREL (D116, PAL API 21).** `pal.x_mouse_capture` (SDL
+   relative mode; query form; headless stays uncaptured), motion events carry
+   game-px `rx/ry`, input record extension tag 2 = MREL (i16 dx/dy whole px,
+   remainder carried, emitted once the domain latches — the _pad_live model;
+   ANY record zeroes applied deltas first so every historical trace reads
+   (0,0)), `input.mouse_rel()`/`capture_mouse()`/boot `mrel_reset`, the Esc
+   menu force-releases capture, and cm.rig consumes the deltas with the
+   drag-look knobs (inert at (0,0) — all goldens un-recut). The demos STAY
+   drag-look: wiring capture in is a feel change, human-gated. 12 new KATs
+   — Linux selftest **24,377** / native Windows **24,379** on PAL API 21;
+   `nix run .#test` ALL GREEN after every packet; `tools/build-windows.sh`
+   staged (4 durable entries) + Start Menu shortcut; rovale_tour +
+   openworld_meet verify PASS on native Windows; bounce/rovale/meet captures
+   inspected on llm-feed.
+
+**Deferred to a mechanical documentation session (Opus) — the 3D docs pass.**
+Scope: per-module reference sections in `engine/stock/docs/scripting.md` for
+the ten 3D cm.* modules (signatures + one copyable example each, D110-
+findable), the PAL x_ surface (x_view3d/x_tris/x_grade quant=/x_soft/
+x_mouse_capture), MREL in the compatibility section, and a docs/README
+cross-check. **Tricky parts a mechanical pass might miss:**
+- Fork docs say "PAL API 15/16" — that numbering is DEAD; mainline is v20
+  (3D) / v21 (relative mouse). Never copy fork version numbers forward.
+- `cm.pick` is TAKEN (the 2d picker list model); the 3D pick ray is
+  `cm.walk.raycast` — do not document any "cm.pick" 3D API.
+- The `rc.` buffer domain: document beside the `ed.` domain in the
+  determinism section — render-class bytes (texture ids, draw scratch) that
+  must never enter snapshots/traces; sim code never reads `rc.*`.
+- x_grade's slot 3 became quant bits (0 = off); x_grade/x_soft are
+  presentation-only — the internal target (readback, pixel goldens) never
+  sees them; docs must not suggest otherwise.
+- cm.kin is VALUE-based by design (D3D-032: the three player buffer layouts
+  diverge; cm.kin must never resize a persistent buffer) — document as pure
+  functions, not a component system. cm.rig/cm.walk OWN a buffer LAYOUT but
+  not the buffer; reproduce the layout tables verbatim.
+- capture_mouse discipline (D116): sim reads `input.mouse_rel()` (recorded);
+  `pal.x_mouse_capture` state is live chrome — the docs must state the split
+  or someone will branch sim on capture state.
+- cm.actor vs mass entities: bigworld's closed-form slot design is the
+  documented answer past ~500 doc actors (D115/D098) — a "which to use"
+  paragraph should say so.
+- DECISIONS3D.md is closed — new ADRs go in DECISIONS.md. The `assets/`
+  packs are gitignored (230MB); reference `assets/README.md`'s re-fetch
+  table, never assume the files exist.
+
+**Prior session (2026-07-18) — D112 gives the docs reader true drag-selection +
 Ctrl+C copy and draws each multi-line code block as ONE panel (A8), on both
 platforms.** Both human-requested ("true selection + copy … and a proper multiline
 code block"), pure editor chrome — no sim/doc/recorded byte moved:

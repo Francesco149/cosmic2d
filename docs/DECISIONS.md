@@ -5495,3 +5495,128 @@ KATs — the pure math is unchanged and already pinned; the timing driver is scr
 on llm-feed: the D112 selection fixture and getting-started panel pixel-matching the
 pre-optimization shots; the Player-saves goto reveal landing highlighted. Windows stage
 + Start Menu shortcut refreshed.
+
+## D114 — the cosmic3d merge: retro-3D lands in mainline (2026-07-18)
+
+The 3D fork (`../cosmic3d`, forked at f791824, 97 commits) merges back.
+It was built merge-first (COSMIC3D §12): no upstream module names
+squatted, demos kept naive copies as merge bait, PAL additions behind
+`x_` — so the tree is almost fully additive. What lands: the retro-3D
+PAL pipeline (`x_view3d`/`x_tris`, lazily created — a pure-2D session
+allocates none of it and its frame path is byte-identical), the retro
+presentation doors (`x_grade quant=` Bayer-dithered 5551 grade, `x_soft`
+VI blit — presentation only, goldens never see them), the retro/
+blit_soft shaders, ten engine modules (`cm.m4/rig/kin/walk/spr/atlas/
+gb/terr/fig/mascot`), one sim-core change (`state.sim_buffer` excludes
+the `"rc."` render-class domain, D3D-012 — additive; every 2d golden
+stands byte-identical as proof), six dev-tree demo projects (bounce/
+openworld/bigworld/rovale/figure/proto3d — none staged into releases),
+their 12 traces + 14 pixel goldens (glob-discovered by the suite), the
+`proto/` reference tree, and the fork docs (COSMIC3D.md, DECISIONS3D.md
+— the D3D-*** ADR namespace stays separate and closed; new decisions log
+here).
+
+**Conflict policy.** Both sides bumped PAL_VERSION_API from 14
+independently (upstream →19, fork →16); the fork's v15/v16 collide with
+mainline meanings, so the 3D API renumbered to **v20** — fork docs
+referencing "API 15/16" are historical text. docs/STATUS.md keeps
+mainline; the fork's round-by-round history is archived verbatim at
+`docs/history/STATUS-3D-2026-07.md`. CLAUDE.md/README keep the cosmic2d
+identity (this repo remains the engine; 3D is a capability, not a fork
+identity). The fork's ignore rules for the 230MB CC0 asset staging area
+(`assets/`, README-only) ride along.
+
+**Validation at the 2d bar.** Clean build; `nix run .#test` ALL GREEN on
+pinned lavapipe — every historical 2d trace + pixel/audio golden
+byte-identical AND all 12 fork traces + 14 fork pixels pass; Linux
+selftest 24,246 on api20 pre-KATs. The fork shipped zero selftest KATs
+(its bar was goldens + FRAM-identity proofs); the same-day KAT packet
+closes that gap (119 checks: t_m4/t_kin/t_walk/t_rig + the rc. domain
+pins — 24,365). Render-class emitters (gb/terr/spr/atlas/fig/mascot)
+stay golden-pinned, the cm.gfx precedent.
+
+**Revisit triggers.** The 3D demos may later move to ../cosmic2d-demos
+(the R0 engine-only rule vs the fork's dev-tree habit — deliberate keep
+for now: they are the 3D goldens' cartridges). The fork's parked editor
+windows (terrain paint/bake, figure vertex-push, sheet preview) stay
+human-gated. 3D documentation intake into the docs/README map is the
+deferred packet (see STATUS).
+
+## D115 — the re-merge retrofit wave: cm.actor/hud/move; tween defers (2026-07-18)
+
+The fork's post-merge queue, executed. **cm.hud + cm.move** (goldens
+un-recut, the strong form): all 13 HUD measure/centering dances across
+the four 3D demos became hud.text anchors (floored centering is the
+demos' exact math; the typed-dialog lines keep no-slide full-line
+centering via hud.place with an explicit width), and the three digital
+fwd/side blocks became move.keys (same integer sums) behind a
+move.stick merge — live pads now steer the 3D demos; recorded traces
+carry zero axes, so every golden stood byte-identical (`nix run .#test`
+ALL GREEN, 20 traces PASS, un-recut).
+
+**cm.actor** (goldens honestly re-cut): openworld's and rovale's
+hand-rolled NPC lists (per-NPC named buffers + the hot-reload
+pcall/free dance) became one `d.npc` actor.world each — spawn seeds the
+cast (`i` links the module-local render-class defs), each/tick drive
+step/emit/dialog/boxes. The greet ENCODINGS stay per-demo (openworld's
+gstart>gend frame+1 edges, rovale's gstart+spent) — D3D-033's audit
+already established they cannot unify; what cm.actor absorbs is the
+list management. Doc shape moved → all six affected traces re-recorded
+from their own eval-armed autoplay (dump-verified zero input records)
+and all seven pixels re-shot on lavapipe; landmarks reproduce (the
+meet, stars 10/10 + banner, greets + typed lines — inspected). Known
+cost, D092's class: 2–3 moving doc actors re-canon ~2.4KB/frame
+(traces ~2×); the recorder per-subtree-delta packet remains the logged
+revisit.
+
+**bigworld exempted, deliberately:** its ~4000 entities are closed-form
+slots in one buffer — position = f(frame), promote/demote by index, no
+per-entity state. That IS its §10 scheduling answer; doc actors would
+break the construction and the D098 envelope. The near-kernel stays
+slot-based with it.
+
+**cm.tween DEFERS** (the D096 precedent): the 3D demos' juice counters
+(bounce squash_t/amt + pickup pop ghosts) live INSIDE persistent f32
+player/pickup buffer layouts, already fed by cm.kin value flow — not
+doc tables. cm.tween is doc-table policy; "retrofitting" would be a
+state migration that deduplicates nothing (the layouts diverge — the
+D3D-032 finding). First 3D demo that grows a doc-side juice counter
+rides cm.tween then.
+
+## D116 — relative mouse: pal.x_mouse_capture + the MREL record extension (2026-07-18)
+
+The fork's parked captured-cursor look (D3D-009/010), buildable once
+D082's additive record v2 shipped — now built. **PAL API v21**:
+`pal.x_mouse_capture(on)` flips SDL relative mouse mode (query with no
+argument; headless has no window and stays uncaptured), and motion
+events carry `rx/ry` — relative deltas scaled by the game viewport like
+the absolute pair, real even while the cursor is frozen.
+
+**Record side — extension tag 2, MREL** (the D082 mechanism): `i16 dx,
+i16 dy` whole internal pixels per frame, live-side float remainder
+carried (the wheel model). Emitted every sample once
+`input.capture_mouse()` has been used this session (the `_pad_live`
+latch model) so a capture-free session stays byte-identical; applying
+ANY record zeroes the applied delta first, so a record without MREL —
+every historical trace — reads (0,0). Capture is live chrome policy
+like device identity: replay never re-captures, the recorded deltas are
+authoritative. Readers: `input.mouse_rel()`; boot runs `mrel_reset`
+beside pad_sync (fresh session, no inherited latch), and the Esc
+options menu force-releases capture on open (the menu needs the OS
+cursor; the game re-captures itself after).
+
+**Consumer:** cm.rig gains captured-cursor look from `mouse_rel()` with
+the drag-look knobs — inert at (0,0), so every committed trace and all
+drag-look demos are untouched (proof: full suite green, goldens
+un-recut). The demos deliberately STAY drag-look — wiring capture into
+a demo is a feel change and waits for a human playtest verdict.
+
+**Proof.** Linux selftest 24,377 (12 new KATs: t_input_mrel — dormant
+domain emits nothing/reads zero, latch emits 4-byte extension, whole-px
++ carry, still-frame zeros, v1 reset, malformed refused/unknown
+skipped, reset ends the domain; t_rig — MREL steers the orbit, v1 moves
+nothing), `nix run .#test` ALL GREEN, every golden byte-identical.
+Deferred, named honestly: demo adoption (human feel gate), an
+editor-shell capture policy (games under `--edit` — today only the Esc
+menu releases), and pointer-lock UX niceties (sensitivity option in the
+menu) if a real game votes them in.

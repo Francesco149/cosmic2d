@@ -19,6 +19,12 @@ mistaken for current work.
 - `AUDIO.md` — deterministic audio kernel, instruments, songs, editor windows.
 - `REWIND.md` — disk-backed history mechanics and browsing semantics. The
   product UI/export work still to do is gate A7 in `ALPHA.md`.
+- `COSMIC3D.md` — the retro-3D pipeline design (x_view3d/x_tris, the N64/RO
+  presets, figures, the distillation plan), merged from the cosmic3d fork
+  (D114). Its ADRs live in `DECISIONS3D.md` (closed namespace; new
+  decisions log in `DECISIONS.md`); `research-3d/` holds the aesthetic/
+  asset research; the fork's session history is
+  `history/STATUS-3D-2026-07.md`.
 - `DECISIONS.md` — append-only binding decisions and revisit triggers.
 
 ## Historical design context
