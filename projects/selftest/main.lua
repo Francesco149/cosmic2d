@@ -9900,14 +9900,49 @@ local function t_standalone_clip()
   end
   check(not std, "clip: a plain ring_export embeds no MFST/BLOB/LOOP")
 
-  -- ---- honest refusals (name the missing capability, never crash) ----
-  -- adopted cross-session range: its opening segment carries no code bundle.
+  -- ---- adopted cross-session range: reconstruct its code bundle (§14) ----
+  -- Its opening segment carries NO live bundle (the adopted session's code was
+  -- never spilled), but the manifest froze every project .lua at the keyframe.
+  -- export_clip rebuilds the SNAP code from that captured tree + the host engine,
+  -- so a cross-session range is now a standalone clip too.
   drive(17, 24); trace.history_drain()
+  -- edit main.lua on disk AFTER the keyframe: the reconstruction must use the
+  -- manifest's captured source, never the mutated disk.
+  pal.write_file(root .. "/main.lua", "return { edited = true }\n")
   trace.ring_start({ project = root }) -- reboot: the retained chain adopts
   local alo = trace.ring_range()
-  local ok_ad, why_ad = trace.export_clip(alo, alo + 1, root .. "/x.ctrace")
-  check(not ok_ad and why_ad and why_ad:find("adopted"),
-        "clip: export of an adopted range names the missing bundle, not a crash")
+  check(not trace._R.segs[1].bundle,
+        "clip: the adopted opening segment truly carries no live code bundle")
+  local adclip = root .. "/adopted.ctrace"
+  local ok_ad = trace.export_clip(alo, alo + 3, adclip)
+  check(ok_ad, "clip: an adopted cross-session range now exports (bundle reconstructed)")
+  -- inspect the reconstructed SNAP bundle: project 'main' at its CAPTURED source,
+  -- the host engine modules, and the standalone tree/loop chunks.
+  local ad_code, ad_mfst, ad_loop = nil, false, false
+  for _, c in ipairs(chunk.read(pal.read_file(adclip) or "", "CTRC")) do
+    if c.tag == "SNAP" then ad_code = cm.require("cm.state").parse_snapshot(c.payload).code end
+    if c.tag == "MFST" then ad_mfst = true end
+    if c.tag == "LOOP" then ad_loop = true end
+  end
+  local by = {}
+  for _, m in ipairs(ad_code or {}) do by[m.name] = m.source end
+  check(by.main == main_src,
+        "clip: the reconstruction carries the captured project source, not disk")
+  check(by["@boot"] and by["cm.trace"],
+        "clip: the reconstruction carries the host engine modules (@boot + cm.*)")
+  check(ad_mfst and ad_loop,
+        "clip: the adopted clip is standalone (project tree + loop bounds)")
+  -- round-trip: the adopted clip materializes its captured tree like any
+  -- standalone clip — the reconstructed code + the frozen project, self-contained.
+  local adws = trace.materialize_clip(adclip)
+  check(adws and pal.read_file(adws .. "/main.lua") == main_src,
+        "clip: the adopted clip materializes its captured project tree on load")
+  -- the reconstructed SNAP is a valid, hashable code identity (D107) — proof the
+  -- bundle is well-formed and loadable, not merely present; and a same-session
+  -- self-export auto-trusts, so dragging this cross-session clip back never prompts.
+  local ad_hash = trace.clip_code_hash(adclip)
+  check(ad_hash and trace.clip_trusted(ad_hash),
+        "clip: the reconstructed adopted clip has a trusted code identity (self-export)")
 
   -- spill-off (legacy / headless) history has no project manifest.
   trace.ring.spill = false
@@ -9921,7 +9956,8 @@ local function t_standalone_clip()
   -- leave a clean tree + ring behind
   wipe_hist(); wipe_ws()
   for _, n in ipairs({ "main.lua", "art/hero.spr", "art", "readme.txt",
-      "video.dat", "input.dat", "range.ctrace", "plain.ctrace" }) do
+      "video.dat", "input.dat", "range.ctrace", "plain.ctrace",
+      "adopted.ctrace" }) do
     pal.x_remove(root .. "/" .. n)
   end
   trace._workspace_root = save_ws
