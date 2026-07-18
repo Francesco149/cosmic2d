@@ -11239,31 +11239,33 @@ end
 -- raising the global text size blurred the game by its factor). blit_scale
 -- snaps to the DESIGN multiple s/ds, clamped to what the well fits.
 local function t_game_blit()
+  -- D125 follow-up: the snap tests the WELL scale itself — the Aa
+  -- compensation lives in the rect (win.aa reconcile), so s is already
+  -- Aa-invariant. D122's s/ds division here, kept alongside the D123
+  -- rect compensation, collapsed the image to r < s at s/ds-integer
+  -- zoom crossings (the letterbox flicker while zooming at Aa 1.5).
   local game = cm.require("cm.ed.win.game")
-  local function bs(s, ds) local r, e = game.blit_scale(s, ds) return r, e end
-  local r, e = bs(2.0, 1)
-  check(r == 2 and e == true, "game.blit: ds=1 integer snaps as before")
-  r, e = bs(2.0004, 1)
+  local function bs(s) local r, e = game.blit_scale(s) return r, e end
+  local r, e = bs(2.0)
+  check(r == 2 and e == true, "game.blit: an integer well scale snaps")
+  r, e = bs(2.0004)
   check(r == 2 and e == true, "game.blit: float noise of an integer snaps")
-  r, e = bs(2.4, 1)
+  r, e = bs(2.4)
   check(r == 2.4 and e == false, "game.blit: a free resize passes through")
-  r, e = bs(2.5, 1.25)
-  check(r == 2 and e == true,
-        "game.blit: Aa 1.25 over a 2x window stays a crisp 2x")
-  r, e = bs(3.75, 1.25)
+  r, e = bs(3.0)
   check(r == 3 and e == true,
-        "game.blit: Aa 1.25 over a 3x window stays a crisp 3x")
-  r, e = bs(1.25, 1.25)
-  check(r == 1 and e == true, "game.blit: Aa 1.25 over a 1x window stays 1x")
-  r, e = bs(1.5, 0.75)
-  check(r == 1 and e == true,
-        "game.blit: Aa 0.75 falls back to the largest fitting integer")
-  r, e = bs(0.6, 0.75)
-  check(r == 0.6 and e == false,
-        "game.blit: a sub-1x design multiple never snaps")
-  r, e = bs(2.5, 1)
-  check(r == 2.5 and e == false,
-        "game.blit: 2.5x at Aa 1 is a real non-integer, not a snap target")
+        "game.blit: a reconciled 2x window at zoom 1.5 fills at a crisp 3x")
+  r, e = bs(3.02)
+  check(r == 3.02 and e == false,
+        "game.blit: 3.02 (the old s/ds=2.013 flicker case) never collapses")
+  r, e = bs(2.997)
+  check(r == 2.997 and e == false,
+        "game.blit: outside the noise window passes through")
+  r, e = bs(0.999)
+  check(r == 1 and e == true, "game.blit: noise below 1x still snaps to 1x")
+  r, e = bs(0.5)
+  check(r == 0.5 and e == false,
+        "game.blit: a sub-1x well scale never snaps")
 end
 
 -- the derived target FOV (D125): the shell asserts pick_fov every live

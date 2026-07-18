@@ -6139,3 +6139,32 @@ the anchor point is the raw VIEWPORT center — if the human reports a
 far-off-center window cluster sliding toward a screen edge on an Aa
 change (visible in the capture pair on the feed), anchor at the
 visible windows' bounds center instead.
+
+**Same-day follow-up (the human, with a trace): zooming flickered
+between letterboxed and filled.** `bigworld-clip-441-568.ctrace`
+confirmed the setup (a 426x240-FOV session; the human runs Aa 1.5).
+Root cause: a LEFTOVER half of the D122 compensation. `blit_scale`
+still divided the machine Aa scale out of the well scale before its
+integer snap — correct when D122 wrote it (the rect was uncompensated,
+so the well grew with Aa and s/ds was the design multiple) — but D123/
+D125 moved the Aa compensation into the RECT (`win.aa` reconcile), so a
+game window's well scale is ALREADY Aa-invariant (design multiple ×
+canvas zoom) and dividing ds out a second time made the snap fire at
+s/ds-integer points where s itself was NOT integer: at Aa 1.5 a zoom
+sweep crossing z=0.75/1.5/2.25 collapsed the image to r < s (a 2x blit
+inside a 3.0x well, fill 0.662) for the frames inside the snap window —
+the letterbox blink. Invisible at ds=1 (s/ds == s), which is why the
+D125 WSL proofs missed it. Fix: `blit_scale(s)` snaps the well scale
+ITSELF — the ds parameter is gone, the draw site no longer reads
+`cam.display_scale`, and the "largest fitting integer" clamp died with
+it (r is within noise of s by construction). Bonus fixed en route: at
+Aa 1.5 / zoom 100% the 2x blit used to return exact=false (s/ds=1.33)
+and skipped the whole-px origin snap — it now snaps origin too.
+Proof: t_game_blit rewritten to the new contract (8 checks, including
+3.02 — the exact old flicker input — passing through unsnapped); Linux
+selftest **24,517** / native Windows **24,519**; `nix run .#test` ALL
+GREEN, goldens byte-identical. Live: the drv5 zoom sweep 1.0→2.0 at
+Aa 1.5 held fill ≥ 0.99 everywhere (was 0.662 at z=1.50); the human's
+clip opens clean — recorded FSIZ 426x240 followed while parked, game
+window fill 1.000 across the whole A/B loop at Aa 1.5. Before/after
+zoom-1.5 captures on llm-feed.
