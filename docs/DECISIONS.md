@@ -5444,3 +5444,54 @@ the copied bytes logged and verified faithful; `getting-started.md`'s two-line
 `bin/cosmic` block as one plain-face panel. `engine/stock/docs/editor.md`
 documents selection + Ctrl+C. `tools/build-windows.sh` refreshed the stage and
 Start Menu shortcut.
+
+## D113 — the docs reader goes retained-mode: layout once, paint the band (A8, 2026-07-18)
+
+**Context.** Opening a doc dropped the WSLg editor from 60 to 42 fps (human-reported,
+same day as D112). Measured on the reference desktop with a scripted 200-frame
+`smoke --edit` run over `scripting.md`: `help.draw` cost **14.7 ms/frame** after D112 —
+but the pre-D112 reader already cost **7.5 ms/frame**. The old design re-laid-out and
+re-drew the ENTIRE document every frame (one `x_ig_text_size` + one draw call per WORD,
+whole-doc, clip or no clip); D112's per-frame row-model rebuild (a table per run per
+frame + `rows_finalize` joins) doubled a cost that was already more than a whole 60 Hz
+frame short of comfortable.
+
+**Decision — a layout/paint split; no C helpers needed.**
+- **`layout_doc(src, maxw, px, z)`** runs ONCE per (doc, width, font, zoom) and
+  produces everything a frame needs, all in doc-space: the **selection row model**
+  (D112's rows — runs now carry their face color and link url), a **decoration list**
+  (block panels, inline-code chips, bullet dots, heading rules), the **link rects**,
+  the **copy-chip block extents**, a **source-line → y map**, and the content height.
+  All `x_ig_text_size` measuring lives here. The cache rides `M.sel_state` (module-
+  local, never canon'd) keyed by src identity + width + px + z; a reflow honestly
+  drops the selection (as D112 already did).
+- **`paint_doc`** draws each frame from the cache: decor → landed-line highlight →
+  selection highlight → text runs, **only for the visible band** (rows ascend, so the
+  row loop early-breaks past it). Zero measuring, zero allocation; link runs pick
+  their hover face + underline live. Selection highlight now paints from the SAME
+  frame's state (no last-frame hlmap lag), and it sits above panels/under text by
+  paint order instead of D112's draw-at-row-creation trick.
+- **Goto reveal simplifies**: a search hit / `#anchor` scrolls via the line→y map the
+  same frame (the old measure-then-scroll two-frame dance and `_goto_y` are gone).
+  Link clicks hit-test the cached doc-space rects with one mouse conversion.
+
+**Measured.** `help.draw` on scripting.md (966 lines): **14.71 → 0.100 ms avg**
+(worst 23.0 → 0.26 ms) — ~147× less per-frame work, and ~75× cheaper than even the
+pre-D112 reader. The layout frame itself (navigate/resize/zoom) costs about one old
+frame. WSLg has ~14 ms of frame budget back.
+
+**No sim/doc/recorded byte moves** — pure editor chrome rework; the D112 selection
+KATs pin the unchanged row-model math; the copied bytes, captures, goto reveal, and
+chips verified identical on the new path.
+
+**Revisit triggers.** The home search-results view still draws immediate-mode (small,
+bounded); if a result list ever reads slow, the same split applies. If a future doc
+grows past ~10k lines, layout itself (~one old frame) could chunk lazily — not worth
+it for the shipped guides.
+
+**Proof.** Linux selftest **24,246** / native Windows **24,248** on PAL API 19 (no new
+KATs — the pure math is unchanged and already pinned; the timing driver is scratch).
+`nix run .#test` ALL GREEN, every golden byte-identical. Headless captures re-inspected
+on llm-feed: the D112 selection fixture and getting-started panel pixel-matching the
+pre-optimization shots; the Player-saves goto reveal landing highlighted. Windows stage
++ Start Menu shortcut refreshed.

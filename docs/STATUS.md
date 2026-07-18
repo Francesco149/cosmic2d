@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session gave the docs reader TRUE drag-selection + Ctrl+C copy and unified each multi-line code block into a single panel (D112, closing D111's deferred "copy any text" packet); prior A8 packets: D111's highlight/copy/scroll-clamp, two docs-UX fixes + two reference sections, D110's in-engine documentation search (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session gave the docs reader TRUE drag-selection + Ctrl+C copy and unified multi-line code blocks into single panels (D112), then made the whole reader retained-mode after the human reported a 60→42 fps drop: layout once, paint the visible band — `help.draw` 14.7 → 0.10 ms/frame (D113); prior A8 packets: D111's highlight/copy/scroll-clamp, two docs-UX fixes + two reference sections, D110's search (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -73,6 +73,25 @@ plain-face panel. `engine/stock/docs/editor.md` documents selection + Ctrl+C.
 Deferred, named honestly: double/triple-click select, resize-surviving selection
 (doc-anchored endpoints), the bullet `- ` marker in drag-copies, in-doc Ctrl+F find.
 See DECISIONS `D112`.
+
+**Same session, D113 — the reader goes retained-mode after the human reported the
+fps cost ("opening a doc drops WSLg from 60 to 42").** Measured: `help.draw` on
+scripting.md cost **14.7 ms/frame** after D112 — but **7.5 ms** even before it: the
+old design re-measured and re-drew the ENTIRE doc every frame (a `text_size` + a
+draw call per word), and D112's per-frame row rebuild doubled it. Now
+**`layout_doc`** runs once per (doc, width, font, zoom) — producing the selection
+rows (runs carry their face), the decoration list (panels/inline chips/bullets/
+rules), link rects, chip extents, a line→y map, and the content height, all
+doc-space, cached in `M.sel_state` — and **`paint_doc`** draws only the visible
+band from it: zero measuring, zero allocation, early-break past the band. Bonuses:
+the selection highlight now paints same-frame (no last-frame lag) and sits
+above panels/under text by paint order; goto reveals resolve via the line map the
+same frame (the two-frame `_goto_y` dance is gone). **`help.draw` 14.71 → 0.100 ms
+avg (worst 23.0 → 0.26)** — ~75× cheaper than even the pre-D112 reader; no C
+helpers needed. Same selftest counts (the pure sel math is unchanged and pinned),
+`nix run .#test` ALL GREEN, captures re-inspected pixel-matching on llm-feed
+(selection fixture, text-block panel, Player-saves goto reveal). See DECISIONS
+`D113`.
 
 **Prior session (2026-07-18) — D111 makes the docs reader's code blocks
 syntax-highlighted + copyable and clamps the home-list over-scroll (A8), on both
