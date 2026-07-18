@@ -163,8 +163,14 @@ function M.launch(root)
   end
   cm.require("cm.view").mode = "canvas" -- no game blit; we draw the target
   -- a saved game window carries its FOV width choice (§12.3): re-apply
+  -- before the first frame (frame() re-asserts every frame after, D125);
+  -- the last sized window owns the shared target (D054 last-loaded-wins)
+  M.g.fov_owner = nil
   for _, w in ipairs(M.doc.wins) do
-    if w.kind == "game" and w.fw then M.kinds.game.apply_fov(w) end
+    if w.kind == "game" and w.fw then
+      M.kinds.game.apply_fov(w)
+      M.g.fov_owner = w.id
+    end
   end
   pal.log("[ed] editor shell on (" .. root .. ")")
 end
@@ -1455,25 +1461,64 @@ function M.frame()
   if not ig then return end
   local view = cm.require("cm.view")
   view.resolve_accessibility(ig.dpi, ig.w, ig.h)
-  -- the Aa canvas scale is CHROME sizing: game windows compensate their
-  -- doc rect (image area only — the pads keep chrome-scaled borders) so
-  -- their screen footprint and pixel-perfect blit stay constant across a
-  -- text-size change instead of growing a blank well (D123, the human's
-  -- report on D122)
+  -- the Aa canvas scale is CHROME sizing (D123/D125). Three per-frame
+  -- reconciles, all skipped while parked (the past renders as recorded;
+  -- unpark heals the present the next frame):
+  --  (a) an Aa CHANGE re-anchors the camera at the viewport center — the
+  --      cam maps screen through zoom * display_scale, so without this
+  --      the layout slides away from the screen origin (the human's
+  --      "changing font size moves windows");
+  --  (b) each game window carries the Aa it was laid out at (win.aa) and
+  --      any mismatch rescales its image area by old/new, center-anchored
+  --      — screen footprint and crisp blit stay constant. The per-window
+  --      stamp (not D123's process-global edge detector) also heals a
+  --      session opened at a different Aa than it was saved at.
   local ds = view.cfg.editor_scale
-  if M.g._aa_ds and M.g._aa_ds ~= ds and M.doc then
-    local f = M.g._aa_ds / ds
-    local gk = M.kinds.game
+  local gk = M.kinds.game
+  if M.doc and not M.parked then
+    if M.g._aa_ds and M.g._aa_ds ~= ds then
+      cam.aa_anchor(M.doc.cam, ig.w, ig.h, M.g._aa_ds, ds)
+      M.g.anim = nil -- an in-flight cam ease predates the new mapping
+      M.touch()
+    end
+    M.g._aa_ds = ds
+    local _, th = gk.design_res()
     for _, w in ipairs(M.doc.wins) do
       if w.kind == "game" then
-        w.w = (w.w - gk.PAD_W) * f + gk.PAD_W
-        w.h = (w.h - gk.PAD_H) * f + gk.PAD_H
-        M.touch()
+        if not w.aa then
+          w.aa = ds -- pre-stamp sessions: adopt, never rescale blind
+        elseif w.aa ~= ds then
+          local nw, nh, dx, dy = gk.aa_rect(w.w, w.h, w.aa, ds, th)
+          w.x, w.y, w.w, w.h, w.aa = w.x + dx, w.y + dy, nw, nh, ds
+          M.touch()
+        end
       end
     end
   end
-  M.g._aa_ds = ds
   cam.set_display_scale(ds)
+  -- the game-target FOV is DERIVED every frame (D125), never latched:
+  -- time-travelling, the recorded FSIZ is the authority (D124's black-bars
+  -- fix — the non-latching read, so observing a 2D replay never arms the
+  -- domain); live, the owning game window's choice (or the design res) —
+  -- which is what un-sticks the target after an unpark left it re-aimed.
+  if cm.require("cm.scrub").paused() then
+    local sw, sh = cm.require("cm.input").fsiz_applied()
+    if sw then
+      local f = view.canvas_fov
+      if not f or f.w ~= sw or f.h ~= sh then
+        view.canvas_fov = { w = sw, h = sh }
+      end
+    end
+  elseif M.doc then
+    local tw, th = gk.design_res()
+    local fw = gk.pick_fov(M.doc.wins, M.g.fov_owner, tw, th)
+    if fw then
+      local f = view.canvas_fov
+      if not f or f.w ~= fw or f.h ~= th then
+        view.canvas_fov = { w = fw, h = th }
+      end
+    end
+  end
   -- global-eyedropper plumbing: a LIVE session arms the capture mirror
   -- at window size while picking, frees it after (a --win capture
   -- session already presents into the capture target — leave it be)

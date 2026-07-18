@@ -79,6 +79,19 @@ function M.at_100(c, vw, vh)
            y = cy - vh * 0.5 / M.display_scale, zoom = 1.0 }
 end
 
+-- an Aa (display_scale) change re-anchors the camera so the world point at
+-- the viewport center stays at the viewport center: the layout grows or
+-- shrinks IN PLACE instead of sliding away from the screen origin (D125 —
+-- the cam maps screen through zoom * display_scale, so a scale change is a
+-- zoom, and an unanchored zoom is anchored at screen (0,0)). Mutates c like
+-- zoom_at; never touches c.zoom.
+function M.aa_anchor(c, vw, vh, ds0, ds1)
+  local wx = c.x + vw * 0.5 / (c.zoom * ds0)
+  local wy = c.y + vh * 0.5 / (c.zoom * ds0)
+  c.x = wx - vw * 0.5 / (c.zoom * ds1)
+  c.y = wy - vh * 0.5 / (c.zoom * ds1)
+end
+
 -- linear interp between two cams (the 280 ms ease samples this with an
 -- eased k; linear zoom over 280 ms reads fine — teidraw does the same)
 function M.lerp(a, b, k)

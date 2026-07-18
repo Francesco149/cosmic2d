@@ -6063,3 +6063,78 @@ varied trees; the re-cut tour golden. Deferred, named honestly: the
 committed mid-trace-FOV golden (D123) still awaits a real recording;
 bigworld's noise-driven terrain has no bake to ship (its cost is mesh
 emission, already fast).
+
+## D125 — the Aa/FOV footgun fix: derive, stamp, and anchor (2026-07-18)
+
+Two reports from the human's native D124 build: the 3D game window
+"starts letterboxed now and then, flickers to filling when I resize",
+and changing the global text size (Aa) moves windows apart. Both traced
+to the same class of bug — one-shot pushes of state that should be
+continuously derived — and the ask was to fix the footgun, not bandaid
+the symptoms.
+
+**The letterbox: `view.canvas_fov` was a write-only latch.** The game
+window pushed it on resize gestures and at session launch; D124's
+paused-time re-aim overwrote it with the recorded FSIZ; NOTHING ever
+put the live window's choice back. Reproduced end-to-end: park early in
+a session recorded at the design res, unpark — the target stays at
+320x240 under a 426-shaped window (black side bars), a resize is the
+only cure, and the live recording even stamps the stale size into new
+FSIZ records. D124's "back live the window's own" held only in its
+input-layer KATs, not in the shell. Now the FOV is **derived every
+frame** in `cm.ed.frame`: time-travelling → the recorded FSIZ
+(`input.fsiz_applied`, non-latching, D124's rule preserved); live →
+`game.pick_fov` (pure, KAT'd) over the doc's game windows — the
+explicit owner (`ed.g.fov_owner`, ephemeral, set by resize and launch:
+last resized/loaded wins, the D054 multi-window rule) → the last sized
+window → the design res when a game window exists at all. A derived
+value cannot go stale; the draw-side D124 block is deleted (a draw-side
+push also only ran for VISIBLE windows — the shell is the right home).
+`constrain` keeps its same-frame `apply_fov` for gesture snappiness.
+
+**The moving windows: two causes, one model.** The Aa canvas-windows
+scale multiplies the camera zoom, so changing it IS a zoom — and it was
+anchored at the screen origin (cam.x/y untouched), so the whole layout
+slid toward/away from the top-left. `cam.aa_anchor` (pure, KAT'd) now
+re-anchors the camera so the world point at the viewport center stays
+centered: the layout grows/shrinks in place. On top of that, D123's
+game-window opt-out (screen footprint constant) rescaled doc rects via
+a PROCESS-GLOBAL edge detector (`g._aa_ds`): it fired only on a live
+change in the same process, so a session opened at a different Aa than
+it was saved at (auto-DPI change, monitor move, cross-machine) was
+silently wrong — canon bytes depending on machine-local state with no
+reconciliation. Now each game window carries the Aa it was laid out at
+(**`win.aa`**, captured — an explicit layout stamp): any mismatch, live
+or at load, rescales the image area by old/new, **center-anchored** (the
+window stays put relative to its neighbors instead of growing rightward
+/downward), restamps, and touches the doc like a resize. Crisp integer
+design multiples recompute EXACTLY (`fw*k/ds`) so repeated flips never
+accumulate float drift — a 1 → 1.5 → 1 round trip restores the doc rect
+bit-for-bit (KAT'd + proven live). Pre-stamp sessions adopt the current
+Aa without rescaling (exactly the old boot behavior). All three
+reconciles skip while parked: the past renders as recorded, the present
+heals one frame after unpark. An Aa change also cancels an in-flight
+camera ease (its endpoints predate the new mapping).
+
+Proof: Linux selftest **24,501 → 24,518** (17 new KATs: `t_game_fov`
+owner/last-sized/design/out-of-range, `t_game_aa` footprint/center/
+round-trip/crisp-recompute/identity, `t_cam_aa` center invariance both
+directions); `nix run .#test` ALL GREEN, every trace and pixel/audio
+golden byte-identical (all of this is editor chrome — no sim/recorded
+byte moved; `win.aa` rides the captured doc like any window field).
+Live scripted proofs on a bigworld copy: the D124-class park/unpark now
+returns to 426x240 the next frame (was stuck at 320x240 letterboxed,
+screenshots both ways); an Aa 1 → 1.5 → 1 flip holds the game image
+area at exactly 852 screen px with the note window scaling about the
+viewport center, and round-trips the doc exactly; a session saved at
+Aa 1 booted at 1.5 heals on frame 1 (582x354, stamp 1.5, same screen
+footprint). EDITOR.md §3/§12.3 and the shipped `editor.md` document
+the model. Revisit triggers: if a future kind needs Aa-constant
+footprint too, generalize the stamp+reconcile into the kind contract
+rather than copying it; if per-window content scaling (text grows,
+window doesn't) is ever wanted, that is a per-kind layout audit — a
+different, much larger packet, deliberately not attempted here; and
+the anchor point is the raw VIEWPORT center — if the human reports a
+far-off-center window cluster sliding toward a screen edge on an Aa
+change (visible in the capture pair on the feed), anchor at the
+visible windows' bounds center instead.

@@ -115,6 +115,64 @@ function M.apply_fov(win)
   end
 end
 
+function M.design_res() -- the shell's door to the project design res
+  return base_res()
+end
+
+-- pure (KAT'd): the live target FOV width picked from the doc's game
+-- windows — the every-frame authority the shell asserts (D125: the FOV is
+-- DERIVED, never a latch; D124's park re-aim latched the recorded size and
+-- nothing restored the live one, so unpark letterboxed until a manual
+-- resize). The explicit owner (last resized, cm.ed.g.fov_owner) wins, else
+-- the last sized window in doc order (the D054 multi-window rule), else the
+-- design width when any game window exists; nil when none does (nothing
+-- shows the target — leave it alone).
+function M.pick_fov(wins, owner_id, tw, th)
+  local lo, hi = res_range(tw, th)
+  local pick, any
+  for _, w in ipairs(wins or {}) do
+    if w.kind == "game" then
+      any = true
+      if w.fw and w.fw >= lo and w.fw <= hi then
+        if owner_id and w.id == owner_id then return w.fw end
+        pick = w.fw
+      end
+    end
+  end
+  if pick then return pick end
+  if any then return tw end
+  return nil
+end
+
+-- pure (KAT'd): reconcile a game window's doc rect from the Aa scale it
+-- was laid out at (aa0) to the current one (ds). The image area scales by
+-- aa0/ds so the SCREEN footprint stays constant (the pads keep their
+-- chrome-scaled world size); a rect that encodes a crisp integer design
+-- multiple is recomputed exactly as fw*k/ds so repeated flips never
+-- accumulate float drift; the change is center-anchored. Returns
+-- (w2, h2, dx, dy) — dx/dy are the position offsets that keep the window
+-- center put. This replaces D123's process-global edge detector: the
+-- per-window stamp (win.aa) also heals a session opened at a DIFFERENT
+-- Aa than it was saved at (boot / cross-machine), which the live-only
+-- detector silently missed.
+function M.aa_rect(w, h, aa0, ds, th)
+  local iw, ih = w - M.PAD_W, h - M.PAD_H
+  local w2, h2
+  local k = th > 0 and ih * aa0 / th or 0 -- intended design multiple
+  local r = math.floor(k + 0.5)
+  if iw > 0 and ih > 0 and r >= 1 and math.abs(k - r) < 0.002 then
+    local fwr = iw / ih * th -- the FOV width the rect encodes
+    local fr = math.floor(fwr + 0.5)
+    if math.abs(fwr - fr) < 0.01 then fwr = fr end
+    w2, h2 = fwr * r / ds, th * r / ds
+  else
+    local f = aa0 / ds
+    w2, h2 = iw * f, ih * f
+  end
+  w2, h2 = w2 + M.PAD_W, h2 + M.PAD_H
+  return w2, h2, (w - w2) * 0.5, (h - h2) * 0.5
+end
+
 -- the resize constraint (threaded through wm.resize by the shell): sees
 -- the raw dragged size, returns the aspect-locked one. r0 is the
 -- gesture-start rect, so the start scale/width stay the gesture's anchor.
@@ -145,8 +203,10 @@ function M.constrain(win, part, r0, ww, wh, ctrl)
   s = math.max(s, 16 / th) -- never collapse
   if win.fw ~= W then
     win.fw = W
-    M.apply_fov(win)
+    M.apply_fov(win) -- same-frame during the drag; the shell's per-frame
+    -- pick_fov assert (D125) carries it from the next frame on
   end
+  cm.require("cm.ed").g.fov_owner = win.id -- last resized wins (D054)
   return W * s + M.PAD_W, th * s + M.PAD_H
 end
 
@@ -163,21 +223,11 @@ function M.blit_scale(s, ds)
 end
 
 function M.draw(win, ctx)
-  -- while time-travelling, the RECORDED target size is the authority
-  -- (D123's FSIZ): a replay of a session whose FOV was resized live must
-  -- re-aim the target to the recorded size, or the window letterboxes
-  -- the boot FOV under a sim that thinks it is wider (the human's
-  -- black-bars report). Chrome-side follow of applied sim input — the
-  -- non-latching read, so watching a 2D replay never arms the domain.
-  if cm.require("cm.scrub").paused() then
-    local sw, sh = cm.require("cm.input").fsiz_applied()
-    if sw then
-      local gw2, gh2 = pal.gfx_size()
-      if sw ~= gw2 or sh ~= gh2 then
-        cm.require("cm.view").canvas_fov = { w = sw, h = sh }
-      end
-    end
-  end
+  -- the target FOV (live: the owning window's fw; time-travelling: the
+  -- recorded FSIZ) is asserted by the SHELL every frame — cm.ed.frame's
+  -- resolve, D125 — not pushed from here: a draw-side push only runs for
+  -- visible windows and D124's paused-only re-aim proved the latch class
+  -- stale (unpark letterboxed until a manual resize).
   -- letterbox the target into a rounded filler well, preserving aspect —
   -- the image sits inside a margin so it never touches the panel's
   -- rounded border (human feedback, live round 2)

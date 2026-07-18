@@ -11266,6 +11266,86 @@ local function t_game_blit()
         "game.blit: 2.5x at Aa 1 is a real non-integer, not a snap target")
 end
 
+-- the derived target FOV (D125): the shell asserts pick_fov every live
+-- frame — the FOV is never a latch, so nothing (a park re-aim, a closed
+-- window) can leave the target stale
+local function t_game_fov()
+  local game = cm.require("cm.ed.win.game")
+  local tw, th = 320, 240 -- 4:3 design -> supported range 320..426
+  check(game.pick_fov({}, nil, tw, th) == nil,
+        "game.fov: no game windows leaves the target alone")
+  check(game.pick_fov({ { kind = "note", id = 1 } }, nil, tw, th) == nil,
+        "game.fov: non-game windows do not count")
+  local wins = { { kind = "note", id = 1 }, { kind = "game", id = 2 } }
+  check(game.pick_fov(wins, nil, tw, th) == 320,
+        "game.fov: an unsized game window asserts the design width")
+  wins[#wins + 1] = { kind = "game", id = 3, fw = 426 }
+  check(game.pick_fov(wins, nil, tw, th) == 426,
+        "game.fov: the sized window wins over the unsized one")
+  wins[#wins + 1] = { kind = "game", id = 4, fw = 360 }
+  check(game.pick_fov(wins, nil, tw, th) == 360,
+        "game.fov: the LAST sized window wins (D054 multi-window)")
+  check(game.pick_fov(wins, 3, tw, th) == 426,
+        "game.fov: the explicit owner beats doc order")
+  check(game.pick_fov(wins, 9, tw, th) == 360,
+        "game.fov: a stale owner id falls back to last-sized")
+  check(game.pick_fov({ { kind = "game", id = 1, fw = 9999 } }, 1, tw, th)
+        == 320, "game.fov: an out-of-range fw falls back to the design width")
+end
+
+-- the per-window Aa stamp reconcile (D125): image area scales by old/new
+-- (screen footprint constant), crisp integer design multiples recompute
+-- exactly (no drift across repeated flips), center-anchored
+local function t_game_aa()
+  local game = cm.require("cm.ed.win.game")
+  local PW, PH = game.PAD_W, game.PAD_H
+  local th = 240
+  -- a crisp 2x 426-wide window laid out at Aa 1 moves to Aa 1.5
+  local w0, h0 = 426 * 2 + PW, 240 * 2 + PH
+  local w1, h1, dx, dy = game.aa_rect(w0, h0, 1, 1.5, th)
+  check(w1 == 426 * 2 / 1.5 + PW and h1 == 240 * 2 / 1.5 + PH,
+        "game.aa: the image area rescales by aa0/ds, pads untouched")
+  check(dx == (w0 - w1) * 0.5 and dy == (h0 - h1) * 0.5,
+        "game.aa: the rescale is center-anchored")
+  local w2, h2 = game.aa_rect(w1, h1, 1.5, 1, th)
+  check(w2 == w0 and h2 == h0,
+        "game.aa: a round trip restores the exact rect")
+  local wa, ha = game.aa_rect(320 * 3 / 1.25 + PW, 240 * 3 / 1.25 + PH,
+                              1.25, 1.5, th)
+  check(wa == 320 * 3 / 1.5 + PW and ha == 240 * 3 / 1.5 + PH,
+        "game.aa: crisp multiples recompute exactly across scales")
+  local wb = game.aa_rect(100 + PW, 90 + PH, 1, 2, th)
+  check(wb == 100 / 2 + PW,
+        "game.aa: a non-integer design multiple rescales plainly")
+  local wc, hc, dxc, dyc = game.aa_rect(w0, h0, 1, 1, th)
+  check(wc == w0 and hc == h0 and dxc == 0 and dyc == 0,
+        "game.aa: equal scales are the exact identity")
+end
+
+-- the Aa camera anchor (D125): a display-scale change keeps the world
+-- point at the viewport center AT the viewport center, so the layout
+-- grows/shrinks in place instead of sliding away from the screen origin
+local function t_cam_aa()
+  local cam = cm.require("cm.ed.cam")
+  local save = cam.display_scale
+  local c = { x = 100, y = 50, zoom = 2 }
+  local W, H = 1280, 800
+  cam.display_scale = 1
+  local wx, wy = cam.s2w(c, W * 0.5, H * 0.5) -- world point at center
+  cam.aa_anchor(c, W, H, 1, 1.5)
+  cam.display_scale = 1.5
+  local sx, sy = cam.w2s(c, wx, wy)
+  check(m.abs(sx - W * 0.5) < 1e-9 and m.abs(sy - H * 0.5) < 1e-9,
+        "cam.aa: the viewport-center world point stays centered")
+  check(c.zoom == 2, "cam.aa: the anchor never touches zoom")
+  cam.aa_anchor(c, W, H, 1.5, 1)
+  cam.display_scale = 1
+  sx, sy = cam.w2s(c, wx, wy)
+  check(m.abs(sx - W * 0.5) < 1e-9 and m.abs(sy - H * 0.5) < 1e-9,
+        "cam.aa: the anchor round-trips")
+  cam.display_scale = save
+end
+
 -- ---- the 3D fork modules (merged 2026-07-18): KATs to the same bar as
 -- the 2d slices. cm.m4 / cm.kin / cm.walk / cm.rig are pure math (rig
 -- reads record-backed input, neutral in this cartridge); the render-class
@@ -11901,6 +11981,9 @@ function game.init()
   t_help_sel()
   t_help_keys()
   t_game_blit()
+  t_game_fov()
+  t_game_aa()
+  t_cam_aa()
   t_m4()
   t_kin()
   t_walk()

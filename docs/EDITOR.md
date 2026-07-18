@@ -133,7 +133,17 @@ teidraw's source; they are taste-approved by construction):
   normal 1080p display and follows SDL display scale or physical pixel density
   on high-DPI/1440p/4K displays. These settings persist in per-user
   `editor.dat` and therefore follow the user across the picker and all projects;
-  they never enter `cm.ed.doc`, traces, or project output.
+  they never enter `cm.ed.doc`, traces, or project output. The canvas-windows
+  scale multiplies the camera zoom, so a change is a zoom — and it is
+  **anchored at the viewport center** (`cam.aa_anchor`, D125): the layout grows
+  or shrinks in place instead of sliding away from the screen origin.
+  **Game windows hold their screen footprint** across it: each carries the Aa
+  it was laid out at (`win.aa`, captured) and any mismatch — a live change, or
+  a session opened at a different Aa than it was saved at — rescales its image
+  area by old/new (crisp integer design multiples recompute exactly, so
+  repeated flips never drift), center-anchored, restamps, and touches the doc
+  like a resize (D123/D125). Reconciliation is skipped while parked: the past
+  renders as recorded, and the present heals on unpark.
 
 ## 4. Windows
 
@@ -534,9 +544,16 @@ vendored-pin-internal, revisited on any imgui bump.
   exact multiples of the res. Mechanism: `kind.constrain` (threaded
   through `wm.resize` via the inp snapshot) recomputes the window size
   as `image(FOV×s) + chrome pads`; the chosen width lives in `win.fw`
-  (captured), reaches the target as `cm.view.canvas_fov` →
-  `pal.x_fov` before the next frame's game draw (render-only, D036 —
-  never sim state; goldens/verify never see it).
+  (captured). The target is **derived every frame, never latched**
+  (D125): the shell asserts `cm.view.canvas_fov` → `pal.x_fov` (before
+  the next frame's game draw) from the owning game window's `fw` —
+  last resized/loaded wins (`ed.g.fov_owner`, ephemeral), the design
+  res when no game window is sized — and, while time-travelling, from
+  the **recorded FSIZ** (`input.fsiz_applied`, the non-latching read;
+  D124's black-bars fix). Deriving is what makes staleness impossible:
+  D124's park-time re-aim was a one-way latch, so returning to live
+  letterboxed the target until a manual resize. Render-only, D036 —
+  never sim state; goldens/verify never see it.
 - **Pixel-perfect**: the window spawns at `native + pads` so the image
   sits 1:1; when the drawn scale lands on an integer (100% canvas zoom
   × a res-multiple window — or any integer product) the draw snaps

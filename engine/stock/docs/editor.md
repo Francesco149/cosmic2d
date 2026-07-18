@@ -87,7 +87,10 @@ scales editor windows and their text without changing the saved logical zoom;
 **fixed chrome** separately scales the HUD, menus, launcher, and rewind tray.
 The default **auto** mode stays at 100% on a normal 1080p display and chooses a
 larger size from display DPI or 4K pixel density. `−` or `+` selects a manual
-size for this machine; click **auto** to follow the display again.
+size for this machine; click **auto** to follow the display again. A size
+change keeps the view centered where it was, and game windows keep their
+on-screen size and crisp pixel scale — the surrounding windows and chrome are
+what grow or shrink.
 
 ## Rewind playback
 
