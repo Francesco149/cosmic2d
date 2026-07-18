@@ -5,15 +5,19 @@
 -- out on the HUD; leave past exit_r and they walk on (hysteresis, one
 -- chime per visit — the openworld exchange grammar on billboards).
 --
--- Sim state per NPC = ONE buffer (ro.npc<i>): position, facing, waypoint,
--- greet-start frame+1, re-arm flag, walk phase, line index. Wave/dialog
--- are pure functions of (buffer, frame).
+-- Sim state = a cm.actor world in doc (`d.npc` — the D3D-033 re-merge
+-- retrofit; three doc actors, well inside the D098 envelope): position,
+-- facing, waypoint, greet-start frame+1, spent flag, walk phase, line
+-- index. Wave/dialog are pure functions of (actor, frame). The baked
+-- sheets are render-class and stay module-local in N.list, linked by
+-- the actor's `i`.
 
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local world = cm.require("world")
 local spr = cm.require("cm.spr")
 local mascot = cm.require("cm.mascot")
+local actor = cm.require("cm.actor")
 local player = cm.require("player")
 local audio = cm.require("audio")
 
@@ -49,21 +53,12 @@ local DEFS = {
 N.list = {}
 
 function N.init(force_bake)
+  local doc = state.doc
+  doc.npc = doc.npc or actor.world()
   N.list = {}
   for i, d in ipairs(DEFS) do
-    local name = "ro.npc" .. i
-    local ok, b = pcall(pal.buf, name, 32)
-    if not ok then
-      pal.buf_free(name)
-      b = pal.buf(name, 32)
-    end
-    if b:f32(0) == 0 and b:f32(4) == 0 then
-      b:f32(0, d.route[1][1])
-      b:f32(4, d.route[1][2])
-      b:u32(12, 1)
-    end
     N.list[i] = {
-      def = d, buf = b, buf_name = name,
+      def = d,
       sheet = spr.bake(i, mascot.build(d.over), {
         { mascot.idle, 0 },
         { mascot.walk, 0 }, { mascot.walk, 0.25 },
@@ -72,103 +67,114 @@ function N.init(force_bake)
       }, force_bake),
     }
   end
+  if actor.count(doc.npc, "npc") == 0 then
+    for i, d in ipairs(DEFS) do
+      actor.spawn(doc.npc, {
+        tag = "npc", i = i,
+        x = d.route[1][1], z = d.route[1][2],
+        yaw = 0, wp = 1, phase = 0,
+        gstart = 0, spent = 0, line = 0,
+      })
+    end
+  end
 end
 
--- greeting is DERIVED per step: greet-start frame+1 in the buffer, zero
--- when idle; armed flag re-arms past exit_r
-local function step_one(n)
+-- greeting is DERIVED per step: greet-start frame+1 on the actor, zero
+-- when idle; the spent flag re-arms past exit_r
+local function step_one(n, a)
   local k = state.doc.knobs.npc
-  local b = n.buf
-  local x, z = b:f32(0), b:f32(4)
+  local x, z = a.x, a.z
   local px, pz = player.pos()
   local dx, dz = px - x, pz - z
   local d2 = dx * dx + dz * dz
-  local greeting = b:u32(16) ~= 0
+  local greeting = a.gstart ~= 0
   if greeting then
     if d2 > k.exit_r * k.exit_r then
-      b:u32(16, 0) -- walk on; re-arm happens out here too
-      b:u32(20, 0)
+      a.gstart = 0 -- walk on; re-arm happens out here too
+      a.spent = 0
     else
-      -- hold: face the player (eased), the wave/dialog read the buffer
+      -- hold: face the player (eased), the wave/dialog read the actor
       local want = m.atan2(dx, dz)
-      local face = b:f32(8)
-      local da = m.atan2(m.sin(want - face), m.cos(want - face))
-      b:f32(8, m.fmod(face + da * k.turn, m.tau))
+      local da = m.atan2(m.sin(want - a.yaw), m.cos(want - a.yaw))
+      a.yaw = m.fmod(a.yaw + da * k.turn, m.tau)
       return
     end
   end
-  if d2 < k.greet_r * k.greet_r and b:u32(20) == 0 then
-    b:u32(16, state.frame() + 1) -- greet begins (frame+1: 0 = none)
-    b:u32(20, 1)                 -- armed off until exit_r
-    b:u32(28, (b:u32(28) % #n.def.lines) + 1)
+  if d2 < k.greet_r * k.greet_r and a.spent == 0 then
+    a.gstart = state.frame() + 1 -- greet begins (frame+1: 0 = none)
+    a.spent = 1                  -- armed off until exit_r
+    a.line = (a.line % #n.def.lines) + 1
     audio.sfx("greet", 100)
     return
   end
   -- amble the route
-  local wp = n.def.route[b:u32(12)]
+  local wp = n.def.route[a.wp]
   local tx, tz = wp[1], wp[2]
   local ddx, ddz = tx - x, tz - z
   local d = m.sqrt(ddx * ddx + ddz * ddz)
   if d < k.arrive then
-    b:u32(12, b:u32(12) % #n.def.route + 1)
+    a.wp = a.wp % #n.def.route + 1
     return
   end
   local step = k.speed / 60.0
   if step > d then step = d end
-  b:f32(0, x + ddx / d * step)
-  b:f32(4, z + ddz / d * step)
-  b:f32(24, b:f32(24) + step)
+  a.x = x + ddx / d * step
+  a.z = z + ddz / d * step
+  a.phase = a.phase + step
   local want = m.atan2(ddx, ddz)
-  local face = b:f32(8)
-  local da = m.atan2(m.sin(want - face), m.cos(want - face))
-  b:f32(8, m.fmod(face + da * k.turn, m.tau))
+  local da = m.atan2(m.sin(want - a.yaw), m.cos(want - a.yaw))
+  a.yaw = m.fmod(a.yaw + da * k.turn, m.tau)
 end
 
 function N.step()
-  for _, n in ipairs(N.list) do step_one(n) end
+  local w = state.doc.npc
+  actor.tick(w) -- once per step (cm.actor's contract)
+  for a in actor.each(w, "npc") do step_one(N.list[a.i], a) end
+end
+
+-- iteration for main's emit/debug loops (ascending id = DEFS order)
+function N.each()
+  return actor.each(state.doc.npc, "npc")
 end
 
 -- the typing dialog line of the nearest ACTIVE greet (nil if none)
 function N.dialog()
   local k = state.doc.knobs.npc
-  for _, n in ipairs(N.list) do
-    local g = n.buf:u32(16)
-    if g ~= 0 then
-      local line = n.def.lines[n.buf:u32(28)]
-      local nch = m.min(#line, (state.frame() - (g - 1)) // k.type_f)
+  for a in actor.each(state.doc.npc, "npc") do
+    if a.gstart ~= 0 then
+      local line = N.list[a.i].def.lines[a.line]
+      local nch = m.min(#line, (state.frame() - (a.gstart - 1)) // k.type_f)
       return line, nch
     end
   end
 end
 
-local function anim_rc(n)
+local function anim_rc(a)
   local k = state.doc.knobs.npc
-  local g = n.buf:u32(16)
-  if g ~= 0 then -- waving: two baked frames on a frame clock
-    local t = (state.frame() - (g - 1)) // (k.wave_f // 2)
+  if a.gstart ~= 0 then -- waving: two baked frames on a frame clock
+    local t = (state.frame() - (a.gstart - 1)) // (k.wave_f // 2)
     return 5 + t % 2
   end
-  local ph = n.buf:f32(24) / state.doc.knobs.move.stride
+  local ph = a.phase / state.doc.knobs.move.stride
   return 1 + math.tointeger(ph * 4 // 1) % 4
 end
 
 -- one NPC -> its own draw segment (each variant is its own sheet texture)
-function N.emit_one(n, out, cam_yaw, cam_pitch)
+function N.emit_one(a, out, cam_yaw, cam_pitch)
   local k = state.doc.knobs.spr
-  local x, z = n.buf:f32(0), n.buf:f32(4)
-  local y = world.ground(x, z)
-  local tint = 0.7 + 0.3 * world.shadow(x, z)
-  local col = spr.oct(n.buf:f32(8), cam_yaw)
-  return spr.billboard(out, n.sheet, x, y, z, k.h, col, anim_rc(n), tint,
-                       cam_yaw, cam_pitch)
+  local y = world.ground(a.x, a.z)
+  local tint = 0.7 + 0.3 * world.shadow(a.x, a.z)
+  local col = spr.oct(a.yaw, cam_yaw)
+  return spr.billboard(out, N.list[a.i].sheet, a.x, y, a.z, k.h, col,
+                       anim_rc(a), tint, cam_yaw, cam_pitch)
 end
 
 function N.emit_shadow(out)
   local ntris = 0
-  for _, n in ipairs(N.list) do
-    local x, z = n.buf:f32(0), n.buf:f32(4)
-    local y = world.ground(x, z)
-    ntris = ntris + spr.decal(out, x, y + 0.03, z, 0.55, 255, 255, 255, 150)
+  for a in actor.each(state.doc.npc, "npc") do
+    local y = world.ground(a.x, a.z)
+    ntris = ntris + spr.decal(out, a.x, y + 0.03, a.z, 0.55, 255, 255, 255,
+                              150)
   end
   return ntris
 end

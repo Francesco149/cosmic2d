@@ -9,7 +9,8 @@
 -- trace exercises the whole kernel); game.demo(2) = walk to the plaza
 -- greeter and stand for the exchange.
 --
--- Determinism: sim state in named buffers (ro.player/ro.cam/ro.npc*) +
+-- Determinism: sim state in named buffers (ro.player/ro.cam) + the
+-- d.npc cm.actor world +
 -- doc tree; cm.math trig; the mouse is in the input record, so a click IS
 -- sim input. The terrain bake runs in draw under a budget knob
 -- (render-class; _G.RO_BUDGET override must never change a trace).
@@ -345,10 +346,10 @@ function game.step()
     print(("DBG f=%d p=%.2f,%.2f g=%.2f face=%.2f moving=%s yaw=%.2f")
       :format(state.frame(), px, pz, world.ground(px, pz), player.face(),
               tostring(player.moving()), cam:f32(0)))
-    for _, n in ipairs(npc.list) do
-      local x, z = n.buf:f32(0), n.buf:f32(4)
+    for a in npc.each() do
       print(("  npc %s p=%.2f,%.2f g=%.2f wp=%d greet=%d"):format(
-        n.def.name, x, z, world.ground(x, z), n.buf:u32(12), n.buf:u32(16)))
+        npc.list[a.i].def.name, a.x, a.z, world.ground(a.x, a.z), a.wp,
+        a.gstart))
     end
   end
 end
@@ -421,8 +422,8 @@ function game.draw()
   local nsh = player.emit_shadow(out) + npc.emit_shadow(out)
   local npl = player.emit(out, yaw, pitch)
   local nnp = {}
-  for i, n in ipairs(npc.list) do
-    nnp[i] = npc.emit_one(n, out, yaw, pitch)
+  for a in npc.each() do -- ascending id = npc.list order (the tex pass below)
+    nnp[a.i] = npc.emit_one(a, out, yaw, pitch)
   end
   dyn:setstr(0, table.concat(out))
   local off = 0

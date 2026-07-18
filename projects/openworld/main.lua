@@ -328,11 +328,9 @@ function game.step()
     print(("DBG f=%d p=%.3f,%.3f,%.3f v=%.2f,%.2f,%.2f g=%.3f yaw=%.2f stars=%d"):format(
       state.frame(), px, py, pz, vx, vy, vz, world.ground(px, pz), cam:f32(0),
       state.doc.stars))
-    for _, n in ipairs(npc.list) do
-      local b = n.buf
-      print(("  npc %s p=%.2f,%.2f yaw=%.2f wp=%d greet %d..%d n=%d"):format(
-        n.buf_name, b:f32(20), b:f32(24), b:f32(0), b:f32(28), b:f32(4),
-        b:f32(12), b:f32(8)))
+    for a in npc.each() do
+      print(("  npc %d p=%.2f,%.2f yaw=%.2f wp=%d greet %d..%d n=%d"):format(
+        a.i, a.x, a.z, a.yaw, a.wp, a.gstart, a.gend, a.greets))
     end
   end
 end
