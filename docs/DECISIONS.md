@@ -6011,3 +6011,55 @@ named honestly: no committed trace exercises a MID-trace FOV change yet
 (the first real 3D resize-while-recording session should be exported
 and committed as that golden); the 2D demos keep their render-side
 `pal.gfx_size()` HUD reads (nothing sim-side depends on it there).
+
+## D124 — replay follows the recorded FOV; rovale ships its bake; varied trees (2026-07-18)
+
+Three reports from the human's native session with the D123 build.
+
+**A replay showed black bars where the live window adapted.** D123 made
+the SIM see the recorded size, but nothing re-aimed the render target
+during time travel: a clip (or a parked past) recorded at a resized FOV
+replayed into the boot-size target and the game window letterboxed it.
+Now the game window, while `scrub.paused()`, follows the applied FSIZ:
+`input.fsiz_applied()` is the NON-latching read (chrome observing a
+replay must never arm the domain into a live recording — 3 KATs pin
+that), and a mismatch re-aims `view.canvas_fov`. Scripted proof across
+a mid-session FOV change (320 → 426): parked early the target reads
+320x240, parked late 426x240, back live the window's own — both
+directions, same session.
+
+**rovale no longer bakes its terrain at every boot.** The per-tile
+atlas bake (1024 unique 34x34 tiles at 8/frame) filled visibly for ~2s
+on every launch. `cm.atlas` gained the shipped-bake snapshot:
+`A.export` (PNG of a finished bake — refuses an unfinished one) and
+`A.import` (dims-checked, fills the pixel buffer, marks done under the
+current stamp, uploads). PNG is lossless RGBA, so an imported atlas is
+byte-identical to the bake that produced it — the budgeted loop stays
+the dev-side authority. rovale commits
+`spr/terrain-atlas-v<BAKE_STAMP>.png` (1.5 MB; the stamp rides the
+FILENAME, so a texel-math bump orphans the asset and the progressive
+bake silently takes over) — `game.bake_atlas()` on the console
+re-exports it, the `rebake_sprites` model. Boot now reads bake-done by
+frame 2. 9 KATs (t_atlas_snapshot): a 2x2 bake round-trips
+byte-identical through export/import, layout mismatch + garbage refuse,
+unfinished-bake export refuses.
+
+**The tree canopy tuft varies per tree.** Every rovale tree carried its
+small top ball at the same offset — read as obvious repetition. The
+tuft now rides a POSITION hash (never the placement stream, D3D-022:
+props, casters, and the walk-grid blockers stand exactly where they
+always did, so sim state is untouched): yaw around the canopy, reach,
+height, and size all vary, and about a quarter of trees grow a second
+tuft. Render-only by construction.
+
+Proof: Linux selftest **24,489 → 24,501** / native Windows **24,503**;
+`nix run .#test` ALL GREEN — every trace byte-identical (bundled old
+code + no sim byte moved), the two rovale pixel goldens honestly
+RE-CUT on pinned lavapipe for the tree change (the shipped atlas
+itself is pixel-neutral: the golden frames sit past bake completion
+and import is lossless) with landmarks inspected (gazebo, NPCs, path,
+pond). Captures on llm-feed: a fresh boot at frame 12 fully baked with
+varied trees; the re-cut tour golden. Deferred, named honestly: the
+committed mid-trace-FOV golden (D123) still awaits a real recording;
+bigworld's noise-driven terrain has no bake to ship (its cost is mesh
+emission, already fast).

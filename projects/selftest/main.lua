@@ -11622,6 +11622,110 @@ local function t_input_mrel()
   check(exts(rec)[2] == nil, "mrel: reset ends the domain")
 end
 
+-- the FSIZ extension (D123): the frame's live target size as recorded sim
+-- input — a LATCH (a bare record keeps the last size), design-res fallback
+local function t_input_fsiz()
+  local input = cm.require("cm.input")
+  local view = cm.require("cm.view")
+  local function exts(rec)
+    local out, pos = {}, 11
+    while pos <= #rec do
+      local tag, len = rec:byte(pos), rec:byte(pos + 1)
+      out[tag] = rec:sub(pos + 2, pos + 1 + len)
+      pos = pos + 2 + len
+    end
+    return out
+  end
+
+  -- dormant domain: no extension, and reads fall back to the design res
+  input.fsiz_reset()
+  local rec = input.collect({})
+  check(exts(rec)[3] == nil, "fsiz: dormant domain emits no extension")
+  input.apply(rec)
+  local w, h = input.game_size() -- this read latches the domain
+  check(w == view.cfg.ref_w and h == view.cfg.ref_h,
+        "fsiz: unsized state reads the design res")
+
+  -- latched: every record carries the live target; apply makes it the read
+  rec = input.collect({})
+  local p = exts(rec)[3]
+  check(p and #p == 4, "fsiz: a latched domain emits the 4-byte extension")
+  input.apply(rec)
+  local gw, gh = pal.gfx_size()
+  w, h = input.game_size()
+  check(w == gw and h == gh, "fsiz: the applied record carries the target")
+
+  -- a bare v1 record KEEPS the applied size (latch, not a delta) — and a
+  -- hand-built sized record is the authority over the live target
+  input.apply(string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0))
+  w, h = input.game_size()
+  check(w == gw and h == gh, "fsiz: a bare v1 record keeps the last size")
+  input.apply(string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+              .. string.pack("<I1I1i2i2", 3, 4, 320, 180))
+  w, h = input.game_size()
+  check(w == 320 and h == 180, "fsiz: the recorded size is the authority")
+
+  -- malformed refused loudly
+  local v1 = string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+  check(not pcall(input.apply, v1 .. string.pack("<I1I1i2", 3, 2, 64)),
+        "fsiz: malformed extension refused")
+
+  -- reset drops the latch AND the applied size
+  input.fsiz_reset()
+  rec = input.collect({})
+  check(exts(rec)[3] == nil, "fsiz: reset ends the domain")
+  w, h = input.game_size()
+  check(w == view.cfg.ref_w and h == view.cfg.ref_h,
+        "fsiz: reset forgets the applied size")
+
+  -- the non-latching chrome read (the replay-follow door): nil when
+  -- unsized, the applied size after, and reading it never arms the domain
+  input.fsiz_reset()
+  check(input.fsiz_applied() == nil, "fsiz: applied reads nil when unsized")
+  rec = input.collect({})
+  check(exts(rec)[3] == nil, "fsiz: the applied read never latches")
+  input.apply(string.pack("<I4i2i2I1i1", 0, 0, 0, 0, 0)
+              .. string.pack("<I1I1i2i2", 3, 4, 426, 240))
+  local aw, ah = input.fsiz_applied()
+  check(aw == 426 and ah == 240, "fsiz: applied reads the recorded size")
+  input.fsiz_reset() -- leave the cartridge's domain clean
+end
+
+-- the atlas shipped-bake snapshot (D124): a finished bake exports as PNG
+-- and imports byte-identical into a fresh atlas of the same layout
+local function t_atlas_snapshot()
+  local atlas = cm.require("cm.atlas")
+  local function texel(wx, wz) -- a position-dependent, exact pattern
+    return (wx * 31) % 256, (wz * 57) % 256, (wx + wz) % 256
+  end
+  local a = atlas.build{ pixels = "rc.st.atl1", state = "rc.st.atls1",
+                         n = 2, tile = 1.0, stamp = 7 }
+  local none, why = atlas.export(a)
+  check(none == nil and why == "bake not finished",
+        "atlas: export refuses an unfinished bake")
+  atlas.bake(a, 4, texel)
+  check(atlas.done(a), "atlas: 4 tiles bake in one budget-4 call")
+  local png = atlas.export(a)
+  check(type(png) == "string" and #png > 8, "atlas: a finished bake exports")
+  local b = atlas.build{ pixels = "rc.st.atl2", state = "rc.st.atls2",
+                         n = 2, tile = 1.0, stamp = 7 }
+  check(not atlas.done(b), "atlas: the fresh twin starts unbaked")
+  check(atlas.import(b, png) == true, "atlas: the export imports")
+  check(atlas.done(b), "atlas: an imported bake reads done")
+  check(b.buf:str(0, b.sx * b.sy * 4) == a.buf:str(0, a.sx * a.sy * 4),
+        "atlas: imported pixels are byte-identical to the bake")
+  local c = atlas.build{ pixels = "rc.st.atl3", state = "rc.st.atls3",
+                         n = 3, tile = 1.0, stamp = 7 }
+  local ok3, why3 = atlas.import(c, png)
+  check(ok3 == nil and why3:find("want"),
+        "atlas: a layout-mismatched import refuses")
+  check(atlas.import(b, "not a png") == nil, "atlas: garbage bytes refuse")
+  pal.tex_free(a.tex); pal.tex_free(b.tex); pal.tex_free(c.tex)
+  pal.buf_free("rc.st.atl1"); pal.buf_free("rc.st.atls1")
+  pal.buf_free("rc.st.atl2"); pal.buf_free("rc.st.atls2")
+  pal.buf_free("rc.st.atl3"); pal.buf_free("rc.st.atls3")
+end
+
 local function t_figverts()
   local gb = cm.require("cm.gb")
   local m4 = cm.require("cm.m4")
@@ -11802,6 +11906,8 @@ function game.init()
   t_walk()
   t_rig()
   t_input_mrel()
+  t_input_fsiz()
+  t_atlas_snapshot()
   t_figverts()
   t_console_sel()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))

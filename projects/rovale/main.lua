@@ -93,6 +93,18 @@ function game.rebake_sprites()
   npc.init(true)
 end
 
+-- console: export the finished terrain bake as the committed shipped
+-- asset (D124 — boot adopts it instead of baking; after editing the
+-- texel math, bump BAKE_STAMP in world.lua, let the bake finish, rerun)
+function game.bake_atlas()
+  local bytes, why = cm.require("cm.atlas").export(world.atlas)
+  if not bytes then pal.log("[rovale] bake_atlas: " .. why) return end
+  local path = world.atlas_asset()
+  local ok, err = pal.write_file_atomic(path, bytes)
+  pal.log(ok and ("[rovale] wrote " .. path .. " (" .. #bytes .. " bytes)")
+             or ("[rovale] bake_atlas FAILED: " .. tostring(err)))
+end
+
 local function build_sky()
   skybuf = pal.buf("rc.ro.sky", 6 * 24)
   local function sv(x, y, c)

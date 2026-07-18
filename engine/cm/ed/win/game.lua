@@ -163,6 +163,21 @@ function M.blit_scale(s, ds)
 end
 
 function M.draw(win, ctx)
+  -- while time-travelling, the RECORDED target size is the authority
+  -- (D123's FSIZ): a replay of a session whose FOV was resized live must
+  -- re-aim the target to the recorded size, or the window letterboxes
+  -- the boot FOV under a sim that thinks it is wider (the human's
+  -- black-bars report). Chrome-side follow of applied sim input — the
+  -- non-latching read, so watching a 2D replay never arms the domain.
+  if cm.require("cm.scrub").paused() then
+    local sw, sh = cm.require("cm.input").fsiz_applied()
+    if sw then
+      local gw2, gh2 = pal.gfx_size()
+      if sw ~= gw2 or sh ~= gh2 then
+        cm.require("cm.view").canvas_fov = { w = sw, h = sh }
+      end
+    end
+  end
   -- letterbox the target into a rounded filler well, preserving aspect —
   -- the image sits inside a margin so it never touches the panel's
   -- rounded border (human feedback, live round 2)

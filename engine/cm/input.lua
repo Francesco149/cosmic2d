@@ -932,6 +932,17 @@ function M.game_size()
   return cfg.ref_w, cfg.ref_h
 end
 
+-- The applied FSIZ size WITHOUT latching the domain (nil when no sized
+-- record ever applied) — chrome that wants to FOLLOW a replay's recorded
+-- size (the editor game window) reads this, so observing a 2D replay
+-- never starts emitting the extension into a live recording.
+function M.fsiz_applied()
+  local b = buf()
+  local fw, fh = b:i16(20), b:i16(22)
+  if fw > 0 and fh > 0 then return fw, fh end
+  return nil
+end
+
 -- Boot-path reset beside mrel_reset (cm.main): fresh project, fresh
 -- domain, applied size forgotten.
 function M.fsiz_reset()

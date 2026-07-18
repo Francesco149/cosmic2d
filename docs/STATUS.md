@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **D123 (the D122 feel-check follow-ups): the live target size is now recorded input** — extension tag 3 FSIZ + `input.game_size()` (design-res fallback = boot target, so every historical golden stands byte-identical); all six 3D demos adapt aspect/HUD/pick-rays to a live FOV resize instead of squashing; and an Aa change rescales game-window doc rects (image area only) so their screen footprint + crisp blit stay constant instead of growing a blank well. Linux selftest **24,489** / native Windows **24,491**. Before that, **D122 fixed three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D124 (the D123 native-session reports): replays re-aim the target to the recorded FOV** (the game window follows applied FSIZ via the new non-latching `input.fsiz_applied()` while time-travelling — the black-bars fix, proven both directions across a mid-session resize), **rovale ships its terrain bake** (cm.atlas export/import + the committed `spr/terrain-atlas-v4.png`; boot reads bake-done by frame 2, was ~2s of visible filling; `game.bake_atlas()` is the dev re-export door), and **rovale's tree tufts vary per tree** (position hash, placement stream untouched — sim byte-identical; the two rovale pixel goldens honestly re-cut on lavapipe, landmarks inspected). Linux selftest **24,501** / native Windows **24,503**. Before that, **D123: the live target size became recorded input** — extension tag 3 FSIZ + `input.game_size()` (design-res fallback = boot target, so every historical golden stands byte-identical); all six 3D demos adapt aspect/HUD/pick-rays to a live FOV resize instead of squashing; and an Aa change rescales game-window doc rects (image area only) so their screen footprint + crisp blit stay constant instead of growing a blank well. Linux selftest **24,489** / native Windows **24,491**. Before that, **D122 fixed three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,26 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18, continued) — D123: the D122 feel-check
+**This session (2026-07-18, continued) — D124: the D123 native-session
+reports.** (1) A replay of a resized-FOV session letterboxed the boot target
+(black bars): the game window now re-aims `view.canvas_fov` to the applied
+FSIZ while `scrub.paused()`, via the non-latching `input.fsiz_applied()`
+(chrome observing a replay must never arm the domain — KAT'd). Scripted
+proof: parked early reads the recorded 320x240, parked late the recorded
+426x240, back live the window's own. (2) rovale's ~2s per-boot terrain bake
+became a shipped asset: `cm.atlas.export/import` (lossless PNG round trip,
+byte-identical to a live bake, layout+garbage refusals KAT'd), the committed
+`spr/terrain-atlas-v<STAMP>.png` (stamp in the filename — a texel bump
+orphans it and the budgeted bake takes over), `game.bake_atlas()` as the dev
+re-export door. (3) The repetitive tree tuft now varies per tree off a
+position hash — placement stream, casters, and walk grid untouched, so sim
+is byte-identical; the two rovale pixel goldens were honestly re-cut on
+pinned lavapipe (tree change only; the shipped atlas is pixel-neutral past
+bake completion) with landmarks inspected. Linux selftest **24,501**
+(12 new KATs) / native Windows **24,503**; suite ALL GREEN. Captures on
+llm-feed (fresh-boot frame 12 fully baked + varied trees; the re-cut tour).
+
+**Same session, earlier — D123: the D122 feel-check
 follow-ups.** (1) The Aa compensation moved from the blit to the RECT: the
 game window's doc rect (image area minus the pads) rescales by old/new on a
 live Aa change, so the screen footprint and the crisp blit stay constant —

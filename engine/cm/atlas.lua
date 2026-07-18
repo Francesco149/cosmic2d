@@ -153,6 +153,37 @@ function A.done(a) return a.st:u32(0) >= a.w * a.h end
 -- editor's re-bake button)
 function A.rebake(a) a.st:u32(0, 0); a.st:u32(4, a.stamp) end
 
+-- ---- the shipped-bake snapshot (D124) ----
+-- A finished bake exported as PNG so a demo can COMMIT its terrain bake
+-- and boot instantly; the budgeted loop stays the dev-side authority (a
+-- stamp bump orphans the shipped asset and the progressive bake takes
+-- over until the dev re-exports). PNG is lossless RGBA, so an imported
+-- atlas is byte-identical to the bake that produced it.
+
+-- PNG bytes of the finished bake, or nil, reason before completion
+function A.export(a)
+  if not A.done(a) then return nil, "bake not finished" end
+  return pal.png_encode(a.buf:str(0, a.sx * a.sy * 4), a.sx, a.sy)
+end
+
+-- adopt previously exported PNG bytes: dims must match this layout
+-- exactly; fills the pixel buffer, marks the bake done under the
+-- CURRENT stamp, uploads. Stamp policy is the caller's (carry it in the
+-- asset's name, the BAKE_STAMP model). Returns true, or nil, reason.
+function A.import(a, bytes)
+  if type(bytes) ~= "string" then return nil, "no bytes" end
+  local pix, w, h = pal.png_read(bytes)
+  if not pix then return nil, "bad png: " .. tostring(w) end
+  if w ~= a.sx or h ~= a.sy then
+    return nil, ("%dx%d, want %dx%d"):format(w, h, a.sx, a.sy)
+  end
+  a.buf:setstr(0, pix)
+  a.st:u32(0, a.w * a.h)
+  a.st:u32(4, a.stamp)
+  pal.tex_update(a.tex, a.buf, a.sx, a.sy)
+  return true
+end
+
 -- the interior UV rect of tile (tx, tz): the mesh emitter maps this tile's
 -- quad to (u0,v0)..(u1,v1) so it samples the tile's cell WITHOUT its gutter
 -- (the gutter exists only to feed the filter across borders). The one seam

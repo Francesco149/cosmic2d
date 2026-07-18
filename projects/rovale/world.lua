@@ -363,6 +363,12 @@ local BAKE_STAMP = 4
 W.atlas = nil     -- the cm.atlas handle (built in W.build)
 W.atlas_tex = nil -- its texture id (the terrain segment samples it)
 
+-- the committed shipped-bake asset (D124; stamp in the name — a stale
+-- file from an older texel version never matches and is ignored)
+function W.atlas_asset()
+  return cm.main.args.project .. "/spr/terrain-atlas-v" .. BAKE_STAMP .. ".png"
+end
+
 -- run K tiles of bake budget; returns done fraction 0..1. Call from draw
 -- ONLY (render-class). cm.atlas uploads the atlas once on completion.
 function W.bake(budget)
@@ -489,6 +495,16 @@ local TRUNK_C = { 0.42, 0.30, 0.22 }
 local WOOD_C = { 0.36, 0.26, 0.20 }
 local FENCE_C = { 0.42, 0.30, 0.22 }
 
+-- per-tree deterministic variation (D124 — the human: the fixed canopy
+-- tuft read repetitive): a POSITION hash, never the placement stream, so
+-- props, casters, and the walk grid stand exactly where they always did
+local function prop_hash(x, z)
+  local h = (m.floor(x * 16.0) * 374761393 + m.floor(z * 16.0) * 668265263)
+            & 0xffffffff
+  h = ((h ~ (h >> 13)) * 1274126177) & 0xffffffff
+  return h ~ (h >> 16)
+end
+
 local function emit_props(out)
   local n = 0
   for _, p in ipairs(W.props) do
@@ -503,17 +519,32 @@ local function emit_props(out)
         m4.mul(b, m4.mul(m4.translate(0.5 * p.sc, 0.30 * p.sc, 0.3 * p.sc),
                          m4.scale(1.2, 0.7, 1.2))),
         0.6 * p.sc, 7, g2, nil, b)
-    else -- round-canopy tree (the ro2 species: trunk + stacked balls)
+    else -- round-canopy tree (the ro2 species: trunk + stacked balls); the
+         -- top tuft rides the position hash — yaw, reach, height, and size
+         -- all vary per tree, and about a quarter grow a second tuft
       local sc = p.sc
       n = n + gb.prism(out, b, 5, 0.20 * sc, 0.16 * sc, 1.3 * sc, TRUNK_C, 0)
       local c1, c2 = { 0.22, 0.44, 0.24 }, { 0.30, 0.53, 0.27 }
       n = n + gb.ball(out,
         m4.mul(b, m4.mul(m4.translate(0, 1.75 * sc, 0), m4.scale(1.25, 1.0, 1.25))),
         0.95 * sc, 9, c1, nil, b)
+      local hv = prop_hash(p.x, p.z)
+      local ang = (hv % 256) * (m.tau / 256.0)
+      local rad = (0.28 + ((hv >> 8) % 64) / 256.0) * sc  -- 0.28..0.53 u
+      local ty = (2.05 + ((hv >> 14) % 64) / 160.0) * sc  -- 2.05..2.44 u
+      local ts = 0.55 + ((hv >> 20) % 48) / 240.0         -- 0.55..0.74
       n = n + gb.ball(out,
-        m4.mul(b, m4.mul(m4.translate(0.35 * sc, 2.25 * sc, 0.2 * sc),
+        m4.mul(b, m4.mul(m4.translate(m.cos(ang) * rad, ty, m.sin(ang) * rad),
                          m4.scale(1.0, 0.8, 1.0))),
-        0.62 * sc, 8, c2, nil, b)
+        ts * sc, 8, c2, nil, b)
+      if (hv >> 26) & 3 == 0 then
+        local a2 = ang + m.tau * 0.38
+        n = n + gb.ball(out,
+          m4.mul(b, m4.mul(m4.translate(m.cos(a2) * rad * 0.9, ty - 0.28 * sc,
+                                        m.sin(a2) * rad * 0.9),
+                           m4.scale(1.0, 0.75, 1.0))),
+          ts * 0.75 * sc, 7, c1, nil, b)
+      end
     end
   end
   for _, f in ipairs(W.fences) do
@@ -610,6 +641,18 @@ function W.build()
     n = N, tile = TILE, fill = "\40\60\40\255", stamp = BAKE_STAMP,
   }
   W.atlas_tex = W.atlas.tex
+  -- the SHIPPED bake (D124): adopt the committed atlas so boot skips the
+  -- progressive bake (~2s of visibly-filling terrain). PNG is lossless, so
+  -- the adopted pixels are byte-identical to a finished live bake; a
+  -- BAKE_STAMP bump orphans the asset (filename mismatch) and the budgeted
+  -- bake takes over until `game.bake_atlas()` re-exports it (dev side).
+  if not atlas.done(W.atlas) then
+    local bytes = pal.read_file(W.atlas_asset())
+    if bytes then
+      local ok, why = atlas.import(W.atlas, bytes)
+      if not ok then pal.log("[rovale] shipped atlas ignored: " .. why) end
+    end
+  end
 
   -- texture registry: [0]=count then ids (free the old generation on reload)
   local idbuf = pal.buf("rc.ro.texids", 4 * 8)
