@@ -50,7 +50,8 @@ LUA_OBJ := $(LUA_SRC:vendor/lua/src/%.c=$(BUILD)/lua_%.o)
 IMGUI_OBJ := $(addprefix $(BUILD)/ig_,$(notdir $(IMGUI_SRC:.cpp=.o)))
 
 SHADERS := shaders/quad.vert.spv shaders/quad.frag.spv shaders/blit.vert.spv \
-           shaders/blit.frag.spv
+           shaders/blit.frag.spv shaders/blit_soft.frag.spv \
+           shaders/retro.vert.spv shaders/retro.frag.spv
 
 all: $(BIN) $(SHADERS)
 

@@ -11,7 +11,12 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 19 /* v19: device-output volume gains + display size */
+#define PAL_VERSION_API 20 /* v20: the cosmic3d merge — 3D retro pipeline
+                              (x_view3d/x_tris) + retro presentation (x_grade
+                              quant=, x_soft VI blit); the fork numbered these
+                              v15/v16, which collide with mainline v15–v19
+                              (pads, folder chooser, exe identity, volume
+                              gains + display size — v19) */
 
 /* Stable SDL preference identity. SDL maps this pair to the platform-native
  * per-user writable application-data root; changing either string would
@@ -27,6 +32,10 @@
    both fit, plus headroom for hopping projects in one session. The watcher
    thread only stats up to watch_count, so a bigger cap is free at runtime. */
 #define PAL_VERT_BYTES 20 /* x f32, y f32, u f32, v f32, rgba u8x4 */
+#define PAL_VERT3D_BYTES 24 /* x,y,z f32, u,v f32, rgba u8x4 (pre-lit) */
+#define PAL_MAX_VIEW3D 64 /* x_view3d calls per frame (sky pass + scene +
+   editor viewports); segments reference views by index, so several
+   camera/fog setups can coexist in one frame */
 #define PAL_EV_TEXT_MAX 40 /* utf-8 bytes per text event (longer commits split) */
 #define PAL_EV_DROP_MAX 512 /* bytes per OS-drop path (longer paths ignored) */
 #define PAL_LOG_RING 256
@@ -99,6 +108,27 @@ typedef struct {
   uint32_t first, count; /* vertex range */
 } PalSeg;
 
+/* one 3D camera/fog setup (pal.x_view3d); the retro pipeline's per-view
+ * uniforms, snapshotted at call time so segments drawn under different
+ * views coexist in one frame (sky pass = identity mvp + fog off) */
+typedef struct {
+  float mvp[16];   /* column-major, Lua-side policy (proj*view*model) */
+  float fog[4];    /* start, end, on, 0 — matches retro.vert VUBO */
+  float fogcol[4]; /* r, g, b, 1 — matches retro.frag FUBO */
+} PalView3D;
+
+/* x_tris flags (frozen-shape candidate; mirrors proto/gpu_proto.c) */
+#define PAL_TRI_ALPHATEST 1u /* cutout: discard texel alpha < 0.5 */
+#define PAL_TRI_NEAREST 2u   /* nearest sampling (default: three-point) */
+#define PAL_TRI_BLEND 4u     /* alpha blend + depth write OFF (decals) */
+
+typedef struct {
+  int tex;
+  uint32_t flags; /* PAL_TRI_* */
+  int view;       /* index into views3d */
+  uint32_t first, count; /* vertex range in the 3D batch */
+} PalSeg3D;
+
 typedef struct {
   char *path;
   int64_t mtime;     /* consumer baseline (parachute / engine last-seen) */
@@ -131,8 +161,8 @@ typedef struct {
   int ui_w, ui_h;    /* ui canvas size in px (pal.x_ui_target) */
   float ui_scale;    /* integer px scale the ui canvas blits to the window at */
   int cur_target;    /* 0 = game, 1 = ui — where subsequent quads accumulate */
-  SDL_GPUSampler *sampler;
-  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit, *pipe_grade;
+  SDL_GPUSampler *sampler, *sampler_lin; /* nearest (default) / linear (VI) */
+  SDL_GPUGraphicsPipeline *pipe_scene, *pipe_blit, *pipe_blit_soft, *pipe_grade;
   SDL_GPUBuffer *vbuf;
   SDL_GPUTransferBuffer *tbuf;
   uint32_t gpubuf_cap; /* bytes in vbuf/tbuf */
@@ -159,9 +189,16 @@ typedef struct {
   int vp_x, vp_y, vp_scale; /* game viewport origin (window px) + integer scale */
   /* per-frame render-only color grade on the game-target blit (pal.x_grade);
    * reset each begin_frame so it is opt-in per frame and can't leak across a
-   * reboot. grade[8] = brightness, contrast, saturation, pad, tint rgb, pad. */
+   * reboot. grade[8] = brightness, contrast, saturation, quant bits (0 = off:
+   * Bayer-4 dithered n-bit-per-channel quantize, the 5551 grade), tint rgb,
+   * pad. */
   bool grade_set;
   float grade[8];
+  /* per-frame VI-soft presentation (pal.x_soft): the game-target blit samples
+   * bilinearly + smears one dest px horizontally (the N64 VI resample look;
+   * proto --soft is the reference). Reset each begin_frame like the grade.
+   * Presentation only — the internal target (readback/goldens) never sees it. */
+  bool soft_set;
   SDL_GPUTexture *grade_tmp; /* ping-pong scratch for the grade post-pass */
   int grade_tmp_w, grade_tmp_h;
   /* cached swapchain px size (pal.x_window_size), updated each present; the
@@ -179,8 +216,25 @@ typedef struct {
   bool clip_on;
   SDL_Rect clip;
 
+  /* 3D retro pipeline (x_view3d/x_tris — docs/COSMIC3D.md §2). All lazily
+   * created on first 3D use; a pure-2D session never allocates any of it
+   * and its frame path is byte-identical to cosmic2d's. */
+  SDL_GPUGraphicsPipeline *pipe3d_opaque, *pipe3d_blend;
+  SDL_GPUTexture *depth3d; /* D16, sized to the internal target */
+  int depth3d_w, depth3d_h;
+  uint8_t *verts3d;
+  uint32_t v3count, v3cap; /* in vertices */
+  PalSeg3D *segs3d;
+  uint32_t seg3d_count, seg3d_cap;
+  PalView3D views3d[PAL_MAX_VIEW3D];
+  uint32_t view3d_count;
+  SDL_GPUBuffer *vbuf3d;
+  SDL_GPUTransferBuffer *tbuf3d;
+  uint32_t gpubuf3d_cap; /* bytes in vbuf3d/tbuf3d */
+
   /* last-present counters (pal.frame_stats) */
   uint32_t stat_quads, stat_segs, stat_vbytes;
+  uint32_t stat_tris, stat_segs3d; /* 3D batch (0 in pure-2D sessions) */
 
   /* log ring (pal.log_lines) */
   PalLogLine log_ring[PAL_LOG_RING];
@@ -276,6 +330,15 @@ void pal_gfx_read_end(void);
 int pal_gfx_tex_create(const void *pixels, int w, int h);
 bool pal_gfx_tex_update(int id, const void *pixels, int w, int h);
 bool pal_gfx_tex_free(int id);
+/* 3D retro pipeline (x_ experimental, docs/COSMIC3D.md §2). view3d appends a
+ * camera/fog setup for subsequent tris (false = per-frame view cap hit);
+ * tris appends `count` triangles of 3 packed verts (PAL_VERT3D_BYTES each,
+ * pre-lit color) drawn under the latest view with PAL_TRI_* flags. 3D draws
+ * into the game target under all 2D quads (HUD/UI on top), depth-tested;
+ * pipelines + depth target are created lazily on the first call. */
+bool pal_gfx_view3d(const float mvp[16], float fog_start, float fog_end,
+                    float fog_r, float fog_g, float fog_b, bool fog_on);
+bool pal_gfx_tris(int tex, const void *verts, uint32_t count, uint32_t flags);
 
 /* buf.c */
 PalBuf *pal_buf_get(const char *name, size_t size, const char **err);

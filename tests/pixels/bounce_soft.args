@@ -1,0 +1,8 @@
+projects/bounce
+--headless
+--frames
+150
+--win
+960x720
+--eval
+cm.require('main').demo(1)

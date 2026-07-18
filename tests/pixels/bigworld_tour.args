@@ -1,0 +1,6 @@
+projects/bigworld
+--headless
+--frames
+700
+--eval
+cm.require('main').demo(1)

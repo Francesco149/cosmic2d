@@ -1,0 +1,6 @@
+projects/bounce
+--headless
+--frames
+346
+--eval
+cm.require('main').demo(3)

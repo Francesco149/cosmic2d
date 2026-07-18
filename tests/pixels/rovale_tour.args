@@ -1,0 +1,6 @@
+projects/rovale
+--headless
+--frames
+620
+--eval
+cm.require('main').demo(1)

@@ -1,6 +1,8 @@
 # cosmic2d
 
-A tiny 2D pixel-art engine / fantasy console. The intended distribution is one
+A tiny 2D pixel-art engine / fantasy console — with an optional retro-3D
+pipeline (N64-era 3D and Ragnarok-Online-style 2.5D, merged back from the
+cosmic3d fork; see `docs/COSMIC3D.md`). The intended distribution is one
 folder containing the engine, editor, tools, and game projects. The source
 checkout is built with Nix and the extract-and-run archives are clean-machine
 tested; the editor can export any opened project with its carried runtime.

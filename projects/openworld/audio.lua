@@ -1,0 +1,54 @@
+-- audio — openworld's sound hooks: SFX one-shots on sim slots (the bounce
+-- pattern, tuned .ins presets copied into ins/). All sim code (cm.snd is
+-- recorded/replayed/rewound) so the mix is deterministic; a missing .ins
+-- just mutes that hook (headless-safe).
+
+local ins = cm.require("cm.ins")
+local snd = cm.require("cm.snd")
+
+local M = select(2, ...) or {}
+
+-- ORDERED (no hash-order dependence — the determinism rule): slot i-1 gets
+-- SFX[i]. { key, ins file, trigger note }
+local SFX = {
+  { "jump", "sfx-jump", 64 },
+  { "land", "sfx-land", 55 },
+  { "splash", "sfx-splash", 84 }, -- fixed-clock noise ops: the hiss (12k)
+  -- + plosh (2.8k) don't track the note (a note-clocked LFSR at a low
+  -- note is a buzz — the human's "low pitch laser"); vel still scales
+  { "greet", "sfx-greet", 76 }, -- the NPC's hello: bounce's fm-bell ding
+  -- at its fanfare note (a human-heard preset, not a new synth draft)
+  { "coin", "sfx-coin", 74 }, -- star pickup: bounce's coin, same note
+}
+local by_name = {}
+
+function M.init()
+  local proj = cm.main.args.project
+  for i, s in ipairs(SFX) do
+    local slot = i - 1
+    local bytes = pal.read_file(proj .. "/ins/" .. s[2] .. ".ins")
+    if bytes then
+      local doc = ins.decode(bytes)
+      ins.upload(doc, slot, "sim", "sfx" .. slot)
+      by_name[s[1]] = { slot = slot, note = s[3] }
+    end
+  end
+end
+
+function M.sfx(name, vel, note) -- note overrides the slot default (the
+  -- wanderer's hello is the same bell a fourth up, not a new preset)
+  local s = by_name[name]
+  if s then snd.on(s.slot, note or s.note, vel or 110) end
+end
+
+-- all-stars fanfare: a bell major triad on the greet slot (bounce's goal
+-- fanfare voicing — one frame, three voices)
+function M.fanfare()
+  local s = by_name.greet
+  if not s then return end
+  snd.on(s.slot, 76, 105)
+  snd.on(s.slot, 80, 100)
+  snd.on(s.slot, 83, 110)
+end
+
+return M

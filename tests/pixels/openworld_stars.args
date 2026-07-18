@@ -1,0 +1,6 @@
+projects/openworld
+--headless
+--frames
+1740
+--eval
+cm.require('main').demo(5)
