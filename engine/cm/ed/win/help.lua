@@ -232,10 +232,11 @@ end
 -- render the markdown body; returns the content height (for scroll clamp)
 local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
   local y = y0
-  local fence = false
-  -- iterate the SAME line split cm.docs numbers by, so a search hit's line
-  -- (and a #anchor) map to the right rendered row
-  local ls, n = docs._lines(src)
+  -- classify code vs prose once (pure, KAT-pinned) over the SAME line split
+  -- cm.docs numbers by, so a search hit's line (and a #anchor) map to the right
+  -- rendered row. "code" covers a whole fenced/indented block — every nested
+  -- line and interior blank — not just the first line.
+  local kind, ls, n = docs.line_kinds(src)
   for ln = 1, n do
     local line = ls[ln]
     if win.goto_line == ln then win._goto_y = y end
@@ -243,10 +244,10 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
       pal.x_ig_rect_fill(x0 - 3 * z, y - 1, maxw + 6 * z, px * 1.5 + 2,
                          COL.hl, 3 * z)
     end
-    local fenced = line:match("^%s*```")
-    if fenced then
-      fence = not fence
-    elseif fence or line:match("^    %S") then -- code block (fence or indent)
+    local k = kind[ln]
+    if k == "fence" then
+      -- a ``` marker line: draw nothing, take no vertical space
+    elseif k == "code" then
       pal.x_ig_rect_fill(x0, y - 1, maxw, px + 3, COL.code_bg, 0)
       pal.x_ig_text(x0 + 4 * z, y, px, COL.code, (line:gsub("^    ", "")), 1)
       y = y + px * 1.5

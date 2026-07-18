@@ -10883,6 +10883,41 @@ local function t_docs()
   check(sg[2].level == 1 and sg[2].title == "Gamma" and sg[2].lo == 2,
         "docs.sections: heading after preamble")
 
+  -- line_kinds(): the code/prose boundary the reader draws by. A 4-space
+  -- indented block is code through EVERY line — nested-deeper lines and
+  -- interior blanks — not just its first (the multi-line-code-block bug);
+  -- ``` markers are drawn as nothing and a fenced body is code verbatim.
+  local km = "# Title\n" ..                    -- 1  text (heading)
+             "Intro paragraph.\n" ..           -- 2  text
+             "\n" ..                           -- 3  text (gap before the block)
+             "    local a = 1\n" ..            -- 4  code (4-space indent)
+             "      nested = deeper\n" ..      -- 5  code (6-space — the bug)
+             "\n" ..                           -- 6  code (interior blank)
+             "    return a\n" ..               -- 7  code (block resumes at 4)
+             "\n" ..                           -- 8  text (block ended -> gap)
+             "- a bullet\n" ..                 -- 9  text (bullet)
+             "```\n" ..                        -- 10 fence marker
+             "# not a heading\n" ..            -- 11 code (fenced body)
+             "\n" ..                           -- 12 code (fenced interior blank)
+             "still fenced\n" ..               -- 13 code (fenced body)
+             "```\n" ..                        -- 14 fence marker
+             "Closing text.\n"                 -- 15 text
+  local k = docs.line_kinds(km)
+  check(k[1] == "text" and k[2] == "text" and k[3] == "text",
+        "docs.line_kinds: heading/paragraph/leading gap are prose")
+  check(k[4] == "code" and k[5] == "code" and k[7] == "code",
+        "docs.line_kinds: an indented block is code through nested-deeper lines")
+  check(k[6] == "code",
+        "docs.line_kinds: a blank interior to an indented block stays code")
+  check(k[8] == "text",
+        "docs.line_kinds: the blank after the block ends is a prose gap")
+  check(k[9] == "text", "docs.line_kinds: a bullet is prose")
+  check(k[10] == "fence" and k[14] == "fence",
+        "docs.line_kinds: ``` markers are fence lines (drawn as nothing)")
+  check(k[11] == "code" and k[12] == "code" and k[13] == "code",
+        "docs.line_kinds: fenced body — comment, blank, and text — is all code")
+  check(k[15] == "text", "docs.line_kinds: text after the closing fence is prose")
+
   -- section_at(): the heading owning a line
   check(docs.section_at(sa, 5).title == "Camera (cm.camera)",
         "docs.section_at: line 5 belongs to Camera")

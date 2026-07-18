@@ -115,6 +115,44 @@ function M.sections(src)
   return secs
 end
 
+-- classify every source line for the reader as "fence" (a ``` marker line —
+-- drawn as nothing), "code" (a code-BODY line: inside a ``` fence, or a
+-- 4-space indented block, INCLUDING lines indented deeper than 4 for nested
+-- code and interior blank lines that the block resumes past), or "text"
+-- (everything else — headings, bullets, blanks, paragraphs — which the reader
+-- lays out itself). Pure over the text; this owns the code/prose boundary (the
+-- stateful part: fence toggling + indent runs) so it is KAT-pinned, while the
+-- reader keeps prose layout. Returns kind[1..n], lines, n.
+function M.line_kinds(src)
+  local lines, n = split_lines(src)
+  local kind = {}
+  local fence = false
+  for ln = 1, n do
+    local line = lines[ln]
+    if line:match("^%s*```") then
+      kind[ln] = "fence"; fence = not fence
+    elseif fence then
+      kind[ln] = "code"                                   -- a fenced body line
+    elseif line:match("^    ") and line:match("%S") then
+      kind[ln] = "code"                     -- an indented line (>=4, any depth)
+    else
+      kind[ln] = "text"
+    end
+  end
+  -- second pass: a blank line between two indented code lines is interior to
+  -- the block (so blank-separated groups render as ONE contiguous block, not
+  -- fragmented by prose gaps). Fenced interior blanks are already "code" above.
+  for ln = 1, n do
+    if kind[ln] == "text" and not lines[ln]:match("%S") then
+      local prev, nxt
+      for k = ln - 1, 1, -1 do if lines[k]:match("%S") then prev = kind[k]; break end end
+      for k = ln + 1, n do if lines[k]:match("%S") then nxt = kind[k]; break end end
+      if prev == "code" and nxt == "code" then kind[ln] = "code" end
+    end
+  end
+  return kind, lines, n
+end
+
 function M.section_at(secs, line)
   local owner
   for _, s in ipairs(secs) do
