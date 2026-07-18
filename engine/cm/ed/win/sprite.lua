@@ -43,6 +43,13 @@ function M.defaults()
            color2 = 0x000000ff, palettes = {} }
 end
 
+-- the right button is OURS while editing (cm.ed takes_right): secondary
+-- paint on the canvas, secondary set on rail/palette swatches. View mode
+-- keeps the canvas spawn menu.
+function M.takes_right(win)
+  return win.edit == true and win.path ~= ""
+end
+
 -- per-window hotkeys (EDITOR.md §13): tool keys mirror the rail chips
 -- (edit mode only), shift+1 refits the view — dispatched by the shell
 -- to the focused window, hints render under it

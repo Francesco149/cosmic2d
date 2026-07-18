@@ -1029,7 +1029,22 @@ local function interact(ig)
   if ig.mouse and not g.alt then return end -- an edit widget owns the rest
 
   if i.clicked[3] then
-    g.rpend = { sx = i.wx, sy = i.wy, wx = wwx, wy = wwy }
+    -- a kind may CLAIM right presses over its content body (kind.takes_right
+    -- — sprite edit-mode secondary paint + swatches, tilemap erase, the
+    -- win-sprite.md affordances): a claimed press never arms the spawn-menu
+    -- pend, so the press-frame pointer gate stays hot and the kind's draw
+    -- sees clicked[3]. interact runs BEFORE draw, so an unconditional pend
+    -- here gated hot_id() on the press frame and the kind never saw the
+    -- press — right-paint was dead and a still right-click over an editing
+    -- sprite opened the spawn menu (found by the D127 walkthrough tape).
+    -- The header strip stays menu territory like every other window part.
+    local id, part = wm.hit(doc, wwx, wwy, 0)
+    local win = id and part == "content" and wm.get(doc, id)
+    local kind = win and M.kinds[win.kind]
+    if not (win and wwy >= win.y + HDR and kind and kind.takes_right
+            and kind.takes_right(win, M)) then
+      g.rpend = { sx = i.wx, sy = i.wy, wx = wwx, wy = wwy }
+    end
   end
 end
 

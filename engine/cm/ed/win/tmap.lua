@@ -50,6 +50,12 @@ end
 -- per-window hotkeys (EDITOR.md §13): tool keys mirror the rail chips
 -- (edit mode only), shift+1 refits the view
 local function editing(win) return win.edit == true and win.path ~= "" end
+
+-- the right button erases while editing (cm.ed takes_right): a claimed
+-- press must reach draw's rmb-erase instead of arming the spawn menu.
+function M.takes_right(win)
+  return editing(win)
+end
 local function set_tool(t)
   return function(win, ed)
     win.tool = t
