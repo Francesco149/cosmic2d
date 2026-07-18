@@ -58,6 +58,13 @@ reader); a `#section` link jumps to that heading. The header **◀ ▶** — or 
 mouse back/forward buttons — walk your history, **docs** returns to search, and
 **src** opens the raw markdown in a code editor (which has its own Ctrl+F find).
 
+Any text in a doc can be **selected**: drag across prose, headings, or code —
+the selection is glyph-precise and follows the rendered text, spanning
+wrapped lines and whole code blocks. Press **Ctrl+C** to copy it (a small
+"copied" tag confirms; wrapped lines rejoin, code keeps its exact
+indentation). **Esc** clears the selection. Links still follow on a plain
+click — a drag that starts on a link selects instead of navigating.
+
 Code blocks are **syntax-highlighted** and **copyable**: hover a block for its
 **copy** button (it copies that block's source), or press **copy page** in the
 header to put the whole doc on the clipboard as plain text.

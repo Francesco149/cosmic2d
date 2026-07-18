@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session made the docs reader's code blocks syntax-highlighted + copyable (per-block chip + copy-page) and fixed the home-list over-scroll flicker (D111); prior A8 packets were two docs-UX fixes + two reference sections, and D110's in-engine documentation search (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session gave the docs reader TRUE drag-selection + Ctrl+C copy and unified each multi-line code block into a single panel (D112, closing D111's deferred "copy any text" packet); prior A8 packets: D111's highlight/copy/scroll-clamp, two docs-UX fixes + two reference sections, D110's in-engine documentation search (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,50 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18) — D111 makes the docs reader's code blocks
+**This session (2026-07-18) — D112 gives the docs reader true drag-selection +
+Ctrl+C copy and draws each multi-line code block as ONE panel (A8), on both
+platforms.** Both human-requested ("true selection + copy … and a proper multiline
+code block"), pure editor chrome — no sim/doc/recorded byte moved:
+- **One panel per code block.** The old per-line `px+3` background rects (at a
+  `px*1.5` advance) read as a stack of striped single-line boxes; `draw_doc` now
+  draws a single rounded, padded panel spanning the whole contiguous block (height
+  known up front from the fixed line advance). The copy chip's extents come from
+  the same computation.
+- **True selection.** While a doc renders, every drawn text run (prose words, bold,
+  links, inline code, headings, code lines — including empty ones, so
+  block-interior blanks select) records into a per-frame **row model**: one row per
+  visual line, runs in reading order, doc-space coords (scroll/window moves never
+  invalidate), the source line `ln`, and a joined text (a gap becomes one space).
+  A drag picks **glyph-precise, utf8-safe** `{row, byte-offset}` endpoints against
+  last frame's rows (stable indices; a reflow honestly drops the selection), with
+  autoscroll past the band edges; the highlight draws under the text, over the
+  panel. **Esc** clears via the kind escape hook. Links follow on **release of a
+  gesture that never dragged**, so link text is selectable.
+- **Ctrl+C copy.** Routed as the shell's `kind_call("copy")` beside undo/redo (so
+  it never fires while an imgui edit widget owns the keyboard — the code editor
+  keeps its own). Extraction rejoins wraps with the space the wrap consumed, `\n`
+  per source line, `\n\n` across crossed blanks, and code rows keep exact dedented
+  indentation; a "copied" tag rides the selection head. Copied bytes verified
+  faithful against scripting.md in a scripted headless run.
+- **State discipline.** Selection + row model live **module-local keyed by
+  `win.id`** (`M.sel_state`) — deliberately not window fields, since every string
+  key on a captured window rides `state.canon` into `session.dat` and the row
+  model is large + per-frame. (Observed en route: the reader's existing `_src`
+  whole-doc cache does persist that way — logged in D112 as a cheap future trim.)
+
+Proof: Linux selftest **24,246** / native Windows **24,248** on PAL API 19 (21 new
+KATs in `t_help_sel` — pure pick/x/extract math with an injected fake measure, the
+`text.fr_matches` precedent), `nix run .#test` ALL GREEN, every trace + pixel/audio
+golden byte-identical. `tools/build-windows.sh` refreshed the stage (4 durable
+entries) and Start Menu shortcut. Headless `smoke --edit` captures inspected on
+llm-feed: scripting.md with a selection spanning prose into the `project.lua` block
+(one panel, highlight, "copied" tag); getting-started.md's `bin/cosmic` block as one
+plain-face panel. `engine/stock/docs/editor.md` documents selection + Ctrl+C.
+Deferred, named honestly: double/triple-click select, resize-surviving selection
+(doc-anchored endpoints), the bullet `- ` marker in drag-copies, in-doc Ctrl+F find.
+See DECISIONS `D112`.
+
+**Prior session (2026-07-18) — D111 makes the docs reader's code blocks
 syntax-highlighted + copyable and clamps the home-list over-scroll (A8), on both
 platforms.** Three docs-reader gaps, two human-reported, all pure editor chrome —
 no sim/doc/recorded byte moved:
@@ -444,10 +487,9 @@ the 20-line "Small module reference" is still an index, and several `cm.*`
    (also the spine of the later fresh-user pass).
 The remaining cheap reader nicety is **in-doc Ctrl+F find** (the `text.lua` find
 model; the shell already routes Ctrl+F to `kind_call("find")`, so `M.find` on the
-help kind drops in). Deferred: **full prose drag-select** (glyph-precise selection
-across wrapped inline runs — the real "copy any text" packet; D111 shipped per-block
-+ copy-page copy instead) and D110's launcher content-search / result keyboard-nav /
-span-precise highlight. Deferred A7 refinements (captured-audio embedding, a
+help kind drops in). **Full prose drag-select shipped (D112)** — still deferred:
+D110's launcher content-search / result keyboard-nav / span-precise highlight, and
+D112's double/triple-click select + resize-surviving selection. Deferred A7 refinements (captured-audio embedding, a
 wall-clock clip filename, asset-import markers, native-failure next-launch synthesis,
 an embedded-tail size budget) stay available if a real use votes one up. See
 `ALPHA.md` §A8, DECISIONS `D111`/`D110`.

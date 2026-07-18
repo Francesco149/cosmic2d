@@ -5375,3 +5375,72 @@ block highlighted with a `copy` chip and the `copy page` button; `getting-starte
 `bin/cosmic` block staying plain; the home doc-list scrolled past the end sitting flush
 (no over-scroll gap). `engine/stock/docs/editor.md` documents copy + highlighting.
 `tools/build-windows.sh` refreshed the stage (4 durable entries) and Start Menu shortcut.
+
+## D112 — docs reader: true drag-selection + one panel per code block (A8, 2026-07-18)
+
+**Context.** D111 shipped per-block copy chips + copy-page and named **full prose
+drag-select** the real "copy any text" packet, deferred. The human voted it up
+("I'd prefer true selection + copy"), together with the other rendering nit: a
+multi-line code block drew a `px+3`-tall background rect per line while lines
+advance `px*1.5` apart, so every block read as an obvious stack of striped
+single-line boxes.
+
+**Decision — a per-frame row model makes the rendered doc selectable.**
+- **One panel per block.** `draw_doc` draws a single rounded rect spanning the
+  whole contiguous block (its height is knowable up front — code lines advance at
+  a fixed `px*1.5`), with small vertical padding, at block entry; the per-line
+  rects are gone. The chip's `_y0/_y1` extents come from the same computation.
+- **The row model.** While a doc renders, every drawn text run (prose words, bold,
+  links, inline code, headings, code lines — including *empty* code lines, so
+  block-interior blanks select) is recorded into **rows**: one per VISUAL line,
+  runs in reading order, **doc-space** coords (x rel. the text edge, y rel. the
+  content top — scroll and window moves never invalidate them), plus the source
+  line `ln`. After the body draws, each row's runs join into its **text** (a
+  gap wider than half a pixel becomes one space — exactly what the eye reads).
+- **Selection.** Endpoints are `{ri, ci}` — row index + byte offset into the
+  row's joined text. A press in the band anchors; a drag picks the head against
+  **last frame's rows** (same indices — the doc and width are stable
+  frame-to-frame; a reflow drops the selection), with autoscroll past the band
+  edges. Picking is **glyph-precise and utf8-safe** (midpoint-snapped, never
+  splitting a codepoint). The highlight draws per row at row-creation time, so
+  it sits *under* the text but *over* the block panel. **Esc** clears (the
+  kind's `escape` hook, ahead of the shell ladder). Links now follow on
+  **release of a gesture that never dragged**, so link text is selectable.
+- **Copy.** **Ctrl+C** routes through the shell as `kind_call("copy")` (beside
+  undo/redo, so it never fires while an imgui edit widget owns the keyboard —
+  the code editor keeps its own copy). Extraction: end rows sliced at their
+  offsets, middle rows whole; a **wrap rejoins with the space it consumed**, the
+  next source line is `\n`, a 2+ line jump crossed a blank — a paragraph break
+  (`\n\n`); code rows keep exact dedented indentation. A "copied" tag rides the
+  selection head on the wall clock.
+- **Where the state lives.** Selection state + the row model are **module-local
+  keyed by `win.id`** (`M.sel_state`), deliberately NOT window fields: every
+  string key on a captured window rides `state.canon` into `session.dat`, and
+  the row model is big and rebuilt every frame. (Observed while placing this:
+  the reader's existing `_src` cache — a whole doc string — does persist that
+  way; logged as a cheap future trim, not this packet.)
+
+**No sim/doc/recorded byte moves** — pure Lua chrome; the pick/x/extract math is
+pure over the row structure with an injected measure, KAT-pinned with a fake
+monospace measure (the `text.fr_matches` precedent), and the reader passes
+`pal.x_ig_text_size`.
+
+**Revisit triggers / deferred, named honestly.** **Double-click word-select /
+triple-click line-select** ride the same model when a real use votes them in.
+A **selection that survives a resize** would need doc-anchored (not row-anchored)
+endpoints — dropped-on-reflow is the honest v1. The bullet marker (`- `) is
+drawn decoration, not a recorded run, so copied bullets lose it (copy-page keeps
+it). **In-doc Ctrl+F find** stays the remaining cheap reader nicety (D110).
+
+**Proof.** Linux selftest **24,246** on PAL API 19 (21 new KATs in `t_help_sel`:
+row joining incl. touching runs + empty rows, pick midpoint/gap/clamp semantics,
+utf8 boundary snapping, `row_x` inverses, band picking, extraction — slices, wrap
+rejoin, newline vs paragraph break, code blanks, reversed-endpoint normalization,
+empty selection — and the escape contract). `nix run .#test` ALL GREEN with every
+historical trace and pixel/audio golden byte-identical. Headless `smoke --edit`
+captures inspected on llm-feed: `scripting.md` with a selection spanning prose
+into the `project.lua` block (one unified panel, highlight, "copied" tag) with
+the copied bytes logged and verified faithful; `getting-started.md`'s two-line
+`bin/cosmic` block as one plain-face panel. `engine/stock/docs/editor.md`
+documents selection + Ctrl+C. `tools/build-windows.sh` refreshed the stage and
+Start Menu shortcut.
