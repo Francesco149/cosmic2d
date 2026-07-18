@@ -188,19 +188,46 @@ function M.draw(ed, ig, i)
   pal.x_ig_rect_fill(px, py, pw, ph, COL.panel, 10)
   pal.x_ig_rect(px, py, pw, ph, COL.edge, 1, 10)
 
-  -- the search field
+  -- the search field. x_ig_edit is a transparent imgui WINDOW, which renders
+  -- below this overlay's FOREGROUND drawlist — so an ordinary field is hidden
+  -- behind the panel we just drew (input still works, but it looks empty as you
+  -- type). Ghost it (a pure input machine, no glyphs) and draw the query text +
+  -- our own blinking caret onto the foreground ourselves, exactly like the code
+  -- editor. Font/px match the widget's so its scroll and byte-offset caret line
+  -- up with what we draw.
   local fh = 30
+  local fx, fy, fw, fpx = px + 16, py + 15, pw - 32, 15
   pal.x_ig_rect_fill(px + 10, py + 10, pw - 20, fh, COL.field, 6)
-  if l.q == "" then
-    pal.x_ig_text(px + 20, py + 18, 15, COL.dim,
-                  "search assets, docs, windows…  (↑↓ enter · esc)", 0)
-  end
-  local text, _, _, _ = pal.x_ig_edit {
-    id = "launcher", x = px + 16, y = py + 15, w = pw - 32, h = fh - 8,
-    text = l.q, px = 15, font = 0, multiline = false, focus = l.focus or nil,
+  local text, _, active, st = pal.x_ig_edit {
+    id = "launcher", x = fx, y = fy, w = fw, h = fh - 8,
+    text = l.q, px = fpx, font = 0, multiline = false, ghost = true,
+    focus = l.focus or nil,
   }
   l.focus = nil
   if text ~= l.q then l.q = text:gsub("[\r\n\t]", ""); l.sel = 1; ed.touch() end
+
+  local sx = (st and st.sx) or 0
+  local ty = py + 18
+  pal.x_ig_clip_push(fx, py + 10, fw, fh)
+  if l.q == "" then
+    pal.x_ig_text(px + 20, ty, fpx, COL.dim,
+                  "search assets, docs, windows…  (↑↓ enter · esc)", 0)
+  else
+    if active and st and st.sa and st.sb and st.sb > st.sa then -- selection
+      local hx = fx + pal.x_ig_text_size(l.q:sub(1, st.sa), fpx, 0) - sx
+      local hw = pal.x_ig_text_size(l.q:sub(st.sa + 1, st.sb), fpx, 0)
+      pal.x_ig_rect_fill(hx, ty - 2, hw, fpx + 4, COL.row_sel, 0)
+    end
+    pal.x_ig_text(fx - sx, ty, fpx, COL.hot, l.q, 0)
+  end
+  -- our caret (the ghost hides imgui's): blink on the wall clock
+  if active and st and st.caret then
+    if (pal.time_ns() // 1000000 % 1060) < 530 then
+      local cx = fx + pal.x_ig_text_size(l.q:sub(1, st.caret), fpx, 0) - sx
+      pal.x_ig_rect_fill(cx, ty - 1, 1, fpx + 2, COL.hot, 0)
+    end
+  end
+  pal.x_ig_clip_pop()
 
   -- split: results (left) + preview (right)
   local listx, listy = px + 10, py + 10 + fh + 8
