@@ -42,4 +42,8 @@ Player/author-facing documentation lives under `engine/stock/docs/`. It must
 describe only shipped behavior and use links that the in-engine reader can
 resolve. A0's scripting guide covers the supported small-project path and its
 current limits; gate A8 expands this into the complete create-to-export guide
-and exhaustive public API/task reference.
+and exhaustive public API/task reference. `scripting.md` also carries the
+author-facing reference for the retro-3D pipeline (its "Making a 3D game"
+section: the `pal.x_*` primitives and the ten 3D `cm.*` modules), findable
+through the reader's search; `COSMIC3D.md` remains the design/rationale doc
+behind it.

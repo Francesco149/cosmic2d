@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **this session merged the cosmic3d fork back into mainline (D114) and executed its entire post-merge queue**: 3D-module KATs to the 2d bar, the cm.actor/hud/move retrofits with honest re-cuts (D115), the relative-mouse + MREL record packet (D116), and — after the human's "NPCs tank bigworld 240→80fps" report — the baked-figure pipeline + x_figverts C loop (D117, PAL API 22): **1.84 → 0.188 ms per figure, byte-identical, all goldens un-recut**. The 3D documentation pass is deferred to a mechanical session (handoff notes below). Prior A8 packets: D110–D113 (docs search/reference/reader polish) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **this session merged the cosmic3d fork back into mainline (D114) and executed its entire post-merge queue**: 3D-module KATs to the 2d bar, the cm.actor/hud/move retrofits with honest re-cuts (D115), the relative-mouse + MREL record packet (D116), and — after the human's "NPCs tank bigworld 240→80fps" report — the baked-figure pipeline + x_figverts C loop (D117, PAL API 22): **1.84 → 0.188 ms per figure, byte-identical, all goldens un-recut**. The 3D documentation pass is now complete — **D119** (notes below). Prior A8 packets: D110–D113 (docs search/reference/reader polish) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -120,12 +120,23 @@ Esc/eject restores the untouched live session.**
    native clipboard — if it still fails windowed, chase the imgui host with
    a repro. Linux selftest **24,403**; native Windows pending the stage swap (staged editor running — retry queued).
 
-**Deferred to a mechanical documentation session (Opus) — the 3D docs pass.**
-Scope: per-module reference sections in `engine/stock/docs/scripting.md` for
-the ten 3D cm.* modules (signatures + one copyable example each, D110-
-findable), the PAL x_ surface (x_view3d/x_tris/x_grade quant=/x_soft/
-x_mouse_capture), MREL in the compatibility section, and a docs/README
-cross-check. **Tricky parts a mechanical pass might miss:**
+**The 3D docs pass — DONE (D119).** All of the deferred scope landed, no
+sim/render/recorded byte moved (selftest holds at 24,403; docs are not
+compiled). `engine/stock/docs/scripting.md` gained a `## Making a 3D game`
+umbrella, a `## 3D drawing primitives (pal.x_*)` section, and one
+D110-findable `## …(cm.x)` section per module (m4/gb/terr/atlas/fig/mascot/
+spr/rig/kin/walk) — each with signatures + a copyable example; the module
+index and the Compatibility section (PAL API **19 → 22** + the MREL note)
+were updated. `docs/ARCHITECTURE.md` got the contract half: the `rc.`
+render-class buffer domain beside `ed.` in the state model, and PAL API
+v20/v21/v22 sections. `docs/README.md` cross-checked. Findability was
+verified headless (`cm.docs.search` lands every module + the primitives on
+their own sections); the prose was kept to the reader's known-good glyph
+set. **One correction to the notes below:** the source
+(`luabind.c`/`gfx.c`) is explicit that **x_grade bakes into the internal
+target before readback, so pixel goldens DO see it** — x_soft is a
+present-blit effect the target never sees; both stay never-sim (D036). The
+tricky parts that were honored:
 - Fork docs say "PAL API 15/16" — that numbering is DEAD; mainline is v20
   (3D) / v21 (relative mouse). Never copy fork version numbers forward.
 - `cm.pick` is TAKEN (the 2d picker list model); the 3D pick ray is

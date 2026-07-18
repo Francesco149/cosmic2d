@@ -5732,3 +5732,62 @@ console text search (Ctrl+F via the shell's find route) wait for real
 votes; the standalone-clip materialize path warns but proceeds when a
 clip carries no tree (legacy) — a "clip carries no assets" pill in the
 tray is a cheap future affordance.
+
+## D119 — the 3D documentation pass: scripting.md gains the retro-3D reference (2026-07-18)
+
+The cosmic3d merge (D114) deferred its author-facing docs to a mechanical
+session. This is it — pure prose/markdown, no sim/render/recorded byte
+moved (selftest holds at **24,403**, `nix run .#test` unaffected by
+construction: docs are not compiled).
+
+**Where the 3D reference lives: `engine/stock/docs/scripting.md`, one
+file.** The A8 charter designates the scripting guide the "exhaustive
+public API/task reference", and one file keeps a single findable module
+index and one determinism contract. The 3D content is fenced under a
+`## Making a 3D game (the retro pipeline)` umbrella that tells a 2D author
+to skip it, then a `## 3D drawing primitives (pal.x_*)` section, then one
+`## …(cm.x)` section per module (m4, gb, terr, atlas, fig, mascot, spr,
+rig, kin, walk) — the same `## Title (cm.mod)` shape the 2D modules use,
+so each is D110-findable by name. Verified: `cm.docs.search` over the real
+doc lands every module query on its own section, and `x_view3d` /
+`x_figverts` / `pick ray` / `heightfield` / `mouselook` resolve to the
+right sections. The 20-line module index and the Compatibility section
+(PAL API bumped **19 → 22**, plus the MREL additive-record note) were
+updated to match.
+
+**The tricky-parts checklist from the handoff was honored — and one item
+corrected against the source.** Fork "PAL API 15/16" numbering is dead;
+the doc uses mainline v20 (3D) / v21 (relative mouse) / v22 (baked
+figures). The 3D pick ray is documented as `cm.walk.raycast`, never a
+"cm.pick" (that name is the 2D picker's). `cm.kin` is documented as pure
+value-based functions (not a component system) and `cm.rig`/`cm.walk` as
+owning a buffer *layout* but not the buffer — the verbatim layout tables
+are reproduced. The capture-vs-recorded split is stated (sim reads
+`input.mouse_rel()`, never `pal.x_mouse_capture` state). **Correction:**
+the handoff's shorthand called x_grade and x_soft both presentation-only
+with the internal target "never" seeing them; the PAL source
+(`luabind.c`/`gfx.c`) is explicit that **x_grade bakes into the internal
+target before readback — so pixel goldens DO see the grade** — while
+x_soft is a present-blit effect the target never sees. The doc states the
+real distinction; the load-bearing invariant both share (**neither is ever
+read by the sim**, D036) leads.
+
+**ARCHITECTURE.md got the contract-level half.** The `rc.` render-class
+buffer domain is documented beside the `ed.` editor domain in the state
+model (both excluded from snapshots/traces by `cm.state.sim_buffer`;
+D3D-012/D3D-025), and the PAL API contract gained v20/v21/v22 sections
+(the 3D pipeline, relative mouse, `x_figverts`). `docs/README.md` notes
+that scripting.md now carries the 3D author reference with COSMIC3D.md as
+the design doc behind it.
+
+Proof: selftest **24,403** (unchanged — the t_docs smoke parses the new
+markdown clean), `cm.docs.search` findability spot-checked headless
+against the shipped doc, and reader-safety checked — the shipped bitmap
+font only renders a known glyph set, so the new prose was kept to glyphs
+the existing docs already use (`>=` and `64x64` replaced `≥`/`64²`).
+Deferred, named honestly: DECISIONS3D.md stays a closed namespace (this
+entry is in DECISIONS.md, per the merge); the editor's 3D asset windows
+(terrain paint, figure vertex-pushing, sheet preview) stay parked, so no
+`win-*.md` guide exists for them yet; a worked end-to-end 3D tutorial (the
+getting-started walkthrough's 3D twin) is a later A8-style packet, not
+attempted here.

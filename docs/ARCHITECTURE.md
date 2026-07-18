@@ -785,6 +785,19 @@ buffers (selftest-pinned) — the editor's captured state (cm.ed.doc +
 future `ed.*` buffers) is delta-able by R6 rewind without ever entering
 the sim's determinism domain.
 
+The cosmic3d merge (D114) adds a second excluded prefix on the same
+mechanism (D3D-012): **`rc.` is the render-class domain** — named buffers
+holding bytes only the renderer ever reads (baked terrain-chunk vertex
+streams, the per-tile terrain atlas's pixels, figure→sprite-sheet
+texture-id registries, per-frame draw scratch). `cm.state.sim_buffer`
+returns false for both `ed.*` and `rc.*`, so neither enters a snapshot or
+a `cm.trace` recording, and sim code must never read an `rc.*` buffer.
+That split is what lets the streaming-world demo page thousands of
+terrain chunks into `rc.*` buffers, and the RO demo bake its 1088² terrain
+atlas a few tiles per frame, while a golden trace — which pins only the
+player/entity *sim* buffers — stays byte-identical under any chunk radius
+or bake budget (D3D-025).
+
 cm.view grows **`mode = "canvas"`** (the ig-canvas session): full-window ui
 canvas for the legacy dev chrome (which renders UNDER the ig layer until
 R3/R4 re-host it), `x_compose{scale=0}`, game FOV stays the project's fixed
@@ -812,6 +825,60 @@ does not silently bless different bytes. This is observer/render state only.
 `cm.main` calls it after every project boot/switch, using the project-local
 `icon` path when safe and the carried canonical cosmic2d PNG otherwise, so a
 surviving picker window never retains the previous project's icon.
+
+### PAL API v20 additions (the cosmic3d merge — retro-3D pipeline, D114)
+
+The retro-3D triangle pipeline lands additively beside the 2D quad
+renderer (docs/COSMIC3D.md §2); a pure-2D frame never touches it, so its
+bytes are byte-identical. All four primitives are render/dev — the sim
+never reads any of them (D036).
+
+- `pal.x_view3d{ mvp={m0..m15}, fog_start=, fog_end=, fog={r,g,b}, fog_on= }`
+  appends one 3D camera/fog setup for subsequent `x_tris` calls; `mvp` is a
+  column-major `proj*view*model` (matrix and lighting policy stay in Lua —
+  the PAL is a dumb consumer, vertex colors arrive pre-lit). No-arg =
+  identity mvp + fog off (the sky pass's NDC passthrough). Up to
+  `PAL_MAX_VIEW3D` (64) views per frame; segments bind the latest at call
+  time.
+- `pal.x_tris(tex, buf, count[, off[, flags]])` draws `count` triangles of
+  3 packed verts (24 B each: xyz f32, uv f32, rgba u8x4 pre-lit) from a
+  buffer view at byte `off`, under the latest `x_view3d`. `flags`:
+  1 = alpha-test cutout, 2 = nearest (default three-point), 4 = alpha blend
+  + no depth write (decals).
+- `pal.x_grade{…, quant= }` gains a `quant` field: bits per channel
+  (0 = off), a Bayer-4 dithered quantize after the grade — `quant=5` is the
+  retro 5551-framebuffer look. The grade is a post-pass baked INTO the
+  internal game target before readback + composite, so a headless `--shot`
+  and the pixel goldens see it (unchanged from D036: still never sim).
+- `pal.x_soft(on)` is VI-soft presentation: the game-target blit resamples
+  bilinearly with a mild one-dest-pixel horizontal smear (the N64 preset's
+  adopted default look). It touches only the composite blit — the internal
+  target that readback and the pixel goldens see is untouched. Reset every
+  `begin_frame` like the grade.
+
+### PAL API v21 additions (relative mouse — D116)
+
+`pal.x_mouse_capture(on) -> captured` enters/leaves SDL relative-mouse mode
+(the captured-cursor look): the OS cursor hides and stops moving while
+motion events keep delivering real `rx/ry` game-pixel deltas. No-arg queries
+without changing. It is live-side chrome policy — a headless run has no
+window and stays uncaptured. Motion events carry the per-frame relative
+delta; the recorded, sim-legal form is the MREL input-record extension
+(tag 2), so **sim code reads `cm.input.mouse_rel()`, never this capture
+state.** Additive: a v1 recording with no MREL replays as (0,0), so every
+historical trace is unaffected.
+
+### PAL API v22 additions (baked figures — D117)
+
+`pal.x_figverts(blob, nv, xf, nxf, sun, ambient, col[, alpha]) -> bytes`
+runs the baked-figure transform+light+pack loop (the `cm.gb.emit_baked`
+inner loop) in C: `blob` is 64 bytes per vertex of packed doubles
+(`lx,ly,lz, nlx,nly,nlz, u,v`, built once at bake time), and it returns `nv`
+24-byte lit vertices ready for `x_tris`. Every operation mirrors the Lua
+reference in double precision and expression order, so the output is
+byte-IDENTICAL (pinned by a selftest KAT and the standing pixel goldens);
+the Lua path stays the fallback when the primitive is absent. Render-class:
+it reads only its arguments and owns nothing. Little-endian hosts only.
 
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.

@@ -799,6 +799,510 @@ undo, randomness — are already the modules above. The one genre this
 recipe does not cover is real-time board juice like falling-block chains;
 `cm.tween` plus an actor world covers what the bundled demos needed.
 
+## Making a 3D game (the retro pipeline)
+
+Everything above is the 2D path. cosmic2d also ships a fixed **retro-3D
+pipeline** — an N64/PS1/Ragnarok-Online-flavored triangle renderer with a
+handful of Lua modules on top. If you are making a 2D game you can skip to
+[the performance envelope](#the-performance-envelope); nothing below is
+needed. If you want 3D, this is the whole supported surface, and it mirrors
+the 2D engine exactly:
+
+- **The sim never sees pixels or geometry.** Simulation state (player,
+  entities, camera angles) lives in `state.doc` and named buffers as
+  always; `draw` derives triangles from it every frame and hands them to
+  the PAL. Determinism, rewind, traces, and goldens work identically — 3D
+  is just a different `draw`.
+- **Geometry is CPU-built and re-submitted every frame.** There is no
+  retained GPU scene: you fill a vertex buffer (24 bytes/vert) and call
+  `pal.x_tris`, the 3D sibling of `pal.quad`. Static worlds bake their
+  vertices into a buffer once; characters rebuild theirs per frame.
+- **Lighting and matrices are Lua policy.** Vertex colors arrive at the PAL
+  already lit (`col * (ambient + sun term)`); the PAL is a dumb triangle
+  consumer. `cm.m4` builds the camera matrix; `cm.gb`/`cm.terr`/`cm.fig`
+  build and light the vertices.
+- **Two presets, chosen by presentation knobs, not engine forks.** The
+  **N64 preset** (soft VI upscale + 5-bit dither) and the **RO preset**
+  (sharp, steep camera, billboard sprites) are the same renderer with
+  different `pal.x_grade`/`pal.x_soft` settings and camera policy.
+
+Bytes are lazy: a project that never calls `pal.x_view3d` produces a frame
+byte-identical to a pure-2D build. The pipeline needs a PAL that provides
+the 3D primitives (**API >= 20**; relative-mouse look needs 21, the
+baked-figure fast path 22); engine code checks and refuses loudly on an
+older PAL.
+
+The bundled 3D demos are the worked examples — read them the way you would
+`projects/demo`: `projects/bounce` (an N64 platformer, the cube
+protagonist), `projects/openworld` and `projects/bigworld` (open-world +
+streaming), `projects/rovale` (the RO-style vale), and `projects/figure`
+(the character showcase). They live in the engine dev tree, not the shipped
+starter templates — references, not scaffolds. The 3D modules run on
+procedural graybox art; the CC0 asset packs a few experiments reference are
+gitignored (see `assets/README.md` for the re-fetch table — never assume
+those files are present).
+
+## 3D drawing primitives (`pal.x_*`)
+
+Three PAL calls draw a 3D frame: set a camera, submit triangles, pick a
+preset.
+
+    local m4 = cm.require("cm.m4")
+
+    function game.draw()
+      pal.begin_frame(0.5, 0.7, 0.9, 1)            -- sky color
+
+      -- one camera + fog setup for the triangles that follow
+      local view = m4.lookat(ex, ey, ez, tx, ty, tz, 0, 1, 0)
+      local proj = m4.persp(60, W / H, 0.1, 200)
+      pal.x_view3d{
+        mvp = m4.mul(proj, view),                  -- column-major proj*view
+        fog_start = 40, fog_end = 110, fog = { 0.5, 0.7, 0.9 }, fog_on = true,
+      }
+      pal.x_tris(world.tex, world.vbuf, world.count, 0, 0)  -- a prebuilt world
+
+      pal.x_grade{ quant = 5 }                      -- N64 preset: 5-bit dither
+      pal.x_soft(1)                                 -- + VI bilinear/smear
+    end
+
+- `pal.x_view3d{ mvp=, fog_start=, fog_end=, fog={r,g,b}, fog_on= }` sets
+  the camera and fog for every `pal.x_tris` that follows it. `mvp` is a flat
+  16-number column-major `proj*view*model` (usually just `proj*view` — bake
+  the model into your vertices). Call it again to change camera or fog
+  mid-frame, up to 64 times (a sky pass, then the scene, then a HUD-space
+  pass). **`pal.x_view3d()` with no argument** is identity + fog off: an NDC
+  passthrough for a full-screen sky/gradient quad.
+- `pal.x_tris(tex, buf, count [, off [, flags]])` draws `count` triangles
+  from a named buffer — `3 × count` packed vertices of **24 bytes** each,
+  `<fffffBBBB` = position `xyz` (f32), texcoord `uv` (f32), color `rgba`
+  (u8×4). `tex` is a `gfx`/`gb` texture id; `off` is a byte offset (draw
+  sub-ranges of one big buffer); `flags` bit 1 = alpha-test cutout, 2 =
+  nearest filtering (default is three-point), 4 = alpha blend with no depth
+  write (decals/shadows, drawn last). Colors are **pre-lit** — the PAL does
+  no lighting.
+- `pal.x_grade{ quant = bits }` and `pal.x_soft(on)` are the retro
+  presentation knobs (both render-only, both reset every `begin_frame`, so
+  set them each frame you want them). `quant` posterizes to N bits/channel
+  with a Bayer dither (`quant = 5` is the classic 5551 framebuffer);
+  `x_soft` is the N64 preset's bilinear-upscale-plus-horizontal-smear. The
+  RO preset runs `quant = 5` with `soft` off (sharp pixels suit pixel-art
+  sprites). `x_grade` bakes into the internal target, so screenshots and
+  pixel goldens include it; `x_soft` is a present-blit effect only.
+
+**Filling the buffer.** The `cm.gb`/`cm.terr`/`cm.fig` emitters below append
+packed vertex strings to a plain Lua array; concatenate it into a named
+buffer once and submit:
+
+    local out = {}
+    local n = gb.gbox(out, root, { 1, 1, 1 }, { 0, 0, 0 }, { 0.8, 0.4, 0.3 })
+    dyn:setstr(0, table.concat(out))     -- dyn = pal.buf("rc.mygame.dyn", cap)
+    pal.x_tris(0, dyn, n, 0, 0)
+
+A per-frame vertex buffer is **render-class** — nothing the sim reads — so
+name it with the **`rc.`** prefix (`rc.mygame.dyn`). Buffers named `rc.*`
+are excluded from snapshots and traces exactly like the editor's `ed.*`
+buffers, which is what keeps a huge streaming world or a rebuilt-every-frame
+character out of your recordings. Never read an `rc.*` buffer from `step`.
+
+**Relative-mouse look.** For mouselook, capture the cursor and read the
+recorded delta:
+
+    local input = cm.require("cm.input")
+    input.capture_mouse(true)              -- live chrome: hide + lock cursor
+    local dx, dy = input.mouse_rel()       -- recorded game-px delta, sim-legal
+
+`input.mouse_rel()` is part of the input recording (the MREL extension), so
+using it in `step` stays deterministic and replays exactly. The capture
+*state* (`pal.x_mouse_capture`) is live-side chrome — headless runs stay
+uncaptured, and sim logic must branch on `mouse_rel()`, never on whether the
+cursor is captured. The Esc menu force-releases capture for you.
+
+## Matrices (`cm.m4`)
+
+`cm.m4` is column-major 4×4 matrix math for building the camera `mvp` and
+transforming vertices on the CPU. It uses `cm.math` trig, so it is
+bit-stable (though matrices usually live in `draw`). Every function returns
+a fresh flat 16-number array (or, for `apply`, three numbers).
+
+    local m4 = cm.require("cm.m4")
+
+    local view = m4.lookat(ex, ey, ez, tx, ty, tz, 0, 1, 0)  -- eye, target, up
+    local proj = m4.persp(60, W / H, 0.1, 200)               -- fovy in DEGREES
+    local mvp  = m4.mul(proj, view)
+
+    local root = m4.mul(m4.translate(x, y, z), m4.roty(yaw)) -- a model transform
+    local wx, wy, wz = m4.apply(root, lx, ly, lz)            -- transform a point
+
+- Builders: `m4.ident()`, `m4.translate(x,y,z)`, `m4.scale(x,y,z)`,
+  `m4.rotx(a)`/`m4.roty(a)`/`m4.rotz(a)` (radians), `m4.lookat(ex,ey,ez,
+  ax,ay,az, ux,uy,uz)`, and `m4.persp(fovy_deg, aspect, znear, zfar)` (fovy
+  is in **degrees**). `m4.mul(a, b)` composes (a·b).
+- `m4.apply(t, x,y,z)` transforms a **point** (with translation) → `x,y,z`;
+  `m4.applydir(t, x,y,z)` transforms a **direction** (no translation, for
+  normals under rigid transforms). The convention matches the reference
+  software rasterizer, GL-style clip z.
+
+## Graybox meshes, textures, and baked figures (`cm.gb`)
+
+`cm.gb` is the "graybox" mesh library: procedural material-checker textures
+plus pre-lit triangle emitters for boxes, prisms, lathes, and balls — a
+shape vocabulary that escapes axis-aligned boxes without a modeling tool. It
+lights every vertex as `col * (ambient + max(0, -N·sun))` using its
+`gb.sun`/`gb.ambient` fields (overwrite them to relight a scene).
+
+    local gb = cm.require("cm.gb")
+
+    function game.init()
+      -- six 64x64 material checkers (grass/stone/wood/dirt/metal/accent) + a
+      -- shadow blob; ids kept in an rc. buffer across hot reloads
+      tex = gb.load_textures("rc.mygame.texids")
+    end
+
+    -- in draw: append geometry, then submit
+    local out, n = {}, 0
+    n = n + gb.gbox(out, root, { 1, 2, 0.5 }, { 0, 1, 0 }, { 0.7, 0.5, 0.3 })
+    n = n + gb.prism(out, m4.translate(4, 0, 0), 6, 0.5, 0.34, 1.0,
+                     { 0.6, 0.6, 0.7 }, 3)         -- hexagonal post, both caps
+    dyn:setstr(0, table.concat(out))
+    pal.x_tris(tex.stone, dyn, n, 0, 0)
+
+- Textures: `gb.load_textures(idbuf_name)` (re)creates the six 64x64 material
+  checkers + a shadow blob, returning `{ grass, stone, wood, dirt, metal,
+  accent, shadow }` → texture id. It frees the previous generation's ids
+  (kept in the `rc.` buffer you name) first, so it is hot-reload safe.
+- Low-level: `gb.vert(x,y,z, u,v, col, nx,ny,nz [,alpha])` packs one lit
+  24-byte vertex; `gb.quad(out, a,b,c,d, col, nx,ny,nz [,alpha])` and
+  `gb.tri(out, a,b,c, col, nx,ny,nz [,alpha])` append a quad/tri from
+  `{x,y,z,u,v}` corner tables with one shared normal.
+- Shape emitters append packed strings to `out` and return the triangle
+  count: `gb.gbox(out, xf, size, center, col [, uvs [, rot]])`,
+  `gb.prism(out, xf, n, r0, r1, h, col [, caps [, nrmxf]])` (an extruded
+  n-gon; `caps` bit 0 = top, bit 1 = bottom), `gb.lathe(out, xf, prof, n,
+  col [, alpha [, nrmxf]])` (revolves a flat `{r,y, r,y, …}` profile around
+  Y), and `gb.ball(out, xf, R, n, col [, alpha [, nrmxf]])`. `xf` is an `m4`
+  (or `nil` for identity); `uvs` scales texel density.
+
+**Baked figures** are the fast path for geometry you re-emit every frame
+(characters). Record a shape's local vertex stream once, then transform +
+light + pack it per frame — in C when the PAL supports it:
+
+    local bk = gb.bake_prism(6, 0.5, 0.34, 1.0, 3)  -- once: record local space
+    n = n + gb.emit_baked(out, xf, nxf, bk, { 0.6, 0.6, 0.7 })  -- per frame
+
+`gb.bake_gbox(size, center [, uvs])`, `gb.bake_prism(n, r0, r1, h [,
+caps])`, `gb.bake_lathe(prof, n)`, and `gb.bake_ball(R, n)` return a bake
+record (local vertices, in emit order). `gb.emit_baked(out, xf, nxf, bk, col
+[, alpha])` is the per-frame emitter: it uses `pal.x_figverts` (PAL 22) to
+run the transform/light/pack loop in C — ~10× cheaper than the immediate
+emitters and **byte-identical** to them — and falls back to Lua on an older
+PAL. `cm.fig` drives this for you; reach for it directly only for your own
+re-posed props. (`xf` carries position and any squash/scale; `nxf` is the
+rigid transform for normals, so lighting ignores the squash.)
+
+## Heightfield terrain (`cm.terr`)
+
+`cm.terr` is the world surface: a grid of per-vertex heights that emits a
+lit triangle mesh AND answers exact height queries, so **one height grid is
+both what you see and what you walk on**. The sim reads heights via
+`terr.sample`; `draw` emits the mesh via `terr.emit`.
+
+    local terr = cm.require("cm.terr")
+
+    function game.init()
+      local t = terr.build{ w = 64, h = 64, tile = 2.0 }    -- 64×64 tiles
+      for vz = 0, 64 do for vx = 0, 64 do
+        local nz = terr.vnoise(31, vx * 3, vz * 3, 64)       -- value noise
+        terr.hset(t, vx, vz, nz * nz * 20 - 1)
+      end end
+      W.terr = t
+    end
+
+    function W.ground(x, z) return terr.sample(W.terr, x, z) end  -- sim query
+
+    -- in draw:
+    local n = terr.emit(out, W.terr, {
+      bands = { { 2, { 0.3, 0.5, 0.2 } }, { 8, { 0.5, 0.45, 0.3 } } },
+      sun = gb.sun, amb = gb.ambient,
+    })
+
+- `terr.build{ w=, h=, tile= }` allocates a `(w+1)×(h+1)` vertex grid (tile
+  size default 2.0), heights zeroed; `terr.hget/hset(t, vx, vz [, v])` read
+  and write vertex heights; `terr.size(t)` is the world extent.
+- `terr.sample(t, wx, wz)` is the **triangle-exact** height at a world point
+  — it matches the exact diagonal `terr.emit` triangulates, so an entity
+  never floats or sinks against the visible ground. This is the sim query;
+  feed it a walk grid or use it directly for ground glue.
+- `terr.emit(out, t, opts)` appends the lit mesh and returns the tri count;
+  `opts.bands` is a required ordered `{ upper_height, {r,g,b} }` color ramp,
+  plus optional `jitter`, `seed`, `sun`, `amb`, `flat_y`, and `ox`/`oz`
+  (lattice offset, for chunked worlds). `terr.emit_water(out, t, y, col,
+  alpha [, step [, ox, oz]])` adds a flat water plane; `terr.load_detail
+  (idbuf_name)` makes a neutral detail texture (id in an `rc.` buffer).
+- `terr.vnoise(seed, x, y, cell)` and `terr.hash(seed, ix, iy)` are the
+  deterministic noise primitives for procedural heights. For a **streaming**
+  world with no stored grid, `terr.sample_fn(hfn, tile, wx, wz)` samples the
+  same triangle-exact surface from a pure `hfn(vx, vz)` height function — the
+  sim stands anywhere in an unbounded world with zero resident terrain state
+  (the `bigworld` demo).
+
+## The terrain texture atlas (`cm.atlas`)
+
+The RO look bakes a **unique texture per terrain tile** (organic blended
+borders, baked shadow) into one big atlas so the whole map draws in one
+call. `cm.atlas` owns that atlas: its layout, a budgeted bake loop, and the
+gutter trick that stops filtering from seaming at tile edges. It is entirely
+render-class — pixels and progress live in `rc.` buffers, the sim never
+touches it.
+
+    local atlas = cm.require("cm.atlas")
+
+    W.atlas = atlas.build{
+      pixels = "rc.mygame.atlas", state = "rc.mygame.bake",
+      n = 32, tile = 2.0, stamp = 1,               -- 32×32 tiles
+    }
+
+    -- in draw: bake a few tiles per frame until done
+    local frac = atlas.bake(W.atlas, 24, function(wx, wz)
+      return material_rgb(wx, wz)          -- your policy: 0..255 per channel
+    end)
+    local u0, v0, u1, v1 = atlas.uv(W.atlas, tx, tz)  -- tile UVs for the mesh
+
+- `atlas.build(o)` creates the atlas texture and returns a handle (`o`:
+  `pixels`/`state` rc. buffer names, `n` tiles per side or `w`×`h`, `tile`
+  world units, `cell` interior texels [32], `gutter` [1], `fill`, `stamp`).
+  You own `handle.tex` — register it for freeing.
+- `atlas.bake(a, budget, texel)` bakes up to `budget` tiles this frame and
+  returns the done fraction 0..1; `texel(wx, wz) -> r, g, b` (0..255) is your
+  per-texel material policy. It uploads to the GPU once on completion. Call
+  it from `draw`. `atlas.done(a)` tests completion, `atlas.rebake(a)`
+  restarts, `atlas.uv(a, tx, tz)` gives the interior UV rect the terrain mesh
+  must share.
+
+Because the whole bake is a budgeted render-class pass, a golden trace
+replays byte-identically whatever `budget` you pass — the sim reads only
+`terr.sample` and the walk grid, never the atlas.
+
+## Figures — rigid-part characters (`cm.fig`)
+
+A **figure** is a character built the SM64 way: a tree of rigid parts (no
+skinning), each a `cm.gb` primitive, posed by per-joint euler rotations and
+lerped keyframes. `cm.fig` compiles a figure definition and emits its posed
+geometry.
+
+    local fig = cm.require("cm.fig")
+
+    local guy = fig.build{ parts = {
+      { name = "pelvis", joint = { 0, 0.95, 0 }, shapes = {
+        { kind = "gbox", size = { 0.44, 0.28, 0.30 }, col = { 0.3, 0.3, 0.4 } } } },
+      { name = "torso", parent = "pelvis", joint = { 0, 0.20, 0 }, shapes = {
+        { kind = "gbox", size = { 0.52, 0.50, 0.34 }, col = { 0.7, 0.3, 0.3 } } } },
+      -- … arms, legs, head parented onward …
+    } }
+
+    local walk = { pose_a, pose_b, pose_c, pose_d }   -- a clip = a list of poses
+
+    -- in draw: pick a pose from sim time, emit under a root transform
+    local pose = fig.cycle(walk, state.frame() / 40 % 1)
+    local root = m4.mul(m4.translate(x, y, z), m4.roty(yaw))
+    n = n + fig.emit(out, guy, root, pose)
+
+- `fig.build(def)` compiles `def.parts` (tree order, parents before
+  children) into a figure. Each part has a `name`, optional `parent`, a
+  `joint` offset `{x,y,z}`, and `shapes` — each shape a `kind` of `"gbox"` /
+  `"prism"` / `"lathe"` / `"ball"` with that primitive's params, a `col`,
+  and optional `at`/`scale`/`alpha`.
+- A **pose** is a sparse `{ [part_name] = {rx,ry,rz, tx,ty,tz, sx,sy,sz} }`
+  (rotation Ry·Rx·Rz; translation for floating parts; scale for squash,
+  which deforms positions but never lighting). `fig.mix(a, b, t)` lerps two
+  poses; `fig.cycle(keys, t)` lerps around a clip (a list of poses) at phase
+  `t` wrapped to 0..1.
+- `fig.emit(out, fig, root, pose [, alpha])` appends the posed, lit geometry
+  to `out` (via `cm.gb`'s baked path) and returns the tri count. It does not
+  call `pal.x_tris` — concatenate `out` and submit yourself, so several
+  figures can batch into one buffer.
+
+## The stock mascot (`cm.mascot`)
+
+`cm.mascot` is the engine's ready-made character — the cosmic mascot (lathe
+teardrop body, floating mitts and boots, antenna star) expressed as `cm.fig`
+data, with idle/walk/swim/wave clips. Drop it in for a protagonist or an NPC
+without authoring a figure.
+
+    local mascot = cm.require("cm.mascot")
+
+    local npc = mascot.build{ body = { 0.4, 0.7, 0.9 } }   -- a recolored variant
+
+    -- in draw: a walk cycle
+    local pose = fig.cycle(mascot.walk, state.frame() / 40 % 1)
+    local root = m4.mul(m4.translate(x, y, z), m4.roty(yaw))
+    n = n + fig.emit(out, mascot.fig, root, pose)
+
+- `mascot.fig` is the prebuilt default figure; `mascot.build(over)` builds a
+  color variant (override keys from `mascot.colors`: `body`, `belly`,
+  `mitt`, `dark`, `white`, `star`).
+- Clips: `mascot.idle`, `mascot.walk`, `mascot.swim`, `mascot.wave` — pose
+  lists for `fig.cycle`.
+- `mascot.pose(bob, lean, s, hl, hr, fl, fr, ant)` builds a pose from feel
+  parameters (base bob/lean, body squash, per-limb offsets, antenna sway);
+  `mascot.sq(s)` turns a squash amount into a volume-preserving scale triple.
+
+## Figure sprite sheets (`cm.spr`)
+
+`cm.spr` bakes any figure into an **8-direction sprite sheet** and draws it
+as a camera-facing billboard — the RO path, and the "model once, use as 3D
+or as a sprite" loop. The bake is a tiny deterministic rasterizer; the sheet
+is cached as a committed `.spx` asset.
+
+    local spr = cm.require("cm.spr")
+
+    function P.init()
+      -- 8 directions × these rows, rasterized once (or loaded from .spx)
+      P.sheet = spr.bake(0, mascot.fig, {
+        { mascot.idle, 0 },
+        { mascot.walk, 0 }, { mascot.walk, 0.5 },
+        { mascot.wave, 0 },
+      }, force_bake)
+    end
+
+    -- in draw: pick the column for our facing seen from the camera, billboard it
+    local col = spr.oct(facing, cam_yaw)
+    n = n + spr.billboard(out, P.sheet, x, y, z, 3.0, col, anim_row, tint,
+                          cam_yaw, cam_pitch)
+    n = n + spr.decal(out, x, y + 0.03, z, 0.5, 0, 0, 0, 120)   -- blob shadow
+
+- `spr.bake(slot, figure, rows, force)` rasterizes `figure` into a sheet (8
+  columns 45° apart, one row per `{ clip, phase }` in `rows`) and returns
+  `{ tex, rows, fv }`. It loads a cached `.spx` (`<project>/spr/sheetN.spx`)
+  unless `force`. Cells are `spr.CW × spr.CH` (40×52); the sheet is
+  `spr.DIRS` (8) columns wide.
+- `spr.oct(face_ang, cam_yaw)` picks the sheet column (0..7) for a world
+  facing seen from the camera yaw. `spr.billboard(out, sheet, x, y, z, h,
+  col, row, tint, cam_yaw, cam_pitch)` emits a fully camera-facing quad (feet
+  at `x,y,z`, height `h`, `tint` a grayscale ground-shadow factor) — draw
+  with `x_tris` flags 3 (alpha-test + nearest). `spr.decal(out, x, y, z, r,
+  rr, gg, bb, aa)` is a flat ground quad (blob shadow, click marker) — draw
+  with flag 4.
+
+## The camera rig (`cm.rig`)
+
+`cm.rig` is the orbit-follow camera every 3D demo shares: it eases behind a
+moving target, follows its facing, and takes mouse/key look. Because look is
+camera-relative *input*, the rig is **sim state** — it owns the layout of a
+caller-named f32 buffer but never allocates it, so you keep the buffer and
+snapshots, traces, and rewind carry the camera by construction.
+
+    local rig = cm.require("cm.rig")
+
+    function game.init()
+      cam = pal.buf("mygame.cam", rig.SIZE)                 -- 40 bytes
+      d.knobs = d.knobs or rig.defaults()                  -- tunables in doc
+      rig.reset(cam, d.knobs, px, py, pz, player_yaw)
+    end
+
+    function game.step()
+      local wx, wz = rig.wish(cam, fwd_input, side_input)  -- camera-relative wish
+      -- … player.step consumes wx,wz … then advance the rig behind the player:
+      rig.step(cam, d.knobs, px, py, pz, vx, vz, player_yaw)
+    end
+
+    function game.draw()
+      local view = rig.view(cam, d.knobs)                  -- the view matrix
+      pal.x_view3d{ mvp = m4.mul(proj, view), fog_on = false }
+    end
+
+The `mygame.cam` buffer layout `cm.rig` owns (f32):
+
+    [0]yaw [4]pitch [8]dist [12/16/20]focus xyz
+    [24]manual-hold frames [28/32]prev cursor [36]recentering flag
+
+- `rig.SIZE` (40) is the buffer size; `rig.defaults()` returns the knob
+  table (orbit distance/height, follow lerps, mouse/key look rates, pitch
+  clamps, recenter — keep it in `state.doc` so tuning rewinds).
+  `rig.reset(cam, knobs, px, py, pz, target_yaw)` seeds it (init, respawn,
+  room cut).
+- `rig.step(cam, knobs, px, py, pz, vx, vz, target_yaw)` advances the orbit
+  once per step **after** the target moves (fed its post-step position,
+  horizontal velocity, and facing). `rig.wish(cam, fwd, side)` turns
+  forward/side input into a camera-relative world vector for the player.
+  `rig.view(cam, knobs)` derives the view matrix in `draw` (the camera
+  *position* exists only here — render-class). `rig.angdiff(a, b)` is the
+  shortest signed-arc helper.
+
+## The player kernel (`cm.kin`)
+
+`cm.kin` is the shared 3D character-movement core — ground collision, jump
+with coyote/buffer, gravity, box-top landing and mantling, run
+accel/friction, squash and lean. It is deliberately **value-based**: every
+function takes values and returns values, allocating nothing. You own the
+player buffer and its layout (they differ per game — platformer vs
+open-world vs streaming — so no single owned layout fits, and a pure module
+can never accidentally resize a persistent buffer mid-session).
+
+    local kin = cm.require("cm.kin")
+
+    -- in your player step, reading/writing your OWN player buffer:
+    local vy, jbuf, coyote, grounded, evt =
+      kin.jump(jbuf, coyote, grounded, jump_pressed, k.buffer, k.coyote, v0)
+    vy = kin.gravity(vy, g_rise, k.fall_mul)
+    -- swept clamp against a list of AABB boxes, one axis at a time:
+    nx, vx, y = kin.slide(boxes, true,  nx, y, z, x, vx, hw, hh, mantle)
+    nz, vz, y = kin.slide(boxes, false, x, y, nz, z, vz, hw, hh, mantle)
+
+- Movement: `kin.run(vx, vz, yaw, wx, wz, speed, accel, fric, turn)`,
+  `kin.gravity(vy, g_rise, fall_mul)`, `kin.jump(...)` (returns the new `vy`
+  plus updated jump-buffer/coyote/grounded and a `"jump"`/`"paddle"` event),
+  `kin.jump_curve(jump_h, apex_t) -> g_rise, v0`, `kin.approach(v, target,
+  step)`, and `kin.lean(lean, hspeed, amount, speed)`.
+- Collision (against a plain list of `{x0,y0,z0,x1,y1,z1}` boxes you build):
+  `kin.overlaps(box, x, y, z, hw, hh)`, `kin.slide(list, xaxis, cx, cy, cz,
+  p0, v, hw, hh [, mantle])` (one swept axis; returns the clamped axis
+  position, the new velocity, and the new y), `kin.mantle_top(...)`,
+  `kin.ground_top(list, g, x, y, z, hw)` (raise the ground to a box top —
+  heightfield landing), and `kin.land_squash(vy, squash, vref, frames)`.
+- `kin.EPS` (1e-3) is the shared epsilon. Because nothing here is stateful,
+  the bundled `bounce`/`openworld`/`bigworld` players each keep their own
+  buffer layout and call the same core — the module is pure math on your
+  values.
+
+## Pick rays and walk-grid pathing (`cm.walk`)
+
+`cm.walk` is the click-to-move kernel: cast a screen ray onto the ground,
+snap to a walk grid, A* a path, and follow the cell chain. (The name
+`cm.pick` is taken by the project picker, so the 3D pick ray lives here as
+`walk.raycast`.) The walker is a caller-named buffer whose layout `cm.walk`
+owns.
+
+    local walk = cm.require("cm.walk")
+
+    -- pick: march a camera ray onto the terrain (ground(x,z)->height)
+    local hx, hz = walk.raycast(world.ground, ex, ey, ez, kx, ky, kz)
+
+    -- command: snap + A* + store the path into the walker buffer
+    if hx and walk.command(buf, PATH_MAX, world.GW, world.walkable,
+                           hx, hz, 4, marker_ttl) then … end
+
+    -- follow: advance along the cell-center chain each step
+    walk.step(buf, world.GW, k.speed, k.turn)
+
+The walker buffer layout `cm.walk` owns (f32/u32, size `40 + path_max*4`):
+
+    [0]x [4]z [8]facing [12]dist_phase  [16]u32 len [20]u32 idx
+    [24/28]marker x/z [32]marker ttl   [40..] u32 path cell indices
+
+- `walk.raycast(ground, ex, ey, ez, kx, ky, kz [, step, maxs, iters])`
+  marches ray origin `(ex,ey,ez)` + direction `(kx,ky,kz)` against the
+  caller's `ground(x, z) -> height`, returning the hit `x, z` (or nil). Build
+  the ray from the sim camera so clicks replay deterministically.
+- The grid is the caller's `(gw, walkable)` pair — `gw` cells per side and a
+  `walkable(cx, cz) -> bool` predicate you derive once from slope/water/
+  blockers. `walk.cell(gw, wx, wz)` maps world→cell, `walk.snap(gw, ok, cx,
+  cz, r)` finds the nearest walkable cell, and `walk.astar(gw, ok, sx, sz,
+  gx, gz)` is heap A* (8-way, no corner cutting) returning a cell-index list.
+- `walk.command(buf, path_max, gw, walkable, wx, wz, snap_r, marker_ttl)`
+  does snap+A* and writes the chain into the walker (returns whether a path
+  exists); `walk.step(buf, gw, speed, turn)` follows it (eases facing, decays
+  the destination marker); `walk.moving(buf)` is the done test.
+
 ## The performance envelope
 
 The engine records everything, always: the rewind ring re-canonizes your
@@ -836,7 +1340,12 @@ What the cost actually tracks — and how to stay fast when you grow:
   a compact binary delta on the C side — thousands of particles or bullets
   in packed `f32`/`i16` slots cost a tiny fraction of the same data as
   doc tables, and they snapshot and rewind identically. Doc for dozens to
-  hundreds of rich actors; buffers for thousands of simple ones.
+  hundreds of rich actors; buffers for thousands of simple ones. Past ~500
+  rich `cm.actor` tables the answer is that shape, not more tables: the 3D
+  `bigworld` demo streams ~4,000 entities as fixed-slot records in ONE
+  named buffer (each just a route + a phase; far ones advance by closed-form
+  catch-up, O(1) and exact, and only the handful near the player promote to
+  a full interactive kernel).
 - **Render-only flourish stays out of doc.** Sparks, floating numbers,
   and screen-shake offsets that decide nothing can live in module locals
   or derive from `cm.tween` counters — they cost the recorder nothing.
@@ -915,16 +1424,21 @@ the rules that protect your project are already enforced, not merely promised
 - **Recordings replay forever.** Every golden trace committed to `tests/` must
   replay byte-exact on every future build; a change that breaks an old trace is
   by definition a bug. Your half of that contract is the determinism discipline
-  above — stable action order and named-buffer layouts.
+  above — stable action order and named-buffer layouts. Input capabilities grow
+  additively: the relative-mouse deltas (`input.mouse_rel`) ride a new input-
+  record extension (MREL), and a recording made before it existed replays as
+  (0,0) — so extending the input format never invalidates an old trace.
 
 - **Formats are versioned, tagged-chunk containers.** Every chunk is
   version-stamped; a reader skips the chunks it does not know and errors loudly
   on truncation — it never guesses. Old files stay readable as a format grows.
 
 - **The engine refuses loudly, never degrades silently.** Engine code checks the
-  PAL API version (currently **19**) and function presence, and refuses with a
+  PAL API version (currently **22**) and function presence, and refuses with a
   clear "needs PAL api >= N" message rather than half-running. A newer engine on
-  an older PAL still works whenever it needs no new primitive.
+  an older PAL still works whenever it needs no new primitive — the retro-3D
+  pipeline needs >= 20, relative-mouse look >= 21, and the baked-figure fast
+  path >= 22, each refusing loudly (or falling back) rather than half-running.
 
 - **Saves migrate forward and refuse newer.** Bump `save.schema(n)` and describe
   each `save.migrate` step once: old saves upgrade on read, and a save from a
@@ -957,6 +1471,19 @@ the rules that protect your project are already enforced, not merely promised
 - `cm.save` — per-player save slots/profiles outside the project folder.
 - `cm.palette` / `cm.grade` — palette data and render-only color grading.
 - `cm.rand` / `cm.math` / `cm.ease` — deterministic helpers.
+
+The 3D retro pipeline (see [Making a 3D game](#making-a-3d-game-the-retro-pipeline)):
+
+- `cm.m4` — column-major 4×4 matrices for the camera mvp and vertex transforms.
+- `cm.gb` — graybox meshes (box/prism/lathe/ball), material textures, baked figures.
+- `cm.terr` — heightfield terrain: build, triangle-exact sample, emit, water.
+- `cm.atlas` — the budgeted per-tile terrain-texture atlas (the RO bake).
+- `cm.fig` — rigid-part figures: build, pose, cycle clips, emit.
+- `cm.mascot` — the stock mascot figure and its idle/walk/swim/wave clips.
+- `cm.spr` — bake a figure to an 8-way sprite sheet; billboards and decals.
+- `cm.rig` — the orbit-follow camera rig (a sim buffer whose layout it owns).
+- `cm.kin` — the value-based player kernel: collide, jump, gravity, mantle, squash.
+- `cm.walk` — the pick ray + walk-grid A* + cell-chain follow (click-to-move).
 
 Advanced format and determinism contracts live in `docs/ARCHITECTURE.md`,
 `docs/MAPS.md`, and `docs/AUDIO.md`. For copyable game code, read
