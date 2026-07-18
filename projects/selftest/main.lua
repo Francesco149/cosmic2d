@@ -10918,6 +10918,29 @@ local function t_docs()
         "docs.line_kinds: fenced body — comment, blank, and text — is all code")
   check(k[15] == "text", "docs.line_kinds: text after the closing fence is prose")
 
+  -- code_blocks(): the contiguous code runs the reader syntax-highlights and
+  -- offers "copy" on, built ON line_kinds so the ranges agree with what's drawn.
+  -- Over km: block 1 = the indented lua at 4..7, block 2 = the fenced body at
+  -- 11..13 (the ``` markers are "fence", excluded from either run).
+  local cb = docs.code_blocks(km)
+  check(#cb == 2, "docs.code_blocks: two blocks (indented + fenced)")
+  check(cb[1].lo == 4 and cb[1].hi == 7 and cb[1].lang == "lua",
+        "docs.code_blocks: indented lua block spans 4..7")
+  check(cb[1].text == "local a = 1\n  nested = deeper\n\nreturn a",
+        "docs.code_blocks: dedented text keeps nested indent + interior blank")
+  check(cb[2].lo == 11 and cb[2].hi == 13,
+        "docs.code_blocks: fenced body is 11..13 (``` markers excluded)")
+  check(cb[2].text == "# not a heading\n\nstill fenced",
+        "docs.code_blocks: fenced body is copied verbatim")
+  -- lang guess: a command sample (a path-command first token) is "text" so the
+  -- lua lexer never mis-colors it; a real lua sample is "lua"
+  local cshell = docs.code_blocks("Run it:\n\n    bin/cosmic projects/demo --edit\n")
+  check(#cshell == 1 and cshell[1].lang == "text",
+        "docs.code_blocks: a bin/… command block is text, not lua")
+  local cpure = docs.code_blocks("    local x = cm.require('m')\n    return x\n")
+  check(#cpure == 1 and cpure[1].lang == "lua" and cpure[1].hi == 2,
+        "docs.code_blocks: a plain lua block is lua")
+
   -- section_at(): the heading owning a line
   check(docs.section_at(sa, 5).title == "Camera (cm.camera)",
         "docs.section_at: line 5 belongs to Camera")
