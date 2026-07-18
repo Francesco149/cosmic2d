@@ -6433,3 +6433,70 @@ pad navigation for the picker dialogs beyond its existing keyboard nav.
 Revisit triggers: a second `ui.nav_scope` consumer (the crash autopsy?
 the picker?) votes scope priorities; a game that NEEDS the back/select
 button votes a rebindable menu button.
+
+## D129 — reduced flash/shake: the accessibility policy rides the engine's render-only effect doors (2026-07-19)
+
+**Context.** ALPHA §A8's accessibility line (opened by D128's nav cursor)
+names "reduced flash/shake options" next. Screen shake and full-screen
+flashes are the two classic photosensitivity/vestibular hazards, and the
+engine already draws a hard line the feature can stand on: effect
+*counters* are recorded sim state in the doc, while the *drawn* wobble
+and wash are render-only derivations (`camera.offset`, `tween.wobble`,
+game-drawn overlay alphas) that sim results must never read (D092/D094).
+A per-player attenuation of the drawn side is therefore replay-safe by
+construction.
+
+**Decision.**
+
+1. **The policy lives user-wide in `cm.view`'s accessibility store**
+   (`editor.dat`, beside the D-series legibility scales — a
+   photosensitive player sets it once per machine, never once per game):
+   `cfg.reduce_shake` / `cfg.reduce_flash`, persisted only when set (the
+   never-freeze-defaults rule), loaded strictly (`== true`; malformed
+   values stay off), reset on every load. Headless / `--frames` /
+   `--verify` sessions never load the store (main.lua's existing gate),
+   so goldens cannot see the policy by construction.
+2. **The scale doors:** `view.shake_scale()` → 0 when reduced else 1;
+   `view.flash_scale()` → 0.25 when reduced else 1 (attenuate, don't
+   delete: the death-cue survives, the wash goes). `cm.options` exposes
+   delegating `shake_scale`/`flash_scale` — the documented game-facing
+   reads for HAND-ROLLED effects, draw-only.
+3. **The engine's render-only effect doors consume the policy
+   themselves:** `camera.offset` (and so `apply`), `tween.wobble`, and
+   the new **`tween.flash(o, name [, curve])`** — `val` times the flash
+   policy, THE door for flash-overlay alphas. `val`/`k`/`mix` stay pure:
+   sim legally reads those (hit pause), so policy in them would be the
+   exact determinism bug the module headers warn about. This makes the
+   "sim must never read wobble/offset" rule load-bearing rather than
+   advisory — the headers and scripting.md now say why.
+4. **The Esc menu** gains an "accessibility" section (main page, between
+   volume and game options): "reduce screen shake" / "reduce flashes"
+   checkboxes — keyboard/pad-reachable for free through D128's nav
+   cursor.
+5. **Retrofits:** swarm's death wash draws through `tween.flash`; the
+   platformer demo's teleport-flash tint multiplies
+   `options.flash_scale()` (the worked hand-rolled example). Shake needed
+   zero game changes — both demos already ride the engine doors.
+
+**Determinism.** No sim/doc/recorded byte moved; no PAL change. The
+scales multiply render output only; at the default 1.0 every drawn byte
+is IEEE-identical (x*1.0 == x), and headless sessions never load the
+flags, so every golden stands byte-identical.
+
+**Proof.** Linux selftest **24,626** (21 new in `t_reduce_fx`: unity
+defaults + the options delegates; reduce-shake zeroes `camera.offset`/
+`apply`/`tween.wobble` and releasing restores the exact bytes with the
+recorded counters untouched; `tween.flash` attenuates ×0.25 with the
+curve carried while `val`/`k` stay pure; the store round trip — only set
+flags persist, stored flags adopt, malformed values stay off, a
+store-less load resets). `nix run .#test` ALL GREEN, every golden
+byte-identical. Headless tape on the REAL swarm Esc menu (captures on
+llm-feed): toggling both checkboxes by keyboard, then the death moment
+with the wash attenuated and the arena still.
+
+**Revisit triggers.** A player report that 0.25 is still too bright (or
+that a game's flash carries information the attenuation hides) votes a
+per-effect floor or a stronger setting; a "reduce motion" ask beyond
+shake (parallax, camera lerp) is its own packet; a game hand-rolling
+shake that ignores `shake_scale()` is a docs/review issue, not an engine
+gate.

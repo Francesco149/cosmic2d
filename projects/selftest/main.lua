@@ -11,6 +11,11 @@ local state = cm.require("cm.state")
 local game = {}
 local checks = 0
 
+local function tmproot()
+  return (pal.platform == "windows" and os.getenv("TEMP"))
+         or os.getenv("TMPDIR") or "/tmp"
+end
+
 local function check(cond, what)
   checks = checks + 1
   if not cond then error("SELFTEST FAIL: " .. what, 0) end
@@ -763,6 +768,128 @@ local function t_tween()
   end
   check(state_m.canon(build()) == state_m.canon(build()),
         "tween: same ops, same canonical bytes")
+end
+
+-- ---- reduced effects: the A8 accessibility policy (D129) ----
+-- reduce-shake zeroes the engine's render-only shake doors, reduce-flash
+-- attenuates the flash door, the pure sim-legal reads never move, and the
+-- choices ride the user-wide accessibility store.
+
+local function t_reduce_fx()
+  local view = cm.require("cm.view")
+  local camera = cm.require("cm.camera")
+  local tween = cm.require("cm.tween")
+  local ease = cm.require("cm.ease")
+  local options = cm.require("cm.options")
+  local state_m = cm.require("cm.state")
+
+  -- hermetic: never touch the real user store, leave every knob as found
+  local saved_access = view._access_path
+  local saved_cfg = { reduce_shake = view.cfg.reduce_shake,
+                      reduce_flash = view.cfg.reduce_flash,
+                      editor_scale = view.cfg.editor_scale,
+                      chrome_scale = view.cfg.chrome_scale,
+                      access_auto = view.cfg.access_auto,
+                      access_resolved = view.access_resolved }
+  local root = tmproot() .. "/cosmic_selftest_reduce"
+  pal.x_remove(root .. "/editor.dat")
+  pal.x_remove(root)
+  pal.mkdir(root)
+  view._access_path = root .. "/editor.dat"
+  view.cfg.reduce_shake, view.cfg.reduce_flash = false, false
+
+  -- defaults: both scales are unity, on view and the options delegates
+  check(view.shake_scale() == 1.0 and view.flash_scale() == 1.0,
+        "reduce: default scales are unity")
+  check(options.shake_scale() == 1.0 and options.flash_scale() == 1.0,
+        "reduce: the options doors delegate to view")
+
+  -- camera.offset: reduce-shake zeroes it; releasing restores EXACT bytes
+  local c = camera.shake(camera.new({ w = 320, h = 180 }), 5, 7)
+  local ox, oy = camera.offset(c)
+  check(ox ~= 0 or oy ~= 0, "reduce: a live shake wobbles at unity")
+  view.cfg.reduce_shake = true
+  check(view.shake_scale() == 0.0, "reduce: reduce-shake scale is 0")
+  local rx, ry = camera.offset(c)
+  check(rx == 0 and ry == 0, "reduce: reduce-shake zeroes camera.offset")
+  local ax, ay = camera.apply(c)
+  check(ax == c.x and ay == c.y,
+        "reduce: apply hands gfx the unshaken camera")
+  cm.require("cm.gfx").camera(0, 0) -- leave the render camera as found
+  view.cfg.reduce_shake = false
+  local bx, by = camera.offset(c)
+  check(bx == ox and by == oy,
+        "reduce: releasing the toggle restores the exact offset")
+  check(c.shake == 7 and c.shake_t0 == 7 and c.shake_mag == 5,
+        "reduce: the policy never touches the recorded counters")
+
+  -- tween.wobble: the same door rule for table effects
+  local w = {}
+  tween.play(w, "shake", 6, 2.4)
+  local wx, wy = tween.wobble(w, "shake")
+  check(wx ~= 0 or wy ~= 0, "reduce: tween.wobble moves at unity")
+  view.cfg.reduce_shake = true
+  local zx, zy = tween.wobble(w, "shake")
+  check(zx == 0.0 and zy == 0.0, "reduce: reduce-shake zeroes tween.wobble")
+  view.cfg.reduce_shake = false
+
+  -- tween.flash: val scaled by the flash policy; val itself NEVER moves
+  -- (the purity pin: sim-legal reads cannot depend on live policy)
+  tween.play(w, "flash", 14, 0.55)
+  tween.tick(w)
+  local v = tween.val(w, "flash")
+  check(tween.flash(w, "flash") == v,
+        "reduce: flash is val at unity")
+  view.cfg.reduce_flash = true
+  check(view.flash_scale() == 0.25, "reduce: reduce-flash scale is 0.25")
+  check(tween.flash(w, "flash") == v * 0.25,
+        "reduce: reduce-flash attenuates the flash door")
+  check(tween.flash(w, "flash", "cubic_out")
+          == tween.val(w, "flash", "cubic_out") * 0.25,
+        "reduce: the flash door carries the curve")
+  check(tween.val(w, "flash") == v
+          and tween.k(w, "flash") == 13 / 14,
+        "reduce: val and k stay pure under the policy")
+  check(tween.flash(w, "gone") == 0.0, "reduce: idle flash is 0")
+  view.cfg.reduce_flash = false
+
+  -- persistence: set_* saves user-wide; only set flags enter the store
+  view.set_reduce_shake(true)
+  local t = state_m.parse(pal.read_file(root .. "/editor.dat"))
+  check(t.reduce_shake == true and t.reduce_flash == nil,
+        "reduce: only set flags enter the store")
+  view.set_reduce_flash(true)
+  view.cfg.reduce_shake, view.cfg.reduce_flash = false, false
+  view.load_accessibility()
+  check(view.cfg.reduce_shake == true and view.cfg.reduce_flash == true,
+        "reduce: stored flags adopt on load")
+  view.set_reduce_shake(false)
+  view.set_reduce_flash(false)
+  t = state_m.parse(pal.read_file(root .. "/editor.dat"))
+  check(t.reduce_shake == nil and t.reduce_flash == nil,
+        "reduce: clearing a flag leaves the store clean")
+
+  -- a crafted store: only literal true engages (malformed values stay off)
+  pal.write_file(root .. "/editor.dat", state_m.canon({
+    reduce_shake = "yes", reduce_flash = 1,
+  }))
+  view.load_accessibility()
+  check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false,
+        "reduce: malformed store flags stay off")
+  pal.x_remove(root .. "/editor.dat")
+  view.load_accessibility()
+  check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false,
+        "reduce: a store-less load resets both flags")
+
+  -- leave everything as found
+  view._access_path = saved_access
+  view.cfg.reduce_shake = saved_cfg.reduce_shake
+  view.cfg.reduce_flash = saved_cfg.reduce_flash
+  view.cfg.editor_scale = saved_cfg.editor_scale
+  view.cfg.chrome_scale = saved_cfg.chrome_scale
+  view.cfg.access_auto = saved_cfg.access_auto
+  view.access_resolved = saved_cfg.access_resolved
+  pal.x_remove(root)
 end
 
 -- ---- cm.depth: stable draw-order sorting (A5/D095) ----
@@ -3819,11 +3946,6 @@ end
 -- the platform temp root: windows has no /tmp (SDL can't create dirs under
 -- a unix-absolute path there — found running this selftest on the win exe);
 -- engine code never hits this (project paths are engine-root-relative)
-local function tmproot()
-  return (pal.platform == "windows" and os.getenv("TEMP"))
-         or os.getenv("TMPDIR") or "/tmp"
-end
-
 local function t_atomic_write()
   local path = tmproot() .. "/cosmic_selftest_atomic.bin"
   local prefix = "cosmic_selftest_atomic.bin.tmp."
@@ -12213,6 +12335,7 @@ function game.init()
   t_actor()
   t_camera()
   t_tween()
+  t_reduce_fx()
   t_depth()
   t_snapshot()
   t_buf_poke()

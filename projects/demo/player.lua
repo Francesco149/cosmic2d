@@ -55,6 +55,7 @@
 local m = cm.require("cm.math")
 local state = cm.require("cm.state")
 local ease = cm.require("cm.ease")
+local options = cm.require("cm.options")
 local level = cm.require("level")
 local fx = cm.require("fx")
 
@@ -555,7 +556,10 @@ function M.draw()
   -- neutral tint; teleport mode B = cyan/translucent; a flash brightens
   local r_, g_, b_, a_ = 0.90, 0.91, 0.86, 1
   if mode == 1 then r_, g_, b_, a_ = 0.55, 0.93, 1.0, 0.82 end
-  local flash = buf:f32(O.tp_flash)
+  -- the flash decay counter is sim state (recorded); the DRAWN brightness
+  -- multiplies the player's reduce-flash policy (D129) — the hand-rolled-
+  -- overlay pattern: policy at draw, never in step
+  local flash = buf:f32(O.tp_flash) * options.flash_scale()
   if flash > 0 then
     r_ = r_ + (1 - r_) * flash; g_ = g_ + (1 - g_) * flash; b_ = b_ + (1 - b_) * flash
   end

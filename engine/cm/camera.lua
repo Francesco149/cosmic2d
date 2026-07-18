@@ -33,8 +33,10 @@
 --     tick(c) — once per step — counts down and removes them at zero.
 --     offset(c)/apply(c) derive the render-only wobble from the counters
 --     (cm.math sin off the remaining count — never the PRNG, exactly the
---     swarm idiom), amplitude fading linearly from mag to zero. Arming
---     replaces any running shake. Sim results must never read offset().
+--     swarm idiom), amplitude fading linearly from mag to zero, scaled by
+--     the player's reduce-shake accessibility policy (D129). Arming
+--     replaces any running shake. Sim results must never read offset() —
+--     the counters are recorded state, the offset is per-player.
 --   * to_world/to_screen convert through the UNSHAKEN camera: mouse aim
 --     stays deterministic while the view wobbles.
 --   * apply(c) is render-side: hands the shaken top-left to cm.gfx's
@@ -143,11 +145,14 @@ function M.tick(c)
 end
 
 -- offset(c) -> ox, oy: the render-only shake wobble (0, 0 when idle).
--- Pure math off the doc counters; never sim input.
+-- Math off the doc counters, scaled by the player's reduce-shake policy
+-- (cm.view.shake_scale, D129) — which is WHY sim must never read it: the
+-- counters in the doc are recorded, this output is per-player presentation.
 function M.offset(c)
   local t = c.shake
   if t == nil then return 0, 0 end
-  local a = c.shake_mag * t / c.shake_t0
+  local a = c.shake_mag * t / c.shake_t0 * cm.require("cm.view").shake_scale()
+  if a == 0 then return 0, 0 end
   return m.sin(t * 2.7) * a, m.sin(t * 3.1 + 2) * a
 end
 

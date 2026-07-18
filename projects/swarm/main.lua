@@ -206,7 +206,9 @@ function game.draw()
     pal.quad(d.x + d.fx * 4 + 3 + sx, d.y + d.fy * 4 + 3 + sy, 4, 4,
              0.85, 0.95, 1.0, 1)
   end
-  local a = tween.val(d, "flash") -- juice: the death flash washes the arena
+  -- juice: the death flash washes the arena — through the reduce-flash-
+  -- aware door (D129), so the wash attenuates for players who asked
+  local a = tween.flash(d, "flash")
   if a > 0 then pal.quad(0, 0, W, H, 0.9, 0.25, 0.25, a) end
   local k = input.pad_connected(1) and "pad" or "key"
   local msg = d.over

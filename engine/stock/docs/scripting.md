@@ -565,7 +565,10 @@ The rules:
   swaps, and anywhere a follow would whip-pan. Clearing: `camera.bounds(c)`.
 - `shake(c, mag, frames)` arms integer counters in the table; `tick` counts
   them down. The wobble itself is render-only math off the counters
-  (`offset`/`apply`), fading linearly — sim logic must never read it.
+  (`offset`/`apply`), fading linearly — sim logic must never read it. It
+  honors the player's "reduce screen shake" accessibility choice from the
+  Esc menu automatically (the counters are recorded; the drawn offset is
+  per-player).
 - `to_world`/`to_screen` convert through the **unshaken** camera, so mouse
   aim stays deterministic while the view wobbles.
 - Pixel-art projects: `gfx.pixel_snap(true)` still owns the whole-pixel
@@ -602,7 +605,7 @@ lifetime — and gives you the eased draw math so you never hand-tune
       local d = state.doc
       local sx, sy = tween.wobble(d, "shake")   -- render-only offset pair
       ...draw everything at +sx, +sy...
-      local a = tween.val(d, "flash")           -- 0.55 fading to 0
+      local a = tween.flash(d, "flash")         -- 0.55 fading to 0
       if a > 0 then pal.quad(0, 0, W, H, 0.9, 0.25, 0.25, a) end
     end
 
@@ -626,7 +629,15 @@ The rules:
   the counters — deterministic anywhere.
 - `wobble(o, name)` is the screen-shake offset pair (amplitude `mag * k`,
   the same idiom as `camera.offset` for screens without a camera). Like
-  the camera's shake, it is presentation: sim logic must never read it.
+  the camera's shake, it is presentation: sim logic must never read it —
+  and it respects the player's "reduce screen shake" accessibility choice
+  from the Esc menu by itself, which is the other reason it belongs to
+  draw only.
+- `flash(o, name [, curve])` is `val` through the player's "reduce
+  flashes" choice — draw flash-overlay alphas with it and the wash
+  attenuates for players who asked. `val`/`k`/`mix` stay pure (sim may
+  read them for hit pause and gameplay timers); `flash`, like `wobble`,
+  is draw-only.
 - `bob(frame, period, amp)` is the pure looping wobble for item bobs and
   breathing idles: `tween.bob(state.frame(), 90, 2)` in draw.
 
@@ -762,11 +773,14 @@ simulation: trigger it in `step`, not `draw`.
 ## The options menu (`cm.options`)
 
 Every game gets the Esc menu for free: fullscreen, window sizes that fit the
-player's display, UI scale, master/music/SFX volume, the controls page
+player's display, UI scale, master/music/SFX volume, the accessibility
+toggles (reduce screen shake / reduce flashes), the controls page
 (rebinding plus stick deadzone and press-threshold knobs), and quit. All of it
 is per-player, per-machine policy — volumes change what the speakers hear,
 never the simulated mix, so recordings and replays are untouched; every choice
-persists in the project's `video.dat`/`input.dat` (never exported).
+persists in the project's `video.dat`/`input.dat` (never exported). The
+accessibility toggles persist user-wide instead: a player who needs them
+sets them once per machine, not once per game.
 
 The whole menu works without a mouse. Esc opens it; on a controller the
 back/select button does (that button belongs to the menu, like Esc, so it
@@ -796,6 +810,33 @@ apply them via `on_change`. A setting that changes gameplay belongs in
 `state.doc` (where it is recorded) instead, or it will break replay.
 `options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
 are the scripted doors to the same knobs.
+
+### Reduced effects (accessibility)
+
+The menu's "reduce screen shake" and "reduce flashes" toggles are honored
+by the engine automatically wherever the engine draws the effect:
+`camera.offset`/`camera.apply`, `tween.wobble`, and `tween.flash` all
+scale themselves. Use those doors and your game complies for free — the
+recorded shake/flash *counters* in the doc never change, only the drawn
+result, so replays and recordings are untouched.
+
+If you hand-roll an effect instead, multiply it by the read doors in
+`draw`:
+
+    local options = cm.require("cm.options")
+
+    -- a hand-rolled full-screen wash:
+    local a = d.hurt_alpha * options.flash_scale()
+    if a > 0 then pal.quad(0, 0, W, H, 1, 0.2, 0.2, a) end
+
+    -- a hand-rolled screen offset:
+    local ox = my_shake_x * options.shake_scale()
+
+`shake_scale()` is `0` when the player asked for no shake, else `1`;
+`flash_scale()` is `0.25` when flashes are reduced (the cue survives, the
+wash goes), else `1`. Both are live presentation policy: read them in
+`draw`, never in `step` — sim results must never depend on them, or the
+game diverges under replay the moment a player flips a toggle.
 
 ## Player saves (`cm.save`)
 

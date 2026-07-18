@@ -21,6 +21,8 @@ M.cfg = {
   editor_scale = 1, -- native editor canvas windows/content (machine-local)
   chrome_scale = 1, -- fixed native chrome: HUD, launcher, rewind tray
   access_auto = true,
+  reduce_shake = false, -- accessibility: zero the render-only screen shake
+  reduce_flash = false, -- accessibility: attenuate flash overlays
 }
 
 M.ACCESS_SCALES = {
@@ -189,16 +191,52 @@ local function accessibility_path()
   return root .. "editor.dat"
 end
 
+-- Reduced effects (A8 accessibility, D129): player preferences, user-wide
+-- like the legibility scales above — a photosensitive player sets them once
+-- per machine, not per game. The scale doors are what the engine's
+-- render-only effect doors multiply by: cm.camera.offset and cm.tween.wobble
+-- consume shake_scale by themselves (every game using the engine doors
+-- complies for free); flashes have no single engine door, so cm.tween.flash
+-- and hand-rolled overlays multiply by flash_scale at draw. Both are LIVE
+-- policy — the same class as every cfg knob here: read in draw, never in
+-- step (a sim read is the documented determinism bug), and headless /
+-- verify sessions never load the store, so goldens stay byte-identical by
+-- construction. Reduced flash attenuates rather than deletes (0.25): the
+-- cue survives, the wash goes.
+function M.shake_scale()
+  return M.cfg.reduce_shake and 0.0 or 1.0
+end
+
+function M.flash_scale()
+  return M.cfg.reduce_flash and 0.25 or 1.0
+end
+
+function M.set_reduce_shake(on)
+  M.cfg.reduce_shake = on == true
+  M.save_accessibility()
+  return M.cfg.reduce_shake
+end
+
+function M.set_reduce_flash(on)
+  M.cfg.reduce_flash = on == true
+  M.save_accessibility()
+  return M.cfg.reduce_flash
+end
+
 function M.save_accessibility()
   local path, path_err = accessibility_path()
   if not path then
     if path_err then pal.log("[display] save FAILED: " .. tostring(path_err)) end
     return nil, path_err
   end
+  -- the reduce flags enter the store only when set (an untouched player
+  -- never freezes today's defaults — the video.dat rule)
   local t = { editor_scale = M.cfg.editor_scale,
               chrome_scale = M.cfg.chrome_scale,
               access_auto = M.cfg.access_auto,
-              history_budget_mb = M.cfg.history_budget_mb }
+              history_budget_mb = M.cfg.history_budget_mb,
+              reduce_shake = M.cfg.reduce_shake or nil,
+              reduce_flash = M.cfg.reduce_flash or nil }
   local ok, err = pal.write_file_atomic(path, cm.require("cm.state").canon(t),
                                         M._access_save_fail)
   if not ok then
@@ -211,6 +249,7 @@ function M.load_accessibility()
   M.access_resolved = false
   M.cfg.access_auto = true -- missing/old generations opt into safe auto
   M.cfg.editor_scale, M.cfg.chrome_scale = 1, 1
+  M.cfg.reduce_shake, M.cfg.reduce_flash = false, false
   local path, path_err = accessibility_path()
   if not path then
     if path_err then pal.log("[display] load FAILED: " .. tostring(path_err)) end
@@ -231,6 +270,8 @@ function M.load_accessibility()
     M.cfg.access_auto = false
     M.access_resolved = true
   end
+  M.cfg.reduce_shake = t.reduce_shake == true
+  M.cfg.reduce_flash = t.reduce_flash == true
   local mb = M.budget_mb_ok(t.history_budget_mb)
   if mb then M.cfg.history_budget_mb = mb end
 end

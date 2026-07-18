@@ -3,7 +3,9 @@
 -- which the resize ladder can't cover: a borderless or fullscreen window
 -- can't be drag-resized (human ask 2026-06-28); owns the master/music/sfx
 -- volume knobs (device-output gains — the deterministic mix and audio
--- goldens never hear them) and hosts project-declared options (M.add).
+-- goldens never hear them), the reduced-effects accessibility toggles
+-- (D129, stored user-wide in cm.view), and hosts project-declared
+-- options (M.add).
 -- Toggled by Esc (keyboard) or the pad back/select button (D128) — the
 -- whole menu drives without a mouse: cm.ui's nav cursor (arrows / dpad /
 -- left stick move, Enter/Space/pad-south activate, left/right adjust
@@ -64,6 +66,23 @@ function M.set_vol(kind, v)
   apply_vol()
   view.save_video()
   return M.vol[kind]
+end
+
+-- ---- reduced effects (A8 accessibility, D129) ----
+-- The player's reduce-shake / reduce-flash choices, stored user-wide in
+-- cm.view's accessibility store (a photosensitive player sets them once per
+-- machine). The engine's render-only doors — cm.camera.offset, cm.tween.
+-- wobble, cm.tween.flash — consume the scales by themselves; these are the
+-- game-facing reads for HAND-ROLLED effects: multiply your own flash
+-- overlay's alpha by flash_scale() and your own shake offset by
+-- shake_scale(), in draw, never in step (live policy, the options.add rule).
+
+function M.shake_scale()
+  return view.shake_scale()
+end
+
+function M.flash_scale()
+  return view.flash_scale()
 end
 
 -- ---- project-declared options (A4/D085) ----
@@ -352,6 +371,17 @@ local function main_page()
   vol_slider("master")
   vol_slider("music")
   vol_slider("sfx")
+
+  -- reduced effects (A8 accessibility, D129): user-wide policy in cm.view —
+  -- the engine's render-only effect doors (camera.offset / tween.wobble /
+  -- tween.flash) consume the scales by themselves
+  ui.label("accessibility", { color = st.text_dim })
+  local rs, rsc = ui.checkbox("reduce screen shake", view.cfg.reduce_shake,
+                              { id = "redshake" })
+  if rsc then view.set_reduce_shake(rs) end
+  local rf, rfc = ui.checkbox("reduce flashes", view.cfg.reduce_flash,
+                              { id = "redflash" })
+  if rfc then view.set_reduce_flash(rf) end
 
   -- knobs the project declared (options.add); values are live render policy
   if #M.defs > 0 then

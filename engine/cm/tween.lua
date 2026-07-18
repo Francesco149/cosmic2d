@@ -19,7 +19,7 @@
 --   tween.tick(d)                      -- ONCE per step, top of step
 --   if tween.on(d, "pause") then return end   -- world frozen, effects run
 --   -- in draw:
---   local a = tween.val(d, "flash")            -- 0.55 fading to 0
+--   local a = tween.flash(d, "flash")          -- 0.55 fading to 0 (policy-aware)
 --   local sx, sy = tween.wobble(d, "shake")    -- the screen-shake offset
 --
 -- Semantics, pinned by KATs:
@@ -48,7 +48,13 @@
 --   * wobble(o, name) -> ox, oy: the render-only shake offset, amplitude
 --     mag * k with the fixed incommensurate sin pair off the remaining
 --     count — exactly cm.camera.offset for tables that are not cameras
---     (swarm has no camera). Never the PRNG. Idle -> 0, 0.
+--     (swarm has no camera). Never the PRNG. Idle -> 0, 0. Scaled by the
+--     player's reduce-shake accessibility policy (D129), which is why it
+--     belongs to draw: the counters are recorded, the offset is per-player.
+--   * flash(o, name [, curve]) -> val scaled by the reduce-flash policy
+--     (D129): draw flash-overlay alphas through this door and players who
+--     asked for fewer flashes get an attenuated wash. Render-only like
+--     wobble; val/k/mix stay pure for sim reads (hit pause).
 --   * bob(frame, period, amp) -> the pure looping wobble (cellar's item
 --     bobs): amp * sin(frame * tau / period). Not an effect — just the
 --     idiom, off the sim frame count, render-only by convention.
@@ -139,13 +145,25 @@ end
 
 -- wobble(o, name) -> ox, oy: the render-only shake offset, amplitude
 -- mag * k off the remaining count (cm.camera.offset's exact idiom —
--- never the PRNG). Sim results must never read it.
+-- never the PRNG), scaled by the player's reduce-shake policy (D129).
+-- Sim results must never read it — val/k stay the pure sim-legal reads.
 function M.wobble(o, name)
   local tw = o.tw
   local e = tw and tw[name]
   if e == nil then return 0.0, 0.0 end
   local a = (e.mag or 1.0) * e.t / e.t0
+        * cm.require("cm.view").shake_scale()
+  if a == 0 then return 0.0, 0.0 end
   return m.sin(e.t * 2.7) * a, m.sin(e.t * 3.1 + 2) * a
+end
+
+-- flash(o, name [, curve]) -> val scaled by the player's reduce-flash
+-- policy (D129): THE door for flash-overlay alphas — a full-screen wash
+-- drawn at flash() attenuates for players who asked for fewer flashes,
+-- while val() stays pure for sim reads (hit pause, gameplay timers).
+-- Render-only by the wobble rule: sim results must never read it.
+function M.flash(o, name, curve)
+  return M.val(o, name, curve) * cm.require("cm.view").flash_scale()
 end
 
 -- bob(frame, period, amp): the pure looping wobble — amp * sin over a
