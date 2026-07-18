@@ -29,7 +29,7 @@ local COL = {
   code = 0x9fdc8fff, code_bg = 0x20203aff, bold = 0xefeaffff,
   bar = 0x1a1730ff, btn = 0x2a2542ff, btn_hot = 0x3a3560ff,
   row = 0x232038ff, row_hot = 0x322d48ff, rule = 0x35305aff,
-  field = 0x141220ff, hl = 0x35406a80,
+  field = 0x141220ff, hl = 0x35406a80, sel = 0x5a74c455,
 }
 
 -- syntax faces for code blocks — the code editor's exact palette (cm.ed.lex
@@ -72,6 +72,22 @@ end
 
 function M.defaults() return { path = "", scroll = 0, q = "" } end
 
+-- transient per-window selection state, module-local and keyed by win.id —
+-- deliberately NOT fields on the captured window: the row model is rebuilt
+-- every frame and can be large, and every string key on a win rides
+-- state.canon into session.dat. Holds: rows (the run model), a/b (endpoints),
+-- drag/moved (the gesture), copy_t (the ctrl+C flash), w (the layout width
+-- the rows were built at).
+local SEL = {}
+function M.sel_state(win)
+  local s = SEL[win.id or 0]
+  if not s then
+    s = {}
+    SEL[win.id or 0] = s
+  end
+  return s
+end
+
 function M.title(win)
   local p = win.path or ""
   if p == "" then return "help" end
@@ -92,6 +108,7 @@ local function navigate(win, path, nohist, opts)
   win.scroll = 0
   win._src, win._srcpath = nil, nil
   win._copied, win._copied_t, win._pagecopy_t = nil, nil, nil -- copy feedback
+  SEL[win.id or 0] = nil -- a new doc invalidates the selection + row model
   -- an optional source line to reveal on arrival (a search hit or a #anchor);
   -- hl_line lights it until the next scroll/navigate
   win.goto_line = opts and opts.line or nil
@@ -197,9 +214,120 @@ local function parse_inline(s)
   return segs
 end
 
+-- ---- the selection row model (true drag-select + copy) ----
+--
+-- While a doc renders, every drawn text run is recorded into `rows`: one row
+-- per VISUAL line, holding its runs in reading order with doc-space coords
+-- (x relative to the text left edge, y relative to the content top — so
+-- scroll and window moves never invalidate them). Selection endpoints are
+-- {ri, ci}: a row index + a 0-based byte offset into the row's JOINED text
+-- (runs concatenated, a single space standing in for each horizontal gap —
+-- exactly what the eye reads). The pick/x/extract math below is pure over
+-- that structure (measure is injected), so the selftest KATs pin it with a
+-- fake monospace measure; the reader passes pal.x_ig_text_size.
+
+-- step one utf8 codepoint: the byte AFTER the char starting at byte `i`
+local function utf8_next(s, i)
+  local c = s:byte(i)
+  return i + (c < 0x80 and 1 or c < 0xE0 and 2 or c < 0xF0 and 3 or 4)
+end
+
+-- build each row's joined text + every run's j0 (its 0-based offset into it);
+-- a gap between runs wider than half a pixel joins as one space
+function M.rows_finalize(rows)
+  for _, r in ipairs(rows) do
+    local t, j = {}, 0
+    for k, run in ipairs(r.runs) do
+      local prev = r.runs[k - 1]
+      if prev and run.x > prev.x + prev.w + 0.5 then
+        t[#t + 1] = " "
+        j = j + 1
+      end
+      run.j0 = j
+      t[#t + 1] = run.s
+      j = j + #run.s
+    end
+    r.text = table.concat(t)
+  end
+end
+
+-- doc-space x -> byte offset into the row's joined text, snapped to the
+-- nearest codepoint boundary (a click in a gap lands on its edge)
+function M.row_pick(row, x, measure)
+  for _, run in ipairs(row.runs) do
+    if x < run.x then return run.j0 end
+    if x < run.x + run.w then
+      local pos, wprev = 1, 0
+      while pos <= #run.s do
+        local nx = utf8_next(run.s, pos)
+        local wnext = measure(run.s:sub(1, nx - 1), run.px, run.font)
+        if x < run.x + (wprev + wnext) * 0.5 then return run.j0 + pos - 1 end
+        pos, wprev = nx, wnext
+      end
+      return run.j0 + #run.s
+    end
+  end
+  local last = row.runs[#row.runs]
+  return last and (last.j0 + #last.s) or 0
+end
+
+-- byte offset -> doc-space x (the caret edge of that offset)
+function M.row_x(row, ci, measure)
+  local endx = 0
+  for _, run in ipairs(row.runs) do
+    if ci <= run.j0 then return run.x end
+    if ci <= run.j0 + #run.s then
+      return run.x + measure(run.s:sub(1, ci - run.j0), run.px, run.font)
+    end
+    endx = run.x + run.w
+  end
+  return endx
+end
+
+-- doc-space point -> selection endpoint {ri, ci}, clamped into the doc
+function M.rows_pick(rows, x, y, measure)
+  if #rows == 0 then return nil end
+  if y < rows[1].y then return { ri = 1, ci = 0 } end
+  for ri, r in ipairs(rows) do
+    local nxt = rows[ri + 1]
+    if y < (nxt and nxt.y or r.y + r.h) then
+      return { ri = ri, ci = M.row_pick(r, x, measure) }
+    end
+  end
+  local lr = rows[#rows]
+  return { ri = #rows, ci = #(lr.text or "") }
+end
+
+-- a..b in reading order (endpoints may arrive reversed)
+local function sel_norm(a, b)
+  if b.ri < a.ri or (b.ri == a.ri and b.ci < a.ci) then return b, a end
+  return a, b
+end
+
+-- the selected text: middle rows whole, end rows sliced at their offsets.
+-- Rows joining rule: the SAME source line (a wrap) rejoins with the space the
+-- wrap consumed; the next source line is a newline; a jump of 2+ source lines
+-- crossed a blank — a paragraph break.
+function M.sel_text(rows, a, b)
+  a, b = sel_norm(a, b)
+  local out = {}
+  for ri = a.ri, math.min(b.ri, #rows) do
+    local r = rows[ri]
+    local s = r.text or ""
+    if ri > a.ri then
+      local dl = r.ln - rows[ri - 1].ln
+      out[#out + 1] = dl == 0 and " " or dl == 1 and "\n" or "\n\n"
+    end
+    local lo = ri == a.ri and a.ci or 0
+    local hi = ri == b.ri and b.ci or #s
+    out[#out + 1] = s:sub(lo + 1, hi)
+  end
+  return table.concat(out)
+end
+
 -- draw a run of inline segments, wrapping at maxw; collect link rects into
 -- `links`. Returns the y after the block.
-local function draw_inline(segs, x0, y0, maxw, px, links, i, ctx, z)
+local function draw_inline(segs, x0, y0, maxw, px, links, i, ctx, z, rec)
   local x, y = x0, y0
   local lh = px * 1.5
   local spacew = pal.x_ig_text_size(" ", px, 0)
@@ -211,11 +339,13 @@ local function draw_inline(segs, x0, y0, maxw, px, links, i, ctx, z)
       if x + ww > x0 + maxw and x > x0 then newline() end
       if seg.t == "code" then
         pal.x_ig_rect_fill(x - 1, y - 1, ww + 2, px + 2, COL.code_bg, 2 * z)
+        if rec then rec(x, y, ww, seg.s, 1, px) end
         pal.x_ig_text(x, y, px, COL.code, seg.s, 1)
       else
         local hot = ctx.hot and i.wx >= x and i.wx < x + ww
                     and i.wy >= y and i.wy < y + px
         local col = hot and COL.link_hot or COL.link
+        if rec then rec(x, y, ww, seg.s, 0, px) end
         pal.x_ig_text(x, y, px, col, seg.s, 0)
         pal.x_ig_line(x, y + px, x + ww, y + px, col, math.max(1, z))
         links[#links + 1] = { x = x, y = y, w = ww, h = px, url = seg.url }
@@ -226,6 +356,7 @@ local function draw_inline(segs, x0, y0, maxw, px, links, i, ctx, z)
       for word in seg.s:gmatch("%S+") do
         local ww = pal.x_ig_text_size(word, px, 0)
         if x + ww > x0 + maxw and x > x0 then newline() end
+        if rec then rec(x, y, ww, word, 0, px) end
         pal.x_ig_text(x, y, px, face, word, 0)
         x = x + ww + spacew
       end
@@ -297,8 +428,12 @@ local function page_text(src)
 end
 
 -- render the markdown body; returns the content height (for scroll clamp) and
--- the code blocks with their on-screen extents recorded (for the copy chips)
-local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
+-- the code blocks with their on-screen extents recorded (for the copy chips).
+-- Every drawn text run is recorded into `rows` (the selection model); `hlmap`
+-- (doc-space x ranges keyed by row index, from LAST frame's rows) draws the
+-- selection highlight under each row's text the moment the row is created.
+local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z,
+                        rows, hlmap)
   local y = y0
   -- classify code vs prose once (pure, KAT-pinned) over the SAME line split
   -- cm.docs numbers by, so a search hit's line (and a #anchor) map to the right
@@ -313,9 +448,32 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
   for bi, b in ipairs(blocks) do
     for ln = b.lo, b.hi do block_of[ln] = bi end
   end
+  -- the run recorder: doc-space coords (x rel. x0, y rel. the content top);
+  -- creating a row draws its selection highlight first, so it sits under the
+  -- text but over the block panel
+  local cur_ln = 0
+  local function rec(x, ys, w, s, font, fpx, h)
+    if not rows then return end
+    local dy = ys - y0
+    local r = rows[#rows]
+    if not r or r.y ~= dy then
+      r = { y = dy, h = h or fpx * 1.5, ln = cur_ln, runs = {} }
+      rows[#rows + 1] = r
+      local hlr = hlmap and hlmap[#rows]
+      if hlr then
+        pal.x_ig_rect_fill(x0 + hlr.a, ys - 1, hlr.b - hlr.a, r.h, COL.sel, 0)
+      end
+    end
+    if #s > 0 then
+      r.runs[#r.runs + 1] = { x = x - x0, w = w, s = s, font = font, px = fpx }
+    end
+  end
+  local lh = px * 1.5
+  local bpad = 3 * z -- the code panel's vertical padding
   local carry, cur_bi = "", nil
   for ln = 1, n do
     local line = ls[ln]
+    cur_ln = ln
     if win.goto_line == ln then win._goto_y = y end
     if win.hl_line == ln then
       pal.x_ig_rect_fill(x0 - 3 * z, y - 1, maxw + 6 * z, px * 1.5 + 2,
@@ -327,9 +485,17 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
     elseif k == "code" then
       local bi = block_of[ln]
       local b = blocks[bi]
-      if bi ~= cur_bi then carry, cur_bi, b._y0 = "", bi, y end
-      pal.x_ig_rect_fill(x0, y - 1, maxw, px + 3, COL.code_bg, 0)
+      if bi ~= cur_bi then
+        -- ONE panel for the whole block (its height is known: contiguous
+        -- code lines at a fixed advance), not a rect per line
+        carry, cur_bi = "", bi
+        b._y0 = y
+        b._y1 = y + (b.hi - b.lo + 1) * lh + 2 * bpad
+        pal.x_ig_rect_fill(x0, b._y0, maxw, b._y1 - b._y0, COL.code_bg, 4 * z)
+        y = y + bpad
+      end
       local dline = line:gsub("^    ", "")
+      rec(x0 + 4 * z, y, pal.x_ig_text_size(dline, px, 1), dline, 1, px)
       if b.lang == "lua" then
         local toks
         toks, carry = lex.line("lua", dline, carry)
@@ -337,8 +503,8 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
       else
         pal.x_ig_text(x0 + 4 * z, y, px, CODE_FACE.base, dline, 1)
       end
-      b._y1 = y + px + 2 * z
-      y = y + px * 1.5
+      y = y + lh
+      if ln == b.hi then y = y + bpad end
     else
       local h = line:match("^(#+)%s")
       if h then
@@ -346,7 +512,10 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
         local hpx = lvl == 1 and px * 1.7 or lvl == 2 and px * 1.32 or px * 1.12
         local face = lvl == 1 and COL.h1 or lvl == 2 and COL.h2 or COL.h3
         y = y + (lvl == 1 and px * 0.7 or px * 0.5)
-        pal.x_ig_text(x0, y, hpx, face, line:gsub("^#+%s*", ""), 0)
+        local shown = line:gsub("^#+%s*", "")
+        rec(x0, y, pal.x_ig_text_size(shown, hpx, 0), shown, 0, hpx,
+            hpx * 1.35)
+        pal.x_ig_text(x0, y, hpx, face, shown, 0)
         y = y + hpx * 1.35
         if lvl == 1 then
           pal.x_ig_line(x0, y - px * 0.4, x0 + maxw, y - px * 0.4, COL.rule, 1)
@@ -356,11 +525,12 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
         pal.x_ig_circle_fill(x0 + 3 * z, y + px * 0.5, math.max(1.5, 2 * z),
                              COL.dim)
         y = draw_inline(parse_inline(body), x0 + 14 * z, y, maxw - 14 * z, px,
-                        links, i, ctx, z)
+                        links, i, ctx, z, rec)
       elseif line:match("^%s*$") then -- blank: paragraph gap
         y = y + px * 0.6
       else
-        y = draw_inline(parse_inline(line), x0, y, maxw, px, links, i, ctx, z)
+        y = draw_inline(parse_inline(line), x0, y, maxw, px, links, i, ctx, z,
+                        rec)
       end
     end
   end
@@ -409,6 +579,25 @@ local function hbtn(x, y, w, h, label, on, i, ctx, z, px)
                 y + (h - px) * 0.5, px, (hot and on) and COL.hot
                 or on and COL.text or COL.dim, label, 0)
   return hot and i.clicked[1]
+end
+
+-- Ctrl+C (the shell's kind_call("copy")): the drag selection to the clipboard
+function M.copy(win, ed)
+  local sl = M.sel_state(win)
+  if win.path == "" or not sl.a or not sl.b or not sl.rows
+     or (sl.a.ri == sl.b.ri and sl.a.ci == sl.b.ci) then return end
+  pal.x_clipboard(M.sel_text(sl.rows, sl.a, sl.b))
+  sl.copy_t = pal.time_ns()
+end
+
+-- Esc clears an active selection before the shell's own Esc ladder
+function M.escape(win, ed)
+  local sl = M.sel_state(win)
+  if sl.a then
+    sl.a, sl.b, sl.drag = nil, nil, nil
+    return true
+  end
+  return false
 end
 
 function M.wheel(win, ed, delta)
@@ -505,6 +694,60 @@ function M.draw(win, ctx)
     if (win.q or "") ~= "" then results = search_results(win.q) end
   end
 
+  -- ---- drag selection (doc view): endpoints picked against LAST frame's
+  -- rows (same indices — the doc and width are stable frame-to-frame; a
+  -- reflow drops the selection). Runs before the body draws so this frame's
+  -- highlight is current.
+  local measure = pal.x_ig_text_size
+  local sl = M.sel_state(win)
+  local hlmap
+  if win.path ~= "" then
+    if sl.w ~= maxw then -- a resize reflowed the rows
+      sl.a, sl.b, sl.drag = nil, nil, nil
+    end
+    local prows = sl.rows
+    local function mpos() return i.wx - x0, i.wy - sy0 + win.scroll end
+    if prows and #prows > 0 then
+      if ctx.hot and i.clicked[1] and i.wx >= x0 and i.wx < x0 + maxw
+         and i.wy >= sy0 and i.wy < sy0 + sh then
+        local dx, dy = mpos()
+        local p = M.rows_pick(prows, dx, dy, measure)
+        sl.a, sl.b, sl.drag, sl.moved = p, p, true, nil
+      elseif sl.drag and i.buttons[1] then
+        -- autoscroll while dragging past the band edge
+        if i.wy < sy0 then
+          win.scroll = math.max(0, win.scroll - (sy0 - i.wy) * 0.25)
+        elseif i.wy > sy0 + sh then
+          win.scroll = math.min(win._maxscroll or win.scroll,
+                                win.scroll + (i.wy - sy0 - sh) * 0.25)
+        end
+        local dx, dy = mpos()
+        local p = M.rows_pick(prows, dx, dy, measure)
+        if p.ri ~= sl.a.ri or p.ci ~= sl.a.ci then sl.moved = true end
+        sl.b = p
+      elseif sl.drag then
+        sl.drag = nil -- released: a no-move gesture was a click
+        if not sl.moved then sl.a, sl.b = nil, nil end
+      end
+    end
+    -- the highlight map this frame's rows draw under their text
+    if sl.a and sl.b and prows
+       and not (sl.a.ri == sl.b.ri and sl.a.ci == sl.b.ci) then
+      hlmap = {}
+      local a, b = sel_norm(sl.a, sl.b)
+      for ri = a.ri, math.min(b.ri, #prows) do
+        local r = prows[ri]
+        local run1, runN = r.runs[1], r.runs[#r.runs]
+        local xa = ri == a.ri and M.row_x(r, a.ci, measure)
+                   or (run1 and run1.x or 0)
+        local xb = ri == b.ri and M.row_x(r, b.ci, measure)
+                   or (runN and runN.x + runN.w or 0) + px * 0.4
+        if xb > xa then hlmap[ri] = { a = xa, b = xb } end
+      end
+    end
+  end
+  sl.w = maxw
+
   pal.x_ig_clip_push(ctx.cx, sy0, ctx.cw, sh)
   local y = sy0 - win.scroll
   local inband = function(ry, rh)
@@ -555,9 +798,27 @@ function M.draw(win, ctx)
   else
     local src = read_doc(win, ed)
     win._goto_y = nil
+    local rows = {}
     local blocks
-    contenth, blocks = draw_doc(win, ed, src, x0, y, maxw, px, links, i, ctx, z)
+    contenth, blocks = draw_doc(win, ed, src, x0, y, maxw, px, links, i, ctx, z,
+                                rows, hlmap)
+    M.rows_finalize(rows)
+    sl.rows = rows
     draw_copy_chips(win, blocks, x0, maxw, sy0, sh, px, z, i, ctx)
+    -- the ctrl+C ack: a "copied" chip riding the selection head
+    if sl.copy_t and sl.a
+       and (pal.time_ns() - sl.copy_t) < COPIED_MS * 1000000 then
+      local _, b = sel_norm(sl.a, sl.b)
+      local r = rows[math.min(b.ri, #rows)]
+      if r then
+        local cpx = math.max(6, px * 0.82)
+        local lw = pal.x_ig_text_size("copied", cpx, 0)
+        local cx = x0 + math.min(M.row_x(r, b.ci, measure), maxw - lw - 12 * z)
+        local cy = sy0 - win.scroll + r.y + r.h + 2 * z
+        pal.x_ig_rect_fill(cx, cy, lw + 12 * z, cpx + 6 * z, COL.btn, 3 * z)
+        pal.x_ig_text(cx + 6 * z, cy + 3 * z, cpx, COL.code, "copied", 0)
+      end
+    end
   end
   pal.x_ig_clip_pop()
 
@@ -581,8 +842,9 @@ function M.draw(win, ctx)
     ed.touch()
   end
 
-  -- link clicks (over the body only)
-  if ctx.hot and i.clicked[1] and i.wy >= sy0 then
+  -- link clicks fire on RELEASE of a gesture that never dragged, so link
+  -- text is selectable like any other (a drag starting on a link selects)
+  if ctx.hot and i.released[1] and not sl.moved and i.wy >= sy0 then
     for _, lk in ipairs(links) do
       if i.wx >= lk.x and i.wx < lk.x + lk.w and i.wy >= lk.y
          and i.wy < lk.y + lk.h then

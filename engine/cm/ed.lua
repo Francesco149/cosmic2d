@@ -112,7 +112,7 @@ local C = {
 local HDR = 24 -- header strip height, world units
 local K = { escape = 41, lbracket = 47, rbracket = 48, space = 44,
             n1 = 30, n2 = 31, n0 = 39, right = 79, left = 80,
-            down = 81, up = 82, f = 9, s = 22, v = 25, z = 29, y = 28,
+            down = 81, up = 82, c = 6, f = 9, s = 22, v = 25, z = 29, y = 28,
             f1 = 58, f2 = 59, f3 = 60, f4 = 61, grave = 53 }
 
 -- ---- boot ----
@@ -665,6 +665,7 @@ local function hotkeys(ig, i)
       if g.ctrl and sc == K.y then kind_call("redo")
       elseif g.ctrl and g.shift and sc == K.z then kind_call("redo")
       elseif g.ctrl and sc == K.z then kind_call("undo")
+      elseif g.ctrl and sc == K.c then kind_call("copy")
       elseif sc == K.grave then summon_console()
       elseif g.alt and sc == K.v then
         -- selection mode: the next press can only select, even over a
