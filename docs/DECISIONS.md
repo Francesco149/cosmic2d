@@ -6168,3 +6168,23 @@ Aa 1.5 held fill ≥ 0.99 everywhere (was 0.662 at z=1.50); the human's
 clip opens clean — recorded FSIZ 426x240 followed while parked, game
 window fill 1.000 across the whole A/B loop at Aa 1.5. Before/after
 zoom-1.5 captures on llm-feed.
+
+**Same-day follow-up 2 (the human): the CTRL game-window resize at Aa
+125% snapped to a non-pixel-perfect size.** The last member of the same
+class: `constrain`'s CTRL snap rounded the WORLD-unit scale to integers,
+but the Aa canvas scale multiplies the doc rect on screen — at Aa 1.25 a
+world-integer multiple draws at 2.5x and the blit never snaps crisp. The
+snapped quantity must be the SCREEN design multiple: `game.snap_mult(s,
+ds)` (pure, KAT'd) rounds `s*ds` to a whole number ≥ 1 and returns
+`k/ds` — exactly the shape `aa_rect`'s crisp branch recomputes, so a
+CTRL-snapped window stays crisp across Aa flips (KAT-pinned: the snapped
+Aa-1.25 rect flips to Aa 1 as an exact 2x). Both CTRL sites (the
+horizontal walk's gesture anchor and the final scale) route through it.
+Proof: Linux selftest **24,523** / native Windows **24,525** (6 new
+t_game_snap checks); suite ALL GREEN, goldens byte-identical. Live at
+Aa 1.25: a scripted CTRL corner drag to world 2.3x through the real
+constrain door lands world s=2.4 = screen 3.0000, and the drawn blit
+reads s=3.0000 integer-exact (was: world 2.0 = screen 2.5, never
+crisp). With this, every place that reasons about game-window
+crispness — the blit snap, the rect reconcile, the CTRL snap — speaks
+the same unit: the screen design multiple.

@@ -173,6 +173,20 @@ function M.aa_rect(w, h, aa0, ds, th)
   return w2, h2, (w - w2) * 0.5, (h - h2) * 0.5
 end
 
+-- pure (KAT'd): the CTRL-resize snap — land the window on an exact
+-- SCREEN design multiple. The doc rect lives in world units, which the
+-- Aa scale multiplies on screen, so the integer to hit is s*ds, not s:
+-- at Aa 1.25 a world-integer multiple reads 2.5x on screen and the blit
+-- never snaps crisp (the human's report, D125 follow-up 2). Returns the
+-- world-unit scale whose screen multiple (at 100% canvas zoom) is a
+-- whole number >= 1 — the same k/ds shape the win.aa reconcile
+-- recomputes exactly, so a CTRL-snapped window stays crisp across Aa
+-- flips.
+function M.snap_mult(s, ds)
+  ds = ds or 1
+  return math.max(1, math.floor(s * ds + 0.5)) / ds
+end
+
 -- the resize constraint (threaded through wm.resize by the shell): sees
 -- the raw dragged size, returns the aspect-locked one. r0 is the
 -- gesture-start rect, so the start scale/width stay the gesture's anchor.
@@ -180,6 +194,7 @@ function M.constrain(win, part, r0, ww, wh, ctrl)
   local tw, th = base_res()
   if not th or tw <= 0 or th <= 0 then return end
   local lo, hi = res_range(tw, th)
+  local ds = cm.require("cm.view").cfg.editor_scale or 1
   local W = math.min(hi, math.max(lo, win.fw or tw)) -- current FOV width
   local s0 = math.max((r0.h - M.PAD_H) / th, 1e-6)   -- gesture-start scale
   local iw, ih = ww - M.PAD_W, wh - M.PAD_H          -- dragged image size
@@ -187,7 +202,7 @@ function M.constrain(win, part, r0, ww, wh, ctrl)
   if part == "e" or part == "w" then
     -- horizontal: walk the width through the range at constant scale,
     -- then scale past the ends (16:9 out, 4:3 in)
-    s = ctrl and math.max(1, math.floor(s0 + 0.5)) or s0
+    s = ctrl and M.snap_mult(s0, ds) or s0
     W = math.floor(math.min(hi, math.max(lo, iw / s)) + 0.5)
     if iw > hi * s then s = iw / hi
     elseif iw < lo * s then s = iw / lo end
@@ -199,7 +214,7 @@ function M.constrain(win, part, r0, ww, wh, ctrl)
     local sw, sh = iw / W, ih / th
     s = math.abs(sw - s0) > math.abs(sh - s0) and sw or sh
   end
-  if ctrl then s = math.max(1, math.floor(s + 0.5)) end
+  if ctrl then s = M.snap_mult(s, ds) end
   s = math.max(s, 16 / th) -- never collapse
   if win.fw ~= W then
     win.fw = W

@@ -11268,6 +11268,30 @@ local function t_game_blit()
         "game.blit: a sub-1x well scale never snaps")
 end
 
+-- the CTRL-resize snap (D125 follow-up 2): lands on an exact SCREEN
+-- design multiple — s*ds integer, not s (a world-integer multiple at
+-- Aa 1.25 reads 2.5x on screen and is never crisp)
+local function t_game_snap()
+  local game = cm.require("cm.ed.win.game")
+  check(game.snap_mult(2.1, 1) == 2,
+        "game.snap: Aa 1 snaps the world multiple as before")
+  check(game.snap_mult(1.9, 1.25) == 2 / 1.25,
+        "game.snap: Aa 1.25 lands on a 2x SCREEN multiple (1.6 world)")
+  check(game.snap_mult(2.9, 1.25) * 1.25 == 4,
+        "game.snap: Aa 1.25 near 3.6 screen lands the next whole screen x")
+  check(game.snap_mult(1.35, 1.5) == 2 / 1.5,
+        "game.snap: Aa 1.5 snaps 2.025 screen to exactly 2x screen")
+  check(game.snap_mult(0.3, 1.5) == 1 / 1.5,
+        "game.snap: the floor is a 1x SCREEN multiple")
+  -- the snapped shape survives an Aa flip crisp: k/ds is exactly what
+  -- aa_rect's crisp branch recomputes
+  local PW, PH = game.PAD_W, game.PAD_H
+  local s = game.snap_mult(1.9, 1.25) -- 2x screen at Aa 1.25
+  local w1, h1 = game.aa_rect(426 * s + PW, 240 * s + PH, 1.25, 1, 240)
+  check(w1 == 426 * 2 + PW and h1 == 240 * 2 + PH,
+        "game.snap: a CTRL-snapped rect flips to Aa 1 as an exact 2x")
+end
+
 -- the derived target FOV (D125): the shell asserts pick_fov every live
 -- frame — the FOV is never a latch, so nothing (a park re-aim, a closed
 -- window) can leave the target stale
@@ -11983,6 +12007,7 @@ function game.init()
   t_help_sel()
   t_help_keys()
   t_game_blit()
+  t_game_snap()
   t_game_fov()
   t_game_aa()
   t_cam_aa()

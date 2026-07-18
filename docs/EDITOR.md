@@ -540,8 +540,13 @@ vendored-pin-internal, revisited on any imgui bump.
   change. A **horizontal** edge drag walks the FOV width through that
   range at constant scale, then scales aspect-locked past the ends;
   **vertical** edges and **corners** always scale at the current
-  width. **CTRL snaps the scale to integers** — the window lands on
-  exact multiples of the res. Mechanism: `kind.constrain` (threaded
+  width. **CTRL snaps the scale to integer SCREEN multiples** — the
+  window lands where the drawn image is an exact multiple of the res at
+  100% canvas zoom. The snapped quantity is `s × Aa` (`game.snap_mult`,
+  D125 follow-up 2): the doc rect lives in world units, which the Aa
+  canvas scale multiplies on screen, so snapping the world multiple at
+  Aa 1.25 landed on 2.5x screen — never crisp. Mechanism:
+  `kind.constrain` (threaded
   through `wm.resize` via the inp snapshot) recomputes the window size
   as `image(FOV×s) + chrome pads`; the chosen width lives in `win.fw`
   (captured). The target is **derived every frame, never latched**
