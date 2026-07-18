@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **D126: mouse-look capture — the wish/consent pump** (the human voted in D116's deferred feel change: openworld/bounce/bigworld arm `input.capture_mouse(true)` in `game.init`, and capture is now a WISH the shell grants per tick — `cm.input.capture_pump(allowed)` derives `pal.x_mouse_capture` every frame from wish AND consent (no options menu / autopsy / parked time machine; in the editor only while `cm.ed.game_live()` holds, the exact filter_events live condition) — so Esc/unfocus/menu release and refocus re-captures by itself; the PLAYING chip reads `PLAYING · ESC RELEASES MOUSE` while captured (the user cannot click their way out — the key is named on screen); captured motion/button/wheel pass to the game past the over-the-image test. Linux selftest **24,533** / native Windows **24,535**; suite ALL GREEN, goldens byte-identical; live WSLg proof of the full engage/release/re-engage lifecycle). Before that, **D125 (the D124 native-session reports): the Aa/FOV footgun fix — derive, stamp, anchor** (the game-target FOV is DERIVED every frame — parked follows the recorded FSIZ, live follows the owning game window's `fw` — so nothing can strand a letterboxed target the way D124's one-way park re-aim did; each game window carries an Aa layout stamp `win.aa` reconciled live AND at load — size only, the corner never moves — crisp multiples recomputed exactly; an Aa change re-anchors the canvas at the viewport center so the layout grows in place instead of drifting; follow-ups: the zoom letterbox flicker — blit_scale snaps the well scale itself now that the rect owns the Aa compensation — and the CTRL resize snaps the SCREEN design multiple via game.snap_mult, crisp at any Aa). Linux selftest **24,523** / native Windows **24,525**. Before that, **D124 (the D123 native-session reports): replays re-aim the target to the recorded FOV** (the game window follows applied FSIZ via the new non-latching `input.fsiz_applied()` while time-travelling — the black-bars fix, proven both directions across a mid-session resize), **rovale ships its terrain bake** (cm.atlas export/import + the committed `spr/terrain-atlas-v4.png`; boot reads bake-done by frame 2, was ~2s of visible filling; `game.bake_atlas()` is the dev re-export door), and **rovale's tree tufts vary per tree** (position hash, placement stream untouched — sim byte-identical; the two rovale pixel goldens honestly re-cut on lavapipe, landmarks inspected). Linux selftest **24,501** / native Windows **24,503**. Before that, **D123: the live target size became recorded input** — extension tag 3 FSIZ + `input.game_size()` (design-res fallback = boot target, so every historical golden stands byte-identical); all six 3D demos adapt aspect/HUD/pick-rays to a live FOV resize instead of squashing; and an Aa change rescales game-window doc rects (image area only) so their screen footprint + crisp blit stay constant instead of growing a blank well. Linux selftest **24,489** / native Windows **24,491**. Before that, **D122 fixed three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D127: the in-engine Getting Started walkthrough, verified by driving the shipped UI** (ALPHA §A8's first box is ticked: `getting-started.md` is now the guided "Your first game" path — create from the picker chooser → play → rewind/park/resume → change the code (live hot reload) → draw a sprite and `gfx.sprite` it → author a `goal` map marker the game reads via `map.use` → make a jump sound from the synth's `sfx-jump` preset → write controls/credits/license in-editor → build the portable player. Every step was EXECUTED as written by a synthetic UI tape (`pal.x_ig_event`'s capture-mode door + a `pal.poll_events` wrapper, committed as `tools/drive/drive.lua`) against a fresh scaffold, through to a published `hello-hopper-0-1-0-linux.tar.gz` + SHA-256 from the built release archive (the dev tree carries no portable runtime; its preflight names that honestly). The tape found three real bugs, fixed at class level: (1) Enter on "+ New project" instantly scaffolded a blank project — the chooser now swallows its opening keypress; (2) right-button content affordances were DEAD (sprite secondary paint, tmap erase — interact armed the spawn-menu pend before draw, killing the pointer gate): new `kind.takes_right` claim; (3) no in-editor way to create a text file — the kit pathfield gained `exts` + root prefill and the unbound code window runs it, so controls/credits/license author from scratch. Two same-day human reports folded in: markdown TABLES don't render — the one shipped table (perf envelope) is now an aligned preformatted block, KAT-guarded so no `|`-table ships until a real renderer exists — and (same family) ~25 cross-line `**bold**`/backtick spans rendered literal markers (the reader parses inline per source line): all reflowed + a balanced-span KAT guard. Linux selftest **24,569** / native Windows **24,571** (36 new); suite ALL GREEN, goldens byte-identical; Windows stage refreshed (7 durable entries + Start Menu shortcut); the 8-frame walkthrough montage + fix captures on llm-feed) (2026-07-18). Before that, **D126: mouse-look capture — the wish/consent pump** (the human voted in D116's deferred feel change: openworld/bounce/bigworld arm `input.capture_mouse(true)` in `game.init`, and capture is now a WISH the shell grants per tick — `cm.input.capture_pump(allowed)` derives `pal.x_mouse_capture` every frame from wish AND consent (no options menu / autopsy / parked time machine; in the editor only while `cm.ed.game_live()` holds, the exact filter_events live condition) — so Esc/unfocus/menu release and refocus re-captures by itself; the PLAYING chip reads `PLAYING · ESC RELEASES MOUSE` while captured (the user cannot click their way out — the key is named on screen); captured motion/button/wheel pass to the game past the over-the-image test. Linux selftest **24,533** / native Windows **24,535**; suite ALL GREEN, goldens byte-identical; live WSLg proof of the full engage/release/re-engage lifecycle). Before that, **D125 (the D124 native-session reports): the Aa/FOV footgun fix — derive, stamp, anchor** (the game-target FOV is DERIVED every frame — parked follows the recorded FSIZ, live follows the owning game window's `fw` — so nothing can strand a letterboxed target the way D124's one-way park re-aim did; each game window carries an Aa layout stamp `win.aa` reconciled live AND at load — size only, the corner never moves — crisp multiples recomputed exactly; an Aa change re-anchors the canvas at the viewport center so the layout grows in place instead of drifting; follow-ups: the zoom letterbox flicker — blit_scale snaps the well scale itself now that the rect owns the Aa compensation — and the CTRL resize snaps the SCREEN design multiple via game.snap_mult, crisp at any Aa). Linux selftest **24,523** / native Windows **24,525**. Before that, **D124 (the D123 native-session reports): replays re-aim the target to the recorded FOV** (the game window follows applied FSIZ via the new non-latching `input.fsiz_applied()` while time-travelling — the black-bars fix, proven both directions across a mid-session resize), **rovale ships its terrain bake** (cm.atlas export/import + the committed `spr/terrain-atlas-v4.png`; boot reads bake-done by frame 2, was ~2s of visible filling; `game.bake_atlas()` is the dev re-export door), and **rovale's tree tufts vary per tree** (position hash, placement stream untouched — sim byte-identical; the two rovale pixel goldens honestly re-cut on lavapipe, landmarks inspected). Linux selftest **24,501** / native Windows **24,503**. Before that, **D123: the live target size became recorded input** — extension tag 3 FSIZ + `input.game_size()` (design-res fallback = boot target, so every historical golden stands byte-identical); all six 3D demos adapt aspect/HUD/pick-rays to a live FOV resize instead of squashing; and an Aa change rescales game-window doc rects (image area only) so their screen footprint + crisp blit stay constant instead of growing a blank well. Linux selftest **24,489** / native Windows **24,491**. Before that, **D122 fixed three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,45 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18, continued) — D126: mouse-look capture — the
+**This session (2026-07-18, continued) — D127: the Getting Started
+walkthrough packet.** The method WAS the packet: a synthetic input tape
+(committed: `tools/drive/drive.lua` — `pal.x_ig_event` is documented as
+the capture-mode io door for exactly this; a `pal.poll_events` wrapper
+schedules clicks/keys/text/drags per frame, closures can read live editor
+state to aim at real widget rects) drove the ENTIRE walkthrough through
+the shipped UI on a fresh scaffold: picker → "+ New project" → platformer
+starter → play (PLAYING chip, real input moved the player) → F4 → park →
+resume-here → Esc to live → launcher → main.lua → Ctrl+F find/replace
+(JUMP -5.6 → -7.2) → Ctrl+S → sprite new-file door (`art/hero`) → fill +
+pen paint (right button = secondary) → bake → `gfx.sprite` wired via the
+same find/replace path → map new-file door (`maps/room`) → marker drag →
+inspector label `goal` → `map.use` + `room.doc.markers` moved the flag →
+synth new-file door (`ins/jump`) → the `sfx-jump` stock preset → save →
+`ins.upload` + `snd.on` fired on jump (wrapped and logged in the real
+sim) → controls.md/credits.md/license.txt authored FROM SCRATCH in-editor
+→ project settings (name/version, icon = the baked 32×32 hero.png,
+player files, one license via the add-file picker) → build/export from
+the BUILT RELEASE ARCHIVE (nix build .#cosmic-linux-release, run under
+steam-run): preflight ready → job → published
+`hello-hopper-0-1-0-linux.tar.gz` (31 MiB) + SHA-256 + sibling .sha256.
+Live WSLg proved the reload watcher half uncapped (`[reload]` + the new
+JUMP in the running sim, position preserved). Three tape-found bugs fixed
+at class level (the chooser Enter leak / dead right-button content
+affordances via the new `kind.takes_right` / the missing new-text-file
+door via kit `pathfield.exts`), and the human's mid-session reports
+landed: the docs reader renders NO markdown tables (the one shipped
+table is now an aligned preformatted block; a KAT keeps `|`-tables out
+of shipped docs until a real table layout exists) and per-line inline
+parsing rendered ~25 cross-line bold/code spans as literal markers (all
+reflowed; a balanced-span KAT pins the authoring contract). Notes for
+future tape work: `x_ig_event` NO-OPS in windowed sessions (tapes are
+capture-only); an OCCLUDED window's widgets are inert (close/move the
+overlapping window first — the walkthrough now tells users too); the
+release binary needs steam-run (or the podman smoke) on NixOS, and
+bwrap could not see the scratchpad mount (stage under $HOME). See
+DECISIONS `D127`.
+
+**Same session, earlier — D126: mouse-look capture — the
 wish/consent pump.** The human folded in D116's deliberately deferred feel
 change: the three rig demos (openworld, bounce = the cube, bigworld) get
 true captured-cursor mouse look, with the editor capturing only while the
@@ -830,25 +868,29 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **continue A8 (ALPHA §A8).** The searchable-reference
-checkbox is now `[x]` (D120): every supported module has a full anchored
-section, all five reference topics are present and findable, and the
-every-module-findable sweep is KAT-pinned; the Windows stage and the native
-selftest re-count (24,440) are current. **The next well-shaped packet is
-the in-engine Getting Started walkthrough** — turn `getting-started.md` from
-an orientation page into the guided **create → modify code/art/map/audio →
-play/debug/rewind → export** path, driven and verified through the shipped UI
-(also the spine of the later fresh-user pass). After that, A8's remaining
-open lines: the accessibility pass, the fresh-user usability pass, the
-clean-machine/upgrade/soak matrix, and the alpha freeze. The remaining cheap
-reader nicety is **in-doc Ctrl+F find** (the `text.lua` find model; the shell
-already routes Ctrl+F to `kind_call("find")`, so `M.find` on the help kind
-drops in). Still deferred: D110's launcher content-search / result
-keyboard-nav / span-precise highlight, and D112's double/triple-click select
-+ resize-surviving selection. Deferred A7 refinements (captured-audio
-embedding, a wall-clock clip filename, asset-import markers, native-failure
-next-launch synthesis, an embedded-tail size budget) stay available if a real
-use votes one up. See `ALPHA.md` §A8, DECISIONS `D120`/`D119`/`D110`.
+**Exact next packet:** **continue A8 (ALPHA §A8).** The walkthrough box is
+now `[x]` (D127): `getting-started.md` is the guided create → code/art/map/
+audio → play/rewind → export path, every step tape-driven through the
+shipped UI to a published player archive, and the tape driver is committed
+(`tools/drive/drive.lua` — the natural instrument for the NEXT packets).
+A8's remaining open lines, in rough order of leverage: **the accessibility
+pass** (keyboard-reachable core flows, visible focus, non-color-only
+states, reduced flash/shake, controller navigation — the tape driver can
+prove keyboard reachability the same way it proved the walkthrough), the
+fresh-user usability pass (human-gated; the walkthrough is its spine), the
+clean-machine/upgrade/soak matrix (the release-archive tape run under
+steam-run/podman is the seed), and the alpha freeze. Docs-reader items
+deliberately deferred with guards in place: a REAL markdown-table layout
+(the KAT keeps `|`-tables out of shipped docs until then), cross-line
+inline spans (per-line parser; balanced-span KAT pins the authoring
+contract), in-doc Ctrl+F find, D110's launcher result keyboard-nav /
+span-precise highlight, D112's double/triple-click select. Deferred A7
+refinements (captured-audio embedding, a wall-clock clip filename,
+asset-import markers, native-failure next-launch synthesis, an
+embedded-tail size budget) stay available if a real use votes one up.
+Observed en route (polish, unclaimed): a focused game window's chip still
+reads PLAYING while the timeline is parked (keys don't drive the game
+then). See `ALPHA.md` §A8, DECISIONS `D127`/`D120`.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's
