@@ -8,9 +8,86 @@
 -- frame gate died with this file).
 --
 -- Captured (win fields): itext (the input line), filter, sy + stick
--- (scroll). Ephemeral: history cursor, refocus intent.
+-- (scroll). Ephemeral: history cursor, refocus intent, and the log
+-- drag-selection (module-local by win.id — the D112 discipline: selection
+-- state never rides a captured window into session.dat).
 
 local M = select(2, ...) or {}
+
+-- log selection: { a = {li, ci}, b = {li, ci}, drag, moved, tag, copy_t }.
+-- li indexes the FILTERED lines list, ci is a byte offset; `tag` remembers
+-- the anchored line's text so a scrollback trim / filter change (indices
+-- shift) drops the selection honestly instead of drifting.
+local SEL = {}
+function M.sel_of(win)
+  local s = SEL[win.id]
+  if not s then
+    s = {}
+    SEL[win.id] = s
+  end
+  return s
+end
+
+local COPY_DWELL = 1.2e9 -- ns the "copied" tag stays up
+
+-- byte offset for a horizontal pixel in line s (utf8-safe prefix walk)
+function M.pick_ci(s, dx, px, measure)
+  if dx <= 0 then return 0 end
+  local i = 1
+  while i <= #s do
+    local c = s:byte(i)
+    local step = (c < 0x80 or c >= 0xf0) and (c >= 0xf0 and 4 or 1)
+                 or (c >= 0xe0 and 3 or 2)
+    local j = math.min(#s, i + step - 1)
+    local w = measure(s:sub(1, j), px, 1)
+    if w > dx then
+      -- inside this glyph: snap to the nearer edge
+      local wprev = i == 1 and 0 or measure(s:sub(1, i - 1), px, 1)
+      if dx - wprev < w - dx then return i - 1 end
+      return j
+    end
+    i = j + 1
+  end
+  return #s
+end
+
+local function sel_norm(a, b)
+  if b.li < a.li or (b.li == a.li and b.ci < a.ci) then return b, a end
+  return a, b
+end
+
+-- pure extraction (KAT-able): the selected span of `lines`, exactly as
+-- shown (timestamps included), lines joined with \n
+function M.sel_text(lines, a, b)
+  a, b = sel_norm(a, b)
+  local out = {}
+  for li = a.li, math.min(b.li, #lines) do
+    local s = lines[li]
+    local i0 = li == a.li and a.ci + 1 or 1
+    local i1 = li == b.li and b.ci or #s
+    out[#out + 1] = s:sub(i0, i1)
+  end
+  return table.concat(out, "\n")
+end
+
+-- Ctrl+C (the shell's kind_call("copy"))
+function M.copy(win)
+  local sl = M.sel_of(win)
+  if not sl.a or not sl.b or not sl.lines
+     or (sl.a.li == sl.b.li and sl.a.ci == sl.b.ci) then return end
+  pal.x_clipboard(M.sel_text(sl.lines, sl.a, sl.b))
+  sl.copy_t = pal.time_ns()
+end
+
+-- Esc clears an active selection before the shell's own Esc ladder
+function M.escape(win)
+  local sl = M.sel_of(win)
+  if sl.a then
+    sl.a, sl.b, sl.drag = nil, nil, nil
+    return true
+  end
+  return false
+end
 
 M.kind = "console"
 M.menu = "console"
@@ -132,11 +209,76 @@ function M.draw(win, ctx)
     y = y + lh
   end
 
+  -- ---- log drag-selection (D118's console half): glyph-precise pick
+  -- against this frame's geometry; a scrollback trim or filter change
+  -- shifts indices, so the anchored line's text is the validity tag ----
+  local measure = pal.x_ig_text_size
+  local sl = M.sel_of(win)
+  local x0 = ctx.cx + 6 * z
+  local y0 = y
+  if sl.a and (not lines[sl.a.li] or lines[sl.a.li] ~= sl.tag) then
+    sl.a, sl.b, sl.drag = nil, nil, nil -- the list shifted under it
+  end
+  if measure and not ctx.occluded then
+    local function pick()
+      local li = start + math.floor((i.wy - y0) / lh)
+      li = math.max(1, math.min(li, #lines))
+      local s = lines[li] or ""
+      return { li = li, ci = M.pick_ci(s, i.wx - x0, px, measure) }
+    end
+    if ctx.hot and i.clicked[1] and #lines > 0
+       and i.wx >= ctx.cx and i.wx < ctx.cx + ctx.cw
+       and i.wy >= y0 and i.wy < ctx.cy + log_h then
+      local p = pick()
+      sl.a, sl.b, sl.drag, sl.moved = p, p, true, nil
+      sl.tag = lines[p.li]
+    elseif sl.drag and i.buttons[1] then
+      -- autoscroll past the band edges (unsticks the tail-follow)
+      if i.wy < y0 then
+        win.stick = false
+        win.sy = math.max(1, (win.sy or start) - 1)
+      elseif i.wy > ctx.cy + log_h and start + rows <= #lines then
+        win.stick = false
+        win.sy = (win.sy or start) + 1
+      end
+      local p = pick()
+      if p.li ~= sl.a.li or p.ci ~= sl.a.ci then sl.moved = true end
+      sl.b = p
+    elseif sl.drag then
+      sl.drag = nil -- released: a no-move gesture was a plain click
+      if not sl.moved then sl.a, sl.b = nil, nil end
+    end
+  end
+  sl.lines = lines -- copy() extracts from what this frame showed
+
   pal.x_ig_clip_push(ctx.cx, ctx.cy, ctx.cw, log_h)
+  local hla, hlb
+  if sl.a and sl.b and not (sl.a.li == sl.b.li and sl.a.ci == sl.b.ci) then
+    hla, hlb = sel_norm(sl.a, sl.b)
+  end
   for li = start, math.min(#lines, start + rows) do
     if y > ctx.cy + log_h then break end
-    pal.x_ig_text(ctx.cx + 6 * z, y, px, line_color(lines[li]), lines[li], 1)
+    local s = lines[li]
+    if hla and li >= hla.li and li <= hlb.li then
+      local xa = li == hla.li and x0 + measure(s:sub(1, hla.ci), px, 1) or x0
+      local xb = li == hlb.li and x0 + measure(s:sub(1, hlb.ci), px, 1)
+                 or x0 + measure(s, px, 1) + px * 0.4
+      if xb > xa then
+        pal.x_ig_rect_fill(xa, y - 1, xb - xa, lh, 0x6a5fa066, 0)
+      end
+    end
+    pal.x_ig_text(x0, y, px, line_color(s), s, 1)
     y = y + lh
+  end
+  -- "copied" feedback rides the selection head briefly
+  if sl.copy_t and pal.time_ns() - sl.copy_t < COPY_DWELL and hlb then
+    local ty = y0 + (hlb.li - start) * lh
+    if ty >= y0 and ty < ctx.cy + log_h then
+      pal.x_ig_text(ctx.cx + ctx.cw - 52 * z, ty, px * 0.9, COL.echo,
+                    "copied", 1)
+    end
+  elseif sl.copy_t and pal.time_ns() - sl.copy_t >= COPY_DWELL then
+    sl.copy_t = nil
   end
   pal.x_ig_clip_pop()
 

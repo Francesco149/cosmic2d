@@ -164,26 +164,35 @@ end
 
 -- snapshot restore (D012): run code from the bundle, not from disk. Disk
 -- reload stays paused until cm.adopt_disk() deliberately switches back.
+-- Two passes ON PURPOSE: seed every unloaded bundle file into the registry
+-- FIRST, then re-run the changed loaded ones. A cross-project clip's main
+-- (hash differs from the live project's) requires its own siblings at
+-- top level; a single interleaved pass would resolve a not-yet-seeded
+-- sibling against the LIVE project's disk — the bigworld-clip-into-demo
+-- drag-in failure (D118).
 function cm.restore_bundle(files)
   bundle_mode = true
+  local rerun = {}
   for _, f in ipairs(files) do
     if f.name:sub(1, 1) ~= "@" then
       local m = registry[f.name]
       if m and m.table then
-        if m.hash ~= pal.hash(f.source) then
-          local result = run_chunk(f.name, f.path, f.source, m.table)
-          if result ~= m.table then
-            for k in pairs(m.table) do m.table[k] = nil end
-            for k, v in pairs(result) do m.table[k] = v end
-          end
-          m.source, m.hash = f.source, pal.hash(f.source)
-        end
+        if m.hash ~= pal.hash(f.source) then rerun[#rerun + 1] = f end
       else
         registry[f.name] = { name = f.name, path = f.path, source = f.source,
                              hash = pal.hash(f.source), mtime = 0,
                              from_bundle = true }
       end
     end
+  end
+  for _, f in ipairs(rerun) do
+    local m = registry[f.name]
+    local result = run_chunk(f.name, f.path, f.source, m.table)
+    if result ~= m.table then
+      for k in pairs(m.table) do m.table[k] = nil end
+      for k, v in pairs(result) do m.table[k] = v end
+    end
+    m.source, m.hash = f.source, pal.hash(f.source)
   end
   cm.code_epoch = cm.code_epoch + 1
 end

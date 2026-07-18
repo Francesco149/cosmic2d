@@ -2584,6 +2584,24 @@ local function t_bundle()
   local changed = cm.adopt_disk()
   check(knob.value == 1, "adopt_disk returns to disk code")
   check(#changed == 1 and changed[1] == "knob", "adopt reports the reload")
+
+  -- D118: a re-run bundle module may require a SIBLING seeded by the same
+  -- bundle (the cross-project clip drop: bigworld's main requiring its
+  -- world inside a demo session). Seeding must complete before ANY re-run
+  -- — a single interleaved pass resolved the sibling against the live
+  -- project's disk, which does not have it. The sibling is deliberately
+  -- listed AFTER the module that requires it.
+  cm.restore_bundle({
+    { name = "knob", path = "projects/selftest/knob.lua",
+      source = "local dep = cm.require('st_bdep')\n"
+               .. "return { value = 10 + dep.v }" },
+    { name = "st_bdep", path = "projects/selftest/st_bdep.lua",
+      source = "return { v = 5 }" },
+  })
+  check(knob.value == 15,
+        "bundle: a re-run resolves its bundle-seeded sibling, never disk")
+  cm.adopt_disk()
+  check(knob.value == 1, "bundle: back on disk code after the sibling round")
 end
 
 -- ---- cm.trace segment ring (D032) ----
@@ -11536,6 +11554,45 @@ local function t_figverts()
         "figverts: out-of-range alpha refused")
 end
 
+local function t_console_sel()
+  -- the console log's drag-selection (D118's console half): pure pick /
+  -- extract / escape math with an injected measure — the t_help_sel model
+  local con = cm.require("cm.ed.win.console")
+  -- fake measure: 10 px per CODEPOINT (utf8-aware like the real font)
+  local function measure(s)
+    local n = 0
+    for _ in s:gmatch("[\x01-\x7f\xc2-\xfd][\x80-\xbf]*") do n = n + 1 end
+    return n * 10
+  end
+  check(con.pick_ci("hello", -3, 12, measure) == 0, "consel: left gutter is 0")
+  check(con.pick_ci("hello", 14, 12, measure) == 1,
+        "consel: mid-glyph snaps to the nearer edge (left)")
+  check(con.pick_ci("hello", 17, 12, measure) == 2,
+        "consel: mid-glyph snaps to the nearer edge (right)")
+  check(con.pick_ci("hello", 999, 12, measure) == 5, "consel: past the end")
+  -- utf8: never lands mid-codepoint ("é" is 2 bytes)
+  check(con.pick_ci("a\xc3\xa9x", 13, 12, measure) == 1
+        and con.pick_ci("a\xc3\xa9x", 18, 12, measure) == 3,
+        "consel: utf8 boundaries only")
+  local lines = { "  0.001 > one", "  0.002 = two", "  0.003 three" }
+  check(con.sel_text(lines, { li = 1, ci = 8 }, { li = 1, ci = 13 })
+        == "> one", "consel: single-line span")
+  check(con.sel_text(lines, { li = 1, ci = 8 }, { li = 3, ci = 13 })
+        == "> one\n  0.002 = two\n  0.003 three",
+        "consel: multi-line span keeps whole middles")
+  check(con.sel_text(lines, { li = 3, ci = 13 }, { li = 1, ci = 8 })
+        == "> one\n  0.002 = two\n  0.003 three",
+        "consel: endpoints normalize either way")
+  -- escape clears an active selection and consumes; idle consumes nothing
+  local win = { id = 990101 }
+  local sl = con.sel_of(win)
+  sl.a, sl.b = { li = 1, ci = 0 }, { li = 2, ci = 3 }
+  check(con.escape(win) == true and sl.a == nil,
+        "consel: escape clears and consumes")
+  check(con.escape({ id = 990102 }) == false,
+        "consel: nothing selected, nothing consumed")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -11637,6 +11694,7 @@ function game.init()
   t_rig()
   t_input_mrel()
   t_figverts()
+  t_console_sel()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 

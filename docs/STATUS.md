@@ -103,6 +103,23 @@ Esc/eject restores the untouched live session.**
    no re-cut. Stars/pickups still emit immediate (next profile vote); the
    immediate emitters stay for one-shot world builds.
 
+7. **D118 — the human's first native 3D clip round-trip found two real bugs.**
+   (a) A cross-project clip drop (bigworld clip into a demo session) crashed:
+   `cm.restore_bundle`'s single interleaved pass re-ran the clip's changed
+   `main` before seeding its siblings, so `world` resolved against the LIVE
+   project's disk — and the failure then tore the live session down (do_load
+   restored the ring but not the stashed present → freed-buffer crash). Now:
+   two-pass restore_bundle (seed all, then re-run) + the failure path heals
+   with the close path's exact restore order. Proven with a real bigworld
+   clip opened from a demo session and a truncated clip (loud fail, session
+   lives); 2 KATs pin the ordering. (b) The console window's log had no
+   selection: it now has D112-style drag-select (glyph-precise, utf8-safe,
+   via pal.x_ig_text_size), Ctrl+C through kind_call("copy"), Esc, drag
+   autoscroll, and trim-safe validity (module-local by win.id, tag-checked);
+   10 KATs; inspected capture on llm-feed. Input-line paste is imgui's own
+   native clipboard — if it still fails windowed, chase the imgui host with
+   a repro. Linux selftest **24,403**; native Windows pending the stage swap (staged editor running — retry queued).
+
 **Deferred to a mechanical documentation session (Opus) — the 3D docs pass.**
 Scope: per-module reference sections in `engine/stock/docs/scripting.md` for
 the ten 3D cm.* modules (signatures + one copyable example each, D110-

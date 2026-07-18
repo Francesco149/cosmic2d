@@ -5674,3 +5674,61 @@ post-alpha idea; the C loop already leaves figures ~2% of frame.
 **Revisit triggers.** A figure-heavy scene (>20 near figures) votes for
 per-figure segment batching (one x_tris per figure instead of per
 shape); an editor figure-preview window reuses emit_baked as-is.
+
+## D118 — cross-project clip drops load their own siblings; the console gets selection (2026-07-18)
+
+Two native-Windows findings from the human's first real 3D clip
+round-trip (export a bigworld `.ctrace`, switch to the demo project,
+drag it back in).
+
+**The drag-in error.** `cm.restore_bundle` seeded unloaded bundle files
+and re-ran changed loaded ones in a SINGLE interleaved pass — so when a
+cross-project clip's `main` (hash differs from the live project's)
+re-ran and its top level required a sibling (`world`) the loop had not
+seeded yet, the loader fell through to the LIVE project's disk
+(`projects/demo/world.lua`: no such file). Never seen before: a
+same-project drop has matching hashes (no re-run) and every clip KAT
+project was single-module. Now restore_bundle is TWO passes — seed every
+unloaded file first, then re-run the changed ones (which resolve
+bundle-seeded siblings through the registry; execution order inside
+pass 2 is safe under the D093 module-table-adoption contract). Worse,
+the failure TORE THE LIVE SESSION DOWN: scrub's do_load caught the
+error after ring_load had already replaced buffers/doc, restored the
+stashed ring but never the stashed present — the demo then crashed on
+freed buffers. The failure path now heals with the close path's exact
+restore order (present state, after_restore, then the live ring).
+Repro + fix proven with a real bigworld clip opened from a demo editor
+session (loads, mounts, 159 frames) and a truncated clip (fails loudly,
+session steps on). 2 new KATs in t_bundle pin the sibling-after-requirer
+ordering; the suite's every trace verify rides restore_bundle and stays
+green.
+
+**Console select/copy.** The console window's log had no selection (the
+human's second report). It now has the docs reader's drag-selection,
+console-shaped: glyph-precise utf8-safe picking via pal.x_ig_text_size
+(pick_ci — a pure prefix walk), multi-line extraction exactly as shown
+(timestamps included, \n-joined — `sel_text`, pure), Ctrl+C through the
+shell's kind_call("copy") with a "copied" tag, Esc through the kind
+escape hook, drag autoscroll that unsticks the tail-follow, and an
+honest validity rule: selection state is module-local by win.id (never
+on the captured window — the D112 discipline) and indexes the filtered
+list, with the anchored line's text as a tag so a scrollback trim or
+filter change DROPS the selection instead of drifting it. The input
+line is a real imgui edit — its own Ctrl+C/V/X are the widget's native
+clipboard ops (wired via the SDL3 backend); if paste still fails
+windowed on a host, that is an imgui-host bug to chase with a repro,
+not a console one. 10 new KATs (pick boundaries incl. utf8, extraction
+spans + normalization, escape semantics).
+
+Proof: Linux selftest **24,403**; native Windows **pending the stage swap** (the human's staged editor is running — the D118 code is cross-platform-plain Lua and the stage retry is queued; the stale stage still passes its own 24,393);
+`nix run .#test` ALL GREEN, every golden byte-identical (both changes
+are load-path/chrome — no sim byte moved). Inspected capture on
+llm-feed: the console window with a live multi-line selection, partial
+first/last lines, and the copied tag.
+
+**Deferred, named honestly:** double-click word-select in the console,
+a scrollback-trim-surviving selection (content-anchored endpoints), and
+console text search (Ctrl+F via the shell's find route) wait for real
+votes; the standalone-clip materialize path warns but proceeds when a
+clip carries no tree (legacy) — a "clip carries no assets" pill in the
+tray is a cheap future affordance.

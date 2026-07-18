@@ -239,7 +239,19 @@ local function do_load(path, editor_clip)
   local ok, lo = pcall(trace.ring_load, path)
   if not ok then
     pal.log("[scrub] replay load failed: " .. tostring(lo))
-    if editor_clip then trace.restore_live(); M.live_snap = nil end
+    if editor_clip then
+      -- ring_load may have already replaced buffers/doc/code before it
+      -- failed; heal with the SAME restore order the close path uses —
+      -- present state first, then the live ring — so the session resumes
+      -- exactly where it was (D118: the failure must not tear the live
+      -- session down with it)
+      if M.live_snap then
+        state.restore(M.live_snap)
+        if cm.main and cm.main.after_restore then cm.main.after_restore() end
+        M.live_snap = nil
+      end
+      trace.restore_live()
+    end
     return
   end
   if cm.main and cm.main.after_restore then cm.main.after_restore() end
