@@ -6344,3 +6344,92 @@ content gestures, it adds `takes_right` — if a kind wants finer-than-
 content claims (per-sub-rect), that votes a hit-region surface. The tape
 driver (scratchpad `drive.lua`) is session tooling; if a third session
 rebuilds it, commit a `tools/drive/` version with the proof recipes.
+
+## D128 — the ui nav cursor: the Esc menu drives keyboard-only and pad-only (2026-07-18)
+
+**Context.** ALPHA §A8's accessibility line requires keyboard-reachable
+core flows and controller navigation where player-facing. The player-facing
+surface is the Esc/options menu — and `cm.ui`'s interaction model was
+pointer-only (`hot` = hover, widgets arm on click): a keyboard-only player
+could open the menu but operate nothing, and a pad-only player could not
+even open it (the Esc grammar read the keyboard alone; pads were read only
+by the rebind capture).
+
+**Decision.** `cm.ui` gains a navigation layer — chrome on the module
+table, never sim, never persisted:
+
+1. **Scope, claimed per frame.** An overlay that wants its widgets
+   reachable calls `ui.nav_scope()` each frame it is open (the
+   `capture_keys` shape; one-frame engage latency). Widgets drawn AFTER
+   the claim register as nav targets — panels drawn before it (perf,
+   console, the editor beneath the menu) never do, so the cursor cannot
+   wander behind the claiming overlay. `cm.options` claims it on both
+   pages, suspended while a rebind capture is armed (the next press must
+   BIND, not navigate).
+2. **A spatial cursor.** Arrow keys, dpad (11–14), or the left stick
+   (±16384 press / ±8192 release hysteresis) move a cursor over the
+   registered rects via pure `ui.nav_pick(items, cur_id, dir)`: the
+   dear-imgui shadow rule — in-direction items whose off-axis span
+   overlaps the current widget win, nearest first (down from a full-width
+   row lands the NEXT row; right walks the row); no shadow hit falls back
+   to best-aligned; nothing in the direction wraps to the far end. A
+   slider registers its FULL row (label included) so the columns above
+   still shadow it. Held pad directions repeat (18-tick delay, 6-tick
+   interval, off `ui.ticks`); keyboard repeat rides the OS key-repeat
+   events. Nav is inert while a text widget holds `ui.focus` — arrows
+   must edit text (Esc blurs and nav resumes).
+3. **Activation and adjustment.** Enter/Space/pad-south clicks the
+   cursored widget (buttons click, checkboxes toggle, text fields take
+   focus); left/right on an adjustable widget (slider ±`step` or
+   (max−min)/20; number ±`speed`) steps its value instead of moving.
+   The cursored widget draws a 1px accent ring outside its rect — the
+   visible focus — is kept scrolled into view through the enclosing
+   scroll region, and a mouse press on any target syncs the cursor
+   there, so mixed mouse/pad use never strands the ring. The cursor
+   seeds onto the first registered widget the moment a scope engages
+   (visible focus with zero presses), and prunes when its widget
+   vanishes (page switch).
+4. **The pad door into the menu.** The pad **back/select** button (SDL 4)
+   is the pad Esc: it opens the closed menu and walks the same
+   one-step-back grammar (cancel capture → leave controls → close). It is
+   therefore the menu's button the way Esc is — the grammar consumes it
+   before an armed capture can bind it (`pad:start` was NOT usable: every
+   starter template binds it to reset). **East** (B) also walks back but
+   only while the menu is open and never while a capture is armed — games
+   bind east, so east must stay bindable and only means "back" inside the
+   menu.
+
+**Determinism.** All nav state lives on the `cm.ui` module table
+(render/dev class). While the menu is open `capture_pads`/`capture_keys`
+already keep downs from the game, so recorded input is untouched; the
+menu never opens in headless/verify/golden runs, and the pad grammar
+reads the same raw `ui.inp.pads` stream the rebind capture already reads.
+No sim/doc/recorded byte moved, no PAL change.
+
+**Proof.** Linux selftest **24,605** (36 new in `t_ui_nav`: `nav_pick`
+grid geometry incl. the shadow rule + wraps + single-column stay-put;
+real `ui.frame` cycles — seed, arrow/dpad/stick moves, slider left/right
+steps, Enter/south activation, held-dpad repeat, focus suspension,
+mouse-press sync, scroll-into-view, scope prune; the options pad
+grammar — back opens/walks/cancels-capture, east closes-from-main /
+never-opens / binds-while-armed as `pad:east`). A scripted tape drove
+the real menu on `projects/demo` headless: keyboard-only Esc → arrows to
+master volume → two lefts → 90% → Esc out; pad-only back → dpad + stick
+moves → up-wrap → south into the controls page → east back → back
+closed — montage on llm-feed. Two bugs the proof found and fixed at
+class level: in-direction scoring without the shadow rule skipped rows
+(alignment-dominated) or rows skipped sliders (track-only rects), and a
+Lua `and…or` fall-through in the overlap test. `nix run .#test` ALL
+GREEN, every golden byte-identical. scripting.md's options section
+documents the no-mouse operation.
+
+**Deferred, named honestly.** The rest of the §A8 accessibility line:
+reduced flash/shake options (an `options.add` convention + an engine
+gate on `cm.camera.shake`/`cm.tween` render output — its own packet),
+editor-side keyboard gaps (window focus-cycling, keyboard close/resize;
+the launcher already covers keyboard spawn/open), non-color-only polish
+(the rewind budget meter's amber/red threshold, the unsaved dot), and
+pad navigation for the picker dialogs beyond its existing keyboard nav.
+Revisit triggers: a second `ui.nav_scope` consumer (the crash autopsy?
+the picker?) votes scope priorities; a game that NEEDS the back/select
+button votes a rebindable menu button.

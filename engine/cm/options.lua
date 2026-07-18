@@ -4,7 +4,10 @@
 -- can't be drag-resized (human ask 2026-06-28); owns the master/music/sfx
 -- volume knobs (device-output gains — the deterministic mix and audio
 -- goldens never hear them) and hosts project-declared options (M.add).
--- Toggled by Esc; available in play AND editor. The controls page (A4/D084)
+-- Toggled by Esc (keyboard) or the pad back/select button (D128) — the
+-- whole menu drives without a mouse: cm.ui's nav cursor (arrows / dpad /
+-- left stick move, Enter/Space/pad-south activate, left/right adjust
+-- sliders, Esc/back/east walk out). The controls page (A4/D084)
 -- is the player-facing rebind surface: every action the project defines
 -- lists its live bindings as chips; clicking one (or +) arms a capture that
 -- binds the next key or pad input, stealing it from any other action that
@@ -185,9 +188,12 @@ end, function(t)
 end)
 
 local KEY_ESC, KEY_DEL = 41, 76
+local PAD_MENU, PAD_EAST = 4, 1 -- SDL back/select = the pad Esc; east = B
 -- keys the capture refuses: the menu's own grammar and engine chrome. Del
 -- doubles as "remove this binding" while a capture is armed, so it cannot
--- itself be bound.
+-- itself be bound. (pad back/select needs no entry here: the grammar above
+-- cancels the armed capture on that press before the capture ever sees it,
+-- the exact Esc path.)
 local RESERVED = {
   [KEY_ESC] = "esc drives this menu",
   [53] = "` is the console key",
@@ -471,7 +477,7 @@ local function controls_page()
     ui.label(M.arm.index and "esc cancels, del removes" or "esc cancels",
              { color = st.text_dim })
   else
-    ui.label(M.note or "click a binding to change it, + adds one",
+    ui.label(M.note or "pick a binding to change it, + adds one",
              { color = st.text_dim })
     ui.label(next(conflicted) and "red bindings drive several actions" or "",
              { color = st.error })
@@ -502,10 +508,20 @@ end
 
 function M.frame()
   -- Esc walks the grammar one step at a time: open the menu, cancel an
-  -- armed capture, leave the controls page, close the menu.
+  -- armed capture, leave the controls page, close the menu. The pad
+  -- back/select button IS the pad Esc (D128) — the one pad door into the
+  -- menu, so it is reserved from rebinding like Esc itself; east (B) also
+  -- walks back but only while the menu is open (games bind east), and
+  -- never while a capture is armed (the press must bind, not cancel).
   local esc = false
   for _, k in ipairs(ui.inp.keys) do
     if k.down and not k.rep and k.scancode == KEY_ESC then esc = true end
+  end
+  for _, e in ipairs(ui.inp.pads) do
+    if (e.type == "padbtn" or e.type == "gpadbtn") and e.down then
+      if e.button == PAD_MENU then esc = true
+      elseif e.button == PAD_EAST and M.on and not M.arm then esc = true end
+    end
   end
   if esc then
     if not M.on then
@@ -527,6 +543,9 @@ function M.frame()
                     -- downs swallowed, releases pass, hot-plug passes
   input.pad_neutralize() -- and a held stick stops driving the sim (the
                          -- editor's focus-loss rule, applied to the menu)
+  if not M.arm then -- keyboard/pad cursor over the menu widgets (D128);
+    ui.nav_scope()  -- suspended while a capture is armed: the next press
+  end               -- must BIND, not navigate
 
   if M.arm then do_capture() end
   if M.page == "controls" then

@@ -768,6 +768,14 @@ is per-player, per-machine policy — volumes change what the speakers hear,
 never the simulated mix, so recordings and replays are untouched; every choice
 persists in the project's `video.dat`/`input.dat` (never exported).
 
+The whole menu works without a mouse. Esc opens it; on a controller the
+back/select button does (that button belongs to the menu, like Esc, so it
+cannot be rebound). Arrow keys, the dpad, or the left stick move a visible
+focus ring between controls; Enter, Space, or the south button activates the
+focused one; left/right steps a focused slider; Esc, back/select, or the east
+button walks back out one layer at a time. A game that binds the east button
+keeps it: east only means "back" while the menu is open.
+
 Add game-specific settings to the same menu with `cm.options`:
 
     local options = cm.require("cm.options")

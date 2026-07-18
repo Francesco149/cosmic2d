@@ -385,9 +385,14 @@ Goal: validate the whole promise, not isolated subsystems.
   project schema, determinism rules, common failures, and compatibility policy.
   (D110 substrate; D111–D113 reader; D119 the 3D modules; D120 per-module
   2D sections + the KAT-pinned every-module-findable sweep.)
-- [ ] Accessibility pass: scalable legible UI, keyboard-reachable core flows,
+- [~] Accessibility pass: scalable legible UI, keyboard-reachable core flows,
   visible focus, non-color-only states, reduced flash/shake options, and
-  controller navigation where player-facing.
+  controller navigation where player-facing. (D128: the player-facing Esc
+  menu drives keyboard-only AND pad-only — cm.ui nav cursor with a visible
+  focus ring, pad back/select as the pad Esc; the picker was already
+  keyboard-complete. Remaining: reduced flash/shake options, editor
+  keyboard gaps (focus-cycle/close), non-color-only polish on the rewind
+  meter + unsaved dot.)
 - [x] Add independent machine-local sizing for canvas-window text/content and
   fixed chrome (including rewind), with 1080p-compatible defaults and automatic
   SDL-DPI/4K scaling. The broader keyboard/focus/player accessibility gate above

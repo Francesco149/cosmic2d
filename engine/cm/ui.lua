@@ -93,6 +93,26 @@ M.cap_mouse = M.cap_mouse or false -- filters applied to THIS tick's events
 M.cap_keys = M.cap_keys or false
 M.cap_pads = M.cap_pads or false
 
+-- ---- keyboard/pad navigation (A8 accessibility, D128) ----
+-- An overlay that wants its widgets reachable without a mouse claims the
+-- nav scope every frame it is open (ui.nav_scope(), the capture_keys
+-- shape). While the scope held LAST frame, this frame's arrows / dpad /
+-- left stick move a spatial cursor over the widgets that registered last
+-- frame, Enter/Space/pad-south activates the cursored widget (buttons
+-- click, checkboxes toggle, text fields take focus), and left/right on an
+-- adjustable widget (slider/number) steps its value instead of moving.
+-- The cursored widget draws an accent ring (the visible focus) and is
+-- kept scrolled into view. All of it is render/dev chrome on this module
+-- table — never sim, never persisted, and inert while a text widget owns
+-- the keyboard (arrows must edit text).
+M.nav = M.nav or {}
+M.nav.list = M.nav.list or {} -- last frame's registered items (nav targets)
+M.nav.items = M.nav.items or {} -- this frame's registry (rebuilt each frame)
+M.nav.held = M.nav.held or {} -- pad dpad buttons currently down
+M.nav.ax = M.nav.ax or { 0, 0 } -- left-stick x/y as -1/0/1 (hysteresis)
+M.nav.act = M.nav.act or false -- activate edge this frame (consumed once)
+M.nav.adj = M.nav.adj or 0 -- slider/number steps this frame (consumed once)
+
 -- ---- internals (rebuilt every frame; plain locals are fine) ----
 
 local lay_stack, clip_stack, id_stack, scroll_stack, panels = {}, {}, {}, {}, {}
@@ -190,6 +210,209 @@ local function behave_button(id, x, y, w, h)
   return clicked, M.active == id
 end
 
+-- ---- keyboard/pad navigation core (D128) ----
+
+-- claim the nav scope for this frame (call every frame while your overlay
+-- is open, during the draw phase — the capture_keys shape). Takes effect
+-- next frame: nav input is interpreted against the widgets that registered
+-- while the scope held.
+function M.nav_scope()
+  M.nav.want = true
+end
+
+function M.nav_active() return M.nav.on == true end
+function M.nav_is(id) return M.nav.on and M.nav.id == id end
+
+-- pure spatial pick: from cur_id, which item does one step in dir
+-- ("up"|"down"|"left"|"right") land on? items = { {id=,x=,y=,w=,h=}, ... }
+-- in registration (draw) order. No current item -> the first item.
+-- Preference order (the dear-imgui shadow rule):
+--   1. in-direction items whose off-axis SPAN OVERLAPS the current
+--      widget's (its "shadow"): nearest progress first, alignment breaks
+--      the tie — so down from a full-width row lands the NEXT row, and
+--      right walks the row;
+--   2. no shadow hit: any in-direction item, best-aligned first (offset
+--      layouts still reachable);
+--   3. nothing in the direction: wrap to the far end (furthest against
+--      the direction, nearest off-axis).
+-- nil = no move (e.g. sideways in a single column). Exported pure for
+-- the selftest KATs.
+function M.nav_pick(items, cur_id, dir)
+  if #items == 0 then return nil end
+  local cur
+  for _, it in ipairs(items) do
+    if it.id == cur_id then cur = it break end
+  end
+  if not cur then return items[1].id end
+  local cx, cy = cur.x + cur.w / 2, cur.y + cur.h / 2
+  local horiz = dir == "left" or dir == "right"
+  local sign = (dir == "down" or dir == "right") and 1 or -1
+  local shad, ss, best, bs, wrap, ws
+  for _, it in ipairs(items) do
+    if it.id ~= cur_id then
+      local ix, iy = it.x + it.w / 2, it.y + it.h / 2
+      local p = (horiz and ix - cx or iy - cy) * sign -- progress along dir
+      local o = horiz and (iy < cy and cy - iy or iy - cy)
+                or (ix < cx and cx - ix or ix - cx) -- off-axis distance
+      local over -- off-axis span overlap ("in the shadow"); NOT a-and-b-or-c:
+      if horiz then -- a false overlap must stay false, not fall through
+        over = it.y < cur.y + cur.h and it.y + it.h > cur.y
+      else
+        over = it.x < cur.x + cur.w and it.x + it.w > cur.x
+      end
+      if p >= 1 then
+        if over then
+          local s = p * 1000 + o -- nearest line first, alignment tiebreak
+          if not ss or s < ss then shad, ss = it, s end
+        end
+        local s = o * 1000 + p -- best-aligned fallback
+        if not bs or s < bs then best, bs = it, s end
+      elseif p <= -1 then
+        local s = p * 1000 + o -- most negative p = furthest against dir
+        if not ws or s < ws then wrap, ws = it, s end
+      end
+    end
+  end
+  local hit = shad or best or wrap
+  return hit and hit.id or nil
+end
+
+-- register an interactive widget as a nav target; keeps the cursored
+-- widget scrolled into view and syncs the cursor onto mouse presses so
+-- mixed mouse/pad use never strands the ring somewhere stale. Gated on
+-- want (claimed THIS frame, during draw): only widgets drawn AFTER the
+-- scope claim register, so panels beneath the claiming overlay (perf/
+-- console draw before the options menu) never become nav targets —
+-- claim the scope immediately before drawing your widgets.
+local function nav_item(id, x, y, w, h, adj)
+  local nav = M.nav
+  if not (nav.on and nav.want) then return end
+  nav.items[#nav.items + 1] = { id = id, x = x, y = y, w = w, h = h,
+                                adj = adj or false }
+  if id == nav.id then
+    local sc = scroll_stack[#scroll_stack]
+    if sc then
+      local r, s = sc.rect, widget_state(sc.id)
+      local d = 0
+      if y < r.y + 2 then d = y - (r.y + 2)
+      elseif y + h > r.y + r.h - 2 then d = (y + h) - (r.y + r.h - 2) end
+      if d ~= 0 then
+        s.scroll = (s.scroll or 0) + d -- clamped at end_scroll
+        s.vel = 0
+      end
+    end
+  end
+  if M.inp.clicked[1] and mouse_in(x, y, w, h) then nav.id = id end
+end
+
+-- did nav activate this widget this frame? (consumes the edge)
+local function nav_clicked(id)
+  local nav = M.nav
+  if nav.on and nav.act and nav.id == id then
+    nav.act = false
+    return true
+  end
+  return false
+end
+
+-- accumulated left/right steps for the cursored adjustable widget
+-- this frame (consumes them)
+local function nav_adjust(id)
+  local nav = M.nav
+  if nav.on and nav.adj ~= 0 and nav.id == id then
+    local a = nav.adj
+    nav.adj = 0
+    return a
+  end
+  return 0
+end
+
+-- the visible focus ring (accent, 1px outside the widget rect)
+local function nav_deco(id, x, y, w, h)
+  if M.nav.on and M.nav.id == id then
+    M.frame_rect(x - 1, y - 1, w + 2, h + 2, M.style.accent)
+  end
+end
+
+local NAV_KEY = { [82] = "up", [81] = "down", [80] = "left", [79] = "right" }
+local PAD_DIR = { [11] = "up", [12] = "down", [13] = "left", [14] = "right" }
+local NAV_REP_DELAY, NAV_REP_EVERY = 18, 6 -- pad hold-to-repeat, render ticks
+
+-- interpret this tick's raw input as nav ops (runs inside M.frame, against
+-- LAST frame's item list). Keyboard repeat rides the OS key-repeat events;
+-- pad dpad/stick get their own delay+interval repeat off M.ticks.
+local function nav_input()
+  local nav, i = M.nav, M.inp
+  if not nav.on or M.focus then
+    -- scope off (or a text widget owns the keyboard): drop held state so a
+    -- stale hold can't fire when nav re-engages
+    nav.held, nav.ax, nav.dir = {}, { 0, 0 }, nil
+    return
+  end
+  local moves = {}
+  for _, k in ipairs(i.keys) do
+    if k.down then
+      local d = NAV_KEY[k.scancode]
+      if d then
+        moves[#moves + 1] = d
+      elseif (k.scancode == 40 or k.scancode == 44) and not k.rep then
+        nav.act = true -- Enter / Space
+      end
+    end
+  end
+  for _, e in ipairs(i.pads) do
+    local t = e.type
+    if t == "padbtn" or t == "gpadbtn" then
+      if e.button == 0 and e.down then nav.act = true end -- south
+      if PAD_DIR[e.button] then
+        nav.held[e.button] = e.down and true or nil
+      end
+    elseif (t == "padaxis" or t == "gpadaxis")
+           and (e.axis == 0 or e.axis == 1) then
+      local n, cur, v = e.axis + 1, nav.ax[e.axis + 1], e.value
+      if v >= 16384 then nav.ax[n] = 1
+      elseif v <= -16384 then nav.ax[n] = -1
+      elseif v > -8192 and v < 8192 then nav.ax[n] = 0
+      else nav.ax[n] = cur end -- hysteresis band: keep the engaged dir
+    end
+  end
+  -- one held pad direction (vertical wins: menus are columns), with repeat
+  local pd = (nav.held[11] or nav.ax[2] == -1) and "up"
+             or (nav.held[12] or nav.ax[2] == 1) and "down"
+             or (nav.held[13] or nav.ax[1] == -1) and "left"
+             or (nav.held[14] or nav.ax[1] == 1) and "right" or nil
+  if pd ~= nav.dir then
+    nav.dir = pd
+    nav.since = M.ticks
+    if pd then moves[#moves + 1] = pd end
+  elseif pd then
+    local dt = M.ticks - nav.since
+    if dt >= NAV_REP_DELAY and (dt - NAV_REP_DELAY) % NAV_REP_EVERY == 0 then
+      moves[#moves + 1] = pd
+    end
+  end
+  -- route: left/right on an adjustable item steps it, else spatial move
+  local cur
+  for _, it in ipairs(nav.list) do
+    if it.id == nav.id then cur = it break end
+  end
+  for _, d in ipairs(moves) do
+    if cur and cur.adj and (d == "left" or d == "right") then
+      nav.adj = nav.adj + (d == "left" and -1 or 1)
+    else
+      local nid = M.nav_pick(nav.list, nav.id, d)
+      if nid then
+        nav.id = nid
+        cur = nil
+        for _, it in ipairs(nav.list) do
+          if it.id == nid then cur = it break end
+        end
+      end
+    end
+  end
+  if not nav.id then nav.act = false end -- nothing cursored: nothing to hit
+end
+
 -- ---- frame lifecycle ----
 
 -- store both mouse spaces from a motion/button event: gx/gy is always game
@@ -265,6 +488,9 @@ function M.frame(events)
   M.force_keys = false
   M.force_mouse = false
   M.force_pads = false
+  M.nav.items = {}
+  M.nav.want = false
+  nav_input() -- against last frame's items; widgets consume act/adj below
   return out
 end
 
@@ -291,6 +517,23 @@ function M.frame_end()
     pal.text_input(want_text)
     M.text_on = want_text
   end
+
+  -- nav bookkeeping: latch the scope for next frame's input, prune a
+  -- cursor whose widget vanished (page switch), seed the cursor onto the
+  -- first item so the ring is visible the moment a scope opens, and
+  -- drop unconsumed one-frame edges
+  local nav = M.nav
+  if nav.id then
+    local found = false
+    for _, it in ipairs(nav.items) do
+      if it.id == nav.id then found = true break end
+    end
+    if not found then nav.id = nil end
+  end
+  nav.list = nav.items
+  nav.on = nav.want == true
+  if nav.on and not nav.id and nav.list[1] then nav.id = nav.list[1].id end
+  nav.act, nav.adj = false, 0
 end
 
 -- engine overlays (console) call this each frame while they want the
@@ -648,6 +891,8 @@ function M.button(label, opts)
   local id = qid(opts.id or label)
   local r = lay_next(opts.h, opts)
   local clicked, held = behave_button(id, r.x, r.y, r.w, r.h)
+  nav_item(id, r.x, r.y, r.w, r.h)
+  clicked = clicked or nav_clicked(id)
   if clip_visible(r.x, r.y, r.w, r.h) then
     local bg = held and st.widget_active or
                (M.is_hot(id) and st.widget_hot or st.widget)
@@ -656,6 +901,7 @@ function M.button(label, opts)
     local tw = text_w(label)
     M.text(r.x + (r.w - tw) // 2, r.y + (r.h - st.gh) // 2, label,
            opts.color or st.text)
+    nav_deco(id, r.x, r.y, r.w, r.h)
   end
   return clicked
 end
@@ -666,6 +912,8 @@ function M.checkbox(label, value, opts)
   local id = qid(opts.id or label)
   local r = lay_next(nil, opts)
   local clicked, held = behave_button(id, r.x, r.y, r.w, r.h)
+  nav_item(id, r.x, r.y, r.w, r.h)
+  clicked = clicked or nav_clicked(id)
   if clicked then value = not value end
   if clip_visible(r.x, r.y, r.w, r.h) then
     local box = r.h - 2
@@ -677,6 +925,7 @@ function M.checkbox(label, value, opts)
       M.rect(r.x + 2, r.y + 3, box - 4, box - 4, st.accent)
     end
     M.text(r.x + box + st.pad, r.y + (r.h - st.gh) // 2, label, st.text)
+    nav_deco(id, r.x, r.y, r.w, r.h)
   end
   return value, clicked
 end
@@ -696,12 +945,23 @@ function M.slider(label, value, min, max, opts)
   local lw = opts.label_w or (r.w * 45 // 100)
   local tx, tw = r.x + lw, r.w - lw
   local _, held = behave_button(id, tx, r.y, tw, r.h)
+  nav_item(id, r.x, r.y, r.w, r.h, true) -- the FULL row is the nav target
+  -- (label included) so a column above still shadows it; the ring below
+  -- stays on the track, the interactive part
   local changed = false
   if held and tw > 4 then
     local t = (M.inp.mx - tx - 2) / (tw - 4)
     t = math.min(math.max(t, 0.0), 1.0)
     local v = min + (max - min) * t
     if opts.step then v = min + math.floor((v - min) / opts.step + 0.5) * opts.step end
+    if math.type(value) == "integer" then v = math.floor(v + 0.5) end
+    if v ~= value then value, changed = v, true end
+  end
+  local na = nav_adjust(id)
+  if na ~= 0 then
+    local stp = opts.step or (max - min) / 20
+    local v = value + na * stp
+    v = math.min(math.max(v, min), max)
     if math.type(value) == "integer" then v = math.floor(v + 0.5) end
     if v ~= value then value, changed = v, true end
   end
@@ -715,6 +975,7 @@ function M.slider(label, value, min, max, opts)
            held and st.accent or st.widget_active)
     local vs = fmt_num(value, opts.fmt)
     M.text(tx + tw - text_w(vs) - 2, r.y + (r.h - st.gh) // 2, vs, st.text)
+    nav_deco(id, tx, r.y, tw, r.h)
   end
   return value, changed
 end
@@ -728,8 +989,19 @@ function M.number(label, value, opts)
   local lw = opts.label_w or (r.w * 45 // 100)
   local tx, tw = r.x + lw, r.w - lw
   local _, held = behave_button(id, tx, r.y, tw, r.h)
+  nav_item(id, r.x, r.y, r.w, r.h, true) -- full row, the slider's rule
   local s = widget_state(id)
   local changed = false
+  local na = nav_adjust(id)
+  if na ~= 0 then
+    local v = value + na * (opts.speed or 1)
+    if opts.min then v = math.max(v, opts.min) end
+    if opts.max then v = math.min(v, opts.max) end
+    if math.type(value) == "integer" then
+      v = math.tointeger(v // 1) or value
+    end
+    if v ~= value then value, changed = v, true end
+  end
   if held then
     if s.last_mx then
       local dv = (M.inp.mx - s.last_mx) * (opts.speed or 1.0)
@@ -755,6 +1027,7 @@ function M.number(label, value, opts)
     M.frame_rect(tx, r.y + 1, tw, r.h - 2, st.panel_edge)
     local vs = fmt_num(value, opts.fmt)
     M.text(tx + (tw - text_w(vs)) // 2, r.y + (r.h - st.gh) // 2, vs, st.text)
+    nav_deco(id, tx, r.y, tw, r.h)
   end
   return value, changed
 end
@@ -769,12 +1042,15 @@ function M.heading(label, opts)
   if s.open == nil then s.open = opts.default_open ~= false end
   local r = lay_next()
   local clicked = behave_button(id, r.x, r.y, r.w, r.h)
+  nav_item(id, r.x, r.y, r.w, r.h)
+  clicked = clicked or nav_clicked(id)
   if clicked then s.open = not s.open end
   if clip_visible(r.x, r.y, r.w, r.h) then
     M.rect(r.x, r.y, r.w, r.h, M.is_hot(id) and st.widget_hot or st.title)
     local ty = r.y + (r.h - st.gh) // 2
     M.text(r.x + 2, ty, s.open and "v" or ">", st.accent)
     M.text(r.x + 2 + st.gw + 3, ty, label, st.text)
+    nav_deco(id, r.x, r.y, r.w, r.h)
   end
   if s.open then M.indent(opts.indent or 8) end
   return s.open
@@ -824,6 +1100,11 @@ function M.text_input(id, txt, opts)
   end
 
   behave_button(id, r.x, r.y, r.w, r.h) -- registers hover
+  nav_item(id, r.x, r.y, r.w, r.h)
+  if nav_clicked(id) then -- nav activate = take the keyboard (Esc gives it
+    M.focus = id          -- back and nav resumes)
+    s.cursor = #txt + 1
+  end
   -- focus on press (standard text-field feel), needs last-frame hover
   if M.hot == id and M.inp.clicked[1] and mouse_in(r.x, r.y, r.w, r.h) then
     M.focus = id
@@ -916,6 +1197,7 @@ function M.text_input(id, txt, opts)
       M.rect(r.x + 3 + cur_px - s.sx, ty - 1, 1, st.gh + 2, st.accent)
     end
     pop_clip()
+    nav_deco(id, r.x, r.y, r.w, r.h)
   end
 
   return txt, changed, submitted

@@ -11995,6 +11995,211 @@ local function t_console_sel()
         "consel: nothing selected, nothing consumed")
 end
 
+-- ---- cm.ui keyboard/pad navigation (D128, A8 accessibility) ----
+
+local function t_ui_nav()
+  local ui = cm.require("cm.ui")
+
+  -- pure spatial pick over a 2x2 grid + a wide bottom row:
+  --   A(0,0)   B(50,0)
+  --   C(0,20)  D(50,20)
+  --   E(0,40, full width)
+  local G = {
+    { id = "A", x = 0, y = 0, w = 40, h = 10 },
+    { id = "B", x = 50, y = 0, w = 40, h = 10 },
+    { id = "C", x = 0, y = 20, w = 40, h = 10 },
+    { id = "D", x = 50, y = 20, w = 40, h = 10 },
+    { id = "E", x = 0, y = 40, w = 90, h = 10 },
+  }
+  check(ui.nav_pick(G, nil, "down") == "A", "uinav: no cursor picks first")
+  check(ui.nav_pick(G, "zz", "up") == "A", "uinav: stale cursor picks first")
+  check(ui.nav_pick({}, nil, "down") == nil, "uinav: empty list picks none")
+  check(ui.nav_pick(G, "A", "down") == "C",
+        "uinav: down lands the aligned next row, not the diagonal")
+  check(ui.nav_pick(G, "C", "down") == "E", "uinav: down again reaches E")
+  check(ui.nav_pick(G, "A", "right") == "B",
+        "uinav: right walks the row, not the closer-x next row")
+  check(ui.nav_pick(G, "E", "down") == "A",
+        "uinav: down off the bottom wraps to the top")
+  check(ui.nav_pick(G, "A", "up") == "E",
+        "uinav: up off the top wraps to the bottom")
+  check(ui.nav_pick(G, "B", "right") == "A",
+        "uinav: right off the row end wraps to the row start")
+  local col = { { id = "A", x = 0, y = 0, w = 40, h = 10 },
+                { id = "C", x = 0, y = 20, w = 40, h = 10 } }
+  check(ui.nav_pick(col, "A", "left") == nil,
+        "uinav: sideways in a single column stays put")
+  -- the shadow rule: down from a full-width row must land the NEXT row's
+  -- overlapping widget, never skip to a better-ALIGNED distant row (the
+  -- options menu's fullscreen row above two button columns above a
+  -- centered third column)
+  local F = {
+    { id = "full", x = 0, y = 0, w = 210, h = 10 },
+    { id = "colL", x = 0, y = 20, w = 100, h = 10 },
+    { id = "colR", x = 110, y = 20, w = 100, h = 10 },
+    { id = "mid", x = 70, y = 40, w = 70, h = 10 },
+  }
+  check(ui.nav_pick(F, "full", "down") == "colL",
+        "uinav: down from a full row lands the next row (shadow rule)")
+  check(ui.nav_pick(F, "colL", "down") == "mid",
+        "uinav: down from a column falls through to the overlapping row")
+
+  -- integration: real ui frames with synthetic key/pad events. The scope
+  -- engages one frame after the first claim (the imgui latency), items
+  -- register while claimed, the cursor seeds onto the first item.
+  local clicks, vol = {}, 50
+  local function menu()
+    ui.nav_scope()
+    ui.begin_panel("t_nav", 0, 0, 120, 90)
+    if ui.button("alpha") then clicks.alpha = (clicks.alpha or 0) + 1 end
+    if ui.button("beta") then clicks.beta = (clicks.beta or 0) + 1 end
+    local v, ch = ui.slider("vol", vol, 0, 100, { id = "vol" })
+    if ch then vol = v end
+    ui.end_panel()
+  end
+  local function frame(evs)
+    ui.frame(evs or {})
+    menu()
+    ui.frame_end()
+  end
+  local function key(sc) return { type = "key", scancode = sc, down = true,
+                                  rep = false } end
+  ui.nav.id, ui.nav.want, ui.nav.on = nil, false, false
+  ui.nav.held, ui.nav.ax, ui.nav.dir = {}, { 0, 0 }, nil
+  frame() -- claim; nav engages next frame
+  frame() -- items register; the cursor seeds onto the first widget
+  check(ui.nav.id == "t_nav/alpha", "uinav: cursor seeds the first widget")
+  frame({ key(81) }) -- down arrow
+  check(ui.nav.id == "t_nav/beta", "uinav: down arrow moves the cursor")
+  frame({ key(81) })
+  check(ui.nav.id == "t_nav/vol", "uinav: cursor reaches the slider")
+  frame({ key(80) }) -- left on an adjustable widget steps it, no move
+  check(vol == 45 and ui.nav.id == "t_nav/vol",
+        "uinav: left steps the slider down by (max-min)/20")
+  frame({ key(79) })
+  check(vol == 50, "uinav: right steps the slider back up")
+  frame({ key(82) }) -- up
+  frame({ key(82) })
+  check(ui.nav.id == "t_nav/alpha", "uinav: up arrows walk back to the top")
+  frame({ key(40) }) -- Enter
+  check(clicks.alpha == 1, "uinav: Enter clicks the cursored button")
+  frame({ { type = "gpadbtn", button = 12, down = true } }) -- dpad down
+  check(ui.nav.id == "t_nav/beta", "uinav: dpad down moves the cursor")
+  for _ = 1, 18 do frame() end -- held: repeat kicks in after the delay
+  check(ui.nav.id ~= "t_nav/beta",
+        "uinav: a held dpad direction repeats the move")
+  frame({ { type = "gpadbtn", button = 12, down = false } })
+  ui.nav.id = "t_nav/alpha"
+  frame({ { type = "gpadaxis", axis = 1, value = 20000 } }) -- stick down
+  check(ui.nav.id == "t_nav/beta", "uinav: stick deflection moves once")
+  frame({ { type = "gpadaxis", axis = 1, value = 0 } }) -- release
+  frame({ { type = "gpadbtn", button = 0, down = true } }) -- south
+  check(clicks.beta == 1, "uinav: pad south activates the cursored button")
+  frame({ { type = "gpadbtn", button = 0, down = false } })
+  ui.focus = "t_nav/fake_focus" -- a text widget owns the keyboard:
+  ui.frame({ key(81) })         -- nav must not interpret the arrows
+  check(ui.nav.id == "t_nav/beta",
+        "uinav: nav suspends while a text widget holds focus")
+  ui.focus = nil
+  menu()
+  ui.frame_end()
+  -- mouse press syncs the cursor (mixed mouse/pad use): beta's row is the
+  -- second 11px strip inside the panel padding
+  frame({ { type = "motion", x = 20, y = 21, ui_x = 20, ui_y = 21,
+            wx = 20, wy = 21 },
+          { type = "button", button = 1, down = true, x = 20, y = 21,
+            ui_x = 20, ui_y = 21, wx = 20, wy = 21 } })
+  check(ui.nav.id == "t_nav/beta", "uinav: a mouse press syncs the cursor")
+  frame({ { type = "button", button = 1, down = false, x = 20, y = 21,
+            ui_x = 20, ui_y = 21, wx = 20, wy = 21 } })
+
+  -- scroll-into-view: six rows in a 30px window; navigating below the view
+  -- scrolls the region so the cursored widget is visible
+  local function scrolly()
+    ui.nav_scope()
+    ui.begin_panel("t_nav2", 0, 0, 120, 60)
+    ui.begin_scroll("scr", 30)
+    for i = 1, 6 do ui.button("b" .. i, { id = "b" .. i }) end
+    ui.end_scroll()
+    ui.end_panel()
+  end
+  local function sframe(evs)
+    ui.frame(evs or {})
+    scrolly()
+    ui.frame_end()
+  end
+  ui.nav.id = nil
+  sframe()
+  sframe()
+  check(ui.nav.id == "t_nav2/scr/b1",
+        "uinav: scroll list seeds its first row")
+  for _ = 1, 5 do sframe({ key(81) }) end
+  check(ui.nav.id == "t_nav2/scr/b6", "uinav: arrows reach the last row")
+  sframe() -- the registration pass after the last move applies the scroll
+  local ss = ui.s["t_nav2/scr"]
+  check(ss and ss.scroll and ss.scroll > 30,
+        "uinav: the cursored off-view row scrolled into view (scroll="
+        .. tostring(ss and ss.scroll) .. ")")
+
+  -- page-vanish prune: stop drawing; the cursor clears with the scope
+  ui.frame({})
+  ui.frame_end()
+  check(ui.nav.id == nil and not ui.nav_active(),
+        "uinav: cursor and scope clear when the overlay stops drawing")
+
+  -- ---- the options menu pad grammar (back/select = the pad Esc) ----
+  local options = cm.require("cm.options")
+  local function oframe(evs)
+    ui.frame(evs or {})
+    options.frame()
+    ui.frame_end()
+  end
+  local function padbtn(b, down)
+    return { type = "gpadbtn", button = b, down = down ~= false }
+  end
+  options.toggle(false)
+  oframe({ padbtn(4) }) -- back/select opens the closed menu
+  check(options.on, "uinav: pad back/select opens the options menu")
+  oframe({ padbtn(4, false) })
+  oframe({ padbtn(1) }) -- east walks back = closes from the main page
+  check(not options.on, "uinav: pad east closes the menu from main")
+  oframe({ padbtn(1, false) })
+  oframe({ padbtn(1) }) -- ...but east must NOT open a closed menu
+  check(not options.on, "uinav: pad east never opens the menu")
+  oframe({ padbtn(1, false) })
+  options.toggle(true)
+  options.page = "controls"
+  oframe({ padbtn(4) }) -- back/select from the controls page = page back
+  check(options.on and options.page == "main",
+        "uinav: pad back walks controls -> main, menu stays open")
+  oframe({ padbtn(4, false) })
+  options.page = "controls"
+  local input = cm.require("cm.input")
+  input.define("uinav_jump", {})
+  options.arm = { action = "uinav_jump" }
+  oframe({ padbtn(1) }) -- east while a capture is armed must BIND (players
+                        -- bind east), never walk the menu grammar
+  check(options.arm == nil and options.on,
+        "uinav: east while armed reaches the capture")
+  local got
+  for _, b in ipairs(input.bindings("uinav_jump")) do
+    if b == "pad:east" then got = true end
+  end
+  check(got, "uinav: ...and binds as pad:east")
+  oframe({ padbtn(1, false) })
+  options.arm = { action = "uinav_jump" }
+  oframe({ padbtn(4) }) -- back/select cancels the capture like Esc
+  check(options.arm == nil and options.on
+        and options.note == "rebind cancelled",
+        "uinav: pad back cancels an armed capture")
+  oframe({ padbtn(4, false) })
+  options.toggle(false)
+  oframe()
+  ui.nav.id, ui.nav.want, ui.nav.on = nil, false, false
+  cm.require("cm.console").open = false -- a failed bind-save summons it
+  cm.adopt_disk() -- drop the test action + binding from the input defs
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -12105,6 +12310,7 @@ function game.init()
   t_atlas_snapshot()
   t_figverts()
   t_console_sel()
+  t_ui_nav()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
