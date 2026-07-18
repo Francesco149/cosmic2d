@@ -382,8 +382,13 @@ end
 -- The "+ New project" chooser (D081): a prefilled editable folder name
 -- plus one row of starter templates. Everything ephemeral, like the rest.
 function M.open_new()
+  -- swallow: the Enter that OPENS this chooser (grid keyboard, D080) is
+  -- still in this frame's key batch — without the flag it reaches the
+  -- freshly-focused name field AND kb_row's default "create" in the same
+  -- draw pass and scaffolds a blank project before the chooser is ever
+  -- seen (found by the D127 walkthrough tape).
   M.action = { mode = "new", template = 1, parent = "projects",
-               rename = fresh_name(), focus = true }
+               rename = fresh_name(), focus = true, swallow = true }
 end
 
 -- ---- draw ----
@@ -1121,6 +1126,7 @@ function M.draw()
       local fy, fh = py + 84, 32
       local valid, name_error, submit, factive =
         name_field("picker_project_new_name", fy, fh, true)
+      if a.swallow then submit = nil end -- the opening Enter (see open_new)
       -- an existing file or folder wins over a grammar-valid name; the
       -- check is remembered per spelling so it costs one stat per edit
       if valid and a.checked ~= a.rename then
@@ -1143,6 +1149,7 @@ function M.draw()
       -- the starter row: what the first main.lua teaches. Enter on a
       -- template selects it; create (the safe default) scaffolds.
       local act = not factive and not submit and kb_row(6, 5)
+      if a.swallow then act, a.swallow = nil, nil end
       local trow_y, trow_h = py + 144, 28
       local trow_w = (pw - 36 - 3 * 8) / 4
       for k, t in ipairs(project.TEMPLATES) do
