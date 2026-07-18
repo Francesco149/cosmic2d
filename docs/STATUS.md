@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **D120 closes A8's searchable-reference checkbox**: per-module scripting.md sections for the remaining 2D `cm.*` (tmap, anim/sprite, palette/grade, rand/math/ease), eight headings retitled to name their modules, and a KAT-pinned every-module-findable sweep (Linux selftest 24,403 → **24,438**). Prior work this date: the cosmic3d merge (D114) + its post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119). **Native Windows selftest re-count + stage swap still pending — the staged editor was running (D118's condition); retry `tools/build-windows.sh` first thing** (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D120 closes A8's searchable-reference checkbox**: per-module scripting.md sections for the remaining 2D `cm.*` (tmap, anim/sprite, palette/grade, rand/math/ease), eight headings retitled to name their modules, and a KAT-pinned every-module-findable sweep (Linux selftest 24,403 → **24,438**). Prior work this date: the cosmic3d merge (D114) + its post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119). **The stage swap + native re-count owed since D118 are now DONE: Windows staged (5 durable entries + shortcut), native selftest 24,440 PASS on PAL API 22** (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -50,10 +50,13 @@ scripting.md hit whose section heading names it. Linux selftest **24,438**;
 `nix run .#test` ALL GREEN, every golden byte-identical (docs are not
 compiled). Captures inspected on llm-feed: the reader landed on the Tilemaps
 section; home search `cm.rand` ranking the new section first. ALPHA §A8's
-searchable-reference box is ticked (D120). **The Windows stage swap failed
-with D118's exact condition (staged editor running, permission denied on the
-move) — the Linux-side proof is complete; the native re-count rides the next
-successful `tools/build-windows.sh`.**
+searchable-reference box is ticked (D120). **The Windows stage swap first
+failed with D118's condition (a root-directory handle; every subtree renamed
+fine, no cosmic/WSL/Explorer holder found — it cleared on its own, reading
+as a transient indexer/AV handle), then succeeded: the dev tree staged with
+5 durable entries + the Start Menu shortcut, and the owed-since-D118 native
+Windows selftest re-count PASSED — 24,440 on PAL API 22** (= Linux 24,438 +
+the usual +2 native delta), covering D118/D119/D120 cumulatively.
 
 **Prior session (2026-07-18) — the cosmic3d merge (D114) + its post-merge queue
 (D115/D116).** Five packets, committed separately with their own proofs:
@@ -142,7 +145,7 @@ successful `tools/build-windows.sh`.**
    autoscroll, and trim-safe validity (module-local by win.id, tag-checked);
    10 KATs; inspected capture on llm-feed. Input-line paste is imgui's own
    native clipboard — if it still fails windowed, chase the imgui host with
-   a repro. Linux selftest **24,403**; native Windows pending the stage swap (staged editor running — retry queued).
+   a repro. Linux selftest **24,403**; native Windows was pending the stage swap here — since covered by D120's 24,440 native PASS.
 
 **The 3D docs pass — DONE (D119).** All of the deferred scope landed, no
 sim/render/recorded byte moved (selftest holds at 24,403; docs are not
@@ -642,10 +645,8 @@ Menu shortcut.
 **Exact next packet:** **continue A8 (ALPHA §A8).** The searchable-reference
 checkbox is now `[x]` (D120): every supported module has a full anchored
 section, all five reference topics are present and findable, and the
-every-module-findable sweep is KAT-pinned. **First: retry
-`tools/build-windows.sh`** — the stage swap has been blocked twice by the
-running staged editor (D118, D120), so the native Windows selftest re-count
-(expect 24,438 + the native-delta) is owed. **The next well-shaped packet is
+every-module-findable sweep is KAT-pinned; the Windows stage and the native
+selftest re-count (24,440) are current. **The next well-shaped packet is
 the in-engine Getting Started walkthrough** — turn `getting-started.md` from
 an orientation page into the guided **create → modify code/art/map/audio →
 play/debug/rewind → export** path, driven and verified through the shipped UI
