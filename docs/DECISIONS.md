@@ -5843,3 +5843,54 @@ Deferred, named honestly: in-doc Ctrl+F find, launcher content-search,
 result keyboard-nav, span-precise highlight (all D110-logged); the
 native Windows selftest re-count rides the next successful stage swap
 (the staged editor was running — same D118 condition).
+
+## D121 — reader scroll ergonomics + launcher doc-section search (2026-07-18)
+
+Three human asks against the docs surface, all editor chrome — no
+sim/doc/recorded byte moved.
+
+**The reader's scrollbar was paint-only; now it is a control.** The
+gutter right of the text band (disjoint from the selection region by
+construction, so a grab can never start a text drag) is the hit zone:
+clicking the knob drags it with its grab offset, clicking the track
+centers the knob at the mouse and keeps dragging; the knob widens and
+brightens on hover/drag, and dragging dismisses the landed-here
+highlight exactly like the wheel. The knob geometry and drag targeting
+are pure exported functions (`sb_knob`/`sb_target`) that draw feeds
+live values — that is what the KATs pin (floor at 20*z, full-scroll
+lands the knob flush at the band bottom, linear track mapping, both
+clamps). Drag state rides the module-local `sel_state`, the D112 rule —
+never a captured-window field.
+
+**Keyboard scrolling** rides the declarative windowkit table (EDITOR.md
+§13), so the hint strip advertises it and the keys can never fire while
+an imgui edit widget owns the keyboard: **PgUp/PgDn** page by 0.9 of
+the measured band (`win._band`, stored by draw beside `_maxscroll` —
+same class of transient scalar), **Home**/**Ctrl+PgUp** jump to the
+top, **End**/**Ctrl+PgDn** to the bottom; all clamp through one
+`scroll_by` (exported, KAT'd) and every entry when-gates on real
+overflow so a short doc renders no hints. The kit's scancode table
+already carried pgup/pgdn/home/end — no shell change at all.
+
+**The launcher now content-searches the shipped docs** — D110's named
+"launcher content-search" deferral, paid. A non-empty query appends up
+to 8 `cm.docs.search` section hits (tag `sect`) BELOW the fuzzy name
+matches: the two rankings are incomparable, and a name match ("sprite"
+→ the sprite window) should stay first for the palette's primary job.
+Each hit previews the doc source from its matching line in the existing
+lines pane; enter opens the reader revealed+highlighted at that section
+via the same `goto_line` door the reader's home uses. Power users get
+Ctrl+Space straight to a doc page; the reader's home search stays the
+discoverable path.
+
+Proof: Linux selftest **24,438 → 24,471** (33 new KATs in
+`t_help_keys`: the six declared keyspecs parse, paging/clamping/marker
+dismissal, the overflow when-gate both ways, and the scrollbar math),
+native Windows **24,473** on PAL API 22; `nix run .#test` ALL GREEN,
+every golden byte-identical. Captures inspected on llm-feed: the
+launcher's `deadzone` sect results with the section preview, and the
+reader with the knob + the new hint strip. `editor.md` documents both.
+Deferred, named honestly: key-repeat on held PgUp/PgDn (the kit
+dispatches on `not e.rep` for every kind — a kit-wide decision, not a
+reader hack), launcher result keyboard-nav paging, and in-doc Ctrl+F
+find (still the next cheap reader packet).

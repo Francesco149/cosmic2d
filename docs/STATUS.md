@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **D120 closes A8's searchable-reference checkbox**: per-module scripting.md sections for the remaining 2D `cm.*` (tmap, anim/sprite, palette/grade, rand/math/ease), eight headings retitled to name their modules, and a KAT-pinned every-module-findable sweep (Linux selftest 24,403 → **24,438**). Prior work this date: the cosmic3d merge (D114) + its post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119). **The stage swap + native re-count owed since D118 are now DONE: Windows staged (5 durable entries + shortcut), native selftest 24,440 PASS on PAL API 22** (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D121 lands the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,29 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18, continued) — D120 closes the A8 searchable-reference
+**This session (2026-07-18, continued) — D121: reader scroll ergonomics +
+launcher doc-section search.** Three human asks, all editor chrome, no
+sim/doc/recorded byte moved: (1) the reader's paint-only scrollbar became a
+control — the gutter right of the text band is its hit zone (disjoint from
+text selection by construction), knob drags with grab offset, track click
+centers-and-drags, hover/drag widens + brightens the knob, and the pure
+knob/targeting math (`sb_knob`/`sb_target`) is exported and KAT'd; (2)
+keyboard scrolling rides the windowkit hotkey table (hint-strip visible,
+never fires in an edit widget): PgUp/PgDn page by 0.9 band, Home/Ctrl+PgUp
+top, End/Ctrl+PgDn bottom, all through one clamped `scroll_by`, when-gated
+on real overflow; (3) the Ctrl+Space launcher appends up to 8
+`cm.docs.search` section hits (tag `sect`) below the fuzzy name matches —
+incomparable rankings, name matches keep the palette's primary job — each
+previewing the doc source at its hit line, enter opening the reader
+revealed+highlighted there (the reader home's `goto_line` door). Proof:
+Linux selftest **24,471** (33 new `t_help_keys` KATs) / native Windows
+**24,473**, suite ALL GREEN, goldens untouched; launcher `deadzone` +
+reader scrollbar/hint-strip captures inspected on llm-feed; `editor.md`
+documents both. Deferred honestly (D121): key-repeat on held paging keys
+(a kit-wide `e.rep` decision), launcher result keyboard paging, in-doc
+Ctrl+F find.
+
+**Same session, earlier — D120 closes the A8 searchable-reference
 checkbox.** The named gap was per-module reference depth. Four new/deepened
 scripting.md sections in the `## Title (cm.mod)` shape with copyable examples
 from real bundled-project usage: **Tilemaps (cm.tmap)**, **Animation clips and

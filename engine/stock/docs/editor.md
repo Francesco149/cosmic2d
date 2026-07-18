@@ -41,6 +41,12 @@ only if it overflows). The highlighted result shows a live **preview** — an
 image thumbnail, a map schematic, or a code/doc excerpt. **↑↓** move · **enter**
 opens · **esc** closes.
 
+The query also **content-searches the shipped docs**: a term like `cm.actor`
+or "deadzone" lists the doc **sections** covering it (tagged `sect`, below the
+name matches), previewing the section source at the matching line. Enter opens
+the documentation reader scrolled to that section — the fast path to a doc
+page without leaving the keyboard.
+
 ## Reading and searching the docs
 
 This window is a rendered documentation reader. Spawn it from the right-click
@@ -68,6 +74,11 @@ click — a drag that starts on a link selects instead of navigating.
 Code blocks are **syntax-highlighted** and **copyable**: hover a block for its
 **copy** button (it copies that block's source), or press **copy page** in the
 header to put the whole doc on the clipboard as plain text.
+
+Scrolling: the wheel, the **scroll bar** (drag its knob, or click anywhere on
+the track to jump), and the keyboard — **PgUp/PgDn** page through the doc,
+**Home** (or **Ctrl+PgUp**) jumps to the top, **End** (or **Ctrl+PgDn**) to
+the bottom.
 
 ## Text and UI size
 

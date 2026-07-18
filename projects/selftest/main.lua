@@ -11176,6 +11176,65 @@ local function t_help_sel()
         "help.escape: nothing selected, nothing consumed")
 end
 
+-- the reader's keyboard scrolling: the paging hotkeys are declarative kit
+-- entries over pure clamped math (M.scroll_by) — drive them with fake wins
+local function t_help_keys()
+  local help = cm.require("cm.ed.win.help")
+  local hk = {}
+  for _, e in ipairs(help.hotkeys) do hk[e.key] = e end
+  for _, k in ipairs({ "pgup", "pgdn", "home", "end",
+                       "ctrl+pgup", "ctrl+pgdn" }) do
+    check(hk[k] ~= nil, "help.keys: a '" .. k .. "' hotkey is declared")
+    check(cm.require("cm.ed.kit").keyspec(k) ~= nil,
+          "help.keys: '" .. k .. "' parses as a keyspec")
+  end
+
+  -- paging: down/up by 90% of the measured band, clamped both ends
+  local w = { scroll = 0, _maxscroll = 1000, _band = 400, hl_line = 7 }
+  hk.pgdn.fn(w)
+  check(w.scroll == 360, "help.keys: pgdn pages by 0.9 of the band")
+  check(w.hl_line == nil, "help.keys: paging dismisses the landed marker")
+  hk.pgdn.fn(w); hk.pgdn.fn(w)
+  check(w.scroll == 1000, "help.keys: pgdn clamps at the bottom")
+  hk.pgup.fn(w)
+  check(w.scroll == 640, "help.keys: pgup pages back up")
+  hk["home"].fn(w)
+  check(w.scroll == 0, "help.keys: home jumps to the top")
+  hk["end"].fn(w)
+  check(w.scroll == 1000, "help.keys: end jumps to the bottom")
+  hk["ctrl+pgup"].fn(w)
+  check(w.scroll == 0, "help.keys: ctrl+pgup also reaches the top")
+  hk["ctrl+pgdn"].fn(w)
+  check(w.scroll == 1000, "help.keys: ctrl+pgdn also reaches the bottom")
+  local near_top = { scroll = 100, _maxscroll = 1000, _band = 400 }
+  hk.pgup.fn(near_top)
+  check(near_top.scroll == 0, "help.keys: pgup clamps at the top")
+
+  -- the when-gate: nothing fires on a doc that fits its band
+  local flat = { scroll = 0, _maxscroll = 0, _band = 400 }
+  for _, k in ipairs({ "pgup", "pgdn", "home", "end" }) do
+    check(hk[k].when(flat) == false,
+          "help.keys: '" .. k .. "' gates off without overflow")
+  end
+  check(hk.pgdn.when({ scroll = 0, _maxscroll = 12, _band = 400 }) == true,
+        "help.keys: the gate opens once content overflows")
+
+  -- the scrollbar's pure math (draw feeds it live values)
+  local ky, kh = help.sb_knob(0, 1000, 1600, 600, 100, 1)
+  check(kh == 225, "help.sb: knob height is sh*sh/contenth")
+  check(ky == 100, "help.sb: at scroll 0 the knob sits at the band top")
+  ky = help.sb_knob(1000, 1000, 1600, 600, 100, 1)
+  check(ky + kh == 700, "help.sb: at full scroll the knob touches the bottom")
+  local _, kmin = help.sb_knob(0, 1e6, 1e6, 100, 0, 2)
+  check(kmin == 40, "help.sb: the knob floors at 20*z")
+  check(help.sb_target(-1e9, 0, 100, 600, 225, 1000) == 0,
+        "help.sb: a drag past the top clamps to 0")
+  check(help.sb_target(1e9, 0, 100, 600, 225, 1000) == 1000,
+        "help.sb: a drag past the bottom clamps to maxscroll")
+  check(help.sb_target(100 + 187.5, 0, 100, 600, 225, 1000) == 500,
+        "help.sb: the knob maps linearly over the track")
+end
+
 -- ---- the 3D fork modules (merged 2026-07-18): KATs to the same bar as
 -- the 2d slices. cm.m4 / cm.kin / cm.walk / cm.rig are pure math (rig
 -- reads record-backed input, neutral in this cartridge); the render-class
@@ -11705,6 +11764,7 @@ function game.init()
   t_ed_domain()
   t_docs()
   t_help_sel()
+  t_help_keys()
   t_m4()
   t_kin()
   t_walk()

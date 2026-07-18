@@ -63,7 +63,12 @@ local function all_entries(ed)
   return out
 end
 
--- filter + rank against the query (empty = the natural order above)
+-- filter + rank against the query (empty = the natural order above).
+-- Below the fuzzy name matches, the query also content-searches the shipped
+-- docs (cm.docs.search, D110 — its own ranking) so a term like "deadzone"
+-- or "cm.actor" surfaces the doc SECTION covering it, capped to the best 8;
+-- enter opens the reader revealed at that section, like the reader's home.
+local DOCSEC_CAP = 8
 local function filtered(ed, l)
   local all = all_entries(ed)
   if l.q == "" then return all end
@@ -78,6 +83,14 @@ local function filtered(ed, l)
   end)
   local out = {}
   for _, h in ipairs(hits) do out[#out + 1] = h.e end
+  local secs = cm.require("cm.docs").search(l.q)
+  for k = 1, math.min(#secs, DOCSEC_CAP) do
+    local h = secs[k]
+    out[#out + 1] = { cat = "docsec", key = "ds:" .. h.name .. ":" .. h.line,
+                      label = h.title .. " · " .. h.section, tag = "sect",
+                      doc = h.name:gsub("%.md$", ""), line = h.line,
+                      section = h.section, snippet = h.snippet }
+  end
   return out
 end
 
@@ -88,6 +101,9 @@ local function activate(ed, e, ig)
   if e.cat == "win" then ed.pan_to_window(e.win, raw_ig)
   elseif e.cat == "spawn" then ed.spawn_kind(e.name, raw_ig)
   elseif e.cat == "doc" then ed.open_doc(e.doc)
+  elseif e.cat == "docsec" then -- the reader revealed at the hit's section
+    local w = ed.open_doc(e.doc)
+    w.goto_line, w.hl_line = e.line, e.line
   elseif e.cat == "asset" then
     local c = ed.doc.cam
     local z = cm.require("cm.ed.cam").screen_zoom(c)
@@ -124,6 +140,17 @@ local function build_preview(ed, e)
     end
   elseif e.cat == "doc" then
     pv.lines = preview.head_lines(pal.read_file("engine/stock/docs/" .. e.doc .. ".md"))
+  elseif e.cat == "docsec" then -- the section's own source from its heading
+    local src = pal.read_file("engine/stock/docs/" .. e.doc .. ".md")
+    if src then
+      local lines, k = {}, 0
+      for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+        k = k + 1
+        if k >= e.line then lines[#lines + 1] = line:gsub("\t", "  ") end
+        if #lines >= 22 then break end
+      end
+      pv.lines = lines
+    end
   elseif e.cat == "spawn" then
     pv.blurb = "Spawn a new\n" .. e.label .. ".\n\nThe window's ? button\n"
                .. "opens its guide."

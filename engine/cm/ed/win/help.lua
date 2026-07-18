@@ -124,8 +124,32 @@ local function hist_go(win, dir)
 end
 M.hist_go = hist_go
 
--- per-window hotkeys (EDITOR.md §13): [ back · ] forward · h home; the hint
--- strip renders them under the focused reader
+-- the scrollbar's pure math (KAT'd; draw feeds it live values): knob
+-- geometry from the scroll state, and the scroll a drag position targets
+function M.sb_knob(scroll, maxscroll, contenth, sh, sy0, z)
+  local knobh = math.max(20 * z, sh * sh / contenth)
+  return sy0 + (sh - knobh) * (scroll / maxscroll), knobh
+end
+
+function M.sb_target(my, grab, sy0, sh, knobh, maxscroll)
+  local t = (my - grab - sy0) / math.max(1, sh - knobh)
+  return math.max(0, math.min(t * maxscroll, maxscroll))
+end
+
+-- keyboard scrolling (the human's ask): clamped like M.wheel, against last
+-- frame's measured extent; win._band is the visible band height from draw
+local function scroll_by(win, dy)
+  win.scroll = math.max(0, math.min((win.scroll or 0) + dy,
+                                    win._maxscroll or math.huge))
+  win.hl_line = nil -- scrolling dismisses the "landed here" marker
+end
+M.scroll_by = scroll_by
+
+local function overflows(win) return (win._maxscroll or 0) > 0 end
+
+-- per-window hotkeys (EDITOR.md §13): [ back · ] forward · h home, plus the
+-- reading keys — PgUp/PgDn page, Home/End (and Ctrl+PgUp/PgDn) jump to the
+-- top/bottom; the hint strip renders the hinted ones under the focused reader
 M.hotkeys = {
   { key = "[", hint = "back",
     when = function(win) return win.hist and (win.hpos or 1) > 1 end,
@@ -138,6 +162,18 @@ M.hotkeys = {
   { key = "h", hint = "home",
     when = function(win) return win.path ~= "" end,
     fn = function(win) navigate(win, "") end },
+  { key = "pgdn", hint = "scroll", when = overflows,
+    fn = function(win) scroll_by(win, (win._band or 300) * 0.9) end },
+  { key = "pgup", when = overflows,
+    fn = function(win) scroll_by(win, -(win._band or 300) * 0.9) end },
+  { key = "home", hint = "top", when = overflows,
+    fn = function(win) scroll_by(win, -math.huge) end },
+  { key = "end", when = overflows,
+    fn = function(win) scroll_by(win, math.huge) end },
+  { key = "ctrl+pgup", when = overflows,
+    fn = function(win) scroll_by(win, -math.huge) end },
+  { key = "ctrl+pgdn", when = overflows,
+    fn = function(win) scroll_by(win, math.huge) end },
 }
 
 -- the source line of a doc's #anchor (the heading whose slug matches), or nil
@@ -892,16 +928,37 @@ function M.draw(win, ctx)
   end
   pal.x_ig_clip_pop()
 
-  -- a slim scrollbar when the content overflows
+  -- a slim scrollbar when the content overflows. The gutter right of the
+  -- text band is its live hit zone (disjoint from the selection region, so
+  -- a grab never starts a text drag): the knob drags with its grab offset,
+  -- a track click centers the knob at the mouse and keeps dragging.
+  -- sl.sbdrag is module-local like the selection — never canon.
   local maxscroll = math.max(0, contenth - sh)
   if maxscroll > 0 then
-    local knobh = math.max(20 * z, sh * sh / contenth)
-    local knoby = sy0 + (sh - knobh) * (win.scroll / maxscroll)
-    pal.x_ig_rect_fill(ctx.cx + ctx.cw - 4 * z, knoby, 3 * z, knobh,
-                       COL.rule, 2 * z)
+    local knoby, knobh = M.sb_knob(win.scroll, maxscroll, contenth, sh,
+                                   sy0, z)
+    local gx = x0 + maxw -- everything right of the band
+    local hover = ctx.hot and i.wx >= gx and i.wx < ctx.cx + ctx.cw
+                  and i.wy >= sy0 and i.wy < sy0 + sh
+    if hover and i.clicked[1] then
+      sl.sbdrag = (i.wy >= knoby and i.wy < knoby + knobh)
+                  and (i.wy - knoby) or knobh * 0.5
+    end
+    if sl.sbdrag and i.buttons[1] then
+      win.scroll = M.sb_target(i.wy, sl.sbdrag, sy0, sh, knobh, maxscroll)
+      win.hl_line = nil -- scrolling dismisses the "landed here" marker
+      knoby = M.sb_knob(win.scroll, maxscroll, contenth, sh, sy0, z)
+    elseif sl.sbdrag then
+      sl.sbdrag = nil
+    end
+    local live = (sl.sbdrag and COL.hot) or (hover and COL.dim) or COL.rule
+    local barw = (sl.sbdrag or hover) and 6 * z or 3 * z
+    pal.x_ig_rect_fill(ctx.cx + ctx.cw - barw - 1 * z, knoby, barw, knobh,
+                       live, 2 * z)
   end
   win.scroll = math.max(0, math.min(win.scroll, maxscroll))
   win._maxscroll = maxscroll -- so M.wheel can clamp before it over-scrolls
+  win._band = sh -- the visible band height: the pgup/pgdn page size
 
   -- link clicks fire on RELEASE of a gesture that never dragged, so link
   -- text is selectable like any other (a drag starting on a link selects);
