@@ -10984,23 +10984,37 @@ local function t_ed_domain()
         "ed lifecycle: active export guards return to picker")
   ed.g.project_exports.lifecycle.job.terminal = true
 
-  -- the launcher's player-options command (D131): the entry is listed and
-  -- activating it opens the Esc menu — the editor's keyboard door to the
-  -- player options surface (the yield while it is open is tape-proven)
+  -- the launcher's settings command (D132): the entry is listed and
+  -- activating it summons the settings window — the editor's keyboard
+  -- door to the knobs players reach in the Esc menu
   local L = cm.require("cm.ed.launcher")
-  local options = cm.require("cm.options")
   local cmd
   for _, e in ipairs(L.entries(ed)) do
     if e.cat == "cmd" and e.cmd == "options" then cmd = e end
   end
-  check(cmd ~= nil, "launcher: the player-options command is listed")
-  local opt_was = options.on
-  options.on = false
+  check(cmd ~= nil, "launcher: the settings command is listed")
   L.activate(ed, cmd)
-  check(options.on == true and options.page == "main",
-        "launcher: activating the command opens the Esc menu")
-  options.toggle(false)
-  options.on = opt_was
+  local sw
+  for _, w in ipairs(ed.doc.wins) do
+    if w.kind == "settings" then sw = w end
+  end
+  check(sw ~= nil and ed.doc.focus == sw.id,
+        "launcher: the settings command summons a focused settings window")
+  L.activate(ed, cmd) -- summon again: focuses the SAME window, no twin
+  local n = 0
+  for _, w in ipairs(ed.doc.wins) do
+    if w.kind == "settings" then n = n + 1 end
+  end
+  check(n == 1, "launcher: summon reuses the existing settings window")
+
+  -- the overlay menu never opens under the editor shell (D132): the ui
+  -- canvas composites beneath the imgui layer, so an "open" there would
+  -- be invisible AND double-handle input — frame() forces it shut
+  local options = cm.require("cm.options")
+  options.on = true
+  options.frame()
+  check(options.on == false,
+        "options: the overlay menu never opens under the editor shell")
 
   ed.kinds.project.drop_ephemeral(ed)
   ed.on, ed.doc, ed.root = was_on, was_doc, was_root
@@ -12293,6 +12307,19 @@ local function t_ui_nav()
   check(ss and ss.scroll and ss.scroll > 30,
         "uinav: the cursored off-view row scrolled into view (scroll="
         .. tostring(ss and ss.scroll) .. ")")
+
+  -- the edge-item limit cycle (D132, the vibration report): the first
+  -- row's 2px top margin is unsatisfiable at scroll 0, so the correction
+  -- must clamp to the legal range and go QUIET — an out-of-range write
+  -- re-arms the elastic spring and the two fight ~1px forever
+  for _ = 1, 5 do sframe({ key(82) }) end -- up arrows back to b1
+  check(ui.nav.id == "t_nav2/scr/b1", "uinav: arrows return to the top row")
+  for _ = 1, 12 do sframe() end -- idle: any residual physics must settle
+  ss = ui.s["t_nav2/scr"]
+  check(ss.scroll == 0 and (ss.vel or 0) == 0,
+        "uinav: an edge-cursored scroll rests at exactly 0, no limit cycle"
+        .. " (scroll=" .. tostring(ss.scroll)
+        .. " vel=" .. tostring(ss.vel) .. ")")
 
   -- page-vanish prune: stop drawing; the cursor clears with the scope
   ui.frame({})

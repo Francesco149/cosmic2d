@@ -68,6 +68,16 @@ function M.set_vol(kind, v)
   return M.vol[kind]
 end
 
+-- preview_vol: set_vol without the disk write — a dragging slider applies
+-- every frame and saves ONCE on release via set_vol (the _dirty rule the
+-- Esc menu uses, exported for the settings window, D132)
+function M.preview_vol(kind, v)
+  if M.vol[kind] == nil then error("unknown volume: " .. tostring(kind), 2) end
+  M.vol[kind] = vol_clamp(v)
+  apply_vol()
+  return M.vol[kind]
+end
+
 -- ---- reduced effects (A8 accessibility, D129) ----
 -- The player's reduce-shake / reduce-flash choices, stored user-wide in
 -- cm.view's accessibility store (a photosensitive player sets them once per
@@ -161,6 +171,22 @@ function M.set(id, v)
       M._custom[id] = v
       if d.on_change then d.on_change(v) end
       view.save_video()
+      return v
+    end
+  end
+  error("unknown option: " .. tostring(id), 2)
+end
+
+-- preview(id, v): set without the disk write (the drag-frame door, D132);
+-- the gesture end calls set with the final value to persist once
+function M.preview(id, v)
+  for _, d in ipairs(M.defs) do
+    if d.id == id then
+      if not opt_valid(d, v) then
+        error(("bad value for option %s: %s"):format(id, tostring(v)), 2)
+      end
+      M._custom[id] = v
+      if d.on_change then d.on_change(v) end
       return v
     end
   end
@@ -537,6 +563,17 @@ local function flush_dirty()
 end
 
 function M.frame()
+  -- The overlay menu is the PLAYER surface. Under the editor shell it
+  -- cannot render (the ui canvas composites beneath the imgui layer — the
+  -- D131 lesson), so it never opens there: the editor's settings window
+  -- (D132) is the dev door to the same knobs, and the shell maps the pad
+  -- back/select button to it.
+  local med = cm.main and cm.main.ed
+  if med ~= nil and med.on == true then
+    M.on = false
+    flush_dirty()
+    return
+  end
   -- Esc walks the grammar one step at a time: open the menu, cancel an
   -- armed capture, leave the controls page, close the menu. The pad
   -- back/select button IS the pad Esc (D128) — the one pad door into the
@@ -578,19 +615,11 @@ function M.frame()
   end               -- must BIND, not navigate
 
   if M.arm then do_capture() end
-  -- over the editor shell the ui canvas composites UNDER the imgui layer,
-  -- so the menu routes its drawing to the imgui foreground drawlist at the
-  -- ui-canvas scale (cm.ui's sink, D131) — same layout, same hit tests,
-  -- rendered above the editor's windows. Player mode draws as ever.
-  local med = cm.main and cm.main.ed
-  local over_ed = med ~= nil and med.on == true
-  if over_ed then ui.sink_begin(math.max(1, view.cfg.ui_scale)) end
   if M.page == "controls" then
     controls_page()
   else
     main_page()
   end
-  if over_ed then ui.sink_end() end
 end
 
 return M

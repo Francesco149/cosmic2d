@@ -108,6 +108,19 @@ notch on the track marks 90% of the budget; when the fill passes it the
 used/budget label gains a leading **!** — both read without color, beside
 the exact numbers.
 
+## The settings window
+
+The **settings** window (spawn menu, the launcher's "settings / player
+options" entry, or the controller's back/select button) is the dev view
+over the knobs your players reach in the Esc menu: the options your game
+declared with `cm.options.add` (against their defaults), the volume
+knobs, stick deadzone and press threshold, and the user-wide
+accessibility toggles (reduce screen shake / reduce flashes) — so you can
+watch a reduced death flash or a volume change live against the running
+game window. It's an ordinary window: nothing pauses, nothing is blocked
+while it's open. Rebinding and the Esc menu itself are player-facing —
+test those by running the game in player mode.
+
 ## Playing and mouse capture
 
 Clicking into a game window focuses it — focused means playing, and your
@@ -122,10 +135,8 @@ all release it, and it re-engages when you click back in.
 ## Keys that matter
 
 - **Ctrl+Space** — the launcher (find/open anything, pan to a window). Its
-  **player options** entry opens the Esc menu right in the editor — test
-  volumes, rebinds, and the accessibility toggles exactly as players will
-  see them (the pad back/select button opens it too). While it's open the
-  editor pauses its own shortcuts; Esc walks back out of the menu.
+  **settings / player options** entry summons the settings window (the pad
+  back/select button does too).
 - **F4** — open/close rewind (an active A/B clip requires Esc first).
 - **Right-click** — spawn menu (over an editing sprite/tilemap canvas the
   right button paints/erases instead — spawn from elsewhere or the launcher).

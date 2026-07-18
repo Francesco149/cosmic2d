@@ -6582,3 +6582,86 @@ closes. The player-mode swarm menu re-shot pixel-matching D129's capture.
 legacy scrub?) votes moving the bracket into a shared overlay helper; a
 complaint about native-font metrics in the sunk menu votes a mono font or
 measured layout; more launcher commands vote a real command category.
+
+## D132 — the settings window; the vibration limit-cycle fix; the settings architecture (2026-07-19)
+
+**Context.** Two human reports on D131's in-editor menu overlay — it
+vibrated ~1px vertically and blocked all editor input — plus the
+direction: "either make it a fully native editor window or find another
+solution", and "we would want an editor window to set the game's
+settings and defaults ... then the game itself decides what settings to
+expose to the end user through its in-game menus."
+
+**The vibration was a D128 class bug, not a D131 one.** `nav_item`'s
+scroll-into-view demands the cursored widget sit 2px inside the band —
+unsatisfiable for the FIRST row, which naturally sits at scroll 0 — so
+it wrote a negative scroll and zeroed the velocity every frame, while
+end_scroll's elastic spring pulled back: a permanent ~1px limit cycle
+(probed: scroll oscillating −0.87..−1.89 forever). It affected the
+PLAYER-mode menu too. Fix at the class level: the correction clamps to
+the legal scroll range and writes nothing when the value cannot move —
+an unchanged value never re-arms the spring. KAT'd (an edge-cursored
+scroll rests at exactly 0 across idle frames).
+
+**The overlay path is deleted; the settings window replaces it
+(supersedes D131's render half).** The cm.ui drawlist sink and the
+editor's wholesale interact yield are gone; the overlay menu now
+force-closes under the editor shell (KAT'd) — it is the PLAYER surface
+and only renders where it composites on top. In the editor:
+
+1. **`cm.ed.win.settings`** — a native canvas window (the perf/console
+   precedent: chrome window, no journal, close fearlessly): the
+   project's `options.add` declarations (live values, kind-appropriate
+   widgets), the volume knobs, stick deadzone/press-at, and the
+   user-wide accessibility toggles. An ordinary window — nothing pauses,
+   nothing blocks; occlusion/focus gate input like every other kind.
+2. **Doors:** the launcher `cmd` entry ("settings / player options") and
+   the pad back/select press in the editor both route to
+   `ed.summon_settings()` — focus the existing window or spawn one
+   (KAT'd: summon reuses, never twins). The spawn menu lists it too.
+3. **`options.preview`/`preview_vol`** — the set doors minus the disk
+   write, so a dragging slider applies live and persists once on
+   release (the Esc menu's `_dirty` rule, exported).
+4. Deliberately absent, named: rebinding (the capture grammar is
+   player-facing — test in player mode) and window-size/fullscreen/
+   ui-scale (they reshape the editor's own window).
+
+**The architecture (the human's question, answered).** One settings
+MODEL, many frontends. cm.options owns the model: declarations
+(`options.add`), values + validation + `on_change`, and persistence
+(video.dat per machine+project; accessibility user-wide in cm.view).
+Frontends render it: the stock Esc menu (player mode — batteries
+included, accessibility + rebinding guaranteed), the settings window
+(editor), and THE GAME'S OWN MENUS — a game that hand-rolls its
+settings screen calls `options.get/set/preview/...`, deciding itself
+what to expose; persistence and on_change are identical by
+construction. **cm.ui stays the in-game UI kit and raw imgui is NOT
+exposed to games:** a game's entire visual output is its render target
+— replays, exported clips, pixel goldens, thumbnails, and the editor's
+game windows all capture the target — while imgui draws native-res
+OUTSIDE it (and its C-side state neither records nor rewinds), so
+game-side imgui would fork the visual record A7 is built on. The cost
+("waste" of shipping imgui unused by games) buys the target contract;
+the remedy for UI pain is growing cm.ui from demo votes (it already has
+scroll regions, sliders, nav, styling via `ui.style`).
+
+**Open questions, deliberately not decided here:** declaring option
+DEFAULTS in `project.lua` data instead of `options.add` code (would let
+the settings window edit defaults, not just values — a project-schema
+change); whether a game may suppress/reskin the stock Esc menu without
+losing the accessibility/rebind guarantees; an editor rebind surface if
+player-mode testing proves too slow a loop.
+
+**Proof.** Linux selftest **24,636** (+4: the limit-cycle rest, the
+editor-shell force-close, summon focuses + reuses); `nix run .#test` ALL
+GREEN, goldens byte-identical. Tape on smoke --edit: launcher summons
+the focused settings window; the launcher still opens while it's up (not
+modal); clicking both accessibility toggles flips cfg AND the user-wide
+store; a master-volume drag lands 40% saving once on release; pad
+back/select focuses the window. The scroll probe that reproduced the
+vibration reads scroll=0 vel=0 flat after the fix. Captures on llm-feed.
+
+**Revisit triggers.** The open questions above; a second chrome window
+wanting shared kit widgets (settings hand-rolls slider/checkbox/cycle —
+a third copy votes extracting them into cm.ed.kit); pad-driving editor
+windows (the settings window is mouse-only today).

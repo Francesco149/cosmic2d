@@ -51,11 +51,12 @@ local function all_entries(ed)
     out[#out + 1] = { cat = "spawn", key = "s:" .. it[1],
                       label = it[2] .. " window", tag = "new", name = it[1] }
   end
-  -- the player options menu (D131): the editor's keyboard door to the Esc
-  -- menu, so devs test what players see (volumes, rebinds, accessibility)
-  -- without leaving the editor. The pad back/select door works here too.
+  -- the settings window (D132): the editor's keyboard door to the game's
+  -- settings — the dev surface over the knobs players reach in the Esc
+  -- menu (declared options, volumes, stick, accessibility). Focuses an
+  -- existing window; the spawn entry above always makes a new one.
   out[#out + 1] = { cat = "cmd", key = "c:options",
-                    label = "player options (esc menu)", tag = "open",
+                    label = "settings / player options", tag = "open",
                     cmd = "options" }
   for _, d in ipairs(DOCS) do
     out[#out + 1] = { cat = "doc", key = "d:" .. d, label = d, tag = "doc",
@@ -104,8 +105,8 @@ end
 local function activate(ed, e, ig)
   M.close(ed)
   local raw_ig = ed.g.last_ig or ig
-  if e.cat == "cmd" then -- launcher commands (D131: just the options menu)
-    if e.cmd == "options" then cm.require("cm.options").toggle(true) end
+  if e.cat == "cmd" then -- launcher commands (D132: just the settings door)
+    if e.cmd == "options" then ed.summon_settings() end
   elseif e.cat == "win" then ed.pan_to_window(e.win, raw_ig)
   elseif e.cat == "spawn" then ed.spawn_kind(e.name, raw_ig)
   elseif e.cat == "doc" then ed.open_doc(e.doc)

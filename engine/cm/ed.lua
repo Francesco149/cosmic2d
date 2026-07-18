@@ -38,7 +38,7 @@ M.g = M.g or {}
 -- double-clicks/drops to it (assets.kind_for reads it).
 local ROSTER = { "note", "project", "text", "assets", "map", "tmap", "game",
                  "console", "anim", "perf", "image", "sprite", "sound",
-                 "synth", "music", "palette", "help" }
+                 "synth", "music", "palette", "help", "settings" }
 M.kinds = {}
 local MENU_ITEMS = {}
 for _, name in ipairs(ROSTER) do
@@ -546,6 +546,32 @@ local function summon_console()
 end
 M.summon_console = summon_console -- persistence paths surface actionable errors
 
+-- focus an existing settings window or spawn one (D132): the launcher's
+-- "player options / settings" command and the editor's pad back/select
+-- door — the dev surface over the knobs players reach in the Esc menu
+function M.summon_settings()
+  local doc = M.doc
+  for _, win in ipairs(doc.wins) do
+    if win.kind == "settings" then
+      doc.focus = win.id
+      doc.sel = { win.id }
+      wm.to_front(doc, win.id)
+      M.touch()
+      return
+    end
+  end
+  local ig = M.g.last_ig
+  local kind = M.kinds.settings
+  local w, h = kind.DEF_W, kind.DEF_H
+  local cx, cy = doc.cam.x, doc.cam.y
+  local sw = ig and ig.w or 1280
+  local sh = ig and ig.h or 800
+  local z = cam.screen_zoom(doc.cam)
+  wm.spawn(doc, "settings", cx + (sw / z - w) * 0.5,
+           cy + (sh / z - h) * 0.4, w, h, kind.defaults())
+  M.touch()
+end
+
 local function anim_to(target)
   M.g.anim = { from = { x = M.doc.cam.x, y = M.doc.cam.y,
                         zoom = M.doc.cam.zoom },
@@ -757,21 +783,18 @@ local function interact(ig)
   local i = cm.require("cm.ui").inp
   local doc, g = M.doc, M.g
   track_mods(i.keys)
-  -- the player options menu over the editor (D131): while it is open the
-  -- editor yields the tick — no hotkeys, no canvas/window interaction, and
-  -- no legacy strip (the menu's one-step-back grammar needs the Esc that
-  -- consume_legacy_keys would eat; its own capture_* calls already keep
-  -- input from the game). Doors in: the launcher's "player options" entry
-  -- and the pad back/select button (the player-mode grammar, unchanged).
-  if cm.require("cm.options").on then
-    pal.x_ig_mouse(false) -- canvas widgets never fight the menu
-    step_anim()
-    g.ig_kb = ig.kb
-    g.last_ig = ig
-    return
-  end
   hotkeys(ig, i)
   consume_legacy_keys(i.keys)
+  -- pad back/select is the player-mode menu button; in the editor it
+  -- summons the settings window (D132) — the dev surface over the same
+  -- knobs. Downs only; pad:back is reserved from game bindings (D128),
+  -- so no game ever loses this press.
+  for _, e in ipairs(i.pads) do
+    if (e.type == "padbtn" or e.type == "gpadbtn") and e.down
+       and e.button == 4 then
+      M.summon_settings()
+    end
+  end
   local rw_owns = cm.require("cm.ed.rewind").owns_pointer(M, i)
   local ci = chrome.virtual_input(i, cm.require("cm.view").cfg.chrome_scale)
   local function in_chrome(r)

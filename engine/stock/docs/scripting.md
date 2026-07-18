@@ -811,10 +811,15 @@ apply them via `on_change`. A setting that changes gameplay belongs in
 `options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
 are the scripted doors to the same knobs.
 
-The menu is also reachable inside the editor — the Ctrl+Space launcher's
-**player options** entry (or the pad back/select button) — so you can test
-your declared options and the accessibility toggles without leaving your
-session.
+In the editor, the **settings window** (the Ctrl+Space launcher's
+"settings / player options" entry, or the pad back/select button) is the
+dev surface over the same knobs — declared options, volumes, stick
+tuning, accessibility — so you test them against the running game without
+leaving your session. And the menu is only the STOCK frontend: a game
+that builds its own settings screens reads and writes the same model
+through `options.get`/`set`/`set_vol` (plus `preview`/`preview_vol` for
+drag gestures — apply live, save once on release), so persistence and
+`on_change` behave identically wherever the knob is turned.
 
 ### Reduced effects (accessibility)
 
