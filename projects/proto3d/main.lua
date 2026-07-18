@@ -131,6 +131,7 @@ function game.init()
 end
 
 function game.step()
+  W, H = input.game_size()
   local auto = cam:u8(8)
   if input.pressed("auto") then
     auto = auto == 1 and 0 or 1
@@ -148,6 +149,7 @@ function game.step()
 end
 
 function game.draw()
+  W, H = input.game_size()
   pal.begin_frame(0, 0, 0, 1)
 
   -- sky pass: NDC passthrough (identity view, fog off)

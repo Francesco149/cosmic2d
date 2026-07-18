@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **D122 fixes three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D123 (the D122 feel-check follow-ups): the live target size is now recorded input** — extension tag 3 FSIZ + `input.game_size()` (design-res fallback = boot target, so every historical golden stands byte-identical); all six 3D demos adapt aspect/HUD/pick-rays to a live FOV resize instead of squashing; and an Aa change rescales game-window doc rects (image area only) so their screen footprint + crisp blit stay constant instead of growing a blank well. Linux selftest **24,489** / native Windows **24,491**. Before that, **D122 fixed three human reports**: the sprite window gains the kit new-file prompt (it could not create a sprite), the reader's scroll anchors across zoom/Aa reflows (zooming visibly scrolled the docs — the raw-px-scroll class guard is now named in the ADR), and the game blit divides the Aa scale out of its pixel-perfect snap (text size no longer blurs/resizes the game — crisp constant integer multiple, `game.blit_scale` KAT'd). Linux selftest **24,480** / native Windows **24,482**. Before that, **D121 landed the reader scroll ergonomics + launcher doc-section search** (three human asks: the scrollbar is now a real control, PgUp/PgDn/Home/End/Ctrl+PgUp scroll the reader, and Ctrl+Space content-searches the shipped docs with section previews — D110's launcher-content-search deferral paid). Same date, D120 closed A8's searchable-reference checkbox (per-module sections + the KAT-pinned findability sweep). Linux selftest **24,471** / native Windows **24,473** on PAL API 22. Earlier this date: the cosmic3d merge (D114) + post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119) (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,28 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18, continued) — D122: three human reports.** (1) The
+**This session (2026-07-18, continued) — D123: the D122 feel-check
+follow-ups.** (1) The Aa compensation moved from the blit to the RECT: the
+game window's doc rect (image area minus the pads) rescales by old/new on a
+live Aa change, so the screen footprint and the crisp blit stay constant —
+no more blank well; canon fields move on a user action, undo/session treat
+it like a resize, nothing rescales at boot. (2) A live FOV resize squashed
+the 3D demos because they (correctly) froze `pal.gfx_size()` at boot — and a
+render-only fix would have desynced their pick rays. The live target size is
+now recorded input: **extension tag 3 FSIZ** (the MREL model, but a LATCH
+not a delta), `input.game_size()` latches the domain and reads the applied
+size from the `cm.input` buffer ([20]/[22] — snapshot/rewind restore it),
+falling back to the project design res — the boot target, so pre-FSIZ traces
+and record/replay agree by construction. All six 3D demos refresh W,H from
+it at the top of step+draw. Pure Lua, no PAL bump. Proof: Linux selftest
+**24,489** (9 t_input_fsiz KATs) / native Windows **24,491**; suite ALL
+GREEN with every 3D golden byte-identical; live openworld `--edit` proof —
+FOV 320x240 → 426x240 rendered undistorted AT Aa 1.5 with the compensated
+rect still blitting exactly 2x (capture on llm-feed). scripting.md +
+ARCHITECTURE.md document FSIZ. Deferred honestly: a committed
+mid-trace-FOV-change golden awaits the first real resized 3D recording.
+
+**Same session, earlier — D122: three human reports.** (1) The
 unbound sprite window only said "drag a .spr" — it now runs the kit
 `pathfield` (prefilled unique name, Enter creates via the existing `fresh`
 32x32 door, open/overwrite/cancel on collisions; a new sprite opens in edit

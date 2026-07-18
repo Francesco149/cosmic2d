@@ -1073,6 +1073,19 @@ using it in `step` stays deterministic and replays exactly. The capture
 uncaptured, and sim logic must branch on `mouse_rel()`, never on whether the
 cursor is captured. The Esc menu force-releases capture for you.
 
+**The live target size.** The editor's game window (and the player's resize
+ladder) can change the FOV while the game runs. Read the size through the
+recording, never the live target:
+
+    local W, H = input.game_size()   -- recorded, sim-legal (FSIZ)
+
+Refresh it at the top of `step` and `draw` and use it for the projection
+aspect and any screen-to-world unprojection (pick rays) — the bundled 3D
+demos do exactly this, so a widened window widens their view instead of
+squashing it. It rides the input record like `mouse_rel`: a replay sees the
+recorded sizes, an older recording reads the project's design resolution,
+and `pal.gfx_size()` in `step` remains the determinism trap it always was.
+
 ## Matrices (`cm.m4`)
 
 `cm.m4` is column-major 4×4 matrix math for building the camera `mvp` and
@@ -1582,8 +1595,10 @@ the rules that protect your project are already enforced, not merely promised
   by definition a bug. Your half of that contract is the determinism discipline
   above — stable action order and named-buffer layouts. Input capabilities grow
   additively: the relative-mouse deltas (`input.mouse_rel`) ride a new input-
-  record extension (MREL), and a recording made before it existed replays as
-  (0,0) — so extending the input format never invalidates an old trace.
+  record extension (MREL) that old recordings replay as (0,0), and the live
+  target size (`input.game_size`) rides another (FSIZ) that old recordings
+  replay as the design resolution — so extending the input format never
+  invalidates an old trace.
 
 - **Formats are versioned, tagged-chunk containers.** Every chunk is
   version-stamped; a reader skips the chunks it does not know and errors loudly

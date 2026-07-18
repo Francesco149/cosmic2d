@@ -44,12 +44,26 @@
 -- device identity: replay never re-captures, the recorded deltas are the
 -- authority.
 --
+-- Extension tag 3 = FSIZ, the frame's live game-target size (D123 — the
+-- editor's game window resizes the FOV live; 3D aspect + screen->world
+-- unprojection must see it deterministically):
+--   i16 LE w, i16 LE h — pal.gfx_size() at sample time.
+-- Emitted every sample once game_size() has been read this session (the
+-- _pad_live model), so a size-blind session stays byte-identical to
+-- before. Unlike MREL this is a LATCH, not a delta: a record without
+-- FSIZ leaves the applied size untouched, and until any sized record
+-- applies, game_size() returns the project's design resolution — which
+-- IS the boot target, so pre-FSIZ traces and record/replay agree by
+-- construction. Sim code reads game_size(), never pal.gfx_size().
+--
 -- Applied v1 state lives in the "cm.input" named buffer (32 bytes, layout
 -- below) — pressed/released derive from cur vs prev bits, so snapshots and
 -- trace verify see identical edges to live play.
 --   [0] u32 cur bits | [4] u32 prev bits | [8] i16 mx | [10] i16 my
 --   [12] u8 buttons | [13] u8 prev buttons | [14] i8 wheel
---   [16] i16 rel dx | [18] i16 rel dy (MREL, v21) | rest reserved
+--   [16] i16 rel dx | [18] i16 rel dy (MREL, v21)
+--   [20] i16 fsiz w | [22] i16 fsiz h (FSIZ, D123; 0 = never sized)
+--   rest reserved
 --
 -- Applied pad state lives in the "cm.input.pad" named buffer (96 bytes,
 -- 4 slots x 24-byte stride), created only by a PAD-carrying record or a
@@ -706,6 +720,15 @@ function M.sample()
     rec = rec .. pack("<I1I1i2i2", 2, 4, iclamp(rdx, -32768, 32767),
                       iclamp(rdy, -32768, 32767))
   end
+
+  -- the FSIZ extension (D123): the frame's live target size, once the
+  -- size domain latched. The recorded value is the authority — replay
+  -- never re-reads the live target.
+  if M._fsiz_live then
+    local fw, fh = pal.gfx_size()
+    rec = rec .. pack("<I1I1i2i2", 3, 4, iclamp(fw, 0, 32767),
+                      iclamp(fh, 0, 32767))
+  end
   return rec
 end
 
@@ -829,6 +852,11 @@ function M.apply(record)
       local rdx, rdy = string.unpack("<i2i2", record, pos + 2)
       b:i16(16, rdx)
       b:i16(18, rdy)
+    elseif tag == 3 then
+      if len ~= 4 then error("bad FSIZ extension in input record", 2) end
+      local fw, fh = string.unpack("<i2i2", record, pos + 2)
+      b:i16(20, fw)
+      b:i16(22, fh)
     end
     pos = fin + 1
   end
@@ -885,6 +913,32 @@ function M.mrel_reset()
   rel_carry_x, rel_carry_y = 0.0, 0.0
   M._mrel_live = nil
   if pal.x_mouse_capture then pal.x_mouse_capture(false) end
+end
+
+-- Record-backed live game-target size (the FSIZ domain, D123): what sim
+-- code reads for 3D aspect and screen->world unprojection — the editor's
+-- game window resizes the FOV live, and this is the deterministic view of
+-- it. First use latches the domain so every later record carries the
+-- frame's target size; until a sized record applies (and in every
+-- pre-FSIZ trace) it returns the project's design resolution — which IS
+-- the boot target, so record and replay agree by construction. Sim code
+-- reads this, never pal.gfx_size().
+function M.game_size()
+  M._fsiz_live = true
+  local b = buf()
+  local fw, fh = b:i16(20), b:i16(22)
+  if fw > 0 and fh > 0 then return fw, fh end
+  local cfg = cm.require("cm.view").cfg
+  return cfg.ref_w, cfg.ref_h
+end
+
+-- Boot-path reset beside mrel_reset (cm.main): fresh project, fresh
+-- domain, applied size forgotten.
+function M.fsiz_reset()
+  M._fsiz_live = nil
+  local b = buf()
+  b:i16(20, 0)
+  b:i16(22, 0)
 end
 
 function M.button_down(n)

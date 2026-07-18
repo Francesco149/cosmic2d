@@ -315,6 +315,7 @@ local function cam_step()
 end
 
 function game.step()
+  W, H = input.game_size()
   local d = state.doc
   if d.demo ~= 0 then
     if input.button_pressed(1) or input.pressed("recenter") then
@@ -378,6 +379,7 @@ local function draw_loading(frac)
 end
 
 function game.draw()
+  W, H = input.game_size()
   pal.begin_frame(0, 0, 0, 1)
   gb.sun, gb.ambient = world.sun, world.ambient
 

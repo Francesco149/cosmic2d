@@ -5955,3 +5955,59 @@ contenth ×1.5 exactly across a mid-run Aa flip, the pathfield's bind
 door yielding a fresh 32x32 single-layer doc, and `grect.s == 2` for a
 2x window at Aa 1.5. Captures inspected on llm-feed (the prefilled
 new-sprite prompt). `win-sprite.md` documents the door.
+
+## D123 — FSIZ: the recorded target size; game windows opt their rect out of Aa (2026-07-18)
+
+Two follow-ups on D122 from the human's feel-check.
+
+**The game window still grew (blank well) on an Aa change.** D122 pinned
+the blit multiple but the window rect rides the uniform canvas
+projection, so the well grew around a constant image. The projection
+cannot special-case one window (wm hit-tests in world space), so the
+shell now compensates the DOC rect instead: when the applied Aa scale
+changes, every game window's image area (rect minus the pads — those
+keep chrome-scaled borders) rescales by old/new, keeping the screen
+footprint and the crisp blit constant. This edits canon window fields
+on an Aa click — deliberate: it is a user action, undo/session treat it
+like any resize, and a session opened under a different machine scale
+simply shows the rect that machine's click left (the D074 concern does
+not apply — nothing rescales at boot, only on a live change).
+
+**Ctrl+edge resizing a 3D demo squashed instead of adapting FOV — and
+the fix needed a new recorded input.** The demos froze `W, H =
+pal.gfx_size()` at boot (correctly: live size in sim breaks replay), so
+a live FOV change stretched their fixed-aspect projection over the new
+target; the pick-ray unprojection squashed consistently with it, so a
+render-only aspect fix would have broken click-to-move. The live target
+size is now first-class recorded input: **extension tag 3 = FSIZ**
+(i16 w, i16 h, the D116 MREL model) — `input.game_size()` latches the
+domain on first read and every later record carries the frame's
+`pal.gfx_size()`; unlike MREL it is a LATCH, not a delta (a bare record
+keeps the last size). Until any sized record applies — and in every
+pre-FSIZ trace — it returns the project's **design resolution**, which
+IS the boot target, so record and replay agree by construction and
+every historical golden stands. The applied size lives in the
+`cm.input` named buffer ([20]/[22]), so snapshots and rewind restore it
+like any input state. All six 3D demos now refresh `W, H =
+input.game_size()` at the top of step and draw: aspect adapts, HUD
+anchors track, pick rays stay consistent with what is on screen.
+`fsiz_reset` joins `mrel_reset` on the boot path. Pure Lua — no PAL
+change (the v21 bump was for capture; the record lives in `cm.input`).
+
+Proof: Linux selftest **24,480 → 24,489** (9 t_input_fsiz KATs:
+dormant/latch emission, apply authority over the live target, the
+bare-record LATCH semantics, design-res fallback + reset, malformed
+refusal); `nix run .#test` ALL GREEN — **every committed 3D trace and
+pixel golden byte-identical** (their replays carry no FSIZ, so
+game_size reads the design res = exactly the old boot-frozen values;
+their SNAP bundles carry the old code besides). Live proof on
+openworld `--edit`: FOV widened 320x240 → 426x240, `game_size` tracked
+it, the scene rendered undistorted at the wide aspect (capture on
+llm-feed, shot AT Aa 1.5 with the compensated rect still blitting
+exactly 2x — AA_PRE w=866 → AA_POST w=582, grect.s=2.0).
+`scripting.md` (the 3D umbrella + the compatibility bullet) and
+`ARCHITECTURE.md` (the record-extension list) document it. Deferred,
+named honestly: no committed trace exercises a MID-trace FOV change yet
+(the first real 3D resize-while-recording session should be exported
+and committed as that golden); the 2D demos keep their render-side
+`pal.gfx_size()` HUD reads (nothing sim-side depends on it there).

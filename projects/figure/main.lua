@@ -16,6 +16,7 @@ local gb = cm.require("cm.gb")
 local fig = cm.require("cm.fig")
 local chars = cm.require("chars")
 
+local input = cm.require("cm.input")
 local W, H = pal.gfx_size()
 local FOVY, ZN, ZF = 52, 0.3, 120
 
@@ -117,6 +118,7 @@ function game.init()
 end
 
 function game.step()
+  W, H = input.game_size()
   -- nothing: the whole showcase is a pure function of the frame counter
 end
 
@@ -127,6 +129,7 @@ local function ring_root(a, r)
 end
 
 function game.draw()
+  W, H = input.game_size()
   pal.begin_frame(0, 0, 0, 1)
 
   local d = state.doc

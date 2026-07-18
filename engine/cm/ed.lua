@@ -1455,7 +1455,25 @@ function M.frame()
   if not ig then return end
   local view = cm.require("cm.view")
   view.resolve_accessibility(ig.dpi, ig.w, ig.h)
-  cam.set_display_scale(view.cfg.editor_scale)
+  -- the Aa canvas scale is CHROME sizing: game windows compensate their
+  -- doc rect (image area only — the pads keep chrome-scaled borders) so
+  -- their screen footprint and pixel-perfect blit stay constant across a
+  -- text-size change instead of growing a blank well (D123, the human's
+  -- report on D122)
+  local ds = view.cfg.editor_scale
+  if M.g._aa_ds and M.g._aa_ds ~= ds and M.doc then
+    local f = M.g._aa_ds / ds
+    local gk = M.kinds.game
+    for _, w in ipairs(M.doc.wins) do
+      if w.kind == "game" then
+        w.w = (w.w - gk.PAD_W) * f + gk.PAD_W
+        w.h = (w.h - gk.PAD_H) * f + gk.PAD_H
+        M.touch()
+      end
+    end
+  end
+  M.g._aa_ds = ds
+  cam.set_display_scale(ds)
   -- global-eyedropper plumbing: a LIVE session arms the capture mirror
   -- at window size while picking, frees it after (a --win capture
   -- session already presents into the capture target — leave it be)

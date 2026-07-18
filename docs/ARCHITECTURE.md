@@ -326,7 +326,14 @@ filters what the game may sample — see UI below); keys fold into **actions**
 via the rebindable action map (project + user bindings), and gamepads map
 device→slot 1..4 in `cm.input` (first-connected takes the lowest free slot)
 before entering the recorded PAD extension (D082/D083). The sim reads
-actions and slot-addressed pad state only.
+actions and slot-addressed pad state only. The record grows additively by
+tagged extension: tag 1 PAD (D082), tag 2 MREL relative-mouse deltas
+(D116), tag 3 FSIZ — the frame's live game-target size (D123; the editor's
+game window resizes the FOV live). Sim code reads `cm.input.game_size()`
+(recorded; the project's design resolution until any sized record applies,
+which is also what every pre-FSIZ trace replays as), never
+`pal.gfx_size()` — the 3D demos use it for projection aspect and pick-ray
+unprojection.
 
 ## Engine UI (cm.ui — M2)
 

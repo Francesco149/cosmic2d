@@ -314,6 +314,7 @@ local function build_ctl()
 end
 
 function game.step()
+  W, H = input.game_size()
   player.step(build_ctl(), npc.boxes()) -- NPCs are solid (pre-step boxes)
   npc.step() -- after the player: the exchange reads this step's position
   stars.step() -- likewise: pickup tests run on this step's position
@@ -336,6 +337,7 @@ function game.step()
 end
 
 function game.draw()
+  W, H = input.game_size()
   pal.begin_frame(0, 0, 0, 1)
 
   -- openworld light on cm.gb every frame (reload-proof): the mascot and

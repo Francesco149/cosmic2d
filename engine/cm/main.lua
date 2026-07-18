@@ -422,6 +422,8 @@ function M.boot()
   -- same fresh-session rule for the relative-mouse domain (v21): release
   -- any OS capture and drop the MREL latch before the project's first frame
   M.input.mrel_reset()
+  -- and for the target-size domain (D123): drop the latch + applied size
+  M.input.fsiz_reset()
   M.ui = cm.require("cm.ui")
   M.repl = cm.require("cm.repl")
   M.console = cm.require("cm.console")

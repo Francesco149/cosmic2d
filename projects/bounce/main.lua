@@ -325,6 +325,7 @@ local function build_ctl()
 end
 
 function game.step()
+  W, H = input.game_size()
   player.step(build_ctl())
   pickups.step()
   -- the orbit-follow rig (cm.rig, D3D-028): orbit/focus state in bounce.cam
@@ -343,6 +344,7 @@ function game.step()
 end
 
 function game.draw()
+  W, H = input.game_size()
   pal.begin_frame(0, 0, 0, 1)
 
   -- the N64 presentation: 5551+Bayer grade baked into the internal target

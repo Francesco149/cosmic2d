@@ -273,6 +273,7 @@ local function build_ctl()
 end
 
 function game.step()
+  W, H = input.game_size()
   player.step(build_ctl(), ents.boxes())
   ents.step() -- after the player: greets read this step's position
   -- the orbit-follow rig (cm.rig, D3D-028): orbit/focus state in bw.cam
@@ -290,6 +291,7 @@ function game.step()
 end
 
 function game.draw()
+  W, H = input.game_size()
   pal.begin_frame(0, 0, 0, 1)
 
   gb.sun, gb.ambient = world.sun, world.ambient
