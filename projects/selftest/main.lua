@@ -10784,13 +10784,24 @@ local function t_ed_domain()
         "ed domain: ed.* names excluded")
   check(state.sim_buffer("edit.thing") and state.sim_buffer("ed"),
         "ed domain: only the exact ed. prefix excludes")
+  -- the render-class domain (D3D-012, merged with the 3d fork): rc.* holds
+  -- PAL resource ids + draw scratch — session-dependent bytes that must
+  -- never enter a snapshot, trace or golden
+  check(not state.sim_buffer("rc.mesh") and not state.sim_buffer("rc."),
+        "rc domain: rc.* names excluded")
+  check(state.sim_buffer("rcx.thing") and state.sim_buffer("rc"),
+        "rc domain: only the exact rc. prefix excludes")
 
   local v = pal.buf("ed.selftest", 16)
   v:u32(0, 0xdeadbeef)
+  local rcv = pal.buf("rc.selftest", 16)
+  rcv:u32(0, 0xfeedface)
   local snap = state.parse_snapshot(state.snapshot())
   for _, b in ipairs(snap.bufs) do
     check(b.name ~= "ed.selftest", "ed domain: snapshot excludes ed.*")
+    check(b.name ~= "rc.selftest", "rc domain: snapshot excludes rc.*")
   end
+  pal.buf_free("rc.selftest")
   -- restore of a snapshot without the ed buffer must not free it
   state.restore_tables((function()
     local m = {}
@@ -11130,6 +11141,284 @@ local function t_help_sel()
         "help.escape: nothing selected, nothing consumed")
 end
 
+-- ---- the 3D fork modules (merged 2026-07-18): KATs to the same bar as
+-- the 2d slices. cm.m4 / cm.kin / cm.walk / cm.rig are pure math (rig
+-- reads record-backed input, neutral in this cartridge); the render-class
+-- emitters (cm.gb/terr/spr/atlas/fig/mascot) stay pinned by the committed
+-- pixel/trace goldens, the cm.gfx precedent. ----
+
+local function near(a, b, eps) return m.abs(a - b) <= (eps or 1e-9) end
+
+local function t_m4()
+  local m4 = cm.require("cm.m4")
+  local function pt(what, gx, gy, gz, x, y, z, eps)
+    check(near(gx, x, eps) and near(gy, y, eps) and near(gz, z, eps), what)
+  end
+  pt("m4.ident is identity", 3, -2, 7, m4.apply(m4.ident(), 3, -2, 7))
+  pt("m4.translate moves a point", 4, 7, 10,
+     m4.apply(m4.translate(1, 2, 3), 3, 5, 7))
+  pt("m4.applydir ignores translation", 3, 5, 7,
+     m4.applydir(m4.translate(1, 2, 3), 3, 5, 7))
+  pt("m4.scale scales a point", 6, -10, 21,
+     m4.apply(m4.scale(2, -2, 3), 3, 5, 7))
+  -- rotation conventions (the r3d.c port): quarter turns map axes
+  -- (capture first: a mid-arglist multi-return truncates to one value)
+  local rx, ry, rz = m4.apply(m4.rotx(m.pi / 2), 0, 1, 0)
+  pt("m4.rotx maps +y to +z", 0, 0, 1, rx, ry, rz, 1e-9)
+  rx, ry, rz = m4.apply(m4.roty(m.pi / 2), 0, 0, 1)
+  pt("m4.roty maps +z toward +x", 1, 0, 0, rx, ry, rz, 1e-9)
+  rx, ry, rz = m4.apply(m4.rotz(m.pi / 2), 1, 0, 0)
+  pt("m4.rotz maps +x to +y", 0, 1, 0, rx, ry, rz, 1e-9)
+  -- mul composes right-to-left: mul(T,S) scales first, then translates
+  local T, S = m4.translate(1, 2, 3), m4.scale(2, 2, 2)
+  pt("m4.mul(T,S) applies S first", 3, 4, 5, m4.apply(m4.mul(T, S), 1, 1, 1))
+  pt("m4.mul(S,T) applies T first", 4, 6, 8, m4.apply(m4.mul(S, T), 1, 1, 1))
+  local I = m4.mul(m4.ident(), m4.rotz(0.3))
+  local J = m4.rotz(0.3)
+  for i = 1, 16 do check(I[i] == J[i], "m4.mul by ident is exact") end
+  -- lookat: eye on +z looking at the origin — eye maps to the view origin,
+  -- a point in front maps onto -z, right/up map to +x/+y
+  local V = m4.lookat(0, 0, 5, 0, 0, 0, 0, 1, 0)
+  pt("m4.lookat maps the eye to origin", 0, 0, 0, m4.apply(V, 0, 0, 5))
+  pt("m4.lookat looks down -z", 0, 0, -1, m4.apply(V, 0, 0, 4))
+  pt("m4.lookat right is +x", 1, 0, 0, m4.apply(V, 1, 0, 5))
+  pt("m4.lookat up is +y", 0, 1, 0, m4.apply(V, 0, 1, 5))
+  -- persp: the five live entries at fovy 90 (f = 1), aspect 2, zn 1, zf 101
+  local P = m4.persp(90, 2, 1, 101)
+  check(near(P[1], 0.5, 1e-6) and near(P[6], 1, 1e-6), "m4.persp focal terms")
+  check(near(P[11], -1.02, 1e-9) and P[12] == -1
+        and near(P[15], -2.02, 1e-9), "m4.persp depth terms")
+  local zero = { 2, 3, 4, 5, 7, 8, 9, 10, 13, 14, 16 }
+  for _, i in ipairs(zero) do check(P[i] == 0, "m4.persp zero entry " .. i) end
+end
+
+local function t_kin()
+  local K = cm.require("cm.kin")
+  check(K.approach(0, 10, 1) == 1 and K.approach(5, 0, 2) == 3
+        and K.approach(9.5, 10, 3) == 10 and K.approach(-2, -10, 1) == -3,
+        "kin.approach caps toward the target from both sides")
+  -- overlaps: strict on the sides, half-open feet-up on y
+  local b = { 0, 0, 0, 1, 1, 1 }
+  check(K.overlaps(b, 0.5, 0.5, 0.5, 0.3, 1), "kin.overlaps inside")
+  check(not K.overlaps(b, -0.5, 0.5, 0.5, 0.5, 1),
+        "kin.overlaps flush -x face is out (strict)")
+  check(not K.overlaps(b, 0.5, 1.0, 0.5, 0.3, 1),
+        "kin.overlaps feet at the top face are out (half-open)")
+  check(not K.overlaps(b, 0.5, -1.0, 0.5, 0.3, 1),
+        "kin.overlaps head flush under the floor is out")
+  -- the D029 fixed-apex curve, and the apex_t floor
+  local g, v0 = K.jump_curve(1, 60)
+  check(g == 2 and v0 == 2, "kin.jump_curve h=1 apex=60")
+  g, v0 = K.jump_curve(1, 0.25)
+  check(g == 7200 and v0 == 120, "kin.jump_curve clamps apex_t to 1")
+  -- run: accel toward the wish + turn, or brake
+  local vx, vz, yaw = K.run(0, 0, 0, 1, 0, 10, 60, 120, 1)
+  check(near(vx, 1, 1e-12) and vz == 0, "kin.run accelerates toward the wish")
+  check(near(yaw, m.pi / 2, 1e-4), "kin.run turns to the heading (turn=1)")
+  vx, vz, yaw = K.run(5, 0, 1.2, 0, 0, 10, 60, 120, 1)
+  check(near(vx, 3, 1e-12) and yaw == 1.2, "kin.run brakes, yaw untouched")
+  -- gravity: rise slope vs the heavier fall
+  check(near(K.gravity(2, 60, 2), 1, 1e-12), "kin.gravity rising")
+  check(near(K.gravity(-1, 60, 2), -3, 1e-12), "kin.gravity falling (mul)")
+  -- jump: grounded press fires; coyote fires; buffer holds; paddle hops
+  local vy, jb, co, gr, evt = K.jump(0, 0, true, true, 6, 5, 7, false)
+  check(vy == 7 and evt == "jump" and gr == false and jb == 0 and co == 0,
+        "kin.jump grounded press fires and consumes")
+  vy, jb, co, gr, evt = K.jump(0, 3, false, true, 6, 5, 7, false)
+  check(vy == 7 and evt == "jump", "kin.jump coyote fires airborne")
+  vy, jb, co, gr, evt = K.jump(0, 0, false, true, 6, 5, 7, false)
+  check(vy == nil and evt == nil and jb == 5 and gr == false,
+        "kin.jump airborne press only arms the buffer")
+  vy, jb, co, gr, evt = K.jump(jb, co, true, false, 6, 5, 7, false)
+  check(vy == 7 and evt == "jump", "kin.jump buffered press fires on landing")
+  vy, jb, co, gr, evt = K.jump(0, 0, false, true, 6, 5, 8, true, 0.5)
+  check(vy == 4 and evt == "paddle" and gr == false,
+        "kin.jump swim paddle hop, no ground leave")
+  -- slide: face from the pre-move side, EPS-tolerant, squeezed clamps
+  -- nothing, mantle raises instead
+  local box = { 2, 0, 2, 4, 2, 4 }
+  local n, v, cy = K.slide({ box }, true, 2.0, 0.5, 3.0, 1.5, 5, 0.3, 1)
+  check(n == 1.7 and v == 0 and cy == 0.5, "kin.slide clamps to the -x face")
+  n, v = K.slide({ box }, true, 4.0, 0.5, 3.0, 4.5, -5, 0.3, 1)
+  check(n == 4.3 and v == 0, "kin.slide clamps to the +x face (pre-move side)")
+  n, v = K.slide({ box }, true, 3.1, 0.5, 3.0, 3.0, 5, 0.3, 1)
+  check(n == 3.1 and v == 5, "kin.slide squeezed pre-move overlap clamps nothing")
+  n, v = K.slide({ box }, false, 3.0, 0.5, 2.0, 1.5, 5, 0.3, 1)
+  check(n == 1.7 and v == 0, "kin.slide z axis clamps too")
+  n, v = K.slide({ box }, true, 1.75, 0.5, 3.0, 1.7, 5, 0.3, 1)
+  check(n == 1.7 and v == 0, "kin.slide EPS: a flush player still reads outside")
+  n, v, cy = K.slide({ box }, true, 2.0, 0.5, 3.0, 1.5, 5, 0.3, 1,
+                     function(bb) return bb[5] end)
+  check(cy == 2 and v == 5 and n == 2.0,
+        "kin.slide mantle raises the feet and keeps the run")
+  -- mantle_top: the lift window and the fit probe
+  local step = { 2, 0, 2, 4, 0.5, 4 }
+  check(K.mantle_top(step, { step }, 3, 3, 0.2, 0.3, 1, 0.6) == 0.5,
+        "kin.mantle_top lifts within step_h when the body fits")
+  local lid = { 2, 0, 2, 4, 3, 4 }
+  check(K.mantle_top(step, { step, lid }, 3, 3, 0.2, 0.3, 1, 0.6) == nil,
+        "kin.mantle_top refuses when blocked at the new height")
+  check(K.mantle_top(step, { step }, 3, 3, 0.2, 0.3, 1, 0.2) == nil,
+        "kin.mantle_top refuses past step_h")
+  check(K.mantle_top(step, { step }, 3, 3, 1.0, 0.3, 1, 0.6) == nil,
+        "kin.mantle_top refuses a top at or below the feet")
+  -- ground_top: interior-footprint landing plane
+  local deck = { 0, 0, 0, 4, 1, 4 }
+  check(K.ground_top({ deck }, 0, 2, 1.0, 2, 0.3) == 1,
+        "kin.ground_top raises to a box top under the feet")
+  check(K.ground_top({ deck }, 0, 5, 1.0, 2, 0.3) == 0,
+        "kin.ground_top ignores a footprint outside the box")
+  check(K.ground_top({ deck }, 0, 2, 0.5, 2, 0.3) == 0,
+        "kin.ground_top ignores a top above the feet")
+  -- landing squash + lean
+  local amt, t = K.land_squash(-10, 1, 20, 8)
+  check(amt == 0.5 and t == 8, "kin.land_squash scales with fall speed")
+  check(K.land_squash(-1, 1, 20, 8) == nil,
+        "kin.land_squash ignores a soft touch")
+  check(near(K.lean(0, 5, 0.3, 5), 0.06, 1e-12),
+        "kin.lean eases toward the scaled target")
+end
+
+local function t_walk()
+  local W = cm.require("cm.walk")
+  local cx, cz = W.cell(8, -3.2, 9.7)
+  check(cx == 0 and cz == 7, "walk.cell clamps into the grid")
+  cx, cz = W.cell(8, 3.7, 0.2)
+  check(cx == 3 and cz == 0, "walk.cell floors world coords")
+  local blocked = {}
+  local function ok(x, z)
+    return x >= 0 and x < 8 and z >= 0 and z < 8 and not blocked[z * 8 + x]
+  end
+  cx, cz = W.snap(8, ok, 3, 3, 2)
+  check(cx == 3 and cz == 3, "walk.snap walkable cell is itself")
+  blocked[3 * 8 + 3] = true
+  cx, cz = W.snap(8, ok, 3, 3, 2)
+  check(ok(cx, cz) and m.max(m.abs(cx - 3), m.abs(cz - 3)) == 1,
+        "walk.snap finds the nearest ring")
+  check(W.snap(8, function() return false end, 3, 3, 2) == nil,
+        "walk.snap nil past r rings")
+  blocked = {}
+  local path = W.astar(8, ok, 0, 0, 3, 0)
+  check(#path == 3 and path[3] == 3, "walk.astar straight line")
+  path = W.astar(8, ok, 0, 0, 2, 2)
+  check(#path == 2 and path[2] == 2 * 8 + 2, "walk.astar diagonals count one")
+  check(#W.astar(8, ok, 4, 4, 4, 4) == 0, "walk.astar start==goal is empty")
+  blocked[0 * 8 + 1] = true -- wall at (1,0): no corner cutting past it
+  path = W.astar(8, ok, 0, 0, 2, 0)
+  check(path and #path == 4 and path[4] == 2,
+        "walk.astar routes around, no corner cut")
+  blocked = { [0 * 8 + 5] = true }
+  check(W.astar(8, ok, 0, 0, 5, 0) == nil,
+        "walk.astar unwalkable goal refuses")
+  blocked = {}
+  -- raycast: march + bisect over an analytic ground
+  local x, z = W.raycast(function() return 0 end, 0, 10, 0, 1, -1, 0)
+  check(near(x, 10, 1e-2) and z == 0, "walk.raycast flat ground hit")
+  x, z = W.raycast(function(gx) return gx end, 0, 1, 0, 1, 0, 0)
+  check(near(x, 1, 1e-2), "walk.raycast sloped ground hit")
+  check(W.raycast(function() return 0 end, 0, 10, 0, 0, 1, 0) == nil,
+        "walk.raycast miss is nil")
+  -- command + step over a real walker buffer (layout is the module's)
+  local buf = pal.buf("st.walk", 40 + 16 * 4)
+  buf:f32(0, 0.5); buf:f32(4, 0.5)
+  check(W.command(buf, 16, 8, ok, 3.7, 0.5, 2, 30) == true,
+        "walk.command paths to a walkable point")
+  check(buf:u32(16) == 3 and buf:u32(20) == 0 and buf:f32(32) == 30,
+        "walk.command stores the chain and arms the marker")
+  check(W.moving(buf), "walk.moving while the chain is live")
+  for _ = 1, 3 do W.step(buf, 8, 60, 1) end
+  check(near(buf:f32(0), 3.5, 1e-5) and near(buf:f32(4), 0.5, 1e-5),
+        "walk.step arrives at the goal cell center")
+  check(not W.moving(buf) and buf:u32(20) == 3,
+        "walk.step consumed the chain")
+  check(near(buf:f32(12), 3, 1e-5), "walk.step accumulates dist_phase")
+  check(near(buf:f32(8), m.pi / 2, 1e-4), "walk.step eases facing to travel")
+  check(buf:f32(32) == 27, "walk.step decays the marker ttl")
+  check(W.command(buf, 16, 8, function() return false end, 5, 5, 1, 30)
+        == false and buf:u32(16) == 3,
+        "walk.command refusal leaves the walker untouched")
+  pal.buf_free("st.walk")
+end
+
+local function t_rig()
+  local rig = cm.require("cm.rig")
+  local input = cm.require("cm.input")
+  check(near(rig.angdiff(m.pi / 2, 0), m.pi / 2, 1e-6)
+        and near(rig.angdiff(0, m.pi / 2), -m.pi / 2, 1e-6)
+        and near(rig.angdiff(m.tau + 0.1, 0), 0.1, 1e-6)
+        and near(rig.angdiff(-0.1, 0.1), -0.2, 1e-6),
+        "rig.angdiff shortest arc")
+  -- a fake f32 accessor (the injected-fake precedent): rig owns the layout,
+  -- the store is any :f32(off[,v]) object
+  local mem = {}
+  local cam = { f32 = function(_, off, val)
+    if val ~= nil then mem[off] = val else return mem[off] or 0 end
+  end }
+  local kc = rig.defaults()
+  input.map({ { "cam_l", input.key.left }, { "cam_r", input.key.right },
+              { "cam_u", input.key.up }, { "cam_d", input.key.down },
+              { "recenter", input.key.c } })
+  rig.reset(cam, kc, 10, 0, 0, 0)
+  check(near(cam:f32(0), m.pi, 1e-9) and cam:f32(8) == kc.dist
+        and cam:f32(12) == 10, "rig.reset seeds behind the facing")
+  -- still target: nothing moves (no input in this cartridge)
+  rig.step(cam, kc, 10, 0, 0, 0, 0, 0)
+  check(near(cam:f32(0), m.pi, 1e-6) and cam:f32(12) == 10,
+        "rig.step holds on a still target")
+  -- the focus chases by pos_lerp
+  rig.step(cam, kc, 20, 0, 0, 0, 0, 0)
+  check(near(cam:f32(12), 11, 1e-9), "rig.step focus chases the target")
+  -- yaw-follow eases behind a sideways run; the back cone holds instead
+  mem = {}
+  rig.step(cam, kc, 0, 0, 0, 5, 0, 0)
+  check(near(cam:f32(0), -m.pi / 2 * kc.yaw_follow * kc.yaw_lerp, 1e-6),
+        "rig.step yaw-follow circles a sideways run")
+  mem = {}
+  rig.step(cam, kc, 0, 0, 0, 0, 5, 0)
+  check(cam:f32(0) == 0, "rig.step back cone: into-camera run holds yaw")
+  mem = {}
+  rig.step(cam, kc, 0, 0, 0, 0, -5, 0)
+  check(cam:f32(0) == 0, "rig.step away-run heading is already behind")
+  -- a manual hold pauses yaw-follow and decays
+  mem = {}
+  cam:f32(24, 10)
+  rig.step(cam, kc, 0, 0, 0, 5, 0, 0)
+  check(cam:f32(0) == 0 and cam:f32(24) == 9,
+        "rig.step hold pauses yaw-follow and decrements")
+  -- recenter: eases to behind-the-facing, snaps + clears when close (seed
+  -- yaw at 1 so the arc to pi is unambiguous — from 0 the sign of
+  -- angdiff(pi, 0) hangs on sin(pi) rounding)
+  mem = {}
+  cam:f32(0, 1); cam:f32(36, 1)
+  rig.step(cam, kc, 0, 0, 0, 0, 0, 0)
+  check(near(cam:f32(0), 1 + (m.pi - 1) * kc.recenter_lerp, 1e-6)
+        and cam:f32(36) == 1, "rig.step recenter eases toward tyaw+pi")
+  mem = {}
+  cam:f32(0, m.pi - 0.005); cam:f32(4, 0.005); cam:f32(36, 1)
+  rig.step(cam, kc, 0, 0, 0, 0, 0, 0)
+  check(near(cam:f32(0), m.pi, 1e-9) and cam:f32(4) == 0 and cam:f32(36) == 0,
+        "rig.step recenter snaps and clears when converged")
+  -- wish: camera-relative unit vector from orbit yaw
+  mem = {}
+  local wx, wz = rig.wish(cam, 1, 0)
+  check(near(wx, 0, 1e-6) and near(wz, -1, 1e-6), "rig.wish forward at yaw 0")
+  wx, wz = rig.wish(cam, 0, 1)
+  check(near(wx, 1, 1e-6) and near(wz, 0, 1e-6), "rig.wish right at yaw 0")
+  wx, wz = rig.wish(cam, 1, 1)
+  check(near(wx * wx + wz * wz, 1, 1e-6), "rig.wish diagonal is unit")
+  wx, wz = rig.wish(cam, 0, 0)
+  check(wx == 0 and wz == 0, "rig.wish zero input is zero")
+  -- view: at pitch 0 / knob dist the eye hangs behind at the knob height,
+  -- and the matrix maps its own eye to the view origin
+  mem = {}
+  cam:f32(8, kc.dist)
+  local V = rig.view(cam, kc)
+  local ex, ey, ez = 0, kc.height, kc.dist
+  local vx2, vy2, vz2 = cm.require("cm.m4").apply(V, ex, ey, ez)
+  check(near(vx2, 0, 1e-3) and near(vy2, 0, 1e-3) and near(vz2, 0, 1e-3),
+        "rig.view maps the derived eye to the origin")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -11225,6 +11514,10 @@ function game.init()
   t_ed_domain()
   t_docs()
   t_help_sel()
+  t_m4()
+  t_kin()
+  t_walk()
+  t_rig()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
