@@ -121,7 +121,43 @@ local focus_drawn = false -- did the focused widget draw this frame?
 
 -- ---- drawing helpers ----
 
+-- The drawlist sink (D131). The composite order is game → ui canvas →
+-- imgui, so while the editor shell is on, anything cm.ui draws to the ui
+-- canvas lands UNDER the editor's windows. An overlay that must render
+-- ABOVE the editor (the options menu) brackets its drawing with
+-- sink_begin(s)/sink_end(): rect/text/clip route to the imgui FOREGROUND
+-- drawlist at window-px scale s. Drawing only — hit tests, nav, and
+-- layout stay in ui-canvas coords, which map to window px by exactly s
+-- (the composite blits the ui canvas from 0,0 at ui_scale). Only bracket
+-- when an ig host is live (the editor implies one); never in the sim.
+M.sink = nil
+
+local function sink_rgba(c)
+  local function b(v)
+    v = math.floor((v or 0) * 255 + 0.5)
+    if v < 0 then v = 0 elseif v > 255 then v = 255 end
+    return v
+  end
+  return b(c[1]) << 24 | b(c[2]) << 16 | b(c[3]) << 8
+         | b(c[4] == nil and 1 or c[4])
+end
+
+function M.sink_begin(s)
+  M.sink = { s = s }
+  pal.x_ig_overlay(true)
+end
+
+function M.sink_end()
+  M.sink = nil
+  pal.x_ig_overlay(false)
+end
+
 function M.rect(x, y, w, h, c)
+  local k = M.sink
+  if k then
+    pal.x_ig_rect_fill(x * k.s, y * k.s, w * k.s, h * k.s, sink_rgba(c))
+    return
+  end
   pal.quad(x, y, w, h, c[1], c[2], c[3], c[4])
 end
 
@@ -133,6 +169,11 @@ function M.frame_rect(x, y, w, h, c) -- 1px outline
 end
 
 function M.text(x, y, s, c, font)
+  local k = M.sink
+  if k then
+    pal.x_ig_text(x * k.s, y * k.s, M.style.gh * k.s, sink_rgba(c), s, 0)
+    return
+  end
   text.draw(x, y, s, { font = font or M.style.font,
                        r = c[1], g = c[2], b = c[3], a = c[4] })
 end
@@ -576,11 +617,20 @@ local function push_clip(x, y, w, h)
   end
   local nc = { x = x, y = y, w = w, h = h }
   clip_stack[#clip_stack + 1] = nc
+  local k = M.sink
+  if k then -- nc is already the intersection, so a plain push is exact
+    pal.x_ig_clip_push(nc.x * k.s, nc.y * k.s, nc.w * k.s, nc.h * k.s)
+    return
+  end
   pal.clip(nc.x, nc.y, nc.w, nc.h)
 end
 
 local function pop_clip()
   clip_stack[#clip_stack] = nil
+  if M.sink then
+    pal.x_ig_clip_pop()
+    return
+  end
   local c = clip_stack[#clip_stack]
   if c then pal.clip(c.x, c.y, c.w, c.h) else pal.clip() end
 end

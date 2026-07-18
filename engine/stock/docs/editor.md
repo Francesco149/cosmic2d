@@ -121,7 +121,11 @@ all release it, and it re-engages when you click back in.
 
 ## Keys that matter
 
-- **Ctrl+Space** — the launcher (find/open anything, pan to a window).
+- **Ctrl+Space** — the launcher (find/open anything, pan to a window). Its
+  **player options** entry opens the Esc menu right in the editor — test
+  volumes, rebinds, and the accessibility toggles exactly as players will
+  see them (the pad back/select button opens it too). While it's open the
+  editor pauses its own shortcuts; Esc walks back out of the menu.
 - **F4** — open/close rewind (an active A/B clip requires Esc first).
 - **Right-click** — spawn menu (over an editing sprite/tilemap canvas the
   right button paints/erases instead — spawn from elsewhere or the launcher).

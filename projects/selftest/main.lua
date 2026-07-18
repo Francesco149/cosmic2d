@@ -10983,6 +10983,25 @@ local function t_ed_domain()
   check(not switched and ed.on and switch_err:find("cancel", 1, true),
         "ed lifecycle: active export guards return to picker")
   ed.g.project_exports.lifecycle.job.terminal = true
+
+  -- the launcher's player-options command (D131): the entry is listed and
+  -- activating it opens the Esc menu — the editor's keyboard door to the
+  -- player options surface (the yield while it is open is tape-proven)
+  local L = cm.require("cm.ed.launcher")
+  local options = cm.require("cm.options")
+  local cmd
+  for _, e in ipairs(L.entries(ed)) do
+    if e.cat == "cmd" and e.cmd == "options" then cmd = e end
+  end
+  check(cmd ~= nil, "launcher: the player-options command is listed")
+  local opt_was = options.on
+  options.on = false
+  L.activate(ed, cmd)
+  check(options.on == true and options.page == "main",
+        "launcher: activating the command opens the Esc menu")
+  options.toggle(false)
+  options.on = opt_was
+
   ed.kinds.project.drop_ephemeral(ed)
   ed.on, ed.doc, ed.root = was_on, was_doc, was_root
   view.mode = was_mode

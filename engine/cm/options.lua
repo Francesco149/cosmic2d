@@ -578,11 +578,19 @@ function M.frame()
   end               -- must BIND, not navigate
 
   if M.arm then do_capture() end
+  -- over the editor shell the ui canvas composites UNDER the imgui layer,
+  -- so the menu routes its drawing to the imgui foreground drawlist at the
+  -- ui-canvas scale (cm.ui's sink, D131) — same layout, same hit tests,
+  -- rendered above the editor's windows. Player mode draws as ever.
+  local med = cm.main and cm.main.ed
+  local over_ed = med ~= nil and med.on == true
+  if over_ed then ui.sink_begin(math.max(1, view.cfg.ui_scale)) end
   if M.page == "controls" then
     controls_page()
   else
     main_page()
   end
+  if over_ed then ui.sink_end() end
 end
 
 return M

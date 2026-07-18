@@ -6529,3 +6529,56 @@ a staged 95% budget with the red fill past the notch and the `!` label.
 **Revisit triggers.** A pattern-fill or shape change on the meter if a
 report says the notch is too subtle; the same non-color audit for any new
 chrome that gains a threshold color.
+
+## D131 — the Esc menu opens in the editor: launcher door, editor yield, the cm.ui drawlist sink (2026-07-19)
+
+**Context.** The human's ask: devs should be able to test the player
+options surface (volumes, rebinds, D129's accessibility toggles) from the
+editor. Investigation found a latent half-state: D128's pad back/select
+door already opened the menu inside `--edit` — but invisibly (the menu
+draws with cm.ui on the ui canvas, and the composite order is game → ui
+canvas → **imgui last**, so the editor's windows covered it) and
+un-yielded (the editor kept handling the same clicks and hotkeys, and
+`consume_legacy_keys` ate the Esc the menu's close grammar needed).
+
+**Decision.** Three small pieces, no PAL change:
+
+1. **The keyboard door:** the Ctrl+Space launcher gains its first `cmd`
+   entry — "player options (esc menu)" — activation calls
+   `options.toggle(true)`. The pad back/select door is now supported
+   rather than latent. Esc deliberately does NOT open it in the editor:
+   editor Esc stays the release/get-out (D126), and the menu's own
+   grammar still closes one step at a time once open.
+2. **The editor yields:** while `options.on`, `ed.interact` returns
+   before hotkeys/legacy-strip/canvas interaction (the rewind
+   `owns_pointer` precedent), gates imgui's mouse off, and keeps
+   `g.ig_kb`/`g.last_ig`/animation fresh. The menu's existing
+   `capture_keys/pads/mouse` already hold input from the game beneath.
+3. **The cm.ui drawlist sink:** `ui.sink_begin(s)`/`sink_end()` route
+   cm.ui's entire draw surface — `rect`, `text`, and the clip stack, all
+   of it — to the imgui FOREGROUND drawlist (`pal.x_ig_overlay(true)`)
+   at window-px scale `s`. Drawing only: layout, hit tests, and nav stay
+   in ui-canvas coords, which map to window px by exactly `s` (the
+   composite blits the ui canvas from 0,0 at ui_scale — the sink scale
+   IS that scale). `options.frame` brackets its pages with the sink only
+   when the editor shell is on; player mode draws the bitmap-font quad
+   path byte-identically (the uigallery pixel golden pins it). Text
+   renders in the native font at `gh × s` px — a deliberate visual
+   difference from player mode, named here: function over pixel parity.
+
+**Proof.** Linux selftest **24,632** (2 new: the launcher lists the
+command; activating it opens the menu — via the new `launcher.entries`/
+`launcher.activate` seams); `nix run .#test` ALL GREEN, every golden
+byte-identical (the sink never engages outside the editor). A scripted
+tape on `smoke --edit` proved the full lifecycle headless: launcher →
+"options" → Enter opens the menu OVER the editor (shot: panel, sliders,
+accessibility checkboxes, nav ring — rendered above the code windows);
+Ctrl+Space while open does NOT open the launcher (yield); a click beneath
+the menu moves no editor focus (yield); Esc closes via the menu grammar;
+Ctrl+Space then opens the launcher again (resume); pad back opens / east
+closes. The player-mode swarm menu re-shot pixel-matching D129's capture.
+
+**Revisit triggers.** A second cm.ui overlay needing the sink (perf?
+legacy scrub?) votes moving the bracket into a shared overlay helper; a
+complaint about native-font metrics in the sunk menu votes a mono font or
+measured layout; more launcher commands vote a real command category.

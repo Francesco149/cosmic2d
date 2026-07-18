@@ -51,6 +51,12 @@ local function all_entries(ed)
     out[#out + 1] = { cat = "spawn", key = "s:" .. it[1],
                       label = it[2] .. " window", tag = "new", name = it[1] }
   end
+  -- the player options menu (D131): the editor's keyboard door to the Esc
+  -- menu, so devs test what players see (volumes, rebinds, accessibility)
+  -- without leaving the editor. The pad back/select door works here too.
+  out[#out + 1] = { cat = "cmd", key = "c:options",
+                    label = "player options (esc menu)", tag = "open",
+                    cmd = "options" }
   for _, d in ipairs(DOCS) do
     out[#out + 1] = { cat = "doc", key = "d:" .. d, label = d, tag = "doc",
                       doc = d }
@@ -98,7 +104,9 @@ end
 local function activate(ed, e, ig)
   M.close(ed)
   local raw_ig = ed.g.last_ig or ig
-  if e.cat == "win" then ed.pan_to_window(e.win, raw_ig)
+  if e.cat == "cmd" then -- launcher commands (D131: just the options menu)
+    if e.cmd == "options" then cm.require("cm.options").toggle(true) end
+  elseif e.cat == "win" then ed.pan_to_window(e.win, raw_ig)
   elseif e.cat == "spawn" then ed.spawn_kind(e.name, raw_ig)
   elseif e.cat == "doc" then ed.open_doc(e.doc)
   elseif e.cat == "docsec" then -- the reader revealed at the hit's section
@@ -111,6 +119,10 @@ local function activate(ed, e, ig)
                          c.y + (raw_ig.h / z) * 0.18)
   end
 end
+
+-- selftest seams: the entry list and activation, KAT-able without imgui
+M.entries = all_entries
+M.activate = activate
 
 -- ---- the preview (cached on l.pv, recomputed when the highlight moves) ----
 local function build_preview(ed, e)

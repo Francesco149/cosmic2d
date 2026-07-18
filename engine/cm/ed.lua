@@ -757,6 +757,19 @@ local function interact(ig)
   local i = cm.require("cm.ui").inp
   local doc, g = M.doc, M.g
   track_mods(i.keys)
+  -- the player options menu over the editor (D131): while it is open the
+  -- editor yields the tick — no hotkeys, no canvas/window interaction, and
+  -- no legacy strip (the menu's one-step-back grammar needs the Esc that
+  -- consume_legacy_keys would eat; its own capture_* calls already keep
+  -- input from the game). Doors in: the launcher's "player options" entry
+  -- and the pad back/select button (the player-mode grammar, unchanged).
+  if cm.require("cm.options").on then
+    pal.x_ig_mouse(false) -- canvas widgets never fight the menu
+    step_anim()
+    g.ig_kb = ig.kb
+    g.last_ig = ig
+    return
+  end
   hotkeys(ig, i)
   consume_legacy_keys(i.keys)
   local rw_owns = cm.require("cm.ed.rewind").owns_pointer(M, i)

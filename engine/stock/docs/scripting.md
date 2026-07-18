@@ -811,6 +811,11 @@ apply them via `on_change`. A setting that changes gameplay belongs in
 `options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
 are the scripted doors to the same knobs.
 
+The menu is also reachable inside the editor — the Ctrl+Space launcher's
+**player options** entry (or the pad back/select button) — so you can test
+your declared options and the accessibility toggles without leaving your
+session.
+
 ### Reduced effects (accessibility)
 
 The menu's "reduce screen shake" and "reduce flashes" toggles are honored
