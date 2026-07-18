@@ -11029,6 +11029,107 @@ local function t_docs()
         "docs.search: an absent token finds nothing in the shipped docs")
 end
 
+-- the help reader's drag-selection row model (D112): pure pick/x/extract math
+-- over recorded text runs, with an injected measure (fake monospace here; the
+-- reader passes pal.x_ig_text_size) — the text.fr_matches precedent
+local function t_help_sel()
+  local help = cm.require("cm.ed.win.help")
+  local function meas(s, px, font) return #s * 6 end
+  -- a synthetic rendered doc: a wrapped prose line, prose after a blank, a
+  -- code block with an interior blank line, a utf8 run, adjacent runs
+  local rows = {
+    { y = 0,  h = 12, ln = 1,  runs = {
+        { x = 0,  w = 30, s = "Hello", font = 0, px = 8 },
+        { x = 36, w = 30, s = "world", font = 0, px = 8 } } },
+    { y = 12, h = 12, ln = 1,  runs = {                -- ln 1 wrapped on
+        { x = 0, w = 42, s = "wrapped", font = 0, px = 8 } } },
+    { y = 24, h = 12, ln = 3,  runs = {                -- blank line crossed
+        { x = 0, w = 24, s = "next", font = 0, px = 8 } } },
+    { y = 36, h = 12, ln = 6,  runs = {                -- a bigger gap
+        { x = 0, w = 30, s = "later", font = 0, px = 8 } } },
+    { y = 48, h = 12, ln = 10, runs = {                -- a code block…
+        { x = 4, w = 18, s = "a=1", font = 1, px = 8 } } },
+    { y = 60, h = 12, ln = 11, runs = {} },            -- …with a blank line
+    { y = 72, h = 12, ln = 12, runs = {
+        { x = 4, w = 18, s = "b=2", font = 1, px = 8 } } },
+    { y = 84, h = 12, ln = 20, runs = {                -- ◀ is 3 bytes
+        { x = 0, w = 30, s = "a\226\151\128b", font = 0, px = 8 } } },
+    { y = 96, h = 12, ln = 30, runs = {                -- touching runs
+        { x = 0,  w = 18, s = "foo", font = 0, px = 8 },
+        { x = 18, w = 18, s = "bar", font = 0, px = 8 } } },
+  }
+  help.rows_finalize(rows)
+
+  -- the joined text: a gap becomes one space, touching runs none, empty rows ""
+  check(rows[1].text == "Hello world" and rows[1].runs[2].j0 == 6,
+        "help.sel: gap joins as one space; j0 counts it")
+  check(rows[9].text == "foobar" and rows[9].runs[2].j0 == 3,
+        "help.sel: touching runs join with no space")
+  check(rows[6].text == "", "help.sel: a blank code line is an empty row")
+
+  -- row_pick: x -> byte offset, snapped to the nearest glyph boundary
+  check(help.row_pick(rows[1], -5, meas) == 0,
+        "help.row_pick: left of the row is offset 0")
+  check(help.row_pick(rows[1], 2, meas) == 0
+        and help.row_pick(rows[1], 4, meas) == 1,
+        "help.row_pick: the glyph midpoint splits the pick")
+  check(help.row_pick(rows[1], 33, meas) == 6,
+        "help.row_pick: a click in the word gap lands the boundary")
+  check(help.row_pick(rows[1], 999, meas) == 11,
+        "help.row_pick: past the end is the row end")
+  check(help.row_pick(rows[8], 10, meas) == 1
+        and help.row_pick(rows[8], 20, meas) == 4,
+        "help.row_pick: utf8 picks never split a codepoint")
+
+  -- row_x: offset -> x (the inverse edge)
+  check(help.row_x(rows[1], 0, meas) == 0
+        and help.row_x(rows[1], 5, meas) == 30
+        and help.row_x(rows[1], 6, meas) == 36
+        and help.row_x(rows[1], 8, meas) == 48
+        and help.row_x(rows[1], 11, meas) == 66,
+        "help.row_x: run starts, interiors, the gap edge, the row end")
+
+  -- rows_pick: point -> {ri, ci}, clamped; the next row's y is the boundary
+  local p = help.rows_pick(rows, 0, -5, meas)
+  check(p.ri == 1 and p.ci == 0, "help.rows_pick: above clamps to the start")
+  p = help.rows_pick(rows, 2, 13, meas)
+  check(p.ri == 2 and p.ci == 0, "help.rows_pick: y lands by row band")
+  p = help.rows_pick(rows, 999, 9999, meas)
+  check(p.ri == 9 and p.ci == 6, "help.rows_pick: below clamps to the end")
+
+  -- sel_text: slices, wrap rejoin, newlines, paragraph gaps, normalization
+  check(help.sel_text(rows, { ri = 1, ci = 0 }, { ri = 1, ci = 5 }) == "Hello",
+        "help.sel_text: a same-row slice")
+  check(help.sel_text(rows, { ri = 1, ci = 6 }, { ri = 2, ci = 7 })
+        == "world wrapped",
+        "help.sel_text: a wrap rejoins with the space it consumed")
+  check(help.sel_text(rows, { ri = 2, ci = 0 }, { ri = 3, ci = 4 })
+        == "wrapped\n\nnext",
+        "help.sel_text: a crossed blank line is a paragraph break")
+  check(help.sel_text(rows, { ri = 3, ci = 0 }, { ri = 4, ci = 5 })
+        == "next\n\nlater",
+        "help.sel_text: any 2+ line jump is a paragraph break")
+  check(help.sel_text(rows, { ri = 5, ci = 0 }, { ri = 7, ci = 3 })
+        == "a=1\n\nb=2",
+        "help.sel_text: code rows keep their interior blank line")
+  check(help.sel_text(rows, { ri = 3, ci = 4 }, { ri = 2, ci = 0 })
+        == "wrapped\n\nnext",
+        "help.sel_text: reversed endpoints normalize")
+  check(help.sel_text(rows, { ri = 1, ci = 3 }, { ri = 1, ci = 3 }) == "",
+        "help.sel_text: an empty selection is empty text")
+
+  -- escape clears an active selection (and only then consumes the key);
+  -- selection state is module-local per win.id — NEVER on the captured
+  -- window, so it can't ride state.canon into session.dat
+  local w = { id = 990001 }
+  local st = help.sel_state(w)
+  st.a, st.b = { ri = 1, ci = 0 }, { ri = 1, ci = 2 }
+  check(help.escape(w) == true and st.a == nil,
+        "help.escape: clears the selection and consumes")
+  check(help.escape({ id = 990002 }) == false,
+        "help.escape: nothing selected, nothing consumed")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -11123,6 +11224,7 @@ function game.init()
   t_crash_tail()
   t_ed_domain()
   t_docs()
+  t_help_sel()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
