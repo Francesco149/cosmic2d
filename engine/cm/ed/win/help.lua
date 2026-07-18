@@ -16,6 +16,7 @@
 local M = select(2, ...) or {}
 local wm = cm.require("cm.ed.wm")
 local docs = cm.require("cm.docs")
+local lex = cm.require("cm.ed.lex")
 
 M.kind = "help"
 M.menu = "help"
@@ -30,6 +31,18 @@ local COL = {
   row = 0x232038ff, row_hot = 0x322d48ff, rule = 0x35305aff,
   field = 0x141220ff, hl = 0x35406a80,
 }
+
+-- syntax faces for code blocks — the code editor's exact palette (cm.ed.lex
+-- kinds), so a lua sample reads the same in the reader as in the editor. The
+-- base face covers identifiers/operators and whole "text" (shell) blocks.
+local CODE_FACE = {
+  base = 0xd8d2f2ff, kw = 0xc792eaff, str = 0x9fdc8fff,
+  num = 0xf2b46eff, com = 0x7a7498ff,
+}
+
+-- the copy-feedback dwell (ns): how long a chip / the header button reads
+-- "copied" after a click, on the wall clock (the editor redraws every frame)
+local COPIED_MS = 1200
 
 local STOCK = "engine/stock/docs"
 
@@ -78,6 +91,7 @@ local function navigate(win, path, nohist, opts)
   win.path = path
   win.scroll = 0
   win._src, win._srcpath = nil, nil
+  win._copied, win._copied_t, win._pagecopy_t = nil, nil, nil -- copy feedback
   -- an optional source line to reveal on arrival (a search hit or a #anchor);
   -- hl_line lights it until the next scroll/navigate
   win.goto_line = opts and opts.line or nil
@@ -229,7 +243,61 @@ local function read_doc(win, ed)
   return win._src
 end
 
--- render the markdown body; returns the content height (for scroll clamp)
+-- draw one dedented code line as colored lexer spans (mono font 1); the gaps
+-- between tokens take the base code face. `toks` are cm.ed.lex 1-based inclusive
+-- byte ranges; the caller threads the multi-line carry across a block.
+local function draw_code_line(x, y, px, s, toks)
+  if #s == 0 then return end
+  local function span(a, b, col)
+    if b < a then return end
+    pal.x_ig_text(x + pal.x_ig_text_size(s:sub(1, a - 1), px, 1), y, px, col,
+                  s:sub(a, b), 1)
+  end
+  local posb = 1
+  for _, t in ipairs(toks) do
+    if t.a > posb then span(posb, t.a - 1, CODE_FACE.base) end
+    span(t.a, t.b, CODE_FACE[t.k] or CODE_FACE.base)
+    posb = t.b + 1
+  end
+  if posb <= #s then span(posb, #s, CODE_FACE.base) end
+end
+
+-- flatten inline segments to their DISPLAYED text (drops `code`/**bold**/link
+-- markup, keeps the words) — the parse the reader already renders by
+local function flatten_inline(segs)
+  local t = {}
+  for _, seg in ipairs(segs) do t[#t + 1] = seg.s end
+  return table.concat(t)
+end
+
+-- the whole doc as plain, un-marked text for the clipboard (the header "copy
+-- page"): headings lose their #, bullets become "- ", inline markup flattens to
+-- shown text, code blocks dedent verbatim, ``` fence markers drop.
+local function page_text(src)
+  local kind, ls, n = docs.line_kinds(src)
+  local out = {}
+  for ln = 1, n do
+    local line = ls[ln]
+    local k = kind[ln]
+    if k == "fence" then                                    -- drop the ``` line
+    elseif k == "code" then
+      out[#out + 1] = (line:gsub("^    ", ""))
+    elseif line:match("^#+%s") then
+      out[#out + 1] = line:gsub("^#+%s*", "")
+    elseif line:match("^%s*[%-%*]%s") then
+      out[#out + 1] = "- " .. flatten_inline(parse_inline(
+        (line:gsub("^%s*[%-%*]%s+", ""))))
+    elseif line:match("^%s*$") then
+      out[#out + 1] = ""
+    else
+      out[#out + 1] = flatten_inline(parse_inline(line))
+    end
+  end
+  return table.concat(out, "\n")
+end
+
+-- render the markdown body; returns the content height (for scroll clamp) and
+-- the code blocks with their on-screen extents recorded (for the copy chips)
 local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
   local y = y0
   -- classify code vs prose once (pure, KAT-pinned) over the SAME line split
@@ -237,6 +305,15 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
   -- rendered row. "code" covers a whole fenced/indented block — every nested
   -- line and interior blank — not just the first line.
   local kind, ls, n = docs.line_kinds(src)
+  -- map every code line to its block (contiguous run); the lua lexer's carry
+  -- threads WITHIN a block (multi-line strings/comments) and resets between
+  -- blocks. blocks[bi]._y0/_y1 get the block's screen span for the copy chip.
+  local blocks = docs.code_blocks(src)
+  local block_of = {}
+  for bi, b in ipairs(blocks) do
+    for ln = b.lo, b.hi do block_of[ln] = bi end
+  end
+  local carry, cur_bi = "", nil
   for ln = 1, n do
     local line = ls[ln]
     if win.goto_line == ln then win._goto_y = y end
@@ -248,8 +325,19 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
     if k == "fence" then
       -- a ``` marker line: draw nothing, take no vertical space
     elseif k == "code" then
+      local bi = block_of[ln]
+      local b = blocks[bi]
+      if bi ~= cur_bi then carry, cur_bi, b._y0 = "", bi, y end
       pal.x_ig_rect_fill(x0, y - 1, maxw, px + 3, COL.code_bg, 0)
-      pal.x_ig_text(x0 + 4 * z, y, px, COL.code, (line:gsub("^    ", "")), 1)
+      local dline = line:gsub("^    ", "")
+      if b.lang == "lua" then
+        local toks
+        toks, carry = lex.line("lua", dline, carry)
+        draw_code_line(x0 + 4 * z, y, px, dline, toks)
+      else
+        pal.x_ig_text(x0 + 4 * z, y, px, CODE_FACE.base, dline, 1)
+      end
+      b._y1 = y + px + 2 * z
       y = y + px * 1.5
     else
       local h = line:match("^(#+)%s")
@@ -276,7 +364,40 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
       end
     end
   end
-  return y - y0
+  return y - y0, blocks
+end
+
+-- the hover "copy" chip over each code block (drawn inside the scroll clip, so
+-- it clips to the band; sticky to the band's top while a tall block scrolls).
+-- Copies the block's dedented source and flashes "copied".
+local function draw_copy_chips(win, blocks, x0, maxw, sy0, sh, px, z, i, ctx)
+  if not blocks then return end
+  local now = pal.time_ns()
+  local cpx = math.max(6, px * 0.82)
+  for bi, b in ipairs(blocks) do
+    if b._y0 and b._y1 and b._y1 > sy0 and b._y0 < sy0 + sh then
+      local copied = win._copied == bi and win._copied_t
+                     and (now - win._copied_t) < COPIED_MS * 1000000
+      local label = copied and "copied" or "copy"
+      local lw = pal.x_ig_text_size(label, cpx, 0)
+      local cw, ch = lw + 12 * z, cpx + 6 * z
+      local cx = x0 + maxw - cw - 4 * z
+      local cy = math.max(sy0 + 3 * z,
+                          math.min(b._y0 + 3 * z, b._y1 - ch - 3 * z,
+                                   sy0 + sh - ch - 3 * z))
+      local hot = ctx.hot and i.wx >= cx and i.wx < cx + cw
+                  and i.wy >= cy and i.wy < cy + ch
+                  and i.wy >= sy0 and i.wy < sy0 + sh
+      pal.x_ig_rect_fill(cx, cy, cw, ch, hot and COL.btn_hot or COL.btn, 3 * z)
+      pal.x_ig_text(cx + (cw - lw) * 0.5, cy + (ch - cpx) * 0.5, cpx,
+                    copied and COL.code or (hot and COL.hot or COL.dim),
+                    label, 0)
+      if hot and i.clicked[1] then
+        pal.x_clipboard(b.text)
+        win._copied, win._copied_t = bi, now
+      end
+    end
+  end
 end
 
 -- a header button; returns true when clicked
@@ -291,7 +412,11 @@ local function hbtn(x, y, w, h, label, on, i, ctx, z, px)
 end
 
 function M.wheel(win, ed, delta)
-  win.scroll = math.max(0, (win.scroll or 0) - delta * 40)
+  -- clamp against last frame's measured max (win._maxscroll) too, not just 0 —
+  -- else a wheel past the end draws one over-scrolled frame before draw's own
+  -- clamp snaps it back (the home-list "scroll past then flick back" flicker)
+  win.scroll = math.max(0, math.min((win.scroll or 0) - delta * 40,
+                                    win._maxscroll or math.huge))
   win.hl_line = nil -- scrolling dismisses the "landed here" marker
   return true
 end
@@ -329,12 +454,21 @@ function M.draw(win, ctx)
   -- title
   local title = win.path == "" and "documentation"
                 or (win.path:match("([^/]+)$") or ""):gsub("%.md$", "")
-  -- src button (right)
+  -- src + copy-page buttons (right); copy-page grabs the whole doc as plain text
   local srcw = px * 3
   if win.path ~= "" then
     if hbtn(ctx.cx + ctx.cw - pad - srcw, by, srcw, bh, "src", true,
             i, ctx, z, px) then
       ed.open_asset_window(win.path, win.x + win.w + 20, win.y)
+    end
+    local pcopied = win._pagecopy_t
+                    and (pal.time_ns() - win._pagecopy_t) < COPIED_MS * 1000000
+    local plbl = pcopied and "copied" or "copy page"
+    local pw = pal.x_ig_text_size("copy page", px, 0) + 14 * z
+    if hbtn(ctx.cx + ctx.cw - pad - srcw - 6 * z - pw, by, pw, bh, plbl, true,
+            i, ctx, z, px) then
+      pal.x_clipboard(page_text(read_doc(win, ed)))
+      win._pagecopy_t = pal.time_ns()
     end
   end
   pal.x_ig_text(bx, by + (bh - px) * 0.5, px, COL.hot, title, 0)
@@ -421,7 +555,9 @@ function M.draw(win, ctx)
   else
     local src = read_doc(win, ed)
     win._goto_y = nil
-    contenth = draw_doc(win, ed, src, x0, y, maxw, px, links, i, ctx, z)
+    local blocks
+    contenth, blocks = draw_doc(win, ed, src, x0, y, maxw, px, links, i, ctx, z)
+    draw_copy_chips(win, blocks, x0, maxw, sy0, sh, px, z, i, ctx)
   end
   pal.x_ig_clip_pop()
 
@@ -434,6 +570,7 @@ function M.draw(win, ctx)
                        COL.rule, 2 * z)
   end
   win.scroll = math.max(0, math.min(win.scroll, maxscroll))
+  win._maxscroll = maxscroll -- so M.wheel can clamp before it over-scrolls
 
   -- reveal a pending goto line (a search hit / #anchor): draw_doc measured its
   -- screen y this frame; scroll it near the top and adopt next frame
