@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is at its full exit and its crash-report gate item is now checked; the information layer (D100/D101), retention surface (D102), §14 blob-store foundation (D103), standalone clip (D104), drag-in consumer (D105), crash-report drop (D106), the untrusted-bundle trust prompt (D107), adopted-range standalone export (D108), and the embedded crash tail (D109) are in — the remaining A7 items are honestly-named refinement packets, so A8 is the open gate (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed (A7's every gate item is `[x]` or an honestly-named refinement); **A8 (documentation, accessibility, release candidate) is the open gate and now under way** — D110 lands the first A8 packet: in-engine documentation search, the `cm.docs` cross-doc index + a searchable help-reader home, the substrate A8's searchable-reference item needs (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -30,6 +30,53 @@ release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
 materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
+
+**D110 opens A8 with in-engine documentation search — the substrate A8's
+"searchable public API/task reference" item needs.** The shipped guides
+(`engine/stock/docs/*.md`) were rendered by the D061 help reader but not
+searchable: the reader had links + history but no find, and the launcher ranked
+only the three doc *filenames*. A term you knew ("shake", "deadzone",
+"cm.actor") had no path to the section covering it. **`cm.docs`** (new, pure) is
+the index + matcher: `sections(src)` parses the heading tree as numbered line
+ranges (fence-guarded — a `#` in a ``` sample is not a heading), `section_at`,
+`heading_slug` (both sides of a `#anchor`), and **`search(query, corpus?)`** — a
+literal-matched (pattern-safe), **doc-level-AND** ranked matcher returning
+`{name,title,section,line,snippet,score}`: full-section hits first, then heading
+terms, then co-occurring body-line terms, then specificity/tightness, ties by
+`(name,line)`. Only `list()` touches the filesystem (name-sorted, memoized,
+lazy) — editor/tool code, **never the sim** (no buffer/doc/snapshot/verify path
+calls it). The **help reader's** empty-path home gains a fixed **search field**
+over ranked result cards (doc · section · snippet); a click navigates to the doc
+and **reveals the hit** via a deferred one-frame scroll (`draw_doc` now iterates
+the *same* line split `cm.docs` numbers by — a shared `_lines` that terminates
+the last line but doesn't double-terminate a `\n`-ended source, the off-by-one
+that would mis-map every goto) with a landed-on highlight cleared on the next
+scroll; `follow()` resolves cross- and same-doc `#anchor`s via `heading_slug`.
+The query/goto/highlight fields ride the captured window (`win.q`/`goto_line`/
+`hl_line` — all `state.canon`-legal scalars; the rewind ring captures the *sim*
+doc, not the editor doc). Pure Lua chrome + a new pure module, **no
+sim/doc/recorded byte moved**: Linux selftest **24,208** / native Windows
+**24,210** on PAL API 19 (31 new KATs in `t_docs` — `sections` ranges +
+fence-guarded headings + lead handling; `section_at`; `heading_slug`; and
+`search`: heading hit ranks first and lands on the heading, body-only ranks
+below, multi-term AND drops a doc missing a token, scattered terms fall back to
+one best section, single-doc-term isolation, literal pattern-metachar queries,
+empty/whitespace/absent → none, plus a tolerant smoke over the *real* shipped
+docs), `nix run .#test` ALL GREEN with every historical trace and pixel/audio
+golden byte-identical. Two windowed `smoke --edit` captures inspected on
+llm-feed: the home searching `save` (22 ranked hits spanning `scripting.md` +
+the `win-*.md` editor guides, `cm.save`'s "Player saves" first) and a hit
+opening `scripting.md` scrolled to its section with the landed-on highlight.
+`getting-started.md` (stale "remaining alpha work" line fixed) and `editor.md`
+(a "Reading and searching the docs" section) document it.
+`tools/build-windows.sh` refreshed the stage (4 durable entries) and Start Menu
+shortcut. **Deferred, named honestly:** in-doc **Ctrl+F find** in the reader
+(the `text.lua` model; the shell already routes Ctrl+F to `kind_call("find")`,
+so `M.find` on the help kind is the drop-in) is the immediate follow-up;
+**launcher content-search** (reuse `cm.docs.search`), result-list **keyboard
+nav**, and **span-precise** highlight are logged; the reference **content**
+itself (every module, project schema, determinism rules, common failures,
+compatibility policy as indexed sections) is the next A8 packet.
 
 **D109 lands the embedded crash tail (A7 §16) — the last A7 gate checkbox.**
 D106 resolves a dropped crash against *local* history by identity, but a report from
@@ -306,26 +353,31 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **open A8 — documentation, accessibility, release
-candidate (ALPHA §A8).** With the embedded crash tail in (D109), **A7's exit story
-is complete and its every gate checkbox is `[x]` or an honestly-named refinement**:
-spot a moment, seek / A/B-loop / export it — **live or adopted cross-session** —
-drag a standalone replay into a fresh editor (confirming its code the first time),
-poke around its bundled project, dismiss back to the untouched live session, and
-reach the preceding minute from a crash report **from this machine or another**,
-all while understanding storage use. The remaining A7 items are genuinely
-deferred-past-alpha refinements — **captured-audio embedding** (the last §14 clip
-content), a **wall-clock clip filename** (needs a PAL date door), asset **imports**
-as a timeline marker, cross-process **native-failure next-launch synthesis**, and a
-**size budget** on the embedded tail — none of which gate the alpha promise. So the
-alpha's remaining weight is **A8**, whose first bounded packets are the in-engine
-**Getting Started** walkthrough (create → modify code/art/map/audio → play/debug/
-rewind → export, using only shipped UI) and the **searchable API/task reference**;
-the accessibility pass, fresh-user usability probes (need the human), clean-machine
-artifact matrix, and the version freeze follow. A machine-local sizing slice of A8
-already shipped (D074/D085). Pick an A8 packet, or cherry-pick a deferred A7
-refinement if a real use votes it up. See `ALPHA.md` §A8 (and §A7 for the deferred
-list), `REWIND.md` §14/§16.
+**Exact next packet:** **continue A8 (ALPHA §A8) — the searchable-reference item
+now has its search substrate (D110), so its two natural follow-ons are open.** A8's
+`[x]` machine-local sizing (D074/D085) and now the doc-search substrate (D110) are
+in; the gate's open items are the Getting Started walkthrough, the reference
+*content*, the accessibility pass, the fresh-user usability probes (need the human),
+the clean-machine artifact matrix, and the version freeze. **Two well-shaped next
+packets, either order:**
+1. **The searchable-reference content** — now that `cm.docs.search` indexes every
+   shipped doc, fill the reference it searches: promote the 20-line "Small module
+   reference" into per-module sections (every supported `cm.*`), and add the
+   **project schema**, **determinism rules** (cross-link `ARCHITECTURE.md`), **common
+   failures**, and the **compatibility policy** as first-class searchable sections
+   with `#anchor`s. Verify by searching each new topic in the reader (the D110 loop
+   makes "what I documented is findable" a real test). This closes A8's
+   searchable-reference checkbox.
+2. **The in-engine Getting Started walkthrough** — turn `getting-started.md` from an
+   orientation page into the guided **create → modify code/art/map/audio →
+   play/debug/rewind → export** path, driven and verified through the shipped UI
+   (also the spine of the later fresh-user pass).
+A cheap immediate follow-up is **in-doc Ctrl+F find** in the reader (the `text.lua`
+find model; the shell already routes Ctrl+F to `kind_call("find")`, so `M.find` on
+the help kind drops in). Deferred A7 refinements (captured-audio embedding, a
+wall-clock clip filename, asset-import markers, native-failure next-launch synthesis,
+an embedded-tail size budget) stay available if a real use votes one up. See
+`ALPHA.md` §A8, DECISIONS `D110`.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's

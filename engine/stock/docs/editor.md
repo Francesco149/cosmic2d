@@ -41,6 +41,23 @@ only if it overflows). The highlighted result shows a live **preview** — an
 image thumbnail, a map schematic, or a code/doc excerpt. **↑↓** move · **enter**
 opens · **esc** closes.
 
+## Reading and searching the docs
+
+This window is a rendered documentation reader. Spawn it from the right-click
+menu, or press the **?** on any window's title bar for that window's guide.
+
+Its home — the **docs** button in the header — is a **search field over every
+shipped doc**. Type a module (`cm.actor`), a task ("draw a map"), or any term,
+and it lists ranked hits across the whole documentation set, each naming the
+**doc**, the **section**, and a one-line snippet. Click a hit to open that doc
+scrolled to the section (the landed-on line lights briefly). An empty field
+just lists the docs to browse.
+
+Inside a doc, click a link to follow it in place (**ctrl+click** opens a new
+reader); a `#section` link jumps to that heading. The header **◀ ▶** — or the
+mouse back/forward buttons — walk your history, **docs** returns to search, and
+**src** opens the raw markdown in a code editor (which has its own Ctrl+F find).
+
 ## Text and UI size
 
 Click the **Aa** pill beside the canvas zoom percentage. **Canvas windows**

@@ -1,13 +1,15 @@
 # Getting started
 
 Welcome to **cosmic2d** — a tiny 2D pixel-art engine and fantasy console.
-Make and export a game with the built-in editor in this engine folder. The
-remaining alpha work broadens project lifecycle, input/settings, starter
-genres, rewind product UI, and release validation.
+Everything here — create a project, edit its code, art, maps, and audio, play
+and rewind it, and build a Linux or Windows player — happens in the built-in
+editor in this engine folder, using only the shipped UI.
 
-This is a rendered doc reader. Click a link to follow it in place
-(ctrl+click opens it in a new reader); the header arrows — or the mouse
-back/forward buttons — walk your history. `src` opens the raw markdown.
+This is a rendered doc reader. The **docs** button is a search field over every
+shipped guide — type a module (`cm.actor`) or a task and jump straight to the
+right section. Click a link to follow it in place (ctrl+click opens it in a new
+reader); the header arrows — or the mouse back/forward buttons — walk your
+history. `src` opens the raw markdown.
 
 ## Run something
 

@@ -5233,3 +5233,87 @@ mode (header "CRASH TAIL / sim.step", CRASH A/B pill, the red boundary wall,
 pre-roll looping A2..B44, `ed.root` mounted to the materialized replay-workspace,
 retention greyed, eject offered) — inspected on llm-feed. `tools/build-windows.sh`
 refreshed the stage (4 durable entries) and Start Menu shortcut.
+
+## D110 — in-engine documentation search: the `cm.docs` index (A8, 2026-07-18)
+
+**Context.** A8 wants a **searchable public API/task reference**. The shipped guides
+already exist as markdown under `engine/stock/docs/*.md`, rendered by the D061 help
+reader — but nothing could **search** them: the reader had history + links but no
+find, and the Ctrl+Space launcher ranked only the three top-level doc **filenames**
+by label, never a word of body text. So a term you knew ("shake", "deadzone",
+"cm.actor") had no path to the section that covered it. This packet builds the
+missing substrate; the reference **content** expansion (project schema, common
+failures, compatibility policy as indexed sections) is the next A8 packet, and it
+now lands into a searchable surface.
+
+**Decision — a pure search module, `cm.docs`.** A new engine module holds the index
+and matcher, KAT-pinned over synthetic corpora so ranking is testable without the
+filesystem:
+- `sections(src)` — the markdown heading tree as numbered line ranges (`lo..hi`); a
+  synthetic level-0 lead covers preamble and is dropped when the doc opens on a
+  heading (all shipped docs do). Headings **inside ``` fences are text, not
+  headings**, so a `#` comment in a code sample never splits a doc.
+- `section_at(secs, line)` / `heading_slug(title)` — the section owning a line, and a
+  GitHub-style anchor slug used on **both** sides of an in-doc `#anchor` (so deep
+  links resolve by construction).
+- `search(query, corpus?)` — ranked `{name,title,section,line,snippet,score}`. Tokens
+  split on whitespace, lower-cased, matched **literally** (`,true` plain find — a
+  query like `cm.actor` or `(cm.camera)` is not a Lua pattern). A doc qualifies only
+  if it contains **every** token (doc-level AND). Within it, a section covering all
+  tokens is a **full** hit; if none does, the doc's best-covering section is emitted
+  once (the scattered-terms fallback). Ranking: full hits first, then more terms in
+  the **heading**, then more terms co-occurring on one **body line**, then
+  specificity (deeper heading) and tightness; ties break by `(name, line)` for a
+  total order. The hit line is the heading when the term is in it (you land on the
+  section), else the best body line; the **snippet previews the first body line** for
+  a heading hit (the section name is already the card subtitle — don't repeat it).
+
+**Discipline.** Only `list()` touches the filesystem (`pal.list_dir`/`read_file` at
+the engine root, exactly like the reader; results **name-sorted** so readdir order
+can't leak in), and it is editor/tool code — **never the sim**: no buffer, no doc, no
+snapshot, no verify path calls it. `list()` loads lazily and is memoized, so adding
+the module to every boot (the editor shell always loads, and its window ROSTER pulls
+`help.lua` → `cm.docs`) costs nothing until a reader opens.
+
+**The reader surface (`cm.ed.win.help`).** The empty-path "home" gains a **fixed
+search field** above a scrolling region: a non-empty query renders ranked result
+cards (doc title · section · one-line snippet); clicking one navigates to the doc and
+reveals the hit. Reveal is a **deferred one-frame scroll** — `draw_doc` now iterates
+the **same line split `cm.docs` numbers by** (a shared `_lines` that terminates the
+last line but does not double-terminate a `\n`-ended source — the off-by-one that
+would mis-map every goto), records the target line's screen `y`, and the next frame
+scrolls it near the top; the landed-on line lights (`hl_line`, cleared on the next
+scroll/navigate). `follow()` learned `#anchor` (cross-doc `path#frag` and same-doc
+`#frag`) via `heading_slug`. The query/goto/highlight fields ride the captured
+window (`win.q`/`goto_line`/`hl_line`) — all `state.canon`-legal scalars; the rewind
+ring captures the **sim** doc, not the editor doc, so none of this nears determinism.
+
+**No sim/doc/recorded byte moves** — pure Lua chrome + a new pure module; every trace
+and pixel/audio golden is byte-identical.
+
+**Revisit triggers / deferred, named honestly.** In-doc **Ctrl+F find** in the reader
+(the `text.lua` find model; the shell already routes `Ctrl+F` to `kind_call("find")`
+mid-typing, so `M.find` on the help kind is the drop-in) is the immediate follow-up.
+**Launcher content-search** (reuse `cm.docs.search` so Ctrl+Space surfaces sections,
+not just three filenames), **keyboard nav** of the result list, and **span-precise**
+match highlight (the reader wraps text; today's highlight is line-level) are logged.
+The **reference content** itself — every module, the project schema, determinism
+rules, common failures, and the compatibility policy as indexed sections — is the
+next A8 packet.
+
+**Proof.** Linux selftest **24,208** / native Windows **24,210** on PAL API 19 (31
+new KATs in `t_docs`, no PAL API bump — pure Lua): `sections` ranges + fence-guarded
+headings + lead handling;
+`section_at`; `heading_slug`; and `search` — heading hit ranks first and lands on the
+heading, body-only hit ranks below, multi-term AND drops a doc missing a token,
+scattered terms fall back to one best section, single-doc-term isolation, literal
+(pattern-metachar) queries, empty/whitespace/absent → none, plus a tolerant smoke
+over the **real** shipped docs (`cm.actor` finds `scripting.md`; an absent token
+finds nothing). `nix run .#test` ALL GREEN with every historical trace and
+pixel/audio golden byte-identical. Two windowed `smoke --edit` captures inspected on
+llm-feed: the home searching `save` (22 ranked hits spanning `scripting.md` + the
+`win-*.md` editor guides, `cm.save`'s "Player saves" first), and a hit opening
+`scripting.md` scrolled to its section with the landed-on highlight.
+`getting-started.md` (stale "remaining alpha work" line fixed) and `editor.md`
+(a "Reading and searching the docs" section) document it. `tools/build-windows.sh`
+refreshed the stage (4 durable entries) and Start Menu shortcut.
