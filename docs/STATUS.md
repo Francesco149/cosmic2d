@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed (A7's every gate item is `[x]` or an honestly-named refinement); **A8 (documentation, accessibility, release candidate) is the open gate and now under way** — D110 lands the first A8 packet: in-engine documentation search, the `cm.docs` cross-doc index + a searchable help-reader home, the substrate A8's searchable-reference item needs (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; **A8 (documentation, accessibility, release candidate) is the open gate and progressing** — this session fixed two docs-reader/launcher UX bugs and filled the two named searchable-reference gaps (common failures + compatibility policy); the prior A8 packet was D110's in-engine documentation search (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -30,6 +30,43 @@ release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
 materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
+
+**This session (2026-07-18) — two docs-UX bug fixes + two searchable-reference
+sections (A8), all on both platforms.** Human-reported bugs, both editor chrome,
+no sim/doc/recorded byte moved:
+- **Multi-line code blocks rendered only their first line as code.** The shipped
+  guides use 4-space *indented* code blocks (zero fences), and the help reader's
+  `draw_doc` matched a code line with `^    %S` — content at *exactly* column 5 —
+  so only the block's base-indent lines were code; every nested-deeper line
+  (`  name = ...` at 6 spaces) and interior blank fell through to prose. New
+  **pure `cm.docs.line_kinds(src)`** owns the code/prose boundary (`fence` /
+  `code` / `text`; a ≥4-space line at *any* depth and a block-interior blank are
+  code; fenced bodies render verbatim); `draw_doc` consumes it. This also
+  repaired the Player-saves section's nested `game.init()` examples, silently
+  broken the same way. 8 `t_docs` KATs pin it.
+- **The Ctrl+Space launcher field looked empty while typing** (worked + found
+  results, but showed no text — the human's report). `x_ig_edit` is a transparent
+  imgui *window*, which renders *below* the overlay's FOREGROUND drawlist, so the
+  launcher's own opaque panel occluded the edit's glyphs while input still routed.
+  Fixed with the established **ghost-widget** pattern (the code editor's): ghost
+  the field (no glyphs to occlude) and draw the query text + selection + a
+  wall-clock-blinked caret onto the foreground ourselves, matching the widget's
+  font/px and exported `scroll.x`/byte-caret so long queries track.
+- **Searchable-reference content (A8 gate item).** scripting.md already covered
+  modules (task sections + the reference index), the project schema (Project
+  shape), and determinism (the checklist); the two named topics with *no* section
+  were **Common failures** (determinism traps as symptom/cause/fix) and
+  **Compatibility policy** (the enforced stability contract in author terms).
+  Both added as first-class anchored (so `#`-linkable) sections; findability
+  pinned by 2 live-doc smoke KATs (`compatibility`/`diverges` find scripting.md).
+
+Proof: Linux selftest **24,218** / native Windows **24,220** on PAL API 19 (10
+new KATs); `nix run .#test` ALL GREEN, every trace and pixel/audio golden
+byte-identical. `tools/build-windows.sh` refreshed the stage (4 durable entries)
+and Start Menu shortcut. Inspected captures on llm-feed: the launcher showing a
+typed query with live results; the reader rendering scripting.md's project.lua +
+Common-failures code blocks fully; the search home finding the new
+`compatibility` section.
 
 **D110 opens A8 with in-engine documentation search — the substrate A8's
 "searchable public API/task reference" item needs.** The shipped guides
@@ -353,28 +390,28 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **continue A8 (ALPHA §A8) — the searchable-reference item
-now has its search substrate (D110), so its two natural follow-ons are open.** A8's
-`[x]` machine-local sizing (D074/D085) and now the doc-search substrate (D110) are
-in; the gate's open items are the Getting Started walkthrough, the reference
-*content*, the accessibility pass, the fresh-user usability probes (need the human),
-the clean-machine artifact matrix, and the version freeze. **Two well-shaped next
-packets, either order:**
-1. **The searchable-reference content** — now that `cm.docs.search` indexes every
-   shipped doc, fill the reference it searches: promote the 20-line "Small module
-   reference" into per-module sections (every supported `cm.*`), and add the
-   **project schema**, **determinism rules** (cross-link `ARCHITECTURE.md`), **common
-   failures**, and the **compatibility policy** as first-class searchable sections
-   with `#anchor`s. Verify by searching each new topic in the reader (the D110 loop
-   makes "what I documented is findable" a real test). This closes A8's
-   searchable-reference checkbox.
-2. **The in-engine Getting Started walkthrough** — turn `getting-started.md` from an
-   orientation page into the guided **create → modify code/art/map/audio →
+**Exact next packet:** **continue A8 (ALPHA §A8).** The searchable reference now
+has its substrate (D110), the readable rendering path is correct (this session),
+and all five named reference topics are *present and findable*: modules (task
+sections + the one-line index), the project schema (Project shape), determinism
+(the checklist), **common failures** and **compatibility policy** (this session).
+The A8 checkbox stays `[ ]` on one honest gap — **per-module reference depth**:
+the 20-line "Small module reference" is still an index, and several `cm.*`
+(`cm.tmap`, `cm.anim`/`cm.sprite`, `cm.palette`/`cm.grade`, `cm.rand`/`cm.math`/
+`cm.ease`) have no full section. **Two well-shaped next packets, either order:**
+1. **Promote the module index into per-module sections** — a full anchored
+   section per supported `cm.*` (the commonly-used ones already have one), each
+   with its signatures + a copyable example. Verify each new module name is
+   findable in the reader (the D110 loop). This closes A8's searchable-reference
+   checkbox.
+2. **The in-engine Getting Started walkthrough** — turn `getting-started.md` from
+   an orientation page into the guided **create → modify code/art/map/audio →
    play/debug/rewind → export** path, driven and verified through the shipped UI
    (also the spine of the later fresh-user pass).
 A cheap immediate follow-up is **in-doc Ctrl+F find** in the reader (the `text.lua`
 find model; the shell already routes Ctrl+F to `kind_call("find")`, so `M.find` on
-the help kind drops in). Deferred A7 refinements (captured-audio embedding, a
+the help kind drops in) — now that the reader renders code correctly, find is the
+next reader nicety. Deferred A7 refinements (captured-audio embedding, a
 wall-clock clip filename, asset-import markers, native-failure next-launch synthesis,
 an embedded-tail size budget) stay available if a real use votes one up. See
 `ALPHA.md` §A8, DECISIONS `D110`.
