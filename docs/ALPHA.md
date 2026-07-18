@@ -350,7 +350,7 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   the flash. Deferred: a wall-clock name (needs a PAL date door) and
   select-the-exact-file reveal (needs `explorer /select,` and has no portable
   Linux twin) — the folder reveal is §15's stated fallback.
-- [~] Make structured crash reports locate an exact history stream/frame. A
+- [x] Make structured crash reports locate an exact history stream/frame. A
   drop opens and loops up to one minute before the crash, preferring an embedded
   tail and otherwise resolving local retained history; evicted/missing tails
   explain the failed identity instead of guessing by time. (D106: dropping a
@@ -358,8 +358,11 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   matches the report's stream+frame against the live/adopted ring by identity and
   returns the pre-roll bounds; `rewind.drop_crash` parks the live source in place,
   loops the safe pre-roll, and draws the failed-frame boundary — export-the-pre-roll
-  and resume-here stay live. Remaining: an **embedded tail** in the container and
-  cross-process native-failure next-launch synthesis.)
+  and resume-here stay live. D109: the report now **embeds its one-minute tail** as
+  a self-contained clip, preferred on drop and opened through the D107 trust-gated
+  clip door, so a report from another machine / after local eviction still carries
+  its timeline. Remaining refinement: cross-process native-failure next-launch
+  synthesis — a PAL crash has no live process to embed a tail.)
 - [ ] Export recording-friendly image/video/frame/audio paths only after the
   replay artifact is stable; avoid embedding a full video editor.
 

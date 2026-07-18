@@ -530,6 +530,21 @@ stay available** (inspect, export, or resume the last safe frame and retry). The
 tray enters CRASH mode: a red pill/head naming the error kind, a bold **CRASH**
 boundary wall drawn just after the last committed frame, and a "CRASH PRE-ROLL A ..
 B (last safe frame)" range label. Esc layering is §13's: first clears the loop and
-keeps the crash view, second returns to live. Still open: the container carries only
-the locator today, so the **embedded-tail** path (route it through `open_clip` like
-a clip) and cross-process native-failure next-launch synthesis are their own packets.
+keeps the crash view, second returns to live.
+
+**Built (D109), the embedded tail.** A `.ccrash` now embeds its one-minute tail as
+a self-contained clip (an additive `CLIP` chunk carrying the same standalone-clip
+bytes `export_clip` writes), so a report opened on **another machine** — or after
+the local tail was **evicted** — still carries its timeline. `crash_tail_bytes`
+packs the safe pre-roll in memory (best-effort — legacy/spill-off history embeds
+nothing) and `cm.crash.capture` embeds it alongside the durable locator. On drop,
+`drop_crash` **prefers the embedded tail**: it stages it (`write_crash_tail`, a
+per-user `crash-tails/` scratch) and opens it through the **same trust-gated clip
+door** as a dragged-in `.ctrace` (`drop_clip(…, crash)`), so a foreign bundle
+prompts (D107) and this session's own does not. It opens as an ephemeral CRASH-
+flavored clip — the bundled project mounted, the pre-roll looping, the failed-frame
+wall drawn over the clip region — and offers **eject** (resume-here stays the
+locator-only in-place affordance). A locator-only report still takes D106's local
+in-place path. Still open: cross-process **native-failure next-launch synthesis**
+(a PAL crash has no live process to embed a tail) and, if diagnostics dirs grow, a
+**size budget** on the embedded tail are their own packets.

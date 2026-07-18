@@ -5154,3 +5154,82 @@ LOOP) and **materializes its captured tree on load**; and it has a valid, truste
 D107 code identity (self-export). The legacy (spill-off, no-manifest) refusal
 stays. `nix run .#test` ALL GREEN — every historical trace and pixel/audio golden
 byte-identical.
+
+## D109 — the embedded crash tail: a self-contained `.ccrash` (A7 §16, 2026-07-18)
+
+**Context.** D106 resolves a dropped crash report against **local** history by
+identity, which is exactly right on the machine that crashed — but a report from
+**another machine**, or one opened after the local tail was **evicted**, names a
+stream `crash_resolve` can't find and so "carries no timeline". `REWIND.md` §16 and
+`ALPHA.md` §A7 line 9 always specified more: a report *may embed its own one-minute
+tail*, and "the viewer prefers embedded data, then an exact local stream/frame
+match". D103/D104/D108 already make any retained range a complete self-contained
+clip (manifest + content-addressed blobs + reconstructed bundle), and D107's trust
+prompt gates running a foreign bundle — so the embedded tail is those two features
+composed, exactly as `crash_resolve`'s own comment anticipated ("a report that
+embeds its own history tail is opened as a clip instead").
+
+**Decision.**
+- **Write side — embed the pre-roll as clip bytes.** `write_trace` split into
+  `build_trace_blob` (serialize a range to CTRC bytes, no I/O) + the atomic-write
+  wrapper; `export_clip`'s clamp/segment-align/reconstruct split into
+  `resolve_clip_range`. On those, **`cm.trace.crash_tail_bytes(committed[, preroll])`**
+  packs the safe pre-roll `[max(lo, committed−preroll+1) .. committed]` as the SAME
+  standalone-clip bytes `export_clip` writes, in memory, and seeds the D107 trust set
+  with them (our own code — a self-drop never prompts). Best-effort: it returns
+  `nil` + reason for legacy/spill-off/adopted-evicted history. `cm.crash.capture`
+  embeds it as an **additive `CLIP` chunk** in `CCRP` **only when the durable
+  locator is present** (alongside it, gated on `ring_flush`'s `exact`), so a
+  locator-only report is byte-identical to before and old readers ignore the chunk.
+- **Read side — prefer embedded, open as a trust-gated crash clip.** `drop_crash`
+  reads the report; **if it carries a tail**, `write_crash_tail` stages it as a
+  content-named `.ctrace` under a per-user `crash-tails/` dir (swept to one) so the
+  **exact same** `drop_clip` door — `clip_code_hash` → trust check → `open_clip` →
+  workspace mount — opens it, flavored CRASH. So a foreign report **prompts** before
+  running its bundle; this session's own does not. If staging fails (headless / no
+  per-user root) it **falls through** to the local match rather than refusing (the
+  locator is still valid). A locator-only report takes D106's in-place path unchanged.
+- **`drop_clip(ed, path, crash)` gained the flavor.** The optional `crash` descriptor
+  (`{committed, attempted, kind, report_id}`) rides `r.trust.crash` through the prompt
+  so `trust_run` re-supplies it after a confirm; on open it sets `r.crash` +
+  `r.fit_crash`. The tray reorders `r.crash` ahead of `clip` (header "CRASH TAIL",
+  "CRASH A/B" pill), draws the D106 boundary wall over the clip region, and fills the
+  crash's `a`/`b` lazily from the clip's own `LOOP` (the report named only the failed
+  frame). The clip stays ephemeral: **eject, not resume-here** (resume-here is the
+  locator-only in-place affordance).
+
+**Ordering rationale (prefer embedded).** Following §16 and the D106 code comment:
+when a tail is embedded, it wins. The crashed-minute view is then **frozen-exact and
+identical whether opened on the origin machine or another** — immune to any local
+history mutation between crash and drop. The one cost is that a same-session
+contained-error report now opens as an ephemeral clip (no resume-here) rather than
+in place; re-offering resume-here when an embedded clip's stream still matches the
+live ring is a logged refinement, not alpha weight.
+
+**Observer discipline.** The `CLIP` chunk is additive and stripped-by-absence on
+every existing path; the staged tail is ephemeral per-user scratch; the tray change
+is chrome + policy. **No sim/doc/recorded byte moves** — every trace and pixel/audio
+golden is byte-identical.
+
+**Revisit triggers.** The embedded tail is a full standalone clip (all project
+source + assets), so a large project makes a large `.ccrash` — a **size budget /
+dedup-across-reports / opt-out** is the first refinement if diagnostics dirs grow.
+Captured-audio embedding (shared with §14) and cross-process native-failure
+next-launch synthesis stay their own packets.
+
+**Proof.** Linux selftest **24,177** / native Windows **24,179** on PAL API 19 (22
+new KATs in `t_crash_tail`, no PAL API bump — pure Lua). The KATs prove: the tail is
+a standalone clip (SNAP + MFST + LOOP) whose `LOOP` is the safe pre-roll; it stages
+under the per-user root and is self-trusted; the `CLIP` chunk round-trips through
+`CCRP`; a self-trusted drop opens directly as a CRASH-flavored ephemeral clip
+(`is_clip` + `has_stash` + `r.crash`) looping the embedded bounds with the bundled
+project mounted; Esc layering (clear loop → eject) restores the byte-untouched live
+ring; an **untrusted** tail parks a CRASH-flavored trust prompt and `trust_run`
+opens it still flavored CRASH; a **locator-only** report still resolves the local
+stream **in place**; and spill-off history embeds no tail (names the legacy limit).
+`nix run .#test` ALL GREEN. A windowed `--edit` fixture dropped a real 1.1 MB
+embedded-tail `.ccrash` through `drop_crash` and landed the tray in CRASH-over-clip
+mode (header "CRASH TAIL / sim.step", CRASH A/B pill, the red boundary wall,
+pre-roll looping A2..B44, `ed.root` mounted to the materialized replay-workspace,
+retention greyed, eject offered) — inspected on llm-feed. `tools/build-windows.sh`
+refreshed the stage (4 durable entries) and Start Menu shortcut.

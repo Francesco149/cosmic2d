@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is at its full exit; the information layer (D100/D101), retention surface (D102), §14 blob-store foundation (D103), standalone clip (D104), drag-in consumer (D105), crash-report drop (D106), the untrusted-bundle trust prompt (D107), and adopted-range standalone export (D108) are in — the remaining A7 items are honestly-named refinement packets (2026-07-18)
+## Current handoff — A4/A5/A6 closed; A7 (rewind/replay product UI) is at its full exit and its crash-report gate item is now checked; the information layer (D100/D101), retention surface (D102), §14 blob-store foundation (D103), standalone clip (D104), drag-in consumer (D105), crash-report drop (D106), the untrusted-bundle trust prompt (D107), adopted-range standalone export (D108), and the embedded crash tail (D109) are in — the remaining A7 items are honestly-named refinement packets, so A8 is the open gate (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -30,6 +30,51 @@ release-candidate pass (A8) are the open alpha gates. **D105 turns D104's
 materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
+
+**D109 lands the embedded crash tail (A7 §16) — the last A7 gate checkbox.**
+D106 resolves a dropped crash against *local* history by identity, but a report from
+**another machine** (or after the local tail was evicted) named a stream it couldn't
+find. Now a `.ccrash` **embeds its one-minute tail** as a self-contained clip, so the
+crashed minute travels with the report. **Write side:** `write_trace` split into
+`build_trace_blob` (bytes, no I/O) + the atomic-write wrapper, and `export_clip`'s
+clamp/segment-align/reconstruct split into `resolve_clip_range`; on those,
+**`cm.trace.crash_tail_bytes(committed)`** packs the safe pre-roll `[max(lo,
+committed−60·60+1) .. committed]` as the SAME standalone-clip bytes `export_clip`
+writes (in memory) and seeds the D107 trust set with them (our own code — a self-drop
+never prompts). `cm.crash.capture` embeds it as an **additive `CLIP` chunk** in `CCRP`
+**only alongside the durable locator**, so a locator-only report is byte-identical to
+before and old readers ignore it. **Read side:** `drop_crash` now **prefers the
+embedded tail** — `write_crash_tail` stages it as a content-named `.ctrace` under a
+per-user `crash-tails/` scratch, then the **exact same** trust-gated `drop_clip` door
+opens it (a foreign bundle prompts, this session's own doesn't), flavored CRASH; a
+locator-only report still takes D106's in-place path, and a staging failure falls
+through to it. `drop_clip(ed, path, crash)` gained the crash descriptor (rides
+`r.trust.crash` through the prompt so `trust_run` re-supplies it); the tray reorders
+`r.crash` ahead of `clip` (header "CRASH TAIL", "CRASH A/B" pill), draws the D106
+boundary wall over the clip region, and fills the crash's `a`/`b` lazily from the
+clip's own `LOOP`. The crash clip stays ephemeral — **eject, not resume-here** (which
+remains the locator-only in-place affordance). **Prefer-embedded** (per §16 + D106's
+code comment) makes the crashed-minute view frozen-exact and identical on any machine;
+the one cost — a same-session contained-error report opens as a clip, not in place —
+is logged as a refinement. Pure additive write chunk + chrome/policy read side, **no
+sim/doc/recorded byte moved**: Linux selftest **24,177** / native Windows **24,179**
+on PAL API 19 (22 new KATs in `t_crash_tail` — the tail is a standalone SNAP+MFST+LOOP
+clip whose LOOP is the safe pre-roll; it stages self-trusted; the CLIP chunk
+round-trips through CCRP; a self-trusted drop opens directly as a CRASH-flavored
+ephemeral clip looping the embedded bounds with the bundled project mounted; Esc
+layering restores the byte-untouched live ring; an untrusted tail parks a
+CRASH-flavored prompt and trust_run opens it still CRASH; a locator-only report
+resolves the local stream in place; spill-off history embeds no tail), `nix run .#test`
+ALL GREEN with every historical trace and pixel/audio golden byte-identical. Windowed
+`--edit` fixture: a real 1.1 MB embedded-tail `.ccrash` dropped through `drop_crash`
+landed the tray in CRASH-over-clip mode (header "CRASH TAIL / sim.step", CRASH A/B
+pill, red boundary wall, pre-roll looping A2..B44, `ed.root` mounted to the
+materialized replay-workspace, retention greyed, eject offered) — inspected on
+llm-feed. `tools/build-windows.sh` refreshed the stage (4 durable entries) and Start
+Menu shortcut. **Deferred, named honestly:** cross-process native-failure next-launch
+synthesis (a PAL crash has no live process to embed a tail) and, if diagnostics dirs
+grow, a size budget on the embedded tail; captured-audio embedding stays its own §14
+refinement.
 
 **D108 closes adopted-range standalone export (A7 §14) — the last place the
 shipped UI still refused something §14 already paid for.** An adopted
@@ -261,25 +306,26 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **A7 — the embedded crash tail (REWIND.md §16, ALPHA §A7),
-or judge A7 done and open A8.** With adopted-range export in (D108), A7's whole
-exit story now works AND is honest about foreign code: spot a moment, seek /
-A/B-loop / export it — **live or adopted cross-session** — drag a standalone replay
-into a fresh editor (confirming its code the first time), poke around its bundled
-project, dismiss back to the untouched live session, and reach the preceding minute
-from a crash report, all while understanding storage use. The remaining A7 items
-are the honestly-deferred refinements, in rough order: the **embedded crash tail**
-in the `.ccrash` container first — D106 resolves a crash against *local* history
-by identity, but a report from another machine (or after the local tail was
-evicted) carries no timeline; embedding the one-minute tail and routing it through
-the gated `open_clip` door like a clip closes §16's "prefer embedded" path and
-inherits D107's trust prompt for free. Then **captured-audio embedding** (the last
-§14 clip content), a **wall-clock clip filename** (needs a PAL date door), asset
-**imports** as a timeline marker, and cross-process **native-failure next-launch
-synthesis**. Any of these can reasonably be judged deferred-past-alpha on its
-merits — at that point **A8** (documentation, accessibility, release candidate —
-ALPHA §A8) is the open gate, and the alpha's remaining weight is there. See
-`ALPHA.md` §A7/§A8 and `REWIND.md` §14/§16.
+**Exact next packet:** **open A8 — documentation, accessibility, release
+candidate (ALPHA §A8).** With the embedded crash tail in (D109), **A7's exit story
+is complete and its every gate checkbox is `[x]` or an honestly-named refinement**:
+spot a moment, seek / A/B-loop / export it — **live or adopted cross-session** —
+drag a standalone replay into a fresh editor (confirming its code the first time),
+poke around its bundled project, dismiss back to the untouched live session, and
+reach the preceding minute from a crash report **from this machine or another**,
+all while understanding storage use. The remaining A7 items are genuinely
+deferred-past-alpha refinements — **captured-audio embedding** (the last §14 clip
+content), a **wall-clock clip filename** (needs a PAL date door), asset **imports**
+as a timeline marker, cross-process **native-failure next-launch synthesis**, and a
+**size budget** on the embedded tail — none of which gate the alpha promise. So the
+alpha's remaining weight is **A8**, whose first bounded packets are the in-engine
+**Getting Started** walkthrough (create → modify code/art/map/audio → play/debug/
+rewind → export, using only shipped UI) and the **searchable API/task reference**;
+the accessibility pass, fresh-user usability probes (need the human), clean-machine
+artifact matrix, and the version freeze follow. A machine-local sizing slice of A8
+already shipped (D074/D085). Pick an A8 packet, or cherry-pick a deferred A7
+refinement if a real use votes it up. See `ALPHA.md` §A8 (and §A7 for the deferred
+list), `REWIND.md` §14/§16.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's
