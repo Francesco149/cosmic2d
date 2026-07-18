@@ -281,10 +281,16 @@ function M.draw(win, ctx)
   local ed = ctx.ed
   ed.g.grect = ed.g.grect or {}
   ed.g.grect[win.id] = { x = ix, y = iy, s = s, w = dw, h = dh }
-  -- playing state, unmissable: accent chip in the top-right of the well
+  -- playing state, unmissable: accent chip in the top-right of the well.
+  -- While the cursor is captured (mouse look, D126) the chip is the way
+  -- out — the user cannot click anywhere else to unfocus, so it must say
+  -- which key frees the mouse.
   if ctx.focused then
     local px = math.max(4, 10 * ctx.z)
     local label = "PLAYING"
+    if cm.require("cm.input").captured() then
+      label = "PLAYING · ESC RELEASES MOUSE"
+    end
     local lw = pal.x_ig_text_size(label, px, 0)
     pal.x_ig_rect_fill(ctx.cx + ctx.cw - lw - 14 * ctx.z, ctx.cy + 4 * ctx.z,
                        lw + 10 * ctx.z, px * 1.5, 0x7fd8a8cc, 4 * ctx.z)

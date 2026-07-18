@@ -348,6 +348,16 @@ local function playing_game()
   if win and M.kinds[win.kind].game_input then return win end
 end
 
+-- the live-play predicate (§12.3): the focused game window when no shell
+-- layer sits over play. filter_events feeds the sim exactly then, and the
+-- D126 mouse-capture consent (cm.main's capture_pump) engages exactly
+-- then — one condition, two consumers, so they can never drift.
+function M.game_live()
+  local win = playing_game()
+  local g = M.g
+  if win and not g.alt and not g.ig_kb and not g.launcher then return win end
+end
+
 -- a kind that OWNS ITS VIEW while focused (the human's ask, MAPS.md §6):
 -- wheel + middle-drag act on the focused window's camera from ANYWHERE —
 -- priority over canvas zoom/pan — until the focus leaves (any canvas
@@ -373,6 +383,11 @@ function M.filter_events(events)
   local g = M.g
   local live = win and not g.alt and not g.ig_kb and not g.launcher
   local rect = win and g.grect and g.grect[win.id]
+  -- captured cursor (D126): the OS cursor is frozen wherever it was when
+  -- capture engaged, so the over-the-image test is meaningless — the
+  -- MREL deltas are the payload. While captured (and live), mouse events
+  -- pass to the game unconditionally.
+  local cap = cm.require("cm.input").captured()
   -- game focus just left: return live pad axes to neutral so a held stick
   -- can't keep driving the sim (buttons follow the key rule — their release
   -- events pass below, exactly like keys)
@@ -402,8 +417,8 @@ function M.filter_events(events)
       end
     elseif e.type == "motion" or e.type == "button" then
       local pass = e.type == "button" and not e.down -- releases always
-      if live and rect and e.wx >= rect.x and e.wx < rect.x + rect.w
-         and e.wy >= rect.y and e.wy < rect.y + rect.h then
+      if live and rect and (cap or (e.wx >= rect.x and e.wx < rect.x + rect.w
+         and e.wy >= rect.y and e.wy < rect.y + rect.h)) then
         pass = true
       end
       if pass then
@@ -415,8 +430,8 @@ function M.filter_events(events)
       end
     elseif e.type == "wheel" then
       local i = cm.require("cm.ui").inp
-      if live and rect and i.wx >= rect.x and i.wx < rect.x + rect.w
-         and i.wy >= rect.y and i.wy < rect.y + rect.h then
+      if live and rect and (cap or (i.wx >= rect.x and i.wx < rect.x + rect.w
+         and i.wy >= rect.y and i.wy < rect.y + rect.h)) then
         out[#out + 1] = e
         g.wheel_taken = true -- the canvas must not also zoom on it
       end

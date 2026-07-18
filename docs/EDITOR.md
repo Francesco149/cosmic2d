@@ -528,6 +528,19 @@ vendored-pin-internal, revisited on any imgui bump.
   (`]`/`[`, arrows, shift+digit fits — they'd collide with gameplay);
   the ALT layer, Esc, and Ctrl combos stay the shell's. Esc-to-shell is
   the one deliberate theft (universal "get out").
+- **Mouse capture rides focus (D126).** A mouse-look game declares a
+  capture WISH (`input.capture_mouse(true)`); the shell grants the OS
+  relative-mouse mode only while `cm.ed.game_live()` holds — the exact
+  filter_events live condition (game window focused, no ALT / edit
+  widget / launcher) — reconciled every tick by `cm.input.capture_pump`
+  (never latched: the options menu, the autopsy, and a parked time
+  machine all withhold consent, and the wish re-engages by itself).
+  While captured the user cannot click anywhere else to unfocus, so the
+  PLAYING chip reads **PLAYING · ESC RELEASES MOUSE** — Esc (the
+  universal get-out) is the way back. While captured, motion/button/
+  wheel events pass to the game regardless of the over-the-image test
+  (the frozen cursor position is meaningless; the MREL deltas are the
+  payload).
 - **The `restart` header button (D056)**: boot state at the current
   frame — buffers/doc/rand reset, `game.init` re-runs, but the frame
   counter keeps counting (it's the rewind timeline, D055: the restart

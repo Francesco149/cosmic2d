@@ -873,7 +873,13 @@ window and stays uncaptured. Motion events carry the per-frame relative
 delta; the recorded, sim-legal form is the MREL input-record extension
 (tag 2), so **sim code reads `cm.input.mouse_rel()`, never this capture
 state.** Additive: a v1 recording with no MREL replays as (0,0), so every
-historical trace is unaffected.
+historical trace is unaffected. Since D126 nothing but the per-tick
+reconcile calls this door: `cm.input.capture_mouse(on)` records the
+cartridge's WISH, and `cm.input.capture_pump(allowed)` (cm.main.tick)
+derives the OS state every frame from wish AND the shell's consent — no
+options menu / autopsy / parked time machine, and in the editor only
+while a game window is live-focused. A replay re-running a mouse-look
+game's init therefore never grabs the live cursor.
 
 ### PAL API v22 additions (baked figures — D117)
 

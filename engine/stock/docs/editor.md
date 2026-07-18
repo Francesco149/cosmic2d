@@ -100,6 +100,17 @@ drop intermediate displayed frames so the transport remains on time. A/B
 selection stays inclusive and loops until Esc clears it; Esc again returns to
 the live present.
 
+## Playing and mouse capture
+
+Clicking into a game window focuses it — focused means playing, and your
+keys drive the game. A mouse-look game (one that called
+`input.capture_mouse(true)`) also captures the cursor while its window is
+focused: the pointer hides and turns into look input. The window's chip
+reads **PLAYING · ESC RELEASES MOUSE** while that's on — press **Esc** and
+the cursor comes back exactly where it was. The capture never survives
+leaving play: the launcher, an edit field, time travel, or the Esc menu
+all release it, and it re-engages when you click back in.
+
 ## Keys that matter
 
 - **Ctrl+Space** — the launcher (find/open anything, pan to a window).

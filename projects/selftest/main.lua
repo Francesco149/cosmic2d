@@ -11727,6 +11727,33 @@ local function t_input_mrel()
   input.mrel_reset()
   rec = input.collect({ motion(2.0, 2.0) })
   check(exts(rec)[2] == nil, "mrel: reset ends the domain")
+
+  -- the capture pump (D126): capture_mouse is a WISH, the pump derives
+  -- the OS state every tick from wish AND the shell's consent. Headless
+  -- the PAL no-ops, so these observe the reconciled flag (captured()).
+  input.mrel_reset()
+  check(input.captured() == false, "cap: fresh domain is uncaptured")
+  input.capture_mouse(true)
+  check(input.captured() == false, "cap: a wish alone captures nothing")
+  input.capture_pump(false)
+  check(input.captured() == false, "cap: wish without consent stays out")
+  input.capture_pump(true)
+  check(input.captured() == true, "cap: wish + consent engages")
+  input.capture_pump(false)
+  check(input.captured() == false, "cap: withdrawn consent releases")
+  input.capture_pump(true)
+  check(input.captured() == true, "cap: returned consent re-engages")
+  input.capture_mouse(false)
+  input.capture_pump(true)
+  check(input.captured() == false, "cap: a dropped wish releases")
+  rec = input.collect({})
+  check(exts(rec)[2] ~= nil, "cap: the MREL domain outlives the wish")
+  input.capture_mouse(true)
+  input.capture_pump(true)
+  input.mrel_reset()
+  check(input.captured() == false, "cap: reset clears wish and state")
+  input.capture_pump(true)
+  check(input.captured() == false, "cap: no wish survives a reset")
 end
 
 -- the FSIZ extension (D123): the frame's live target size as recorded sim

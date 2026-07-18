@@ -899,19 +899,46 @@ function M.mouse_rel()
 end
 
 -- Live-side capture door (chrome policy, the device-identity model):
--- flips the OS relative-mouse mode via pal.x_mouse_capture (a headless
--- run stays uncaptured — deltas simply never arrive) and latches the
--- MREL domain so every later record carries the extension. Sim code
--- reads mouse_rel(), never the capture state.
+-- the cartridge declares a WISH for the captured cursor (mouse look) and
+-- latches the MREL domain so every later record carries the extension.
+-- The wish never flips the OS state itself — capture_pump derives the
+-- real pal.x_mouse_capture EVERY tick from wish AND the shell's consent
+-- (D126, the D125 derive-don't-latch lesson: a one-shot flip from sim
+-- code would strand a captured cursor across the Esc menu, the editor's
+-- focus changes, and time travel — and a replay re-running init must
+-- never grab the live mouse just because the recorded game asked). Sim
+-- code reads mouse_rel(), never the capture state.
 function M.capture_mouse(on)
   M._mrel_live = true
-  if pal.x_mouse_capture then pal.x_mouse_capture(on and true or false) end
+  M._cap_wish = on and true or nil
+end
+
+-- The per-tick reconcile (cm.main.tick calls it): the OS relative-mouse
+-- mode IS wish AND allowed, nothing else owns pal.x_mouse_capture.
+-- `allowed` is the shell's consent — false while the options menu, the
+-- crash autopsy, or a parked time machine needs the cursor, and in the
+-- editor unless the game window is live-focused (= playing). Headless
+-- runs no-op inside the PAL (no window), so KATs observe M._cap_on only.
+function M.capture_pump(allowed)
+  local want = (M._cap_wish and allowed) and true or false
+  if want ~= (M._cap_on or false) then
+    M._cap_on = want
+    if pal.x_mouse_capture then pal.x_mouse_capture(want) end
+  end
+end
+
+-- Reconciled capture state (chrome reads it for hints/routing — the game
+-- window's "ESC RELEASES MOUSE" chip, filter_events' captured pass).
+-- Sim code never branches on this: the recorded deltas are the authority.
+function M.captured()
+  return M._cap_on or false
 end
 
 -- Boot-path reset beside pad_sync (cm.main): fresh project, fresh domain.
 function M.mrel_reset()
   rel_carry_x, rel_carry_y = 0.0, 0.0
   M._mrel_live = nil
+  M._cap_wish, M._cap_on = nil, nil
   if pal.x_mouse_capture then pal.x_mouse_capture(false) end
 end
 

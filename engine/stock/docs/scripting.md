@@ -1060,18 +1060,26 @@ are excluded from snapshots and traces exactly like the editor's `ed.*`
 buffers, which is what keeps a huge streaming world or a rebuilt-every-frame
 character out of your recordings. Never read an `rc.*` buffer from `step`.
 
-**Relative-mouse look.** For mouselook, capture the cursor and read the
-recorded delta:
+**Relative-mouse look.** For mouselook, declare the capture wish (once, in
+`game.init`) and read the recorded delta:
 
     local input = cm.require("cm.input")
-    input.capture_mouse(true)              -- live chrome: hide + lock cursor
+    input.capture_mouse(true)              -- the WISH: this game wants the cursor
     local dx, dy = input.mouse_rel()       -- recorded game-px delta, sim-legal
+
+`capture_mouse(true)` never grabs the cursor by itself — it declares that
+your game wants it, and the engine grants the actual OS capture only while
+play owns the screen: in the player, whenever the Esc menu is closed; in
+the editor, only while your game window is focused (Esc releases, and the
+PLAYING chip says so). Opening the Esc menu, a crash, or time travel
+releases it automatically, and the standing wish re-captures by itself
+afterward — you never manage the OS state.
 
 `input.mouse_rel()` is part of the input recording (the MREL extension), so
 using it in `step` stays deterministic and replays exactly. The capture
 *state* (`pal.x_mouse_capture`) is live-side chrome — headless runs stay
 uncaptured, and sim logic must branch on `mouse_rel()`, never on whether the
-cursor is captured. The Esc menu force-releases capture for you.
+cursor is captured.
 
 **The live target size.** The editor's game window (and the player's resize
 ladder) can change the FOV while the game runs. Read the size through the

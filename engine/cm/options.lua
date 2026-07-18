@@ -203,10 +203,11 @@ function M.toggle(on)
   end
   M.page = "main"
   M.arm, M.note = nil, nil
-  -- the menu needs the OS cursor: opening releases a captured mouse (v21).
-  -- Chrome policy only — the game re-captures with its own next
-  -- capture_mouse(true) once the menu closes.
-  if M.on and pal.x_mouse_capture then pal.x_mouse_capture(false) end
+  -- the menu needs the OS cursor: while it is open the capture pump
+  -- (cm.main.tick, D126) withholds consent, so a captured mouse releases
+  -- on the next tick — and the game's standing capture wish re-engages by
+  -- itself once the menu closes. One owner of pal.x_mouse_capture: the
+  -- pump; a direct flip here would just fight its reconcile.
 end
 
 -- persist the rebinds now; a failure names itself on the panel AND summons

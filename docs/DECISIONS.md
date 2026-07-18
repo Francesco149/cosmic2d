@@ -6208,3 +6208,64 @@ the neighbor note window never moves; suite ALL GREEN, goldens
 byte-identical. (The viewport-center CAMERA anchor from D125 is
 untouched — that one maps ALL windows uniformly and cannot change their
 relative layout.)
+
+## D126 — mouse-look capture: the wish/consent pump (2026-07-18)
+
+**Decision.** `input.capture_mouse(on)` no longer touches
+`pal.x_mouse_capture`. It declares the cartridge's capture WISH (and still
+arms the MREL domain latch); the actual OS relative-mouse mode is DERIVED
+every tick by `cm.input.capture_pump(allowed)` from wish AND the shell's
+consent — the D125 derive-don't-latch rule applied to the OS cursor. One
+owner: nothing else calls the PAL door (the options menu's direct release
+is deleted; the pump withholds consent instead). Consent, computed in
+`cm.main.tick`: never while the options menu, the crash autopsy, or a
+parked time machine needs the cursor; in the editor only while
+`cm.ed.game_live()` holds — the focused game window with no shell layer
+over play, the EXACT `filter_events` live condition, extracted so the two
+consumers can never drift; player mode otherwise consents. The wish
+STANDS across a denial, so closing the menu / refocusing the game
+re-captures by itself, and a game that armed capture in `game.init` never
+manages OS state again.
+
+**Why a wish, not a flip.** The one-shot flip class had three real
+failures waiting: a replay/rewind re-running a mouse-look game's `init`
+would grab the LIVE cursor while the user browses the past; an
+editor session would capture while the user types in the code window
+(init runs long before any game window is focused); and the D116-era
+menu release lost a boot-armed capture forever (nothing re-asked). All
+three die by construction when the OS state is derived per tick.
+
+**The way out is named on screen.** While captured the user cannot click
+another window to unfocus — the cursor is gone. The game window's chip
+reads **PLAYING · ESC RELEASES MOUSE** (Esc = the shell's universal
+get-out, `doc.focus = 0`); ALT, the launcher, an edit widget, time
+travel, and the Esc menu also release by dropping the live condition.
+While captured (and live), `filter_events` passes motion/button/wheel to
+the game regardless of the over-the-image test — the frozen cursor
+position is meaningless, the MREL deltas are the payload.
+
+**The demos.** openworld, bounce, and bigworld arm
+`input.capture_mouse(true)` in `game.init` — the D116 human-gated feel
+change, now voted in. The rig already sums `input.mouse_rel()` with
+drag-look, so captured and drag look coexist; sim reads only recorded
+deltas, so replay/verify never depend on capture state.
+
+**Determinism.** No sim/doc/recorded byte moved: the wish/`_cap_on` pair
+is live chrome on `cm.input` (never in a buffer/snapshot), MREL emission
+rules are untouched, and verify replays never sample. Every committed
+golden stands byte-identical.
+
+**Proof.** Linux selftest **24,533** / native Windows **24,535** (10 new
+capture-pump KATs: wish-alone captures nothing, consent gates both ways,
+the domain outlives a dropped wish, reset clears all); `nix run .#test`
+ALL GREEN. Live WSLg (real window, scripted driver): focus → `os=true`,
+Esc/unfocus → `os=false`, menu open → released, menu closed →
+re-captured; the capped composite capture shows the chip hint (on
+llm-feed). Windows stage refreshed (7 durable entries + shortcut).
+
+**Revisit triggers.** A game that wants capture only in a sub-state
+(e.g. aiming) calls `capture_mouse(false)`/`(true)` from its own logic —
+if a real game needs finer grants (per-window wish, capture in an
+unfocused-but-watched window), that votes a capture policy surface. If a
+player reports "the mouse vanished" in PLAYER mode, the Esc-menu line
+may need an on-screen first-capture toast there too.

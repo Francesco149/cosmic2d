@@ -15,8 +15,9 @@
 -- eases behind the velocity heading (holding a sideways run circles the
 -- camera around), manual look (drag / z/x) pauses yaw-follow briefly so
 -- they don't fight, and recenter snaps behind the facing. Drag-look uses
--- absolute cursor deltas from the frozen input record; true captured-mouse
--- look needs a PAL relative-mouse API (deferred — record v1 stays frozen).
+-- absolute cursor deltas from the frozen input record; captured-mouse look
+-- rides the recorded MREL deltas (v21) — game.init arms the capture wish
+-- and the shell grants the OS capture while play owns the screen (D126).
 --
 -- Determinism: sim state in named buffers (bounce.player/bounce.cam) + doc
 -- tree; cm.math trig; fixed dt. The follow camera is GAMEPLAY state (input
@@ -121,6 +122,12 @@ local function build_sky()
 end
 
 function game.init()
+  -- mouse look (D126): declare the capture WISH — the shell grants the
+  -- actual OS capture only while play owns the screen (player mode with
+  -- the Esc menu closed; in the editor while the game window is focused,
+  -- Esc releases). The rig reads the recorded input.mouse_rel() deltas,
+  -- so replay/verify never depend on live capture state.
+  input.capture_mouse(true)
   local d = state.doc
   d.knobs = d.knobs or load_knobs() or {}
   for group, defaults in pairs(KNOBS) do

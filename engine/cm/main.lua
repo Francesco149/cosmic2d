@@ -704,6 +704,16 @@ function M.tick()
   -- render loop faster than the 60 Hz sim never drops a press/release (the
   -- windowed key-stick bug); sim_step then samples the live state per step
   M.input.feed(events)
+  -- reconcile the OS mouse capture (D126): the cartridge's capture WISH
+  -- (input.capture_mouse) engages only with the shell's consent, derived
+  -- every tick — never over the options menu, the crash autopsy, or a
+  -- parked time machine; in the editor only while a game window is
+  -- live-focused (= playing). One-frame latency on focus changes is the
+  -- grect class; headless the PAL no-ops (no window).
+  M.input.capture_pump(not M.options.on and not M.game_err
+                       and not M.scrub.paused()
+                       and (not (M.ed and M.ed.on)
+                            or M.ed.game_live() ~= nil))
 
   local now = pal.time_ns()
   -- reload polling off in capped runs (deterministic captures)
