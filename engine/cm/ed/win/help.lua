@@ -15,6 +15,7 @@
 
 local M = select(2, ...) or {}
 local wm = cm.require("cm.ed.wm")
+local docs = cm.require("cm.docs")
 
 M.kind = "help"
 M.menu = "help"
@@ -27,30 +28,36 @@ local COL = {
   code = 0x9fdc8fff, code_bg = 0x20203aff, bold = 0xefeaffff,
   bar = 0x1a1730ff, btn = 0x2a2542ff, btn_hot = 0x3a3560ff,
   row = 0x232038ff, row_hot = 0x322d48ff, rule = 0x35305aff,
+  field = 0x141220ff, hl = 0x35406a80,
 }
 
 local STOCK = "engine/stock/docs"
 
-local cache
+-- the shipped-doc list (name/title from cm.docs, the shared search index);
+-- PATH is ed.root-relative — the reader's read/navigate convention (docs
+-- resolve at the engine root via ../../engine/stock/docs/*)
 local function list_docs()
-  if cache then return cache end
   local out = {}
-  for _, n in ipairs(pal.list_dir(STOCK) or {}) do
-    local file = n:match("([^/]+%.md)$")
-    if file then
-      local title = file:gsub("%.md$", ""):gsub("[%-_]", " ")
-      local src = pal.read_file(STOCK .. "/" .. file)
-      local h = src and src:match("^#+%s*([^\n]+)")
-      out[#out + 1] = { name = file, title = h or title,
-                        path = "../../" .. STOCK .. "/" .. file }
-    end
+  for _, d in ipairs(docs.list()) do
+    out[#out + 1] = { name = d.name, title = d.title,
+                      path = "../../" .. STOCK .. "/" .. d.name }
   end
-  table.sort(out, function(a, b) return a.name < b.name end)
-  cache = out
   return out
 end
 
-function M.defaults() return { path = "", scroll = 0 } end
+-- the ed.root-relative reader path for a stock doc basename (a search hit)
+local function stock_path(name) return "../../" .. STOCK .. "/" .. name end
+
+-- cross-doc search, memoized on the last query (module-local, never captured):
+-- the home view recomputes every frame while typing, but the query is stable
+-- frame-to-frame so we parse the corpus once per distinct query
+local last_q, last_res
+local function search_results(q)
+  if q ~= last_q then last_q, last_res = q, docs.search(q) end
+  return last_res
+end
+
+function M.defaults() return { path = "", scroll = 0, q = "" } end
 
 function M.title(win)
   local p = win.path or ""
@@ -60,7 +67,7 @@ end
 
 -- ---- navigation (history rides win.hist / win.hpos, captured) ----
 
-local function navigate(win, path, nohist)
+local function navigate(win, path, nohist, opts)
   if not nohist then
     win.hist = win.hist or { win.path or "" }
     win.hpos = win.hpos or #win.hist
@@ -71,6 +78,10 @@ local function navigate(win, path, nohist)
   win.path = path
   win.scroll = 0
   win._src, win._srcpath = nil, nil
+  -- an optional source line to reveal on arrival (a search hit or a #anchor);
+  -- hl_line lights it until the next scroll/navigate
+  win.goto_line = opts and opts.line or nil
+  win.hl_line = win.goto_line
 end
 
 local function hist_go(win, dir)
@@ -98,22 +109,41 @@ M.hotkeys = {
     fn = function(win) navigate(win, "") end },
 }
 
+-- the source line of a doc's #anchor (the heading whose slug matches), or nil
+local function anchor_line(ed, rp, frag)
+  local src = pal.read_file(ed.root .. "/" .. rp)
+  if not src then return nil end
+  frag = frag:lower()
+  for _, s in ipairs(docs.sections(src)) do
+    if docs.heading_slug(s.title) == frag then return s.line end
+  end
+  return nil
+end
+
 -- follow a link target: markdown navigates the reader (ctrl = a new reader
--- window); any other asset opens in its proper editor window
+-- window); a `#anchor` reveals that heading (same-doc anchors jump in place);
+-- any other asset opens in its proper editor window
 local function follow(win, ed, target, newwin)
   local text = cm.require("cm.ed.win.text")
+  local frag = target:match("#([^#]*)$")
+  if target:sub(1, 1) == "#" then -- a same-doc anchor
+    local line = frag and anchor_line(ed, win.path, frag)
+    if line then win.goto_line, win.hl_line = line, line; ed.touch() end
+    return
+  end
   local rp = text.resolve_link(ed, target)
   if not rp then
     pal.log("[help] dead link: " .. tostring(target))
     return
   end
   if rp:lower():find("%.md$") then
+    local opts = frag and { line = anchor_line(ed, rp, frag) } or nil
     if newwin then
       local nw = wm.spawn(ed.doc, "help", win.x + 28, win.y + 28,
                           win.w, win.h, M.defaults())
-      navigate(nw, rp)
+      navigate(nw, rp, false, opts)
     else
-      navigate(win, rp)
+      navigate(win, rp, false, opts)
     end
   else
     ed.open_asset_window(rp, win.x + win.w + 20, win.y)
@@ -203,7 +233,16 @@ end
 local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z)
   local y = y0
   local fence = false
-  for line in (src .. "\n"):gmatch("([^\n]*)\n") do
+  -- iterate the SAME line split cm.docs numbers by, so a search hit's line
+  -- (and a #anchor) map to the right rendered row
+  local ls, n = docs._lines(src)
+  for ln = 1, n do
+    local line = ls[ln]
+    if win.goto_line == ln then win._goto_y = y end
+    if win.hl_line == ln then
+      pal.x_ig_rect_fill(x0 - 3 * z, y - 1, maxw + 6 * z, px * 1.5 + 2,
+                         COL.hl, 3 * z)
+    end
     local fenced = line:match("^%s*```")
     if fenced then
       fence = not fence
@@ -252,6 +291,7 @@ end
 
 function M.wheel(win, ed, delta)
   win.scroll = math.max(0, (win.scroll or 0) - delta * 40)
+  win.hl_line = nil -- scrolling dismisses the "landed here" marker
   return true
 end
 
@@ -299,52 +339,112 @@ function M.draw(win, ctx)
   pal.x_ig_text(bx, by + (bh - px) * 0.5, px, COL.hot, title, 0)
 
   -- body
-  local byy = ctx.cy + bh + 10 * z
-  local bodyh = ctx.ch - (bh + 10 * z) - 4 * z
-  pal.x_ig_clip_push(ctx.cx, byy, ctx.cw, bodyh)
+  local topy = ctx.cy + bh + 10 * z
   local x0 = ctx.cx + pad
   local maxw = ctx.cw - pad * 2
   local links = {}
-  local y = byy - win.scroll
   local contenth
 
+  -- the home view reserves a FIXED search strip above the scroll region
+  local sy0 = topy
+  local sh = ctx.cy + ctx.ch - 4 * z - topy
+  local results
   if win.path == "" then
-    -- the doc list (home)
+    local fh = px * 1.9
+    pal.x_ig_rect_fill(x0, topy, maxw, fh, COL.field, 5 * z)
+    if (win.q or "") == "" then
+      pal.x_ig_text(x0 + 10 * z, topy + (fh - px) * 0.5, px, COL.dim,
+                    "search the docs — a module, a task, a term…", 0)
+    end
+    local qt = pal.x_ig_edit {
+      id = "help.q." .. win.id, x = x0 + 8 * z,
+      y = topy + (fh - px) * 0.5 - 2 * z, w = maxw - 16 * z, h = px + 4 * z,
+      text = win.q or "", px = px, font = 0, multiline = false,
+    }
+    if qt ~= (win.q or "") then
+      win.q = qt:gsub("[\r\n\t]", "")
+      win.scroll = 0
+    end
+    sy0 = topy + fh + 8 * z
+    sh = ctx.cy + ctx.ch - 4 * z - sy0
+    if (win.q or "") ~= "" then results = search_results(win.q) end
+  end
+
+  pal.x_ig_clip_push(ctx.cx, sy0, ctx.cw, sh)
+  local y = sy0 - win.scroll
+  local inband = function(ry, rh)
+    return ctx.hot and i.wx >= x0 and i.wx < x0 + maxw and i.wy >= sy0
+           and i.wy < sy0 + sh and i.wy >= ry and i.wy < ry + rh
+  end
+
+  if win.path == "" and results then
+    -- ranked cross-doc search results
+    if #results == 0 then
+      pal.x_ig_text(x0, y, px, COL.dim, "no matches", 0)
+      contenth = px * 1.8
+    else
+      pal.x_ig_text(x0, y, px * 0.85, COL.dim,
+                    ("%d result%s"):format(#results, #results == 1 and "" or "s"), 0)
+      y = y + px * 1.5
+      local rh = px * 3.1
+      for _, h in ipairs(results) do
+        local hov = inband(y, rh - 4 * z)
+        pal.x_ig_rect_fill(x0, y, maxw, rh - 4 * z, hov and COL.row_hot or COL.row,
+                           4 * z)
+        pal.x_ig_clip_push(x0, y, maxw, rh)
+        pal.x_ig_text(x0 + 9 * z, y + 5 * z, px * 0.9, hov and COL.hot or COL.h2,
+                      h.title .. "  ·  " .. h.section, 0)
+        pal.x_ig_text(x0 + 9 * z, y + px * 1.55, px * 0.82, COL.dim, h.snippet, 0)
+        pal.x_ig_clip_pop()
+        if hov and i.clicked[1] then
+          navigate(win, stock_path(h.name), false, { line = h.line })
+        end
+        y = y + rh
+      end
+      contenth = (y + win.scroll) - sy0
+    end
+  elseif win.path == "" then
+    -- the browse list (empty query)
     pal.x_ig_text(x0, y, px, COL.dim, "the shipped docs — click to read:", 0)
     y = y + px * 1.8
     local rh = px * 2
     for _, d in ipairs(list_docs()) do
-      local hov = ctx.hot and i.wx >= x0 and i.wx < x0 + maxw
-                  and i.wy >= y and i.wy < y + rh
+      local hov = inband(y, rh)
       pal.x_ig_rect_fill(x0, y, maxw, rh, hov and COL.row_hot or COL.row, 4 * z)
       pal.x_ig_text(x0 + 10 * z, y + (rh - px) * 0.5, px,
                     hov and COL.hot or COL.text, d.title, 0)
       if hov and i.clicked[1] then navigate(win, d.path) end
       y = y + rh + 5 * z
     end
-    if #list_docs() == 0 then
-      pal.x_ig_text(x0, y, px, COL.dim, "no docs found", 0)
-    end
-    contenth = y - (byy - win.scroll)
+    contenth = (y + win.scroll) - sy0
   else
     local src = read_doc(win, ed)
+    win._goto_y = nil
     contenth = draw_doc(win, ed, src, x0, y, maxw, px, links, i, ctx, z)
   end
   pal.x_ig_clip_pop()
 
   -- a slim scrollbar when the content overflows
-  local maxscroll = math.max(0, contenth - bodyh)
+  local maxscroll = math.max(0, contenth - sh)
   if maxscroll > 0 then
-    local trackh = bodyh
-    local knobh = math.max(20 * z, trackh * bodyh / contenth)
-    local knoby = byy + (trackh - knobh) * (win.scroll / maxscroll)
+    local knobh = math.max(20 * z, sh * sh / contenth)
+    local knoby = sy0 + (sh - knobh) * (win.scroll / maxscroll)
     pal.x_ig_rect_fill(ctx.cx + ctx.cw - 4 * z, knoby, 3 * z, knobh,
                        COL.rule, 2 * z)
   end
   win.scroll = math.max(0, math.min(win.scroll, maxscroll))
 
+  -- reveal a pending goto line (a search hit / #anchor): draw_doc measured its
+  -- screen y this frame; scroll it near the top and adopt next frame
+  if win.goto_line and win._goto_y then
+    win.scroll = math.max(0, math.min(win.scroll + (win._goto_y - sy0) - px,
+                                      maxscroll))
+    win.goto_line, win._goto_y = nil, nil
+    ed.touch()
+  end
+
   -- link clicks (over the body only)
-  if ctx.hot and i.clicked[1] and i.wy >= byy then
+  if ctx.hot and i.clicked[1] and i.wy >= sy0 then
     for _, lk in ipairs(links) do
       if i.wx >= lk.x and i.wx < lk.x + lk.w and i.wy >= lk.y
          and i.wy < lk.y + lk.h then
