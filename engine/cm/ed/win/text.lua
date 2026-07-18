@@ -272,6 +272,20 @@ M.project_files = project_files
 
 local function draw_picker(win, ctx)
   local ed = ctx.ed
+  -- the kit new-file door (the sprite window's D122 field, wired here):
+  -- a project can't author controls/credits/license text — or a fresh
+  -- module — without a from-scratch file. Any text-editable extension
+  -- typed is kept; a bare name becomes .lua.
+  local pxf = math.max(4, 10 * ctx.z)
+  A.pathfield(win, ed, ctx, {
+    ext = "lua", exts = EXT, default = "",
+    label = "new file — type a path (enter creates), or open below:",
+  })
+  if win.path ~= "" then return end -- the door just bound this window
+  local dy = 8 * ctx.z + pxf * 1.8 + pxf * 1.7 + 6 * ctx.z
+  local pnew = plumb(ed, "@new" .. win.id)
+  if pnew.confirm then dy = dy + pxf * 2.2 + pxf * 1.5 end -- the exists row
+  ctx = setmetatable({ cy = ctx.cy + dy, ch = ctx.ch - dy }, { __index = ctx })
   local z, pad = ctx.z, 8 * ctx.z
   local px = math.max(4, (win.px or M.PX) * z)
   if ctx.occluded then

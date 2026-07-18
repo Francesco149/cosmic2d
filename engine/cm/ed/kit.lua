@@ -401,7 +401,9 @@ function M.asset(spec)
   -- undo-forever journal keeps the old bytes reachable regardless).
   --
   --   opts = { ext = "song", default = "sound/",
-  --            label = "new song path:" (optional) }
+  --            label = "new song path:" (optional),
+  --            exts = { md = true, ... } (optional: extra extensions a
+  --            typed path may keep; a bare name still gets "." .. ext) }
   function A.pathfield(win, ed, ctx, opts)
     local z = ctx.z
     local px = math.max(4, 10 * z)
@@ -463,8 +465,10 @@ function M.asset(spec)
 
     -- auto-name (human): prefill an unbound field with a unique 3-word
     -- name so Enter creates immediately — no naming paralysis (audit G6).
-    -- Only when default is a bare dir ("ins/"); stays fully editable.
-    if p0.newpath == nil and opts.default and opts.default:find("/$") then
+    -- Only when default is a bare dir ("ins/", or "" = the project
+    -- root); stays fully editable.
+    if p0.newpath == nil and opts.default
+       and (opts.default == "" or opts.default:find("/$")) then
       local words = cm.require("cm.words")
       local dir = opts.default
       p0.newpath = dir .. words.unique(function(nm)
@@ -486,7 +490,8 @@ function M.asset(spec)
       if path == "" or path == (opts.default or "") or path:find("/$") then
         return
       end
-      if not path:lower():find("%." .. opts.ext .. "$") then
+      local ext = path:lower():match("%.([%w]+)$")
+      if not (ext and (ext == opts.ext or (opts.exts and opts.exts[ext]))) then
         path = path .. "." .. opts.ext
       end
       local exists = pal.read_file(ed.root .. "/" .. path) ~= nil
