@@ -23,6 +23,8 @@ local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local rig = cm.require("cm.rig")
+local move = cm.require("cm.move")
+local hud = cm.require("cm.hud")
 local world = cm.require("world")
 local player = cm.require("player")
 local ents = cm.require("ents")
@@ -254,8 +256,16 @@ local function build_ctl()
   elseif d.demo == 2 then
     return glide_ctl()
   else
-    fwd = (input.down("up") and 1 or 0) + (input.down("down") and -1 or 0)
-    side = (input.down("right") and 1 or 0) + (input.down("left") and -1 or 0)
+    -- cm.move (D097): stick verbatim when deflected, else the digital
+    -- keys — keys() is the old block's exact integer sums, so recorded
+    -- traces (zero axes) replay bit-exact; a live pad steers for free
+    local sx, sy = move.stick(1)
+    if sx ~= 0 or sy ~= 0 then
+      fwd, side = -sy, sx
+    else
+      local ix, iy = move.keys()
+      fwd, side = -iy, ix
+    end
     jump_pressed = input.pressed("jump")
   end
   local wishx, wishz = rig.wish(cam, fwd, side)
@@ -335,20 +345,18 @@ function game.draw()
   local frame = state.frame()
   text.draw(3, 3, ("bigworld  %d tris  frame %d"):format(st.tris or 0, frame))
   local near, total = ents.count()
-  local hud = ("res %d  gen %d  ents %d/%d"):format(
+  local counter = ("res %d  gen %d  ents %d/%d"):format(
     res_n, world.gen_count, near, total)
-  text.draw(W - text.measure(hud) - 3, 3, hud)
+  hud.text("tr", 3, 3, counter)
   if player.gliding() then
     local msg = "~ gliding ~"
-    text.draw((W - text.measure(msg)) // 2, 24, msg,
-              { r = 0.75, g = 0.92, b = 1, a = 0.9 })
+    hud.text("t", 0, 24, msg, { r = 0.75, g = 0.92, b = 1, a = 0.9 })
   end
   if state.doc.demo ~= 0 then
     local msg = "AUTOPLAY * press any key"
-    text.draw((W - text.measure(msg)) // 2, 14, msg,
-              { r = 1, g = 0.92, b = 0.6, a = 0.95 })
+    hud.text("t", 0, 14, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
-  text.draw(3, H - 11, "wasd move . space jump/glide . arrows/drag camera . wheel zoom . c recenter")
+  hud.text("bl", 3, 3, "wasd move . space jump/glide . arrows/drag camera . wheel zoom . c recenter")
 end
 
 return game

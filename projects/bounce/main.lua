@@ -33,6 +33,8 @@ local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local rig = cm.require("cm.rig")
+local move = cm.require("cm.move")
+local hud = cm.require("cm.hud")
 local level = cm.require("level")
 local movers = cm.require("movers")
 local player = cm.require("player")
@@ -305,8 +307,17 @@ local function build_ctl()
     side = (rel % 270 >= 90 and rel % 270 < 180) and -1 or 0
     jump_pressed = rel % 45 == 5
   else
-    fwd = (input.down("up") and 1 or 0) + (input.down("down") and -1 or 0)
-    side = (input.down("right") and 1 or 0) + (input.down("left") and -1 or 0)
+    -- cm.move (D097): the left stick verbatim when deflected, else the
+    -- digital keys — keys() is the same integer sums as the old block,
+    -- so recorded traces (zero axes) replay bit-exact; a live pad now
+    -- steers for free (rig.wish normalizes either)
+    local sx, sy = move.stick(1)
+    if sx ~= 0 or sy ~= 0 then
+      fwd, side = -sy, sx
+    else
+      local ix, iy = move.keys()
+      fwd, side = -iy, ix
+    end
     jump_pressed = input.pressed("jump")
   end
   local wishx, wishz = rig.wish(cam, fwd, side)
@@ -385,23 +396,21 @@ function game.draw()
   text.draw(3, 3, ("bounce  %d tris  frame %d")
             :format(st.tris or 0, frame))
   local d = state.doc
-  local hud = ("gems %d . laps %d"):format(d.score, d.laps)
-  text.draw(W - text.measure(hud) - 3, 3, hud,
-            { r = 1, g = 0.85, b = 0.45 })
+  local score = ("gems %d . laps %d"):format(d.score, d.laps)
+  hud.text("tr", 3, 3, score, { r = 1, g = 0.85, b = 0.45 })
   if d.clear_t > 0 then
     -- CLEAR banner: holds, then fades out over its last third
     local kb = d.knobs.goal.banner
     local a = m.min(1, 3 * d.clear_t / kb)
     local msg = "COURSE CLEAR!"
-    text.draw((W - text.measure(msg, "8x16")) // 2, H // 3, msg,
-              { font = "8x16", r = 1, g = 0.9, b = 0.5, a = a })
+    hud.text("t", 0, H // 3, msg,
+             { font = "8x16", r = 1, g = 0.9, b = 0.5, a = a })
   end
   if d.demo ~= 0 then
     local msg = "AUTOPLAY * press any key"
-    text.draw((W - text.measure(msg)) // 2, 14, msg,
-              { r = 1, g = 0.92, b = 0.6, a = 0.95 })
+    hud.text("t", 0, 14, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
-  text.draw(3, H - 11, "wasd move . space jump . arrows/drag camera . wheel zoom . c recenter")
+  hud.text("bl", 3, 3, "wasd move . space jump . arrows/drag camera . wheel zoom . c recenter")
 end
 
 return game

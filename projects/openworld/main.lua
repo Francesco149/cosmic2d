@@ -20,6 +20,8 @@ local text = cm.require("cm.text")
 local m4 = cm.require("cm.m4")
 local gb = cm.require("cm.gb")
 local rig = cm.require("cm.rig")
+local move = cm.require("cm.move")
+local hud = cm.require("cm.hud")
 local world = cm.require("world")
 local player = cm.require("player")
 local npc = cm.require("npc")
@@ -295,8 +297,16 @@ local function build_ctl()
   elseif d.demo ~= 0 then
     return route_ctl()
   else
-    fwd = (input.down("up") and 1 or 0) + (input.down("down") and -1 or 0)
-    side = (input.down("right") and 1 or 0) + (input.down("left") and -1 or 0)
+    -- cm.move (D097): stick verbatim when deflected, else the digital
+    -- keys — keys() is the old block's exact integer sums, so recorded
+    -- traces (zero axes) replay bit-exact; a live pad steers for free
+    local sx, sy = move.stick(1)
+    if sx ~= 0 or sy ~= 0 then
+      fwd, side = -sy, sx
+    else
+      local ix, iy = move.keys()
+      fwd, side = -iy, ix
+    end
     jump_pressed = input.pressed("jump")
   end
   local wishx, wishz = rig.wish(cam, fwd, side)
@@ -374,31 +384,32 @@ function game.draw()
   text.draw(3, 3, ("openworld  %d tris  frame %d"):format(st.tris or 0, frame))
   -- the star counter, top-right (gold once complete)
   local got, total = stars.count()
-  local hud = ("stars %d/%d"):format(got, total)
-  text.draw(W - text.measure(hud) - 3, 3, hud,
-            got >= total and { r = 1, g = 0.85, b = 0.35, a = 1 } or nil)
+  local counter = ("stars %d/%d"):format(got, total)
+  hud.text("tr", 3, 3, counter,
+           got >= total and { r = 1, g = 0.85, b = 0.35, a = 1 } or nil)
   -- the ALL-STARS banner, fading out (the bounce CLEAR banner read)
   local d = state.doc
   if d.star_t > 0 then
     local kb = d.knobs.stars.banner
     local a = m.min(1, 3 * d.star_t / kb)
     local msg = "ALL THE STARS!"
-    text.draw((W - text.measure(msg)) // 2, H // 2 - 20, msg,
-              { r = 1, g = 0.85, b = 0.35, a = a })
+    hud.text("t", 0, H // 2 - 20, msg, { r = 1, g = 0.85, b = 0.35, a = a })
   end
   -- the exchange line, typing out (centered on the FULL line so the text
   -- doesn't slide while it reveals)
   local line, nch = npc.dialog()
   if line then
-    text.draw((W - text.measure(line)) // 2, H - 26, line:sub(1, nch),
+    -- hud.place with the FULL line's width: the typed reveal must not
+    -- slide (hud.text would measure the substring)
+    local lx, ly = hud.place("t", 0, H - 26, text.measure(line), 8, W, H)
+    text.draw(lx, ly, line:sub(1, nch),
               { r = 1, g = 0.95, b = 0.72, a = 0.95 })
   end
   if state.doc.demo ~= 0 then
     local msg = "AUTOPLAY * press any key"
-    text.draw((W - text.measure(msg)) // 2, 14, msg,
-              { r = 1, g = 0.92, b = 0.6, a = 0.95 })
+    hud.text("t", 0, 14, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
-  text.draw(3, H - 11, "wasd move . space jump . arrows/drag camera . wheel zoom . c recenter")
+  hud.text("bl", 3, 3, "wasd move . space jump . arrows/drag camera . wheel zoom . c recenter")
 end
 
 return game

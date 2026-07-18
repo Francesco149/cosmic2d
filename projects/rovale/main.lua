@@ -23,6 +23,7 @@ local gb = cm.require("cm.gb")
 local world = cm.require("world")
 local spr = cm.require("cm.spr")
 local walk = cm.require("cm.walk")
+local hud = cm.require("cm.hud")
 local player = cm.require("player")
 local npc = cm.require("npc")
 local audio = cm.require("audio")
@@ -372,8 +373,7 @@ local function draw_loading(frac)
   uibuf:setstr(0, bytes)
   pal.x_tris(0, uibuf, #bytes // 72, 0, 0)
   local msg = ("baking the vale  %d%%"):format((frac * 100) // 1)
-  text.draw((W - text.measure(msg)) // 2, H // 2 - 24, msg,
-            { r = 1, g = 0.92, b = 0.6, a = 1 })
+  hud.text("t", 0, H // 2 - 24, msg, { r = 1, g = 0.92, b = 0.6, a = 1 })
 end
 
 function game.draw()
@@ -441,15 +441,17 @@ function game.draw()
                                                        state.frame()))
   local line, nch = npc.dialog()
   if line then
-    text.draw((W - text.measure(line)) // 2, H - 30, line:sub(1, nch),
+    -- hud.place with the FULL line's width: the typed reveal must not
+    -- slide (hud.text would measure the substring)
+    local lx, ly = hud.place("t", 0, H - 30, text.measure(line), 8, W, H)
+    text.draw(lx, ly, line:sub(1, nch),
               { r = 1, g = 0.95, b = 0.72, a = 0.95 })
   end
   if state.doc.demo ~= 0 then
     local msg = "AUTOPLAY * click to take over"
-    text.draw((W - text.measure(msg)) // 2, 14, msg,
-              { r = 1, g = 0.92, b = 0.6, a = 0.95 })
+    hud.text("t", 0, 14, msg, { r = 1, g = 0.92, b = 0.6, a = 0.95 })
   end
-  text.draw(3, H - 11,
+  hud.text("bl", 3, 3,
     "left click walk . right drag / arrows camera . wheel zoom . c recenter")
 end
 
