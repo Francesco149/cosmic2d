@@ -862,6 +862,80 @@ number includes the recorder, so the gap between it and what your own
   files, directory order, editor state, or the operating system.
 - Keep action order and named-buffer layouts compatible with old recordings.
 
+## Common failures
+
+Most bugs here are determinism bugs — the simulation did something the recorder
+could not reproduce. The symptom, the cause, and the fix:
+
+- **A recording stops verifying, or a replay diverges.** You changed the
+  simulation's shape: the order of `cm.input` actions, a named buffer's layout,
+  or a project source (a code edit changes the recorded code bundle). Old
+  recordings are against the old shape, so the mismatch is an honest divergence,
+  not a crash. Keep action order and buffer layouts stable; when a change is
+  deliberate, re-record the affected trace.
+
+- **`--verify` crashes instead of reporting a divergence.** A project module
+  written `local M = {}` split-brains when the bundle re-executes — the reloaded
+  copy writes a table nobody reads. Adopt the loader's table instead:
+
+      local M = select(2, ...) or {}
+
+- **Collisions, spawns, or draws come out differently between runs.** Something
+  gameplay-visible depends on hash-table `pairs` order. Iterate gameplay arrays
+  with `ipairs`; `cm.actor` already gives actors stable, spawn-ordered ids.
+
+- **Random numbers differ between machines or replays.** You used `math.random`
+  or a wall clock. Use `cm.rand` for randomness and `cm.math` for simulation
+  trig — both are seeded and deterministic.
+
+- **The frame budget breaks as the world grows.** Per-frame history cost tracks
+  total `state.doc` size, not motion — about **500 live, moving, doc-carried
+  actors** is the supported alpha envelope. Move bulk numeric state into named
+  buffers, keep flourish render-only, and watch the F3 gauge. See
+  [the performance envelope](#the-performance-envelope).
+
+- **A saved game did not travel with an export or a copy.** That is intended:
+  `cm.save` keeps saves outside the project folder, so a shared game never
+  carries anyone's progress. See [Player saves](#player-saves).
+
+- **A load behaves differently on replay.** Reading a save slot inside `step`
+  and branching on it is a determinism bug. Read in `init` (filling only absent
+  `state.doc` fields), or use `save.on_load` + `save.load(slot)` for a
+  mid-session load — the recorder reproduces that without the file.
+
+- **A background layer does not parallax.** Give the map layer `par_x`/`par_y`
+  factors below `1`; parallax is presentation-only and never moves colliders.
+
+## Compatibility policy
+
+The engine is pre-1.0, so formats can still change before the alpha freeze — but
+the rules that protect your project are already enforced, not merely promised
+(the full stability contract is in `docs/ARCHITECTURE.md`):
+
+- **Recordings replay forever.** Every golden trace committed to `tests/` must
+  replay byte-exact on every future build; a change that breaks an old trace is
+  by definition a bug. Your half of that contract is the determinism discipline
+  above — stable action order and named-buffer layouts.
+
+- **Formats are versioned, tagged-chunk containers.** Every chunk is
+  version-stamped; a reader skips the chunks it does not know and errors loudly
+  on truncation — it never guesses. Old files stay readable as a format grows.
+
+- **The engine refuses loudly, never degrades silently.** Engine code checks the
+  PAL API version (currently **19**) and function presence, and refuses with a
+  clear "needs PAL api >= N" message rather than half-running. A newer engine on
+  an older PAL still works whenever it needs no new primitive.
+
+- **Saves migrate forward and refuse newer.** Bump `save.schema(n)` and describe
+  each `save.migrate` step once: old saves upgrade on read, and a save from a
+  newer version of your game is refused with a named error instead of being
+  misread.
+
+- **Base semantics are frozen** — little-endian data, IEEE-754 numbers, Lua 5.4,
+  `buf:hash()` as fnv1a-64, SDL scancodes. Code and data written against them
+  stay valid; new behavior arrives under a new name, never by redefining an old
+  one.
+
 ## Small module reference
 
 - `cm.state` — `doc`, `frame()`, snapshots, named-buffer helpers.

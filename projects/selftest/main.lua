@@ -10990,6 +10990,18 @@ local function t_docs()
     if h.name == "scripting.md" then saw_scripting = true end
   end
   check(saw_scripting, "docs.search: 'cm.actor' finds the shipped scripting guide")
+  -- the A8 reference topics we documented are findable (the D110 loop: what is
+  -- written must be searchable) — tolerant, term appears in scripting.md
+  local function shipped_finds(term, doc)
+    for _, h in ipairs(docs.search(term)) do
+      if h.name == doc then return true end
+    end
+    return false
+  end
+  check(shipped_finds("compatibility", "scripting.md"),
+        "docs.search: 'compatibility' finds the compatibility policy")
+  check(shipped_finds("diverges", "scripting.md"),
+        "docs.search: 'diverges' finds the common-failures section")
   check(#docs.search("zzq_not_a_real_token_xyz") == 0,
         "docs.search: an absent token finds nothing in the shipped docs")
 end
