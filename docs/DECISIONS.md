@@ -5894,3 +5894,16 @@ Deferred, named honestly: key-repeat on held PgUp/PgDn (the kit
 dispatches on `not e.rep` for every kind — a kit-wide decision, not a
 reader hack), launcher result keyboard-nav paging, and in-doc Ctrl+F
 find (still the next cheap reader packet).
+
+**Same-day follow-up (the human): the launcher no longer remembers the
+last query.** `M.open` always reset `q = ""`, but the ghost edit
+widget's per-id buffer survives a dismissal (the field is still ACTIVE
+when the overlay dies — nothing ever deactivates it), so on reopen the
+widget returned its retained text and `draw`'s change-sync wrote the
+old query straight back into `l.q`. The open frame now passes the
+widget's `set` flag beside `focus` (deactivate-first + adopt the
+incoming empty text — the D051 door built for exactly this). No KAT can
+reach it (the widget needs the live imgui host, which the headless
+selftest never boots); proven both ways with a scripted draw-hook
+driver — open/type/close/reopen read `[stale query]` before the fix and
+`[]` after.

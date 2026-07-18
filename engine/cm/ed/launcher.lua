@@ -229,6 +229,10 @@ function M.draw(ed, ig, i)
     id = "launcher", x = fx, y = fy, w = fw, h = fh - 8,
     text = l.q, px = fpx, font = 0, multiline = false, ghost = true,
     focus = l.focus or nil,
+    -- a fresh open starts EMPTY: the widget's per-id buffer survives a
+    -- dismissal (the field was still active when the overlay died), so
+    -- without `set` the last session's query would reappear here
+    set = l.focus or nil,
   }
   l.focus = nil
   if text ~= l.q then l.q = text:gsub("[\r\n\t]", ""); l.sel = 1; ed.touch() end

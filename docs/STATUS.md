@@ -51,7 +51,12 @@ Linux selftest **24,471** (33 new `t_help_keys` KATs) / native Windows
 reader scrollbar/hint-strip captures inspected on llm-feed; `editor.md`
 documents both. Deferred honestly (D121): key-repeat on held paging keys
 (a kit-wide `e.rep` decision), launcher result keyboard paging, in-doc
-Ctrl+F find.
+Ctrl+F find. **Follow-up in D121: a reopened launcher starts empty** —
+the ghost widget's per-id buffer survived a dismissal (the field never
+deactivates) and leaked the previous query back through the change-sync;
+the open frame now passes `set` beside `focus`. Proven both directions
+with a scripted draw-hook driver (no KAT can reach it — the widget needs
+the live imgui host the headless selftest never boots).
 
 **Same session, earlier — D120 closes the A8 searchable-reference
 checkbox.** The named gap was per-module reference depth. Four new/deepened
