@@ -10825,6 +10825,140 @@ local function t_ed_domain()
   view.mode = was_mode
 end
 
+-- ---- cm.docs: the A8 documentation search index (pure over supplied
+-- markdown; only list() touches the filesystem, smoke-tested at the end) ----
+local function t_docs()
+  local docs = cm.require("cm.docs")
+
+  -- a synthetic corpus (line numbers matter — they are the goto targets)
+  local corpus = {
+    { name = "alpha.md", title = "Alpha guide", src =
+      "# Alpha guide\n" ..                                         -- 1
+      "Intro line about widgets.\n" ..                             -- 2
+      "\n" ..                                                      -- 3
+      "## Camera (cm.camera)\n" ..                                 -- 4
+      "The camera follows with a deadzone and shake.\n" ..         -- 5
+      "Use camera.shake for screen shake.\n" ..                    -- 6
+      "\n" ..                                                      -- 7
+      "## Actors (cm.actor)\n" ..                                  -- 8
+      "Actor worlds keep stable ids.\n" },                         -- 9
+    { name = "beta.md", title = "Beta notes", src =
+      "# Beta notes\n" ..                                          -- 1
+      "```\n" ..                                                   -- 2
+      "# this is a code comment, not a heading\n" ..               -- 3
+      "```\n" ..                                                   -- 4
+      "## Storage\n" ..                                            -- 5
+      "Saves live outside the project. The camera is not here.\n" }, -- 6
+    { name = "gamma.md", title = "Gamma", src =
+      "Preamble before any heading mentions turtles.\n" ..         -- 1
+      "# Gamma\n" ..                                               -- 2
+      "Body about turtles and rockets.\n" },                       -- 3
+  }
+  local function find_src(name)
+    for _, d in ipairs(corpus) do if d.name == name then return d.src end end
+  end
+
+  -- sections(): headings become numbered ranges; the lead is dropped when the
+  -- doc opens on a heading, kept when there is real preamble
+  local sa = docs.sections(find_src("alpha.md"))
+  check(#sa == 3, "docs.sections: alpha has 3 heading sections (lead dropped)")
+  check(sa[1].level == 1 and sa[1].title == "Alpha guide" and sa[1].line == 1
+        and sa[1].lo == 1 and sa[1].hi == 3, "docs.sections: H1 range 1..3")
+  check(sa[2].level == 2 and sa[2].title == "Camera (cm.camera)"
+        and sa[2].line == 4 and sa[2].hi == 7, "docs.sections: Camera H2 4..7")
+  check(sa[3].level == 2 and sa[3].line == 8 and sa[3].hi == 9,
+        "docs.sections: Actors H2 8..9")
+  -- a '#' inside a ``` fence is code, never a heading
+  local sb = docs.sections(find_src("beta.md"))
+  check(#sb == 2 and sb[2].title == "Storage",
+        "docs.sections: fenced '# comment' does not split the doc")
+  for _, s in ipairs(sb) do
+    check(not s.title:find("code comment", 1, true),
+          "docs.sections: the fenced comment is not a section title")
+  end
+  -- real preamble keeps the lead section (level 0)
+  local sg = docs.sections(find_src("gamma.md"))
+  check(sg[1].level == 0 and sg[1].lo == 1 and sg[1].hi == 1,
+        "docs.sections: preamble keeps a level-0 lead")
+  check(sg[2].level == 1 and sg[2].title == "Gamma" and sg[2].lo == 2,
+        "docs.sections: heading after preamble")
+
+  -- section_at(): the heading owning a line
+  check(docs.section_at(sa, 5).title == "Camera (cm.camera)",
+        "docs.section_at: line 5 belongs to Camera")
+  check(docs.section_at(sa, 1).title == "Alpha guide",
+        "docs.section_at: line 1 belongs to the H1")
+  check(docs.section_at(sa, 9).title == "Actors (cm.actor)",
+        "docs.section_at: line 9 belongs to Actors")
+
+  -- heading_slug(): the same slug both sides of an in-doc #anchor
+  check(docs.heading_slug("Camera (cm.camera)") == "camera-cmcamera",
+        "docs.heading_slug: punctuation dropped, spaces hyphenated")
+  check(docs.heading_slug("Actors (cm.actor)") == "actors-cmactor",
+        "docs.heading_slug: actors slug")
+
+  -- search(): single term hitting a heading is a full section hit, ranked
+  -- ahead of a body-only hit in another doc. The term is IN the Camera
+  -- heading (line 4), so the hit lands on the heading itself.
+  local r = docs.search("camera", corpus)
+  check(#r == 2, "docs.search: 'camera' hits Camera + Storage sections")
+  check(r[1].name == "alpha.md" and r[1].section == "Camera (cm.camera)"
+        and r[1].line == 4, "docs.search: heading hit ranks first, lands on line 4")
+  check(r[1].snippet:lower():find("camera", 1, true),
+        "docs.search: the snippet carries the term")
+  check(r[2].name == "beta.md" and r[2].section == "Storage" and r[2].line == 6,
+        "docs.search: body-only hit ranks second")
+  check(r[1].score > r[2].score, "docs.search: scores descend")
+
+  -- multi-term AND: both terms co-occur in Camera; beta lacks 'shake' so the
+  -- whole doc drops out (doc-level AND)
+  local r2 = docs.search("camera shake", corpus)
+  check(#r2 == 1 and r2[1].name == "alpha.md"
+        and r2[1].section == "Camera (cm.camera)" and r2[1].line == 5,
+        "docs.search: 'camera shake' -> only the section with both, line 5")
+  check(r2[1].snippet:lower():find("shake", 1, true),
+        "docs.search: multi-term snippet carries a term")
+
+  -- scattered terms: alpha has 'widgets' (H1 body) and 'actors' (Actors head)
+  -- in DIFFERENT sections; no section covers both, so the doc emits its single
+  -- best-covering section (Actors, headed) once
+  local r3 = docs.search("widgets actors", corpus)
+  check(#r3 == 1 and r3[1].name == "alpha.md"
+        and r3[1].section == "Actors (cm.actor)" and r3[1].line == 8,
+        "docs.search: scattered terms fall back to one best section")
+
+  -- a term only one doc has excludes the others entirely
+  local r4 = docs.search("rockets", corpus)
+  check(#r4 == 1 and r4[1].name == "gamma.md" and r4[1].section == "Gamma"
+        and r4[1].line == 3, "docs.search: 'rockets' isolates gamma")
+
+  -- literal matching: a query with pattern metacharacters is matched plainly,
+  -- not as a Lua pattern (would error or mis-match otherwise)
+  check(docs.search("cm.actor", corpus)[1].section == "Actors (cm.actor)",
+        "docs.search: 'cm.actor' matches literally")
+  local rp = docs.search("(cm.camera)", corpus)
+  check(#rp >= 1 and rp[1].name == "alpha.md",
+        "docs.search: parenthesised query does not error and matches literally")
+
+  -- empty / whitespace / absent -> no results
+  check(#docs.search("", corpus) == 0, "docs.search: empty query is empty")
+  check(#docs.search("   ", corpus) == 0, "docs.search: whitespace query is empty")
+  check(#docs.search("zznope", corpus) == 0, "docs.search: absent term is empty")
+
+  -- smoke over the REAL shipped docs (stable API anchors, tolerant asserts)
+  local live = docs.list()
+  check(#live > 0 and live[1].name and live[1].title and live[1].src,
+        "docs.list: the shipped corpus loads with name/title/src")
+  local la = docs.search("cm.actor")
+  local saw_scripting = false
+  for _, h in ipairs(la) do
+    if h.name == "scripting.md" then saw_scripting = true end
+  end
+  check(saw_scripting, "docs.search: 'cm.actor' finds the shipped scripting guide")
+  check(#docs.search("zzq_not_a_real_token_xyz") == 0,
+        "docs.search: an absent token finds nothing in the shipped docs")
+end
+
 function game.init()
   checks = 0
   t_rand_kat()
@@ -10918,6 +11052,7 @@ function game.init()
   t_clip_trust()
   t_crash_tail()
   t_ed_domain()
+  t_docs()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
 
