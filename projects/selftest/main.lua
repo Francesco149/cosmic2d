@@ -10590,6 +10590,191 @@ local function t_clip_trust()
   trace.ring_start({ project = "selftest" })
 end
 
+local function t_crash_tail()
+  -- A7 §16: a .ccrash may EMBED its one-minute history tail as a self-contained
+  -- standalone clip, so a report opened on ANOTHER machine (or after the local
+  -- tail is evicted) still carries its timeline. crash_tail_bytes packs the safe
+  -- pre-roll like export_clip (in memory); the drop stages it and opens it
+  -- through the SAME trust-gated clip door, flavored CRASH. This pins the byte
+  -- production + the drop/trust/Esc state machine; the imgui tray is chrome.
+  local trace = cm.require("cm.trace")
+  local scrub = cm.require("cm.scrub")
+  local ed = cm.require("cm.ed")
+  local view = cm.require("cm.view")
+  local rewind = cm.require("cm.ed.rewind")
+  local crash = cm.require("cm.crash")
+  local chunk = cm.require("cm.chunk")
+  local sim = pal.buf("cm.sim", 64)
+  local f0 = sim:i64(0)
+
+  local save_after = cm.main.after_restore
+  local save_on, save_doc, save_root = ed.on, ed.doc, ed.root
+  local save_mode = view.mode
+  local save_kf, save_sec = trace.ring.kf, trace.ring.seconds
+  local save_spill, save_mb = trace.ring.spill, trace.ring.budget_mb
+  local save_ws, save_ct = trace._workspace_root, trace._crash_tail_root
+  cm.main.after_restore = function() end
+
+  local root = tmproot() .. "/cosmic_selftest_crashtail"
+  local wsroot = tmproot() .. "/cosmic_selftest_crashtailws"
+  local ctroot = tmproot() .. "/cosmic_selftest_crashtailct"
+  pal.mkdir(root)
+  local function wipe_hist()
+    local ns = pal.list_dir(root .. "/.ed/history") or {}
+    for i = #ns, 1, -1 do pal.x_remove(root .. "/.ed/history/" .. ns[i]) end
+    pal.x_remove(root .. "/.ed/history/blobs")
+    pal.x_remove(root .. "/.ed/history")
+  end
+  local function wipe_dir(d)
+    local ns = pal.x_list_dir_all and pal.x_list_dir_all(d) or {}
+    for i = #ns, 1, -1 do pal.x_remove(d .. "/" .. ns[i]) end
+    pal.x_remove(d)
+  end
+  wipe_hist(); wipe_dir(wsroot); wipe_dir(ctroot)
+  pal.write_file(root .. "/main.lua", "return {}\n")
+
+  ed.launch(root)
+  trace.ring.kf, trace.ring.seconds = 4, 30
+  trace.ring.spill, trace.ring.budget_mb = true, 64
+  trace._workspace_root, trace._crash_tail_root = wsroot, ctroot
+  local b = pal.buf("st.crashtail", 8)
+  local irec = ("\0"):rep(10)
+  sim:i64(0, f0)
+  trace.ring_start({ project = root })
+  for i = 1, 24 do
+    b:i32(0, i * 5); sim:i64(0, f0 + i); trace.record_frame(irec, nil)
+  end
+  trace.history_drain()
+  local live_lo, live_hi = trace.ring_range()
+  local stream = trace.ring_locator().stream
+
+  -- ---- crash_tail_bytes: a self-contained standalone clip over the pre-roll ----
+  local committed = live_hi - 2
+  local blob, frames = trace.crash_tail_bytes(committed, 8) -- an 8-frame pre-roll
+  check(type(blob) == "string" and frames and frames > 0,
+        "crash-tail: crash_tail_bytes packs the pre-roll as clip bytes")
+  local has_snap, has_mfst, loopa, loopb = false, false, nil, nil
+  for _, c in ipairs(chunk.read(blob, "CTRC")) do
+    if c.tag == "SNAP" then has_snap = true end
+    if c.tag == "MFST" then has_mfst = true end
+    if c.tag == "LOOP" then loopa, loopb = string.unpack("<I4I4", c.payload) end
+  end
+  check(has_snap and has_mfst and loopa ~= nil,
+        "crash-tail: the tail is a standalone clip (SNAP + project tree + LOOP)")
+  check(loopb == committed and loopa == committed - 7,
+        "crash-tail: LOOP is the safe pre-roll ending at the last committed frame")
+
+  -- ---- write_crash_tail stages it where the trust-gated clip door reads it ----
+  local staged = trace.write_crash_tail(blob)
+  check(staged and staged:find(ctroot, 1, true) == 1
+        and staged:match("%.ctrace$"),
+        "crash-tail: write_crash_tail stages the tail under the per-user root")
+  local hash = trace.clip_code_hash(staged)
+  check(hash and trace.clip_trusted(hash),
+        "crash-tail: this session's own crash tail is pre-trusted (self-export)")
+
+  -- ---- the CLIP chunk round-trips through the .ccrash container ----
+  local report_o = {
+    report_id = "cr1-tail", project_path = root, project_name = "ct",
+    history_stream = stream, committed_frame = committed,
+    attempted_frame = committed + 1, error_kind = "sim.step",
+    traceback = "boom", tail = blob }
+  check(crash.decode(crash.encode(report_o)).tail == blob,
+        "crash-tail: the additive CLIP chunk round-trips the embedded tail")
+  local ccrash = root .. "/boom.ccrash"
+  pal.write_file(ccrash, crash.encode(report_o))
+
+  -- ---- drop it (self-trusted): opens directly as a CRASH-flavored clip ----
+  check(rewind.drop_crash(ed, ccrash),
+        "crash-tail: a report with an embedded tail opens directly (self-trusted)")
+  local r = ed.g.rw
+  check(r.crash and r.crash.committed == committed
+        and r.crash.attempted == committed + 1 and r.crash.kind == "sim.step",
+        "crash-tail: the drop flavors the clip CRASH (failed boundary marked)")
+  scrub.frame() -- chrome phase: do_load stashes live + mounts the tail clip
+  check(scrub.is_clip() and trace.has_stash(),
+        "crash-tail: the embedded tail opens as an ephemeral clip (live stashed)")
+  local la, lb = scrub.loop_range()
+  check(la == loopa and lb == loopb,
+        "crash-tail: the crash clip loops the embedded pre-roll bounds")
+  local ws = trace.replay_workspace()
+  check(ws and pal.read_file(ws .. "/main.lua") == "return {}\n",
+        "crash-tail: the crash clip mounts its bundled project ephemerally")
+
+  -- ---- Esc layering: clear the loop, then eject back to the untouched live ----
+  rewind.escape(ed)
+  check(not scrub.has_loop() and scrub.is_clip() and r.crash,
+        "crash-tail: Esc clears the loop but keeps the crash clip")
+  rewind.escape(ed)
+  check(not scrub.is_clip() and not trace.has_stash()
+        and not (ed.g.rw and ed.g.rw.crash),
+        "crash-tail: a second Esc ejects to live; the crash focus is dismissed")
+  local rlo, rhi = trace.ring_range()
+  check(rlo == live_lo and rhi == live_hi,
+        "crash-tail: the live ring is byte-untouched after the crash clip")
+
+  -- ---- an UNTRUSTED (foreign-session) tail parks the CRASH trust prompt ----
+  trace._trust_reset()
+  check(not rewind.drop_crash(ed, ccrash),
+        "crash-tail: an untrusted embedded tail does NOT open the clip")
+  check(r.trust and r.trust.hash == hash and r.trust.crash
+        and r.trust.crash.kind == "sim.step",
+        "crash-tail: it parks a CRASH-flavored trust prompt naming the tail")
+  check(not scrub.is_clip() and not trace.has_stash(),
+        "crash-tail: nothing was stashed, mounted, or run before the confirm")
+  check(rewind.trust_run(ed) and r.trust == nil and r.crash
+        and r.crash.kind == "sim.step",
+        "crash-tail: trust_run confirms and re-opens still flavored CRASH")
+  scrub.frame()
+  check(scrub.is_clip() and trace.has_stash(),
+        "crash-tail: the confirmed crash tail opens as an ephemeral clip")
+  scrub.close()
+  check(not scrub.is_clip() and not trace.has_stash(),
+        "crash-tail: dismissal restores the live ring")
+
+  -- ---- a locator-only report still resolves the local stream IN PLACE (D106) --
+  local plain = root .. "/plain.ccrash"
+  pal.write_file(plain, crash.encode({
+    report_id = "cr1-plain", project_path = root, project_name = "ct",
+    history_stream = stream, committed_frame = committed,
+    attempted_frame = committed + 1, error_kind = "sim.step" }))
+  check(rewind.drop_crash(ed, plain) and scrub.paused()
+        and not scrub.is_clip() and not trace.has_stash(),
+        "crash-tail: a locator-only report resolves the local stream in place")
+  rewind.escape(ed); rewind.escape(ed)
+
+  -- ---- refusal: spill-off history embeds no tail (legacy limit, named) ----
+  trace.ring.spill = false
+  sim:i64(0, f0); trace.ring_start({ project = root })
+  for i = 1, 8 do b:i32(0, i); sim:i64(0, f0 + i); trace.record_frame(irec, nil) end
+  local no, nowhy = trace.crash_tail_bytes(select(2, trace.ring_range()))
+  check(not no and nowhy and nowhy:find("manifest"),
+        "crash-tail: spill-off history embeds no tail (names the legacy limit)")
+
+  -- restore the world for the tests that follow
+  trace._trust_reset()
+  wipe_hist(); wipe_dir(wsroot); wipe_dir(ctroot)
+  for _, n in ipairs({ "main.lua", "boom.ccrash", "plain.ccrash" }) do
+    pal.x_remove(root .. "/" .. n)
+  end
+  ed.on, ed.doc, ed.root = save_on, save_doc, save_root
+  ed.parked, ed.g.stash = false, nil
+  ed.g.root_stash, ed.g.root_stashed = nil, nil
+  if ed.g.rw then
+    ed.g.rw.trust, ed.g.rw.trust_rect = nil, nil
+    ed.g.rw.crash, ed.g.rw.open, ed.g.rw.fit_crash = nil, nil, nil
+  end
+  view.mode = save_mode
+  cm.main.after_restore = save_after
+  trace._workspace_root, trace._crash_tail_root = save_ws, save_ct
+  trace.ring.kf, trace.ring.seconds = save_kf, save_sec
+  trace.ring.spill, trace.ring.budget_mb = save_spill, save_mb
+  scrub.live_snap = nil
+  sim:i64(0, f0)
+  pal.buf_free("st.crashtail")
+  trace.ring_start({ project = "selftest" })
+end
+
 local function t_ed_domain()
   -- the ed.* buffer domain is invisible to sim snapshots + traces (D050)
   local state = cm.require("cm.state")
@@ -10731,6 +10916,7 @@ function game.init()
   t_crash_resolve()
   t_crash_focus()
   t_clip_trust()
+  t_crash_tail()
   t_ed_domain()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))
 end
