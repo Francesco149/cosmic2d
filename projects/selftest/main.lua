@@ -11054,6 +11054,23 @@ local function t_docs()
         "docs.search: 'compatibility' finds the compatibility policy")
   check(shipped_finds("diverges", "scripting.md"),
         "docs.search: 'diverges' finds the common-failures section")
+  -- the A8 searchable-reference bar: every supported cm.* lands a scripting.md
+  -- hit whose SECTION heading names the module (tolerant of retitles that keep
+  -- the module name in the heading — the D110 loop: what is written must be
+  -- searchable)
+  for _, mod in ipairs({ "cm.state", "cm.input", "cm.gfx", "cm.text", "cm.map",
+      "cm.collide", "cm.box", "cm.actor", "cm.camera", "cm.tween", "cm.depth",
+      "cm.hud", "cm.move", "cm.tmap", "cm.anim", "cm.sprite", "cm.snd",
+      "cm.ins", "cm.options", "cm.save", "cm.palette", "cm.grade", "cm.rand",
+      "cm.math", "cm.ease", "cm.m4", "cm.gb", "cm.terr", "cm.atlas", "cm.fig",
+      "cm.mascot", "cm.spr", "cm.rig", "cm.kin", "cm.walk" }) do
+    local named = false
+    for _, h in ipairs(docs.search(mod)) do
+      if h.name == "scripting.md" and h.section
+         and h.section:find(mod, 1, true) then named = true break end
+    end
+    check(named, "docs.search: '" .. mod .. "' lands its own scripting.md section")
+  end
   check(#docs.search("zzq_not_a_real_token_xyz") == 0,
         "docs.search: an absent token finds nothing in the shipped docs")
 end

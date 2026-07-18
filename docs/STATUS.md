@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — A4/A5/A6/A7 closed; A8 open — **this session merged the cosmic3d fork back into mainline (D114) and executed its entire post-merge queue**: 3D-module KATs to the 2d bar, the cm.actor/hud/move retrofits with honest re-cuts (D115), the relative-mouse + MREL record packet (D116), and — after the human's "NPCs tank bigworld 240→80fps" report — the baked-figure pipeline + x_figverts C loop (D117, PAL API 22): **1.84 → 0.188 ms per figure, byte-identical, all goldens un-recut**. The 3D documentation pass is now complete — **D119** (notes below). Prior A8 packets: D110–D113 (docs search/reference/reader polish) (2026-07-18)
+## Current handoff — A4/A5/A6/A7 closed; A8 open — **D120 closes A8's searchable-reference checkbox**: per-module scripting.md sections for the remaining 2D `cm.*` (tmap, anim/sprite, palette/grade, rand/math/ease), eight headings retitled to name their modules, and a KAT-pinned every-module-findable sweep (Linux selftest 24,403 → **24,438**). Prior work this date: the cosmic3d merge (D114) + its post-merge queue (D115–D117), the clip-drop/console fixes (D118), the 3D docs pass (D119). **Native Windows selftest re-count + stage swap still pending — the staged editor was running (D118's condition); retry `tools/build-windows.sh` first thing** (2026-07-18)
 
 The active release program is `ALPHA.md`; the original M-series in
 `PLAN.md` and the R-series in `REVAMP.md` are historical context. The
@@ -31,7 +31,31 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-18) — the cosmic3d merge (D114) + its post-merge queue
+**This session (2026-07-18, continued) — D120 closes the A8 searchable-reference
+checkbox.** The named gap was per-module reference depth. Four new/deepened
+scripting.md sections in the `## Title (cm.mod)` shape with copyable examples
+from real bundled-project usage: **Tilemaps (cm.tmap)**, **Animation clips and
+sprites (cm.anim, cm.sprite)** (the thin `## Animation` deepened with the clip
+shape, the cosmetic/sim-bound timing anchors, and the `.meta` pivot/slices
+door), **Palettes and color grading (cm.palette, cm.grade)** (the demo's
+per-room mood pattern + the never-sim contract), and **Deterministic
+randomness, math, and easing (cm.rand, cm.math, cm.ease)**. The findability
+sweep then exposed eight headings whose modules landed on the index line or
+the wrong doc (`cm.map` → win-map.md, `cm.snd` → win-music.md) — all retitled
+to name their modules (`cm.state`, `cm.input`, `cm.gfx`/`cm.text`, `cm.map`,
+`cm.collide`, `cm.snd`/`cm.ins`, `cm.options`, `cm.save`; the one
+`#player-saves` anchor updated to the new slug). The exit criterion is now
+KAT-pinned: t_docs sweeps all 35 supported `cm.*` and each must land a
+scripting.md hit whose section heading names it. Linux selftest **24,438**;
+`nix run .#test` ALL GREEN, every golden byte-identical (docs are not
+compiled). Captures inspected on llm-feed: the reader landed on the Tilemaps
+section; home search `cm.rand` ranking the new section first. ALPHA §A8's
+searchable-reference box is ticked (D120). **The Windows stage swap failed
+with D118's exact condition (staged editor running, permission denied on the
+move) — the Linux-side proof is complete; the native re-count rides the next
+successful `tools/build-windows.sh`.**
+
+**Prior session (2026-07-18) — the cosmic3d merge (D114) + its post-merge queue
 (D115/D116).** Five packets, committed separately with their own proofs:
 
 1. **The merge (D114).** `../cosmic3d` (97 commits, fork point f791824) merged
@@ -615,33 +639,27 @@ packaging shipped: `ring_manifest`, `manifest_at`, `blob_get`,
 `manifest_files`. `tools/build-windows.sh` refreshed the stage and Start
 Menu shortcut.
 
-**Exact next packet:** **continue A8 (ALPHA §A8).** The searchable reference now
-has its substrate (D110), the readable rendering path is correct and the reader is
-**polished** — code blocks syntax-highlight + copy, home scroll clamps (D111) —
-and all five named reference topics are *present and findable*: modules (task
-sections + the one-line index), the project schema (Project shape), determinism
-(the checklist), **common failures** and **compatibility policy**.
-The A8 checkbox stays `[ ]` on one honest gap — **per-module reference depth**:
-the 20-line "Small module reference" is still an index, and several `cm.*`
-(`cm.tmap`, `cm.anim`/`cm.sprite`, `cm.palette`/`cm.grade`, `cm.rand`/`cm.math`/
-`cm.ease`) have no full section. **Two well-shaped next packets, either order:**
-1. **Promote the module index into per-module sections** — a full anchored
-   section per supported `cm.*` (the commonly-used ones already have one), each
-   with its signatures + a copyable example. Verify each new module name is
-   findable in the reader (the D110 loop). This closes A8's searchable-reference
-   checkbox.
-2. **The in-engine Getting Started walkthrough** — turn `getting-started.md` from
-   an orientation page into the guided **create → modify code/art/map/audio →
-   play/debug/rewind → export** path, driven and verified through the shipped UI
-   (also the spine of the later fresh-user pass).
-The remaining cheap reader nicety is **in-doc Ctrl+F find** (the `text.lua` find
-model; the shell already routes Ctrl+F to `kind_call("find")`, so `M.find` on the
-help kind drops in). **Full prose drag-select shipped (D112)** — still deferred:
-D110's launcher content-search / result keyboard-nav / span-precise highlight, and
-D112's double/triple-click select + resize-surviving selection. Deferred A7 refinements (captured-audio embedding, a
-wall-clock clip filename, asset-import markers, native-failure next-launch synthesis,
-an embedded-tail size budget) stay available if a real use votes one up. See
-`ALPHA.md` §A8, DECISIONS `D111`/`D110`.
+**Exact next packet:** **continue A8 (ALPHA §A8).** The searchable-reference
+checkbox is now `[x]` (D120): every supported module has a full anchored
+section, all five reference topics are present and findable, and the
+every-module-findable sweep is KAT-pinned. **First: retry
+`tools/build-windows.sh`** — the stage swap has been blocked twice by the
+running staged editor (D118, D120), so the native Windows selftest re-count
+(expect 24,438 + the native-delta) is owed. **The next well-shaped packet is
+the in-engine Getting Started walkthrough** — turn `getting-started.md` from
+an orientation page into the guided **create → modify code/art/map/audio →
+play/debug/rewind → export** path, driven and verified through the shipped UI
+(also the spine of the later fresh-user pass). After that, A8's remaining
+open lines: the accessibility pass, the fresh-user usability pass, the
+clean-machine/upgrade/soak matrix, and the alpha freeze. The remaining cheap
+reader nicety is **in-doc Ctrl+F find** (the `text.lua` find model; the shell
+already routes Ctrl+F to `kind_call("find")`, so `M.find` on the help kind
+drops in). Still deferred: D110's launcher content-search / result
+keyboard-nav / span-precise highlight, and D112's double/triple-click select
++ resize-surviving selection. Deferred A7 refinements (captured-audio
+embedding, a wall-clock clip filename, asset-import markers, native-failure
+next-launch synthesis, an embedded-tail size budget) stay available if a real
+use votes one up. See `ALPHA.md` §A8, DECISIONS `D120`/`D119`/`D110`.
 
 **D102 turns the rewind tray's storage readout into a control — the A7
 disk-budget / retention surface (ALPHA §A7 line 4).** The head's

@@ -377,8 +377,10 @@ Goal: validate the whole promise, not isolated subsystems.
 
 - [ ] In-engine Getting Started completes create → modify code/art/map/audio →
   play/debug/rewind → export, using only shipped UI.
-- [ ] Searchable public API/task reference covers every supported module,
+- [x] Searchable public API/task reference covers every supported module,
   project schema, determinism rules, common failures, and compatibility policy.
+  (D110 substrate; D111–D113 reader; D119 the 3D modules; D120 per-module
+  2D sections + the KAT-pinned every-module-findable sweep.)
 - [ ] Accessibility pass: scalable legible UI, keyboard-reachable core flows,
   visible focus, non-color-only states, reduced flash/shake options, and
   controller navigation where player-facing.

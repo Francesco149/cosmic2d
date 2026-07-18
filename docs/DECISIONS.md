@@ -5791,3 +5791,55 @@ entry is in DECISIONS.md, per the merge); the editor's 3D asset windows
 `win-*.md` guide exists for them yet; a worked end-to-end 3D tutorial (the
 getting-started walkthrough's 3D twin) is a later A8-style packet, not
 attempted here.
+
+## D120 — per-module reference sections close A8's searchable-reference bar (2026-07-18)
+
+The A8 checkbox held on one honest gap: the 20-line "Small module
+reference" was still an index, and the 2D modules `cm.tmap`,
+`cm.anim`/`cm.sprite`, `cm.palette`/`cm.grade`, and
+`cm.rand`/`cm.math`/`cm.ease` had no full section (D119 gave the ten 3D
+modules theirs). This packet promotes them — pure prose/markdown plus
+selftest Lua, no sim/render/recorded byte moved.
+
+**Four new/deepened sections in `engine/stock/docs/scripting.md`,**
+each in the established `## Title (cm.mod)` shape with signatures and a
+copyable example lifted from real bundled-project usage:
+`## Tilemaps (cm.tmap)` (the .tm doc/codec/grid ops, the placed-on-a-map
+common path, `graybox`, the culled batched draw — placed after map
+collision); `## Animation clips and sprites (cm.anim, cm.sprite)` (the
+old thin `## Animation` deepened: clip shape + loop modes, the
+cosmetic/sim-bound timing anchors, `.meta` pivot/slices via
+`load_meta`/`find_slice`); `## Palettes and color grading (cm.palette,
+cm.grade)` (the demo's sky + per-room mood pattern, the preset table,
+the never-sim contract); `## Deterministic randomness, math, and easing
+(cm.rand, cm.math, cm.ease)` (stream-in-`cm.sim`-buffer seeding,
+`ensure_seeded` vs `seed`, the draw family, the fdlibm trig + wrapped-
+angle rule, the by-name endpoint-pinned curve registry) — placed at the
+end of the 2D task sections, directly before the 3D umbrella.
+
+**Eight headings retitled to name their modules** — `cm.state`,
+`cm.input`, `cm.gfx`/`cm.text`, `cm.map`, `cm.collide`,
+`cm.snd`/`cm.ins`, `cm.options`, `cm.save` — because the findability
+sweep showed those names landing on the index line or the WRONG doc
+(`cm.map` → win-map.md, `cm.snd` → win-music.md): body mentions lose to
+foreign heading hits, so the module name belongs in its own heading (the
+D119 rule, now uniform). The one in-doc anchor (`#player-saves`) was
+updated to the new slug.
+
+**The exit criterion is now KAT-pinned, not just verified once:** t_docs
+gained a tolerant sweep — every supported `cm.*` (all 35: the 25 2D + 10
+3D) must land a `scripting.md` hit whose section heading names it —
+so a future retitle that drops a module name from its heading fails the
+suite instead of silently degrading search. Linux selftest **24,403 →
+24,438**; `nix run .#test` ALL GREEN, every golden byte-identical (docs
+are not compiled). Captures inspected on llm-feed: the reader landed on
+the Tilemaps section (heading panel, highlighted copy-chipped example),
+and the home search `cm.rand` ranking the new section first.
+
+**This closes ALPHA §A8's searchable-reference checkbox**: modules (now
+per-module depth), project schema, determinism rules, common failures,
+and compatibility policy are all present, anchored, and findable.
+Deferred, named honestly: in-doc Ctrl+F find, launcher content-search,
+result keyboard-nav, span-precise highlight (all D110-logged); the
+native Windows selftest re-count rides the next successful stage swap
+(the staged editor was running — same D118 condition).

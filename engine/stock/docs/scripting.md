@@ -95,7 +95,7 @@ table other modules already hold, and functions from a fresh table write
 fields your callers never see. Avoid top-level simulation changes: put
 them in `init` or `step` so reload and replay have an explicit boundary.
 
-## State that rewinds
+## State that rewinds (`cm.state`)
 
 Simulation truth belongs in `cm.state.doc` or a named `pal.buf`. Ordinary Lua
 locals and module tables are not snapshotted.
@@ -121,7 +121,7 @@ For dense numeric state, allocate a stable named buffer and access typed slots:
 Calling `pal.buf` again with the same name adopts the existing buffer. Do not
 change a buffer's size without an explicit migration.
 
-## Actions, mouse, and keys
+## Actions, mouse, and keys (`cm.input`)
 
 Define actions in a fixed array during `init`. Their first-definition order is
 part of recorded input, so append new actions rather than reordering old ones.
@@ -237,7 +237,7 @@ platformer velocity handling like the demo's stays yours. The bundled
 arcade demo (swarm) is the worked twin-stick example; the top-down demo
 (cellar) feeds `dir` into `box.slide`.
 
-## Drawing, cameras, and text
+## Drawing, cameras, and text (`cm.gfx`, `cm.text`)
 
 Begin every draw with a clear, then draw back-to-front:
 
@@ -272,10 +272,16 @@ Load and draw a baked PNG or sprite strip:
 `text.draw` uses the `5x8` font by default; pass `font="8x16"` for the larger
 font. `text.measure(str [, font])` returns width and height.
 
-## Animation
+## Animation clips and sprites (`cm.anim`, `cm.sprite`)
 
-The sprite editor bakes a `.spr` source into a horizontal `.png` strip and an
-`.anim` sidecar. Load clips and choose a zero-based frame from sim time:
+The sprite editor authors a layered `.spr` document and bakes it into a
+horizontal `.png` strip plus two sidecars: `.anim` (the clip table) and
+`.meta` (pivot + named slices). Games consume the baked output: the strip is
+a normal texture, `cm.anim` picks the frame, `cm.sprite` reads the metadata.
+
+`cm.anim` is a pure evaluator over (clip data, integer elapsed ticks) — no
+state of its own, integer math only — so it is equally safe in sim and
+render code. Load clips and choose a zero-based frame from sim time:
 
     local anim = cm.require("cm.anim")
     local clips = anim.load(cm.main.args.project .. "/art/hero.anim")
@@ -285,7 +291,33 @@ The sprite editor bakes a `.spr` source into a horizontal `.png` strip and an
 Use that frame to select a source rectangle in `gfx.sprite`. Map placements
 with an animation name do this automatically in `cm.map.draw_places`.
 
-## Loading and drawing a map
+- A clip is `{ name, loop = "loop"|"once"|"pingpong", frames = { { frame=,
+  dur= }, ... } }` — `frame` indexes the baked strip (zero-based), `dur` is
+  ticks at 60 Hz. `anim.duration(clip)` is one forward play-through in
+  ticks; "pingpong" bounces without holding the endpoints twice.
+- Two timing anchors. **Cosmetic**: `elapsed = state.frame() - t0`
+  recomputed each draw, nothing stored, never snapshotted. **Sim-bound**:
+  the controller keeps its start frame in its own named buffer and calls
+  the same evaluator. The studio's wall-clock preview never reaches sim.
+- `anim.load(path)` reads the sidecar (nil on a missing/corrupt file);
+  `anim.find(clips, name)` looks a clip up by name. Re-load on
+  `cm.asset_epoch` if you want editor saves to show live — the bundled
+  smoke project's player does exactly this.
+
+`cm.sprite` at runtime is the metadata door (the authoring surface —
+layers, fills, undo — belongs to the sprite window, and a `.spr` itself is
+never sim state):
+
+    local sprite = cm.require("cm.sprite")
+    local meta = sprite.load_meta(cm.main.args.project .. "/art/hero.meta")
+    local px = meta and meta.pivot.x or 0            -- in-game origin
+    local hand = meta and sprite.find_slice(meta, "hand")  -- {name,x,y,w,h}
+
+`sprite.load_meta(path)` returns `{ pivot = {x,y}, slices = {...} }` (nil on
+any failure, so keep fallbacks); `sprite.find_slice(meta, name)` finds a
+named slice rectangle — attachment points, hitboxes, trim rects.
+
+## Loading and drawing a map (`cm.map`)
 
 A `.map` contains bounds, collider chains/circles, markers, and placed assets.
 Load it during `init` with a stable collision-buffer name:
@@ -338,7 +370,7 @@ A named placement can act as an asset reference:
 `ok` is false when a loud built-in fallback is used. Missing visual placements
 draw a magenta checkerboard rather than silently disappearing.
 
-## Moving against map collision
+## Moving against map collision (`cm.collide`)
 
 `room.world` is a `cm.collide` world. Sweep an AABB by a proposed delta:
 
@@ -362,6 +394,47 @@ Useful queries are:
 
 The mover handles solid and one-way chains, slopes up to 45 degrees, and map
 bounds.
+
+## Tilemaps (`cm.tmap`)
+
+A `.tm` is a pure-visual tile grid: square cells of `tile` px drawn from a
+tileset `.spr` whose baked frames are the tiles — tile id N draws strip
+frame N (1-based), cell 0 is empty. A tilemap carries no collision, ever;
+collision is collider chains on the map like everything else.
+
+The common path needs no code: place a `.tm` on a map layer in the map
+window and `cm.map.draw_places` draws it — culled, batched, riding the
+layer's parallax — with everything else. Reach for `cm.tmap` directly to
+generate or edit grids from code:
+
+    local tmap = cm.require("cm.tmap")
+    local proj = cm.main.args.project
+
+    local td = tmap.blank(60, 8, 16, proj .. "/art/tiles.spr")
+    for tx = 0, 59 do
+      tmap.set(td, tx, 6, 1)     -- lit ridge row
+      tmap.set(td, tx, 7, 2)     -- mass below
+    end
+    pal.write_file(proj .. "/backdrop.tm", tmap.encode(td))
+
+- The doc is `{ w, h, tile, tileset, cells }` (cells are row-major u16s in
+  one string). `tmap.get(doc, tx, ty)` and `tmap.set(doc, tx, ty, id)` read
+  and write cells — (0,0) is the top-left cell; out-of-range reads return 0
+  and out-of-range writes are ignored.
+- `tmap.blank(w, h, tile, tileset)` makes an all-empty doc;
+  `tmap.encode(doc)` / `tmap.decode(bytes)` are the `.tm` codec;
+  `tmap.save(doc, path)` publishes atomically. `tmap.resize(doc, nw, nh)`
+  (anchored top-left: overlap survives, growth is empty) and
+  `tmap.fill_rect(doc, tx0, ty0, tx1, ty1, id)` are the grid ops the
+  tilemap window drives.
+- `tmap.graybox(mapdoc)` rasterizes a map's free collider layer into a
+  graybox tile doc over the stock tileset — instant visible geometry for a
+  colliders-only room. The bundled demo autotiles its ground layers this
+  way at build time.
+- `tmap.draw(doc, tex, ox, oy, camx, camy [, r,g,b,a])` is the culled
+  batched draw placements use; pass the tileset strip's texture id if you
+  draw a grid yourself. Ids past the strip skip (a shrunken tileset
+  degrades to holes, never errors).
 
 ## Rectangles, triggers, and the lightweight slide (`cm.box`)
 
@@ -627,7 +700,43 @@ use it freely in `draw` without determinism concerns. There is no
 menu/dialogue kit yet — a pause screen is a `d.paused` flag, an early
 `return` in `tick`, and a `hud.text("c", ...)` overlay.
 
-## Sound effects and music
+## Palettes and color grading (`cm.palette`, `cm.grade`)
+
+`cm.palette` reads `.pal` palettes — the color window authors them, stock
+ones ship in `engine/stock/pal/` — and `cm.grade` is the render-only mood
+pass: brightness/contrast/saturation/tint over the finished game composite,
+so each room gets a distinct look without touching the art. The bundled
+demo's per-room sky + warm/cool rooms are the pattern:
+
+    local palette = cm.require("cm.palette")
+    local paint = cm.require("cm.paint")
+    local grade = cm.require("cm.grade")
+
+    local sky = palette.load("engine/stock/pal/ember-8.pal")
+
+    function game.draw()
+      local r, g, b = paint.unpack(sky.colors[6])
+      gfx.layer(0)
+      pal.quad(0, 0, 480, 270, r / 255, g / 255, b / 255, 1)
+      grade.preset("warm")   -- every frame; the grade resets each frame
+      -- ... the rest of the scene ...
+    end
+
+- `palette.load(path)` returns `{ name, colors }` — colors are
+  `cm.paint`-packed rgba, so `paint.unpack` yields 0..255 channels — cached
+  against the asset epoch (an editor save shows live), nil if unreadable.
+  `palette.color(path, i, fallback)` fetches one color with a fallback.
+  The canvas eyedropper samples palette-window swatches directly, so a
+  palette is also a live picking surface while you paint.
+- `grade.set{ brightness=, contrast=, saturation=, tint={r,g,b} }` applies
+  this frame's grade (all fields optional, identity defaults);
+  `grade.preset(name)` picks a named mood — `warm`, `cool`, `dusk`,
+  `night`, `noir`, `dream`; `"none"`/unknown = off — and `grade.off()`
+  clears. The grade is presentation only, never sim: the sim cannot read
+  it, `--verify` ignores it, and like the camera it resets every frame —
+  set it each frame you want it.
+
+## Sound effects and music (`cm.snd`, `cm.ins`)
 
 Instruments must be uploaded into the simulation bank before use. The demo's
 `audio.lua` is the concise pattern to copy:
@@ -648,7 +757,7 @@ for game SFX. Play a tracker song with:
 Sequencing and audio stepping are handled by the engine. Sound is deterministic
 simulation: trigger it in `step`, not `draw`.
 
-## The options menu
+## The options menu (`cm.options`)
 
 Every game gets the Esc menu for free: fullscreen, window sizes that fit the
 player's display, UI scale, master/music/SFX volume, the controls page
@@ -678,7 +787,7 @@ apply them via `on_change`. A setting that changes gameplay belongs in
 `options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
 are the scripted doors to the same knobs.
 
-## Player saves
+## Player saves (`cm.save`)
 
 `cm.save` stores save data per player, outside the project folder, so exports
 and copies of a game never carry anyone's progress. Declare a stable id in
@@ -798,6 +907,53 @@ puzzle's rules differ, and the shared parts — state, edges, anchoring,
 undo, randomness — are already the modules above. The one genre this
 recipe does not cover is real-time board juice like falling-block chains;
 `cm.tween` plus an actor world covers what the bundled demos needed.
+
+## Deterministic randomness, math, and easing (`cm.rand`, `cm.math`, `cm.ease`)
+
+`math.random` and the libm trig functions are banned in sim code — they
+differ across platforms and break bit-exact replay. These three modules are
+the sim-safe replacements.
+
+    local rand = cm.require("cm.rand")
+    local m = cm.require("cm.math")
+    local ease = cm.require("cm.ease")
+
+    function game.init()
+      rand.ensure_seeded(7)               -- seeds only a virgin state
+    end
+
+    local roll = rand.range(1, 6)          -- uniform integer, inclusive
+    local bob = m.sin(t * m.tau * 0.25)    -- bit-stable trig
+    local x = ease.mix(x0, x1, t, "cubic_out")
+
+- `cm.rand` is the engine PRNG (xoshiro256++). Its state lives in the
+  `cm.sim` named buffer, so the stream position snapshots, rewinds, and
+  replays with everything else. `rand.seed(n)` seeds unconditionally;
+  `rand.ensure_seeded(n)` seeds only an untouched state (a restored
+  snapshot keeps its position — usually what `init` wants). Draws:
+  `rand.float()` uniform in [0, 1), `rand.range(m, n)` uniform inclusive
+  integer (unbiased; `range(n)` means [1, n]), `rand.pick(t)` a uniform
+  element of a non-empty array, `rand.u64()` the raw 64-bit draw.
+- `cm.math` is deterministic transcendentals — `m.sin`/`m.cos`/`m.tan`/
+  `m.asin`/`m.acos`/`m.atan`/`m.atan2`/`m.exp2` built from exact IEEE
+  arithmetic (fdlibm kernels), identical on every platform — plus
+  `m.clamp(x, lo, hi)`, `m.round`, `m.lerp(a, b, t)`, the constants
+  `m.pi`/`m.tau`, and exact stock re-exports (`sqrt`, `floor`, `ceil`,
+  `abs`, `min`, `max`, `fmod` — these are already sim-safe from `math`).
+  Trig arguments must stay within about a million radians: keep
+  accumulated angles wrapped, or the call errors loudly rather than
+  silently losing accuracy.
+- `cm.ease` is the easing-curve registry: `linear` plus the `quad`,
+  `cubic`, `quart`, `quint`, `sine`, `expo`, `circ`, `back`, `elastic`,
+  and `bounce` families, each as `_in`/`_out`/`_inout`. Curves are
+  addressed **by name** — names live happily in doc, and `ease.get(name)`
+  resolves at use time — and every curve is endpoint-pinned (f(0)=0,
+  f(1)=1 exactly), so eased values land precisely on their targets.
+  `ease.mix(a, b, t, curve)` is eased interpolation with t clamped;
+  `ease.register(name, fn)` adds a game-defined curve (the registering
+  code travels in snapshots, so named curves replay exactly);
+  `ease.names()` lists them sorted. Use out-curves for things that react
+  to the player: snappy start, soft landing.
 
 ## Making a 3D game (the retro pipeline)
 
@@ -1405,7 +1561,7 @@ could not reproduce. The symptom, the cause, and the fix:
 
 - **A saved game did not travel with an export or a copy.** That is intended:
   `cm.save` keeps saves outside the project folder, so a shared game never
-  carries anyone's progress. See [Player saves](#player-saves).
+  carries anyone's progress. See [Player saves](#player-saves-cmsave).
 
 - **A load behaves differently on replay.** Reading a save slot inside `step`
   and branching on it is a determinism bug. Read in `init` (filling only absent
