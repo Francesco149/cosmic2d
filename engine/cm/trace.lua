@@ -1455,9 +1455,70 @@ local function collect_clip(R, first_i, last_i)
   return mfst, blobs
 end
 
+-- The module name a project-relative .lua path loads under, mirroring boot.lua's
+-- module_path in reverse: "main.lua" -> "main", "player/weapons.lua" ->
+-- "player.weapons", the special "project.lua" -> "@project". Returns nil for a
+-- non-.lua file, an illegal module name, or a "cm.*" name (those resolve to the
+-- engine dir, never the project — such a file could never be a project module).
+local function mod_name_of_rel(rel)
+  if rel == "project.lua" then return "@project" end
+  local base = rel:match("^(.+)%.lua$")
+  if not base then return nil end
+  local name = base:gsub("/", ".")
+  if name == "" or name:find("[^%w_%.%-]") or name:find("%.%.", 1, true)
+     or name:sub(1, 1) == "." or name:sub(-1) == "." or name:sub(1, 3) == "cm." then
+    return nil
+  end
+  return name
+end
+
+-- Reconstruct a cm.modules()-shaped code bundle for an adopted (no-bundle)
+-- segment (A7 §14): the adopted session's live code bundle was never spilled, but
+-- its project manifest froze every project .lua source at the keyframe, and the
+-- engine cm.* modules are this same install. Project sources come from the
+-- content-addressed store (the frozen tree the manifest names — never the current
+-- disk, which may have been edited since); engine modules (@boot + cm.*) come from
+-- the running session, exactly as browsing adopted history already uses the
+-- current engine (REWIND.md §3). Returns a name-sorted bundle, or nil when the
+-- manifest / its blobs are gone (evicted) so the caller names that honestly.
+local function reconstruct_bundle(R, seg)
+  local mh = seg.manifest_hash
+  if not mh then return nil end
+  local files = M.manifest_files(mh)
+  if not files then return nil end
+  local by_name = {}
+  -- project side: every manifest .lua that maps to a legal project module name,
+  -- carried at its CAPTURED source (from the store, not disk).
+  for rel, hash in pairs(files) do
+    local name = mod_name_of_rel(rel)
+    if name then
+      local source = M.blob_get(hash)
+      if source then
+        by_name[name] = { name = name, path = R.project .. "/" .. rel,
+                          source = source }
+      end
+    end
+  end
+  -- engine side: @boot + cm.* from this install (the adopted engine was never
+  -- captured; @project stays whatever the manifest named, never the running one).
+  for _, m in ipairs(cm.modules()) do
+    if m.name == "@boot" or m.name:sub(1, 3) == "cm." then
+      by_name[m.name] = { name = m.name, path = m.path, source = m.source }
+    end
+  end
+  local names = {}
+  for n in pairs(by_name) do names[#names + 1] = n end
+  if #names == 0 then return nil end
+  table.sort(names) -- deterministic SNAP bytes (cm.modules() is name-sorted too)
+  local out = {}
+  for i, n in ipairs(names) do out[i] = by_name[n] end
+  return out
+end
+
 -- serialize segments first_i..last_i as a CTRC blob and write it. `standalone`
 -- (a { a, b } loop-bounds table) additionally embeds the clip's complete project
--- tree so it materializes on load with no dependency on this session's store.
+-- tree so it materializes on load with no dependency on this session's store; its
+-- optional `bundle` overrides the SNAP code (an adopted range's reconstruction).
 local function write_trace(path, project, kf, first_i, last_i, standalone)
   local R = M._R
   last_i = last_i or #R.segs
@@ -1467,7 +1528,11 @@ local function write_trace(path, project, kf, first_i, last_i, standalone)
   for _, n in ipairs(names) do head[#head + 1] = pack("<s4", n) end
   w.chunk("HEAD", 1, table.concat(head))
   local s1 = seg_load(R, R.segs[first_i]) -- spilled segments materialize
-  w.chunk("SNAP", 1, state.encode_snapshot(s1.kf_bufs, s1.kf_doct, s1.bundle))
+  -- SNAP code: the segment's own live bundle, or (adopted range) the caller's
+  -- reconstruction. Plain/live paths pass no override, so their bytes are
+  -- byte-identical to before (goldens hold).
+  local snap_bundle = (standalone and standalone.bundle) or s1.bundle
+  w.chunk("SNAP", 1, state.encode_snapshot(s1.kf_bufs, s1.kf_doct, snap_bundle))
   local frames = 0
   for i = first_i, last_i do
     local s = seg_load(R, R.segs[i])
@@ -1548,10 +1613,10 @@ end
 -- the clip materializes its own project on load with no dependency on this
 -- session's blob store. Segment-aligned: the SNAP is A's keyframe and whole
 -- segments through B's are written (the LOOP metadata pins the exact A/B).
--- Returns ok, frames | nil, reason. Live-range only for now: the opening
--- segment must carry a code bundle. Adopted cross-session ranges are already
--- materialization-ready (their manifest is captured) but need the bundle-
--- reconstruction packet — named honestly, never crashed.
+-- Returns ok, frames | nil, reason. A live range uses its own segment bundle; an
+-- adopted cross-session range (no spilled bundle) reconstructs one from its
+-- captured manifest + the host engine. Only legacy pre-manifest history — or a
+-- store whose blobs were evicted — still refuses, named honestly, never crashed.
 function M.export_clip(a, b, path)
   local R = M._R
   local lo, hi = M.ring_range()
@@ -1565,16 +1630,24 @@ function M.export_clip(a, b, path)
     if R.segs[i].first <= b then last_i = i end
   end
   local aseg = R.segs[first_i]
-  if not aseg.bundle then
-    return nil, "adopted cross-session history: standalone export of an " ..
-      "adopted range is the next step (its project tree is already captured)"
-  end
+  -- a clip is always standalone, so it always needs the project manifest —
+  -- legacy pre-A7 / spill-off history has none and cannot produce one.
   if not aseg.manifest_hash then
     return nil, "legacy history has no project manifest — record under A7 to " ..
       "export a standalone clip"
   end
+  local recon
+  if not aseg.bundle then
+    -- adopted cross-session range: the live code bundle was never spilled;
+    -- rebuild the SNAP code from the captured tree + the host engine.
+    recon = reconstruct_bundle(R, aseg)
+    if not recon then
+      return nil, "adopted range: its project code blobs were evicted from the " ..
+        "store — cannot reconstruct the clip's code"
+    end
+  end
   return write_trace(path, R.project, ring_kf(), first_i, last_i,
-                     { a = a, b = b })
+                     { a = a, b = b, bundle = recon })
 end
 
 -- Quit/crash durability boundary (R6.5/D067): spill the open segment so the
