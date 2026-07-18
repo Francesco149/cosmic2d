@@ -325,30 +325,52 @@ function M.sel_text(rows, a, b)
   return table.concat(out)
 end
 
--- draw a run of inline segments, wrapping at maxw; collect link rects into
--- `links`. Returns the y after the block.
-local function draw_inline(segs, x0, y0, maxw, px, links, i, ctx, z, rec)
+-- ---- layout (once per doc/width/font) ----
+--
+-- The reader is retained-mode for perf (D113): rendering a doc every frame —
+-- one text_size + one draw call per WORD over the whole document — cost
+-- ~7.5 ms/frame before selection even existed, and the D112 row model doubled
+-- it. layout_doc runs ONCE per (src, width, px, z) and produces everything a
+-- frame needs, in doc-space coords: the selection row model (runs now carry
+-- their face), a decoration list (block panels, inline-code chips, bullet
+-- dots, heading rules), the link rects, and a source-line -> y map (goto /
+-- landed-highlight targets). paint_doc then draws only the rows/decor
+-- intersecting the visible band — no measuring, no allocation.
+
+local function lrow(L, y, h, ln)
+  local r = { y = y, h = h, ln = ln, runs = {} }
+  L.rows[#L.rows + 1] = r
+  return r
+end
+
+local function lrun(row, x, w, s, font, px, col, url)
+  row.runs[#row.runs + 1] = { x = x, w = w, s = s, font = font, px = px,
+                              col = col, url = url }
+end
+
+-- lay out a run of inline segments, wrapping at x0+maxw; returns the y after
+local function layout_inline(L, segs, x0, y0, maxw, px, z, ln)
   local x, y = x0, y0
   local lh = px * 1.5
   local spacew = pal.x_ig_text_size(" ", px, 0)
-  local function newline() x = x0; y = y + lh end
+  local row = lrow(L, y, lh, ln)
+  local function newline()
+    x, y = x0, y + lh
+    row = lrow(L, y, lh, ln)
+  end
   for _, seg in ipairs(segs) do
     if seg.t == "link" or seg.t == "code" then
       local font = seg.t == "code" and 1 or 0
       local ww = pal.x_ig_text_size(seg.s, px, font)
       if x + ww > x0 + maxw and x > x0 then newline() end
       if seg.t == "code" then
-        pal.x_ig_rect_fill(x - 1, y - 1, ww + 2, px + 2, COL.code_bg, 2 * z)
-        if rec then rec(x, y, ww, seg.s, 1, px) end
-        pal.x_ig_text(x, y, px, COL.code, seg.s, 1)
+        L.decor[#L.decor + 1] = { t = "rect", x = x - 1, y = y - 1,
+                                  w = ww + 2, h = px + 2, col = COL.code_bg,
+                                  rad = 2 * z }
+        lrun(row, x, ww, seg.s, 1, px, COL.code)
       else
-        local hot = ctx.hot and i.wx >= x and i.wx < x + ww
-                    and i.wy >= y and i.wy < y + px
-        local col = hot and COL.link_hot or COL.link
-        if rec then rec(x, y, ww, seg.s, 0, px) end
-        pal.x_ig_text(x, y, px, col, seg.s, 0)
-        pal.x_ig_line(x, y + px, x + ww, y + px, col, math.max(1, z))
-        links[#links + 1] = { x = x, y = y, w = ww, h = px, url = seg.url }
+        lrun(row, x, ww, seg.s, 0, px, COL.link, seg.url)
+        L.links[#L.links + 1] = { x = x, y = y, w = ww, h = px, url = seg.url }
       end
       x = x + ww + spacew
     else
@@ -356,8 +378,7 @@ local function draw_inline(segs, x0, y0, maxw, px, links, i, ctx, z, rec)
       for word in seg.s:gmatch("%S+") do
         local ww = pal.x_ig_text_size(word, px, 0)
         if x + ww > x0 + maxw and x > x0 then newline() end
-        if rec then rec(x, y, ww, word, 0, px) end
-        pal.x_ig_text(x, y, px, face, word, 0)
+        lrun(row, x, ww, word, 0, px, face)
         x = x + ww + spacew
       end
     end
@@ -374,15 +395,16 @@ local function read_doc(win, ed)
   return win._src
 end
 
--- draw one dedented code line as colored lexer spans (mono font 1); the gaps
--- between tokens take the base code face. `toks` are cm.ed.lex 1-based inclusive
--- byte ranges; the caller threads the multi-line carry across a block.
-local function draw_code_line(x, y, px, s, toks)
+-- lay out one dedented code line as colored lexer runs (mono font 1); the
+-- gaps between tokens take the base code face. `toks` are cm.ed.lex 1-based
+-- inclusive byte ranges; the caller threads the multi-line carry.
+local function layout_code_line(row, x, px, s, toks)
   if #s == 0 then return end
   local function span(a, b, col)
     if b < a then return end
-    pal.x_ig_text(x + pal.x_ig_text_size(s:sub(1, a - 1), px, 1), y, px, col,
-                  s:sub(a, b), 1)
+    local seg = s:sub(a, b)
+    lrun(row, x + pal.x_ig_text_size(s:sub(1, a - 1), px, 1),
+         pal.x_ig_text_size(seg, px, 1), seg, 1, px, col)
   end
   local posb = 1
   for _, t in ipairs(toks) do
@@ -427,14 +449,11 @@ local function page_text(src)
   return table.concat(out, "\n")
 end
 
--- render the markdown body; returns the content height (for scroll clamp) and
--- the code blocks with their on-screen extents recorded (for the copy chips).
--- Every drawn text run is recorded into `rows` (the selection model); `hlmap`
--- (doc-space x ranges keyed by row index, from LAST frame's rows) draws the
--- selection highlight under each row's text the moment the row is created.
-local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z,
-                        rows, hlmap)
-  local y = y0
+-- lay out the whole markdown body into doc-space rows/decor/links (see the
+-- D113 note above layout_inline); everything else about a frame is paint.
+local function layout_doc(src, maxw, px, z)
+  local L = { rows = {}, decor = {}, links = {}, liney = {} }
+  local y = 0
   -- classify code vs prose once (pure, KAT-pinned) over the SAME line split
   -- cm.docs numbers by, so a search hit's line (and a #anchor) map to the right
   -- rendered row. "code" covers a whole fenced/indented block — every nested
@@ -442,43 +461,19 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z,
   local kind, ls, n = docs.line_kinds(src)
   -- map every code line to its block (contiguous run); the lua lexer's carry
   -- threads WITHIN a block (multi-line strings/comments) and resets between
-  -- blocks. blocks[bi]._y0/_y1 get the block's screen span for the copy chip.
+  -- blocks. blocks[bi]._y0/_y1 get the block's doc-space span (panel + chip).
   local blocks = docs.code_blocks(src)
+  L.blocks = blocks
   local block_of = {}
   for bi, b in ipairs(blocks) do
     for ln = b.lo, b.hi do block_of[ln] = bi end
-  end
-  -- the run recorder: doc-space coords (x rel. x0, y rel. the content top);
-  -- creating a row draws its selection highlight first, so it sits under the
-  -- text but over the block panel
-  local cur_ln = 0
-  local function rec(x, ys, w, s, font, fpx, h)
-    if not rows then return end
-    local dy = ys - y0
-    local r = rows[#rows]
-    if not r or r.y ~= dy then
-      r = { y = dy, h = h or fpx * 1.5, ln = cur_ln, runs = {} }
-      rows[#rows + 1] = r
-      local hlr = hlmap and hlmap[#rows]
-      if hlr then
-        pal.x_ig_rect_fill(x0 + hlr.a, ys - 1, hlr.b - hlr.a, r.h, COL.sel, 0)
-      end
-    end
-    if #s > 0 then
-      r.runs[#r.runs + 1] = { x = x - x0, w = w, s = s, font = font, px = fpx }
-    end
   end
   local lh = px * 1.5
   local bpad = 3 * z -- the code panel's vertical padding
   local carry, cur_bi = "", nil
   for ln = 1, n do
     local line = ls[ln]
-    cur_ln = ln
-    if win.goto_line == ln then win._goto_y = y end
-    if win.hl_line == ln then
-      pal.x_ig_rect_fill(x0 - 3 * z, y - 1, maxw + 6 * z, px * 1.5 + 2,
-                         COL.hl, 3 * z)
-    end
+    L.liney[ln] = y
     local k = kind[ln]
     if k == "fence" then
       -- a ``` marker line: draw nothing, take no vertical space
@@ -491,17 +486,21 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z,
         carry, cur_bi = "", bi
         b._y0 = y
         b._y1 = y + (b.hi - b.lo + 1) * lh + 2 * bpad
-        pal.x_ig_rect_fill(x0, b._y0, maxw, b._y1 - b._y0, COL.code_bg, 4 * z)
+        L.decor[#L.decor + 1] = { t = "rect", x = 0, y = b._y0, w = maxw,
+                                  h = b._y1 - b._y0, col = COL.code_bg,
+                                  rad = 4 * z }
         y = y + bpad
       end
+      L.liney[ln] = y -- where the line's text actually sits (post-pad)
       local dline = line:gsub("^    ", "")
-      rec(x0 + 4 * z, y, pal.x_ig_text_size(dline, px, 1), dline, 1, px)
+      local row = lrow(L, y, lh, ln)
       if b.lang == "lua" then
         local toks
         toks, carry = lex.line("lua", dline, carry)
-        draw_code_line(x0 + 4 * z, y, px, dline, toks)
-      else
-        pal.x_ig_text(x0 + 4 * z, y, px, CODE_FACE.base, dline, 1)
+        layout_code_line(row, 4 * z, px, dline, toks)
+      elseif #dline > 0 then
+        lrun(row, 4 * z, pal.x_ig_text_size(dline, px, 1), dline, 1, px,
+             CODE_FACE.base)
       end
       y = y + lh
       if ln == b.hi then y = y + bpad end
@@ -512,40 +511,96 @@ local function draw_doc(win, ed, src, x0, y0, maxw, px, links, i, ctx, z,
         local hpx = lvl == 1 and px * 1.7 or lvl == 2 and px * 1.32 or px * 1.12
         local face = lvl == 1 and COL.h1 or lvl == 2 and COL.h2 or COL.h3
         y = y + (lvl == 1 and px * 0.7 or px * 0.5)
+        L.liney[ln] = y
         local shown = line:gsub("^#+%s*", "")
-        rec(x0, y, pal.x_ig_text_size(shown, hpx, 0), shown, 0, hpx,
-            hpx * 1.35)
-        pal.x_ig_text(x0, y, hpx, face, shown, 0)
+        local row = lrow(L, y, hpx * 1.35, ln)
+        lrun(row, 0, pal.x_ig_text_size(shown, hpx, 0), shown, 0, hpx, face)
         y = y + hpx * 1.35
         if lvl == 1 then
-          pal.x_ig_line(x0, y - px * 0.4, x0 + maxw, y - px * 0.4, COL.rule, 1)
+          L.decor[#L.decor + 1] = { t = "line", x = 0, y = y - px * 0.4,
+                                    x2 = maxw, col = COL.rule }
         end
       elseif line:match("^%s*[%-%*]%s") then -- a bullet
         local body = line:gsub("^%s*[%-%*]%s+", "")
-        pal.x_ig_circle_fill(x0 + 3 * z, y + px * 0.5, math.max(1.5, 2 * z),
-                             COL.dim)
-        y = draw_inline(parse_inline(body), x0 + 14 * z, y, maxw - 14 * z, px,
-                        links, i, ctx, z, rec)
+        L.decor[#L.decor + 1] = { t = "circle", x = 3 * z, y = y + px * 0.5,
+                                  rad = math.max(1.5, 2 * z), col = COL.dim }
+        y = layout_inline(L, parse_inline(body), 14 * z, y, maxw - 14 * z, px,
+                          z, ln)
       elseif line:match("^%s*$") then -- blank: paragraph gap
         y = y + px * 0.6
       else
-        y = draw_inline(parse_inline(line), x0, y, maxw, px, links, i, ctx, z,
-                        rec)
+        y = layout_inline(L, parse_inline(line), 0, y, maxw, px, z, ln)
       end
     end
   end
-  return y - y0, blocks
+  L.contenth = y
+  M.rows_finalize(L.rows)
+  return L
+end
+
+-- paint the visible band from the layout: decor, the landed-line highlight,
+-- the selection highlight, then text runs (links pick their hover face and
+-- underline live). Doc-space -> screen is x0/yoff; `lo..hi` is the band.
+local function paint_doc(win, L, x0, yoff, maxw, px, z, i, ctx, hlmap, sh)
+  local lo, hi = win.scroll, win.scroll + sh
+  for _, d in ipairs(L.decor) do
+    local dh = d.h or (d.rad and d.rad * 2) or 2
+    if d.y + dh >= lo - px and d.y <= hi + px then
+      if d.t == "rect" then
+        pal.x_ig_rect_fill(x0 + d.x, yoff + d.y, d.w, d.h, d.col, d.rad)
+      elseif d.t == "circle" then
+        pal.x_ig_circle_fill(x0 + d.x, yoff + d.y, d.rad, d.col)
+      else
+        pal.x_ig_line(x0 + d.x, yoff + d.y, x0 + d.x2, yoff + d.y, d.col, 1)
+      end
+    end
+  end
+  if win.hl_line and L.liney[win.hl_line] then
+    pal.x_ig_rect_fill(x0 - 3 * z, yoff + L.liney[win.hl_line] - 1,
+                       maxw + 6 * z, px * 1.5 + 2, COL.hl, 3 * z)
+  end
+  if hlmap then
+    for ri, hlr in pairs(hlmap) do
+      local r = L.rows[ri]
+      if r and r.y + r.h >= lo and r.y <= hi then
+        pal.x_ig_rect_fill(x0 + hlr.a, yoff + r.y - 1, hlr.b - hlr.a, r.h,
+                           COL.sel, 0)
+      end
+    end
+  end
+  for _, r in ipairs(L.rows) do
+    if r.y > hi then break end -- rows ascend
+    if r.y + r.h >= lo then
+      for _, run in ipairs(r.runs) do
+        local col = run.col
+        if run.url then
+          local hot = ctx.hot and i.wx >= x0 + run.x
+                      and i.wx < x0 + run.x + run.w
+                      and i.wy >= yoff + r.y and i.wy < yoff + r.y + run.px
+          col = hot and COL.link_hot or COL.link
+          pal.x_ig_line(x0 + run.x, yoff + r.y + run.px,
+                        x0 + run.x + run.w, yoff + r.y + run.px, col,
+                        math.max(1, z))
+        end
+        pal.x_ig_text(x0 + run.x, yoff + r.y, run.px, col, run.s, run.font)
+      end
+    end
+  end
 end
 
 -- the hover "copy" chip over each code block (drawn inside the scroll clip, so
 -- it clips to the band; sticky to the band's top while a tall block scrolls).
--- Copies the block's dedented source and flashes "copied".
-local function draw_copy_chips(win, blocks, x0, maxw, sy0, sh, px, z, i, ctx)
+-- Copies the block's dedented source and flashes "copied". Block extents are
+-- doc-space; yoff converts to screen.
+local function draw_copy_chips(win, blocks, x0, yoff, maxw, sy0, sh, px, z,
+                               i, ctx)
   if not blocks then return end
   local now = pal.time_ns()
   local cpx = math.max(6, px * 0.82)
   for bi, b in ipairs(blocks) do
-    if b._y0 and b._y1 and b._y1 > sy0 and b._y0 < sy0 + sh then
+    local y0s = b._y0 and yoff + b._y0
+    local y1s = b._y1 and yoff + b._y1
+    if y0s and y1s and y1s > sy0 and y0s < sy0 + sh then
       local copied = win._copied == bi and win._copied_t
                      and (now - win._copied_t) < COPIED_MS * 1000000
       local label = copied and "copied" or "copy"
@@ -553,7 +608,7 @@ local function draw_copy_chips(win, blocks, x0, maxw, sy0, sh, px, z, i, ctx)
       local cw, ch = lw + 12 * z, cpx + 6 * z
       local cx = x0 + maxw - cw - 4 * z
       local cy = math.max(sy0 + 3 * z,
-                          math.min(b._y0 + 3 * z, b._y1 - ch - 3 * z,
+                          math.min(y0s + 3 * z, y1s - ch - 3 * z,
                                    sy0 + sh - ch - 3 * z))
       local hot = ctx.hot and i.wx >= cx and i.wx < cx + cw
                   and i.wy >= cy and i.wy < cy + ch
@@ -666,7 +721,6 @@ function M.draw(win, ctx)
   local topy = ctx.cy + bh + 10 * z
   local x0 = ctx.cx + pad
   local maxw = ctx.cw - pad * 2
-  local links = {}
   local contenth
 
   -- the home view reserves a FIXED search strip above the scroll region
@@ -797,24 +851,40 @@ function M.draw(win, ctx)
     contenth = (y + win.scroll) - sy0
   else
     local src = read_doc(win, ed)
-    win._goto_y = nil
-    local rows = {}
-    local blocks
-    contenth, blocks = draw_doc(win, ed, src, x0, y, maxw, px, links, i, ctx, z,
-                                rows, hlmap)
-    M.rows_finalize(rows)
-    sl.rows = rows
-    draw_copy_chips(win, blocks, x0, maxw, sy0, sh, px, z, i, ctx)
+    -- layout once per (doc, width, font, zoom); every other frame is paint
+    local L = sl.L
+    if not L or sl.k_src ~= src or sl.k_w ~= maxw or sl.k_px ~= px
+       or sl.k_z ~= z then
+      L = layout_doc(src, maxw, px, z)
+      sl.L, sl.rows = L, L.rows
+      sl.k_src, sl.k_w, sl.k_px, sl.k_z = src, maxw, px, z
+      sl.a, sl.b, sl.drag = nil, nil, nil -- a reflow drops the selection
+      hlmap = nil
+    end
+    contenth = L.contenth
+    local maxscroll = math.max(0, contenth - sh)
+    -- reveal a pending goto line (a search hit / #anchor): the layout knows
+    -- its y immediately — no measure-then-scroll frame dance
+    if win.goto_line then
+      local ty = L.liney[win.goto_line]
+      if ty then win.scroll = math.max(0, math.min(ty - px, maxscroll)) end
+      win.goto_line = nil
+      ed.touch()
+    end
+    win.scroll = math.max(0, math.min(win.scroll, maxscroll))
+    local yoff = sy0 - win.scroll
+    paint_doc(win, L, x0, yoff, maxw, px, z, i, ctx, hlmap, sh)
+    draw_copy_chips(win, L.blocks, x0, yoff, maxw, sy0, sh, px, z, i, ctx)
     -- the ctrl+C ack: a "copied" chip riding the selection head
     if sl.copy_t and sl.a
        and (pal.time_ns() - sl.copy_t) < COPIED_MS * 1000000 then
       local _, b = sel_norm(sl.a, sl.b)
-      local r = rows[math.min(b.ri, #rows)]
+      local r = L.rows[math.min(b.ri, #L.rows)]
       if r then
         local cpx = math.max(6, px * 0.82)
         local lw = pal.x_ig_text_size("copied", cpx, 0)
         local cx = x0 + math.min(M.row_x(r, b.ci, measure), maxw - lw - 12 * z)
-        local cy = sy0 - win.scroll + r.y + r.h + 2 * z
+        local cy = yoff + r.y + r.h + 2 * z
         pal.x_ig_rect_fill(cx, cy, lw + 12 * z, cpx + 6 * z, COL.btn, 3 * z)
         pal.x_ig_text(cx + 6 * z, cy + 3 * z, cpx, COL.code, "copied", 0)
       end
@@ -833,21 +903,15 @@ function M.draw(win, ctx)
   win.scroll = math.max(0, math.min(win.scroll, maxscroll))
   win._maxscroll = maxscroll -- so M.wheel can clamp before it over-scrolls
 
-  -- reveal a pending goto line (a search hit / #anchor): draw_doc measured its
-  -- screen y this frame; scroll it near the top and adopt next frame
-  if win.goto_line and win._goto_y then
-    win.scroll = math.max(0, math.min(win.scroll + (win._goto_y - sy0) - px,
-                                      maxscroll))
-    win.goto_line, win._goto_y = nil, nil
-    ed.touch()
-  end
-
   -- link clicks fire on RELEASE of a gesture that never dragged, so link
-  -- text is selectable like any other (a drag starting on a link selects)
-  if ctx.hot and i.released[1] and not sl.moved and i.wy >= sy0 then
-    for _, lk in ipairs(links) do
-      if i.wx >= lk.x and i.wx < lk.x + lk.w and i.wy >= lk.y
-         and i.wy < lk.y + lk.h then
+  -- text is selectable like any other (a drag starting on a link selects);
+  -- link rects are doc-space in the layout — convert the mouse once
+  if ctx.hot and i.released[1] and not sl.moved and i.wy >= sy0
+     and win.path ~= "" and sl.L then
+    local mx, my = i.wx - x0, i.wy - sy0 + win.scroll
+    for _, lk in ipairs(sl.L.links) do
+      if mx >= lk.x and mx < lk.x + lk.w and my >= lk.y
+         and my < lk.y + lk.h then
         follow(win, ed, lk.url, ed.g.ctrl and not ctx.alt)
         break
       end
