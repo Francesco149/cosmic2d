@@ -398,8 +398,10 @@ Goal: validate the whole promise, not isolated subsystems.
   90% notch + `!` label — no chrome state reads by color alone. D131/D132:
   devs reach the same knobs in the editor through the native settings
   window (launcher / pad back), and the D128 nav-scroll limit cycle that
-  vibrated the player menu is fixed at class level. Remaining: editor
-  keyboard gaps (focus-cycle/close).)
+  vibrated the player menu is fixed at class level. D133: the menu moves
+  to F1 — the unsuppressable floor (accessibility/rebind/volume/quit)
+  while Esc belongs to games — and option defaults declare as project.lua
+  data. Remaining: editor keyboard gaps (focus-cycle/close).)
 - [x] Add independent machine-local sizing for canvas-window text/content and
   fixed chrome (including rewind), with 1080p-compatible defaults and automatic
   SDL-DPI/4K scaling. The broader keyboard/focus/player accessibility gate above

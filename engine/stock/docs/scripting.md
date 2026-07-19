@@ -22,6 +22,11 @@ A project needs `project.lua` and an entry file (normally `main.lua`):
       internal_h = 270,
       window_scale = 2,
       entry = "main.lua",
+      options = {  -- player-menu knobs, declared as data (see The
+        -- options menu below); the engine renders and persists them
+        { id = "retro_filter", label = "retro filter",
+          kind = "toggle", default = true },
+      },
     }
 
 The editor's **project settings** window edits the identity, internal
@@ -144,8 +149,8 @@ A binding is a scancode number (`input.key` names common ones) or a string:
 `"pad:south"` is a pad-1 button, `"pad:lx-"`/`"pad:lx+"` is a stick or
 trigger direction past a threshold (`input.axis_threshold`, default 40 of
 127), and `"pad2:..."` pins a binding to another pad. What you declare are
-the DEFAULTS: players can rebind every action from the Esc menu's controls
-page, and their overrides persist per machine in the project's `input.dat`
+the DEFAULTS: players can rebind every action from the player menu's (F1)
+controls page, and their overrides persist per machine in the project's `input.dat`
 (never exported with the project). Show bindings honestly in your HUD with
 `input.label`:
 
@@ -193,8 +198,8 @@ Buttons and axes use SDL's standard gamepad layout (`input.pad_btn`,
 arrive already deadzoned and quantized to whole numbers, so using them
 directly in the sim stays deterministic — divide by 127 when you want a
 -1..1 float. Players tune the deadzone and the axis press threshold on the
-Esc menu's controls page; recordings store the post-deadzone values, so
-retuning never invalidates a trace.
+player menu's (F1) controls page; recordings store the post-deadzone values,
+so retuning never invalidates a trace.
 
 ## Movement vectors (`cm.move`)
 
@@ -567,7 +572,7 @@ The rules:
   them down. The wobble itself is render-only math off the counters
   (`offset`/`apply`), fading linearly — sim logic must never read it. It
   honors the player's "reduce screen shake" accessibility choice from the
-  Esc menu automatically (the counters are recorded; the drawn offset is
+  player menu (F1) automatically (the counters are recorded; the drawn offset is
   per-player).
 - `to_world`/`to_screen` convert through the **unshaken** camera, so mouse
   aim stays deterministic while the view wobbles.
@@ -631,7 +636,7 @@ The rules:
   the same idiom as `camera.offset` for screens without a camera). Like
   the camera's shake, it is presentation: sim logic must never read it —
   and it respects the player's "reduce screen shake" accessibility choice
-  from the Esc menu by itself, which is the other reason it belongs to
+  from the player menu (F1) by itself, which is the other reason it belongs to
   draw only.
 - `flash(o, name [, curve])` is `val` through the player's "reduce
   flashes" choice — draw flash-overlay alphas with it and the wash
@@ -772,44 +777,62 @@ simulation: trigger it in `step`, not `draw`.
 
 ## The options menu (`cm.options`)
 
-Every game gets the Esc menu for free: fullscreen, window sizes that fit the
-player's display, UI scale, master/music/SFX volume, the accessibility
-toggles (reduce screen shake / reduce flashes), the controls page
-(rebinding plus stick deadzone and press-threshold knobs), and quit. All of it
-is per-player, per-machine policy — volumes change what the speakers hear,
-never the simulated mix, so recordings and replays are untouched; every choice
-persists in the project's `video.dat`/`input.dat` (never exported). The
-accessibility toggles persist user-wide instead: a player who needs them
-sets them once per machine, not once per game.
+Every game gets the player menu for free behind **F1**: fullscreen, window
+sizes that fit the player's display, UI scale, master/music/SFX volume, the
+accessibility toggles (reduce screen shake / reduce flashes), the controls
+page (rebinding plus stick deadzone and press-threshold knobs), and quit.
+All of it is per-player, per-machine policy — volumes change what the
+speakers hear, never the simulated mix, so recordings and replays are
+untouched; every choice persists in the project's `video.dat`/`input.dat`
+(never exported). The accessibility toggles persist user-wide instead: a
+player who needs them sets them once per machine, not once per game.
 
-The whole menu works without a mouse. Esc opens it; on a controller the
-back/select button does (that button belongs to the menu, like Esc, so it
-cannot be rebound). Arrow keys, the dpad, or the left stick move a visible
-focus ring between controls; Enter, Space, or the south button activates the
-focused one; left/right steps a focused slider; Esc, back/select, or the east
-button walks back out one layer at a time. A game that binds the east button
-keeps it: east only means "back" while the menu is open.
+The menu is the universal floor, not the ceiling: it is always there and
+always the same (players can count on accessibility, rebinding, volume, and
+quit in every game), and most games are expected to ship their OWN settings
+and pause screens on top — that is why the menu lives on F1 and
+**Esc belongs to your game**: bind it, pause with it, build your menu on
+it. Your screens read and write the same knobs through
+`options.get`/`set` below.
 
-Add game-specific settings to the same menu with `cm.options`:
+The whole menu works without a mouse. F1 opens it; on a controller the
+back/select button does (both belong to the menu, so neither can be
+rebound). Arrow keys, the dpad, or the left stick move a visible focus ring
+between controls; Enter, Space, or the south button activates the focused
+one; left/right steps a focused slider; F1 or back/select walks back out
+one layer at a time — and Esc or the east button does too, but only while
+the menu is already open (input is captured then, so your game never hears
+the press). A game binding Esc or east keeps them: while a rebind capture
+is armed they BIND instead of navigating.
+
+Declare your game's settings as DATA in `project.lua` — the declaration of
+record, validated with the rest of the schema:
+
+    options = {
+      { id = "retro_filter", label = "retro filter",
+        kind = "toggle", default = true },
+      { id = "zoom", kind = "slider", min = 1, max = 8, default = 2 },
+      { id = "filter", kind = "choice", choices = { "clean", "crt" } },
+    },
+
+The engine builds the menu rows and persists the choices automatically.
+Read values in `draw` (never in `step`), and attach behavior from code
+when a change needs a side effect:
 
     local options = cm.require("cm.options")
 
-    options.add({ id = "shake", label = "screen shake",
-                  kind = "toggle", default = true })
-    options.add({ id = "zoom", kind = "slider", min = 1, max = 8,
-                  default = 2, on_change = function(v) ... end })
-    options.add({ id = "filter", kind = "choice",
-                  choices = { "clean", "crt" } })
+    if options.get("retro_filter") then ... end   -- in draw
+    options.on_change("zoom", function(v) ... end) -- in init
 
-    if options.get("shake") then ... end -- read it in draw, not step
-
-Declare options in `init`; values persist automatically beside the volume
-knobs, and stored values survive even if a version skips the declaration.
-These are LIVE settings for presentation choices — read them in `draw` or
-apply them via `on_change`. A setting that changes gameplay belongs in
-`state.doc` (where it is recorded) instead, or it will break replay.
-`options.set(id, value)` and `options.set_vol("master"|"music"|"sfx", 0..100)`
-are the scripted doors to the same knobs.
+`options.add(decl)` remains the code-only door (a redeclare replaces in
+place — hot reload safe), and stored values survive even if a version
+skips a declaration. These are LIVE settings for presentation choices — a
+setting that changes gameplay belongs in `state.doc` (where it is
+recorded) instead, or it will break replay. `options.set(id, value)` and
+`options.set_vol("master"|"music"|"sfx", 0..100)` are the scripted doors
+to the same knobs. The bundled `openworld` demo is the worked example:
+its `retro filter` toggle is declared in `project.lua` and read in `draw`
+to gate the color grade.
 
 In the editor, the **settings window** (the Ctrl+Space launcher's
 "settings / player options" entry, or the pad back/select button) is the
@@ -1130,11 +1153,11 @@ character out of your recordings. Never read an `rc.*` buffer from `step`.
 
 `capture_mouse(true)` never grabs the cursor by itself — it declares that
 your game wants it, and the engine grants the actual OS capture only while
-play owns the screen: in the player, whenever the Esc menu is closed; in
-the editor, only while your game window is focused (Esc releases, and the
-PLAYING chip says so). Opening the Esc menu, a crash, or time travel
-releases it automatically, and the standing wish re-captures by itself
-afterward — you never manage the OS state.
+play owns the screen: in the player, whenever the player menu (F1) is
+closed; in the editor, only while your game window is focused (Esc
+releases, and the PLAYING chip says so). Opening the player menu, a crash,
+or time travel releases it automatically, and the standing wish re-captures
+by itself afterward — you never manage the OS state.
 
 `input.mouse_rel()` is part of the input recording (the MREL extension), so
 using it in `step` stays deterministic and replays exactly. The capture
@@ -1717,7 +1740,7 @@ the rules that protect your project are already enforced, not merely promised
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
-- `cm.options` — the Esc menu: game-declared settings, volume doors.
+- `cm.options` — the player menu (F1): game-declared settings, volume doors.
 - `cm.save` — per-player save slots/profiles outside the project folder.
 - `cm.palette` / `cm.grade` — palette data and render-only color grading.
 - `cm.rand` / `cm.math` / `cm.ease` — deterministic helpers.

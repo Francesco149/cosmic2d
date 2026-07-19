@@ -112,13 +112,13 @@ the exact numbers.
 
 The **settings** window (spawn menu, the launcher's "settings / player
 options" entry, or the controller's back/select button) is the dev view
-over the knobs your players reach in the Esc menu: the options your game
+over the knobs your players reach in the player menu (F1): the options your game
 declared with `cm.options.add` (against their defaults), the volume
 knobs, stick deadzone and press threshold, and the user-wide
 accessibility toggles (reduce screen shake / reduce flashes) — so you can
 watch a reduced death flash or a volume change live against the running
 game window. It's an ordinary window: nothing pauses, nothing is blocked
-while it's open. Rebinding and the Esc menu itself are player-facing —
+while it's open. Rebinding and the player menu itself are player-facing —
 test those by running the game in player mode.
 
 ## Playing and mouse capture
@@ -129,7 +129,7 @@ keys drive the game. A mouse-look game (one that called
 focused: the pointer hides and turns into look input. The window's chip
 reads **PLAYING · ESC RELEASES MOUSE** while that's on — press **Esc** and
 the cursor comes back exactly where it was. The capture never survives
-leaving play: the launcher, an edit field, time travel, or the Esc menu
+leaving play: the launcher, an edit field, time travel, or the player menu
 all release it, and it re-engages when you click back in.
 
 ## Keys that matter

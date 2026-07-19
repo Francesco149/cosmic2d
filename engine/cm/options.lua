@@ -6,10 +6,11 @@
 -- goldens never hear them), the reduced-effects accessibility toggles
 -- (D129, stored user-wide in cm.view), and hosts project-declared
 -- options (M.add).
--- Toggled by Esc (keyboard) or the pad back/select button (D128) — the
--- whole menu drives without a mouse: cm.ui's nav cursor (arrows / dpad /
--- left stick move, Enter/Space/pad-south activate, left/right adjust
--- sliders, Esc/back/east walk out). The controls page (A4/D084)
+-- Toggled by F1 (keyboard, D133 — Esc belongs to games) or the pad
+-- back/select button (D128) — the whole menu drives without a mouse:
+-- cm.ui's nav cursor (arrows / dpad / left stick move, Enter/Space/
+-- pad-south activate, left/right adjust sliders, F1/back — and Esc/east
+-- while already open — walk out). The controls page (A4/D084)
 -- is the player-facing rebind surface: every action the project defines
 -- lists its live bindings as chips; clicking one (or +) arms a capture that
 -- binds the next key or pad input, stealing it from any other action that
@@ -70,7 +71,7 @@ end
 
 -- preview_vol: set_vol without the disk write — a dragging slider applies
 -- every frame and saves ONCE on release via set_vol (the _dirty rule the
--- Esc menu uses, exported for the settings window, D132)
+-- player menu uses, exported for the settings window, D132)
 function M.preview_vol(kind, v)
   if M.vol[kind] == nil then error("unknown volume: " .. tostring(kind), 2) end
   M.vol[kind] = vol_clamp(v)
@@ -98,7 +99,7 @@ end
 -- ---- project-declared options (A4/D085) ----
 -- cm.options.add{ id=, label=, kind="toggle"|"slider"|"choice", default=,
 --   min=, max=, step=, choices={...}, on_change=fn } appends a knob to the
--- Esc menu's main page. Values are LIVE POLICY ONLY (render/dev class, like
+-- player menu's main page. Values are LIVE POLICY ONLY (render/dev class, like
 -- every knob here): a setting the sim reads belongs in the doc tree where it
 -- is recorded — reading these from step() is a determinism bug. Values
 -- persist per project + per machine in video.dat's `custom` table; entries
@@ -147,6 +148,20 @@ function M.add(decl)
   for i, e in ipairs(M.defs) do if e.id == d.id then at = i end end
   M.defs[at] = d
   return d
+end
+
+-- on_change(id, fn): attach (or replace) the change handler of a declared
+-- option — the code half of a project.lua-declared knob (D133): the
+-- project file declares the SHAPE and DEFAULT as data, init hooks the
+-- behavior here. Loud on unknown ids, like get/set.
+function M.on_change(id, fn)
+  for _, d in ipairs(M.defs) do
+    if d.id == id then
+      d.on_change = fn
+      return d
+    end
+  end
+  error("unknown option: " .. tostring(id), 2)
 end
 
 -- get(id) -> the live value (stored when valid, else the declared default)
@@ -232,15 +247,17 @@ end, function(t)
   apply_vol()
 end)
 
-local KEY_ESC, KEY_DEL = 41, 76
-local PAD_MENU, PAD_EAST = 4, 1 -- SDL back/select = the pad Esc; east = B
+local KEY_ESC, KEY_F1, KEY_DEL = 41, 58, 76
+local PAD_MENU, PAD_EAST = 4, 1 -- SDL back/select = the pad menu key; east = B
 -- keys the capture refuses: the menu's own grammar and engine chrome. Del
 -- doubles as "remove this binding" while a capture is armed, so it cannot
--- itself be bound. (pad back/select needs no entry here: the grammar above
--- cancels the armed capture on that press before the capture ever sees it,
--- the exact Esc path.)
+-- itself be bound. Esc is deliberately ABSENT (D133): Esc belongs to
+-- games now — while a capture is armed it BINDS, the pad-east rule.
+-- (pad back/select needs no entry here: the grammar above cancels the
+-- armed capture on that press before the capture ever sees it, the F1
+-- path exactly.)
 local RESERVED = {
-  [KEY_ESC] = "esc drives this menu",
+  [KEY_F1] = "f1 drives this menu",
   [53] = "` is the console key",
   [KEY_DEL] = "del removes a binding",
 }
@@ -530,7 +547,7 @@ local function controls_page()
   if M.arm then
     ui.label("press a key or pad input for '" .. M.arm.action .. "'",
              { color = st.accent })
-    ui.label(M.arm.index and "esc cancels, del removes" or "esc cancels",
+    ui.label(M.arm.index and "f1 cancels, del removes" or "f1 cancels",
              { color = st.text_dim })
   else
     ui.label(M.note or "pick a binding to change it, + adds one",
@@ -574,24 +591,29 @@ function M.frame()
     flush_dirty()
     return
   end
-  -- Esc walks the grammar one step at a time: open the menu, cancel an
-  -- armed capture, leave the controls page, close the menu. The pad
-  -- back/select button IS the pad Esc (D128) — the one pad door into the
-  -- menu, so it is reserved from rebinding like Esc itself; east (B) also
-  -- walks back but only while the menu is open (games bind east), and
-  -- never while a capture is armed (the press must bind, not cancel).
-  local esc = false
+  -- F1 is the menu key (D133): it opens the closed menu and walks the
+  -- one-step-back grammar (cancel capture -> leave controls -> close) —
+  -- the keyboard twin of the pad back/select button, reserved from
+  -- rebinding the same way. ESC BELONGS TO GAMES: it never opens the
+  -- menu, walks back only while the menu is already open (input is
+  -- captured then, so the game never hears the press), and never while
+  -- a capture is armed — an armed capture BINDS Esc, exactly the pad
+  -- east (B) rule for the same reason.
+  local step = false
   for _, k in ipairs(ui.inp.keys) do
-    if k.down and not k.rep and k.scancode == KEY_ESC then esc = true end
+    if k.down and not k.rep then
+      if k.scancode == KEY_F1 then step = true
+      elseif k.scancode == KEY_ESC and M.on and not M.arm then step = true end
+    end
   end
   for _, e in ipairs(ui.inp.pads) do
     if (e.type == "padbtn" or e.type == "gpadbtn") and e.down then
-      if e.button == PAD_MENU then esc = true
-      elseif e.button == PAD_EAST and M.on and not M.arm then esc = true end
+      if e.button == PAD_MENU then step = true
+      elseif e.button == PAD_EAST and M.on and not M.arm then step = true end
     end
   end
-  if esc then
-    if not M.on then
+  if step then
+    if not M.on then -- only F1 / pad back reach here: esc/east need M.on
       M.toggle(true)
     elseif M.arm then
       M.arm, M.note = nil, "rebind cancelled"

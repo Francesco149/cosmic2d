@@ -4649,6 +4649,15 @@ local function t_options()
   check(options.get("zoom") == 4,
         "options: a redeclared range falls back to its new default")
 
+  -- on_change attaches behavior to a data-declared knob (D133): the
+  -- project.lua half declares shape+default, this is the code half
+  local attached
+  options.on_change("zoom", function(v) attached = v end)
+  options.set("zoom", 6)
+  check(attached == 6, "options: on_change attaches to a declared knob")
+  check(not pcall(options.on_change, "nope", function() end),
+        "options: on_change is loud on unknown ids")
+
   -- restore the suite's state
   view._video_path, view._access_path = nil, saved_access
   view.cfg.ui_scale = saved_view.ui_scale
@@ -4695,6 +4704,37 @@ local function t_save()
   check(project.validate_runtime({ name = "g", save_id = "ok-id" }) == true
         and not project.validate_runtime({ name = "g", save_id = "Bad Id" }),
         "save: boot validation admits only grammar-clean save_ids")
+
+  -- project-declared option defaults (D133): data-only, mirrored on
+  -- options.add's rules so a schema-valid list never refuses at boot
+  check(project.options_error({
+          { id = "shake", label = "screen shake", default = true },
+          { id = "zoom", kind = "slider", min = 1, max = 8, default = 2 },
+          { id = "filter", kind = "choice", choices = { "clean", "crt" },
+            default = "crt" },
+        }) == nil, "project: a well-formed options list validates")
+  check(project.options_error("nope") ~= nil
+        and project.options_error({ "x" }) ~= nil
+        and project.options_error({ { id = "" } }) ~= nil
+        and project.options_error({ { id = "a" }, { id = "a" } }) ~= nil
+        and project.options_error({ { id = "s", kind = "slider",
+                                      min = 5, max = 1 } }) ~= nil
+        and project.options_error({ { id = "s", kind = "slider",
+                                      default = 99, max = 10 } }) ~= nil
+        and project.options_error({ { id = "c", kind = "choice",
+                                      choices = {} } }) ~= nil
+        and project.options_error({ { id = "c", kind = "choice",
+                                      choices = { "a" }, default = "b" } })
+            ~= nil
+        and project.options_error({ { id = "w", kind = "warp" } }) ~= nil
+        and project.options_error({ { id = "t", default = 1 } }) ~= nil,
+        "project: malformed options entries refuse, naming the entry")
+  check(project.options_error({ { id = "x",
+          on_change = function() end } }) ~= nil,
+        "project: on_change is code and stays out of project.lua")
+  check(project.validate_runtime({ options = { { id = "ok" } } }) == true
+        and not project.validate_runtime({ options = { { id = "" } } }),
+        "project: boot validation covers the options list")
 
   -- settings: empty is a legal draft, invalid never crosses, valid persists
   local meta = { name = "g" }
@@ -12368,11 +12408,41 @@ local function t_ui_nav()
   check(got, "uinav: ...and binds as pad:east")
   oframe({ padbtn(1, false) })
   options.arm = { action = "uinav_jump" }
-  oframe({ padbtn(4) }) -- back/select cancels the capture like Esc
+  oframe({ padbtn(4) }) -- back/select cancels the capture like F1
   check(options.arm == nil and options.on
         and options.note == "rebind cancelled",
         "uinav: pad back cancels an armed capture")
   oframe({ padbtn(4, false) })
+
+  -- keyboard grammar (D133): F1 is the menu key; ESC BELONGS TO GAMES —
+  -- it walks back only while the menu is already open (input captured,
+  -- the game never hears it) and BINDS while a capture is armed
+  options.toggle(false)
+  oframe({ key(41) }) -- Esc must never open the closed menu
+  check(not options.on, "uinav: esc never opens the menu (games bind it)")
+  oframe({ key(58) }) -- F1 opens
+  check(options.on, "uinav: F1 opens the closed menu")
+  oframe({ key(41) }) -- Esc closes from the main page while open
+  check(not options.on, "uinav: esc closes the open menu from main")
+  options.toggle(true)
+  options.page = "controls"
+  oframe({ key(58) })
+  check(options.on and options.page == "main",
+        "uinav: F1 walks controls -> main, menu stays open")
+  options.arm = { action = "uinav_jump" }
+  oframe({ key(41) }) -- Esc while armed must BIND, never cancel
+  check(options.arm == nil and options.on,
+        "uinav: esc while armed reaches the capture")
+  local esc_bound
+  for _, b in ipairs(input.bindings("uinav_jump")) do
+    if b == "key:41" then esc_bound = true end
+  end
+  check(esc_bound, "uinav: ...and binds as key:41")
+  options.arm = { action = "uinav_jump" }
+  oframe({ key(58) }) -- F1 cancels the armed capture (it is reserved)
+  check(options.arm == nil and options.on
+        and options.note == "rebind cancelled",
+        "uinav: F1 cancels an armed capture")
   options.toggle(false)
   oframe()
   ui.nav.id, ui.nav.want, ui.nav.on = nil, false, false

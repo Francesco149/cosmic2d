@@ -310,6 +310,70 @@ function M.validate_plain(meta)
   return plain(meta, "project.lua", {})
 end
 
+-- Project-declared option DEFAULTS (D133): project.lua's `options` list is
+-- pure data — id / kind / label / default (+ min/max/step or choices) —
+-- the declaration of record for the game's settings. Boot declares each
+-- entry through cm.options.add; game code attaches behavior with
+-- cm.options.on_change(id, fn). Returns nil when valid, else the reason
+-- naming the entry. Mirrors options.add's own rules exactly, so a
+-- schema-valid list can never refuse at boot.
+function M.options_error(list)
+  if type(list) ~= "table" then return "options must be a list" end
+  local n = 0
+  for _ in pairs(list) do n = n + 1 end
+  if n ~= #list then return "options must be a plain list" end
+  local seen = {}
+  for i, d in ipairs(list) do
+    local at = "options[" .. i .. "]"
+    if type(d) ~= "table" then return at .. " must be a table" end
+    if type(d.id) ~= "string" or d.id == "" then
+      return at .. ": id must be a non-empty string"
+    end
+    if seen[d.id] then return at .. ": duplicate id " .. d.id end
+    seen[d.id] = true
+    if d.label ~= nil and type(d.label) ~= "string" then
+      return at .. ": label must be a string"
+    end
+    if d.on_change ~= nil then
+      return at .. ": on_change is code — attach it with"
+        .. " cm.options.on_change(id, fn); project.lua stays data"
+    end
+    local kind = d.kind or "toggle"
+    if kind == "toggle" then
+      if d.default ~= nil and type(d.default) ~= "boolean" then
+        return at .. ": a toggle default must be true or false"
+      end
+    elseif kind == "slider" then
+      local lo = tonumber(d.min) or 0
+      local hi = tonumber(d.max) or 100
+      if lo >= hi then return at .. ": min must be < max" end
+      if d.step ~= nil and type(d.step) ~= "number" then
+        return at .. ": step must be a number"
+      end
+      if d.default ~= nil then
+        local v = tonumber(d.default)
+        if not v or v < lo or v > hi then
+          return at .. ": default out of range " .. lo .. ".." .. hi
+        end
+      end
+    elseif kind == "choice" then
+      if type(d.choices) ~= "table" or #d.choices == 0 then
+        return at .. ": choices required"
+      end
+      if d.default ~= nil then
+        local found = false
+        for _, c in ipairs(d.choices) do
+          if c == d.default then found = true end
+        end
+        if not found then return at .. ": default not among choices" end
+      end
+    else
+      return at .. ": unknown kind " .. tostring(kind)
+    end
+  end
+  return nil
+end
+
 -- The save_id grammar (A4/D086): the stable key player saves live under at
 -- <user root>/saves/<save_id>/ — the NAME is mutable, this is the promise.
 -- Filesystem-safe on every host by construction: 1..64 of a-z 0-9 - _,
@@ -374,6 +438,10 @@ function M.validate_runtime(meta)
   end
   if meta.save_id ~= nil then
     err = M.save_id_error(meta.save_id)
+    if err then return nil, err end
+  end
+  if meta.options ~= nil then
+    err = M.options_error(meta.options)
     if err then return nil, err end
   end
   return true

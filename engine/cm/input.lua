@@ -904,7 +904,7 @@ end
 -- The wish never flips the OS state itself — capture_pump derives the
 -- real pal.x_mouse_capture EVERY tick from wish AND the shell's consent
 -- (D126, the D125 derive-don't-latch lesson: a one-shot flip from sim
--- code would strand a captured cursor across the Esc menu, the editor's
+-- code would strand a captured cursor across the player menu, the editor's
 -- focus changes, and time travel — and a replay re-running init must
 -- never grab the live mouse just because the recorded game asked). Sim
 -- code reads mouse_rel(), never the capture state.

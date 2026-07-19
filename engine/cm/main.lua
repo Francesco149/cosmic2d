@@ -255,7 +255,7 @@ end
 -- options-menu "quit" button). A game may intercept it to run a save/confirm
 -- hook (on_quit); otherwise we quit. Single path so every quit affordance
 -- behaves the same — notably the only in-app exit in borderless fullscreen,
--- which has no window chrome (Esc opens the options menu, not quits).
+-- which has no window chrome (F1 opens the player menu, not quits).
 -- the D052 launcher lockdown: proj.editor == false disables every dev
 -- surface (console/perf/scrub/the editor shell). Lived on cm.editor
 -- until the F1 editor died at R8e.
@@ -432,6 +432,13 @@ function M.boot()
   M.scrub = cm.require("cm.scrub")
   M.view = cm.require("cm.view")
   M.options = cm.require("cm.options")
+  -- project-declared option DEFAULTS (D133): project.lua's `options` list
+  -- is the declaration of record — pure data, schema-validated with the
+  -- rest of project.lua (a bad entry is a boot error naming it). Game code
+  -- attaches behavior with options.on_change(id, fn); options.add remains
+  -- the code-only door (a redeclare replaces in place). Declared before
+  -- load_video below so stored player values land on live definitions.
+  for _, d in ipairs(proj.options or {}) do M.options.add(d) end
   M.ed = cm.require("cm.ed") -- the editor shell (R3/R4, D050/D051; the F2
   -- studio died here at R4 — sprite ed is a canvas window, D046 Q4)
   -- the ladder's reference = the project's design res (D054/R7): the cap
@@ -765,7 +772,7 @@ function M.tick()
   M.scrub.frame() -- the time machine rides above the editor
   M.perf.frame()
   M.console.frame() -- after perf: console drops over everything
-  M.options.frame() -- the video menu (Esc) rides on top of all of it
+  M.options.frame() -- the player menu (F1) rides on top of all of it
   M.ui.frame_end()
   local present_t0 = pal.time_ns()
   pal.present()

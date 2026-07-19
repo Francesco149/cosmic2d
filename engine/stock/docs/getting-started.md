@@ -51,8 +51,12 @@ welcome note with the canvas keys.
 Click into the game window. Focused means **playing** — the chip in its
 corner says so, and your keys drive the game: arrows run, Space jumps,
 R resets. Click the canvas (or press Esc) to stop playing and get the
-editor keys back. While playing, **Esc** opens the player menu — volume,
-controls, and rebinding live there.
+editor keys back. The **settings** window (right-click → settings) holds
+volume, stick tuning, and accessibility while you work. When your game
+runs on its own — a build, or the project opened without the editor —
+players press **F1** for the universal player menu: volume, controls,
+rebinding, and accessibility. Esc stays yours to bind (pause menus live
+there).
 
 ### 3. Rewind what just happened
 

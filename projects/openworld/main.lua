@@ -135,7 +135,7 @@ end
 function game.init()
   -- mouse look (D126): declare the capture WISH — the shell grants the
   -- actual OS capture only while play owns the screen (player mode with
-  -- the Esc menu closed; in the editor while the game window is focused,
+  -- the player menu (F1) closed; in the editor while the game window is focused,
   -- Esc releases). The rig reads the recorded input.mouse_rel() deltas,
   -- so replay/verify never depend on live capture state.
   input.capture_mouse(true)
@@ -350,9 +350,14 @@ function game.draw()
   -- the shadow emit under the same warm sun as the terrain
   gb.sun, gb.ambient = world.sun, world.ambient
 
+  -- the project.lua-declared "retro filter" toggle (D133): live render
+  -- policy read in draw — headless/goldens see the default (on), so the
+  -- graded frame is byte-identical; a player turning it off gets the
+  -- clean presentation
+  local retro = cm.require("cm.options").get("retro_filter")
   local kl = state.doc.knobs.look
-  if kl.quant > 0 then pal.x_grade{ quant = kl.quant } end
-  if kl.soft > 0 then pal.x_soft(1) end
+  if retro and kl.quant > 0 then pal.x_grade{ quant = kl.quant } end
+  if retro and kl.soft > 0 then pal.x_soft(1) end
 
   -- sky: NDC passthrough gradient (fog off)
   pal.x_view3d()

@@ -124,7 +124,7 @@ end
 function game.init()
   -- mouse look (D126): declare the capture WISH — the shell grants the
   -- actual OS capture only while play owns the screen (player mode with
-  -- the Esc menu closed; in the editor while the game window is focused,
+  -- the player menu (F1) closed; in the editor while the game window is focused,
   -- Esc releases). The rig reads the recorded input.mouse_rel() deltas,
   -- so replay/verify never depend on live capture state.
   input.capture_mouse(true)

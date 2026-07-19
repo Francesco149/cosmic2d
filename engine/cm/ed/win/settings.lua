@@ -1,5 +1,5 @@
 -- cm.ed.win.settings — the game's settings as a canvas window (D132).
--- The dev surface over the SAME model the player-facing Esc menu renders:
+-- The dev surface over the SAME model the player-facing menu (F1) renders:
 -- project-declared options (cm.options.add — live values against their
 -- declared defaults), the volume knobs, the stick tuning, and the
 -- user-wide accessibility toggles — so a dev tests what players will get
@@ -11,7 +11,7 @@
 --
 -- Deliberately NOT here: rebinding (the capture grammar is player-facing;
 -- test it in player mode) and window-size/fullscreen/ui-scale (those
--- reshape the editor's own window — the Esc menu owns them in player
+-- reshape the editor's own window — the player menu owns them in player
 -- mode, the OS window and Aa chrome own them here).
 
 local M = select(2, ...) or {}
@@ -188,7 +188,7 @@ function M.draw(win, ctx)
   y = y + row
 
   pal.x_ig_text(x0, y + row * 0.3, px, COL.note,
-                "players reach these in the esc menu;", 0)
+                "players reach these in the player menu (f1);", 0)
   pal.x_ig_text(x0, y + row * 0.3 + px * 1.3, px, COL.note,
                 "test rebinding + the menu itself in player mode", 0)
   y = y + row * 2

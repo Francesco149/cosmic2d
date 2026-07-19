@@ -548,7 +548,7 @@ M.summon_console = summon_console -- persistence paths surface actionable errors
 
 -- focus an existing settings window or spawn one (D132): the launcher's
 -- "player options / settings" command and the editor's pad back/select
--- door — the dev surface over the knobs players reach in the Esc menu
+-- door — the dev surface over the knobs players reach in the player menu
 function M.summon_settings()
   local doc = M.doc
   for _, win in ipairs(doc.wins) do

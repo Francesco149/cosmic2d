@@ -36,7 +36,7 @@ end
 function game.init()
   -- each action lists ALL of its default bindings — keys and pad-1 inputs
   -- feed the same action, and the player can rebind everything from the
-  -- Esc menu's controls page (overrides live in this project's input.dat)
+  -- player menu's (F1) controls page (overrides live in this project's input.dat)
   input.map({ { "left", input.key.left, input.key.a, "pad:dpleft", "pad:lx-" },
               { "right", input.key.right, input.key.d, "pad:dpright", "pad:lx+" },
               { "jump", input.key.space, input.key.up, input.key.w, "pad:south" },

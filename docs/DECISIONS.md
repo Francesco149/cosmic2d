@@ -6665,3 +6665,63 @@ vibration reads scroll=0 vel=0 flat after the fix. Captures on llm-feed.
 wanting shared kit widgets (settings hand-rolls slider/checkbox/cycle —
 a third copy votes extracting them into cm.ed.kit); pad-driving editor
 windows (the settings window is mouse-only today).
+
+## D133 — F1 is the player menu key (Esc belongs to games); option defaults are project.lua data (2026-07-19)
+
+**Context.** The human settled D132's open questions: option defaults move
+into project.lua; the universal options menu stays UNSUPPRESSABLE and
+UNSKINNABLE — the floor every player can count on (accessibility,
+rebinding, volume, quit) — but most games are expected to roll their own
+settings/pause screens, so the engine must not take over Esc.
+
+**Decision, part 1 — the key.** The player menu moves from Esc to **F1**.
+The grammar maps onto D128's pad grammar exactly: **F1 is the keyboard
+twin of pad back/select** — opens the closed menu, walks the one-step-back
+ladder, cancels an armed capture, reserved from binding; **Esc is the
+keyboard twin of pad east** — never opens the menu, walks back only while
+the menu is already open (input is captured then, so the game never hears
+it), and while a capture is armed it BINDS as `key:41`, because Esc now
+belongs to games: pause menus live there. Esc left the RESERVED set; F1
+entered it. All player-facing text/docs renamed to "the player menu (F1)".
+
+**Decision, part 2 — defaults as data.** project.lua gains an `options`
+list — id/kind/label/default (+ min/max/step | choices), pure data, no
+functions — validated by the schema (`project.options_error`, mirroring
+options.add's rules exactly so a schema-valid list can never refuse at
+boot; `on_change` in data refuses with a message pointing at the code
+door). Boot declares each entry through options.add before load_video, so
+stored player values land on live definitions in every session shape
+(headless included — goldens read the declared defaults). Code attaches
+behavior with the new **`options.on_change(id, fn)`**; `options.add`
+stays the code-only door (redeclare replaces in place). The worked
+example ships: openworld declares `retro_filter` in project.lua and gates
+its x_grade/x_soft in draw — default on, so every golden stands
+byte-identical while a player can turn the grade off.
+
+**Policy, recorded.** The stock menu is the floor, not the ceiling: games
+build their own screens on the same model (options.get/set/preview) and
+decide what to expose; the F1 surface guarantees accessibility, rebind,
+volume, and quit underneath, in every game, unchanged. Raw imgui stays
+editor-only (D132's target-contract reasoning, confirmed by the human).
+
+**Proof.** Linux selftest **24,649** (+13: the F1/Esc keyboard grammar —
+F1 opens/walks/cancels, Esc never opens / closes while open / BINDS while
+armed; options_error accept + refusal sweep naming entries; boot
+validation covers the list; on_change attach + loud unknown). `nix run
+.#test` ALL GREEN, every golden byte-identical (openworld's grade gate
+defaults on). Tape on openworld headless: Esc opens nothing → F1 opens →
+`retro_filter` declared from data, default true, toggled off live → Esc
+closes the open menu; the closed frame renders ungraded; the menu capture
+shows the game options row with the nav ring on it. Docs: scripting.md
+(project shape + the data-first options section + menu key), editor.md,
+getting-started.md, templates, demo headers all renamed.
+
+**Deferred, named honestly.** The settings window editing DEFAULTS (write
+the options list back into project.lua through the project window's
+publish door) is the next slice of this line; a `controls`/pause hint for
+players ("F1 = options") in the shipped player HUD is worth a look when
+the fresh-user pass (A8) runs.
+
+**Revisit triggers.** A game legitimately needing F1 votes a second
+reserved-key review; a project wanting per-option menu ORDER or grouping
+votes a layout field on the declaration.

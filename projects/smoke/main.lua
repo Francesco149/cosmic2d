@@ -7,7 +7,7 @@
 -- Controls: arrows move (down+jump drops through planks) · space jump /
 -- flash-jump / up-jump · e hop (hold = flutter) · q grapple · r teleport ·
 -- d slice(stub) · ` console (game.demo(1) = KITCHECK, game.demo(2) = the
--- SLOPES walk) · Esc options (the sprite ed lives in --edit since R4; the
+-- SLOPES walk) · F1 options (the sprite ed lives in --edit since R4; the
 -- F1 tile editor retired with the .map migration, R8a).
 --
 -- Determinism: sim state in named buffers (smoke.*) + doc tree only;
