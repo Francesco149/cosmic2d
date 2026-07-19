@@ -374,6 +374,49 @@ function M.options_error(list)
   return nil
 end
 
+-- The settings window's defaults-publish merge (D136): apply the live
+-- option values in `values` (id -> value) as the new `default` of each
+-- MATCHING entry in meta.options — the data-declared knobs. Entries with
+-- no live value stand; live options absent from the list (declared in
+-- code via cm.options.add) are skipped — their defaults live in code, and
+-- writing data for them would be dead weight the code redeclare shadows.
+-- Returns the merged meta (a clone; every other key preserved) plus the
+-- applied id list, or nil and the reason. The merged list re-validates
+-- through options_error against the FILE's shape — the declaration of
+-- record — so a live value that no longer fits a hand-edited range
+-- refuses loudly instead of publishing an out-of-range default.
+function M.apply_option_defaults(meta, values)
+  if type(meta) ~= "table" then return nil, "project.lua must return a table" end
+  if type(meta.options) ~= "table" then
+    return nil, "project.lua declares no options list — "
+      .. "code-declared options keep their defaults in code"
+  end
+  local out = {}
+  for key, child in pairs(meta) do out[key] = child end
+  out.options = {}
+  local applied = {}
+  for i, d in ipairs(meta.options) do
+    local e = {}
+    if type(d) == "table" then
+      for key, child in pairs(d) do e[key] = child end
+      if type(e.id) == "string" and values[e.id] ~= nil then
+        e.default = values[e.id]
+        applied[#applied + 1] = e.id
+      end
+    else
+      e = d
+    end
+    out.options[i] = e
+  end
+  if #applied == 0 then
+    return nil, "no project.lua-declared options to update — "
+      .. "code-declared options keep their defaults in code"
+  end
+  local err = M.options_error(out.options)
+  if err then return nil, err end
+  return out, applied
+end
+
 -- The save_id grammar (A4/D086): the stable key player saves live under at
 -- <user root>/saves/<save_id>/ — the NAME is mutable, this is the promise.
 -- Filesystem-safe on every host by construction: 1..64 of a-z 0-9 - _,

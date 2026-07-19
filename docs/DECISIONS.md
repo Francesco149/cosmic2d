@@ -6864,3 +6864,63 @@ already repeat through cm.ui and stay untouched.
 and the fix is one `rep` flag or one edge gate — the rule localizes the
 decision; a kind wanting gesture-state-dependent repeat (hold-to-paint?)
 votes a richer kit contract.
+
+## D136 — the settings window publishes option defaults into project.lua (2026-07-19)
+
+**Context.** D133 made option defaults `project.lua` data and named the
+next slice honestly: the settings window should be able to write the
+options list back — a dev who tunes a knob live and likes the result
+edits the file by hand today. The write must ride the project window's
+established door (D071's shared `project.lua` text citizen), not a
+second serializer.
+
+**Decision.** The settings window's game-options section gains **"save
+values as defaults"**: the current live values become the `default`
+fields of `project.lua`'s `options` list, written through the SAME
+shared working copy as a code window on the file — one journaled
+undoable step, atomic save, the ordinary Ctrl+S retry contract on an
+interrupted write, conflict-safe by construction with an open project
+window or code window. A row whose value differs from its declared
+default carries a trailing `*` (the D130 dirty grammar); the button is
+inert while every value matches.
+
+Three parts, each with one job:
+
+1. **`cm.project.apply_option_defaults(meta, values)`** — pure merge:
+   live values land on MATCHING `meta.options` entries (in list order,
+   on a clone, every other key preserved), and the merged list
+   re-validates through `options_error` against the FILE's shape — the
+   declaration of record — so a live value that no longer fits a
+   hand-edited range refuses loudly, naming the entry. Data-declared
+   entries only: a live option absent from the list (declared in code
+   via `options.add`) is skipped, because boot's code redeclare would
+   shadow any data written for it — dead weight, honestly refused when
+   NOTHING is data-declared and counted in the status line otherwise
+   ("N code-declared kept in code").
+2. **`cm.ed.win.settings.save_defaults(win, ed)`** — the door: parked
+   guard, decode the LATEST working bytes (unsaved code-window edits
+   are the working truth), merge, encode canonical, `textwin.replace`
+   + `textwin.save`.
+3. **`cm.options.rebase_defaults(values)`** — the live half after a
+   successful publish: declarations adopt the new defaults and a stored
+   custom value now EQUAL to its default leaves the store (one
+   video.dat write). Without the prune, the dev's machine would shadow
+   the very defaults it just published — a later hand edit of
+   project.lua would silently not show up, the untouched-player rule
+   inverted into a footgun.
+
+**Proof.** Linux selftest **24,687** (+14: the pure merge — clone,
+order, codec round trip, no-list / only-code-declared / out-of-shape
+refusals naming the entry; rebase — declaration moves, equal store
+prunes with inert foreign ids surviving the persist, off-shape values
+ignored; the door — refusal without a data list, the parked wall, the
+disk round trip preserving extension keys, the skipped count, the
+atomic-failure retry keeping the complete merged bytes dirty).
+`nix run .#test` ALL GREEN, goldens byte-identical (editor chrome +
+per-project file writes only). Live tape proof + captures on llm-feed.
+
+**Revisit triggers.** A second consumer of per-row default markers (the
+player menu showing "modified" chips?) votes moving the diff read into
+cm.options; a project wanting to publish a SUBSET of values votes
+per-row publish affordances; the fresh-user pass (A8) judging the
+button's discoverability.

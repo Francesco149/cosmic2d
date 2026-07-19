@@ -121,6 +121,15 @@ game window. It's an ordinary window: nothing pauses, nothing is blocked
 while it's open. Rebinding and the player menu itself are player-facing —
 test those by running the game in player mode.
 
+A game-option row whose value differs from its declared default carries a
+trailing `*` (the same mark a dirty window's title wears), and **save
+values as defaults** writes the current values back into `project.lua`'s
+`options` list as the new defaults — through the same working copy as a
+code window on the file, so the write is one undoable step and Ctrl+S
+rules apply. Only options declared in `project.lua` move; an option
+declared in code with `cm.options.add` keeps its default in code, and the
+status line counts those out honestly.
+
 ## Playing and mouse capture
 
 Clicking into a game window focuses it — focused means playing, and your

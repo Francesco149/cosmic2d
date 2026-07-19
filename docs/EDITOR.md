@@ -859,6 +859,16 @@ one structured replacement, and takes the existing atomic text-save path.
 Source-side and form-side edits therefore merge deliberately; an interrupted
 write leaves both the saved generation and complete dirty replacement intact.
 
+The settings window's **defaults publish** (D136) rides the same citizen:
+"save values as defaults" decodes the latest shared `project.lua` working
+bytes, merges the live option values into the `options` list's `default`
+fields through pure `cm.project.apply_option_defaults` (data-declared
+entries only; the merged list re-validates against the file's shape), and
+lands the canonical bytes through the identical journaled replace +
+atomic save. Success rebases the live declarations and prunes now-equal
+stored player values (`cm.options.rebase_defaults`), so the dev's machine
+tracks the published defaults instead of shadowing them.
+
 The general surface owns name/author/version/description, internal width/height,
 initial integer scale, and start-maximized. It shows draft validation and the
 D070 release result separately because a draft description may be empty while

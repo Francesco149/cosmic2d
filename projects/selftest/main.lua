@@ -4658,6 +4658,25 @@ local function t_options()
   check(not pcall(options.on_change, "nope", function() end),
         "options: on_change is loud on unknown ids")
 
+  -- the defaults publish's live half (D136): the declaration follows the
+  -- published value, a now-equal stored value leaves the store (this
+  -- machine tracks the default again), unknown ids and off-shape values
+  -- are ignored, and inert foreign ids survive the persist untouched
+  local zoomdef, styledef
+  for _, d in ipairs(options.defs) do
+    if d.id == "zoom" then zoomdef = d end
+    if d.id == "style" then styledef = d end
+  end
+  options.rebase_defaults({ zoom = 6, nope = true, style = 99 })
+  check(zoomdef.default == 6 and options._custom.zoom == nil
+        and options.get("zoom") == 6,
+        "options: rebase_defaults moves the declaration and prunes the store")
+  check(styledef.default == "clean",
+        "options: rebase_defaults ignores values off the declared shape")
+  t = state.parse(pal.read_file(vroot .. "/video.dat"))
+  check(t.custom.zoom == nil and t.custom.zebra == 5,
+        "options: the pruned value left video.dat, inert ids survive")
+
   -- restore the suite's state
   view._video_path, view._access_path = nil, saved_access
   view.cfg.ui_scale = saved_view.ui_scale
@@ -4735,6 +4754,38 @@ local function t_save()
   check(project.validate_runtime({ options = { { id = "ok" } } }) == true
         and not project.validate_runtime({ options = { { id = "" } } }),
         "project: boot validation covers the options list")
+
+  -- the defaults publish merge (D136): live values become the data
+  -- defaults of MATCHING entries, in list order, on a clone; entries the
+  -- values table does not name stand; live options absent from the list
+  -- (code-declared) are skipped and named in the applied list's absence
+  local dbase = { name = "g", options = {
+    { id = "crt", kind = "toggle", default = true },
+    { id = "glow", kind = "slider", min = 1, max = 8, default = 2 },
+    { id = "look", kind = "choice", choices = { "clean", "neon" } },
+  }, custom = { keep = 7 } }
+  local dmerged, dapplied = project.apply_option_defaults(
+    dbase, { crt = false, glow = 5, codeknob = true })
+  check(dmerged ~= nil and dmerged.options[1].default == false
+        and dmerged.options[2].default == 5
+        and dmerged.options[3].default == nil
+        and #dapplied == 2 and dapplied[1] == "crt" and dapplied[2] == "glow"
+        and dmerged.custom.keep == 7
+        and dbase.options[1].default == true,
+        "project: apply_option_defaults merges live values into a clone")
+  local drt = project.decode(project.encode(dmerged), "@defaults-roundtrip")
+  check(drt and drt.options[2].default == 5 and drt.options[2].max == 8
+        and drt.options[1].id == "crt",
+        "project: published defaults survive the canonical codec")
+  local _, derr = project.apply_option_defaults({ name = "g" }, { crt = true })
+  check(derr and derr:find("declares no options", 1, true),
+        "project: publish refuses without a data options list")
+  _, derr = project.apply_option_defaults(dbase, { codeknob = true })
+  check(derr and derr:find("code-declared", 1, true),
+        "project: publish with only code-declared options refuses honestly")
+  _, derr = project.apply_option_defaults(dbase, { glow = 99 })
+  check(derr and derr:find("options[2]", 1, true),
+        "project: an out-of-shape published default refuses naming the entry")
 
   -- settings: empty is a legal draft, invalid never crosses, valid persists
   local meta = { name = "g" }
@@ -5149,6 +5200,69 @@ return {
   check(not ok and win.error:find("internal_h", 1, true)
         and pal.read_file(path) == before,
         "project window: invalid form stays visible and never reaches disk")
+
+  -- the settings window's defaults publish (D136): the door writes the
+  -- live option values into project.lua's options list through the SAME
+  -- shared working copy (journaled replace + atomic save), refusing
+  -- honestly when nothing is data-declared and walled while parked
+  local S = cm.require("cm.ed.win.settings")
+  local options = cm.require("cm.options")
+  local view = cm.require("cm.view")
+  local saved_defs, saved_custom = options.defs, options._custom
+  local saved_vpath = view._video_path
+  options.defs, options._custom = {}, {}
+  view._video_path = root .. "/video.dat" -- rebase prunes persist here
+  options.add({ id = "crt", kind = "toggle", default = true })
+  options.add({ id = "codeknob", kind = "toggle", default = false })
+  options._custom.crt = false -- the dev toggled it in the window
+  local swin = {}
+  local sok, snote = S.save_defaults(swin, ed)
+  check(not sok and snote:find("declares no options", 1, true)
+        and swin.dnote == snote,
+        "settings publish: refuses without a project.lua options list")
+
+  local pstub = { path = "project.lua" }
+  local wmeta = project.decode(T.open_win(pstub, ed).text, "@working")
+  wmeta.options = { { id = "crt", kind = "toggle", default = true } }
+  T.replace(pstub, ed, project.encode(wmeta))
+
+  ed.parked = true
+  local pbefore = pal.read_file(path)
+  sok, snote = S.save_defaults(swin, ed)
+  check(not sok and snote:find("parked", 1, true)
+        and pal.read_file(path) == pbefore,
+        "settings publish: parked in the past is walled")
+  ed.parked = false
+
+  sok, snote = S.save_defaults(swin, ed)
+  local sdisk = project.decode(pal.read_file(path), "@published")
+  check(sok == true and sdisk.options[1].default == false
+        and sdisk.extension_after_open.enabled == true
+        and sdisk.name == "window name",
+        "settings publish: the live value lands as the data default")
+  check(swin.dnote:find("1 code-declared", 1, true) ~= nil,
+        "settings publish: code-declared options are counted out honestly")
+  local crtdef
+  for _, d in ipairs(options.defs) do if d.id == "crt" then crtdef = d end end
+  check(crtdef.default == false and options._custom.crt == nil,
+        "settings publish: the live declaration rebases and the store prunes")
+
+  options._custom.crt = true -- a fresh diff for the failure path
+  local sp = ed.g.tw["project.lua"]
+  sp._save_fail = { _fail = "rename" }
+  pbefore = pal.read_file(path)
+  sok, snote = S.save_defaults(swin, ed)
+  local dirtymeta = project.decode(T.open_win(pstub, ed).text, "@dirty")
+  check(not sok and snote:find("save failed", 1, true)
+        and pal.read_file(path) == pbefore
+        and dirtymeta.options[1].default == true
+        and options._custom.crt == true and crtdef.default == false,
+        "settings publish: atomic failure keeps merged bytes for the ctrl+s retry")
+  sp._save_fail = nil
+
+  options.defs, options._custom = saved_defs, saved_custom
+  view._video_path = saved_vpath
+  pal.x_remove(root .. "/video.dat")
 end
 
 local function t_project_location()

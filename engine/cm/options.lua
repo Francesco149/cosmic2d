@@ -164,6 +164,30 @@ function M.on_change(id, fn)
   error("unknown option: " .. tostring(id), 2)
 end
 
+-- rebase_defaults(values): the live half of the settings window's
+-- defaults publish (D136) — after project.lua's options list adopts the
+-- current values as its new defaults, the LIVE declarations follow
+-- (id -> value; unknown ids and values off the declared shape are
+-- ignored), and a stored custom value now EQUAL to its default leaves
+-- the store: the dev's machine goes back to tracking the default, so a
+-- later hand edit of project.lua shows up instead of being shadowed by
+-- a frozen copy of the same value (the untouched-player rule). One
+-- video.dat write when anything was pruned.
+function M.rebase_defaults(values)
+  local pruned = false
+  for _, d in ipairs(M.defs) do
+    local v = values[d.id]
+    if v ~= nil and opt_valid(d, v) then
+      d.default = v
+      if M._custom[d.id] == v then
+        M._custom[d.id] = nil
+        pruned = true
+      end
+    end
+  end
+  if pruned then view.save_video() end
+end
+
 -- get(id) -> the live value (stored when valid, else the declared default)
 function M.get(id)
   for _, d in ipairs(M.defs) do

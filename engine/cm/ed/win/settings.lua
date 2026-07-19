@@ -13,6 +13,16 @@
 -- test it in player mode) and window-size/fullscreen/ui-scale (those
 -- reshape the editor's own window — the player menu owns them in player
 -- mode, the OS window and Aa chrome own them here).
+--
+-- The defaults publish (D136): a row whose live value differs from its
+-- declared default carries a trailing `*` (the D130 dirty grammar), and
+-- "save values as defaults" writes the current values back into
+-- project.lua's options list THROUGH the project window's door — the
+-- shared project.lua working copy (one journaled undoable step, atomic
+-- save, conflict-safe with an open project window or code window on the
+-- same file). Only data-declared entries move; options declared in code
+-- (cm.options.add) keep their defaults in code, counted honestly in the
+-- status line.
 
 local M = select(2, ...) or {}
 
@@ -87,17 +97,70 @@ local function checkbox(ctx, x, y, label, on)
   return ctx.hot and i.clicked[1] and over
 end
 
-local function cyclebtn(ctx, x, y, w, label)
+local function cyclebtn(ctx, x, y, w, label, off)
   local i = cm.require("cm.ui").inp
   local z = ctx.z
   local px = math.max(4, 8.5 * z)
   local h = px * 1.7
-  local over = i.wx >= x and i.wx < x + w and i.wy >= y and i.wy < y + h
+  local over = not off and i.wx >= x and i.wx < x + w
+               and i.wy >= y and i.wy < y + h
   pal.x_ig_rect_fill(x, y, w, h, over and COL.btn_hot or COL.btn, 2 * z)
   pal.x_ig_text(x + (w - pal.x_ig_text_size(label, px, 0)) * 0.5,
-                y + (h - px) * 0.45, px, over and COL.hot or COL.text,
+                y + (h - px) * 0.45, px,
+                off and COL.note or (over and COL.hot or COL.text),
                 label, 0)
   return ctx.hot and i.clicked[1] and over
+end
+
+-- Publish the live option values as the project's declared defaults:
+-- decode the LATEST project.lua working bytes (unsaved code-window edits
+-- included — they are the working truth), merge through the pure
+-- cm.project door, and land the canonical bytes through the exact
+-- replace+save path the project window's form uses. On an atomic-write
+-- failure the complete merged bytes stay dirty and journaled — the
+-- ordinary Ctrl+S retry contract. Success rebases the LIVE declarations
+-- and prunes now-equal stored values, so this machine tracks the
+-- published defaults again instead of shadowing them.
+function M.save_defaults(win, ed)
+  local options = cm.require("cm.options")
+  local project = cm.require("cm.project")
+  local textwin = cm.require("cm.ed.win.text")
+  local function note(msg)
+    win.dnote = msg
+    ed.touch()
+    return nil, msg
+  end
+  if ed.parked then
+    return note("parked in the past — writes are walled")
+  end
+  local stub = { path = "project.lua" }
+  local a = textwin.open_win(stub, ed)
+  if not a then return note("project.lua is unavailable") end
+  local meta, err = project.decode(a.text, "@" .. ed.root .. "/project.lua")
+  if not meta then return note(err) end
+  local values = {}
+  for _, d in ipairs(options.defs) do values[d.id] = options.get(d.id) end
+  local merged, applied = project.apply_option_defaults(meta, values)
+  if not merged then return note(applied) end
+  local bytes
+  bytes, err = project.encode(merged)
+  if not bytes then return note(err) end
+  local ok
+  ok, err = textwin.replace(stub, ed, bytes)
+  if not ok then return note(err) end
+  ok, err = textwin.save(stub, ed)
+  if not ok then
+    return note("save failed: " .. tostring(err) .. " — retry via ctrl+s")
+  end
+  local pub = {}
+  for _, id in ipairs(applied) do pub[id] = values[id] end
+  options.rebase_defaults(pub)
+  local skipped = #options.defs - #applied
+  win.dnote = "defaults saved to project.lua"
+    .. (skipped > 0
+        and (" (" .. skipped .. " code-declared kept in code)") or "")
+  ed.touch()
+  return true
 end
 
 function M.draw(win, ctx)
@@ -119,18 +182,23 @@ function M.draw(win, ctx)
     pal.x_ig_text(x0, y, px, COL.dim, s, 0)
   end
 
-  -- game options: the project's cm.options.add declarations
+  -- game options: the project's declared knobs (project.lua data first,
+  -- cm.options.add for the code-declared rest); a trailing * marks a
+  -- value off its declared default (the D130 dirty grammar)
   head("game options")
   if #options.defs == 0 then
-    label("none declared - see cm.options.add")
+    label("none declared - see project.lua's options list")
     y = y + row
   end
+  local moved = false -- any live value off its declared default
   for _, d in ipairs(options.defs) do
     local v = options.get(d.id)
+    if v ~= d.default then moved = true end
+    local name = d.label .. (v ~= d.default and " *" or "")
     if d.kind == "toggle" then
-      if checkbox(ctx, x0, y, d.label, v) then options.set(d.id, not v) end
+      if checkbox(ctx, x0, y, name, v) then options.set(d.id, not v) end
     elseif d.kind == "slider" then
-      label(d.label)
+      label(name)
       y = y + row * 0.8
       local nv, done = slider(ctx, "opt:" .. d.id, x0 + 4 * z, y, sw,
                               v, d.min, d.max)
@@ -138,7 +206,7 @@ function M.draw(win, ctx)
       if done then options.set(d.id, options.get(d.id)) end
       y = y + row * 0.4
     else -- choice: one button cycles
-      label(d.label)
+      label(name)
       if cyclebtn(ctx, x0 + iw - 70 * z, y - px * 0.3, 66 * z,
                   tostring(v)) then
         local at = 1
@@ -147,6 +215,19 @@ function M.draw(win, ctx)
       end
     end
     y = y + row
+  end
+  if #options.defs > 0 then
+    -- publish the current values as the project's defaults (D136);
+    -- inert while every value already matches its declared default
+    if cyclebtn(ctx, x0, y, math.min(iw, 150 * z), "save values as defaults",
+                not moved) and moved then
+      M.save_defaults(win, ctx.ed)
+    end
+    y = y + row * 1.1
+    if win.dnote then
+      pal.x_ig_text(x0, y, px, COL.note, win.dnote, 0)
+      y = y + row
+    end
   end
 
   -- volumes (this machine, this project — video.dat)

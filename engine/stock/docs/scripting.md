@@ -838,7 +838,11 @@ In the editor, the **settings window** (the Ctrl+Space launcher's
 "settings / player options" entry, or the pad back/select button) is the
 dev surface over the same knobs — declared options, volumes, stick
 tuning, accessibility — so you test them against the running game without
-leaving your session. And the menu is only the STOCK frontend: a game
+leaving your session. Its **save values as defaults** button writes the
+current option values back into `project.lua`'s `options` list as the new
+declared defaults (data-declared entries only — a `cm.options.add` knob
+keeps its default in code), so tuning a default is: flip it live, like it,
+publish it. And the menu is only the STOCK frontend: a game
 that builds its own settings screens reads and writes the same model
 through `options.get`/`set`/`set_vol` (plus `preview`/`preview_vol` for
 drag gestures — apply live, save once on release), so persistence and
