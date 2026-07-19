@@ -148,6 +148,67 @@ function M.replace_color(img, from, to)
   end
 end
 
+-- ---- brushes (size / shape / opacity — the sprite ed's pen+eraser) ----
+--
+-- A brush is a size-s footprint (integer s >= 1) of shape "circle" or
+-- "square", stamped at every path pixel; M.brush returns a plot
+-- compatible with M.line/M.curve. Size 1 is the single pixel. The
+-- circle uses the classic pixel-art discs (3 = the plus, 4 = the
+-- 12-px disc): inside when dx^2+dy^2 <= s^2/4 - (s > 2 and 0.5 or 0).
+--
+-- Opacity op (0 < op <= 1) applies ONCE per gesture per pixel: pass a
+-- `seen` table that lives for one stroke and re-crossed pixels are
+-- skipped, so a slow drag cannot compound. op < 1 source-overs with
+-- the color's alpha scaled; rgba == 0 (the transparent color) ERASES —
+-- op = 1 clears, op < 1 fades the pixel's existing alpha. Everything
+-- writes through the clip-aware set/over, so selections hold.
+
+function M.brush(size, shape, op, seen)
+  size = max(1, floor((size or 1) + 0.5))
+  op = op or 1
+  local off = (size - 1) // 2
+  local half = (size - 1) / 2
+  local thr = size * size / 4 - (size > 2 and 0.5 or 0)
+  local circle = shape ~= "square"
+  return function(img, x, y, rgba)
+    for oy = 0, size - 1 do
+      local dy = oy - half
+      for ox = 0, size - 1 do
+        local dx = ox - half
+        if not circle or dx * dx + dy * dy <= thr then
+          local px, py = x + ox - off, y + oy - off
+          local ok = px >= 0 and px < img.w and py >= 0 and py < img.h
+          if ok and seen then
+            local key = py * img.w + px
+            if seen[key] then ok = false else seen[key] = true end
+          end
+          if ok then
+            if rgba == 0 then
+              if op >= 1 then
+                M.set(img, px, py, 0)
+              else -- fade: scale the existing alpha down
+                local d = M.get(img, px, py)
+                local da = (d >> 24) & 255
+                if da ~= 0 then
+                  local na = floor(da * (1 - op) + 0.5)
+                  M.set(img, px, py,
+                        na == 0 and 0 or ((d & 0xffffff) | (na << 24)))
+                end
+              end
+            elseif op >= 1 then
+              M.set(img, px, py, rgba)
+            else
+              local a = (rgba >> 24) & 255
+              M.over(img, px, py,
+                     (rgba & 0xffffff) | (floor(a * op + 0.5) << 24))
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
 -- ---- lines & shapes (no AA) ----
 
 -- Bresenham line, endpoints inclusive, 8-connected. `plot` defaults to set

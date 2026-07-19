@@ -7056,3 +7056,84 @@ getting-started-3d.md (EDITOR3D.md §9 as-built notes).
 (ctrl+alt) if quad strips prove insufficient; a real reorderable key
 rail (drag) when clip counts grow; stamp rotation/spacing knobs when
 stamps see real use; per-pane maximize in the quad view.
+
+## D139 — material textures render live (save = bake); the brush well; sprite brush size/opacity + the stamp well (2026-07-19)
+
+**Context.** The human's fifth native pass on the 3D suite: "the
+material sampling doesn't feel like it's taking effect — the material
+is tagged with the .spr but painting looks like the stock material."
+Diagnosis: D138's §4.5 v1 only showed textures through the manual
+**bake tex** chip (hidden on the sel/view info row), and any paint
+stroke marked the bake stale — so the paint tool NEVER showed the
+texture while you were using it. Working as implemented, failing as a
+product. Plus three UX asks: dropping a sprite off-swatch should add a
+material of it; the brush stamp wants a visible drop target instead of
+the invisible any-brush-drop rule; and the sprite editor wants
+brush size/opacity/shape, transparency fill, and its own stamp door.
+
+**Decision.**
+
+1. **Textures render LIVE; there is no user-facing bake state.**
+   `terr3.bake_into` is the region bake (`bake_pixels` wraps it); the
+   3d map window keeps a per-map CPU atlas: a budgeted rows-per-frame
+   loop fills it (~6k texels/frame, `tex bake N%` in the strip — a
+   48x48 map is ~0.4s of Lua, never one frame's worth), paint/shade
+   strokes re-bake just the touched texel rect, and the finished
+   buffer serves via tex_create/tex_update. Vertex mode draws only
+   while the initial fill runs (or with no textured material).
+   Invalidation is explicit: byte re-adopts (undo/redo/esc/reload),
+   tex assign/clear/material-add, and cm.asset_epoch (a re-saved
+   source image re-bakes; save adopts the new epoch instead of
+   re-baking itself). The window frees its raw texture in
+   drop_ephemeral (the sprite window's pattern).
+2. **Save = bake.** The kind's encode refreshes `doc.stamp`
+   (mat_hash with textured mats, else 0) on EVERY encode, and the
+   write door publishes `<map>-atlas.png` (finishing the live fill
+   synchronously if mid-flight) before after_save bumps the epoch. The
+   game's freshness contract — HEAD stamp == mat_hash ⇒ draw the
+   atlas — holds by construction after every save; the D138 "bake tex"
+   / "x" chips are deleted. A fresh disk atlas seeds the live buffer
+   on open, so reopening a saved map costs nothing.
+3. **The drop grammar got visible targets.** pnt + viewport drop =
+   ADD a material of the image (named from the file, swatch = the
+   image's alpha-weighted average color, tex set, selected — one drag
+   from "I drew a ground tile" to painting with it; a full mat list
+   refuses with a log). Swatch drop = retexture that material
+   (unchanged). The brush STAMP door moved to the inspector's
+   **brush-shape well** — a square showing the live brush (radial dot
+   or the stamp image) that every brush row leads with; dropping an
+   image ON it sets the stamp, the `stamp: name x` chip resets. The
+   old invisible rule (any image drop while a brush tool is active)
+   is gone; non-pnt viewport drops place, as the sel tool always did.
+4. **The sprite editor grew the same hands.** `cm.paint.brush` is the
+   pure footprint plotter — size 1..32 (classic pixel discs: 3 = the
+   plus, 4 = the 12px disc; square = the block), opacity applied ONCE
+   per gesture through a per-stroke seen set (a slow drag cannot
+   compound), rgba==0 erases (op<1 fades alpha, keeping color) — fed
+   to M.line as a plot, clip-aware. The strip under the canvas dials
+   size/opacity/shape for pen+eraser ([ ] steps size); the palette
+   row leads with a TRANSPARENT swatch (pen erases, bucket =
+   transparency fill). The rail's **stamp well** takes a dropped
+   .spr (frame 1 composited) or .png: click the canvas to blit its
+   opaque pixels (ghost preview, one click = one journal entry),
+   `t`/well click re-arms, right-click or the strip chip clears.
+
+**Proofs.** Linux selftest 24,878 (+13: brush footprints/opacity-once/
+erase-fade KATs, bake_into row-band + sub-rect == bake_pixels). Two
+shell-driven tapes on a fresh smoke copy: the terr tape (18 checks —
+viewport drop added the checker material with the average color, the
+budgeted bake completed and flipped the mesh to atlas mode, a stroke
+patched the live atlas in place with no stale fallback, the well drop
+set the stamp, Ctrl+S published the atlas png with a fresh stamp) and
+the sprite tape (13 checks — ] steps size, the 12px disc, the opacity
+dial to 50% painting alpha 128, the transparent swatch + bucket
+clearing the disc, the well drop arming the stamp, the cross blit
+respecting transparency, one ctrl+z undoing the whole stamp). The
+terr capture shows the checker tiling the painted band live under the
+brush falloff; both captures on llm-feed. `nix run .#test` ALL GREEN,
+goldens byte-identical.
+
+**Revisit triggers.** Caster shadows multiplied into the atlas (still
+deferred from §4.5); stamp rotation/spacing (D138's trigger stands);
+drag-to-stamp strokes if single clicks chafe; a shared brush model if
+a third editor grows brushes.

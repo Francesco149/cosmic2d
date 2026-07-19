@@ -17,12 +17,29 @@ Paint a pixel sprite; define animation clips in the paired **animation** window.
 ## Tools (edit mode)
 
 - **p** pen · **e** eraser · **f** fill · **k** pick (eyedropper) · **~ c** curve
+- **t** stamp (once an image is in the stamp well, below)
 
 The pick tool is a **global eyedropper** — click anywhere (other windows, the
 live game) to sample that color.
 
 The **curve** tool is the classic 2-point curve: click the start, click the
 end, then move the mouse to bow the line and click to lay it (esc cancels).
+
+## Brush size, shape and opacity
+
+The strip under the canvas dials the pen/eraser brush: **size** (1-32 px,
+default 1 — also `[` and `]`), **opacity** (drag; applied once per stroke,
+so a slow drag never darkens twice), and the **shape** chip toggles
+**circle / square**. The eraser honors all three — a low-opacity eraser
+fades pixels instead of deleting them.
+
+## The stamp well
+
+The square slot at the bottom of the tool rail is the **stamp well**:
+**drag any sprite or image onto it** and it becomes a stamp — click the
+canvas to print its opaque pixels (a ghost preview shows where it lands;
+one click = one undo step). Click the well or press **t** to re-arm the
+stamp tool; right-click the well (or the strip's `x` chip) to clear it.
 
 ## Two colors + lines
 
@@ -38,6 +55,10 @@ end, then move the mouse to bow the line and click to lay it (esc cancels).
 New assets auto-name with three random words, so nothing blocks on a filename —
 press **enter** to create. The bottom-right **`#hex adds color`** field appends
 a typed `#RRGGBB[AA]` to the palette (the swatch left of it previews the parse).
+
+The palette row starts with the **transparent swatch** (the little
+checker): select it to paint or **fill with transparency** — the bucket
+with transparency erases a whole region in one click.
 
 **Drag a `.pal` in** to stack it as an extra swatch source at the bottom — add
 as many as you like; each row has a **×** to remove it. Left/right-click its

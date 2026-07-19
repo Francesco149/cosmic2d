@@ -16,6 +16,16 @@
 -- frame chips (select/add/dup/del), wheel zoom + middle-drag pan.
 -- Gradients/transforms/clips/pivot editing return as content work
 -- demands them (.spr carries them; saving preserves what we don't show).
+--
+-- The brush row (the human's ask): pen + eraser carry a size (1..32,
+-- default 1), a shape (circle/square) and an opacity, dialed in the
+-- strip under the canvas (cm.paint.brush is the pure footprint —
+-- opacity applies once per gesture, so a slow drag cannot compound).
+-- The palette row leads with a TRANSPARENT swatch (paint/fill with
+-- transparency — the "transparency fill"). The rail's STAMP WELL takes
+-- a dropped .spr/.png and becomes the stamp brush: click the well (or
+-- `t`) for the stamp tool, click the canvas to stamp the image's
+-- opaque pixels; right-click the well (or the row's x chip) clears.
 
 local M = select(2, ...) or {}
 local sprite = cm.require("cm.sprite")
@@ -40,7 +50,8 @@ local TOOLS = { { "pen", "P" }, { "eraser", "E" }, { "fill", "F" },
 
 function M.defaults()
   return { path = "", edit = false, tool = "pen", color = 0xffffffff,
-           color2 = 0x000000ff, palettes = {} }
+           color2 = 0x000000ff, palettes = {},
+           bsize = 1, bshape = "circle", bop = 1 }
 end
 
 -- the right button is OURS while editing (cm.ed takes_right): secondary
@@ -66,6 +77,25 @@ M.hotkeys = {
   { key = "f", hint = "fill", when = editing, fn = set_tool("fill") },
   { key = "k", hint = "pick", when = editing, fn = set_tool("pick") },
   { key = "c", hint = "curve", when = editing, fn = set_tool("curve") },
+  { key = "t", hint = "stamp",
+    when = function(win) return editing(win) and win.stamp ~= nil end,
+    fn = set_tool("stamp") },
+  { key = "[", hint = "smaller", rep = true,
+    when = function(win)
+      return editing(win) and (win.tool == "pen" or win.tool == "eraser")
+    end,
+    fn = function(win, ed)
+      win.bsize = math.max(1, (win.bsize or 1) - 1)
+      ed.touch()
+    end },
+  { key = "]", hint = "bigger", rep = true,
+    when = function(win)
+      return editing(win) and (win.tool == "pen" or win.tool == "eraser")
+    end,
+    fn = function(win, ed)
+      win.bsize = math.min(32, (win.bsize or 1) + 1)
+      ed.touch()
+    end },
   { key = "x", hint = "swap colors", when = editing,
     fn = function(win, ed)
       win.color, win.color2 = win.color2 or 0x000000ff, win.color or 0xffffffff
@@ -95,16 +125,69 @@ function M.rebind(win, ed, path)
 end
 
 -- a .pal dropped on the sprite ed STACKS as an extra swatch source at the
--- bottom (the human's ask: drag palettes in, multiple, each removable). A .spr
--- still rebinds (accepts/rebind above); everything else falls through. Returns
--- true = the drop is handled here (kind.drop outranks rebind, ed.lua §drop).
+-- bottom (the human's ask: drag palettes in, multiple, each removable). An
+-- image dropped ON THE STAMP WELL becomes the stamp brush; a .spr anywhere
+-- else still rebinds (accepts/rebind above); everything else falls through.
+-- Returns true = the drop is handled here (kind.drop outranks rebind).
 function M.drop(win, ed, path, wx, wy)
-  if not path:lower():find("%.pal$") then return false end
+  local l = path:lower()
+  if l:find("%.spr$") or l:find("%.png$") then
+    local p = ed.g.sw and ed.g.sw[win.path]
+    local r = win.edit and p and p.wellrect
+    if r and wx >= r.x and wx < r.x + r.w
+       and wy >= r.y and wy < r.y + r.h then
+      win.stamp = path
+      win.tool = "stamp"
+      ed.touch()
+      return true
+    end
+    return false
+  end
+  if not l:find("%.pal$") then return false end
   win.palettes = win.palettes or {}
   for _, q in ipairs(win.palettes) do if q == path then return true end end
   win.palettes[#win.palettes + 1] = path
   ed.touch()
   return true
+end
+
+-- the stamp source: a dropped .spr composites its FIRST frame, a .png
+-- reads as-is; cached on the plumbing keyed path+epoch (a re-saved
+-- source refreshes next frame). The ghost-preview texture rides along
+-- and is freed with the other ephemera.
+local function stamp_img(ed, p, path)
+  if not path then return nil end
+  local epoch = cm.asset_epoch or 0
+  local s = p.simg
+  if s and s.path == path and s.epoch == epoch then
+    return s.ok and s or nil
+  end
+  if s and s.tex then pal.tex_free(s.tex) end
+  s = { path = path, epoch = epoch, ok = false }
+  p.simg = s
+  local rp = cm.require("cm.ed.win.map").res_path(ed, path)
+  local bytes = rp and pal.read_file(rp)
+  local img
+  if bytes and path:lower():find("%.spr$") then
+    local okd, doc2 = pcall(sprite.decode, bytes)
+    if okd and doc2 then
+      img = paint.image(doc2.w, doc2.h)
+      sprite.composite_into(doc2, 1, img)
+    end
+  elseif bytes then
+    local pix, w, h = pal.png_read(bytes)
+    if pix then
+      img = paint.image(w, h)
+      img.buf:setstr(0, pix)
+    end
+  end
+  if img then
+    s.img = img
+    s.tex = pal.tex_create(img.w, img.h,
+                           img.buf:str(0, img.w * img.h * 4))
+    s.ok = true
+  end
+  return s.ok and s or nil
 end
 
 -- an attached .pal's colors (cm.paint-packed, same as doc.palette), cached on
@@ -183,6 +266,10 @@ function M.drop_ephemeral(ed)
     if p.tex then
       pal.tex_free(p.tex)
       p.tex = nil
+    end
+    if p.simg then
+      if p.simg.tex then pal.tex_free(p.simg.tex) end
+      p.simg = nil
     end
   end
 end
@@ -271,7 +358,7 @@ cm.require("cm.ed.kit").viewlock(M, {
 function M.escape(win, ed)
   local p = ed.g.sw and ed.g.sw[win.path]
   if p and p.curve then p.curve = nil; ed.touch(); return true end
-  if win.edit and win.tool == "pick" then
+  if win.edit and (win.tool == "pick" or win.tool == "stamp") then
     win.tool = "pen"
     ed.touch()
     return true
@@ -391,7 +478,7 @@ function M.draw(win, ctx)
   local LR = math.min(96 * z, ctx.cw * 0.3) -- layers rail
   local nAtt = #(win.palettes or {})
   local ATT_H = 16 * z -- one row per dragged-in palette (the human's stack)
-  local BB = 40 * z + nAtt * ATT_H -- palette + frames rows + attached palettes
+  local BB = 54 * z + nAtt * ATT_H -- palette + frames + brush rows + attached
   local cvx, cvy = ctx.cx + TR, ctx.cy
   local cvw, cvh = ctx.cw - TR - LR, ctx.ch - BB
   if cvw < 40 or cvh < 40 then return end
@@ -406,6 +493,40 @@ function M.draw(win, ctx)
       ctx.touch()
     end
     ty = ty + TR - 5 * z
+  end
+  -- the stamp well: the DEDICATED drop spot — drag a .spr/.png here
+  -- and it becomes the stamp brush (click / `t` = the stamp tool;
+  -- right-click clears). The thumbnail is the dropped image itself.
+  do
+    local wsz = TR - 9 * z
+    local wx0, wy0 = ctx.cx + 3 * z, ty + 4 * z
+    p.wellrect = { x = wx0, y = wy0, w = wsz, h = wsz }
+    local on = win.tool == "stamp"
+    local hov = ctx.hot and i.wx >= wx0 and i.wx < wx0 + wsz
+                and i.wy >= wy0 and i.wy < wy0 + wsz
+    pal.x_ig_rect_fill(wx0, wy0, wsz, wsz,
+                       on and COL.btn_on or (hov and COL.btn_hot or COL.btn),
+                       3 * z)
+    local simg = stamp_img(ed, p, win.stamp)
+    if simg then
+      local s = math.min(wsz / simg.img.w, wsz / simg.img.h)
+      local dw, dh = simg.img.w * s, simg.img.h * s
+      pal.x_ig_image(simg.tex, wx0 + (wsz - dw) * 0.5,
+                     wy0 + (wsz - dh) * 0.5, dw, dh)
+    else
+      local gw = pal.x_ig_text_size("⧉", px, 1)
+      pal.x_ig_text(wx0 + (wsz - gw) * 0.5, wy0 + (wsz - px) * 0.4, px,
+                    (hov or on) and COL.hot or COL.dim, "⧉", 1)
+    end
+    pal.x_ig_rect(wx0, wy0, wsz, wsz, COL.btn_on, 1, 3 * z)
+    if hov and i.clicked[1] and win.stamp then
+      win.tool = "stamp"
+      ctx.touch()
+    elseif hov and i.clicked[3] and win.stamp then
+      win.stamp = nil
+      if win.tool == "stamp" then win.tool = "pen" end
+      ctx.touch()
+    end
   end
   -- primary + secondary color swatches (LEFT paints primary, RIGHT paints the
   -- secondary — the 2-color ask; the X key or a right-click here swaps them)
@@ -525,12 +646,27 @@ function M.draw(win, ctx)
     end
 
   elseif paintable then
+    -- cursor: the pen/eraser footprint at its real size; 1px otherwise
+    local brushy = win.tool == "pen" or win.tool == "eraser"
+    local bs = brushy and math.max(1, math.floor((win.bsize or 1) + 0.5))
+               or 1
     if inb then
-      pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom, 0xE8E4FF66, 1)
+      local bo = (bs - 1) // 2
+      pal.x_ig_rect(ox + (mx - bo) * zoom, oy + (my - bo) * zoom,
+                    bs * zoom, bs * zoom, 0xE8E4FF66, 1)
+    end
+    -- the stamp ghost: the dropped image, translucent, where it lands
+    local simg = win.tool == "stamp" and stamp_img(ed, p, win.stamp)
+    if simg then
+      local dx, dy = mx - simg.img.w // 2, my - simg.img.h // 2
+      pal.x_ig_clip_push(cvx, cvy, cvw, cvh)
+      pal.x_ig_image(simg.tex, ox + dx * zoom, oy + dy * zoom,
+                     simg.img.w * zoom, simg.img.h * zoom, 0, 0, 1, 1,
+                     0xffffff88)
+      pal.x_ig_clip_pop()
     end
     -- shift = a straight line from the LAST painted pixel (pen / eraser)
-    local lineable = g.shift and p.last
-                     and (win.tool == "pen" or win.tool == "eraser")
+    local lineable = g.shift and p.last and brushy
     if lineable and inb then
       pal.x_ig_line(ox + (p.last.x + 0.5) * zoom, oy + (p.last.y + 0.5) * zoom,
                     ox + (mx + 0.5) * zoom, oy + (my + 0.5) * zoom,
@@ -550,13 +686,26 @@ function M.draw(win, ctx)
           p.last, p.comp_dirty = { x = mx, y = my }, true
           commit(ed, win.path)
         end
+      elseif win.tool == "stamp" then
+        if simg and inb and not rmb then
+          paint.blit(cell, mx - simg.img.w // 2, my - simg.img.h // 2,
+                     simg.img, nil, nil, nil, nil, "stamp")
+          p.last, p.comp_dirty = { x = mx, y = my }, true
+          commit(ed, win.path) -- one stamp = one journal entry
+        end
       elseif lineable and not rmb then
-        paint.line(cell, p.last.x, p.last.y, mx, my, paintcol(false))
+        paint.line(cell, p.last.x, p.last.y, mx, my, paintcol(false),
+                   paint.brush(win.bsize, win.bshape, win.bop, {}))
         p.last, p.comp_dirty = { x = mx, y = my }, true
         commit(ed, win.path)
       else
-        p.stroke = { lx = mx, ly = my, rmb = rmb }
-        if inb then paint.set(cell, mx, my, paintcol(rmb)) end
+        -- one stroke = one `seen` set: opacity applies once per pixel
+        -- however the drag re-crosses it (cm.paint.brush)
+        p.stroke = { lx = mx, ly = my, rmb = rmb, seen = {} }
+        if inb then
+          paint.brush(win.bsize, win.bshape, win.bop, p.stroke.seen)(
+            cell, mx, my, paintcol(rmb))
+        end
         p.comp_dirty = true
       end
     end
@@ -567,7 +716,9 @@ function M.draw(win, ctx)
       if nx ~= p.stroke.lx or ny ~= p.stroke.ly then
         if cell then
           paint.line(cell, p.stroke.lx, p.stroke.ly, nx, ny,
-                     paintcol(p.stroke.rmb))
+                     paintcol(p.stroke.rmb),
+                     paint.brush(win.bsize, win.bshape, win.bop,
+                                 p.stroke.seen))
         end
         p.stroke.lx, p.stroke.ly = nx, ny
         p.comp_dirty = true
@@ -628,11 +779,30 @@ function M.draw(win, ctx)
     commit(ed, win.path)
   end
 
-  -- palette row
+  -- palette row — led by the TRANSPARENT swatch (paint/fill with
+  -- transparency: pen = erase, bucket = the "transparency fill")
   local py0 = ctx.cy + cvh + 4 * z
   local sw = math.max(8, 13 * z)
   local sx0 = ctx.cx + 2 * z
-  local n = 0
+  do
+    local hsw = sw * 0.5
+    pal.x_ig_rect_fill(sx0, py0, sw, sw, COL.checker_a, 2 * z)
+    pal.x_ig_rect_fill(sx0 + hsw, py0, hsw, hsw, COL.checker_b)
+    pal.x_ig_rect_fill(sx0, py0 + hsw, hsw, hsw, COL.checker_b)
+    if (win.color or 0xffffffff) == 0 then
+      pal.x_ig_rect(sx0 - 1, py0 - 1, sw + 2, sw + 2, COL.hot, 1, 2 * z)
+    end
+    local hov = ctx.hot and i.wx >= sx0 and i.wx < sx0 + sw
+                and i.wy >= py0 and i.wy < py0 + sw
+    if hov and i.clicked[1] then
+      win.color = 0
+      ctx.touch()
+    elseif hov and i.clicked[3] then
+      win.color2 = 0
+      ctx.touch()
+    end
+  end
+  local n = 1
   for ci, c in ipairs(doc.palette) do
     local x = sx0 + n * (sw + 2 * z)
     if x + sw > ctx.cx + ctx.cw - 108 * z then break end
@@ -725,9 +895,80 @@ function M.draw(win, ctx)
     opx = opx + 25 * z
   end
 
+  -- ---- the brush row: size / opacity / shape (pen + eraser), the
+  -- stamp chip (stamp tool) — drag a dial horizontally to step it
+  local by = ctx.cy + cvh + 38 * z
+  local bh = math.max(8, 13 * z)
+  local function dial(id, x, w, txt)
+    local hov = ctx.hot and i.wx >= x and i.wx < x + w
+                and i.wy >= by and i.wy < by + bh
+    pal.x_ig_rect_fill(x, by, w, bh,
+                       (p.bg and p.bg.id == id) and COL.btn_on
+                       or (hov and COL.btn_hot or COL.btn), 3 * z)
+    pal.x_ig_text(x + 4 * z, by + (bh - px * 0.9) * 0.45, px * 0.9,
+                  hov and COL.hot or COL.dim, txt, 0)
+    if hov and i.clicked[1] then p.bg = { id = id, mx = i.wx } end
+    if p.bg and p.bg.id == id then
+      if i.buttons[1] then
+        local stp = 6 * z
+        local d = math.floor((i.wx - p.bg.mx) / stp)
+        if d ~= 0 then
+          p.bg.mx = p.bg.mx + d * stp
+          ctx.touch()
+          return d
+        end
+      else
+        p.bg = nil
+      end
+    end
+    return 0
+  end
+  if win.tool == "pen" or win.tool == "eraser" then
+    local bx = sx0
+    local d = dial("bsz", bx, 50 * z, ("size %d"):format(win.bsize or 1))
+    if d ~= 0 then
+      win.bsize = math.max(1, math.min(32, (win.bsize or 1) + d))
+    end
+    bx = bx + 54 * z
+    d = dial("bop", bx, 54 * z,
+             ("op %d%%"):format(math.floor((win.bop or 1) * 100 + 0.5)))
+    if d ~= 0 then
+      win.bop = math.max(0.05, math.min(1, (win.bop or 1) + d * 0.05))
+    end
+    bx = bx + 58 * z
+    local shp = win.bshape or "circle"
+    if button(i, ctx, bx, by, 46 * z, bh, shp, false, px * 0.9) then
+      win.bshape = shp == "circle" and "square" or "circle"
+      ctx.touch()
+    end
+    bx = bx + 50 * z
+    pal.x_ig_text(bx, by + (bh - px * 0.8) * 0.45, px * 0.8, COL.dim,
+                  "[ ] size - drag dials - shape toggles", 0)
+  elseif win.tool == "stamp" then
+    local nm = win.stamp and (win.stamp:match("([^/]+)$") or win.stamp)
+               or "none"
+    local txt = "stamp: " .. nm .. "  x"
+    local w2 = pal.x_ig_text_size(txt, px * 0.9, 0) + 10 * z
+    local hov = ctx.hot and i.wx >= sx0 and i.wx < sx0 + w2
+                and i.wy >= by and i.wy < by + bh
+    pal.x_ig_rect_fill(sx0, by, w2, bh, hov and COL.btn_hot or COL.btn,
+                       3 * z)
+    pal.x_ig_text(sx0 + 5 * z, by + (bh - px * 0.9) * 0.45, px * 0.9,
+                  hov and COL.hot or COL.dim, txt, 0)
+    if hov and i.clicked[1] then
+      win.stamp = nil
+      win.tool = "pen"
+      ctx.touch()
+    end
+    pal.x_ig_text(sx0 + w2 + 8 * z, by + (bh - px * 0.8) * 0.45,
+                  px * 0.8, COL.dim,
+                  "click the canvas to stamp - drop an image on the"
+                  .. " rail well to swap", 0)
+  end
+
   -- ---- attached palettes: dragged-in .pal files, stacked, each removable
   -- (the human's ask). Left-click a swatch = primary, right-click = secondary
-  local aty = ctx.cy + cvh + 40 * z
+  local aty = ctx.cy + cvh + 54 * z
   local ssz = math.max(7, 11 * z)
   local remove_idx
   for ai, ppath in ipairs(win.palettes or {}) do

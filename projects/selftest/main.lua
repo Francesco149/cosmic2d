@@ -3421,6 +3421,68 @@ local function t_paint()
   check(bowed, "paint: curve bows toward its control points")
 end
 
+-- ---- cm.paint.brush: the sprite ed's size/shape/opacity pen — classic
+-- pixel-disc footprints, opacity once per gesture via the seen set,
+-- rgba==0 erases (op<1 fades the existing alpha) ----
+local function t_brush()
+  local paint = cm.require("cm.paint")
+  local RED = paint.pack(255, 0, 0)
+  local function count(im)
+    local n = 0
+    for y = 0, im.h - 1 do
+      for x = 0, im.w - 1 do
+        if paint.get(im, x, y) ~= 0 then n = n + 1 end
+      end
+    end
+    return n
+  end
+  local function stamp(size, shape)
+    local im = paint.image(9, 9)
+    paint.brush(size, shape, 1, {})(im, 4, 4, RED)
+    return im
+  end
+  -- footprints: 1 = the pixel, 2 = the 2x2 block, 3 = the plus,
+  -- 4 = the 12px disc; square 3 = the full block
+  local s1 = stamp(1, "circle")
+  check(count(s1) == 1 and paint.get(s1, 4, 4) == RED,
+        "brush: size 1 = one pixel")
+  check(count(stamp(2, "circle")) == 4, "brush: size 2 = the 2x2 block")
+  local p3 = stamp(3, "circle")
+  check(count(p3) == 5 and paint.get(p3, 3, 3) == 0
+        and paint.get(p3, 4, 3) == RED, "brush: size 3 circle is the plus")
+  check(count(stamp(4, "circle")) == 12,
+        "brush: size 4 circle is the 12px disc")
+  check(count(stamp(3, "square")) == 9, "brush: size 3 square is the block")
+  -- through M.line: a size-3 square drag sweeps the 3-tall band
+  local ln = paint.image(9, 9)
+  paint.line(ln, 2, 4, 6, 4, RED, paint.brush(3, "square", 1, {}))
+  check(paint.get(ln, 1, 3) == RED and paint.get(ln, 7, 5) == RED
+        and count(ln) == 21, "brush: line sweeps the footprint")
+  -- opacity applies ONCE per gesture: re-crossing under one seen set is
+  -- a no-op; a fresh gesture composites again
+  local seen = {}
+  local op1 = paint.image(3, 3)
+  local plot = paint.brush(1, "circle", 0.5, seen)
+  plot(op1, 1, 1, RED)
+  local a1 = (paint.get(op1, 1, 1) >> 24) & 255
+  plot(op1, 1, 1, RED)
+  local a2 = (paint.get(op1, 1, 1) >> 24) & 255
+  check(a1 == 128 and a2 == 128, "brush: opacity once per gesture")
+  paint.brush(1, "circle", 0.5, {})(op1, 1, 1, RED)
+  check(((paint.get(op1, 1, 1) >> 24) & 255) > 128,
+        "brush: a new gesture blends again")
+  -- the eraser: rgba==0 clears at op 1, fades alpha at op < 1
+  local er = paint.image(3, 3)
+  paint.set(er, 1, 1, RED)
+  paint.brush(1, "circle", 0.5, {})(er, 1, 1, 0)
+  check(((paint.get(er, 1, 1) >> 24) & 255) == 128,
+        "brush: erase at op .5 fades the alpha")
+  check((paint.get(er, 1, 1) & 0xffffff) == (RED & 0xffffff),
+        "brush: a faded pixel keeps its color")
+  paint.brush(1, "circle", 1, {})(er, 1, 1, 0)
+  check(paint.get(er, 1, 1) == 0, "brush: erase at op 1 clears")
+end
+
 -- ---- cm.paint gradients: eval + ordered dither (M10 Phase 3, STUDIO.md §6) ----
 local function t_grad()
   local paint = cm.require("cm.paint")
@@ -12564,6 +12626,20 @@ local function t_terr3()
     local _, _, _, u2 = string.unpack("<fffff", ab, 6 * 24 + 1)
     check(u2 == 0.5, "terr3: atlas uv spans the map")
     check(ab:byte(21) == 255, "terr3: atlas verts carry lighting only")
+
+    -- bake_into (the editor's budgeted live bake): a full image
+    -- assembled from two row bands + a re-baked sub-rect is byte-
+    -- identical to the one-shot bake_pixels
+    local pxf = T3.bake_pixels(d3, nil, 2)
+    local buf3 = pal.buf(nil, 4 * 2 * 4)
+    T3.bake_into(d3, nil, 2, buf3, 0, 0, 3, 0) -- top row band
+    T3.bake_into(d3, nil, 2, buf3, 0, 1, 3, 1) -- bottom row band
+    check(buf3:str(0, 4 * 2 * 4) == pxf,
+          "terr3: bake_into row bands == bake_pixels")
+    buf3:setstr(4, "\0\0\0\0\0\0\0\0") -- scar two texels mid-row
+    T3.bake_into(d3, nil, 2, buf3, 1, 0, 2, 0) -- re-bake just the rect
+    check(buf3:str(0, 4 * 2 * 4) == pxf,
+          "terr3: bake_into patches a sub-rect in place")
   end
 end
 
@@ -13405,6 +13481,7 @@ function game.init()
   t_ladder()
   t_capture()
   t_paint()
+  t_brush()
   t_grad()
   t_sprite()
   t_anim()
