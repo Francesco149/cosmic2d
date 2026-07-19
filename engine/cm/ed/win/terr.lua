@@ -721,6 +721,7 @@ local function lat_for(ed, p, path)
   if lat and lat.epoch ~= epoch then
     lat.epoch = epoch
     lat.row = 0 -- a source image re-saved: re-fill (texture keeps serving)
+    lat.pub = true -- and republish the disk atlas when the fill lands
   end
   if not lat then
     lat = { w = W, h = H, buf = pal.buf(nil, W * H * 4), row = 0,
@@ -796,6 +797,35 @@ local function live_atlas(ed, p, path)
   elseif lat.dirty then
     pal.tex_update(lat.tex, lat.buf, lat.w, lat.h)
     lat.dirty = nil
+  end
+  -- publish-follow: the disk atlas is DERIVED from the map AND its
+  -- source images, but the stamp only hashes the texture PATHS — so a
+  -- re-saved sprite silently staled the published png and the RUNNING
+  -- GAME kept the old ground (the native report). An epoch-triggered
+  -- refill therefore republishes once it lands, while the map is
+  -- SAVED (unsaved paint must never leak into the game; a dirty map
+  -- publishes on its own Ctrl+S as always). The changed-bytes guard
+  -- makes the follow idempotent: two open maps sharing a sprite each
+  -- republish once and the epoch ping-pong dies out.
+  if lat.pub then
+    lat.pub = nil
+    local a = working(ed, path)
+    if a and a.terr == p.disk then
+      local png = pal.png_encode(lat.buf:str(0, lat.w * lat.h * 4),
+                                 lat.w, lat.h)
+      local ap = terr3.atlas_path(path)
+      local rp = ed.root .. "/" .. ap
+      if pal.read_file(rp) ~= png then
+        local okw, werr = pal.write_file_atomic(rp, png)
+        if okw then
+          cm.asset_epoch = (cm.asset_epoch or 0) + 1
+          lat.epoch = cm.asset_epoch -- just baked from current sources
+          pal.log("[ed] " .. ap .. " republished (source art changed)")
+        else
+          pal.log("[ed] atlas republish FAILED: " .. tostring(werr))
+        end
+      end
+    end
   end
   return lat.tex
 end

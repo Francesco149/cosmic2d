@@ -7232,3 +7232,26 @@ which the editor-state pass still handles), verified by a real
 restage round trip. Class rule: preservation lists must be
 deny-listed (what is DERIVED and rebuildable), never allow-listed
 (what someone remembered to keep).
+
+**Addendum 5 (same day) — the published atlas follows its source
+sprites; the staleness class gets a contract.** The human's report:
+editing the very sprite a material paints with updates the 3d map
+window but NOT the running game — the published `<map>-atlas.png` is
+derived from the map AND its source images, while the stamp only
+hashes the texture PATHS, so a re-saved sprite silently staled the
+disk bake with no violation the game could detect. Fix: an
+epoch-triggered live-atlas refill REPUBLISHES the png once it lands,
+while the map is SAVED (unsaved paint never leaks into the game; a
+dirty map publishes on its own Ctrl+S as always), then bumps the
+epoch so the game's texture memo re-reads. The changed-bytes guard
+makes the follow idempotent — two open maps sharing a sprite each
+republish once and the bump ping-pong dies out. Tape: recolor the
+ground sprite through sprite.save on a clean textured map → the disk
+atlas rewrites once with the new texels, byte-stable for the next 60
+frames, editor atlas live throughout. And per the human's ask
+("this class keeps happening — find a better way"), the discipline is
+now written down as PROCESS.md "Derived state must follow its
+sources": name the inputs at the derivation site, epoch-key every
+in-memory cache, published bakes follow or self-orphan visibly, raw
+GPU ids never cross frames outside their owning cache, and every
+derivation's proof tape EDITS A SOURCE and watches it follow.

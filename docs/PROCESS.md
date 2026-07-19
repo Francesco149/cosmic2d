@@ -156,6 +156,32 @@ judging any nix-built result.
 4. Beyond screenshots, the in-engine trace scrubber (M5) is the intended
    deep-verification tool — invest in it, it pays back agent autonomy.
 
+## Derived state must follow its sources (the staleness class)
+
+The single most-repeated native-report class (D138 thumbnails/stamps,
+D139's atlas seed, live bake, and game-side republish) is a DERIVATION
+that silently stops following an input. When adding ANY derived thing —
+an in-memory cache (decoded image, texture memo, thumbnail, baked mesh,
+stamp mask), a GPU object, or a published file (a baked .png/.spx) —
+do all of this at design time, not after the report:
+
+1. **Enumerate the inputs by name** in a comment at the derivation:
+   which doc(s), which files, which knobs. If you cannot list them,
+   the derivation is not ready to land.
+2. **In-memory caches key on `cm.asset_epoch`** (every editor save
+   bumps it) plus whatever doc generation they read. No hand-rolled
+   "cleared on X" lists — they miss the next X.
+3. **Published files follow their sources too**: a bake on disk whose
+   SOURCE re-saves must republish (while its owner doc is saved) or
+   self-orphan visibly — never silently serve stale bytes. Freshness
+   stamps must cover every bake input, and a stamp writers refresh
+   unconditionally is not a cache-validity token (the D139 seed).
+4. **Raw GPU ids never cross frames outside their owning cache**
+   (hold the memo table or re-ask; the D139 SDL crash).
+5. **The proof tape edits a source and watches the derivation
+   follow.** A feature tape that only exercises the happy path has
+   not tested the derivation at all.
+
 ## llm-feed (visual handoff to the human)
 
 The human keeps a browser tab on `http://localhost:8777`. Push, don't open
