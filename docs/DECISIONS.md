@@ -6990,3 +6990,69 @@ ALPHA gates keep their own queue (3D remains outside the alpha promise).
 per-corner format extension; a scene needing non-sun lights votes the
 point-light bake; a character needing blink votes fig face strips; a
 real project asking for CC0 pack import votes the OBJ→`.msh` converter.
+
+## D138 — the native-test reports batch: picker click swallow, mesh selection layer + quad view, sprite brush stamps, side-by-side reader forks (2026-07-19)
+
+**Context.** The human's first native session with the D137 editors
+returned a bug report and a UX list: the picker's "+ New project"
+dismissed instantly on click (Enter worked), the mesh window needed a
+real selection model (universal click grammar, edge mode, box select
+in every mode, edge loops, selection continuity across modes, a quad
+view at a bigger default), the terrain editor had no custom brushes,
+and ctrl+click doc links should fork the reader beside the current
+window.
+
+**Decisions.**
+
+1. **A modal's opening frame swallows its own click** (the D127
+   opening-Enter swallow, mouse edition). The picker modal shadows
+   `i.clicked` for the frame it opens: the same click can never reach
+   the modal's buttons or the click-outside dismiss. The class rule:
+   any surface that OPENS under the cursor mid-frame must consume the
+   opening press on every input channel, not just the keyboard.
+2. **The mesh window's selection layer is pure cm.mesh topology**:
+   `edges/pick_hits/vert_visible/edge_loop/sel_verts/convert_sel` (+
+   `ekey/eunkey`) are KAT'd data functions; the window stays gesture
+   plumbing. The universal `sel` mode is the DEFAULT: click = edge
+   else front face; click-again drills exactly ONE level (vert / face
+   under an edge / second ray face) and a third click cycles back;
+   press-drag on the selection moves it; empty drag box-selects
+   VISIBLE verts (occlusion-tested; vtx mode keeps the x-ray box).
+   Occluded silhouette edges are unpickable — an edge candidate must
+   beat the front ray hit (the far-corner-column steal the tape
+   caught). CTRL+click an edge = its quad-walk edge loop in every
+   mode. Mode switches re-express the selection via `convert_sel`
+   (face -> corners -> boundary edges -> back), never drop it.
+3. **The quad view is the mesh window's default**: orbit persp +
+   top/front/side orthos (`m4.ortho`, GL clip like persp) sharing
+   focus+zoom, each pane picking/marqueeing/dragging through its own
+   projection; the orbit RT pool grew per-pane subkeys; default window
+   880x720. A pane is a projection, not a mode — every editing gesture
+   works in all four.
+4. **Sprite brush stamps**: an image dropped on the 3d map window
+   WHILE A BRUSH TOOL IS ACTIVE becomes that window's brush stamp —
+   `terr3.stamp_mask` (alpha x luminance) + `terr3.stamp_at`
+   (aspect-true fit into the 2r brush square) replace the radial
+   falloff for every brush tool; the select tool keeps drop-to-place.
+   The inspector's `stamp: name x` chip clears it. 2D art tools author
+   3D ground detail — the material-tex precedent extended to brushes.
+5. **Ctrl+click doc links fork the reader BESIDE the source window**
+   (x+w+16, matched dimensions, focused, revealed by the D134 eased
+   pan) — reading forks into side-by-side pairs instead of cascades.
+6. **Drag-dial chips take stable ids** (found by the E5 tape): a
+   gesture keyed by a label that carries the live value orphans itself
+   after one step. Class rule for any value-labeled drag widget.
+
+**Proofs.** Selftest 24,846 (+39 across the packets); `nix run .#test`
+ALL GREEN after every packet, goldens byte-identical; tape proofs on
+the real windows for every item (picker click both directions, the
+9-check mesh tape, the stamp half-mask stroke, the reader fork, the
+E5 figure tape, the explore3d walk/npc tape); captures on llm-feed.
+Also this session under D137's program: E4.1 (the mesh selection
+layer), E5 (the figure editor), and the 3D vale starter template +
+getting-started-3d.md (EDITOR3D.md §9 as-built notes).
+
+**Revisit triggers.** Mesh: n-gon-aware loop select or face-loop
+(ctrl+alt) if quad strips prove insufficient; a real reorderable key
+rail (drag) when clip counts grow; stamp rotation/spacing knobs when
+stamps see real use; per-pane maximize in the quad view.
