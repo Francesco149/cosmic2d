@@ -626,15 +626,16 @@ end
 -- auto collider, anything else to a named ref position. EXCEPT: an
 -- image dropped while a BRUSH tool is active becomes that window's
 -- brush STAMP (the custom-brush door — the inspector chip clears it).
-function M.drop(win, ed, path, wx, wy)
+function M.drop(win, ed, path, sx, sy)
+  -- sx/sy are SCREEN px (the shell passes i.wx/i.wy — the map window's
+  -- convention; treating them as world coords sent every live drop off
+  -- the viewport test and the whole door silently no-oped)
   if win.path == "" or path:sub(-5) == ".terr" then return false end
   local p = plumb(ed, win.path)
   if not p.doc then return false end
   local u = cm.require("cm.ed.kit").winui(p, win)
   local r = u.vrect
   if not r then return false end
-  local cam = cm.require("cm.ed.cam")
-  local sx, sy = cam.w2s(ed.doc.cam, wx, wy)
   if sx < r.vx or sx >= r.vx + r.vw or sy < r.vy or sy >= r.vy + r.vh then
     return false
   end
@@ -1051,7 +1052,10 @@ function M.draw(win, ctx)
   pal.x_ig_image(r.tex, vx, vy, vw, vh)
 
   -- ---- 2D overlays (projected gizmos) ----
+  -- clipped to the viewport: a gizmo projecting past its edge (a route
+  -- point near the bottom) must not paint over the inspector strip
   if bound then
+    pal.x_ig_clip_push(vx, vy, vw, vh)
     local tool = win.tool or "sel"
     local function diamond(sx, sy, d, col)
       pal.x_ig_line(vx + sx - d, vy + sy, vx + sx, vy + sy - d, col, 1.5)
@@ -1178,6 +1182,7 @@ function M.draw(win, ctx)
       pal.x_ig_text(vx + sx + 6 * z, vy + sy - px * 0.5, px * 0.9,
                     COL.spawn, "spawn", 0)
     end
+    pal.x_ig_clip_pop()
   end
 
   -- unbound: the kit's new-file door over the empty scene

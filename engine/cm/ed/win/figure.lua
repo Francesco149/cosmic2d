@@ -750,8 +750,10 @@ function M.draw(win, ctx)
     end
   else
     pal.x_ig_image(r.tex, vx, vy, vw, vh)
-    -- joint dots
+    -- joint dots (clipped: an off-edge projection must not paint over
+    -- the rail/inspector — the terr gizmo rule)
     if joints and tab ~= "bake" then
+      pal.x_ig_clip_push(vx, vy, vw, vh)
       for pi2, pr in ipairs(proj) do
         if pr then
           local selp = pi2 == win.part
@@ -760,6 +762,7 @@ function M.draw(win, ctx)
                                selp and COL.jsel or COL.joint)
         end
       end
+      pal.x_ig_clip_pop()
     end
   end
 
