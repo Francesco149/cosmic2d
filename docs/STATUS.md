@@ -31,7 +31,31 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — D139 addenda 3+4: the native
+**This session (2026-07-19), latest — D139 addendum 5: the published
+atlas follows its source sprites; the staleness class gets a
+contract.** The human's report: editing the sprite a material paints
+with updates the 3d map window but NOT the running game — the
+published `<map>-atlas.png` derives from the map AND its source
+images while the stamp hashes only the texture PATHS, so a sprite
+save staled the disk bake invisibly. Fix: an epoch-triggered
+live-atlas refill REPUBLISHES the png once it lands while the map is
+SAVED (dirty maps publish on their own Ctrl+S; unsaved paint never
+leaks into the game), then bumps the epoch so the game's texture memo
+re-reads; the changed-bytes guard makes the follow idempotent (two
+open maps sharing a sprite can't bump-ping-pong). Tape: recolor the
+ground sprite through sprite.save on a clean textured map → ONE disk
+rewrite carrying the new texels, byte-stable for the next 60 frames,
+the editor atlas live throughout. And per the human's standing ask
+("this class keeps happening"), the discipline is now PROCESS.md
+**"Derived state must follow its sources"**: name the inputs at the
+derivation site, epoch-key every in-memory cache, published bakes
+follow or self-orphan visibly, raw GPU ids never cross frames outside
+their owning cache, and every derivation's proof tape EDITS A SOURCE
+and watches it follow. Suite ALL GREEN, goldens byte-identical; Linux
+selftest 24,881 / native **24,883**; stage refreshed with all six
+user projects surviving (the addendum-4 preserve fix holding).
+
+**Same session, earlier — D139 addenda 3+4: the native
 crash, billboard yaw, prop scaling, and the stage-preservation
 incident.** Three more native reports, all landed. **(1) The hard
 crash** ("editing the brush sprite and painting again"): the Windows
