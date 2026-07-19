@@ -7179,3 +7179,37 @@ atlas verts (selftest 24,878 → 24,881). Old published atlases
 self-orphan (stamp mismatch → vertex fallback until the next save
 republishes) — the graceful migration the freshness contract was
 built for. The A/B captures on the human's own map are on llm-feed.
+
+**Addendum 3 (same day) — the native crash, billboard yaw, and prop
+scaling.** Three more reports. (1) "Editing the brush sprite and
+painting again crashes the engine": the Windows minidump (0xC0000005
+inside SDL3, scene3d_pass on the stack) plus the crashed process log
+(dies right after `saved + baked <sprite>.spr`, and only once an atlas
+existed) pinned a CLASS bug spanning the PAL and one Lua holder. The
+PAL's deferred texture free keeps a pend slot `used`, so queue-time
+validation accepts its id right up to the present whose tex_reap
+releases it — anyone drawing a freed id ONE frame late binds NULL into
+SDL_GPU and dies. The holder: the explore3d template cached the atlas
+TEXTURE ID in terrcache; a sprite save bumps the epoch, the assets
+window's thumbnail re-asks cm.gfx.texture for `world-atlas.png`, the
+memo frees the old id — and the game keeps drawing it every frame.
+Fixed at both levels: the flush now binds WHITE, never NULL (both
+segment bind sites in gfx.c — a stale-id draw is a one-frame white
+flicker, never a crash; proven by a bench drawing a freed id 7 frames
+on), and the template re-asks gfx.texture per frame (a table hit),
+caching only the doc-keyed freshness gate. Class rule: raw texture ids
+must not be cached across frames by consumers of epoch-refreshed
+sources — hold the memo TABLE or re-ask. (2) Billboards in the vale
+faced "the player, not the camera": emit_props expects the ORBIT yaw
+convention (right = (-sin, cos) — the editor viewport's), the rig
+measures yaw from +z toward the camera; the template passed the rig
+yaw raw, leaving boards 90° off. It now converts (`-yaw - pi/2`);
+game-shot proven full-face. (3) Prop/billboard scaling existed
+(-/= on a selection) but was undiscoverable: ctrl+wheel now scales the
+selection in sel mode (props: scale; markers: radius), the inspector
+hint and win-terr.md name both. Existing template-instantiated
+projects carry the old main.lua: the human's two projects were patched
+in place on the stage (verbatim-block match, refused if hand-edited);
+future scaffolds get the fixed template. Suite ALL GREEN, goldens
+byte-identical (the NULL-bind path never fires in golden runs); all
+tapes green.

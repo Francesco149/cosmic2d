@@ -96,7 +96,8 @@ With the **sel** tool (`v`):
   ground (**ctrl snaps** to the half-tile lattice); click empty ground
   to deselect.
 - **arrows** nudge; **,** and **.** rotate in 15-degree steps;
-  **-** and **=** resize; **del** deletes; **ctrl+d** duplicates.
+  **-** / **=** or **ctrl+wheel** resize; **del** deletes;
+  **ctrl+d** duplicates.
 - the bottom strip edits the selection: a **name** field (games address
   named props from code), **abs** (anchor to absolute height instead of
   the ground), **caster** (casts a baked shadow), **blocker** (stamps

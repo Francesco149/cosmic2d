@@ -212,24 +212,36 @@ local vbuf = pal.buf("rc.explore3d.vb", 1 << 21)
 local terrcache -- rebuild the terrain mesh when the doc changes
 local dyn = pal.buf("rc.explore3d.dyn", 1 << 20)
 
+-- the atlas TEXTURE id must be re-asked from cm.gfx.texture every
+-- frame, never cached across frames: any editor save bumps
+-- cm.asset_epoch, the memo re-reads the png and FREES the old GPU id —
+-- a cached copy would keep drawing a dead texture (the D139 native
+-- crash). The memo is a table hit when nothing changed; only the
+-- stamp-freshness GATE (mat_hash is O(map)) is cached per doc.
+local function atlas_tex()
+  if not terrcache or not terrcache.fresh then return nil end
+  local ok, t = pcall(gfx.texture,
+                      root .. "/" .. terr3.atlas_path("world.terr"))
+  return ok and t and t.id or nil
+end
+
 local function terrain_bytes()
   if terrcache and terrcache.doc == world.doc then return terrcache end
   -- a FRESH baked atlas (stamp matches the paint state) draws textured;
   -- otherwise live vertex colors — exactly the 3d map window's rule
-  local atex
-  if (world.doc.stamp or 0) ~= 0
-     and world.doc.stamp == terr3.mat_hash(world.doc) then
-    local ok, t = pcall(gfx.texture,
-                        root .. "/" .. terr3.atlas_path("world.terr"))
-    if ok and t then atex = t.id end
+  local fresh = (world.doc.stamp or 0) ~= 0
+                and world.doc.stamp == terr3.mat_hash(world.doc)
+  terrcache = { doc = world.doc, fresh = fresh }
+  if fresh and not atlas_tex() then
+    fresh, terrcache.fresh = false, false -- stamped but no readable png
   end
   local out = {}
-  local n = terr3.emit_terrain(out, world.doc, { atlas = atex ~= nil })
+  local n = terr3.emit_terrain(out, world.doc, { atlas = fresh })
   local wout = {}
   local wn = terr3.emit_water(wout, world.doc)
   local bytes = table.concat(out) .. table.concat(wout)
   vbuf:setstr(0, bytes)
-  terrcache = { doc = world.doc, n = n, wn = wn, atex = atex }
+  terrcache.n, terrcache.wn = n, wn
   return terrcache
 end
 
@@ -257,8 +269,13 @@ function game.draw()
 
   -- the world, straight from the file (terrain + props + water)
   local tc = terrain_bytes()
-  pal.x_tris(tc.atex or 0, vbuf, tc.n, 0, tc.atex and 2 or 0)
-  local cam_yaw = cam:f32(0)
+  local atex = atlas_tex()
+  pal.x_tris(atex or 0, vbuf, tc.n, 0, atex and 2 or 0)
+  -- emit_props wants the ORBIT yaw convention (the editor viewport's):
+  -- the rig measures yaw from +z toward the camera, the orbit from +x
+  -- along the look direction — convert, or billboards face 90° off
+  -- (the "facing the player, not the camera" report)
+  local cam_yaw = -cam:f32(0) - m.pi * 0.5
   local segs = terr3.emit_props(doc, {
     cam_yaw = cam_yaw,
     tex = function(path)

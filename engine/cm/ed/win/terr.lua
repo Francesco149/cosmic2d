@@ -250,13 +250,33 @@ function M.takes_middle(win, ed)
   return ed ~= nil and ed.doc.focus == win.id
 end
 
--- ctrl+wheel: the brush radius dial (focused, brush tools)
+-- ctrl+wheel: the brush radius dial (brush tools), or SCALE the
+-- selection (sel tool — the props/billboards size gesture; - = step
+-- the same way from the keyboard). Focused only.
 local BRUSH_TOOLS = { hgt = true, flt = true, smo = true, pnt = true,
                       shd = true, wlk = true }
 
 function M.ctrl_wheel(win, ed, notches)
   if ed.doc.focus ~= win.id then return false end
-  if not BRUSH_TOOLS[win.tool or "view"] then return false end
+  local tool = win.tool or "view"
+  if tool == "sel" then
+    local p = win.path ~= "" and ed.g.t3w and ed.g.t3w[win.path]
+    local sel = p and p.sel
+    if not (sel and p.doc) then return false end
+    local it = sel.t == "prop" and p.doc.props[sel.i]
+               or p.doc.markers[sel.i]
+    if not it then return false end
+    local f = notches > 0 and 1.1 or 1 / 1.1
+    if sel.t == "prop" then
+      it.scale = mm.clamp((it.scale or 1) * f, 0.25, 40)
+    else
+      it.r = mm.clamp((it.r or 0.5) * f, 0.25, 40)
+    end
+    commit(ed, win.path)
+    ed.touch()
+    return true
+  end
+  if not BRUSH_TOOLS[tool] then return false end
   local r = (win.brush_r or 3) * (notches > 0 and 1.25 or 0.8)
   win.brush_r = mm.clamp(r, 0.5, 24)
   ed.touch()
@@ -1736,7 +1756,7 @@ function M.draw(win, ctx)
           end
           pal.x_ig_text(sx + 4 * z, sy0 + (INSP - px) * 0.45, px, COL.dim,
             ("x=%.1f z=%.1f y%+.2f yaw=%d s=%.2f  arrows nudge . , yaw"
-             .. " - = size"):format(it.x, it.z, it.y or 0,
+             .. "  size: - = / ctrl+wheel"):format(it.x, it.z, it.y or 0,
               math.floor(((it.yaw or 0) * 180 / mm.pi) + 0.5),
               it.scale or 1), 0)
         else

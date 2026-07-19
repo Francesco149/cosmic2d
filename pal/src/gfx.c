@@ -613,11 +613,19 @@ static bool scene3d_pass(SDL_GPUCommandBuffer *cmd) {
       fubo.mode[2] = fubo.mode[3] = 0;
       memcpy(fubo.fogcol, v->fogcol, sizeof fubo.fogcol);
       SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof fubo);
-      SDL_BindGPUFragmentSamplers(
-          pass, 0,
-          &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
-                                          .sampler = G.sampler},
-          1);
+      /* a slot whose texture was reaped between queue and flush (a Lua
+       * holder drawing a freed id a frame late) must bind WHITE, never
+       * NULL — a NULL binding is an access violation inside SDL_GPU
+       * (the D139 native crash: a sprite save freed the atlas texture
+       * a game cache still drew every frame). */
+      {
+        SDL_GPUTexture *st = G.texs[s->tex].tex;
+        SDL_BindGPUFragmentSamplers(
+            pass, 0,
+            &(SDL_GPUTextureSamplerBinding){
+                .texture = st ? st : G.texs[0].tex, .sampler = G.sampler},
+            1);
+      }
       if (getenv("PAL_DBG_3D"))
         pal_log("seg3d %u: tex=%d flags=%u view=%d tgt=%d first=%u count=%u",
                 k, s->tex, s->flags, s->view, tgt, s->first, s->count);
@@ -709,11 +717,15 @@ static void scene_pass(SDL_GPUCommandBuffer *cmd, SDL_GPUTexture *tex, int tw,
       if (s->target != target_id) continue;
       SDL_Rect full = {0, 0, tw, th};
       SDL_SetGPUScissor(pass, s->has_clip ? &s->clip : &full);
-      SDL_BindGPUFragmentSamplers(
-          pass, 0,
-          &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
-                                          .sampler = G.sampler},
-          1);
+      /* reaped-slot guard: bind white, never NULL (see scene3d_pass) */
+      {
+        SDL_GPUTexture *st = G.texs[s->tex].tex;
+        SDL_BindGPUFragmentSamplers(
+            pass, 0,
+            &(SDL_GPUTextureSamplerBinding){
+                .texture = st ? st : G.texs[0].tex, .sampler = G.sampler},
+            1);
+      }
       SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
     }
   }
