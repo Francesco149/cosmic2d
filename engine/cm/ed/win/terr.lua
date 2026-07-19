@@ -86,13 +86,22 @@ local function textured(doc)
   return false
 end
 
--- drop the live atlas (CPU buf + GPU texture) — any edit that changes
--- material colors/textures, and every byte re-adopt, goes through here
+-- drop the live atlas (CPU buf + GPU texture) — dimension changes and
+-- window death go through here
 local function lat_free(p)
   if p.lat then
     if p.lat.tex then pal.tex_free(p.lat.tex) end
     p.lat = nil
   end
+end
+
+-- soft-invalidate: restart the budgeted fill but KEEP the buffer and
+-- the served texture, so the ground shows the previous bake (stale for
+-- well under a second) instead of flashing to vertex colors while the
+-- loop re-fills — every material edit and byte re-adopt (undo/redo/
+-- esc-cancel/reload) comes through here
+local function lat_refill(p)
+  if p.lat then p.lat.row = 0 end
 end
 
 local function decode_into(p, bytes)
@@ -106,7 +115,7 @@ local function decode_into(p, bytes)
   end
   p.gen = (p.gen or 0) + 1 -- full mesh + walk overlay rebuild
   p.g = nil
-  lat_free(p) -- materials may have moved: the live atlas re-bakes
+  lat_refill(p) -- materials may have moved: the live atlas re-fills
 end
 
 local function fresh_bytes(path)
@@ -685,15 +694,27 @@ local function lat_for(ed, p, path)
   local W, H = doc.w * TS, doc.h * TS
   local epoch = cm.asset_epoch or 0
   local lat = p.lat
-  if lat and (lat.w ~= W or lat.h ~= H or lat.epoch ~= epoch) then
-    lat_free(p) -- resized map or re-saved source image: full re-bake
+  if lat and (lat.w ~= W or lat.h ~= H) then
+    lat_free(p) -- resized map: the buffer/texture shapes are wrong
     lat = nil
+  end
+  if lat and lat.epoch ~= epoch then
+    lat.epoch = epoch
+    lat.row = 0 -- a source image re-saved: re-fill (texture keeps serving)
   end
   if not lat then
     lat = { w = W, h = H, buf = pal.buf(nil, W * H * 4), row = 0,
             epoch = epoch }
     p.lat = lat
-    if (doc.stamp or 0) ~= 0 and doc.stamp == terr3.mat_hash(doc) then
+    -- seed from the disk atlas ONLY when the working bytes ARE the
+    -- saved file. The stamp check alone became vacuous once encode
+    -- started refreshing it on every commit — the native report: adding
+    -- a material re-seeded from a STALE disk atlas (a D138-era bake
+    -- with flat grass) and the grass "lost its texture"; a dirty doc
+    -- must always re-bake live.
+    local a = working(ed, path)
+    if a and a.terr == p.disk and (doc.stamp or 0) ~= 0
+       and doc.stamp == terr3.mat_hash(doc) then
       local rp = cm.require("cm.ed.win.map").res_path(
         ed, terr3.atlas_path(path))
       local bytes = rp and pal.read_file(rp)
@@ -741,7 +762,11 @@ local function live_atlas(ed, p, path)
     ed.touch() -- keep the loop ticking
     if lat.row < lat.h then
       p.at_note = ("tex bake %d%%"):format(lat.row * 100 // lat.h)
-      return nil
+      -- a REFILL keeps serving the previous texture (stale for well
+      -- under a second — no vertex-mode flash on undo/material edits);
+      -- the swap is atomic at completion. The FIRST fill has no
+      -- texture yet and draws vertex colors.
+      return lat.tex
     end
   end
   p.at_note = nil
@@ -884,7 +909,7 @@ local function add_material(win, ed, p, path)
     col = { cr, cg, cb }, tex = path,
   }
   win.mat = #doc.mats
-  lat_free(p)
+  lat_refill(p)
   p.gen = p.gen + 1
   commit(ed, win.path)
   ed.touch()
@@ -927,7 +952,7 @@ function M.drop(win, ed, path, sx, sy)
          and sy >= r2.y and sy < r2.y + r2.h then
         p.doc.mats[r2.mi].tex = path
         win.mat = r2.mi
-        lat_free(p)
+        lat_refill(p)
         p.gen = p.gen + 1
         commit(ed, win.path)
         ed.touch()
@@ -1597,7 +1622,7 @@ function M.draw(win, ctx)
                       hov and COL.hot or COL.dim, ct, 0)
         if hov and i.clicked[1] then
           am.tex = ""
-          lat_free(p)
+          lat_refill(p) -- lat_for frees if this untextured the map
           commit(ed, win.path)
           p.gen = p.gen + 1
           ed.touch()

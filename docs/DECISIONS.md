@@ -7137,3 +7137,22 @@ goldens byte-identical.
 deferred from §4.5); stamp rotation/spacing (D138's trigger stands);
 drag-to-stamp strokes if single clicks chafe; a shared brush model if
 a third editor grows brushes.
+
+**Addendum (same day) — the stale-seed regression.** The human's next
+report: adding a custom material turned the textured grass solid green
+(painting still worked; ctrl+z flashed texture briefly). Root cause:
+lat_for's disk-atlas seed gated on `stamp == mat_hash(doc)` — under
+D138 only the bake button wrote the stamp, so that meant "the png
+matches this paint"; once D139's encode began refreshing the stamp on
+EVERY commit the check became vacuously true, and any invalidation
+(material add/assign, undo, esc-cancel) re-seeded the live atlas from
+whatever stale png sat on disk (theirs: a D138-era flat-grass bake).
+Fix: the seed additionally requires the working bytes to EQUAL the
+saved file (`a.terr == p.disk`) — a dirty doc always re-bakes live.
+And byte re-adopts now SOFT-refill (`lat_refill`: row=0, buffer and
+served texture kept) instead of freeing, so undo/material edits show
+the previous bake for the sub-second refill and swap atomically —
+no vertex-mode flash. Proven by a tamper-marker tape (atlas painted
+solid purple on disk): pre-fix the grass texel read the purple seed
+after the add, post-fix it live-bakes the checker through add, undo,
+and the republishing save; 7/7, and the D139 tapes + suite stay green.
