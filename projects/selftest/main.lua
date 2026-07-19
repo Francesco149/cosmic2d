@@ -12845,6 +12845,127 @@ local function t_figverts()
         "figverts: out-of-range alpha refused")
 end
 
+local function t_fig_file()
+  -- the .fig asset (CFIG, E5, D137): codec + doc helpers the figure
+  -- window drives, and the mascot converter's byte-exact contract.
+  local F = cm.require("cm.fig")
+  local m4 = cm.require("cm.m4")
+  local mascot = cm.require("cm.mascot")
+
+  -- fresh: valid starter; canonical round trip
+  local doc = F.fresh("hero")
+  check(#doc.parts == 3 and #doc.clips == 1, "fig: fresh starter shape")
+  local b1 = F.encode(doc)
+  check(b1:sub(1, 4) == "CFIG", "fig: CFIG magic")
+  check(F.encode(F.decode(b1)) == b1, "fig: canonical round trip (fresh)")
+
+  -- features round trip: every shape kind, alpha/caps flags, sparse keys
+  local fd = F.fresh("kinds")
+  fd.parts[1].shapes = {
+    { kind = "gbox", col = { 0.2, 0.3, 0.4 }, size = { 1, 2, 0.5 },
+      center = { 0, 1, 0 } },
+    { kind = "prism", col = { 0.5, 0.5, 0.5 }, n = 6, r0 = 0.5,
+      r1 = 0.3, h = 1.2, caps = true },
+    { kind = "lathe", col = { 0.6, 0.2, 0.2 }, n = 8,
+      prof = { 0, -1, 0.5, 0, 0, 1 }, alpha = 128 },
+    { kind = "ball", col = { 0.9, 0.9, 0.9 }, r = 0.4, n = 8,
+      at = { 0, 1, 0 }, scale = { 1, 0.5, 1 } },
+    { kind = "mesh", col = { 1, 1, 1 }, path = "art/hat.msh" },
+  }
+  fd.clips[1].keys = { { base = { 0.1, nil, nil, nil, 0.5 } }, {} }
+  local b2 = F.encode(fd)
+  local d2 = F.decode(b2)
+  check(F.encode(d2) == b2, "fig: canonical round trip (features)")
+  check(d2.parts[1].shapes[2].caps == true
+        and d2.parts[1].shapes[3].alpha == 128
+        and d2.parts[1].shapes[5].path == "art/hat.msh",
+        "fig: shape features survive")
+  check(d2.clips[1].keys[1].base[1] == 0.1
+        and d2.clips[1].keys[1].base[2] == nil
+        and d2.clips[1].keys[1].base[5] == 0.5,
+        "fig: sparse pose channels survive exactly")
+
+  -- refusals
+  check(not pcall(F.decode, "XXXX" .. b2:sub(5)), "fig: bad magic refuses")
+  check(not pcall(F.decode, b2:sub(1, #b2 - 6)), "fig: truncation refuses")
+  do
+    local bad = F.fresh("bad")
+    bad.parts[2].parent = "nope"
+    local bb = F.encode(bad)
+    check(not pcall(F.decode, bb), "fig: undefined parent refuses")
+  end
+
+  -- THE converter contract: the shipped mascot.fig is byte-identical to
+  -- a fresh conversion, and its decoded figure emits BYTE-EXACTLY what
+  -- the code mascot emits (f64 floats end to end)
+  local stock = pal.read_file("engine/stock/fig/mascot.fig")
+  check(stock ~= nil, "fig: stock mascot.fig ships")
+  local mdoc = F.doc_of(mascot.fig, "mascot", {
+    { name = "idle", rate = 0.6, loop = true, keys = mascot.idle },
+    { name = "walk", rate = 1.6, loop = true, keys = mascot.walk },
+    { name = "swim", rate = 1.0, loop = true, keys = mascot.swim },
+    { name = "wave", rate = 1.0, loop = true, keys = mascot.wave },
+  })
+  check(F.encode(mdoc) == stock, "fig: mascot.fig == a fresh conversion")
+  local fdoc = F.decode(stock)
+  local ffg = F.build_doc(fdoc)
+  local pose_f = F.cycle(fdoc.clips[2].keys, 0.3)
+  local pose_c = F.cycle(mascot.walk, 0.3)
+  local o1, o2 = {}, {}
+  local n1 = F.emit(o1, mascot.fig, m4.ident(), pose_c)
+  local n2 = F.emit(o2, ffg, m4.ident(), pose_f)
+  check(n1 == n2 and table.concat(o1) == table.concat(o2),
+        "fig: file mascot emits byte-exactly the code mascot")
+
+  -- joints: world positions ride the emit chain (identity pose = summed
+  -- parent joints; a base translation moves every child)
+  local js = F.joints(mascot.fig, {})
+  check(math.abs(js[1][2] - 0.95) < 1e-12, "fig: base joint at 0.95")
+  local js2 = F.joints(mascot.fig, { base = { 0, 0, 0, 1, 0, 0 } })
+  check(math.abs(js2[3][1] - (js[3][1] + 1)) < 1e-12,
+        "fig: base tx carries children")
+
+  -- mirror_lr: creates/updates the _r twin x-negated
+  local md = F.fresh("m")
+  md.parts[#md.parts + 1] = {
+    name = "arm_l", parent = "body", joint = { 0.4, 0.2, 0 },
+    shapes = { { kind = "ball", col = { 1, 0, 0 }, r = 0.1, n = 6,
+                 at = { 0.1, 0, 0 } } },
+  }
+  local ti = F.mirror_lr(md, #md.parts)
+  check(ti and md.parts[ti].name == "arm_r"
+        and md.parts[ti].joint[1] == -0.4
+        and md.parts[ti].shapes[1].at[1] == -0.1,
+        "fig: mirror_lr negates x geometry")
+  check(F.mirror_lr(md, 1) == nil, "fig: mirror needs a *_l part")
+
+  -- remove_part: children reparent, clips forget the part
+  local rd = F.fresh("r")
+  rd.clips[1].keys[1].body = { 0.5 }
+  check(F.remove_part(rd, 2), "fig: remove_part")
+  check(#rd.parts == 2 and rd.parts[2].name == "head"
+        and rd.parts[2].parent == "base"
+        and rd.clips[1].keys[1].body == nil,
+        "fig: children reparent + clips forget")
+
+  -- build_doc resolves mesh shapes through the read callback
+  local ME = cm.require("cm.mesh")
+  local mshb = ME.encode(ME.fresh("hat"))
+  local hd = F.fresh("h")
+  hd.parts = { { name = "base", joint = { 0, 0, 0 }, shapes = {
+    { kind = "mesh", col = { 1, 1, 1 }, path = "art/hat.msh" } } } }
+  local hfg = F.build_doc(hd, function(path)
+    return path == "art/hat.msh" and mshb or nil
+  end)
+  local ho = {}
+  local hn = F.emit(ho, hfg, m4.ident(), {})
+  check(hn == 12, "fig: mesh shape emits through the figure (12 tris)")
+  local hfg2 = F.build_doc(hd) -- no read: draws nothing, honestly
+  local ho2 = {}
+  check(F.emit(ho2, hfg2, m4.ident(), {}) == 0,
+        "fig: unresolved mesh shape draws nothing")
+end
+
 local function t_console_sel()
   -- the console log's drag-selection (D118's console half): pure pick /
   -- extract / escape math with an injected measure — the t_help_sel model
@@ -13246,6 +13367,7 @@ function game.init()
   t_input_fsiz()
   t_atlas_snapshot()
   t_figverts()
+  t_fig_file()
   t_console_sel()
   t_ui_nav()
   pal.log(("SELFTEST PASS (%d checks)"):format(checks))

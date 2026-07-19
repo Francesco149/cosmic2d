@@ -459,6 +459,25 @@ asset_epoch; a `.terr` placement of the figure hot-updates on save.
 > pool grew per-pane subkeys) at a 2x default window size (880x720).
 > The pure substrate lives in cm.mesh (`ekey/eunkey/edges/pick_hits/
 > vert_visible/edge_loop/sel_verts/convert_sel`), KAT'd.
+>
+> **E5 ✅ (same session):** the figure editor landed — CFIG codec in
+> cm.fig (f64 floats end to end so the cm.mascot converter's emit is
+> BYTE-EXACT; `encode/decode/save/fresh/build_doc/doc_of/joints/
+> mirror_lr/remove_part`, canonical + KAT'd), `F.emit` grew the mesh
+> shape kind (`.msh` part meshes via bake_groups), the shipped
+> `engine/stock/fig/mascot.fig` (KAT: byte-identical to a fresh
+> conversion AND its decoded figure emits the code mascot's exact
+> bytes), and `win/figure.lua` — parts/pose/bake tabs per §6.2 with
+> the .msh DROP door (a dropped mesh becomes a shape on the selected
+> part), key-rail clip editing, dominant-axis pose drags, onion skins,
+> and the .spx bake button through cm.spr's exported
+> rasterize_sheet/spx_encode. E5-exit tape proven on the real window
+> (mascot in, hat from a .msh, walk retimed by the rate dial, a pose
+> drag, spr/mascot.spx baked valid). Deferred honestly: part rename +
+> reparent-by-drag (tree order edits by hand today), key-rail drag
+> reorder, lathe profile editing, the `sq` squash field (scale
+> channels pose it), mesh-shape path typing (the drop door + cross-
+> open cover it).
 
 - **E0 — the viewport substrate**: PAL v24 (`x_rt`, view targets),
   `cm.ed.orbit`, and a proving window skeleton (kind `terr` bound to

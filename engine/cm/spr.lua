@@ -209,6 +209,12 @@ local function rasterize_sheet(figure, rows)
   return concat(sheet), (feet + 1) / CH
 end
 
+-- public doors for the figure window's bake tab (E5): rasterize any
+-- figure to sheet pixels, and encode them as .spx bytes for an
+-- arbitrary path (S.bake below stays the slot-file game door)
+S.rasterize_sheet = rasterize_sheet
+S.spx_encode = spx_encode
+
 -- the sheet for a variant: load the committed .spx asset, or rasterize
 -- and (best-effort) write it. force = re-rasterize + rewrite (console).
 -- Returns { tex, rows, fv }.

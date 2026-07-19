@@ -37,9 +37,9 @@ M.g = M.g or {}
 -- on the spawn menu (roster order = menu order), `M.exts` routes asset
 -- double-clicks/drops to it (assets.kind_for reads it).
 local ROSTER = { "note", "project", "text", "assets", "map", "tmap", "terr",
-                 "mesh", "game", "console", "anim", "perf", "image",
-                 "sprite", "sound", "synth", "music", "palette", "help",
-                 "settings" }
+                 "mesh", "figure", "game", "console", "anim", "perf",
+                 "image", "sprite", "sound", "synth", "music", "palette",
+                 "help", "settings" }
 M.kinds = {}
 local MENU_ITEMS = {}
 for _, name in ipairs(ROSTER) do
