@@ -302,6 +302,17 @@ ADDS a material of the image (average-color swatch + `tex`), a swatch
 drop retextures that material, and the brush STAMP door moved off the
 viewport onto the inspector's brush-shape well (§4.2).
 
+**Lighting lives in the TEXELS** (the second same-day follow-up): the
+original scheme put `lit(white)` in the atlas verts, but a vertex
+color clamps at 1.0 and `amb + sun*d` exceeds 1 on flat and sun-facing
+ground (~1.12 on the vale), so the whole sunlit range collapsed to one
+tone — the "ground goes solid green" report. The bake now multiplies
+albedo × shade × jitter × the per-tile sun/ambient term (unclamped
+until the final byte) and atlas verts are pure white; `mat_hash`
+covers heights + the light rig (they feed the bake), and sculpt
+strokes patch the live atlas like paint does. Old stamps self-orphan:
+pre-change atlases fall back to vertex mode until the next save.
+
 ## 5. `.msh` + the mesh window (kind `mesh`, module `cm.mesh`)
 
 The picoCAD-class refusal set, stated up front: **no skinning, no

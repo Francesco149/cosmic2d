@@ -12595,16 +12595,31 @@ local function t_terr3()
     check(T3.mat_hash(d3) ~= h3, "terr3: a paint edit changes the stamp")
     d3.wts[2][3] = 0
     check(T3.mat_hash(d3) == h3, "terr3: reverting restores the stamp")
+    d3.hts[1] = 1.25 -- lighting bakes into the texels: sculpting stales
+    check(T3.mat_hash(d3) ~= h3, "terr3: a sculpt edit changes the stamp")
+    d3.hts[1] = 0
+    check(T3.mat_hash(d3) == h3, "terr3: reverting a sculpt restores it")
 
-    -- bake: 2x1 tiles at ts=2 -> 4x2 px; the all-grass corner texel is
-    -- exactly the grass color; a sampler recolors its material
+    -- bake: 2x1 tiles at ts=2 -> 4x2 px; texels = albedo x shade x
+    -- jitter x LIGHTING (the flat-ground L = amb + suncol*d, exactly
+    -- the emitter's normal math). Lighting lives in the TEXELS because
+    -- a vertex color clamps at 1.0 and flattens sunlit ground (the
+    -- solid-green native report).
     local px1, W1, H1 = T3.bake_pixels(d3, nil, 2)
     check(W1 == 4 and H1 == 2 and #px1 == 4 * 2 * 4, "terr3: bake dims")
     local gcol = d3.mats[1].col
+    local tm = cm.require("cm.terr")
+    local function jof(vx, vz)
+      return 1 + (tm.hash(31, vx, vz) - 0.5) * 0.10
+    end
+    -- texel (0,0): tile (0,0), fu=fv=0.25 on a FLAT doc: d = -sun.y
+    local dd = -d3.sun[2] * (2.0 / math.sqrt(4.0))
+    local L1 = d3.amb[1] + d3.suncol[1] * dd
+    local jj = (jof(0, 0) * 0.75 + jof(1, 0) * 0.25) * 0.75
+             + (jof(0, 1) * 0.75 + jof(1, 1) * 0.25) * 0.25
     local r0, g0, b0 = px1:byte(1, 3)
-    check(r0 == (gcol[1] * 255) // 1 and g0 == (gcol[2] * 255) // 1
-          and b0 == (gcol[3] * 255) // 1,
-          "terr3: a flat texel is the material color")
+    check(r0 == math.min(255, (gcol[1] * jj * L1 * 255) // 1),
+          "terr3: a flat texel is the lit material color")
     local px2 = T3.bake_pixels(d3, { [1] = function() return 0, 0, 1 end },
                                2)
     check(px2:byte(1) == 0 and px2:byte(3) == 255,
@@ -12615,8 +12630,20 @@ local function t_terr3()
     local px3 = T3.bake_pixels(d3, nil, 2)
     check(px3:byte(1) < r0, "terr3: painted shade darkens the bake")
     d3.shade = nil
+    -- directional light survives the bake: a ridge's sun-facing tile
+    -- bakes brighter than its away-facing twin
+    local d4 = T3.fresh("ridge", 2, 1, 2.0)
+    d4.hts[2] = 1.5 -- the middle column: tile 0 faces away, tile 1 sun
+    d4.hts[5] = 1.5
+    local px4 = T3.bake_pixels(d4, nil, 2)
+    local away = px4:byte((0 * 4 + 1) * 4 + 2) -- texel (1,0), green
+    local toward = px4:byte((0 * 4 + 3) * 4 + 2) -- texel (3,0), green
+    check(toward > away,
+          ("terr3: the bake keeps directional light (%d > %d)")
+          :format(toward, away))
 
-    -- atlas emit: map-normalized uvs, white-lit vertex colors
+    -- atlas emit: map-normalized uvs, PURE WHITE vertex colors (the
+    -- material mix, shade, jitter and lighting all live in the texels)
     local out3 = {}
     local n3 = T3.emit_terrain(out3, d3, { atlas = true })
     check(n3 == 4, "terr3: atlas emit tris")
@@ -12625,7 +12652,8 @@ local function t_terr3()
     check(u1 == 0 and v1 == 0, "terr3: atlas uv origin")
     local _, _, _, u2 = string.unpack("<fffff", ab, 6 * 24 + 1)
     check(u2 == 0.5, "terr3: atlas uv spans the map")
-    check(ab:byte(21) == 255, "terr3: atlas verts carry lighting only")
+    check(ab:byte(21) == 255 and ab:byte(22) == 255 and ab:byte(23) == 255,
+          "terr3: atlas verts are pure white")
 
     -- bake_into (the editor's budgeted live bake): a full image
     -- assembled from two row bands + a re-baked sub-rect is byte-

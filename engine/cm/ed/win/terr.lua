@@ -1324,10 +1324,10 @@ function M.draw(win, ctx)
             patch_mesh(ed, p, win.path, vx0, vz0, vx1, vz1)
             if tool == "hgt" or tool == "flt" or tool == "smo" then
               p.wkgen = nil -- ground moved: the walk overlay is stale
-            elseif tool == "pnt" or tool == "shd" then
-              -- the live atlas follows the brush
-              stroke_patch(ed, p, vx0, vz0, vx1, vz1)
             end
+            -- the live atlas follows EVERY brush: paint/shade recolor,
+            -- and sculpting moves the baked lighting too
+            stroke_patch(ed, p, vx0, vz0, vx1, vz1)
             ctx.touch()
           end
         end

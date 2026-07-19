@@ -460,10 +460,13 @@ end
 --
 -- opts.atlas = true emits the ATLAS UV mode instead (draw the segment
 -- with the baked atlas texture, x_tris flags 2 = nearest): uvs span the
--- whole atlas (map-normalized), vertex colors carry LIGHTING + jitter
--- only (white base — the material mix and painted shade live in the
--- baked texels; texture x vertex color lands within a hair of the
--- vertex mode's read).
+-- whole atlas (map-normalized), vertex colors are PURE WHITE — the
+-- material mix, painted shade, jitter AND the sun/ambient lighting all
+-- live in the baked texels. Lighting must NOT ride the vertex colors:
+-- a vertex color clamps at 1.0, and amb + sun*d exceeds 1 on flat and
+-- sun-facing ground (the vale's flat ground sits at ~1.12), so the
+-- D138 lit-white-vertex scheme collapsed the whole sunlit range to one
+-- tone — the native "ground goes solid green" report.
 function M.emit_terrain(out, doc, opts)
   opts = opts or {}
   local s = doc.tile
@@ -473,7 +476,6 @@ function M.emit_terrain(out, doc, opts)
   local x0t, z0t = opts.x0 or 0, opts.z0 or 0
   local x1t, z1t = opts.x1 or doc.w - 1, opts.z1 or doc.h - 1
   local atlas = opts.atlas or false
-  local WHITE = { 1, 1, 1 }
   local ntris = 0
   for z = z0t, z1t do
     for x = x0t, x1t do
@@ -490,8 +492,7 @@ function M.emit_terrain(out, doc, opts)
       local function V(vx, vz, hh)
         local r, g, b, uu, vv
         if atlas then
-          local j = 1 + (terr.hash(31, vx - ox, vz - oz) - 0.5) * 0.10
-          r, g, b = lit(WHITE, j, nx, ny, nz, sun, suncol, amb)
+          r, g, b = 1, 1, 1
           uu, vv = (vx - ox) / doc.w, (vz - oz) / doc.h
         else
           local c, sh = vcol(doc, vx - ox, vz - oz)
@@ -518,10 +519,11 @@ end
 -- the sprite editor) that REPEATS ONCE PER TILE. The bake renders the
 -- whole ground into one nearest-sampled texture (ts texels per tile):
 -- per texel, the bilinear-blended material weights mix flat colors and
--- sampled texels, times the painted shade. The stamp (M.mat_hash over
--- the PAINT inputs — heights deliberately excluded, sculpting doesn't
--- recolor) marks the atlas fresh; any paint edit makes it stale and
--- consumers fall back to the live vertex mode until the next bake.
+-- sampled texels, times the painted shade, jitter, and the sun/ambient
+-- lighting (lighting lives in the TEXELS — see emit_terrain's atlas
+-- note). The stamp (M.mat_hash over every bake input: materials,
+-- weights, shade, heights, the light rig) marks the atlas fresh; a
+-- stale stamp makes consumers fall back to the live vertex mode.
 
 -- the atlas image path beside its map: maps/vale.terr -> maps/vale-atlas.png
 function M.atlas_path(path)
@@ -558,6 +560,19 @@ function M.mat_hash(doc)
       h = ((h ~ (doc.shade[i] or 255)) * 16777619) & 0xFFFFFFFF
     end
   end
+  -- lighting + heights feed the bake now (the texels carry the sun),
+  -- so they feed the stamp too — a sculpt or light edit stales it
+  feed(pack("<fffffffff", doc.sun[1], doc.sun[2], doc.sun[3],
+            doc.suncol[1], doc.suncol[2], doc.suncol[3],
+            doc.amb[1], doc.amb[2], doc.amb[3]))
+  feed("H")
+  for i = 1, n do
+    local b0, b1, b2, b3 = pack("<f", doc.hts[i]):byte(1, 4)
+    h = ((h ~ b0) * 16777619) & 0xFFFFFFFF
+    h = ((h ~ b1) * 16777619) & 0xFFFFFFFF
+    h = ((h ~ b2) * 16777619) & 0xFFFFFFFF
+    h = ((h ~ b3) * 16777619) & 0xFFFFFFFF
+  end
   if h == 0 then h = 1 end -- 0 means "no atlas"
   return h
 end
@@ -573,6 +588,9 @@ function M.bake_into(doc, samplers, ts, buf, px0, py0, px1, py1)
   local W = doc.w * ts
   local nmat = #doc.mats
   local stride = doc.w + 1
+  local sun, suncol, amb = doc.sun, doc.suncol, doc.amb
+  local flat = 2.0 -- the emitter's flat_y normal softening
+  local s = doc.tile
   local wcache = {}
   local function wof(vx, vz)
     local vi = vz * stride + vx + 1
@@ -587,6 +605,34 @@ function M.bake_into(doc, samplers, ts, buf, px0, py0, px1, py1)
   local function shof(vx, vz)
     if not shade then return 1 end
     return (shade[vz * stride + vx + 1] or 255) / 255
+  end
+  -- the sun/ambient multiplier per TILE (the emitter's exact normal
+  -- math). Lighting bakes into the TEXELS: the product stays unclamped
+  -- until the final byte, where vertex colors would clamp at 1.0 and
+  -- flatten every sun-facing slope to one tone.
+  local lcache = {}
+  local function lof(tx, tz)
+    local key = tz * doc.w + tx
+    local l = lcache[key]
+    if not l then
+      local h00 = terr.hget(doc, tx, tz)
+      local h10 = terr.hget(doc, tx + 1, tz)
+      local h01 = terr.hget(doc, tx, tz + 1)
+      local h11 = terr.hget(doc, tx + 1, tz + 1)
+      local nx = (h00 + h01 - h10 - h11) / (2 * s)
+      local nz = (h00 + h10 - h01 - h11) / (2 * s)
+      local nl = m.sqrt(nx * nx + flat * flat + nz * nz)
+      local d = m.max(0, -(nx / nl * sun[1] + flat / nl * sun[2]
+                           + nz / nl * sun[3]))
+      l = { amb[1] + suncol[1] * d, amb[2] + suncol[2] * d,
+            amb[3] + suncol[3] * d }
+      lcache[key] = l
+    end
+    return l
+  end
+  -- the per-vertex brightness jitter (vcol's organic mottle), bilerped
+  local function jof(vx, vz)
+    return 1 + (terr.hash(31, vx, vz) - 0.5) * 0.10
   end
   local char = string.char
   for pz = py0, py1 do
@@ -620,10 +666,16 @@ function M.bake_into(doc, samplers, ts, buf, px0, py0, px1, py1)
                  * (1 - fv)
                + (shof(tx, tzv + 1) * (1 - fu) + shof(tx + 1, tzv + 1) * fu)
                  * fv
+      local j = (jof(tx, tzv) * (1 - fu) + jof(tx + 1, tzv) * fu)
+                * (1 - fv)
+              + (jof(tx, tzv + 1) * (1 - fu) + jof(tx + 1, tzv + 1) * fu)
+                * fv
+      local L = lof(tx, tzv)
+      local k = sh * j
       row[#row + 1] = char(
-        m.clamp((r * sh * 255) // 1, 0, 255),
-        m.clamp((g * sh * 255) // 1, 0, 255),
-        m.clamp((b * sh * 255) // 1, 0, 255), 255)
+        m.clamp((r * k * L[1] * 255) // 1, 0, 255),
+        m.clamp((g * k * L[2] * 255) // 1, 0, 255),
+        m.clamp((b * k * L[3] * 255) // 1, 0, 255), 255)
     end
     buf:setstr((pz * W + px0) * 4, table.concat(row))
   end

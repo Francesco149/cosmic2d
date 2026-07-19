@@ -7156,3 +7156,26 @@ no vertex-mode flash. Proven by a tamper-marker tape (atlas painted
 solid purple on disk): pre-fix the grass texel read the purple seed
 after the add, post-fix it live-bakes the checker through add, undo,
 and the republishing save; 7/7, and the D139 tapes + suite stay green.
+
+**Addendum 2 (same day) — lighting moved into the atlas texels.** The
+human's third report ("still doing the texture disappear thing", with
+the fond-crow-mink project attached) reproduced on their real data as
+a RENDERING truth, not a state bug: driving their journal through the
+window on both platforms kept the atlas live through every transition,
+but the atlas MODE visibly flattened the terrain. Root cause: atlas
+verts carried `lit(WHITE) = amb + sun*d`, and a vertex color clamps at
+1.0 while flat/sun-facing ground sits at ~1.12 — the entire sunlit
+range collapsed to one tone, so turning textures on (exactly when a
+material is added) read as "the grass loses its texture and goes solid
+green". Fix: the bake multiplies albedo × painted shade × jitter × the
+per-tile sun/ambient term, clamped only at the final byte
+(terr3.bake_into's lof/jof), and atlas verts are PURE WHITE;
+`mat_hash` now covers heights + sun/suncol/amb (they feed the bake, so
+they feed the stamp — sculpting stales honestly), and every brush
+stroke patches the live atlas (sculpt moves baked lighting). KATs:
+the lit flat-texel expectation, a ridge's sun-facing tile baking
+brighter than its away twin, sculpt-changes-the-stamp, pure-white
+atlas verts (selftest 24,878 → 24,881). Old published atlases
+self-orphan (stamp mismatch → vertex fallback until the next save
+republishes) — the graceful migration the freshness contract was
+built for. The A/B captures on the human's own map are on llm-feed.
