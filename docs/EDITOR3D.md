@@ -427,6 +427,21 @@ asset_epoch; a `.terr` placement of the figure hot-updates on save.
 
 ## 9. Build order (E0–E6) + exits
 
+> **As-built (2026-07-19, the unpark session):** E0 ✅ E1 ✅ E2 ✅ E3 ✅
+> E4 ✅ (commits 0f2168c/4c2da64/8bee98b/126a70a) and the E6 loop
+> PROVEN early: a scripted tape hand-authored a vale (tree mesh in the
+> mesh window; terrain/path/water/props/billboards/route/spawn in the
+> 3d map window) and a scratch cartridge played it — ground, walk grid,
+> colliders, spawn, and the NPC route all read from the authored file,
+> zero world code (captures on llm-feed). **E5 (the figure editor) is
+> the next packet**; the committed-fixture + demo-adoption half of E6
+> follows it. Honest deferrals so far: the atlas bake button (§4.5),
+> mesh-bounds auto-fit for placement colliders (auto boxes are
+> generic-sized), per-face texture-region ASSIGN UI in the mesh window
+> (the format + emit carry them; the strip edits colors only),
+> multi-select in the 3d map window, and route double-click-to-end
+> (Enter only).
+
 - **E0 — the viewport substrate**: PAL v24 (`x_rt`, view targets),
   `cm.ed.orbit`, and a proving window skeleton (kind `terr` bound to
   nothing renders the lattice floor + gnomon in its own RT; two open at

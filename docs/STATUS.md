@@ -31,8 +31,78 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — D136: the settings window
-publishes option defaults into project.lua.** D133's named next slice:
+**This session (2026-07-19), latest — D137: the 3D authoring suite
+(the editor unpark) — E0–E4 landed, the hand-authoring loop proven.**
+The human unparked COSMIC3D.md §12's parked editor work with the scope
+stated plainly: everything code/LLM-generated needs a human-facing way
+to make and edit it, hand editing primary, procedural a door; exit = a
+human could recreate an openworld/rovale-like scene by hand. Designed
+in **docs/EDITOR3D.md** (the MAPS.md of 3D) + ADR **D137**, then the
+packets landed with full proofs:
+
+- **E0 — PAL v24, offscreen 3D views** (0f2168c): `pal.x_rt` render-
+  target textures + `x_view3d{target=, clear=}`; `scene3d_pass` runs
+  one pass per same-target run — the game path byte-identical by
+  construction (suite ALL GREEN, 19 pixel matches). `cm.ed.orbit` is
+  the shared 3D viewport helper (world-unit captured fields; basis/
+  ray/project pure + KAT'd; later grew the shared RT pool + gesture
+  pump). Two independent live viewports tape-proven.
+- **E1 — the .terr asset** (same commit): `cm.terr3` = CTER codec
+  (heightfield + material weight planes + painted shade + water +
+  walk knobs/overrides + any-asset placements + route markers) +
+  the cm.map-pattern captured runtime (`<name>.t3state`, recorded-EVAL
+  reload) + readers (ground/walkable/boxes/markers/get) + shared
+  emitters. Procedural stays a door: encode/save are public.
+- **E2 — the 3d map window, terrain half** (4c2da64): full windowkit
+  citizen (kit.asset journal, pathfield door, Ctrl+S -> recorded
+  terr3.reload); tools hgt (CTRL = tile/2 level steps)/flt/smo/pnt
+  (material swatches)/shd/wtr/wlk (GAT overlay + overrides, center-dot
+  non-color state); brush ctrl+wheel radius + [ ] strength; the mesh
+  cached in a named vb with per-tile-row stroke patching. Tape-proven
+  end to end; disk round trip exact; one-gesture undo.
+- **E3 — placements + markers** (8bee98b): the drop door places ANY
+  asset at the ground hit — **2D images default to billboards**
+  (upright, feet-anchored, nearest+alphatest), meshes/figures with an
+  auto collider, else named refs; the sel tool (ray pick, ground drag
+  with CTRL snap, nudge/yaw/scale keys, dup, inspector chips abs/
+  caster/blocker/col + name field); the mkr tool (kinds + route
+  polylines, click-click-Enter, point dragging). cm.terr3 grew
+  pick/aabb/emit_props (+10 KATs).
+- **E4 — the mesh editor** (126a70a): `cm.mesh` CMSH codec + pure
+  geometry (outward-normal box/prism/wedge/plane, MT face pick,
+  extrude/flip/merge/compact/mirror-pair) rendering through gb's baked
+  path (color-grouped bakes ride x_figverts; unlit = the zero-normal
+  slot); the window: vtx mode (marquee, camera-plane drag, x/y/z axis
+  locks, CTRL grid snap, live mirror-x), face mode (e extrude, r flip,
+  swatch paint, ds/unlit), the +primitive strip. A mesh save bumps
+  asset_epoch and placed instances in 3d maps refresh the same frame.
+  +27 KATs.
+- **The E6 loop, proven early** (scratchpad, not yet a committed
+  fixture): a tape hand-authored a vale THROUGH THE SHIPPED EDITORS
+  ONLY — tree modeled in the mesh window (extrude+paint), terrain
+  sculpted, dirt path painted, pond dug + water, 3 tree meshes + 2
+  plank billboards dropped, a 4-point NPC route, spawn — and a
+  150-line scratch cartridge PLAYED it: ground/walk/colliders/spawn/
+  route all from the file, zero world code. Editor + gameplay captures
+  on llm-feed.
+
+Counts: Linux selftest **24,785** (+18 orbit, +49 terr3, +27 mesh,
++4 window/doc checks over D136's 24,687); `nix run .#test` ALL GREEN
+after every packet, every golden byte-identical. En-route class
+lessons: editor-chrome buffers must live in the `ed.` domain (a
+pre-merge trace bundle's sim_buffer only excludes `ed.` — an `rc.ed.*`
+registry broke smoke_kitcheck verify), and named scratch buffers need
+the size-following free-then-recreate pattern. Deferred honestly
+(EDITOR3D.md §9 as-built note): **E5 the figure editor is the next
+packet** (.fig codec in cm.fig + parts/pose/bake tabs + the mascot.fig
+converter + the .spx bake button — design complete in EDITOR3D.md §6);
+then the committed vale fixture + demo adoption, the atlas bake
+button, mesh-bounds auto-fit colliders, the mesh texture-region assign
+UI, 3d-map multi-select. Native Windows re-count owed with the next
+build-windows stage. See DECISIONS `D137`.
+
+**Same session, earlier — D136: the settings window publishes option
+defaults into project.lua.** D133's named next slice:
 "save values as defaults" in the settings window's game-options section
 writes the current live values back as the `default` fields of
 project.lua's `options` list, riding the project window's established
