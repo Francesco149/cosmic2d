@@ -51,6 +51,15 @@ spawn point.
 **ctrl+wheel** dials the radius; **[** and **]** step the strength.
 The ring under the cursor is the live brush footprint.
 
+**Custom brush stamps**: drop a sprite or image onto the map while a
+brush tool is active and it becomes the brush shape — its alpha and
+brightness are the paint weight, fit to the brush circle. Draw a stamp
+in the sprite editor (white shape on transparency = a full-strength
+brush), then sculpt hills, paint paths, or shade with it. The
+`stamp: name  x` chip in the bottom strip clears it back to the round
+brush. Dropping an image with the **select** tool still places a
+billboard as usual.
+
 ## Placing things
 
 **Drag any asset in from the assets window** and release over the

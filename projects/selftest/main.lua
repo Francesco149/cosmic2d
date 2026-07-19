@@ -12435,6 +12435,26 @@ local function t_terr3()
     miny = math.min(miny, yv)
   end
   check(miny == 0, "terr3: billboard feet at the ground")
+
+  -- sprite brush stamps: mask = alpha x luminance; aspect-true sampling
+  do
+    -- 4x2 RGBA: left half opaque white, right half transparent black
+    local px4 = string.rep("\255\255\255\255", 2)
+                .. string.rep("\0\0\0\0", 2)
+    local mk = T3.stamp_mask(px4 .. px4, 4, 2)
+    check(mk.w == 4 and mk.h == 2 and mk[1] == 1 and mk[4] == 0,
+          "terr3: stamp_mask weights alpha x luminance")
+    -- aspect 2: fits 2r wide x r tall; center-left samples white
+    check(T3.stamp_at(mk, -0.5, 0, 1) == 1, "terr3: stamp_at left is 1")
+    check(T3.stamp_at(mk, 0.5, 0, 1) == 0, "terr3: stamp_at right is 0")
+    -- outside the aspect-fit band (|dz| >= r/aspect) is 0, not clamped
+    check(T3.stamp_at(mk, -0.5, 0.6, 1) == 0,
+          "terr3: stamp_at outside the fit band is 0")
+    -- a half-gray opaque texel weighs by luminance
+    local mg = T3.stamp_mask("\128\128\128\255", 1, 1)
+    check(math.abs(mg[1] - 128 / 255) < 1e-9,
+          "terr3: gray stamps paint lighter")
+  end
 end
 
 local function t_walk()

@@ -31,7 +31,10 @@
 --
 -- Brush: ctrl+wheel dials radius, [ ] steps strength (key repeat,
 -- D135). One gesture (press..release) = one journal entry; Esc cancels
--- the live gesture by re-adopting the committed bytes.
+-- the live gesture by re-adopting the committed bytes. Dropping an
+-- image while a brush tool is active makes it the brush STAMP (alpha x
+-- luminance mask, aspect-fit to the brush square — terr3.stamp_at);
+-- the inspector chip clears it back to the radial falloff.
 --
 -- Rendering: the viewport draws through cm.terr3's REAL emitters
 -- (terrain + water) — what this window shows is exactly what the game
@@ -512,9 +515,38 @@ local function falloff(d, r)
   return t * t * (3 - 2 * t) -- smoothstep
 end
 
+-- the stamp pixel cache (render/dev, module-local): a dropped image
+-- becomes the brush shape (terr3.stamp_mask); failures remembered so a
+-- broken image costs one read, not one per stroke frame
+local STAMPS = {}
+local function stamp_for(ed, win)
+  local path = win.stamp
+  if not path then return nil end
+  local l = path:lower()
+  local target = l:find("%.png$") and path
+                 or (l:find("%.spr$") and path:gsub("%.spr$", ".png"))
+  if not target then return nil end
+  local rp = cm.require("cm.ed.win.map").res_path(ed, target)
+  if not rp then return nil end
+  local got = STAMPS[rp]
+  if got == nil then
+    local ok, mk = pcall(function()
+      local bytes = pal.read_file(rp)
+      if not bytes then error("unreadable") end
+      local pix, w, h = pal.png_read(bytes)
+      if not pix then error(tostring(w)) end
+      return terr3.stamp_mask(pix, w, h)
+    end)
+    got = ok and mk or false
+    STAMPS[rp] = got
+  end
+  return got or nil
+end
+
 -- one frame of a brush gesture at ground hit (hx, hz). Returns the
--- touched vertex rect (or nil).
-local function apply_brush(win, p, tool, hx, hz, btn, ctrl)
+-- touched vertex rect (or nil). `mask` (a terr3 stamp) replaces the
+-- radial falloff with the dropped image's shape.
+local function apply_brush(win, p, tool, hx, hz, btn, ctrl, mask)
   local doc = p.doc
   local r = win.brush_r or 3
   local str = win.brush_s or 0.5
@@ -524,7 +556,8 @@ local function apply_brush(win, p, tool, hx, hz, btn, ctrl)
   for vz = vz0, vz1 do
     for vx = vx0, vx1 do
       local dx, dz = vx * s - hx, vz * s - hz
-      local f = falloff(mm.sqrt(dx * dx + dz * dz), r)
+      local f = mask and terr3.stamp_at(mask, dx, dz, r)
+                or falloff(mm.sqrt(dx * dx + dz * dz), r)
       if f > 0 then
         local vi = vz * (doc.w + 1) + vx + 1
         if tool == "hgt" then
@@ -590,7 +623,9 @@ end
 -- the drag-in door (kind.drop): any non-.terr asset dropped over the
 -- viewport PLACES at the ground under the cursor — 2D images default to
 -- billboards (EDITOR3D.md §4.4), meshes/figures to themselves with an
--- auto collider, anything else to a named ref position.
+-- auto collider, anything else to a named ref position. EXCEPT: an
+-- image dropped while a BRUSH tool is active becomes that window's
+-- brush STAMP (the custom-brush door — the inspector chip clears it).
 function M.drop(win, ed, path, wx, wy)
   if win.path == "" or path:sub(-5) == ".terr" then return false end
   local p = plumb(ed, win.path)
@@ -602,6 +637,11 @@ function M.drop(win, ed, path, wx, wy)
   local sx, sy = cam.w2s(ed.doc.cam, wx, wy)
   if sx < r.vx or sx >= r.vx + r.vw or sy < r.vy or sy >= r.vy + r.vh then
     return false
+  end
+  if terr3.is_image(path) and BRUSH_TOOLS[win.tool or "view"] then
+    win.stamp = path
+    ed.touch()
+    return true
   end
   local ray = ob.ray(win, r.vw, r.vh, sx - r.vx, sy - r.vy)
   local doc = p.doc
@@ -965,7 +1005,8 @@ function M.draw(win, ctx)
           end
         elseif hitx then
           local vx0, vz0, vx1, vz1 =
-            apply_brush(win, p, tool, hitx, hitz, btn, g.ctrl)
+            apply_brush(win, p, tool, hitx, hitz, btn, g.ctrl,
+                        stamp_for(ed, win))
           if vx0 then
             patch_mesh(ed, p, win.path, vx0, vz0, vx1, vz1)
             if tool == "hgt" or tool == "flt" or tool == "smo" then
@@ -1155,6 +1196,24 @@ function M.draw(win, ctx)
     local function label(txt, col)
       pal.x_ig_text(vx + 6 * z, sy0 + (INSP - px) * 0.45, px,
                     col or COL.dim, txt, 0)
+      return vx + 6 * z + pal.x_ig_text_size(txt, px, 0)
+    end
+    -- the custom-brush chip: names the dropped stamp, click clears it
+    local function stamp_chip(sx)
+      if not win.stamp then return end
+      local txt = "stamp: " .. (win.stamp:match("([^/]+)$") or win.stamp)
+                  .. "  x"
+      local w = pal.x_ig_text_size(txt, px, 0) + 10 * z
+      local hov = i.wx >= sx and i.wx < sx + w
+                  and i.wy >= sy0 and i.wy < sy0 + INSP
+      pal.x_ig_rect_fill(sx, sy0 + 2 * z, w, INSP - 4 * z,
+                         hov and COL.btn_on or COL.btn, 3 * z)
+      pal.x_ig_text(sx + 5 * z, sy0 + (INSP - px) * 0.45, px,
+                    hov and COL.hot or COL.dim, txt, 0)
+      if hov and i.clicked[1] then
+        win.stamp = nil
+        ed.touch()
+      end
     end
     if tool == "pnt" then
       -- the material strip: swatches + add
@@ -1200,11 +1259,12 @@ function M.draw(win, ctx)
         end
         sx = sx + bw + 6 * z
       end
-      pal.x_ig_text(sx, sy0 + (INSP - px) * 0.45, px, COL.dim,
-        ("%s  r=%.1f (ctrl+wheel)  s=%.1f ([ ])  right = erase")
+      local txt = ("%s  r=%.1f (ctrl+wheel)  s=%.1f ([ ])  right = erase")
           :format(doc.mats[win.mat or 1]
                   and doc.mats[win.mat or 1].name or "?",
-                  win.brush_r or 3, win.brush_s or 0.5), 0)
+                  win.brush_r or 3, win.brush_s or 0.5)
+      pal.x_ig_text(sx, sy0 + (INSP - px) * 0.45, px, COL.dim, txt, 0)
+      stamp_chip(sx + pal.x_ig_text_size(txt, px, 0) + 10 * z)
     elseif tool == "wtr" then
       label(("water %s  y=%.2f  drag up/down (ctrl = 0.25 steps)")
             :format(doc.water.on and "on" or "off", doc.water.y))
@@ -1212,9 +1272,10 @@ function M.draw(win, ctx)
       label(("walk: L block - R walk - ctrl clears  (derived slope<=%.2f"
              .. " wade<=%.2f)"):format(doc.walk.slope, doc.walk.wade))
     elseif BRUSH_TOOLS[tool] then
-      label(("r=%.1f (ctrl+wheel)  s=%.1f ([ ])%s")
+      local endx = label(("r=%.1f (ctrl+wheel)  s=%.1f ([ ])%s")
             :format(win.brush_r or 3, win.brush_s or 0.5,
                     tool == "hgt" and "  ctrl = level steps" or ""))
+      stamp_chip(endx + 10 * z)
     elseif tool == "mkr" then
       local sx = vx + 6 * z
       for _, kn in ipairs(MKINDS) do

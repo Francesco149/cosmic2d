@@ -505,6 +505,34 @@ function M.emit_water(out, doc, opts)
                          opts and opts.ox or 0, opts and opts.oz or 0)
 end
 
+-- ---- sprite brush stamps (render/dev: the 3d map window's custom
+-- brushes — an image dropped on an active brush tool becomes the brush
+-- shape; pure math here so the window stays gesture plumbing) ----------
+
+-- build a brush mask from RGBA8 pixel bytes: weight = alpha x luminance
+-- (a white shape on transparency is a 1.0 brush; darker paints lighter)
+function M.stamp_mask(pix, w, h)
+  local mk = { w = w, h = h }
+  for i = 0, w * h - 1 do
+    local r, g, b, a = pix:byte(i * 4 + 1, i * 4 + 4)
+    mk[i + 1] = (a / 255) * (0.299 * r + 0.587 * g + 0.114 * b) / 255
+  end
+  return mk
+end
+
+-- sample a mask for a brush of radius r: the image fits ASPECT-TRUE
+-- inside the 2r x 2r brush square centered on the hit, nearest texel,
+-- 0 outside. dx/dz = world offset from the brush center.
+function M.stamp_at(mk, dx, dz, r)
+  local aspect = mk.w / mk.h
+  local hw, hh = r, r
+  if aspect > 1 then hh = r / aspect else hw = r * aspect end
+  local u = (dx + hw) / (2 * hw)
+  local v = (dz + hh) / (2 * hh)
+  if u < 0 or u >= 1 or v < 0 or v >= 1 then return 0 end
+  return mk[math.floor(v * mk.h) * mk.w + math.floor(u * mk.w) + 1] or 0
+end
+
 -- ---- placements: rendering + picking (render-class) ----------------------
 
 -- is this path a billboard-able image kind? (.spr draws its baked .png
