@@ -112,6 +112,27 @@ preserve_editor_state() {
 
 if [[ -d "$dest_root" ]]; then
   preserve_file "$dest_root/.recent.dat"
+  # USER PROJECTS live beside the shipped demos in projects/: any project
+  # directory the fresh stage does not ship is the human's own work and
+  # must survive a restage WHOLESALE — the .ed-only preservation silently
+  # dropped two native projects' payload files (D139 addendum 3; the
+  # journals allowed a full recovery, but only because nothing had been
+  # closed unsaved). `.ed` is skipped here so the editor-state pass below
+  # applies its usual rules (sessions + journals kept, derived history
+  # rebuilt).
+  if [[ -d "$dest_root/projects" ]]; then
+    for proj in "$dest_root/projects"/*/; do
+      [[ -d "$proj" ]] || continue
+      pname=$(basename -- "$proj")
+      if [[ ! -e "$next/projects/$pname" ]]; then
+        mkdir -p -- "$next/projects/$pname"
+        while IFS= read -r -d '' entry; do
+          cp -a -- "$entry" "$next/projects/$pname/"
+        done < <(find "$proj" -mindepth 1 -maxdepth 1 ! -name .ed -print0)
+        preserved=$((preserved + 1))
+      fi
+    done
+  fi
   while IFS= read -r -d '' state; do preserve_editor_state "$state"; done \
     < <(find "$dest_root" -type d -name .ed -prune -print0)
   if [[ -d "$dest_root/projects" ]]; then
