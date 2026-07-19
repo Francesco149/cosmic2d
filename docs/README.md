@@ -25,6 +25,9 @@ mistaken for current work.
   decisions log in `DECISIONS.md`); `research-3d/` holds the aesthetic/
   asset research; the fork's session history is
   `history/STATUS-3D-2026-07.md`.
+- `EDITOR3D.md` — the 3D authoring suite (E-series, D137): the `.terr`/
+  `.msh`/`.fig` source formats and the 3d map / mesh / figure editor
+  windows; the unpark of COSMIC3D.md §12's parked editor work.
 - `DECISIONS.md` — append-only binding decisions and revisit triggers.
 
 ## Historical design context

@@ -6924,3 +6924,69 @@ player menu showing "modified" chips?) votes moving the diff read into
 cm.options; a project wanting to publish a SUBSET of values votes
 per-row publish affordances; the fresh-user pass (A8) judging the
 button's discoverability.
+
+## D137 — the 3D authoring suite: the editor unpark, three windows, three source formats (2026-07-19)
+
+**Context.** The human unparked the 3D editor work COSMIC3D.md §12
+explicitly parked ("terrain paint/bake, figure vertex-pushing, sheet
+preview stay parked until the human unparks the editor"), with the
+scope stated plainly: everything code/LLM-generated needs a human-facing
+way to make and edit it — heightmap terrain + props as a 3D twin of the
+2D map editor (any asset attaches; 2D assets default to billboards), a
+3D character editor, and a mesh editor sufficient for the low-poly style
+without recreating Blender. Hand editing is the primary path; procedural
+generation stays an option. Exit: a human could recreate something like
+the openworld/rovale demos by hand. Today NO 3D source format exists —
+terrain, figures, and worlds are procedural Lua inside the demos; the
+only committed 3D assets are baked outputs (`.spx` sheets, the atlas
+`.png`).
+
+**Decision.** The E-series program, designed in **docs/EDITOR3D.md**
+(the MAPS.md of 3D — binding alongside this ADR):
+
+1. **PAL API v24 — offscreen 3D views.** `pal.x_rt(w,h)` creates
+   render-target textures; `pal.x_view3d` grows an optional target +
+   clear; `scene3d_pass` opens one pass per run of same-target views,
+   game-target path byte-identical by construction. This is the one new
+   PAL mechanism; everything else rides existing doors (`x_ig_image`
+   blits RTs; imgui renders after the scene passes).
+2. **Three source formats, `cm.chunk` containers**: `.terr` (CTER,
+   module `cm.terr3` — heightfield + material weight planes + painted
+   shade + water level + derived-with-overrides walk grid + any-asset
+   placements incl. billboard-defaulting 2D + markers with route
+   polylines; runtime door `terr3.use` on the cm.map captured-buffer
+   pattern; render through shared emitters so the editor viewport IS
+   the game look), `.msh` (CMSH, module `cm.mesh` — verts + tri/quad
+   faces, flat colors, optional per-face texture region, emit pre-lit +
+   `x_figverts` blob parity), `.fig` (CFIG, codec in `cm.fig` — part
+   tree with primitive AND `.msh` shapes, sparse-pose clips; the mascot
+   ships as `engine/stock/fig/mascot.fig`, converter KAT-pinned to the
+   code mascot).
+3. **Three windows, full windowkit citizens** (roster, kit.asset
+   journals, pathfield doors, viewlock, CTRL=snap, tape-proven):
+   the **3d map window** (kind `terr`: orbit viewport, height sculpt
+   with CTRL level-steps, material paint, shade paint, water drag, walk
+   overrides, placements/markers/routes, atlas bake button), the
+   **mesh window** (vertex push + face paint + extrude + mirror-x,
+   picoCAD-class refusal set: no skinning/modifiers/subdiv/UV-unwrap,
+   ever), the **figure window** (parts / pose-clip rail with
+   dominant-axis drag rotation + 15° CTRL snap / bake tab writing
+   `.spx`).
+4. **Procedural is a door, not the path**: `terr3.encode/save` are
+   public so generators write the same asset the editor edits; the
+   pure-`hfn` streaming path (bigworld) stays code by design.
+
+Deliberately absent, with triggers (EDITOR3D.md §8): per-corner cliff
+heights, per-region water, point-light bake, face strips, paper-doll
+layers, OBJ import, chunked/streaming `.terr` editing.
+
+**Build order** (EDITOR3D.md §9): E0 viewport substrate → E1 `.terr`
+format+runtime → E2 map window terrain half → E3 placements/markers →
+E4 mesh → E5 figure → E6 the hand-authoring end-goal proof. One packet
+per slice, each with KATs + a real-event tape + llm-feed captures;
+ALPHA gates keep their own queue (3D remains outside the alpha promise).
+
+**Revisit triggers.** A demo needing sheer GND-style cliffs votes the
+per-corner format extension; a scene needing non-sun lights votes the
+point-light bake; a character needing blink votes fig face strips; a
+real project asking for CC0 pack import votes the OBJ→`.msh` converter.

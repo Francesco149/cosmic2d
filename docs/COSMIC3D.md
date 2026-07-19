@@ -721,6 +721,8 @@ ray must not squat it). Consequences for the 3D fork:
 Editor windows (terrain paint/bake, figure vertex-pushing, sheet
 preview) stay parked until the human unparks the editor; the modules
 above (cm.rig / spr / walk / atlas / kin) are their runtime substrate.
+**Unparked 2026-07-19 (D137): the editor windows are the E-series
+program, designed in `EDITOR3D.md`.**
 
 ### §12a. RO preset presents sharp (human, 2026-07-17)
 
