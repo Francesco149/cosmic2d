@@ -9,7 +9,8 @@ almost entirely inside the editors. Budget half an hour.
 From the project picker click **+ New project**, keep (or edit) the
 folder name, pick the **3D vale** starter, and press **create**. The
 editor opens with the game running: green hills, a pond in the dip, a
-teal creature you can walk with **arrows / wasd**, and a friend
+teal creature you can walk with **wasd** (arrows or a mouse drag orbit
+the camera, **c** re-centers it behind you), and a friend
 wandering a loop nearby.
 
 The first boot wrote two files next to `main.lua`:

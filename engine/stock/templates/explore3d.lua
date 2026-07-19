@@ -24,10 +24,17 @@ local fig = cm.require("cm.fig")
 local gb = cm.require("cm.gb")
 local gfx = cm.require("cm.gfx")
 local mesh = cm.require("cm.mesh")
+local rig = cm.require("cm.rig")   -- the orbit-follow camera (openworld's)
+local kin = cm.require("cm.kin")   -- accel/friction/turn easing
+local move = cm.require("cm.move") -- stick-or-keys move vector
 
 local FOVY, ZN, ZF = 55, 0.3, 300
-local SPEED = 0.055          -- walk, world units per frame
-local NPC_SPEED = 0.03
+local DT = 1 / 60
+-- the openworld-approved walk feel (units/second; kin.run applies DT)
+local SPEED, ACCEL, FRIC, TURN = 6.5, 40, 30, 0.25
+local STRIDE = 2.0               -- world units per walk cycle
+local NPC_SPEED = 1.8            -- units/second along the route
+local NPC_TURN = 0.15
 
 local root = cm.main.args.project
 local game = {}
@@ -93,26 +100,40 @@ local function load_figure()
   for _, c in ipairs(doc.clips) do clips[c.name] = c end
 end
 
+local cam -- the rig's orbit/focus state (a captured named buffer)
+
 local function reset(d)
   local sp = world.doc.spawn
   d.x, d.z, d.yaw, d.phase = sp.x, sp.z, sp.yaw, 0
+  d.vx, d.vz = 0, 0
   local route = terr3.markers(world.doc, "route")[1]
-  d.nseg, d.nt = 1, 0
+  d.nseg = 1
   d.nx = route and route.points[1] or sp.x + 4
   d.nz = route and route.points[2] or sp.z
   d.nyaw, d.nphase = 0, 0
+  rig.reset(cam, d.knobs.cam, d.x, terr3.ground(world.doc, d.x, d.z),
+            d.z, d.yaw)
 end
 
 function game.init()
   ensure_assets()
   world = terr3.use{ path = root .. "/world.terr", name = "world" }
   load_figure()
-  input.map({ { "left", input.key.left, input.key.a, "pad:dpleft", "pad:lx-" },
-              { "right", input.key.right, input.key.d, "pad:dpright", "pad:lx+" },
-              { "up", input.key.up, input.key.w, "pad:dpup", "pad:ly-" },
-              { "down", input.key.down, input.key.s, "pad:dpdown", "pad:ly+" },
-              { "reset", input.key.r, "pad:start" } })
+  -- openworld's control map: wasd walks camera-relative, arrows orbit
+  -- the camera, c recenters behind you; drag the mouse to look around,
+  -- wheel zooms (the rig reads those directly — all recorded input)
+  input.map({
+    { "left", input.key.a }, { "right", input.key.d },
+    { "up", input.key.w }, { "down", input.key.s },
+    { "cam_l", input.key.left }, { "cam_r", input.key.right },
+    { "cam_u", input.key.up }, { "cam_d", input.key.down },
+    { "recenter", input.key.c },
+    { "reset", input.key.r, "pad:start" },
+  })
+  cam = pal.buf("vale.cam", rig.SIZE)
   local d = state.doc
+  d.knobs = d.knobs or {}
+  d.knobs.cam = d.knobs.cam or rig.defaults()
   if d.x == nil then reset(d) end
 end
 
@@ -139,39 +160,49 @@ function game.step()
   local d = state.doc
   if input.pressed("reset") then reset(d) end
 
-  -- you: axis-separated moves so hills and water edges slide, not stick
-  local dx = (input.down("right") and 1 or 0)
-           - (input.down("left") and 1 or 0)
-  local dz = (input.down("down") and 1 or 0) - (input.down("up") and 1 or 0)
-  local sp = SPEED
-  if dx ~= 0 and dz ~= 0 then sp = SPEED * 0.70710678 end
-  if dx ~= 0 and can_stand(d.x + dx * sp, d.z) then d.x = d.x + dx * sp end
-  if dz ~= 0 and can_stand(d.x, d.z + dz * sp) then d.z = d.z + dz * sp end
-  if dx ~= 0 or dz ~= 0 then
-    d.yaw = m.atan(dx, dz) -- +z = forward, the fig convention
-    d.phase = (d.phase + sp * 0.55) % 1
+  -- you: the openworld kernel — stick-or-keys, camera-relative wish,
+  -- accel/friction with the yaw easing toward the heading (no snaps)
+  local sx, sy = move.stick(1)
+  local fwd, side
+  if sx ~= 0 or sy ~= 0 then fwd, side = -sy, sx
+  else
+    local ix, iy = move.keys()
+    fwd, side = -iy, ix
   end
+  local wishx, wishz = rig.wish(cam, fwd, side)
+  d.vx, d.vz, d.yaw = kin.run(d.vx or 0, d.vz or 0, d.yaw,
+                              wishx, wishz, SPEED, ACCEL, FRIC, TURN)
+  -- integrate axis-separated so hills and water edges slide, not stick
+  local nx = d.x + d.vx * DT
+  if can_stand(nx, d.z) then d.x = nx else d.vx = 0 end
+  local nz = d.z + d.vz * DT
+  if can_stand(d.x, nz) then d.z = nz else d.vz = 0 end
+  local hspeed = m.sqrt(d.vx * d.vx + d.vz * d.vz)
+  d.phase = (d.phase + hspeed * DT / STRIDE) % 1
 
-  -- the friend: walk the route marker's polyline, forever
+  -- the camera follows (orbit + yaw-follow + drag-look + arrows/c)
+  local py = terr3.ground(world.doc, d.x, d.z)
+  rig.step(cam, d.knobs.cam, d.x, py, d.z, d.vx, d.vz, d.yaw)
+
+  -- the friend: walk the route marker's polyline, forever, easing its
+  -- facing toward the heading (m.atan2 — atan is the 1-arg one!)
   local route = terr3.markers(world.doc, "route")[1]
   if route and #route.points >= 4 then
     local pts = route.points
-    local nseg = ((d.nseg - 1) % (#pts // 2)) + 1
-    local ax = pts[nseg * 2 - 1]
-    local az = pts[nseg * 2]
-    local b = nseg % (#pts // 2) + 1
+    local b = d.nseg % (#pts // 2) + 1
     local bx, bz = pts[b * 2 - 1], pts[b * 2]
     local vx, vz = bx - d.nx, bz - d.nz
     local dist = m.sqrt(vx * vx + vz * vz)
-    if dist < NPC_SPEED * 2 then
+    if dist < NPC_SPEED * DT * 2 then
       d.nseg = b
     else
-      d.nx = d.nx + vx / dist * NPC_SPEED
-      d.nz = d.nz + vz / dist * NPC_SPEED
-      d.nyaw = m.atan(vx, vz)
-      d.nphase = (d.nphase + NPC_SPEED * 0.55) % 1
+      d.nx = d.nx + vx / dist * NPC_SPEED * DT
+      d.nz = d.nz + vz / dist * NPC_SPEED * DT
+      local target = m.atan2(vx, vz)
+      local turn = m.atan2(m.sin(target - d.nyaw), m.cos(target - d.nyaw))
+      d.nyaw = d.nyaw + turn * NPC_TURN
+      d.nphase = (d.nphase + NPC_SPEED * DT / STRIDE) % 1
     end
-    local _ = ax + az -- (the segment anchor: kept for your own logic)
   end
 end
 
@@ -207,11 +238,9 @@ function game.draw()
   gb.sun, gb.ambient = doc.sun, doc.amb
 
   local d = state.doc
-  -- a simple follow camera: behind and above you, looking at you
+  -- the camera position derives from the rig's orbit state (openworld)
   local py = terr3.ground(doc, d.x, d.z)
-  local ex = d.x - m.sin(d.yaw) * 7
-  local ez = d.z - m.cos(d.yaw) * 7
-  local view = m4.lookat(ex, py + 5.5, ez, d.x, py + 1.2, d.z, 0, 1, 0)
+  local view = rig.view(cam, d.knobs.cam)
   local proj = m4.persp(FOVY, W / H, ZN, ZF)
   local fog = doc.fog
   pal.x_view3d{ mvp = m4.mul(proj, view), fog_on = fog.on,
@@ -220,7 +249,7 @@ function game.draw()
   -- the world, straight from the file (terrain + props + water)
   local tc = terrain_bytes()
   pal.x_tris(0, vbuf, tc.n, 0, 0)
-  local cam_yaw = m.atan(d.x - ex, d.z - ez)
+  local cam_yaw = cam:f32(0)
   local segs = terr3.emit_props(doc, {
     cam_yaw = cam_yaw,
     tex = function(path)
@@ -266,7 +295,7 @@ function game.draw()
   -- water tints whatever sank below it (blend, last)
   pal.x_tris(0, vbuf, tc.wn, tc.n * 72, 4)
 
-  text.draw(3, 3, "__NAME__  -  arrows/wasd walk, r resets")
+  text.draw(3, 3, "__NAME__  -  wasd walk - arrows/drag look - c centers")
   text.draw(3, H - 10, "edit world.terr in the 3d map window; Ctrl+S "
             .. "reloads this game live")
 end

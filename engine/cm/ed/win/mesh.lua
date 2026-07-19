@@ -734,7 +734,10 @@ function M.draw(win, ctx)
       local hit = hit_at(doc, p.edges, projs[pi], nv, lx, ly, z, ray)
       if g.ctrl and hit.edge and (mode ~= "vtx" or not hit.vert) then
         -- CTRL+click an edge: the edge loop, expressed in this mode
-        local keys, lfaces = mesh.edge_loop(doc, hit.edge.a, hit.edge.b)
+        -- (the face under the cursor picks the fallback side on a
+        -- dead-end edge — a cube edge selects THAT face's ring)
+        local keys, lfaces = mesh.edge_loop(doc, hit.edge.a, hit.edge.b,
+                                            hit.f1)
         if mode == "vtx" then
           p.vsel, p.esel, p.fsel =
             mesh.sel_verts(doc, {}, keys, {}), {}, {}

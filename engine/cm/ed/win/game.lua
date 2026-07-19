@@ -56,8 +56,15 @@ end
 
 function M.defaults()
   local w, h = pal.gfx_size()
-  -- spawn with the image at native 1:1 — pixel-perfect at 100% zoom
-  return {}, w + M.PAD_W, h + M.PAD_H
+  -- spawn pixel-perfect at 100% zoom: at Aa 1 the world size is 1:1,
+  -- but at Aa 1.25 a world-1x image draws at screen 1.25x and never
+  -- snaps crisp (the human's report) — size the spawn so the SCREEN
+  -- design multiple is whole, the ctrl-snap unit (D125 follow-up 2)
+  local ds = cm.require("cm.view").cfg.editor_scale or 1
+  local s = M.snap_mult(1, ds)
+  -- world size stays FRACTIONAL (screen px = world x ds is the whole
+  -- number; rounding the world size would un-snap it)
+  return {}, w * s + M.PAD_W, h * s + M.PAD_H
 end
 
 function M.title(win)

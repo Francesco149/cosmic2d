@@ -102,6 +102,8 @@ M.dirty, M.save, M.undo, M.redo, M.revert =
 
 function M.defaults()
   local d = ob.defaults(6, 0, 1.0, 0)
+  d.oyaw = -2.45 -- face the figure's FRONT (+z) three-quarter — the
+  -- floating hands/feet sit ahead of the body and hide from behind
   d.tab = "parts"
   d.part = 1
   d.clip = 1
@@ -218,7 +220,10 @@ local function figure_of(ed, p)
   return p.fg
 end
 
--- the pose previewed this frame
+-- the pose previewed this frame. The parts tab shows the FIRST clip's
+-- first key rather than the bind pose: floating parts (the mascot's
+-- mitts and boots) are POSITIONED by pose translations — at bind they
+-- all sit at the origin inside the body, invisible.
 local function preview_pose(win, p, doc)
   local cl = cur_clip(win, doc)
   if not cl or #cl.keys == 0 then return {} end
@@ -227,7 +232,7 @@ local function preview_pose(win, p, doc)
     local key = cur_key(win, cl)
     return key or {}
   end
-  return {} -- parts tab: the bind pose
+  return doc.clips[1] and doc.clips[1].keys[1] or {}
 end
 
 -- part depth for tree indent

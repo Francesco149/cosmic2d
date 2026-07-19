@@ -568,53 +568,86 @@ function M.vert_visible(doc, ox, oy, oz, vi)
   return not t or t >= dist * (1 - 1e-3)
 end
 
--- the edge loop through (a, b): walk quads via opposite edges in both
--- directions until a triangle, a boundary, a non-manifold fan, or the
--- start closes the ring. Returns the edge-key list (start included) and
--- the quad strip walked — the face-mode loop selection.
-function M.edge_loop(doc, a, b)
-  local _, index = M.edges(doc)
+-- the edge loop through (a, b): the vertex walk — at each endpoint the
+-- loop continues along the ONE edge that shares no face with the
+-- current edge (the "straight ahead" of a quad grid; an extruded box's
+-- waist ring walks itself closed). Where no such edge exists at either
+-- end (a lone cube edge: every corner is valence 3), the loop falls
+-- back to the boundary of an adjacent FACE — `prefer_face` (the face
+-- under the cursor) picks which side; selecting a cube edge selects
+-- that face's ring, the expected read. Returns the edge-key list and
+-- the touched faces (the fallback returns exactly the one face).
+function M.edge_loop(doc, a, b, prefer_face)
+  local list, index = M.edges(doc)
   local start = M.ekey(a, b)
-  if not index[start] then return { start }, {} end
-  local keys, faces = { start }, {}
-  local seen_e, seen_f = { [start] = true }, {}
-  local function opposite(f, ea, eb)
-    if #f.v ~= 4 then return nil end
-    for k = 1, 4 do
-      local va, vb = f.v[k], f.v[k % 4 + 1]
-      if (va == ea and vb == eb) or (va == eb and vb == ea) then
-        return f.v[(k + 1) % 4 + 1], f.v[(k + 2) % 4 + 1]
+  local seed = index[start]
+  if not seed then return { start }, {} end
+  local at = {} -- vertex -> incident edge records
+  for _, e in ipairs(list) do
+    at[e.a] = at[e.a] or {}
+    at[e.b] = at[e.b] or {}
+    at[e.a][#at[e.a] + 1] = e
+    at[e.b][#at[e.b] + 1] = e
+  end
+  local keys = { start }
+  local seen = { [start] = true }
+  local function walk(v, e)
+    while true do
+      local eset = {}
+      for _, fi in ipairs(e.fs) do eset[fi] = true end
+      local nxt, n = nil, 0
+      for _, cand in ipairs(at[v] or {}) do
+        if cand ~= e then
+          local shares = false
+          for _, fi in ipairs(cand.fs) do
+            if eset[fi] then shares = true break end
+          end
+          if not shares then
+            n = n + 1
+            nxt = cand
+          end
+        end
+      end
+      if n ~= 1 or seen[nxt.key] then break end
+      seen[nxt.key] = true
+      keys[#keys + 1] = nxt.key
+      v = (nxt.a == v) and nxt.b or nxt.a
+      e = nxt
+    end
+  end
+  walk(seed.b, seed)
+  walk(seed.a, seed)
+
+  if #keys == 1 then
+    -- dead end both ways: the face-boundary fallback
+    local fi = nil
+    if prefer_face then
+      for _, f2 in ipairs(seed.fs) do
+        if f2 == prefer_face then fi = f2 break end
       end
     end
-    return nil
+    fi = fi or seed.fs[1]
+    local f = fi and doc.faces[fi]
+    if f then
+      keys = {}
+      local n = #f.v
+      for k = 1, n do
+        keys[#keys + 1] = M.ekey(f.v[k], f.v[k % n + 1])
+      end
+      return keys, { fi }
+    end
+    return keys, {}
   end
-  local function walk(dir)
-    local ea, eb = a, b
-    local e = index[M.ekey(ea, eb)]
-    local fi = e.fs[dir]
-    while fi do
-      local f = doc.faces[fi]
-      local oa, ob = opposite(f, ea, eb)
-      if not oa then break end
-      if not seen_f[fi] then
-        seen_f[fi] = true
+
+  local fset, faces = {}, {}
+  for _, key in ipairs(keys) do
+    for _, fi in ipairs(index[key].fs) do
+      if not fset[fi] then
+        fset[fi] = true
         faces[#faces + 1] = fi
       end
-      local key = M.ekey(oa, ob)
-      if seen_e[key] then break end
-      seen_e[key] = true
-      keys[#keys + 1] = key
-      -- cross to the other face sharing the opposite edge
-      local oe = index[key]
-      local nxt
-      for _, ofi in ipairs(oe and oe.fs or {}) do
-        if ofi ~= fi then nxt = ofi break end
-      end
-      ea, eb, fi = oa, ob, nxt
     end
   end
-  walk(1)
-  walk(2)
   return keys, faces
 end
 

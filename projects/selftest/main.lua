@@ -11874,6 +11874,19 @@ local function t_game_snap()
   local w1, h1 = game.aa_rect(426 * s + PW, 240 * s + PH, 1.25, 1, 240)
   check(w1 == 426 * 2 + PW and h1 == 240 * 2 + PH,
         "game.snap: a CTRL-snapped rect flips to Aa 1 as an exact 2x")
+  -- a FRESH game window spawns crisp at any Aa (the human's report: at
+  -- 125% the default window wasn't pixel-perfect until ctrl+snapped)
+  local view = cm.require("cm.view")
+  local saved = view.cfg.editor_scale
+  view.cfg.editor_scale = 1.25
+  local _, dw, dh = game.defaults()
+  view.cfg.editor_scale = saved
+  local gw, gh = pal.gfx_size()
+  local si = (dw - PW) / gw
+  check(math.abs(si - game.snap_mult(1, 1.25)) < 1e-12
+        and (gw * si * 1.25) % 1 == 0
+        and math.abs((dh - PH) - gh * game.snap_mult(1, 1.25)) < 1e-9,
+        "game.snap: a fresh spawn is a whole SCREEN multiple at Aa 1.25")
 end
 
 -- the derived target FOV (D125): the shell asserts pick_fov every live
@@ -12253,28 +12266,43 @@ local function t_mesh()
   check(not ME.vert_visible(bx, 0.02, 0.03, 5, 1),
         "mesh: back corner occluded by the front face")
 
-  -- the edge loop around a box's vertical edges: 4 edges, 4 side faces
-  local keys, lfaces = ME.edge_loop(bx, 2, 3)
-  check(#keys == 4, "mesh: box vertical edge loop has 4 edges")
+  -- a lone cube edge dead-ends the vertex walk at both corners
+  -- (valence 3), so the loop falls back to an adjacent FACE's boundary
+  -- — prefer_face (the face under the cursor) picks the side
+  local keys, lfaces = ME.edge_loop(bx, 2, 3, 3) -- prefer the right face
+  check(#keys == 4 and #lfaces == 1 and lfaces[1] == 3,
+        "mesh: cube edge loop falls back to the preferred face ring")
   local kset = {}
   for _, k in ipairs(keys) do kset[k] = true end
-  check(kset[ME.ekey(2, 3)] and kset[ME.ekey(1, 4)]
-        and kset[ME.ekey(5, 8)] and kset[ME.ekey(6, 7)],
-        "mesh: the loop is the 4 verticals")
-  check(#lfaces == 4, "mesh: the loop walks the 4 side faces")
-  local fset = {}
-  for _, fi2 in ipairs(lfaces) do fset[fi2] = true end
-  check(fset[1] and fset[2] and fset[3] and fset[4] and not fset[5]
-        and not fset[6], "mesh: the walked strip skips the caps")
+  check(kset[ME.ekey(2, 3)] and kset[ME.ekey(3, 7)]
+        and kset[ME.ekey(7, 6)] and kset[ME.ekey(6, 2)],
+        "mesh: the fallback ring is the right face's 4 edges")
+  local keys2, lfaces2 = ME.edge_loop(bx, 2, 3) -- no preference
+  check(#keys2 == 4 and #lfaces2 == 1,
+        "mesh: no preference falls back to the first adjacent face")
 
-  -- a triangle stops the walk (loops are a quad grammar): the wedge's
-  -- base right edge crosses the bottom quad once, then dies at the tris
+  -- the REAL loop: extrude the top face — the waist ring's verts are
+  -- valence 4, and the walk closes around all 4 middle edges
+  do
+    local xb = ME.fresh("xb")
+    ME.extrude(xb, 5, 0.5)
+    local wk, wf = ME.edge_loop(xb, 3, 4)
+    check(#wk == 4, "mesh: the extruded waist loop closes (4 edges)")
+    local ws = {}
+    for _, k in ipairs(wk) do ws[k] = true end
+    check(ws[ME.ekey(3, 4)] and ws[ME.ekey(4, 8)]
+          and ws[ME.ekey(8, 7)] and ws[ME.ekey(7, 3)],
+          "mesh: the waist loop is the 4 middle edges")
+    check(#wf == 8, "mesh: the waist loop touches both strips (8 faces)")
+  end
+
+  -- triangles break the straight-ahead rule: the wedge's base right
+  -- edge dead-ends into its tris and falls back to the bottom face
   local tw = ME.fresh("tw")
   ME.add_prim(tw, "wedge", {})
-  local wkeys = ME.edge_loop(tw, 10, 11)
-  check(#wkeys == 2 and wkeys[1] == ME.ekey(10, 11)
-        and wkeys[2] == ME.ekey(9, 12),
-        "mesh: the loop walk stops at triangles")
+  local wkeys, wfaces = ME.edge_loop(tw, 10, 11)
+  check(#wkeys == 4 and #wfaces == 1,
+        "mesh: a tri-bounded edge falls back to its quad's ring")
 
   -- sel_verts unions a mixed selection
   local u = ME.sel_verts(bx, { 1 }, { ME.ekey(2, 3) }, { 2 })
