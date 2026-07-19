@@ -7213,3 +7213,22 @@ in place on the stage (verbatim-block match, refused if hand-edited);
 future scaffolds get the fixed template. Suite ALL GREEN, goldens
 byte-identical (the NULL-bind path never fires in golden runs); all
 tapes green.
+
+**Addendum 4 (same day) — restages preserve user projects wholesale.**
+Verifying addendum 3's restage exposed that tools/stage-windows.sh
+preserved ONLY `.ed` state: every project the human created inside the
+staged tree lost its payload files (world.terr, art, main.lua) on
+every restage — my restage ate fond-crow-mink and deft-cobble-cider,
+and four older native projects had already been hollowed silently.
+All six were restored: fond-crow-mink from this session's full copy,
+deft-cobble-cider + harbor-sparrow-tide + onyx-peach-ferret from
+their `.ed` journals (the undo-forever design paying for real:
+world.terr tips, sprite tips re-baked through sprite.save, figs,
+atlases re-baked, scaffolding regenerated through cm.project.scaffold
+with the fixed template), the two never-edited ones re-scaffolded;
+every one boot-verified natively. The script now copies any
+projects/<name> the fresh stage does not ship WHOLESALE (minus .ed,
+which the editor-state pass still handles), verified by a real
+restage round trip. Class rule: preservation lists must be
+deny-listed (what is DERIVED and rebuildable), never allow-listed
+(what someone remembered to keep).
