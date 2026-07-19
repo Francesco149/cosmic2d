@@ -31,7 +31,29 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — D139: material textures render
+**This session (2026-07-19), latest — the D139 stale-seed follow-up
+(the addendum).** The human's next native pass: adding a custom
+material turned the textured grass SOLID GREEN (painting still worked;
+ctrl+z flashed the texture for a couple frames). Root cause: lat_for's
+disk-atlas seed gated on `stamp == mat_hash(doc)` — meaningful under
+D138 (only the bake button wrote stamps) but VACUOUS once D139's
+encode began refreshing the stamp on every commit, so any
+invalidation (material add/assign, undo, esc-cancel) re-seeded the
+live atlas from whatever stale png sat on disk — theirs being a
+D138-era flat-grass bake. Fix: the seed also requires the working
+bytes to EQUAL the saved file (dirty docs always re-bake live), and
+byte re-adopts SOFT-refill (`lat_refill` keeps the buffer + the
+served texture during the sub-second re-fill, atomic swap) so undo
+and material edits no longer flash to vertex colors either. Proven by
+a tamper-marker tape (disk atlas painted solid purple): pre-fix the
+grass texel seeds purple right after the add — the human's bug
+exactly — post-fix it live-bakes the checker through add, ctrl+z, and
+the republishing save (7/7); the D139 terr/sprite tapes re-ran green
+(18/18, 13/13), `nix run .#test` ALL GREEN, Linux selftest 24,878 /
+native Windows **24,880** on the refreshed stage (11 durable
+entries). See the D139 addendum in DECISIONS.
+
+**Same session, earlier — D139: material textures render
 LIVE (save = bake), the brush-shape well, and the sprite editor's
 brush row + transparency fill + stamp well.** The human's fifth
 native pass: "the material sampling doesn't feel like it's taking
