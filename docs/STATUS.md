@@ -98,8 +98,10 @@ packet** (.fig codec in cm.fig + parts/pose/bake tabs + the mascot.fig
 converter + the .spx bake button — design complete in EDITOR3D.md §6);
 then the committed vale fixture + demo adoption, the atlas bake
 button, mesh-bounds auto-fit colliders, the mesh texture-region assign
-UI, 3d-map multi-select. Native Windows re-count owed with the next
-build-windows stage. See DECISIONS `D137`.
+UI, 3d-map multi-select. The Windows dev tree staged clean (7 durable
+entries + the Start Menu shortcut) and the NATIVE Windows selftest
+PASSED at **24,787** on api24 (the usual +2 delta over Linux 24,785) —
+every packet covered natively. See DECISIONS `D137`.
 
 **Same session, earlier — D136: the settings window publishes option
 defaults into project.lua.** D133's named next slice:
