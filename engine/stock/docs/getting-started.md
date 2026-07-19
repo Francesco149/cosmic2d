@@ -8,8 +8,8 @@ walkthrough that does exactly that, start to finish.
 
 This is a rendered doc reader. The **docs** button is a search field over every
 shipped guide — type a module (`cm.actor`) or a task and jump straight to the
-right section. Click a link to follow it in place (ctrl+click opens it in a new
-reader); the header arrows — or the mouse back/forward buttons — walk your
+right section. Click a link to follow it in place (ctrl+click opens it in a
+new reader beside this one, same size); the header arrows — or the mouse back/forward buttons — walk your
 history. `src` opens the raw markdown.
 
 ## Run something

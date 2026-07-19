@@ -3,7 +3,7 @@
 -- paragraphs, bullet lists, code spans/fences, and links drawn as their
 -- link TEXT (not the `[..](..)` source). One window navigates in place:
 --   click a link          → follow it in THIS window (history pushes)
---   ctrl+click a link      → open it in a NEW help window
+--   ctrl+click a link      → open it in a NEW help window BESIDE this one
 --   a link to an ASSET     → opens in the right editor window (sprite/map/…)
 -- Header ◀ ▶ walk history (mouse back/forward too); ⌂ returns to the doc
 -- list; `src` opens the raw markdown in the code editor. No working state,
@@ -206,9 +206,13 @@ local function follow(win, ed, target, newwin)
   if rp:lower():find("%.md$") then
     local opts = frag and { line = anchor_line(ed, rp, frag) } or nil
     if newwin then
-      local nw = wm.spawn(ed.doc, "help", win.x + 28, win.y + 28,
+      -- beside the current reader, matched dimensions (the cross-open
+      -- convention): reading forks into a side-by-side pair
+      local nw = wm.spawn(ed.doc, "help", win.x + win.w + 16, win.y,
                           win.w, win.h, M.defaults())
       navigate(nw, rp, false, opts)
+      ed.doc.focus = nw.id
+      ed.reveal_window(nw, ed.g.last_ig)
     else
       navigate(win, rp, false, opts)
     end

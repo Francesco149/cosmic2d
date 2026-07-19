@@ -63,7 +63,8 @@ scrolled to the section (the landed-on line lights briefly). An empty field
 just lists the docs to browse.
 
 Inside a doc, click a link to follow it in place (**ctrl+click** opens a new
-reader); a `#section` link jumps to that heading. The header **◀ ▶** — or the
+reader beside this one at the same size); a `#section` link jumps to that
+heading. The header **◀ ▶** — or the
 mouse back/forward buttons — walk your history, **docs** returns to search, and
 **src** opens the raw markdown in a code editor (which has its own Ctrl+F find).
 
