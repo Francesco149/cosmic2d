@@ -31,7 +31,37 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — the third native-report pair:
+**This session (2026-07-19), latest — the fourth native-report batch:
+epoch-aware image caches + material textures with the ground atlas
+bake (the §4.5 unpark, nearest v1).** The human's reports: sprite
+thumbnails and the brush stamp froze until a project reload, and
+"paint the terrain with a custom sprite as a texture". (1) The
+staleness was one CLASS: `cm.gfx.texture`'s memo now keys on
+cm.asset_epoch (every save bumps it; entries re-read and update IN
+PLACE so every holder follows; player sessions never bump it), the
+assets window's whole thumbnail cache re-reads per epoch, and the terr
+window's stamp/texture pixel caches ride the same key — the .msh
+resolver already had the pattern, these had missed it. (2) Materials'
+dormant `tex` field became real: with pnt active, DROP an image on a
+material SWATCH to assign it (corner notch marks textured swatches;
+"tex: name x" clears), and the map-fields row grew the **bake tex**
+chip — `terr3.bake_pixels` renders the painted ground (textured
+materials sampled once per tile, bilinear weight blends, painted
+shade) into `<map>-atlas.png`; `terr3.mat_hash` stamps it (paint
+inputs only — sculpting never stales a bake); `emit_terrain` grew the
+ATLAS mode (map-normalized UVs, lighting-only vertex colors, nearest)
+and the viewport, patch_mesh, and the vale template all draw it when
+fresh — any paint edit reads stale and falls back to live vertex
+colors until the next bake; doc.stamp rides HEAD so Ctrl+S persists
+the state. Proof: Linux selftest **24,865** (+14) / native **24,867**;
+suite ALL GREEN, goldens byte-identical; the tape drove the real UI
+(epoch re-read, shell-carry swatch drop, bake→on, stroke→stale→vertex,
+rebake→on) and the capture shows a checker sprite tiling the ground.
+Deferred honestly from §4.5: caster shadows multiplied into the bake,
+the budgeted (non-blocking) bake loop for big maps, gutter+filtered
+sampling (nearest needs neither).
+
+**Same session, earlier — the third native-report pair:
 live drops into the 3d map + gizmo clipping.** The human's next pass
 found drag-in DOING NOTHING (placement and brush stamps both): the
 shell's carry dispatch passes SCREEN px to `kind.drop` (the map
