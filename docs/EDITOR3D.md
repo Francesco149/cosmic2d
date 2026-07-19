@@ -286,6 +286,22 @@ shadows in — moving a caster invalidates the stamp (the button shows
 `stale`), the vertex mode stays live meanwhile. Honest rule: an
 unexpectedly-different bake on pinned lavapipe is a bug, not a re-bake.
 
+**As built (D139)**: the button died in native testing — "the texture
+doesn't take effect" — and the model simplified to **live + save=bake**.
+The window keeps a CPU atlas per map (`terr3.bake_into` region bakes: a
+budgeted rows-per-frame loop for the initial fill with a `tex bake N%`
+note, per-stroke texel-rect patches while painting), served as a
+`tex_update`d texture the moment it completes; there is NO user-facing
+bake or stale state. The `.terr` stamp refreshes on every encode and
+**Ctrl+S publishes `<map>-atlas.png`** beside the map, so the game's
+freshness contract (HEAD stamp == `mat_hash` ⇒ draw the atlas) holds by
+construction after every save. A fresh disk atlas seeds the live buffer
+on open (reopening pays nothing). Caster shadows in the bake remain
+deferred. Drop grammar as built: with pnt active a viewport image drop
+ADDS a material of the image (average-color swatch + `tex`), a swatch
+drop retextures that material, and the brush STAMP door moved off the
+viewport onto the inspector's brush-shape well (§4.2).
+
 ## 5. `.msh` + the mesh window (kind `mesh`, module `cm.mesh`)
 
 The picoCAD-class refusal set, stated up front: **no skinning, no

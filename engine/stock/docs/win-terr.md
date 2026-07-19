@@ -51,31 +51,36 @@ spawn point.
 **ctrl+wheel** dials the radius; **[** and **]** step the strength.
 The ring under the cursor is the live brush footprint.
 
-**Custom brush stamps**: drop a sprite or image onto the map while a
-brush tool is active and it becomes the brush shape — its alpha and
-brightness are the paint weight, fit to the brush circle. Draw a stamp
-in the sprite editor (white shape on transparency = a full-strength
-brush), then sculpt hills, paint paths, or shade with it. The
-`stamp: name  x` chip in the bottom strip clears it back to the round
-brush. Dropping an image with the **select** tool still places a
-billboard as usual.
+**Custom brush stamps**: while a brush tool is active the bottom strip
+starts with the **brush-shape well** — a small square showing the
+brush's shape (a round dot by default). Drop a sprite or image ON the
+well and it becomes the brush shape — its alpha and brightness are the
+paint weight, fit to the brush circle. Draw a stamp in the sprite
+editor (white shape on transparency = a full-strength brush), then
+sculpt hills, paint paths, or shade with it. The `stamp: name  x` chip
+beside it resets the round brush. Dropping an image on the map itself
+still places a billboard (select tool) or adds a paint material (paint
+tool, below).
 
 ## Texturing the ground
 
-Materials can carry a **texture**: with the paint tool active, drop a
-sprite or image onto a material's swatch in the bottom strip and that
-material now samples the image, repeating once per tile (the corner
-notch marks textured swatches; the `tex: name  x` chip clears the
-active one). Draw ground tiles in the sprite editor — grass, dirt,
-cobbles — and paint with them like any material.
+Materials can carry a **texture**, and textures render live — paint
+with one and the ground shows it immediately, repeating once per tile.
+Two ways to set one up (paint tool active):
 
-Textures show through the **bake**: with the select tool and nothing
-selected, the bottom strip offers **bake tex** — it renders the whole
-painted ground (textures, blends, painted shade) into an atlas image
-saved beside the map, and the viewport and the game draw it. Painting
-again marks the bake **stale** and the ground falls back to live flat
-colors until you bake again; the **x** chip turns the atlas off for
-good. Ctrl+S saves the map's bake state with everything else.
+- **drop a sprite or image onto the map** — a new material is added
+  with that image as its texture (its swatch color is the image's
+  average) and selected, ready to paint.
+- **drop it onto an existing material's swatch** to retexture that
+  material. The corner notch marks textured swatches; the
+  `tex: name  x` chip clears the active one.
+
+Draw ground tiles in the sprite editor — grass, dirt, cobbles — and
+paint with them like any material. Big maps bake the texture view in
+the background for a moment (`tex bake N%` in the strip).
+**Ctrl+S publishes the atlas**: the painted ground (textures, blends,
+painted shade) renders into `<map>-atlas.png` beside the map, always
+in step with the save, and the game draws it.
 
 ## Placing things
 

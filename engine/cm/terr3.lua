@@ -562,12 +562,15 @@ function M.mat_hash(doc)
   return h
 end
 
--- bake the ground colors: ts texels per tile, RGBA8 string (+ w, h in
--- px). samplers[mi] = function(u, v in [0,1) within one tile) -> r,g,b
--- (0..1) for textured materials; absent = the material's flat color.
-function M.bake_pixels(doc, samplers, ts)
+-- bake a texel RECT [px0..px1]x[py0..py1] (inclusive, atlas px) into an
+-- RGBA8 pal.buf laid out doc.w*ts wide — the editor's budgeted live
+-- bake (a few rows per frame, no hitch on big maps) and its per-stroke
+-- patches both call this; bake_pixels below wraps it for the whole
+-- image. samplers[mi] = function(u, v in [0,1) within one tile) ->
+-- r,g,b (0..1) for textured materials; absent = the flat color.
+function M.bake_into(doc, samplers, ts, buf, px0, py0, px1, py1)
   ts = ts or 16
-  local W, H = doc.w * ts, doc.h * ts
+  local W = doc.w * ts
   local nmat = #doc.mats
   local stride = doc.w + 1
   local wcache = {}
@@ -586,12 +589,11 @@ function M.bake_pixels(doc, samplers, ts)
     return (shade[vz * stride + vx + 1] or 255) / 255
   end
   local char = string.char
-  local rows = {}
-  for pz = 0, H - 1 do
+  for pz = py0, py1 do
     local tzv = pz // ts
     local fv = (pz % ts + 0.5) / ts
     local row = {}
-    for px = 0, W - 1 do
+    for px = px0, px1 do
       local tx = px // ts
       local fu = (px % ts + 0.5) / ts
       local w00, w10 = wof(tx, tzv), wof(tx + 1, tzv)
@@ -618,14 +620,23 @@ function M.bake_pixels(doc, samplers, ts)
                  * (1 - fv)
                + (shof(tx, tzv + 1) * (1 - fu) + shof(tx + 1, tzv + 1) * fu)
                  * fv
-      row[px + 1] = char(
+      row[#row + 1] = char(
         m.clamp((r * sh * 255) // 1, 0, 255),
         m.clamp((g * sh * 255) // 1, 0, 255),
         m.clamp((b * sh * 255) // 1, 0, 255), 255)
     end
-    rows[#rows + 1] = table.concat(row)
+    buf:setstr((pz * W + px0) * 4, table.concat(row))
   end
-  return table.concat(rows), W, H
+end
+
+-- bake the whole ground: ts texels per tile, RGBA8 string (+ w, h in
+-- px) — the save-time atlas publish and the KATs use this form.
+function M.bake_pixels(doc, samplers, ts)
+  ts = ts or 16
+  local W, H = doc.w * ts, doc.h * ts
+  local buf = pal.buf(nil, W * H * 4)
+  M.bake_into(doc, samplers, ts, buf, 0, 0, W - 1, H - 1)
+  return buf:str(0, W * H * 4), W, H
 end
 
 -- the water plane (blend segment, drawn after opaque); nil-safe when off
