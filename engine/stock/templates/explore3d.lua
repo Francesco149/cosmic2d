@@ -214,13 +214,22 @@ local dyn = pal.buf("rc.explore3d.dyn", 1 << 20)
 
 local function terrain_bytes()
   if terrcache and terrcache.doc == world.doc then return terrcache end
+  -- a FRESH baked atlas (stamp matches the paint state) draws textured;
+  -- otherwise live vertex colors — exactly the 3d map window's rule
+  local atex
+  if (world.doc.stamp or 0) ~= 0
+     and world.doc.stamp == terr3.mat_hash(world.doc) then
+    local ok, t = pcall(gfx.texture,
+                        root .. "/" .. terr3.atlas_path("world.terr"))
+    if ok and t then atex = t.id end
+  end
   local out = {}
-  local n = terr3.emit_terrain(out, world.doc)
+  local n = terr3.emit_terrain(out, world.doc, { atlas = atex ~= nil })
   local wout = {}
   local wn = terr3.emit_water(wout, world.doc)
   local bytes = table.concat(out) .. table.concat(wout)
   vbuf:setstr(0, bytes)
-  terrcache = { doc = world.doc, n = n, wn = wn }
+  terrcache = { doc = world.doc, n = n, wn = wn, atex = atex }
   return terrcache
 end
 
@@ -248,7 +257,7 @@ function game.draw()
 
   -- the world, straight from the file (terrain + props + water)
   local tc = terrain_bytes()
-  pal.x_tris(0, vbuf, tc.n, 0, 0)
+  pal.x_tris(tc.atex or 0, vbuf, tc.n, 0, tc.atex and 2 or 0)
   local cam_yaw = cam:f32(0)
   local segs = terr3.emit_props(doc, {
     cam_yaw = cam_yaw,

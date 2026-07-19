@@ -457,6 +457,13 @@ end
 
 -- emit the terrain grid pre-lit into out[]; opts.ox/oz = lattice offset
 -- (the cm.terr chunk contract). Returns tris.
+--
+-- opts.atlas = true emits the ATLAS UV mode instead (draw the segment
+-- with the baked atlas texture, x_tris flags 2 = nearest): uvs span the
+-- whole atlas (map-normalized), vertex colors carry LIGHTING + jitter
+-- only (white base — the material mix and painted shade live in the
+-- baked texels; texture x vertex color lands within a hair of the
+-- vertex mode's read).
 function M.emit_terrain(out, doc, opts)
   opts = opts or {}
   local s = doc.tile
@@ -465,6 +472,8 @@ function M.emit_terrain(out, doc, opts)
   local sun, suncol, amb = doc.sun, doc.suncol, doc.amb
   local x0t, z0t = opts.x0 or 0, opts.z0 or 0
   local x1t, z1t = opts.x1 or doc.w - 1, opts.z1 or doc.h - 1
+  local atlas = opts.atlas or false
+  local WHITE = { 1, 1, 1 }
   local ntris = 0
   for z = z0t, z1t do
     for x = x0t, x1t do
@@ -479,9 +488,17 @@ function M.emit_terrain(out, doc, opts)
       local ny = flat / nl
       local wx, wz = ox + x, oz + z
       local function V(vx, vz, hh)
-        local c, sh = vcol(doc, vx - ox, vz - oz)
-        local r, g, b = lit(c, sh, nx, ny, nz, sun, suncol, amb)
-        return vpack("<fffffBBBB", vx * s, hh, vz * s, vx, vz,
+        local r, g, b, uu, vv
+        if atlas then
+          local j = 1 + (terr.hash(31, vx - ox, vz - oz) - 0.5) * 0.10
+          r, g, b = lit(WHITE, j, nx, ny, nz, sun, suncol, amb)
+          uu, vv = (vx - ox) / doc.w, (vz - oz) / doc.h
+        else
+          local c, sh = vcol(doc, vx - ox, vz - oz)
+          r, g, b = lit(c, sh, nx, ny, nz, sun, suncol, amb)
+          uu, vv = vx, vz
+        end
+        return vpack("<fffffBBBB", vx * s, hh, vz * s, uu, vv,
                      (r * 255) // 1, (g * 255) // 1, (b * 255) // 1, 255)
       end
       local A = V(wx, wz, h00)
@@ -493,6 +510,122 @@ function M.emit_terrain(out, doc, opts)
     end
   end
   return ntris
+end
+
+-- ---- the terrain texture atlas (the §4.5 bake, nearest-atlas v1) ----
+--
+-- A material may carry `tex` — an ordinary project image (draw it in
+-- the sprite editor) that REPEATS ONCE PER TILE. The bake renders the
+-- whole ground into one nearest-sampled texture (ts texels per tile):
+-- per texel, the bilinear-blended material weights mix flat colors and
+-- sampled texels, times the painted shade. The stamp (M.mat_hash over
+-- the PAINT inputs — heights deliberately excluded, sculpting doesn't
+-- recolor) marks the atlas fresh; any paint edit makes it stale and
+-- consumers fall back to the live vertex mode until the next bake.
+
+-- the atlas image path beside its map: maps/vale.terr -> maps/vale-atlas.png
+function M.atlas_path(path)
+  return (path:gsub("%.terr$", "") .. "-atlas.png")
+end
+
+-- FNV-1a (integer math, bit-stable) over the color inputs
+function M.mat_hash(doc)
+  local h = 2166136261
+  local function feed(s2)
+    for i = 1, #s2 do
+      h = ((h ~ s2:byte(i)) * 16777619) & 0xFFFFFFFF
+    end
+  end
+  feed(pack("<I4I4", doc.w, doc.h))
+  for _, mt in ipairs(doc.mats) do
+    feed(mt.name or "")
+    feed(pack("<fff", mt.col[1], mt.col[2], mt.col[3]))
+    feed(mt.tex or "")
+  end
+  local n = plane_size(doc)
+  for mi = 1, #doc.mats do
+    local pl = doc.wts[mi]
+    if pl and #pl > 0 then
+      feed(pack("<I1", mi))
+      for i = 1, n do
+        h = ((h ~ (pl[i] or 0)) * 16777619) & 0xFFFFFFFF
+      end
+    end
+  end
+  if doc.shade then
+    feed("S")
+    for i = 1, n do
+      h = ((h ~ (doc.shade[i] or 255)) * 16777619) & 0xFFFFFFFF
+    end
+  end
+  if h == 0 then h = 1 end -- 0 means "no atlas"
+  return h
+end
+
+-- bake the ground colors: ts texels per tile, RGBA8 string (+ w, h in
+-- px). samplers[mi] = function(u, v in [0,1) within one tile) -> r,g,b
+-- (0..1) for textured materials; absent = the material's flat color.
+function M.bake_pixels(doc, samplers, ts)
+  ts = ts or 16
+  local W, H = doc.w * ts, doc.h * ts
+  local nmat = #doc.mats
+  local stride = doc.w + 1
+  local wcache = {}
+  local function wof(vx, vz)
+    local vi = vz * stride + vx + 1
+    local wv = wcache[vi]
+    if not wv then
+      wv = M.weights_at(doc, vi)
+      wcache[vi] = wv
+    end
+    return wv
+  end
+  local shade = doc.shade
+  local function shof(vx, vz)
+    if not shade then return 1 end
+    return (shade[vz * stride + vx + 1] or 255) / 255
+  end
+  local char = string.char
+  local rows = {}
+  for pz = 0, H - 1 do
+    local tzv = pz // ts
+    local fv = (pz % ts + 0.5) / ts
+    local row = {}
+    for px = 0, W - 1 do
+      local tx = px // ts
+      local fu = (px % ts + 0.5) / ts
+      local w00, w10 = wof(tx, tzv), wof(tx + 1, tzv)
+      local w01, w11 = wof(tx, tzv + 1), wof(tx + 1, tzv + 1)
+      local r, g, b = 0, 0, 0
+      for mi = 1, nmat do
+        local wgt = ((w00[mi] or 0) * (1 - fu) + (w10[mi] or 0) * fu)
+                    * (1 - fv)
+                  + ((w01[mi] or 0) * (1 - fu) + (w11[mi] or 0) * fu) * fv
+        if wgt > 0 then
+          local cr, cg, cb
+          local sam = samplers and samplers[mi]
+          if sam then cr, cg, cb = sam(fu, fv) end
+          if not cr then
+            local c = doc.mats[mi].col
+            cr, cg, cb = c[1], c[2], c[3]
+          end
+          r = r + cr * wgt
+          g = g + cg * wgt
+          b = b + cb * wgt
+        end
+      end
+      local sh = (shof(tx, tzv) * (1 - fu) + shof(tx + 1, tzv) * fu)
+                 * (1 - fv)
+               + (shof(tx, tzv + 1) * (1 - fu) + shof(tx + 1, tzv + 1) * fu)
+                 * fv
+      row[px + 1] = char(
+        m.clamp((r * sh * 255) // 1, 0, 255),
+        m.clamp((g * sh * 255) // 1, 0, 255),
+        m.clamp((b * sh * 255) // 1, 0, 255), 255)
+    end
+    rows[#rows + 1] = table.concat(row)
+  end
+  return table.concat(rows), W, H
 end
 
 -- the water plane (blend segment, drawn after opaque); nil-safe when off

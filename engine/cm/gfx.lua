@@ -52,23 +52,28 @@ end
 -- texture instead of erroring. All render-only; none of this is sim state.
 function M.texture(path, reload)
   local t = textures[path]
-  if t and not reload then return t end
+  -- the memo keys on cm.asset_epoch: every editor save bumps it, so a
+  -- re-saved image refreshes EVERY holder on its next ask (the entry
+  -- updates in place — cached {id,w,h} refs follow). Player sessions
+  -- never bump the epoch, so the memo stays as static as ever there.
+  local epoch = cm.asset_epoch or 0
+  if t and not reload and t.epoch == epoch then return t end
   local bytes, err = pal.read_file(path)
   if not bytes then
-    if t then return t end -- reload of a now-missing file: keep what we have
+    if t then t.epoch = epoch; return t end -- now missing: keep it
     error("cm.gfx.texture: " .. path .. ": " .. err, 2)
   end
   local pix, w, h = pal.png_read(bytes)
   if not pix then
-    if t then return t end -- reload of a now-corrupt file: keep what we have
+    if t then t.epoch = epoch; return t end -- now corrupt: keep it
     error("cm.gfx.texture: " .. path .. ": " .. w, 2)
   end
   local id = pal.tex_create(w, h, pix)
   if t then
     if t.id then pal.tex_free(t.id) end -- drop the stale GPU texture
-    t.id, t.w, t.h = id, w, h
+    t.id, t.w, t.h, t.epoch = id, w, h, epoch
   else
-    t = { id = id, w = w, h = h }
+    t = { id = id, w = w, h = h, epoch = epoch }
     textures[path] = t
   end
   return t

@@ -60,6 +60,23 @@ brush), then sculpt hills, paint paths, or shade with it. The
 brush. Dropping an image with the **select** tool still places a
 billboard as usual.
 
+## Texturing the ground
+
+Materials can carry a **texture**: with the paint tool active, drop a
+sprite or image onto a material's swatch in the bottom strip and that
+material now samples the image, repeating once per tile (the corner
+notch marks textured swatches; the `tex: name  x` chip clears the
+active one). Draw ground tiles in the sprite editor — grass, dirt,
+cobbles — and paint with them like any material.
+
+Textures show through the **bake**: with the select tool and nothing
+selected, the bottom strip offers **bake tex** — it renders the whole
+painted ground (textures, blends, painted shade) into an atlas image
+saved beside the map, and the viewport and the game draw it. Painting
+again marks the bake **stale** and the ground falls back to live flat
+colors until you bake again; the **x** chip turns the atlas off for
+good. Ctrl+S saves the map's bake state with everything else.
+
 ## Placing things
 
 **Drag any asset in from the assets window** and release over the

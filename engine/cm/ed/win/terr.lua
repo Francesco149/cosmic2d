@@ -410,23 +410,27 @@ local function scratch(name, bytes)
   return vb
 end
 
-local function mesh_for(ed, p, path)
+-- atexid: the fresh atlas texture id (from atlas_tex below) or nil for
+-- vertex mode — the vb re-emits whenever the MODE flips, and
+-- patch_mesh patches in the same mode (p.meshatlas)
+local function mesh_for(ed, p, path, atexid)
   local doc = p.doc
   local want = doc.w * doc.h * 144
   local name = vb_name(path)
+  local mode = atexid ~= nil
   if p.meshsize == nil then -- a VM reboot dropped the plumb: re-discover
     for _, b in ipairs(pal.buf_list()) do
       if b.name == name then p.meshsize = b.size break end
     end
   end
-  if p.meshgen ~= p.gen or p.meshsize ~= want then
+  if p.meshgen ~= p.gen or p.meshsize ~= want or p.meshatlas ~= mode then
     if p.meshsize and p.meshsize ~= want then pal.buf_free(name) end
     local out = {}
-    terr3.emit_terrain(out, doc)
+    terr3.emit_terrain(out, doc, { atlas = mode })
     local bytes = table.concat(out)
     local vb = pal.buf(name, #bytes)
     vb:setstr(0, bytes)
-    p.meshgen, p.meshsize = p.gen, want
+    p.meshgen, p.meshsize, p.meshatlas = p.gen, want, mode
   end
   return pal.buf(name, want), doc.w * doc.h * 2
 end
@@ -442,7 +446,8 @@ local function patch_mesh(ed, p, path, vx0, vz0, vx1, vz1)
   local vb = pal.buf(vb_name(path), doc.w * doc.h * 144)
   for zz = z0, z1 do
     local out = {}
-    terr3.emit_terrain(out, doc, { x0 = x0, x1 = x1, z0 = zz, z1 = zz })
+    terr3.emit_terrain(out, doc, { x0 = x0, x1 = x1, z0 = zz, z1 = zz,
+                                   atlas = p.meshatlas })
     vb:setstr((zz * doc.w + x0) * 144, table.concat(out))
   end
 end
@@ -515,32 +520,95 @@ local function falloff(d, r)
   return t * t * (3 - 2 * t) -- smoothstep
 end
 
--- the stamp pixel cache (render/dev, module-local): a dropped image
--- becomes the brush shape (terr3.stamp_mask); failures remembered so a
--- broken image costs one read, not one per stroke frame
-local STAMPS = {}
-local function stamp_for(ed, win)
-  local path = win.stamp
-  if not path then return nil end
+-- image pixel + stamp caches (render/dev, module-local; keyed on
+-- cm.asset_epoch so a re-saved sprite refreshes immediately; failures
+-- remembered so a broken image costs one read, not one per frame)
+local TEXPIX, STAMPS, PIX_EPOCH = {}, {}, -1
+local function texpix_for(ed, path)
+  local epoch = cm.asset_epoch or 0
+  if PIX_EPOCH ~= epoch then TEXPIX, STAMPS, PIX_EPOCH = {}, {}, epoch end
   local l = path:lower()
   local target = l:find("%.png$") and path
                  or (l:find("%.spr$") and path:gsub("%.spr$", ".png"))
   if not target then return nil end
   local rp = cm.require("cm.ed.win.map").res_path(ed, target)
   if not rp then return nil end
-  local got = STAMPS[rp]
+  local got = TEXPIX[rp]
   if got == nil then
-    local ok, mk = pcall(function()
-      local bytes = pal.read_file(rp)
-      if not bytes then error("unreadable") end
+    got = false
+    local bytes = pal.read_file(rp)
+    if bytes then
       local pix, w, h = pal.png_read(bytes)
-      if not pix then error(tostring(w)) end
-      return terr3.stamp_mask(pix, w, h)
-    end)
-    got = ok and mk or false
-    STAMPS[rp] = got
+      if pix then got = { pix = pix, w = w, h = h } end
+    end
+    TEXPIX[rp] = got
   end
   return got or nil
+end
+
+-- a dropped image becomes the brush shape (terr3.stamp_mask)
+local function stamp_for(ed, win)
+  local path = win.stamp
+  if not path then return nil end
+  local rec = texpix_for(ed, path)
+  if not rec then return nil end
+  local got = STAMPS[path]
+  if not got then
+    got = terr3.stamp_mask(rec.pix, rec.w, rec.h)
+    STAMPS[path] = got
+  end
+  return got
+end
+
+-- samplers for the atlas bake: mi -> tile-repeat nearest sampler for
+-- every textured material (draw the texture in the sprite editor)
+local function mat_samplers(ed, doc)
+  local out = {}
+  for mi, mt in ipairs(doc.mats) do
+    if mt.tex and mt.tex ~= "" then
+      local rec = texpix_for(ed, mt.tex)
+      if rec then
+        local pix, w, h = rec.pix, rec.w, rec.h
+        out[mi] = function(u, v)
+          local x = math.floor(u * w) % w
+          local y = math.floor(v * h) % h
+          local o = (y * w + x) * 4
+          local r, g, b = pix:byte(o + 1, o + 3)
+          return r / 255, g / 255, b / 255
+        end
+      end
+    end
+  end
+  return out
+end
+
+-- the atlas gate: nil = draw vertex colors; a texid = draw the baked
+-- atlas (nearest). Hashing runs only while a stamp exists, so untextured
+-- maps pay nothing; a paint stroke changes the hash and the mesh falls
+-- back to live vertex mode until the next bake (p.at_state feeds the
+-- inspector chip: off / stale / on / missing).
+local function atlas_tex(ed, p, path)
+  local doc = p.doc
+  local st = doc.stamp or 0
+  if st == 0 then
+    p.at_state = "off"
+    return nil
+  end
+  if st ~= terr3.mat_hash(doc) then
+    p.at_state = "stale"
+    return nil
+  end
+  local rp = cm.require("cm.ed.win.map").res_path(
+    ed, terr3.atlas_path(path))
+  if rp then
+    local ok, t = pcall(cm.require("cm.gfx").texture, rp)
+    if ok and t and t.id then
+      p.at_state = "on"
+      return t.id
+    end
+  end
+  p.at_state = "missing"
+  return nil
 end
 
 -- one frame of a brush gesture at ground hit (hx, hz). Returns the
@@ -636,6 +704,23 @@ function M.drop(win, ed, path, sx, sy)
   local u = cm.require("cm.ed.kit").winui(p, win)
   local r = u.vrect
   if not r then return false end
+  if terr3.is_image(path) then
+    -- a drop on a MATERIAL SWATCH (the pnt strip — BELOW the viewport,
+    -- so this must precede the vrect test) assigns the image as that
+    -- material's texture — the paint-with-a-sprite door; the atlas
+    -- bake samples it per tile
+    for _, r2 in ipairs(u.matrects or {}) do
+      if sx >= r2.x and sx < r2.x + r2.w
+         and sy >= r2.y and sy < r2.y + r2.h then
+        p.doc.mats[r2.mi].tex = path
+        win.mat = r2.mi
+        p.gen = p.gen + 1
+        commit(ed, win.path)
+        ed.touch()
+        return true
+      end
+    end
+  end
   if sx < r.vx or sx >= r.vx + r.vw or sy < r.vy or sy >= r.vy + r.vh then
     return false
   end
@@ -792,8 +877,9 @@ function M.draw(win, ctx)
   if bound then
     local u = cm.require("cm.ed.kit").winui(p, win)
     u.vrect = { vx = vx, vy = vy, vw = vw, vh = vh }
-    local vb, ntris = mesh_for(ed, p, win.path)
-    pal.x_tris(0, vb, ntris, 0)
+    local atexid = atlas_tex(ed, p, win.path)
+    local vb, ntris = mesh_for(ed, p, win.path, atexid)
+    pal.x_tris(atexid or 0, vb, ntris, 0, atexid and 2 or 0)
 
     -- image resolvers for placed billboards (the map window's rule:
     -- .spr draws its baked .png sibling)
@@ -1198,6 +1284,9 @@ function M.draw(win, ctx)
   if INSP > 0 then
     local sy0 = vy + vh + 2 * z
     local tool = win.tool or "view"
+    if tool ~= "pnt" then -- stale swatch drop targets must not linger
+      cm.require("cm.ed.kit").winui(p, win).matrects = nil
+    end
     local function label(txt, col)
       pal.x_ig_text(vx + 6 * z, sy0 + (INSP - px) * 0.45, px,
                     col or COL.dim, txt, 0)
@@ -1221,7 +1310,12 @@ function M.draw(win, ctx)
       end
     end
     if tool == "pnt" then
-      -- the material strip: swatches + add
+      -- the material strip: swatches + add. Each swatch is also a DROP
+      -- TARGET: dropping an image on one assigns it as that material's
+      -- texture (sampled per tile by the atlas bake); the corner notch
+      -- marks textured materials (shape, not only color — D130).
+      local u = cm.require("cm.ed.kit").winui(p, win)
+      u.matrects = {}
       local sx = vx + 6 * z
       for mi = 1, #doc.mats do
         local sw = 14 * z
@@ -1230,10 +1324,16 @@ function M.draw(win, ctx)
           (math.floor(doc.mats[mi].col[1] * 255) << 24)
           | (math.floor(doc.mats[mi].col[2] * 255) << 16)
           | (math.floor(doc.mats[mi].col[3] * 255) << 8) | 0xff, 2 * z)
+        if (doc.mats[mi].tex or "") ~= "" then
+          pal.x_ig_rect_fill(sx + sw - 5 * z, sy0 + 2 * z, 5 * z, 5 * z,
+                             0x141220ee, 0)
+        end
         if on then
           pal.x_ig_rect(sx - 1, sy0 + 2 * z - 1, sw + 2, INSP - 4 * z + 2,
                         COL.hot, 1.5, 2 * z)
         end
+        u.matrects[#u.matrects + 1] = { x = sx, y = sy0, w = sw,
+                                        h = INSP, mi = mi }
         local hov = i.wx >= sx and i.wx < sx + sw
                     and i.wy >= sy0 and i.wy < sy0 + INSP
         if hov and i.clicked[1] then
@@ -1263,6 +1363,25 @@ function M.draw(win, ctx)
           ed.touch()
         end
         sx = sx + bw + 6 * z
+      end
+      -- the active material's texture chip: names it, click clears
+      local am = doc.mats[win.mat or 1]
+      if am and (am.tex or "") ~= "" then
+        local ct = "tex: " .. (am.tex:match("([^/]+)$") or am.tex) .. "  x"
+        local cw2 = pal.x_ig_text_size(ct, px, 0) + 10 * z
+        local hov = i.wx >= sx and i.wx < sx + cw2
+                    and i.wy >= sy0 and i.wy < sy0 + INSP
+        pal.x_ig_rect_fill(sx, sy0 + 2 * z, cw2, INSP - 4 * z,
+                           hov and COL.btn_on or COL.btn, 3 * z)
+        pal.x_ig_text(sx + 5 * z, sy0 + (INSP - px) * 0.45, px,
+                      hov and COL.hot or COL.dim, ct, 0)
+        if hov and i.clicked[1] then
+          am.tex = ""
+          commit(ed, win.path)
+          p.gen = p.gen + 1
+          ed.touch()
+        end
+        sx = sx + cw2 + 6 * z
       end
       local txt = ("%s  r=%.1f (ctrl+wheel)  s=%.1f ([ ])  right = erase")
           :format(doc.mats[win.mat or 1]
@@ -1379,9 +1498,52 @@ function M.draw(win, ctx)
         end
       end
     else
-      label(("%s  %dx%d tile %.1f  props %d  markers %d")
+      local endx = label(("%s  %dx%d tile %.1f  props %d  markers %d")
             :format(doc.name ~= "" and doc.name or win.path,
                     doc.w, doc.h, doc.tile, #doc.props, #doc.markers))
+      -- the atlas bake (§4.5, nearest v1): bake the painted ground —
+      -- textured materials sampled per tile — into <map>-atlas.png;
+      -- any later paint edit reads stale and falls back to live vertex
+      -- colors until the next bake. Synchronous (seconds on big maps).
+      local sx = endx + 10 * z
+      local function chip(labelc, on)
+        local w = pal.x_ig_text_size(labelc, px, 0) + 10 * z
+        local hov = i.wx >= sx and i.wx < sx + w
+                    and i.wy >= sy0 and i.wy < sy0 + INSP
+        pal.x_ig_rect_fill(sx, sy0 + 2 * z, w, INSP - 4 * z,
+                           on and COL.btn_on or COL.btn, 3 * z)
+        pal.x_ig_text(sx + 5 * z, sy0 + (INSP - px) * 0.45, px,
+                      (hov or on) and COL.hot or COL.dim, labelc, 0)
+        sx = sx + w + 3 * z
+        return hov and i.clicked[1]
+      end
+      local st = p.at_state or "off"
+      if chip(st == "off" and "bake tex" or ("bake tex (" .. st .. ")"),
+              st == "on") then
+        local t0 = os.clock()
+        local pxs, aw, ah = terr3.bake_pixels(doc, mat_samplers(ed, doc),
+                                              16)
+        local ap = terr3.atlas_path(win.path)
+        local okw, werr = pal.write_file_atomic(
+          ed.root .. "/" .. ap, pal.png_encode(pxs, aw, ah))
+        if okw then
+          doc.stamp = terr3.mat_hash(doc)
+          p.gen = p.gen + 1
+          commit(ed, win.path)
+          cm.asset_epoch = (cm.asset_epoch or 0) + 1 -- re-read the png
+          pal.log(("[ed] baked %s (%dx%d, %.2fs)")
+                  :format(ap, aw, ah, os.clock() - t0))
+        else
+          pal.log("[ed] atlas bake FAILED: " .. tostring(werr))
+        end
+        ed.touch()
+      end
+      if st ~= "off" and chip("x", false) then
+        doc.stamp = 0 -- back to live vertex colors for good
+        p.gen = p.gen + 1
+        commit(ed, win.path)
+        ed.touch()
+      end
     end
   end
 end

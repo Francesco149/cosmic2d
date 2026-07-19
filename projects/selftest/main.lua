@@ -12510,6 +12510,61 @@ local function t_terr3()
     check(math.abs(mg[1] - 128 / 255) < 1e-9,
           "terr3: gray stamps paint lighter")
   end
+
+  -- the atlas bake (§4.5 nearest v1): stamp hash, baked texels, the
+  -- atlas emit mode
+  do
+    local d3 = T3.fresh("bake", 2, 1, 2.0)
+    check(T3.atlas_path("maps/vale.terr") == "maps/vale-atlas.png",
+          "terr3: atlas path beside its map")
+    local h1 = T3.mat_hash(d3)
+    check(h1 ~= 0 and h1 == T3.mat_hash(d3),
+          "terr3: mat_hash nonzero and stable")
+    d3.mats[2] = { name = "dirt", col = { 1, 0, 0 }, tex = "" }
+    local h2 = T3.mat_hash(d3)
+    check(h2 ~= h1, "terr3: a new material changes the stamp")
+    d3.mats[2].tex = "art/dirt.png"
+    check(T3.mat_hash(d3) ~= h2, "terr3: a tex assignment changes the stamp")
+    d3.mats[2].tex = ""
+    d3.wts[2] = {}
+    for i2 = 1, T3.plane_size(d3) do d3.wts[2][i2] = 0 end
+    local h3 = T3.mat_hash(d3)
+    d3.wts[2][3] = 255 -- the top-right vert goes full dirt
+    check(T3.mat_hash(d3) ~= h3, "terr3: a paint edit changes the stamp")
+    d3.wts[2][3] = 0
+    check(T3.mat_hash(d3) == h3, "terr3: reverting restores the stamp")
+
+    -- bake: 2x1 tiles at ts=2 -> 4x2 px; the all-grass corner texel is
+    -- exactly the grass color; a sampler recolors its material
+    local px1, W1, H1 = T3.bake_pixels(d3, nil, 2)
+    check(W1 == 4 and H1 == 2 and #px1 == 4 * 2 * 4, "terr3: bake dims")
+    local gcol = d3.mats[1].col
+    local r0, g0, b0 = px1:byte(1, 3)
+    check(r0 == (gcol[1] * 255) // 1 and g0 == (gcol[2] * 255) // 1
+          and b0 == (gcol[3] * 255) // 1,
+          "terr3: a flat texel is the material color")
+    local px2 = T3.bake_pixels(d3, { [1] = function() return 0, 0, 1 end },
+                               2)
+    check(px2:byte(1) == 0 and px2:byte(3) == 255,
+          "terr3: a sampler colors its material's texels")
+    -- painted shade darkens the bake
+    d3.shade = {}
+    for i2 = 1, T3.plane_size(d3) do d3.shade[i2] = 127 end
+    local px3 = T3.bake_pixels(d3, nil, 2)
+    check(px3:byte(1) < r0, "terr3: painted shade darkens the bake")
+    d3.shade = nil
+
+    -- atlas emit: map-normalized uvs, white-lit vertex colors
+    local out3 = {}
+    local n3 = T3.emit_terrain(out3, d3, { atlas = true })
+    check(n3 == 4, "terr3: atlas emit tris")
+    local ab = table.concat(out3)
+    local _, _, _, u1, v1 = string.unpack("<fffff", ab, 1)
+    check(u1 == 0 and v1 == 0, "terr3: atlas uv origin")
+    local _, _, _, u2 = string.unpack("<fffff", ab, 6 * 24 + 1)
+    check(u2 == 0.5, "terr3: atlas uv spans the map")
+    check(ab:byte(21) == 255, "terr3: atlas verts carry lighting only")
+  end
 end
 
 local function t_walk()

@@ -193,7 +193,13 @@ end
 -- drop/save/delete).
 local function preview(ed, path)
   local g = ed.g
-  g.athumb = g.athumb or {}
+  -- every save bumps cm.asset_epoch: the whole thumbnail cache re-reads
+  -- so a just-saved sprite/map/tm shows its new look immediately (the
+  -- human's report: thumbnails froze until a project reload)
+  local epoch = cm.asset_epoch or 0
+  if g.athumb_epoch ~= epoch then
+    g.athumb, g.athumb_epoch = {}, epoch
+  end
   local hit = g.athumb[path]
   if hit ~= nil then return hit or nil end
   local cls, ext = M.class_of(path)
