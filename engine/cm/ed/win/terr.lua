@@ -137,7 +137,7 @@ M.dirty, M.save, M.undo, M.redo, M.revert =
 
 function M.defaults()
   local d = ob.defaults(60, 48, 0, 48)
-  d.tool = "view"
+  d.tool = "sel"
   return d
 end
 
@@ -158,8 +158,9 @@ function M.rebind(win, ed, path)
   end
 end
 
--- Esc: cancel the live gesture (re-adopt committed bytes), else drop
--- back to the view tool; the shell's cascade unfocuses after that
+-- Esc: cancel the live gesture (re-adopt committed bytes), else clear
+-- the selection, else drop back to the select tool; the shell's cascade
+-- unfocuses after that
 function M.escape(win, ed)
   local p = win.path ~= "" and ed.g.t3w and ed.g.t3w[win.path]
   if p and p.g then
@@ -168,8 +169,13 @@ function M.escape(win, ed)
     ed.touch()
     return true
   end
-  if (win.tool or "view") ~= "view" then
-    win.tool = "view"
+  if p and p.sel then
+    p.sel = nil
+    ed.touch()
+    return true
+  end
+  if (win.tool or "sel") ~= "sel" then
+    win.tool = "sel"
     ed.touch()
     return true
   end
@@ -214,9 +220,12 @@ end
 -- ---- tools ----
 
 local TOOLS = {
-  { "view", "view" }, { "hgt", "hgt" }, { "flt", "flt" }, { "smo", "smo" },
+  { "sel", "sel" }, { "hgt", "hgt" }, { "flt", "flt" }, { "smo", "smo" },
   { "pnt", "pnt" }, { "shd", "shd" }, { "wtr", "wtr" }, { "wlk", "wlk" },
+  { "mkr", "mkr" },
 }
+
+local MKINDS = { "spawn", "poi", "npc", "portal", "route" }
 
 local function set_tool(win, ed, tool)
   win.tool = tool
@@ -256,9 +265,109 @@ local function bound_focused(win, ed)
   return win.path ~= "" and ed.doc.focus == win.id
 end
 
+local function selection(win, ed)
+  local p = win.path ~= "" and ed.g.t3w and ed.g.t3w[win.path]
+  return p, p and p.sel
+end
+
+local function has_sel(win, ed)
+  local _, sel = selection(win, ed)
+  return bound_focused(win, ed) and sel ~= nil
+end
+
+-- a selection edit closure: fn(doc, item) mutates; commits one entry
+local function sel_edit(fn)
+  return function(win, ed)
+    local p, sel = selection(win, ed)
+    if not (p and sel and p.doc) then return end
+    local it = sel.t == "prop" and p.doc.props[sel.i]
+               or p.doc.markers[sel.i]
+    if not it then return end
+    fn(p.doc, it, sel, p)
+    commit(ed, win.path)
+    ed.touch()
+  end
+end
+
 M.hotkeys = {
-  { key = "v", hint = "view", when = bound_focused,
-    fn = function(win, ed) set_tool(win, ed, "view") end },
+  { key = "v", hint = "select", when = bound_focused,
+    fn = function(win, ed) set_tool(win, ed, "sel") end },
+  { key = "n", hint = "marker", when = bound_focused,
+    fn = function(win, ed) set_tool(win, ed, "mkr") end },
+  { key = "del", hint = "delete", when = has_sel,
+    fn = function(win, ed)
+      local p, sel = selection(win, ed)
+      if sel.t == "prop" then table.remove(p.doc.props, sel.i)
+      else table.remove(p.doc.markers, sel.i) end
+      p.sel = nil
+      commit(ed, win.path)
+      ed.touch()
+    end },
+  { key = "ctrl+d", hint = "duplicate", when = has_sel,
+    fn = function(win, ed)
+      local p, sel = selection(win, ed)
+      local list = sel.t == "prop" and p.doc.props or p.doc.markers
+      local src = list[sel.i]
+      if not src then return end
+      local copy = cm.require("cm.state").value_copy
+                   and cm.require("cm.state").value_copy(src) or nil
+      if not copy then -- plain deep copy (props/markers are plain data)
+        local function dc(t)
+          if type(t) ~= "table" then return t end
+          local o = {}
+          for k, v in pairs(t) do o[k] = dc(v) end
+          return o
+        end
+        copy = dc(src)
+      end
+      copy.name = nil -- names address uniquely (the map paste rule)
+      copy.x = copy.x + (p.doc.tile or 2) * 0.5
+      list[#list + 1] = copy
+      p.sel = { t = sel.t, i = #list }
+      commit(ed, win.path)
+      ed.touch()
+    end },
+  { key = "left", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it) it.x = it.x - doc.tile / 8 end) },
+  { key = "right", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it) it.x = it.x + doc.tile / 8 end) },
+  { key = "up", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it) it.z = it.z - doc.tile / 8 end) },
+  { key = "down", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it) it.z = it.z + doc.tile / 8 end) },
+  { key = ",", hint = "yaw-", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it)
+      if it.yaw ~= nil then it.yaw = it.yaw - mm.pi / 12 end
+    end) },
+  { key = ".", hint = "yaw+", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it)
+      if it.yaw ~= nil then it.yaw = it.yaw + mm.pi / 12 end
+    end) },
+  { key = "minus", hint = "smaller", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it, sel)
+      if sel.t == "prop" then
+        it.scale = math.max(0.25, (it.scale or 1) * 0.9)
+      else
+        it.r = math.max(0.25, (it.r or 0.5) * 0.9)
+      end
+    end) },
+  { key = "equals", hint = "bigger", rep = true, when = has_sel,
+    fn = sel_edit(function(doc, it, sel)
+      if sel.t == "prop" then
+        it.scale = math.min(40, (it.scale or 1) / 0.9)
+      else
+        it.r = math.min(40, (it.r or 0.5) / 0.9)
+      end
+    end) },
+  { key = "enter", hint = "end route",
+    when = function(win, ed)
+      local p = selection(win, ed)
+      return bound_focused(win, ed) and p and p.g and p.g.route ~= nil
+    end,
+    fn = function(win, ed)
+      local p = selection(win, ed)
+      M.finish_route(win, ed, p)
+    end },
   { key = "h", hint = "sculpt", when = bound_focused,
     fn = function(win, ed) set_tool(win, ed, "hgt") end },
   { key = "f", hint = "flatten", when = bound_focused,
@@ -485,6 +594,64 @@ local function apply_brush(win, p, tool, hx, hz, btn, ctrl)
   return vx0, vz0, vx1, vz1
 end
 
+-- finish a route polyline gesture into a route marker (Enter / the
+-- double-click twin); a route needs at least 2 points
+function M.finish_route(win, ed, p)
+  local g = p and p.g
+  if not (g and g.route) then return end
+  if #g.route >= 4 then
+    p.doc.markers[#p.doc.markers + 1] = {
+      kind = "route", x = g.route[1], z = g.route[2],
+      points = g.route,
+    }
+    p.sel = { t = "marker", i = #p.doc.markers }
+    p.g = nil
+    commit(ed, win.path)
+  else
+    p.g = nil
+  end
+  ed.touch()
+end
+
+-- the drag-in door (kind.drop): any non-.terr asset dropped over the
+-- viewport PLACES at the ground under the cursor — 2D images default to
+-- billboards (EDITOR3D.md §4.4), meshes/figures to themselves with an
+-- auto collider, anything else to a named ref position.
+function M.drop(win, ed, path, wx, wy)
+  if win.path == "" or path:sub(-5) == ".terr" then return false end
+  local p = plumb(ed, win.path)
+  if not p.doc then return false end
+  local u = cm.require("cm.ed.kit").winui(p, win)
+  local r = u.vrect
+  if not r then return false end
+  local cam = cm.require("cm.ed.cam")
+  local sx, sy = cam.w2s(ed.doc.cam, wx, wy)
+  if sx < r.vx or sx >= r.vx + r.vw or sy < r.vy or sy >= r.vy + r.vh then
+    return false
+  end
+  local ray = ob.ray(win, r.vw, r.vh, sx - r.vx, sy - r.vy)
+  local doc = p.doc
+  local hx, hz = kwalk.raycast(function(xx, zz)
+    return terr.sample(doc, xx, zz)
+  end, ray.ox, ray.oy, ray.oz, ray.dx, ray.dy, ray.dz, 0.35, 500, 14)
+  if not hx then return false end
+  local wxs, wzs = terr.size(doc)
+  hx = mm.clamp(hx, 0, wxs)
+  hz = mm.clamp(hz, 0, wzs)
+  local isimg = terr3.is_image(path)
+  local ismsh = path:lower():find("%.msh$") ~= nil
+  local isfig = path:lower():find("%.fig$") ~= nil
+  doc.props[#doc.props + 1] = {
+    path = path, x = hx, z = hz, y = 0, yaw = 0,
+    scale = isimg and 2.0 or 1.0,
+    col = (ismsh or isfig) and { mode = "auto" } or nil,
+  }
+  p.sel = { t = "prop", i = #doc.props }
+  win.tool = "sel"
+  commit(ed, win.path)
+  return true
+end
+
 -- walk-override painting: one cell per hit (small cells; dragging
 -- covers a path). CTRL clears the override.
 local function apply_walk(p, hx, hz, btn, ctrl)
@@ -654,14 +821,47 @@ function M.draw(win, ctx)
     fog = fogopts and fogopts.col or nil,
   }
 
-  local hitx, hitz
+  local hitx, hitz, ray
   if bound then
+    local u = cm.require("cm.ed.kit").winui(p, win)
+    u.vrect = { vx = vx, vy = vy, vw = vw, vh = vh }
     local vb, ntris = mesh_for(ed, p, win.path)
     pal.x_tris(0, vb, ntris, 0)
 
-    -- ground hit under the cursor (for brushes + the ring)
+    -- image resolvers for placed billboards (the map window's rule:
+    -- .spr draws its baked .png sibling)
+    local mapwin = cm.require("cm.ed.win.map")
+    local gfx = cm.require("cm.gfx")
+    local function tex_rec(path)
+      local l = path:lower()
+      local target = l:find("%.png$") and path
+                     or (l:find("%.spr$") and path:gsub("%.spr$", ".png"))
+      if not target then return nil end
+      local rp = mapwin.res_path(ed, target)
+      if not rp then return nil end
+      local ok, t = pcall(gfx.texture, rp)
+      if ok then return t end
+    end
+    local function texfn(path)
+      local t = tex_rec(path)
+      return t and t.id
+    end
+    local function dimsfn(path)
+      local t = tex_rec(path)
+      if t then return t.w, t.h end
+    end
+
+    -- placements through the real emitter (billboards Y-face the orbit)
+    local segs = terr3.emit_props(doc, {
+      cam_yaw = win.oyaw, tex = texfn, dims = dimsfn })
+    for si, s in ipairs(segs) do
+      pal.x_tris(s.tex, scratch(fx_name(win.id) .. ":p" .. si, s.bytes),
+                 s.ntris, 0, s.flags)
+    end
+
+    -- ground hit under the cursor (for brushes, picking + the ring)
     if over_view then
-      local ray = ob.ray(win, vw, vh, i.wx - vx, i.wy - vy)
+      ray = ob.ray(win, vw, vh, i.wx - vx, i.wy - vy)
       hitx, hitz = kwalk.raycast(function(xx, zz)
         return terr.sample(doc, xx, zz)
       end, ray.ox, ray.oy, ray.oz, ray.dx, ray.dy, ray.dz, 0.35, 500, 14)
@@ -673,27 +873,137 @@ function M.draw(win, ctx)
       end
     end
 
-    -- ---- tool gestures ----
-    local tool = win.tool or "view"
-    if ctx.focused and tool ~= "view" and over_view and not g.alt then
-      local press = (i.clicked[1] and 1) or (i.clicked[3] and 3)
-      if press and hitx and not p.g then
-        p.g = { tool = tool, btn = press, mutates = true }
-        if tool == "flt" then p.g.target = terr.sample(doc, hitx, hitz) end
-        if tool == "wtr" then
-          p.g.y0 = doc.water.on and doc.water.y
-                   or terr.sample(doc, hitx, hitz)
-          p.g.my0 = i.wy
-          doc.water.on = true
+    -- markers pick in screen space (their tags overlay everything)
+    local vpm_pick = ob.vp(win, vw / vh)
+    local function pick_marker()
+      local best, bestd
+      for mi, mk in ipairs(doc.markers) do
+        local sx, sy = ob.project(vpm_pick, vw, vh, mk.x,
+                                  terr.sample(doc, mk.x, mk.z) + 0.3, mk.z)
+        if sx then
+          local d = math.abs(vx + sx - i.wx) + math.abs(vy + sy - i.wy)
+          if d < 16 * z and (not bestd or d < bestd) then
+            best, bestd = mi, d
+          end
         end
       end
+      return best
     end
-    if p.g then
+    -- a selected route's point handles pick the same way
+    local function pick_route_pt()
+      local sel = p.sel
+      if not (sel and sel.t == "marker") then return nil end
+      local mk = doc.markers[sel.i]
+      if not (mk and mk.points) then return nil end
+      for k = 1, #mk.points, 2 do
+        local pxw, pzw = mk.points[k], mk.points[k + 1]
+        local sx, sy = ob.project(vpm_pick, vw, vh, pxw,
+                                  terr.sample(doc, pxw, pzw) + 0.15, pzw)
+        if sx and math.abs(vx + sx - i.wx) + math.abs(vy + sy - i.wy)
+           < 12 * z then
+          return k
+        end
+      end
+      return nil
+    end
+
+    -- ---- tool gestures ----
+    local tool = win.tool or "sel"
+    if ctx.focused and over_view and not g.alt and not p.g then
+      local press = (i.clicked[1] and 1) or (i.clicked[3] and 3)
+      if tool == "sel" and press == 1 then
+        local rpt = pick_route_pt()
+        local mi = not rpt and pick_marker() or nil
+        local pi = (not rpt and not mi and hitx and ray)
+                   and terr3.pick_prop(doc, ray, dimsfn) or nil
+        if rpt then
+          p.g = { tool = "sel", btn = 1, mode = "routept", k = rpt,
+                  mutates = true }
+        elseif mi then
+          p.sel = { t = "marker", i = mi }
+          local mk = doc.markers[mi]
+          p.g = { tool = "sel", btn = 1, mode = "move", mutates = true,
+                  gdx = mk.x - (hitx or mk.x), gdz = mk.z - (hitz or mk.z) }
+          ed.touch()
+        elseif pi then
+          p.sel = { t = "prop", i = pi }
+          local pr = doc.props[pi]
+          p.g = { tool = "sel", btn = 1, mode = "move", mutates = true,
+                  gdx = pr.x - (hitx or pr.x), gdz = pr.z - (hitz or pr.z) }
+          ed.touch()
+        else
+          if p.sel then
+            p.sel = nil
+            ed.touch()
+          end
+        end
+      elseif tool == "mkr" and press == 1 and hitx then
+        local kind = win.mkind or "spawn"
+        if kind == "route" then
+          p.g = { tool = "mkr", route = { hitx, hitz }, mutates = false }
+          ed.touch()
+        else
+          doc.markers[#doc.markers + 1] = { kind = kind, x = hitx, z = hitz,
+                                            r = 0.5 }
+          p.sel = { t = "marker", i = #doc.markers }
+          commit(ed, win.path)
+          ed.touch()
+        end
+      elseif BRUSH_TOOLS[tool] or tool == "wtr" then
+        if press and hitx then
+          p.g = { tool = tool, btn = press, mutates = true }
+          if tool == "flt" then
+            p.g.target = terr.sample(doc, hitx, hitz)
+          end
+          if tool == "wtr" then
+            p.g.y0 = doc.water.on and doc.water.y
+                     or terr.sample(doc, hitx, hitz)
+            p.g.my0 = i.wy
+            doc.water.on = true
+          end
+        end
+      end
+    elseif ctx.focused and over_view and not g.alt and p.g
+           and p.g.route and i.clicked[1] and hitx then
+      -- the route line grammar: each click appends a point
+      p.g.route[#p.g.route + 1] = hitx
+      p.g.route[#p.g.route + 1] = hitz
+      ed.touch()
+    end
+    if p.g and not p.g.route then
       local btn = p.g.btn
       local held = btn == 1 and i.buttons[1] or btn == 3 and i.buttons[3]
       if held then
         local tool = p.g.tool
-        if tool == "wtr" then
+        if tool == "sel" then
+          if p.g.mode == "move" and hitx and p.sel then
+            local it = p.sel.t == "prop" and doc.props[p.sel.i]
+                       or doc.markers[p.sel.i]
+            if it then
+              local nx, nz = hitx + p.g.gdx, hitz + p.g.gdz
+              if g.ctrl then
+                local st = doc.tile * 0.5
+                nx = math.floor(nx / st + 0.5) * st
+                nz = math.floor(nz / st + 0.5) * st
+              end
+              it.x, it.z = nx, nz
+              ctx.touch()
+            end
+          elseif p.g.mode == "routept" and hitx and p.sel then
+            local mk = doc.markers[p.sel.i]
+            if mk and mk.points then
+              local nx, nz = hitx, hitz
+              if g.ctrl then
+                local st = doc.tile * 0.5
+                nx = math.floor(nx / st + 0.5) * st
+                nz = math.floor(nz / st + 0.5) * st
+              end
+              mk.points[p.g.k], mk.points[p.g.k + 1] = nx, nz
+              if p.g.k == 1 then mk.x, mk.z = nx, nz end
+              ctx.touch()
+            end
+          end
+        elseif tool == "wtr" then
           local ny = p.g.y0 + (p.g.my0 - i.wy) * 0.04
           if g.ctrl then ny = math.floor(ny / 0.25 + 0.5) * 0.25 end
           doc.water.y = ny
@@ -754,22 +1064,129 @@ function M.draw(win, ctx)
 
   -- ---- 2D overlays (projected gizmos) ----
   if bound then
+    local tool = win.tool or "sel"
+    local function diamond(sx, sy, d, col)
+      pal.x_ig_line(vx + sx - d, vy + sy, vx + sx, vy + sy - d, col, 1.5)
+      pal.x_ig_line(vx + sx, vy + sy - d, vx + sx + d, vy + sy, col, 1.5)
+      pal.x_ig_line(vx + sx + d, vy + sy, vx + sx, vy + sy + d, col, 1.5)
+      pal.x_ig_line(vx + sx, vy + sy + d, vx + sx - d, vy + sy, col, 1.5)
+    end
     -- brush ring
-    local tool = win.tool or "view"
     if BRUSH_TOOLS[tool] and hitx then
       draw_ring(vpm, vw, vh, vx, vy, doc, hitx, hitz,
                 tool == "wlk" and doc.tile * 0.25 or (win.brush_r or 3))
+    end
+    -- marker tags + route polylines (selected = accent)
+    for mi, mk in ipairs(doc.markers) do
+      local selm = p.sel and p.sel.t == "marker" and p.sel.i == mi
+      local col = selm and COL.hot or COL.spawn
+      if mk.points then
+        local prev
+        for k = 1, #mk.points, 2 do
+          local pxw, pzw = mk.points[k], mk.points[k + 1]
+          local sx, sy = ob.project(vpm, vw, vh, pxw,
+                                    terr.sample(doc, pxw, pzw) + 0.15, pzw)
+          if sx then
+            if prev then
+              pal.x_ig_line(vx + prev[1], vy + prev[2],
+                            vx + sx, vy + sy, col, selm and 2 or 1.2)
+            end
+            if selm then diamond(sx, sy, 3 * z, col) end
+            prev = { sx, sy }
+          else
+            prev = nil
+          end
+        end
+      end
+      local sx, sy = ob.project(vpm, vw, vh, mk.x,
+                                terr.sample(doc, mk.x, mk.z) + 0.3, mk.z)
+      if sx then
+        diamond(sx, sy, (selm and 5 or 4) * z, col)
+        pal.x_ig_text(vx + sx + 6 * z, vy + sy - px * 0.5, px * 0.9, col,
+                      mk.kind .. (mk.label and mk.label ~= ""
+                                  and (" " .. mk.label) or ""), 0)
+      end
+    end
+    -- the live route rubber band
+    if p.g and p.g.route then
+      local rt = p.g.route
+      local prev
+      for k = 1, #rt, 2 do
+        local sx, sy = ob.project(vpm, vw, vh, rt[k],
+                                  terr.sample(doc, rt[k], rt[k + 1]) + 0.15,
+                                  rt[k + 1])
+        if sx then
+          if prev then
+            pal.x_ig_line(vx + prev[1], vy + prev[2], vx + sx, vy + sy,
+                          COL.hot, 2)
+          end
+          diamond(sx, sy, 3 * z, COL.hot)
+          prev = { sx, sy }
+        end
+      end
+      if prev and hitx then
+        local sx, sy = ob.project(vpm, vw, vh, hitx,
+                                  terr.sample(doc, hitx, hitz) + 0.15, hitz)
+        if sx then
+          pal.x_ig_line(vx + prev[1], vy + prev[2], vx + sx, vy + sy,
+                        0xE8E4FF88, 1.2)
+        end
+      end
+    end
+    -- selected prop: projected AABB bracket
+    if p.sel and p.sel.t == "prop" then
+      local pr = doc.props[p.sel.i]
+      if pr then
+        local dimsfn2 = function(path)
+          local mapwin = cm.require("cm.ed.win.map")
+          local l = path:lower()
+          local target = l:find("%.png$") and path
+                         or (l:find("%.spr$") and path:gsub("%.spr$", ".png"))
+          if not target then return nil end
+          local rp = mapwin.res_path(ed, target)
+          if not rp then return nil end
+          local ok, t = pcall(cm.require("cm.gfx").texture, rp)
+          if ok then return t.w, t.h end
+        end
+        local b = terr3.prop_aabb(doc, pr, dimsfn2)
+        local x0s, y0s, x1s, y1s
+        for _, c in ipairs({ { b[1], b[2], b[3] }, { b[4], b[2], b[3] },
+                             { b[1], b[2], b[6] }, { b[4], b[2], b[6] },
+                             { b[1], b[5], b[3] }, { b[4], b[5], b[3] },
+                             { b[1], b[5], b[6] }, { b[4], b[5], b[6] } }) do
+          local sx, sy = ob.project(vpm, vw, vh, c[1], c[2], c[3])
+          if sx then
+            x0s = math.min(x0s or sx, sx)
+            x1s = math.max(x1s or sx, sx)
+            y0s = math.min(y0s or sy, sy)
+            y1s = math.max(y1s or sy, sy)
+          end
+        end
+        if x0s then
+          pal.x_ig_rect(vx + x0s - 2, vy + y0s - 2,
+                        x1s - x0s + 4, y1s - y0s + 4, COL.hot, 1.5, 2)
+          local nm = pr.name and pr.name ~= "" and (pr.name .. "  ") or ""
+          pal.x_ig_text(vx + x0s, vy + y0s - px - 2, px * 0.9, COL.hot,
+                        nm .. pr.path, 0)
+        end
+      end
+    end
+    -- the asset-carry ghost (drop preview)
+    if g.adrag and g.adrag.moved and hitx then
+      local sx, sy = ob.project(vpm, vw, vh, hitx,
+                                terr.sample(doc, hitx, hitz) + 0.3, hitz)
+      if sx then
+        diamond(sx, sy, 5 * z, COL.hot)
+        pal.x_ig_text(vx + sx + 6 * z, vy + sy - px * 0.5, px * 0.9,
+                      COL.hot, "place " .. g.adrag.path, 0)
+      end
     end
     -- spawn gizmo: a small diamond + label
     local sx, sy = ob.project(vpm, vw, vh, doc.spawn.x,
                               terr.sample(doc, doc.spawn.x, doc.spawn.z)
                               + 0.4, doc.spawn.z)
     if sx then
-      local d = 4 * z
-      pal.x_ig_line(vx + sx - d, vy + sy, vx + sx, vy + sy - d, COL.spawn, 1.5)
-      pal.x_ig_line(vx + sx, vy + sy - d, vx + sx + d, vy + sy, COL.spawn, 1.5)
-      pal.x_ig_line(vx + sx + d, vy + sy, vx + sx, vy + sy + d, COL.spawn, 1.5)
-      pal.x_ig_line(vx + sx, vy + sy + d, vx + sx - d, vy + sy, COL.spawn, 1.5)
+      diamond(sx, sy, 4 * z, COL.spawn)
       pal.x_ig_text(vx + sx + 6 * z, vy + sy - px * 0.5, px * 0.9,
                     COL.spawn, "spawn", 0)
     end
@@ -851,6 +1268,103 @@ function M.draw(win, ctx)
       label(("r=%.1f (ctrl+wheel)  s=%.1f ([ ])%s")
             :format(win.brush_r or 3, win.brush_s or 0.5,
                     tool == "hgt" and "  ctrl = level steps" or ""))
+    elseif tool == "mkr" then
+      local sx = vx + 6 * z
+      for _, kn in ipairs(MKINDS) do
+        local w = pal.x_ig_text_size(kn, px, 0) + 10 * z
+        local on = (win.mkind or "spawn") == kn
+        local hov = i.wx >= sx and i.wx < sx + w
+                    and i.wy >= sy0 and i.wy < sy0 + INSP
+        pal.x_ig_rect_fill(sx, sy0 + 2 * z, w, INSP - 4 * z,
+                           on and COL.btn_on or COL.btn, 3 * z)
+        pal.x_ig_text(sx + 5 * z, sy0 + (INSP - px) * 0.45, px,
+                      (hov or on) and COL.hot or COL.dim, kn, 0)
+        if hov and i.clicked[1] then
+          win.mkind = kn
+          ed.touch()
+        end
+        sx = sx + w + 3 * z
+      end
+      pal.x_ig_text(sx + 4 * z, sy0 + (INSP - px) * 0.45, px, COL.dim,
+                    (win.mkind or "spawn") == "route"
+                    and "click lays points - enter ends"
+                    or "click places", 0)
+    elseif tool == "sel" and p.sel then
+      local sel = p.sel
+      local it = sel.t == "prop" and doc.props[sel.i]
+                 or doc.markers[sel.i]
+      if it then
+        -- name/label field (set-on-selection-change: the D121 lesson)
+        local selkey = sel.t .. sel.i
+        local setb = p.fldkey ~= selkey
+        p.fldkey = selkey
+        local cur = sel.t == "prop" and (it.name or "") or (it.label or "")
+        local fw = 90 * z
+        local text, _, _, st = pal.x_ig_edit {
+          id = "t3nm" .. win.id, x = vx + 6 * z, y = sy0 + 2 * z,
+          w = fw, h = INSP - 4 * z, text = cur, px = px, font = 1,
+          enter = true, multiline = false, set = setb,
+        }
+        if st and st.submit and text ~= cur then
+          local v = text ~= "" and text or nil
+          if sel.t == "prop" then it.name = v else it.label = v end
+          commit(ed, win.path)
+        end
+        local sx = vx + 6 * z + fw + 8 * z
+        local function chip(labelc, on)
+          local w = pal.x_ig_text_size(labelc, px, 0) + 10 * z
+          local hov = i.wx >= sx and i.wx < sx + w
+                      and i.wy >= sy0 and i.wy < sy0 + INSP
+          pal.x_ig_rect_fill(sx, sy0 + 2 * z, w, INSP - 4 * z,
+                             on and COL.btn_on or COL.btn, 3 * z)
+          pal.x_ig_text(sx + 5 * z, sy0 + (INSP - px) * 0.45, px,
+                        (hov or on) and COL.hot or COL.dim, labelc, 0)
+          sx = sx + w + 3 * z
+          return hov and i.clicked[1]
+        end
+        if sel.t == "prop" then
+          if chip("abs", it.abs) then
+            -- keep the resolved height when flipping anchor modes
+            local py = terr3.prop_y(doc, it)
+            it.abs = not it.abs and true or nil
+            it.y = it.abs and py
+                   or py - terr.sample(doc, it.x, it.z)
+            commit(ed, win.path)
+          end
+          if chip("caster", it.caster) then
+            it.caster = not it.caster and true or nil
+            commit(ed, win.path)
+          end
+          if chip("blocker", it.blocker) then
+            it.blocker = not it.blocker and true or nil
+            commit(ed, win.path)
+          end
+          local cmode = it.col and it.col.mode or "none"
+          if chip("col:" .. cmode, cmode ~= "none") then
+            if cmode == "none" then it.col = { mode = "auto" }
+            elseif cmode == "auto" then
+              local b = terr3.prop_aabb(doc, it)
+              local s = it.scale or 1
+              local py = terr3.prop_y(doc, it)
+              it.col = { mode = "box",
+                         box = { (b[1] - it.x) / s, (b[2] - py) / s,
+                                 (b[3] - it.z) / s, (b[4] - it.x) / s,
+                                 (b[5] - py) / s, (b[6] - it.z) / s } }
+            else it.col = nil end
+            commit(ed, win.path)
+          end
+          pal.x_ig_text(sx + 4 * z, sy0 + (INSP - px) * 0.45, px, COL.dim,
+            ("x=%.1f z=%.1f y%+.2f yaw=%d s=%.2f  arrows nudge . , yaw"
+             .. " - = size"):format(it.x, it.z, it.y or 0,
+              math.floor(((it.yaw or 0) * 180 / mm.pi) + 0.5),
+              it.scale or 1), 0)
+        else
+          pal.x_ig_text(sx + 4 * z, sy0 + (INSP - px) * 0.45, px, COL.dim,
+            ("%s  x=%.1f z=%.1f r=%.1f%s"):format(it.kind, it.x, it.z,
+              it.r or 0.5,
+              it.points and ("  route pts=" .. (#it.points // 2)) or ""), 0)
+        end
+      end
     else
       label(("%s  %dx%d tile %.1f  props %d  markers %d")
             :format(doc.name ~= "" and doc.name or win.path,

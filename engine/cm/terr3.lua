@@ -505,6 +505,173 @@ function M.emit_water(out, doc, opts)
                          opts and opts.ox or 0, opts and opts.oz or 0)
 end
 
+-- ---- placements: rendering + picking (render-class) ----------------------
+
+-- is this path a billboard-able image kind? (.spr draws its baked .png
+-- sibling — the map-window rule; EDITOR3D.md §3.1: 2D assets DEFAULT to
+-- billboards in a 3D map)
+function M.is_image(path)
+  local l = path:lower()
+  return l:find("%.png$") ~= nil or l:find("%.spr$") ~= nil
+end
+
+local function is_mesh(path) return path:lower():find("%.msh$") ~= nil end
+local function is_fig(path) return path:lower():find("%.fig$") ~= nil end
+
+-- a deterministic placeholder tint from the path (unresolved meshes/
+-- figures render as a recognizable stand-in box, not nothing)
+function M.path_col(path)
+  local h1 = terr.hash(101, #path, path:byte(1) or 0)
+  local h2 = terr.hash(211, path:byte(-1) or 0, #path)
+  local h3 = terr.hash(311, path:byte(1) or 0, path:byte(-1) or 0)
+  return 0.35 + 0.5 * h1, 0.35 + 0.5 * h2, 0.35 + 0.5 * h3
+end
+
+-- the world-space visual size of a prop: billboards are `scale` world
+-- units tall, width from the image aspect (dims(path) -> px w, px h;
+-- nil = square); everything else is a `scale`-sized stand-in/mesh.
+function M.prop_size(p, dims)
+  local s = p.scale or 1
+  if M.is_image(p.path) then
+    local pw, ph = nil, nil
+    if dims then pw, ph = dims(p.path) end
+    local aspect = (pw and ph and ph > 0) and pw / ph or 1
+    return s * aspect, s
+  end
+  return s, s
+end
+
+-- pick/selection volume as a world AABB {x0,y0,z0,x1,y1,z1}
+function M.prop_aabb(doc, p, dims)
+  local py = M.prop_y(doc, p)
+  local s = p.scale or 1
+  if p.col and p.col.mode == "box" then
+    local b = p.col.box
+    return { p.x + b[1] * s, py + b[2] * s, p.z + b[3] * s,
+             p.x + b[4] * s, py + b[5] * s, p.z + b[6] * s }
+  end
+  if M.is_image(p.path) then
+    local w, hgt = M.prop_size(p, dims)
+    local hw = m.max(w * 0.5, 0.25)
+    return { p.x - hw, py, p.z - hw, p.x + hw, py + hgt, p.z + hw }
+  end
+  local half = m.max(0.35 * s, 0.25)
+  return { p.x - half, py, p.z - half, p.x + half, py + 1.0 * s, p.z + half }
+end
+
+-- ray {ox,oy,oz,dx,dy,dz} vs AABB slab test -> tmin | nil
+function M.ray_aabb(ray, b)
+  local t0, t1 = 0, 1e30
+  local o = { ray.ox, ray.oy, ray.oz }
+  local d = { ray.dx, ray.dy, ray.dz }
+  for ax = 1, 3 do
+    local lo, hi = b[ax], b[ax + 3]
+    if d[ax] == 0 then
+      if o[ax] < lo or o[ax] > hi then return nil end
+    else
+      local ta = (lo - o[ax]) / d[ax]
+      local tb = (hi - o[ax]) / d[ax]
+      if ta > tb then ta, tb = tb, ta end
+      if ta > t0 then t0 = ta end
+      if tb < t1 then t1 = tb end
+      if t0 > t1 then return nil end
+    end
+  end
+  return t0
+end
+
+-- nearest prop under a ray -> index, t | nil
+function M.pick_prop(doc, ray, dims)
+  local best, bestt
+  for i, p in ipairs(doc.props) do
+    local t = M.ray_aabb(ray, M.prop_aabb(doc, p, dims))
+    if t and (not bestt or t < bestt) then best, bestt = i, t end
+  end
+  return best, bestt
+end
+
+-- emit every placement as draw segments, file order preserved inside
+-- each batch: returns { {tex=, flags=, bytes=, ntris=}, ... }.
+--   opts.tex(path)  -> texid | nil     (image resolver; nil = stand-in)
+--   opts.dims(path) -> px w, px h      (image aspect)
+--   opts.mesh(path) -> mesh doc | nil  (the E4 door; nil = stand-in)
+--   opts.cam_yaw    = camera yaw (billboards Y-face it)
+-- Billboards: upright, feet-anchored, nearest+alphatest (the sprite
+-- rule); stand-ins: a lit box in the path's tint.
+function M.emit_props(doc, opts)
+  opts = opts or {}
+  local segs = {}
+  local function seg(tex, flags)
+    local s = segs[#segs]
+    if not (s and s.tex == tex and s.flags == flags) then
+      s = { tex = tex, flags = flags, parts = {}, ntris = 0 }
+      segs[#segs + 1] = s
+    end
+    return s
+  end
+  local cy = opts.cam_yaw or 0
+  local rx, rz = -m.sin(cy), m.cos(cy) -- camera-right on the ground
+  for _, p in ipairs(doc.props) do
+    local py = M.prop_y(doc, p)
+    local texid = M.is_image(p.path) and opts.tex and opts.tex(p.path)
+    if texid then
+      local w, hgt = M.prop_size(p, opts.dims)
+      local hw = w * 0.5
+      local x0, z0 = p.x - rx * hw, p.z - rz * hw
+      local x1, z1 = p.x + rx * hw, p.z + rz * hw
+      local A = vpack("<fffffBBBB", x0, py + hgt, z0, 0, 0, 255, 255, 255, 255)
+      local B = vpack("<fffffBBBB", x1, py + hgt, z1, 1, 0, 255, 255, 255, 255)
+      local C = vpack("<fffffBBBB", x1, py, z1, 1, 1, 255, 255, 255, 255)
+      local D = vpack("<fffffBBBB", x0, py, z0, 0, 1, 255, 255, 255, 255)
+      local s = seg(texid, 3) -- ALPHATEST | NEAREST: the sprite rule
+      s.parts[#s.parts + 1] = A .. B .. C .. A .. C .. D
+      s.ntris = s.ntris + 2
+    elseif M.is_image(p.path) or is_mesh(p.path) or is_fig(p.path) then
+      -- unresolved image / mesh / figure: the stand-in box
+      local r, g, b = M.path_col(p.path)
+      local s = p.scale or 1
+      local half, top = m.max(0.35 * s, 0.25), 1.0 * s
+      local sg = seg(0, 0)
+      -- 4 lit walls + roof, simple two-tone shading
+      local function face(ax, ay, az, bx, by, bz, cx2, cz2, dxx, dzz, lum)
+        local rr = (r * lum * 255) // 1
+        local gg = (g * lum * 255) // 1
+        local bb = (b * lum * 255) // 1
+        local A = vpack("<fffffBBBB", ax, ay, az, 0, 0, rr, gg, bb, 255)
+        local B = vpack("<fffffBBBB", bx, by, bz, 1, 0, rr, gg, bb, 255)
+        local C = vpack("<fffffBBBB", cx2, by, cz2, 1, 1, rr, gg, bb, 255)
+        local D = vpack("<fffffBBBB", dxx, ay, dzz, 0, 1, rr, gg, bb, 255)
+        sg.parts[#sg.parts + 1] = A .. B .. C .. A .. C .. D
+        sg.ntris = sg.ntris + 2
+      end
+      local x0, x1 = p.x - half, p.x + half
+      local z0, z1 = p.z - half, p.z + half
+      local y0, y1 = py, py + top
+      face(x0, y0, z0, x0, y1, z0, x1, z0, x1, z0, 0.95) -- north wall
+      face(x1, y0, z1, x1, y1, z1, x0, z1, x0, z1, 0.72) -- south wall
+      face(x0, y0, z1, x0, y1, z1, x0, z0, x0, z0, 0.60) -- west wall
+      face(x1, y0, z0, x1, y1, z0, x1, z1, x1, z1, 0.85) -- east wall
+      -- roof
+      local rr = (r * 255) // 1
+      local gg = (g * 255) // 1
+      local bb = (b * 255) // 1
+      local A = vpack("<fffffBBBB", x0, y1, z0, 0, 0, rr, gg, bb, 255)
+      local B = vpack("<fffffBBBB", x1, y1, z0, 1, 0, rr, gg, bb, 255)
+      local C = vpack("<fffffBBBB", x1, y1, z1, 1, 1, rr, gg, bb, 255)
+      local D = vpack("<fffffBBBB", x0, y1, z1, 0, 1, rr, gg, bb, 255)
+      sg.parts[#sg.parts + 1] = A .. B .. C .. A .. C .. D
+      sg.ntris = sg.ntris + 2
+    end
+    -- non-visual kinds: named refs — no geometry (the editor overlays
+    -- a tag; game code fetches by name)
+  end
+  for _, s in ipairs(segs) do
+    s.bytes = table.concat(s.parts)
+    s.parts = nil
+  end
+  return segs
+end
+
 -- ---- the captured runtime (the cm.map CMRT pattern, verbatim shape) ------
 
 local RT_MAGIC, CUR_MAGIC = "CT3R", "CT3C"

@@ -12201,6 +12201,40 @@ local function t_terr3()
   check(#T3.inst_boxes(inst) == 3, "terr3: derived boxes rebuilt on reload")
   T3.release("t3test")
   check(T3.get("rock") == nil or T3.cur == nil, "terr3.release clears")
+
+  -- placements (E3): sizes, aabbs, ray pick, emit segments
+  local bdoc = T3.fresh("pk", 8, 8, 2.0)
+  bdoc.props[1] = { path = "a/tree.msh", x = 4, z = 4, scale = 2,
+                    col = { mode = "auto" } }
+  bdoc.props[2] = { path = "a/guy.png", x = 10, z = 4, scale = 3 }
+  local dims = function() return 16, 32 end -- tall image: aspect 0.5
+  local w1, h1 = T3.prop_size(bdoc.props[2], dims)
+  check(h1 == 3 and w1 == 1.5, "terr3: billboard size from aspect")
+  local bb = T3.prop_aabb(bdoc, bdoc.props[2], dims)
+  check(bb[2] == 0 and bb[5] == 3 and bb[1] == 10 - 0.75,
+        "terr3: billboard aabb")
+  local rayd = { ox = 4, oy = 10, oz = 4, dx = 0, dy = -1, dz = 0 }
+  check(T3.pick_prop(bdoc, rayd, dims) == 1, "terr3: ray picks the box")
+  rayd = { ox = 10, oy = 10, oz = 4, dx = 0, dy = -1, dz = 0 }
+  check(T3.pick_prop(bdoc, rayd, dims) == 2, "terr3: ray picks the billboard")
+  rayd = { ox = 7, oy = 10, oz = 7, dx = 0, dy = -1, dz = 0 }
+  check(T3.pick_prop(bdoc, rayd, dims) == nil, "terr3: ray miss = nil")
+  rayd = { ox = -5, oy = 1, oz = 4, dx = 1, dy = 0, dz = 0 }
+  check(T3.pick_prop(bdoc, rayd, dims) == 1, "terr3: nearest prop wins")
+  local segs = T3.emit_props(bdoc, {
+    cam_yaw = 0, dims = dims,
+    tex = function(pth) return pth:find("png") and 7 or nil end })
+  check(#segs == 2, "terr3: two prop segments (stand-in + billboard)")
+  check(segs[1].tex == 0 and segs[1].flags == 0 and segs[1].ntris == 10,
+        "terr3: stand-in box segment")
+  check(segs[2].tex == 7 and segs[2].flags == 3 and segs[2].ntris == 2,
+        "terr3: billboard segment is alphatest+nearest")
+  local miny = 1e9
+  for k = 0, 5 do
+    local yv = string.unpack("<f", segs[2].bytes, k * 24 + 5)
+    miny = math.min(miny, yv)
+  end
+  check(miny == 0, "terr3: billboard feet at the ground")
 end
 
 local function t_walk()

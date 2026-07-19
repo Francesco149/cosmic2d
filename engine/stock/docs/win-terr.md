@@ -51,13 +51,36 @@ spawn point.
 **ctrl+wheel** dials the radius; **[** and **]** step the strength.
 The ring under the cursor is the live brush footprint.
 
+## Placing things
+
+**Drag any asset in from the assets window** and release over the
+ground: a 2D image (`.png`/`.spr`) becomes an upright **billboard**
+standing on the terrain; a mesh or figure places as itself (with an
+automatic collider); anything else becomes a named reference the game
+can look up. Unbuilt asset kinds show as a tinted stand-in box.
+
+With the **sel** tool (`v`):
+
+- **click** a prop or marker to select it; **drag** moves it along the
+  ground (**ctrl snaps** to the half-tile lattice); click empty ground
+  to deselect.
+- **arrows** nudge; **,** and **.** rotate in 15-degree steps;
+  **-** and **=** resize; **del** deletes; **ctrl+d** duplicates.
+- the bottom strip edits the selection: a **name** field (games address
+  named props from code), **abs** (anchor to absolute height instead of
+  the ground), **caster** (casts a baked shadow), **blocker** (stamps
+  the walk grid), and the collider chip (none / auto box / editable
+  box).
+
+The **mkr** tool (`n`) places markers — pick a kind in the strip
+(spawn / poi / npc / portal / route) and click. The **route** kind lays
+a patrol polyline: each click adds a point, **enter** finishes. Games
+read routes for NPC paths; select a route to drag its points.
+
 ## What the game reads
 
 `cm.terr3.use{ path = "maps/vale.terr", name = "world" }` loads the
 map; `terr3.ground(x, z)` is the exact rendered height, walkability
-comes from the derived grid + your overrides, and markers/props are
-readable by name and kind. See the scripting guide's 3D sections.
-
-Placements (props, billboards, characters) and markers arrive in this
-window's next slice; today they author through code or a generator
-script writing the same `.terr`.
+comes from the derived grid + your overrides, colliders come from prop
+collider boxes, and markers/props are readable by name and kind. See
+the scripting guide's 3D sections.
