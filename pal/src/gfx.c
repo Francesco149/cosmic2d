@@ -459,10 +459,16 @@ static bool gfx3d_up(void) {
   return true;
 }
 
+bool pal_gfx_is_rt(int id) {
+  return id > 0 && id < PAL_MAX_TEX && G.texs[id].used && G.texs[id].depth;
+}
+
 bool pal_gfx_view3d(const float mvp[16], float fog_start, float fog_end,
-                    float fog_r, float fog_g, float fog_b, bool fog_on) {
+                    float fog_r, float fog_g, float fog_b, bool fog_on,
+                    int target, const float *clearcol) {
   if (!gfx3d_up()) return false;
   if (G.view3d_count >= PAL_MAX_VIEW3D) return false;
+  if (target >= 0 && !pal_gfx_is_rt(target)) return false;
   PalView3D *v = &G.views3d[G.view3d_count++];
   memcpy(v->mvp, mvp, sizeof v->mvp);
   v->fog[0] = fog_start;
@@ -473,6 +479,11 @@ bool pal_gfx_view3d(const float mvp[16], float fog_start, float fog_end,
   v->fogcol[1] = fog_g;
   v->fogcol[2] = fog_b;
   v->fogcol[3] = 1;
+  v->target = target < 0 ? -1 : target;
+  v->clearcol[0] = clearcol ? clearcol[0] : 0;
+  v->clearcol[1] = clearcol ? clearcol[1] : 0;
+  v->clearcol[2] = clearcol ? clearcol[2] : 0;
+  v->clearcol[3] = clearcol ? clearcol[3] : 1;
   return true;
 }
 
@@ -507,11 +518,16 @@ bool pal_gfx_tris(int tex, const void *verts, uint32_t count, uint32_t flags) {
   return true;
 }
 
-/* the 3D pass: clears the game target (color to the frame clear, depth to
- * far) and draws the accumulated 3D segments; the 2D scene_pass then LOADs
- * over it so quads/HUD composite on top. Runs only when 3D was drawn. */
+/* the 3D pass(es): draws the accumulated 3D segments, one render pass per
+ * run of consecutive same-target segments (v24 — views carry a target: the
+ * game target by default, or an x_rt texture for editor viewports). A
+ * target's FIRST run this frame clears (game: the frame clear + depth far;
+ * RT: its view's clear color); later runs LOAD, so interleaved submission
+ * composes instead of erasing. Depth STOREs for the same reason. Returns
+ * whether the GAME target got a 3D pass — the 2D scene_pass then LOADs over
+ * it so quads/HUD composite on top (an RT-only frame keeps the 2D clear). */
 static bool scene3d_pass(SDL_GPUCommandBuffer *cmd) {
-  /* depth target tracks the internal target size (FOV resizes are live) */
+  /* game depth target tracks the internal target size (FOV resizes are live) */
   if (!G.depth3d || G.depth3d_w != G.iw || G.depth3d_h != G.ih) {
     if (G.depth3d) SDL_ReleaseGPUTexture(G.dev, G.depth3d);
     G.depth3d = SDL_CreateGPUTexture(
@@ -532,57 +548,85 @@ static bool scene3d_pass(SDL_GPUCommandBuffer *cmd) {
     G.depth3d_h = G.ih;
   }
 
-  SDL_GPUColorTargetInfo ct = {
-      .texture = G.target,
-      .clear_color = {G.clear[0], G.clear[1], G.clear[2], G.clear[3]},
-      .load_op = SDL_GPU_LOADOP_CLEAR,
-      .store_op = SDL_GPU_STOREOP_STORE,
-  };
-  SDL_GPUDepthStencilTargetInfo dst = {
-      .texture = G.depth3d,
-      .clear_depth = 1.0f,
-      .load_op = SDL_GPU_LOADOP_CLEAR,
-      .store_op = SDL_GPU_STOREOP_DONT_CARE,
-  };
-  SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dst);
+  bool game_touched = false, cleared_game = false;
+  bool cleared_rt[PAL_MAX_TEX] = {false};
   struct { float mvp[16]; float fog[4]; } vubo;
   struct { float mode[4]; float fogcol[4]; } fubo;
-  int cur_blend = -1, cur_view = -1;
-  for (uint32_t i = 0; i < G.seg3d_count; i++) {
-    PalSeg3D *s = &G.segs3d[i];
-    int blend = (s->flags & PAL_TRI_BLEND) ? 1 : 0;
-    if (blend != cur_blend) {
-      SDL_BindGPUGraphicsPipeline(pass,
-                                  blend ? G.pipe3d_blend : G.pipe3d_opaque);
-      SDL_BindGPUVertexBuffers(pass, 0,
-                               &(SDL_GPUBufferBinding){.buffer = G.vbuf3d}, 1);
-      cur_blend = blend;
-      cur_view = -1; /* uniforms rebind after a pipeline switch */
+  uint32_t i = 0;
+  while (i < G.seg3d_count) {
+    int tgt = G.views3d[G.segs3d[i].view].target;
+    uint32_t run_end = i;
+    while (run_end < G.seg3d_count &&
+           G.views3d[G.segs3d[run_end].view].target == tgt)
+      run_end++;
+    bool first;
+    SDL_GPUTexture *color, *depth;
+    const float *cc;
+    if (tgt < 0) {
+      color = G.target;
+      depth = G.depth3d;
+      cc = G.clear;
+      first = !cleared_game;
+      cleared_game = true;
+      game_touched = true;
+    } else {
+      color = G.texs[tgt].tex;
+      depth = G.texs[tgt].depth;
+      cc = G.views3d[G.segs3d[i].view].clearcol;
+      first = !cleared_rt[tgt];
+      cleared_rt[tgt] = true;
     }
-    PalView3D *v = &G.views3d[s->view];
-    if (s->view != cur_view) {
-      memcpy(vubo.mvp, v->mvp, sizeof vubo.mvp);
-      memcpy(vubo.fog, v->fog, sizeof vubo.fog);
-      SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof vubo);
-      cur_view = s->view;
+    SDL_GPUColorTargetInfo ct = {
+        .texture = color,
+        .clear_color = {cc[0], cc[1], cc[2], cc[3]},
+        .load_op = first ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD,
+        .store_op = SDL_GPU_STOREOP_STORE,
+    };
+    SDL_GPUDepthStencilTargetInfo dst = {
+        .texture = depth,
+        .clear_depth = 1.0f,
+        .load_op = first ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD,
+        .store_op = SDL_GPU_STOREOP_STORE,
+    };
+    SDL_GPURenderPass *pass = SDL_BeginGPURenderPass(cmd, &ct, 1, &dst);
+    int cur_blend = -1, cur_view = -1;
+    for (uint32_t k = i; k < run_end; k++) {
+      PalSeg3D *s = &G.segs3d[k];
+      int blend = (s->flags & PAL_TRI_BLEND) ? 1 : 0;
+      if (blend != cur_blend) {
+        SDL_BindGPUGraphicsPipeline(pass,
+                                    blend ? G.pipe3d_blend : G.pipe3d_opaque);
+        SDL_BindGPUVertexBuffers(pass, 0,
+                                 &(SDL_GPUBufferBinding){.buffer = G.vbuf3d}, 1);
+        cur_blend = blend;
+        cur_view = -1; /* uniforms rebind after a pipeline switch */
+      }
+      PalView3D *v = &G.views3d[s->view];
+      if (s->view != cur_view) {
+        memcpy(vubo.mvp, v->mvp, sizeof vubo.mvp);
+        memcpy(vubo.fog, v->fog, sizeof vubo.fog);
+        SDL_PushGPUVertexUniformData(cmd, 0, &vubo, sizeof vubo);
+        cur_view = s->view;
+      }
+      fubo.mode[0] = (s->flags & PAL_TRI_NEAREST) ? 0.0f : 1.0f;
+      fubo.mode[1] = (s->flags & PAL_TRI_ALPHATEST) ? 1.0f : 0.0f;
+      fubo.mode[2] = fubo.mode[3] = 0;
+      memcpy(fubo.fogcol, v->fogcol, sizeof fubo.fogcol);
+      SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof fubo);
+      SDL_BindGPUFragmentSamplers(
+          pass, 0,
+          &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
+                                          .sampler = G.sampler},
+          1);
+      if (getenv("PAL_DBG_3D"))
+        pal_log("seg3d %u: tex=%d flags=%u view=%d tgt=%d first=%u count=%u",
+                k, s->tex, s->flags, s->view, tgt, s->first, s->count);
+      SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
     }
-    fubo.mode[0] = (s->flags & PAL_TRI_NEAREST) ? 0.0f : 1.0f;
-    fubo.mode[1] = (s->flags & PAL_TRI_ALPHATEST) ? 1.0f : 0.0f;
-    fubo.mode[2] = fubo.mode[3] = 0;
-    memcpy(fubo.fogcol, v->fogcol, sizeof fubo.fogcol);
-    SDL_PushGPUFragmentUniformData(cmd, 0, &fubo, sizeof fubo);
-    SDL_BindGPUFragmentSamplers(
-        pass, 0,
-        &(SDL_GPUTextureSamplerBinding){.texture = G.texs[s->tex].tex,
-                                        .sampler = G.sampler},
-        1);
-    if (getenv("PAL_DBG_3D"))
-      pal_log("seg3d %u: tex=%d flags=%u view=%d first=%u count=%u", i, s->tex,
-              s->flags, s->view, s->first, s->count);
-    SDL_DrawGPUPrimitives(pass, s->count, 1, s->first, 0);
+    SDL_EndGPURenderPass(pass);
+    i = run_end;
   }
-  SDL_EndGPURenderPass(pass);
-  return true;
+  return game_touched;
 }
 
 static void seg_for(int tex) {
@@ -1034,6 +1078,45 @@ int pal_gfx_tex_create(const void *pixels, int w, int h) {
   return tex_slot_create(pixels, w, h);
 }
 
+/* an offscreen 3D view target (pal.x_rt, v24 — D137): an ordinary texture
+ * slot whose texture is also a color target, plus its own D16 depth so
+ * x_view3d{target=} can depth-test into it. Same slot/pend lifetime as any
+ * texture (tex_free defers, tex_reap releases both). */
+int pal_gfx_rt_create(int w, int h) {
+  int id = -1;
+  for (int i = 0; i < PAL_MAX_TEX; i++)
+    if (!G.texs[i].used) { id = i; break; }
+  if (id < 0) return -1;
+  SDL_GPUTexture *tex = SDL_CreateGPUTexture(
+      G.dev, &(SDL_GPUTextureCreateInfo){
+                 .type = SDL_GPU_TEXTURETYPE_2D,
+                 .format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+                 .usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET |
+                          SDL_GPU_TEXTUREUSAGE_SAMPLER,
+                 .width = (Uint32)w,
+                 .height = (Uint32)h,
+                 .layer_count_or_depth = 1,
+                 .num_levels = 1});
+  if (!tex) { pal_log("gfx: x_rt: %s", SDL_GetError()); return -1; }
+  SDL_GPUTexture *depth = SDL_CreateGPUTexture(
+      G.dev, &(SDL_GPUTextureCreateInfo){
+                 .type = SDL_GPU_TEXTURETYPE_2D,
+                 .format = SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+                 .usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET,
+                 .width = (Uint32)w,
+                 .height = (Uint32)h,
+                 .layer_count_or_depth = 1,
+                 .num_levels = 1});
+  if (!depth) {
+    pal_log("gfx: x_rt depth: %s", SDL_GetError());
+    SDL_ReleaseGPUTexture(G.dev, tex);
+    return -1;
+  }
+  G.texs[id] =
+      (PalTexture){.tex = tex, .depth = depth, .w = w, .h = h, .used = true};
+  return id;
+}
+
 /* re-upload into an existing texture in place (no GPU realloc). false if the id
  * is free or the size changed — the caller should free + create instead. */
 bool pal_gfx_tex_update(int id, const void *pixels, int w, int h) {
@@ -1064,6 +1147,7 @@ static void tex_reap(void) {
   for (int i = 1; i < PAL_MAX_TEX; i++) {
     if (G.texs[i].pend == 2) {
       SDL_ReleaseGPUTexture(G.dev, G.texs[i].tex);
+      if (G.texs[i].depth) SDL_ReleaseGPUTexture(G.dev, G.texs[i].depth);
       G.texs[i] = (PalTexture){0};
     } else if (G.texs[i].pend == 1) {
       G.texs[i].pend = 2;

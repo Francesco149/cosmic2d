@@ -9458,6 +9458,87 @@ local function t_ed_winview()
   check(aw.sy == nil, "winview: scroll clamps at 0 (and re-nils)")
 end
 
+local function t_ed_orbit()
+  -- cm.ed.orbit (E0, D137) — the 3D viewport view helper: captured
+  -- fields in world units, pure basis/ray/project math the editor
+  -- windows' gizmos and picking stand on.
+  local ob = cm.require("cm.ed.orbit")
+  local mm = cm.require("cm.math")
+  local win = ob.defaults(40, 10, 0, -6)
+  check(win.odist == 40 and win.ofx == 10 and win.ofz == -6,
+        "orbit: defaults carry dist + focus")
+
+  -- basis: unit fwd, orthogonal frame, world-up-ish up while pitched down
+  local fx, fy, fz, rx, ry, rz, ux, uy, uz = ob.basis(win)
+  local function dot(ax, ay, az, bx, by, bz) return ax*bx + ay*by + az*bz end
+  check(math.abs(dot(fx,fy,fz, fx,fy,fz) - 1) < 1e-12, "orbit: |fwd| = 1")
+  check(math.abs(dot(fx,fy,fz, rx,ry,rz)) < 1e-12
+        and math.abs(dot(fx,fy,fz, ux,uy,uz)) < 1e-12
+        and math.abs(dot(rx,ry,rz, ux,uy,uz)) < 1e-12,
+        "orbit: orthogonal basis")
+  check(uy > 0 and ry == 0, "orbit: up is up, right stays level")
+
+  -- eye sits odist behind the focus along fwd
+  local ex, ey, ez = ob.eye(win)
+  local dl = mm.sqrt((win.ofx-ex)^2 + (win.ofy-ey)^2 + (win.ofz-ez)^2)
+  check(math.abs(dl - win.odist) < 1e-9, "orbit: eye at dist from focus")
+
+  -- the focus projects to the viewport center; behind-camera returns nil
+  local vpm = ob.vp(win, 320/240)
+  local px, py = ob.project(vpm, 320, 240, win.ofx, win.ofy, win.ofz)
+  check(math.abs(px - 160) < 1e-6 and math.abs(py - 120) < 1e-6,
+        "orbit: focus projects to center")
+  check(ob.project(vpm, 320, 240, ex - fx, ey - fy, ez - fz) == nil,
+        "orbit: behind-camera projects nil")
+
+  -- ray through the center is fwd; project->ray round-trips a world point
+  local r0 = ob.ray(win, 320, 240, 160, 120)
+  check(math.abs(r0.dx - fx) < 1e-9 and math.abs(r0.dy - fy) < 1e-9
+        and math.abs(r0.dz - fz) < 1e-9, "orbit: center ray = fwd")
+  local wx, wy, wz = win.ofx + 3.7, win.ofy + 1.2, win.ofz - 2.9
+  local qx, qy = ob.project(vpm, 320, 240, wx, wy, wz)
+  local rr = ob.ray(win, 320, 240, qx, qy)
+  local tx, ty, tz = wx - rr.ox, wy - rr.oy, wz - rr.oz
+  local t = dot(tx,ty,tz, rr.dx,rr.dy,rr.dz)
+  local mx = rr.ox + rr.dx*t - wx
+  local my = rr.oy + rr.dy*t - wy
+  local mz = rr.oz + rr.dz*t - wz
+  check(mm.sqrt(mx*mx + my*my + mz*mz) < 1e-6,
+        "orbit: project->ray round trip hits the point")
+
+  -- gestures: pitch clamps both ways, dolly ladder clamps, fit frames
+  local w2 = ob.defaults(40)
+  ob.orbit(w2, 0, -10000)
+  check(w2.opitch == ob.PITCH_MAX, "orbit: pitch clamps high")
+  ob.orbit(w2, 0, 10000)
+  check(w2.opitch == ob.PITCH_MIN, "orbit: pitch clamps low")
+  local d0 = w2.odist
+  ob.dolly(w2, 1)
+  check(math.abs(w2.odist - d0 / ob.STEP) < 1e-9, "orbit: dolly steps down")
+  for _ = 1, 60 do ob.dolly(w2, 1) end
+  check(w2.odist == ob.DIST_MIN, "orbit: dolly clamps near")
+  for _ = 1, 120 do ob.dolly(w2, -1) end
+  check(w2.odist == ob.DIST_MAX, "orbit: dolly clamps far")
+  ob.fit(w2, 5, 1, 7, 20)
+  check(w2.ofx == 5 and w2.ofy == 1 and w2.ofz == 7, "orbit: fit adopts focus")
+  local half = ob.FOV * (mm.pi / 180) * 0.5
+  check(math.abs(w2.odist - 20 / (mm.tan(half) * 0.8)) < 1e-9,
+        "orbit: fit dist from the fov")
+
+  -- pan: dys moves the focus along flattened-forward, y never moves
+  local w3 = ob.defaults(30)
+  local pfy = w3.ofy
+  local bfx, _, bfz = ob.basis(w3)
+  local bl = mm.sqrt(bfx*bfx + bfz*bfz)
+  ob.pan(w3, 0, 100, 200)
+  check(w3.ofy == pfy, "orbit: pan stays on the ground plane")
+  local want = 2 * 30 / 200 * 100
+  local moved = mm.sqrt(w3.ofx^2 + w3.ofz^2)
+  check(math.abs(moved - want) < 1e-9
+        and math.abs(w3.ofx * (bfz/bl) - w3.ofz * (bfx/bl)) < 1e-9,
+        "orbit: pan tracks flattened forward, dist-scaled")
+end
+
 local function t_ed_park()
   -- R6c (REWIND.md §4): parking is interactive-but-ephemeral; close
   -- restores the stashed present; resume adopts the shown doc
@@ -11987,6 +12068,141 @@ local function t_kin()
         "kin.lean eases toward the scaled target")
 end
 
+local function t_terr3()
+  -- cm.terr3 (E1, D137): the .terr codec + pure readers — the 3D map
+  -- asset the 3d map window edits and games consume.
+  local T3 = cm.require("cm.terr3")
+  local terr = cm.require("cm.terr")
+
+  -- fresh: a valid flat doc; encode(decode(encode)) is byte-canonical
+  local doc = T3.fresh("vale", 8, 6, 2.0)
+  check(#doc.hts == 9 * 7 and doc.mats[1].name == "grass",
+        "terr3.fresh: plane sized, grass seeded")
+  local b1 = T3.encode(doc)
+  check(b1:sub(1, 4) == "CTER", "terr3: CTER magic")
+  local b2 = T3.encode(T3.decode(b1))
+  check(b1 == b2, "terr3: canonical round trip (flat fresh)")
+
+  -- populate every chunk kind and round-trip again
+  terr.hset(doc, 3, 2, 4.5)
+  terr.hset(doc, 4, 2, 1.25)
+  doc.wts[1] = {}
+  for i = 1, T3.plane_size(doc) do doc.wts[1][i] = 0 end
+  doc.wts[1][5] = 200
+  doc.mats[2] = { name = "dirt", col = { 0.5, 0.4, 0.3 }, tex = "art/d.png" }
+  doc.wts[2] = {}
+  for i = 1, T3.plane_size(doc) do doc.wts[2][i] = i % 7 == 0 and 80 or 0 end
+  doc.shade = {}
+  for i = 1, T3.plane_size(doc) do doc.shade[i] = 255 end
+  doc.shade[9] = 120
+  doc.water = { on = true, y = 0.3, col = { 0.2, 0.4, 0.6 }, alpha = 144 }
+  doc.props[1] = { path = "art/tree.msh", name = "oak", x = 5.5, z = 3.5,
+                   y = 0, yaw = 0.5, scale = 2, caster = true,
+                   blocker = true, col = { mode = "auto" } }
+  doc.props[2] = { path = "art/hero.png", x = 2, z = 2, y = 0.25, abs = true,
+                   scale = 3, col = { mode = "box",
+                   box = { -1, 0, -1, 1, 2, 1 } },
+                   extras = { { k = "team", v = "red" } } }
+  doc.markers[1] = { kind = "spawn", x = 4, z = 4, r = 0.5 }
+  doc.markers[2] = { kind = "route", label = "patrol", x = 1, z = 1,
+                     points = { 1, 1, 5, 1, 5, 5 },
+                     extras = { { k = "speed", v = "2" } } }
+  doc.wovr[1] = { cx = 3, cz = 3, v = 0 }
+  doc.wovr[2] = { cx = 5, cz = 3, v = 1 } -- forces walk on a steep+blocked cell
+  local eb = T3.encode(doc)
+  local dd = T3.decode(eb)
+  check(T3.encode(dd) == eb, "terr3: canonical round trip (every chunk)")
+  check(dd.props[1].name == "oak" and dd.props[1].caster
+        and dd.props[1].blocker and dd.props[1].col.mode == "auto",
+        "terr3: prop flags/colmode survive")
+  check(dd.props[2].abs and dd.props[2].col.box[5] == 2
+        and dd.props[2].extras[1].v == "red",
+        "terr3: abs + box + extras survive")
+  check(dd.markers[2].points[5] == 5 and dd.markers[2].extras[1].k == "speed",
+        "terr3: route polyline + extras survive")
+  check(dd.wovr[2].cx == 5 and dd.wovr[2].v == 1, "terr3: walk overrides")
+  check(dd.shade[9] == 120 and dd.wts[2][7] == 80, "terr3: planes survive")
+
+  -- refusals: bad magic, truncation, wrong plane size
+  check(not pcall(T3.decode, "XXXX" .. eb:sub(5)), "terr3: bad magic refuses")
+  check(not pcall(T3.decode, eb:sub(1, #eb - 8)), "terr3: truncation refuses")
+  do
+    local short = T3.fresh("x", 4, 4)
+    short.hts[#short.hts] = nil
+    check(not pcall(T3.encode, short), "terr3: short HTS refuses at encode")
+  end
+
+  -- readers: ground == terr.sample; prop y modes; weights normalize
+  check(T3.ground(dd, 7, 5) == terr.sample(dd, 7, 5),
+        "terr3.ground == terr.sample")
+  check(T3.prop_y(dd, dd.props[2]) == 0.25, "terr3: absolute prop y")
+  check(T3.prop_y(dd, dd.props[1])
+        == terr.sample(dd, 5.5, 3.5) + 0, "terr3: ground-snapped prop y")
+  local wz = T3.weights_at(dd, 1) -- zero-sum vertex -> mat 1
+  check(wz[1] == 1 and wz[2] == 0, "terr3: zero weights fall to mat 1")
+  local w5 = T3.weights_at(dd, 5)
+  check(w5[1] == 1 and w5[2] == 0, "terr3: single-plane weight normalizes")
+
+  -- the walk grid: steep cell blocked, flat cell walkable, override wins
+  local grid, gw, gh = T3.walk_grid(dd)
+  check(gw == 16 and gh == 12 and #grid == gw * gh, "terr3: GAT dims")
+  local function wat(cx, cz) return grid:byte(cz * gw + cx + 1) == 1 end
+  check(not wat(6, 4), "terr3: steep slope blocks")          -- under the cliff
+  check(wat(14, 10), "terr3: flat far corner walks")
+  check(not wat(3, 3), "terr3: override forces block")
+  check(wat(5, 3), "terr3: override forces walk over steep+blocked")
+  check(not wat(4, 2), "terr3: blocker prop stamps its footprint")
+
+  -- boxes: auto footprint + scaled local box
+  local boxes = T3.boxes(dd)
+  check(#boxes == 2, "terr3: two collidable props")
+  local a = boxes[1]
+  check(a[1] == 5.5 - 1 and a[4] == 5.5 + 1 and a[5] - a[2] == 3.2,
+        "terr3: auto box scales")
+  local bx = boxes[2]
+  check(bx[1] == 2 - 3 and bx[6] == 2 + 3 and bx[2] == 0.25,
+        "terr3: local box scales from absolute y")
+
+  -- markers filter; route points intact
+  check(#T3.markers(dd) == 2 and #T3.markers(dd, "route") == 1
+        and T3.markers(dd, "route")[1].label == "patrol",
+        "terr3: marker kind filter")
+
+  -- emission: tri counts (render-class; pixels are golden territory)
+  local out = {}
+  local nt = T3.emit_terrain(out, dd)
+  check(nt == dd.w * dd.h * 2, "terr3: full-grid tri count")
+  local wout = {}
+  check(T3.emit_water(wout, dd) > 0, "terr3: water emits when on")
+  dd.water.on = false
+  check(T3.emit_water({}, dd) == 0, "terr3: water off emits zero")
+  dd.water.on = true
+
+  -- the runtime door: save -> use -> readers -> reload picks up disk edits
+  local tmp = "/tmp/cosmic_t3_" .. tostring(pal.time_ns()):sub(-6)
+  local path = tmp .. "/vale.terr"
+  pal.mkdir(tmp)
+  check(T3.save(dd, path), "terr3.save writes")
+  local inst = T3.use{ path = path, name = "t3test" }
+  check(inst.active and inst.doc.name == "vale", "terr3.use loads + activates")
+  check(T3.get("oak") ~= nil and T3.get("oak").x == 5.5,
+        "terr3.get finds a named prop")
+  check(T3.walkable(inst, 14, 10) and not T3.walkable(inst, 3, 3),
+        "terr3: instance walkable reads the grid")
+  check(#T3.inst_boxes(inst) == 2, "terr3: instance boxes")
+  -- disk changes + reload republish
+  local d2 = T3.decode(T3.encode(dd))
+  d2.props[#d2.props + 1] = { path = "art/rock.msh", name = "rock",
+                              x = 1, z = 1, scale = 1,
+                              col = { mode = "auto" } }
+  check(T3.save(d2, path), "terr3: second save")
+  T3.reload(path)
+  check(T3.get("rock") ~= nil, "terr3.reload republishes disk")
+  check(#T3.inst_boxes(inst) == 3, "terr3: derived boxes rebuilt on reload")
+  T3.release("t3test")
+  check(T3.get("rock") == nil or T3.cur == nil, "terr3.release clears")
+end
+
 local function t_walk()
   local W = cm.require("cm.walk")
   local cx, cz = W.cell(8, -3.2, 9.7)
@@ -12743,6 +12959,7 @@ function game.init()
   t_ed_rewind()
   t_ed_pick()
   t_ed_winview()
+  t_ed_orbit()
   t_ed_park()
   t_timeline_summary()
   t_timeline_thumbs()
@@ -12767,6 +12984,7 @@ function game.init()
   t_cam_aa()
   t_m4()
   t_kin()
+  t_terr3()
   t_walk()
   t_rig()
   t_input_mrel()

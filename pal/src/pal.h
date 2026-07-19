@@ -11,7 +11,12 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 23 /* v23: x_ig_kb_release — the editor's
+#define PAL_VERSION_API 24 /* v24: offscreen 3D views (D137) — x_rt
+                              render-target textures + x_view3d's
+                              optional target/clear, so editor windows
+                              host independent 3D viewports; the
+                              game-target path is byte-identical;
+                              v23: x_ig_kb_release — the editor's
                               keyboard focus-cycle door (drops the
                               active imgui edit widget);
                               v22: x_figverts — the baked-figure
@@ -102,6 +107,9 @@ typedef struct PalBuf {
 
 typedef struct {
   SDL_GPUTexture *tex;
+  SDL_GPUTexture *depth; /* x_rt slots (v24) own a matching D16 depth so a
+                          * 3D view can render into them; NULL for ordinary
+                          * textures. Freed beside tex at reap. */
   int w, h;
   bool used;
   int pend; /* deferred free: 0 = live; 1 = freed this frame; 2 = release next
@@ -126,6 +134,10 @@ typedef struct {
   float mvp[16];   /* column-major, Lua-side policy (proj*view*model) */
   float fog[4];    /* start, end, on, 0 — matches retro.vert VUBO */
   float fogcol[4]; /* r, g, b, 1 — matches retro.frag FUBO */
+  int target;      /* -1 = the game target (default); else an x_rt texture id
+                    * (v24) — editor viewports render offscreen */
+  float clearcol[4]; /* RT clear color (first run per frame; game keeps the
+                      * frame clear) */
 } PalView3D;
 
 /* x_tris flags (frozen-shape candidate; mirrors proto/gpu_proto.c) */
@@ -348,11 +360,18 @@ bool pal_gfx_tex_free(int id);
  * camera/fog setup for subsequent tris (false = per-frame view cap hit);
  * tris appends `count` triangles of 3 packed verts (PAL_VERT3D_BYTES each,
  * pre-lit color) drawn under the latest view with PAL_TRI_* flags. 3D draws
- * into the game target under all 2D quads (HUD/UI on top), depth-tested;
- * pipelines + depth target are created lazily on the first call. */
+ * into the view's target — the game target by default (under all 2D quads,
+ * HUD/UI on top) or an x_rt texture (target >= 0; clearcol NULL = opaque
+ * black) — depth-tested; pipelines + depth targets are created lazily. */
 bool pal_gfx_view3d(const float mvp[16], float fog_start, float fog_end,
-                    float fog_r, float fog_g, float fog_b, bool fog_on);
+                    float fog_r, float fog_g, float fog_b, bool fog_on,
+                    int target, const float *clearcol);
 bool pal_gfx_tris(int tex, const void *verts, uint32_t count, uint32_t flags);
+/* offscreen 3D view target (v24, D137): an ordinary texture slot whose
+ * texture is also a color target, plus its own D16 depth. Drawable by
+ * x_ig_image / sampled like any texture; freed by tex_free. */
+int pal_gfx_rt_create(int w, int h);
+bool pal_gfx_is_rt(int id);
 
 /* buf.c */
 PalBuf *pal_buf_get(const char *name, size_t size, const char **err);

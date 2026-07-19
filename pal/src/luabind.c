@@ -878,18 +878,23 @@ static int l_draw_quads(lua_State *L) {
   return 0;
 }
 
-/* pal.x_view3d{ mvp={m0..m15}, fog_start=, fog_end=, fog={r,g,b}, fog_on= } —
- * append a 3D camera/fog setup (docs/COSMIC3D.md §2) for subsequent x_tris
- * calls; several per frame coexist (segments bind the latest at call time).
- * mvp is column-major (proj*view*model, policy in Lua — the PAL is a dumb
- * consumer; lighting too: vertex colors arrive pre-lit). pal.x_view3d() with
- * no arg = identity mvp + fog off — NDC passthrough for the sky pass.
- * Render-class: the sim never reads any of this. */
+/* pal.x_view3d{ mvp={m0..m15}, fog_start=, fog_end=, fog={r,g,b}, fog_on=,
+ * target=, clear={r,g,b[,a]} } — append a 3D camera/fog setup
+ * (docs/COSMIC3D.md §2) for subsequent x_tris calls; several per frame
+ * coexist (segments bind the latest at call time). mvp is column-major
+ * (proj*view*model, policy in Lua — the PAL is a dumb consumer; lighting
+ * too: vertex colors arrive pre-lit). pal.x_view3d() with no arg = identity
+ * mvp + fog off — NDC passthrough for the sky pass. `target` (v24, D137) =
+ * an x_rt texture id: the view renders offscreen (editor viewports) instead
+ * of into the game target, cleared to `clear` (default opaque black) on its
+ * first drawn run each frame. Render-class: the sim never reads any of this. */
 static int l_x_view3d(lua_State *L) {
   check_gfx(L);
   float mvp[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
   float fs = 0, fe = 1, fr = 0, fg = 0, fb = 0;
+  float cc[4] = {0, 0, 0, 1};
   bool fog_on = false;
+  int target = -1;
   if (!lua_isnoneornil(L, 1)) {
     luaL_checktype(L, 1, LUA_TTABLE);
     lua_getfield(L, 1, "mvp");
@@ -916,11 +921,44 @@ static int l_x_view3d(lua_State *L) {
       lua_geti(L, -3, 3);
       fb = (float)luaL_optnumber(L, -1, 0);
     }
+    lua_getfield(L, 1, "target");
+    if (!lua_isnil(L, -1)) {
+      target = (int)luaL_checkinteger(L, -1);
+      if (!pal_gfx_is_rt(target))
+        return luaL_error(L, "x_view3d: target %d is not an x_rt texture",
+                          target);
+    }
+    lua_getfield(L, 1, "clear");
+    if (lua_istable(L, -1)) {
+      for (int i = 0; i < 4; i++) {
+        lua_geti(L, -1 - i, i + 1);
+        cc[i] = (float)luaL_optnumber(L, -1, i == 3 ? 1 : 0);
+      }
+    }
   }
-  if (!pal_gfx_view3d(mvp, fs, fe, fr, fg, fb, fog_on))
+  if (!pal_gfx_view3d(mvp, fs, fe, fr, fg, fb, fog_on, target, cc))
     return luaL_error(L, "x_view3d: failed (shaders missing or >%d views "
                          "this frame — see log)", PAL_MAX_VIEW3D);
   return 0;
+}
+
+/* pal.x_rt(w, h) -> texid — create an offscreen 3D view target (v24, D137):
+ * an ordinary texture id (drawable via x_ig_image, sampled by x_tris, freed
+ * by pal.tex_free) whose texture is also a color target with its own D16
+ * depth, so pal.x_view3d{target=texid} renders a 3D scene into it. The
+ * editor-viewport door; render-class, works headless. */
+static int l_x_rt(lua_State *L) {
+  check_gfx(L);
+  int w = (int)luaL_checkinteger(L, 1);
+  int h = (int)luaL_checkinteger(L, 2);
+  if (w < 1 || h < 1 || w > 4096 || h > 4096)
+    return luaL_error(L, "x_rt: bad size %dx%d (1..4096)", w, h);
+  int id = pal_gfx_rt_create(w, h);
+  if (id < 0)
+    return luaL_error(L, "x_rt: %dx%d failed (texture slots full or GPU — "
+                         "see log)", w, h);
+  lua_pushinteger(L, id);
+  return 1;
 }
 
 /* pal.x_tris(tex, buf, count[, off[, flags]]) — bulk 3D triangles from a
@@ -2503,6 +2541,7 @@ static const luaL_Reg pal_funcs[] = {
     {"draw_quads", l_draw_quads},
     {"x_view3d", l_x_view3d},
     {"x_tris", l_x_tris},
+    {"x_rt", l_x_rt},
     {"x_ig_image_quads", l_ig_image_quads},
     {"clip", l_clip},
     {"camera", l_camera},
