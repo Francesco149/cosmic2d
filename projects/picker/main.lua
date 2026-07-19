@@ -752,6 +752,14 @@ function M.draw()
   -- failure closes it because the stale tile is now the deliberate repair UI.
   if M.action then
     local a = M.action
+    if not modal_at_start then
+      -- the click that OPENED this modal is still in this frame's input
+      -- (the D127 opening-Enter swallow, mouse edition): without this
+      -- shadow it reaches the modal's own buttons AND the click-outside
+      -- dismiss below in the same draw pass — whenever the clicked tile
+      -- sits outside the centered panel, the chooser closes instantly.
+      i = setmetatable({ clicked = {} }, { __index = i })
+    end
     local pw = math.min(560, ig.w - 48)
     -- The delete/new layouts are the tallest; 240 keeps their buttons on
     -- screen at 300% fixed chrome on an ordinary 1280x800 window (D074's
