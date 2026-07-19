@@ -147,6 +147,16 @@ all release it, and it re-engages when you click back in.
   saved file.
 - **Ctrl+Z / Ctrl+Y** — undo / redo (per asset; journals normally survive a
   restart, but source saves remain the durable boundary).
+- **Ctrl+Tab / Ctrl+Shift+Tab** — cycle window focus in reading order
+  (top-to-bottom, then left-to-right). An off-screen window pans into view;
+  the focus ring shows where you landed. Works mid-typing — cycling out of
+  a code editor releases its keyboard — and while a game window is playing.
+- **Ctrl+W** — close the focused window (with nothing focused, the
+  selection). Closing never loses work: asset state lives with the project,
+  not the window.
+- **Arrow keys** — nudge the selected windows by 1 (Shift = 10);
+  **Alt+arrows** resize them from the bottom-right corner instead (same
+  Shift step, same size rules as a pointer drag).
 - **Esc** — release the current tool / view lock.
 - Each window shows its own hotkeys in a hint strip while it's focused, and a
   **?** button in its title bar opens that window's help (hotkeys + workflow).

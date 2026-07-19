@@ -1707,7 +1707,7 @@ the rules that protect your project are already enforced, not merely promised
   on truncation — it never guesses. Old files stay readable as a format grows.
 
 - **The engine refuses loudly, never degrades silently.** Engine code checks the
-  PAL API version (currently **22**) and function presence, and refuses with a
+  PAL API version (currently **23**) and function presence, and refuses with a
   clear "needs PAL api >= N" message rather than half-running. A newer engine on
   an older PAL still works whenever it needs no new primitive — the retro-3D
   pipeline needs >= 20, relative-mouse look >= 21, and the baked-figure fast

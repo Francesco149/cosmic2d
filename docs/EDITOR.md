@@ -235,6 +235,35 @@ crossing 4 px; double-click = **320 ms / 6 px**, teidraw's thresholds):
   within 600 ms coalesce into one journal-ish step (teidraw's nudge
   rule) — layout nudges live in the session doc, not a journal, so
   coalescing only matters for feel here; the rule matters at R4.
+- **Alt+arrows** resize the selection instead (D134): the se corner
+  walks by the same 1/10 step, origin anchored, through the identical
+  min-clamp + kind-constraint door as a pointer drag (`wm.resize_sel`) —
+  a game window keeps its aspect/FOV rules under keyboard resize.
+
+**The keyboard window grammar (D134 — the §A8 editor keyboard gap):**
+
+- **Ctrl+Tab / Ctrl+Shift+Tab** cycle `doc.focus` through the windows in
+  **reading order** — y, then x, then id (`wm.cycle`, pure). Reading
+  order, not z order, because cycling must be *stable while you cycle*
+  (raising on focus would reshuffle a z-order walk) and z stays
+  explicit-only (§4 no-auto-raise). The cycled-to window is selected +
+  focused, never raised; if it is not fully on screen the camera eases
+  to it (`ed.reveal_window` — the pan_to_window math behind a
+  `cam.contains` gate, so cycling across visible windows never moves
+  the camera).
+- **Ctrl+W** closes the focused window (else the selection), through the
+  same `can_close` guard as A-rightclick — fearless by the same §6
+  construction.
+- All three ride the **pre-`ig.kb` ctrl-combo tier** (beside Ctrl+S/F):
+  they fire mid-typing — leaving or closing the window you are typing in
+  is precisely a mid-typing move — and while a game window is playing
+  (§12.3: plain keys suspend, Ctrl stays the shell's). Cycling away from
+  an active ghost edit calls **`pal.x_ig_kb_release()`** (v23): nothing
+  else would deactivate the widget without a mouse click, and it would
+  keep eating keystrokes. imgui's own Ctrl+Tab windowing gearbox is
+  disabled at ig init (`ConfigNavWindowingKeyNext/Prev = 0`) — it is
+  live even without keyboard nav and would dim the screen and focus
+  ghost windows.
 
 **What the game sees in editor mode: nothing — unless a game window is
 focused.** The sim keeps running (the live-game window is the point);

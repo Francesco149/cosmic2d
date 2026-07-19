@@ -92,6 +92,14 @@ static bool ig_ensure(void) {
   ImGuiIO &io = ImGui::GetIO();
   io.IniFilename = nullptr; /* layout persistence is the engine's job (D049) */
   io.LogFilename = nullptr;
+  {
+    /* Ctrl+Tab is the SHELL's window focus-cycle (D134); imgui's own
+     * windowing gearbox on the same chord is live even without
+     * NavEnableKeyboard, and would dim the screen + focus ghost windows */
+    ImGuiContext *ictx = ImGui::GetCurrentContext();
+    ictx->ConfigNavWindowingKeyNext = 0;
+    ictx->ConfigNavWindowingKeyPrev = 0;
+  }
   IG.windowed = G.win != nullptr;
   IG.fmt = IG.windowed ? SDL_GetGPUSwapchainTextureFormat(G.dev, G.win)
                        : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
@@ -801,6 +809,17 @@ static int l_ig_edit(lua_State *L) {
   return 4;
 }
 
+/* pal.x_ig_kb_release() — drop the active imgui widget (the keyboard).
+ * The shell's keyboard focus-cycle (D134) moves doc.focus without a
+ * mouse click, so nothing would otherwise deactivate a ghost edit; the
+ * old window's widget would keep eating keystrokes. Mirrors what a
+ * click on empty space does. */
+static int l_ig_kb_release(lua_State *L) {
+  (void)L;
+  if (IG.inited && ImGui::GetCurrentContext()) ImGui::ClearActiveID();
+  return 0;
+}
+
 static const luaL_Reg ig_funcs[] = {{"x_ig_frame", l_ig_frame},
                                     {"x_ig_mouse", l_ig_mouse},
                                     {"x_ig_overlay", l_ig_overlay},
@@ -817,6 +836,7 @@ static const luaL_Reg ig_funcs[] = {{"x_ig_frame", l_ig_frame},
                                     {"x_ig_clip_push", l_ig_clip_push},
                                     {"x_ig_clip_pop", l_ig_clip_pop},
                                     {"x_ig_edit", l_ig_edit},
+                                    {"x_ig_kb_release", l_ig_kb_release},
                                     {"x_ig_event", l_ig_event},
                                     {nullptr, nullptr}};
 

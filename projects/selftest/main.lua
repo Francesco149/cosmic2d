@@ -6863,6 +6863,18 @@ local function t_ed_cam()
   check(l0.x == 1 and l0.zoom == 1 and l1.x == 5 and l1.zoom == 3,
         "ed.cam: lerp endpoints")
 
+  -- contains: the focus-cycle reveal gate (D134) — fully-inside only
+  local vc = { x = 100, y = 100, zoom = 2 } -- viewport 100..740 x 100..500
+  check(cam.contains(vc, 1280, 800, 200, 200, 100, 100),
+        "ed.cam: contains inside")
+  check(not cam.contains(vc, 1280, 800, 50, 200, 100, 100),
+        "ed.cam: contains rejects left overhang")
+  check(not cam.contains(vc, 1280, 800, 700, 200, 100, 100),
+        "ed.cam: contains rejects right overhang")
+  check(cam.contains(vc, 1280, 800, 100, 100, 640, 400)
+        and not cam.contains(vc, 1280, 800, 100, 100, 641, 400),
+        "ed.cam: contains is edge-exact")
+
   -- Machine-local editor scaling composes with captured logical zoom without
   -- entering the camera doc, and all pointer/world math stays invertible.
   cam.set_display_scale(2)
@@ -7152,6 +7164,46 @@ local function t_ed_wm()
   })
   check(e.w == 140 and e.h == 70 and e.x + e.w == 400,
         "ed.wm: constrain replaces the size and keeps the w anchor")
+
+  -- ---- keyboard focus-cycle order (D134): reading order, wraps, seeds ----
+  doc = wm.init({ cam = { x = 0, y = 0, zoom = 1 } })
+  check(wm.cycle(doc, 0, 1) == nil, "ed.wm: cycle on empty is nil")
+  local ca = wm.spawn(doc, "note", 0, 0, 100, 80)     -- row 0, first
+  check(wm.cycle(doc, ca.id, 1) == ca.id and wm.cycle(doc, ca.id, -1) == ca.id,
+        "ed.wm: a single window cycles to itself")
+  local cb = wm.spawn(doc, "note", 200, 0, 100, 80)   -- row 0, second (x)
+  local cc = wm.spawn(doc, "note", 0, 150, 100, 80)   -- row 1
+  wm.to_front(doc, ca.id) -- z is scrambled; reading order must not care
+  check(wm.cycle(doc, 0, 1) == ca.id, "ed.wm: cycle seeds at the first")
+  check(wm.cycle(doc, 0, -1) == cc.id, "ed.wm: cycle -1 seeds at the last")
+  check(wm.cycle(doc, ca.id, 1) == cb.id
+        and wm.cycle(doc, cb.id, 1) == cc.id,
+        "ed.wm: reading order walks rows then columns")
+  check(wm.cycle(doc, cc.id, 1) == ca.id, "ed.wm: cycle wraps forward")
+  check(wm.cycle(doc, ca.id, -1) == cc.id
+        and wm.cycle(doc, cc.id, -1) == cb.id,
+        "ed.wm: cycle walks and wraps backward")
+  check(wm.cycle(doc, 999, 1) == ca.id,
+        "ed.wm: a stale from-id reseeds at the first")
+  local cd = wm.spawn(doc, "note", 200, 0, 100, 80) -- exact tie with cb
+  check(wm.cycle(doc, cb.id, 1) == cd.id and wm.cycle(doc, cd.id, 1) == cc.id,
+        "ed.wm: an exact-position tie breaks by id")
+
+  -- ---- keyboard resize (D134): se-anchored, min clamp, constraint ----
+  wm.close(doc, cd.id)
+  doc.sel = { ca.id, cb.id }
+  wm.resize_sel(doc, doc.sel, 10, 5)
+  check(ca.w == 110 and ca.h == 85 and cb.w == 110 and cb.h == 85
+        and ca.x == 0 and ca.y == 0 and cb.x == 200 and cb.y == 0,
+        "ed.wm: resize_sel grows every selected window, origin held")
+  wm.resize_sel(doc, { ca.id }, -1000, -1000)
+  check(ca.w == wm.MIN_W and ca.h == wm.MIN_H and ca.x == 0 and ca.y == 0,
+        "ed.wm: resize_sel clamps at min from the origin")
+  wm.resize_sel(doc, { cb.id }, 10, 0, {
+    constrain = function(_, part) if part == "se" then return 300, 150 end end,
+  })
+  check(cb.w == 300 and cb.h == 150,
+        "ed.wm: resize_sel threads the kind constraint")
 end
 
 local function t_ed_game()

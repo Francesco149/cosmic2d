@@ -11,7 +11,10 @@
 /* stability contract (docs/ARCHITECTURE.md): MAJOR bumps are constitutional
  * events (target: never after 1.0); API bumps on additive changes only */
 #define PAL_VERSION_MAJOR 0
-#define PAL_VERSION_API 22 /* v22: x_figverts — the baked-figure
+#define PAL_VERSION_API 23 /* v23: x_ig_kb_release — the editor's
+                              keyboard focus-cycle door (drops the
+                              active imgui edit widget);
+                              v22: x_figverts — the baked-figure
                               transform+light loop in C (byte-identical
                               to the cm.gb Lua reference); v21: relative
                               mouse — x_mouse_capture + motion rel

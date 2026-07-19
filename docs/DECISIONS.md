@@ -6725,3 +6725,84 @@ the fresh-user pass (A8) runs.
 **Revisit triggers.** A game legitimately needing F1 votes a second
 reserved-key review; a project wanting per-option menu ORDER or grouping
 votes a layout field on the declaration.
+
+## D134 — the editor keyboard window grammar: focus-cycle, close, resize (2026-07-19)
+
+**Context.** The last named slice of ALPHA §A8's accessibility line
+(deferred in D128, carried through D129–D133): the editor's core window
+flows were mouse-only — no keyboard way to move focus between canvas
+windows, close one, or resize one. The launcher already covers keyboard
+spawn/open (Ctrl+Space), arrows already nudge the selection; the gaps
+were cycle, close, resize.
+
+**Decision — three keys, one tier each.**
+
+1. **Ctrl+Tab / Ctrl+Shift+Tab cycle `doc.focus` in READING order** —
+   y, then x, then id (pure `wm.cycle`; 0/stale seeds at the first or
+   last). Reading order, not z order, because the cycle must be stable
+   *while you cycle* and z stays explicit-only (§4 no-auto-raise: the
+   cycled-to window is selected + focused, never raised). If the target
+   is not fully on screen the camera eases to it — `ed.reveal_window`,
+   the pan_to_window math behind a pure `cam.contains` gate, so cycling
+   across visible windows never moves the camera.
+2. **Ctrl+W closes the focused window** (with nothing focused, the
+   selection), through the same `can_close` guard as A-rightclick
+   (project export jobs still refuse) — fearless by the §6
+   unsaved-persists construction; wm.close cleans sel/focus/drill refs.
+3. **Alt+arrows resize the selection** (`wm.resize_sel`): the se corner
+   walks by the arrows' own 1/10 step, origin anchored, through the
+   identical min-clamp + kind-constraint door as a pointer drag — a game
+   window keeps its aspect/FOV rules under keyboard resize. Rides the
+   plain-key tier beside the move arrows (suspends while typing/playing).
+
+Cycle and close ride the **pre-`ig.kb` ctrl-combo tier** (beside
+Ctrl+S/F): leaving or closing the window you are typing in is precisely a
+mid-typing move, and Ctrl combos stay the shell's while a game window is
+playing (§12.3), so Ctrl+Tab is also the keyboard way OUT of play focus.
+
+**PAL API v23 — `pal.x_ig_kb_release()`.** Cycling focus away from a
+window whose ghost `x_ig_edit` is active had no deactivation path: only a
+mouse click clears imgui's active id, so the old window's widget would
+keep eating keystrokes. The door is `ClearActiveID()` (exactly what a
+click on empty space does), guarded no-op headless/pre-init. The same
+packet disables imgui's own Ctrl+Tab windowing gearbox at ig init
+(`ConfigNavWindowingKeyNext/Prev = 0`) — it is live even without
+NavEnableKeyboard (verified in the vendored 1.92.4 source) and would dim
+the screen and focus ghost windows the moment two imgui windows exist.
+
+**Determinism.** All chrome: doc.focus/sel and window rects are captured
+editor state exactly as a click/drag writes them; no sim/recorded byte
+moved; headless sessions never run the editor hotkey path. Goldens stood
+byte-identical.
+
+**Proof.** Linux selftest **24,665** / native Windows **24,667** on PAL
+API 23 (+16: `wm.cycle` reading order incl. z-scramble immunity, both
+wraps, both seeds, stale-id reseed, exact-position id tiebreak, empty,
+single-window self-cycle; `wm.resize_sel` multi-select growth with
+origins held, min clamp, constraint threading; `cam.contains`
+inside/overhang/edge-exact). `nix run .#test` ALL GREEN, every golden
+byte-identical; the Linux-recorded kitcheck trace verifies byte-exact on
+native Windows. A drive tape on a fresh smoke copy (18-window committed
+session) proved the wiring live, twice with byte-identical probes:
+seed→tiebreak walk (11→14 while 11 was PLAYING — ctrl stays ours)→wrap→
+shift-back; camera yanked to (5000,5000) and one Ctrl+Tab eased it back
+to center the target; launcher→main.lua→click into the code text
+(`kb=true`)→Ctrl+Tab moved focus AND released the keyboard (`kb=false` —
+the v23 door); alt+right/alt+shift+down resized the focused sprite
+window 460x380→461x390 with the origin held; Ctrl+W closed it and
+cleaned refs. Focus-ring reveal + resize/hint-pill captures on llm-feed.
+Docs: shipped editor.md "Keys that matter" + welcome note + hint pill;
+EDITOR.md §5 the keyboard window grammar; ARCHITECTURE.md v23;
+scripting.md compat version.
+
+**Deferred, named honestly.** Key-repeat on held cycle/nudge/resize keys
+(the D121 kit-wide `e.rep` decision, still open); a keyboard door for
+z-order already exists (`[`/`]`); pad navigation of editor chrome stays
+out of scope (the editor is the dev surface — pads navigate player-facing
+chrome via D128). The A8 accessibility checkbox is now ticked: player
+menu (D128–D133) + picker + launcher + this grammar cover the
+keyboard-reachable core flows.
+
+**Revisit triggers.** A user asking for MRU cycle order (the dear-imgui
+model) votes a toggle; a second `x_ig_kb_release` consumer (a future
+keyboard close of transient chrome?) votes promoting it into the kit.

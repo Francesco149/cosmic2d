@@ -385,7 +385,7 @@ Goal: validate the whole promise, not isolated subsystems.
   project schema, determinism rules, common failures, and compatibility policy.
   (D110 substrate; D111–D113 reader; D119 the 3D modules; D120 per-module
   2D sections + the KAT-pinned every-module-findable sweep.)
-- [~] Accessibility pass: scalable legible UI, keyboard-reachable core flows,
+- [x] Accessibility pass: scalable legible UI, keyboard-reachable core flows,
   visible focus, non-color-only states, reduced flash/shake options, and
   controller navigation where player-facing. (D128: the player-facing Esc
   menu drives keyboard-only AND pad-only — cm.ui nav cursor with a visible
@@ -401,7 +401,11 @@ Goal: validate the whole promise, not isolated subsystems.
   vibrated the player menu is fixed at class level. D133: the menu moves
   to F1 — the unsuppressable floor (accessibility/rebind/volume/quit)
   while Esc belongs to games — and option defaults declare as project.lua
-  data. Remaining: editor keyboard gaps (focus-cycle/close).)
+  data. D134 closes the editor keyboard gaps: Ctrl+Tab/Ctrl+Shift+Tab
+  cycle window focus in reading order with an off-screen reveal, Ctrl+W
+  closes through the can_close guard, Alt+arrows resize the selection —
+  all live mid-typing (PAL v23 `x_ig_kb_release` drops the ghost edit
+  being left) and while a game window is playing.)
 - [x] Add independent machine-local sizing for canvas-window text/content and
   fixed chrome (including rewind), with 1080p-compatible defaults and automatic
   SDL-DPI/4K scaling. The broader keyboard/focus/player accessibility gate above

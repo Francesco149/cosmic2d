@@ -136,6 +136,48 @@ end
 function M.to_front(doc, id) splice_to(doc, id, #doc.wins + 1) end
 function M.to_back(doc, id) splice_to(doc, id, 1) end
 
+-- ---- keyboard focus-cycle (D134) ----
+
+-- reading order over the canvas: top-to-bottom, then left-to-right, id
+-- as the deterministic tiebreak — stable while cycling (z never moves)
+local function read_order(doc)
+  local out = {}
+  for _, w in ipairs(doc.wins) do out[#out + 1] = w end
+  table.sort(out, function(a, b)
+    if a.y ~= b.y then return a.y < b.y end
+    if a.x ~= b.x then return a.x < b.x end
+    return a.id < b.id
+  end)
+  return out
+end
+
+-- the next window id in reading order from `from` (0/missing seeds at
+-- the first for dir=1, the last for dir=-1); wraps; nil when empty
+function M.cycle(doc, from, dir)
+  local ord = read_order(doc)
+  local n = #ord
+  if n == 0 then return nil end
+  local at
+  for i, w in ipairs(ord) do
+    if w.id == from then at = i break end
+  end
+  if not at then return ord[dir == -1 and n or 1].id end
+  return ord[(at - 1 + dir) % n + 1].id
+end
+
+-- keyboard resize (D134): grow/shrink every selected window from its se
+-- corner (origin anchored — the arrows-move twin), through the same
+-- min-clamp + kind constraint door a pointer resize takes
+function M.resize_sel(doc, sel, dx, dy, opt)
+  for _, id in ipairs(sel) do
+    local w = M.get(doc, id)
+    if w then
+      M.resize(doc, id, "se", { x = w.x, y = w.y, w = w.w, h = w.h },
+               dx, dy, opt)
+    end
+  end
+end
+
 -- ---- hit testing (world coords; reverse scan = topmost first) ----
 
 local function inside(w, x, y)

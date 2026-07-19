@@ -113,7 +113,8 @@ local HDR = 24 -- header strip height, world units
 local K = { escape = 41, lbracket = 47, rbracket = 48, space = 44,
             n1 = 30, n2 = 31, n0 = 39, right = 79, left = 80,
             down = 81, up = 82, c = 6, f = 9, s = 22, v = 25, z = 29, y = 28,
-            f1 = 58, f2 = 59, f3 = 60, f4 = 61, grave = 53 }
+            f1 = 58, f2 = 59, f3 = 60, f4 = 61, grave = 53,
+            tab = 43, w = 26 }
 
 -- ---- boot ----
 
@@ -131,7 +132,10 @@ local function fresh_doc()
            "alt+rclick  close (never loses work)\n" ..
            "alt+v       selection mode\n" ..
            "edges       drag to resize\nrclick      spawn menu\n" ..
-           "ctrl+space  the launcher — find/open anything"
+           "ctrl+space  the launcher — find/open anything\n" ..
+           "ctrl+tab    cycle window focus (+shift back)\n" ..
+           "ctrl+w      close the focused window\n" ..
+           "arrows      nudge selected (alt resize, shift x10)"
   doc.sel, doc.focus = {}, 0
   return doc
 end
@@ -620,19 +624,35 @@ function M.open_doc(name)
   return win
 end
 
--- pan-to a window: center it at the CURRENT zoom, fitting the zoom DOWN only if
+-- center a window at the CURRENT zoom, fitting the zoom DOWN only if
 -- the window overflows the viewport (the human's spec); eased like shift+1
-function M.pan_to_window(win, ig)
-  if not (win and ig) then return end
+local function pan_center(win, ig)
   local c = M.doc.cam
   local fit = cam.fit(win.x, win.y, win.w, win.h, ig.w, ig.h)
   local z = math.min(c.zoom, fit.zoom)
   local screen_z = cam.scaled_zoom(z)
   anim_to({ x = win.x + win.w * 0.5 - ig.w * 0.5 / screen_z,
             y = win.y + win.h * 0.5 - ig.h * 0.5 / screen_z, zoom = z })
+end
+
+-- pan-to a window (launcher open/spawn): always centers, raises, focuses
+function M.pan_to_window(win, ig)
+  if not (win and ig) then return end
+  pan_center(win, ig)
   M.doc.focus = win.id
   wm.to_front(M.doc, win.id)
   M.touch()
+end
+
+-- reveal a window (keyboard focus-cycle, D134): pan only when it is not
+-- already fully visible — cycling across on-screen windows never moves
+-- the camera; z stays where it is (raising is explicit-only)
+function M.reveal_window(win, ig)
+  if not (win and ig) then return end
+  if cam.contains(M.doc.cam, ig.w, ig.h, win.x, win.y, win.w, win.h) then
+    return
+  end
+  pan_center(win, ig)
 end
 
 -- the focused window's asset commands (EDITOR.md §6): resolve the focused
@@ -648,6 +668,51 @@ local function kind_escape()
   local win = wm.get(M.doc, M.doc.focus)
   local kind = win and M.kinds[win.kind]
   return (kind and kind.escape and kind.escape(win, M)) or false
+end
+
+-- a kind's resize constraint (wm threads it through M.resize): the game
+-- window locks aspect + walks the FOV range here (§12.3, live round 3)
+local function kind_constrain(win, part, r0, ww, wh, ctrl)
+  local kind = M.kinds[win.kind]
+  if kind and kind.constrain then
+    return kind.constrain(win, part, r0, ww, wh, ctrl)
+  end
+end
+
+local function kind_can_close(id)
+  local win = wm.get(M.doc, id)
+  local kind = win and M.kinds[win.kind]
+  return not (kind and kind.can_close) or kind.can_close(win, M)
+end
+
+-- keyboard focus-cycle (D134): reading order, select+focus, reveal if
+-- offscreen; the imgui keyboard releases so a ghost edit in the window
+-- being left stops eating keystrokes (what a click elsewhere does)
+local function cycle_focus(dir, ig)
+  local doc = M.doc
+  local nid = wm.cycle(doc, doc.focus, dir)
+  if not nid then return end
+  doc.sel, doc.focus = { nid }, nid
+  if pal.x_ig_kb_release then pal.x_ig_kb_release() end
+  M.reveal_window(wm.get(doc, nid), ig)
+  M.touch()
+end
+
+-- keyboard close (D134): the focused window, else the selection — the
+-- same non-destructive close as alt+rclick, through the same guard
+local function close_by_key()
+  local doc = M.doc
+  local ids = {}
+  if doc.focus ~= 0 then ids[1] = doc.focus
+  else for i, id in ipairs(doc.sel) do ids[i] = id end end
+  local closed = false
+  for _, id in ipairs(ids) do
+    if kind_can_close(id) and wm.close(doc, id) then closed = true end
+  end
+  if closed then
+    if pal.x_ig_kb_release then pal.x_ig_kb_release() end
+    M.touch()
+  end
 end
 
 -- the focused kind's declarative hotkey table (EDITOR.md §13): fires
@@ -692,11 +757,16 @@ local function hotkeys(ig, i)
 
   -- ctrl combos that must fire even while an edit widget owns the
   -- keyboard (UX round 5 — imgui assigns no meaning to these; save and
-  -- find are exactly what you reach for mid-typing)
+  -- find are exactly what you reach for mid-typing; cycle/close are the
+  -- D134 keyboard window grammar — leaving or closing the window you
+  -- are typing in is precisely a mid-typing move, and imgui's own
+  -- Ctrl+Tab gearbox is disabled at ig init so the chord is ours)
   for _, e in ipairs(i.keys) do
     if e.down and not e.rep and g.ctrl then
       if e.scancode == K.s then kind_call("save")
       elseif e.scancode == K.f then kind_call("find")
+      elseif e.scancode == K.tab then cycle_focus(g.shift and -1 or 1, ig)
+      elseif e.scancode == K.w then close_by_key()
       elseif e.scancode == K.space then -- Ctrl+Space: the global launcher
         local L = cm.require("cm.ed.launcher")
         if L.active(M) then L.close(M) else L.open(M) end
@@ -757,26 +827,15 @@ local function hotkeys(ig, i)
         local d = g.shift and 10 or 1
         local dx = (sc == K.right and d) or (sc == K.left and -d) or 0
         local dy = (sc == K.down and d) or (sc == K.up and -d) or 0
-        wm.move_sel(doc, dx, dy)
+        if g.alt then -- D134: alt+arrows resize (se corner, origin held)
+          wm.resize_sel(doc, doc.sel, dx, dy, { constrain = kind_constrain })
+        else
+          wm.move_sel(doc, dx, dy)
+        end
         M.touch()
       end
     end
   end
-end
-
--- a kind's resize constraint (wm threads it through M.resize): the game
--- window locks aspect + walks the FOV range here (§12.3, live round 3)
-local function kind_constrain(win, part, r0, ww, wh, ctrl)
-  local kind = M.kinds[win.kind]
-  if kind and kind.constrain then
-    return kind.constrain(win, part, r0, ww, wh, ctrl)
-  end
-end
-
-local function kind_can_close(id)
-  local win = wm.get(M.doc, id)
-  local kind = win and M.kinds[win.kind]
-  return not (kind and kind.can_close) or kind.can_close(win, M)
 end
 
 local function interact(ig)
@@ -1465,7 +1524,7 @@ local function draw_hud(ig, i)
   -- hint pill, bottom-left
   local hint = "drag title move · drag canvas select · alt+drag move · " ..
                "alt+rclick close · alt+v select mode · edges resize · " ..
-               "mid pan · rclick menu"
+               "mid pan · rclick menu · ctrl+tab cycle · ctrl+w close"
   local hw = pal.x_ig_text_size(hint, 11, 0)
   pal.x_ig_rect_fill(10, ig.h - 32, hw + 20, 24, C.pill, 8)
   pal.x_ig_text(20, ig.h - 27, 11, C.hud_dim, hint, 0)

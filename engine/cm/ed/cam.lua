@@ -57,6 +57,14 @@ function M.wheel_factor(notches)
   return 1.16 ^ notches
 end
 
+-- is the world rect fully inside the vw x vh viewport? (the focus-cycle
+-- reveal gate, D134: a visible window never yanks the camera)
+function M.contains(c, vw, vh, x, y, w, h)
+  local z = M.screen_zoom(c)
+  return x >= c.x and y >= c.y
+         and x + w <= c.x + vw / z and y + h <= c.y + vh / z
+end
+
 -- the camera that fits world rect (x,y,w,h) into a vw x vh viewport with a
 -- screen-px margin, centered; degenerate rects get zoom 1. Returns a new cam.
 function M.fit(x, y, w, h, vw, vh, margin)

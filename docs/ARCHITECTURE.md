@@ -893,5 +893,16 @@ byte-IDENTICAL (pinned by a selftest KAT and the standing pixel goldens);
 the Lua path stays the fallback when the primitive is absent. Render-class:
 it reads only its arguments and owns nothing. Little-endian hosts only.
 
+### PAL API v23 additions (editor keyboard window grammar — D134)
+
+`pal.x_ig_kb_release()` drops the active imgui widget (`ClearActiveID`) —
+what a mouse click on empty space does, exposed for the shell's keyboard
+focus-cycle: Ctrl+Tab moves `doc.focus` without a click, and nothing else
+would deactivate a ghost edit in the window being left (it would keep
+eating keystrokes). Editor chrome only; no-op headless or before ig init.
+The same packet turns imgui's built-in Ctrl+Tab windowing gearbox off at
+ig init (`ConfigNavWindowingKeyNext/Prev = 0`) — it is active even
+without keyboard nav and the chord belongs to the shell.
+
 Everything else (snapshot save/load helpers, audio, kernels) lands in M2+ and
 gets documented here when it does.
