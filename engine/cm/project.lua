@@ -87,6 +87,9 @@ M.TEMPLATES = {
   { key = "arcade", label = "arcade",
     note = "one screen: shoot falling rocks, chase the best score",
     main = "engine/stock/templates/arcade.lua" },
+  { key = "explore3d", label = "3D vale",
+    note = "a 3D map, you, and a wandering friend (writes world.terr)",
+    main = "engine/stock/templates/explore3d.lua" },
 }
 
 -- nil means the default (blank); an unknown key is an explicit error so a

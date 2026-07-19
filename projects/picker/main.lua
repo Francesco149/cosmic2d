@@ -11,9 +11,9 @@
 -- its tile go. A tile opens the project IN THE EDITOR (the picker is the
 -- editor's front door); the ▶ zone boots play mode. "+ New project" opens
 -- the starter chooser (D081): an editable random three-word folder name
--- plus the blank/platformer/top-down/arcade template row from
--- cm.project.TEMPLATES, scaffolded through the same atomic rollback
--- contract as ever.
+-- plus the template row from cm.project.TEMPLATES (blank/platformer/
+-- top-down/arcade/3D vale), scaffolded through the same atomic
+-- rollback contract as ever.
 --
 -- Navigation and scale (D080): the grid scrolls (wheel, draggable bar,
 -- PgUp/PgDn), a search field + sort toggle reorder it through cm.pick's
@@ -734,7 +734,7 @@ function M.draw()
       pal.x_ig_text(x + 14, y + 14, 18, hov and C.text or C.accent,
                     "+ New project", 0)
       pal.x_ig_text(x + 14, y + 42, 11, C.dim,
-                    "blank · platformer · top-down · arcade", 1)
+                    "blank · platformer · top-down · arcade · 3D", 1)
       if hov and gi.clicked[1] and not modal_at_start then M.open_new() end
     end
   end
@@ -1155,11 +1155,14 @@ function M.draw()
                       .. "your own.", 0)
       end
       -- the starter row: what the first main.lua teaches. Enter on a
-      -- template selects it; create (the safe default) scaffolds.
-      local act = not factive and not submit and kb_row(6, 5)
+      -- template selects it; create (the safe default) scaffolds. The
+      -- row sizes itself to the registry, so a new starter never needs
+      -- this layout touched again.
+      local NT = #project.TEMPLATES
+      local act = not factive and not submit and kb_row(NT + 2, NT + 1)
       if a.swallow then act, a.swallow = nil, nil end
       local trow_y, trow_h = py + 144, 28
-      local trow_w = (pw - 36 - 3 * 8) / 4
+      local trow_w = (pw - 36 - (NT - 1) * 8) / NT
       for k, t in ipairs(project.TEMPLATES) do
         local bx = px + 18 + (k - 1) * (trow_w + 8)
         local chosen = a.template == k
@@ -1183,8 +1186,8 @@ function M.draw()
                     project.TEMPLATES[a.template].note, 1)
       pal.x_ig_clip_pop()
       local by = py + ph - 44
-      if (button(px + 18, by, 96, 28, "create", valid ~= nil, a.kcursor == 5)
-          or (submit and valid) or (act and a.kcursor == 5 and valid)) then
+      if (button(px + 18, by, 96, 28, "create", valid ~= nil, a.kcursor == NT + 1)
+          or (submit and valid) or (act and a.kcursor == NT + 1 and valid)) then
         local tmpl = project.TEMPLATES[a.template]
         local name = a.rename
         local ok, err = create(name, tmpl.key)
@@ -1199,7 +1202,7 @@ function M.draw()
         end
       end
       if M.action and (button(px + 124, by, 72, 28, "cancel", true,
-                              a.kcursor == 6) or (act and a.kcursor == 6)) then
+                              a.kcursor == NT + 2) or (act and a.kcursor == NT + 2)) then
         M.action = nil
       end
     else

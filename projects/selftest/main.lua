@@ -6426,9 +6426,9 @@ local function t_project_templates()
   local project = cm.require("cm.project")
   local input = cm.require("cm.input")
 
-  -- the registry: four starters, blank first (the no-template default)
-  check(#project.TEMPLATES == 4 and project.TEMPLATES[1].key == "blank",
-        "templates: registry offers four starters, blank first")
+  -- the registry: five starters, blank first (the no-template default)
+  check(#project.TEMPLATES == 5 and project.TEMPLATES[1].key == "blank",
+        "templates: registry offers five starters, blank first")
   local seen = {}
   for _, t in ipairs(project.TEMPLATES) do
     check(type(t.key) == "string" and type(t.label) == "string"
@@ -6464,6 +6464,12 @@ local function t_project_templates()
   local function rm_dir()
     pal.x_remove(dir .. "/main.lua")
     pal.x_remove(dir .. "/project.lua")
+    -- the explore3d starter generates assets on first boot; without
+    -- these the dir survives rm and the NEXT selftest run (the shared
+    -- tmp) fails the no-partial-project check on stale debris
+    pal.x_remove(dir .. "/world.terr")
+    pal.x_remove(dir .. "/art/mascot.fig")
+    pal.x_remove(dir .. "/art")
     pal.x_remove(dir)
   end
   rm_dir()
@@ -6518,6 +6524,12 @@ local function t_project_templates()
     local chunk, cerr = load(bytes, "@" .. dir .. "/main.lua")
     check(chunk ~= nil,
           "templates: " .. t.key .. " loads (" .. tostring(cerr) .. ")")
+    -- boot with the scratch dir AS the project (explore3d captures
+    -- cm.main.args.project at LOAD time and writes its world.terr /
+    -- mascot.fig beside main.lua — the real boot semantics), so the
+    -- override must wrap chunk(), not just init
+    local saved_proj = cm.main.args.project
+    cm.main.args.project = dir
     local game2 = chunk()
     check(type(game2) == "table" and type(game2.init) == "function"
           and type(game2.step) == "function"
@@ -6531,6 +6543,7 @@ local function t_project_templates()
     input.apply(zero)
     input.apply(zero)
     for _ = 1, 120 do game2.step() end
+    cm.main.args.project = saved_proj
     state.doc.canary = 7
     game2.init() -- the hot-reload contract: init must not reset a live run
     local d = state.doc
@@ -6549,6 +6562,19 @@ local function t_project_templates()
     elseif t.key == "topdown" then
       check(d.count == 0 and #d.got == 6,
             "templates: topdown tracks its gems")
+    elseif t.key == "explore3d" then
+      -- the vale booted from its own generated .terr: the player stands
+      -- at the file's spawn, the npc walked some of its route
+      check(type(d.x) == "number" and type(d.z) == "number"
+            and type(d.nx) == "number" and d.nphase > 0,
+            "templates: explore3d walks its generated vale")
+      -- drop the terr3 slot the boot published (suite hygiene: the
+      -- captured buffers must not leak into later tests)
+      local terr3 = cm.require("cm.terr3")
+      terr3._slots["world"] = nil
+      terr3.cur = nil
+      pal.buf_free("world.t3state")
+      pal.buf_free("cm.terr3.current")
     else
       check(type(d.x) == "number" and type(d.y) == "number",
             "templates: blank owns a movable dot")
@@ -11543,8 +11569,9 @@ local function t_docs()
       "cm.collide", "cm.box", "cm.actor", "cm.camera", "cm.tween", "cm.depth",
       "cm.hud", "cm.move", "cm.tmap", "cm.anim", "cm.sprite", "cm.snd",
       "cm.ins", "cm.options", "cm.save", "cm.palette", "cm.grade", "cm.rand",
-      "cm.math", "cm.ease", "cm.m4", "cm.gb", "cm.terr", "cm.atlas", "cm.fig",
-      "cm.mascot", "cm.spr", "cm.rig", "cm.kin", "cm.walk" }) do
+      "cm.math", "cm.ease", "cm.m4", "cm.gb", "cm.terr", "cm.terr3",
+      "cm.atlas", "cm.fig", "cm.mascot", "cm.spr", "cm.rig", "cm.kin",
+      "cm.walk" }) do
     local named = false
     for _, h in ipairs(docs.search(mod)) do
       if h.name == "scripting.md" and h.section

@@ -1315,6 +1315,45 @@ The sim reads heights via
   sim stands anywhere in an unbounded world with zero resident terrain state
   (the `bigworld` demo).
 
+## 3D maps from the editor (`cm.terr3`)
+
+`cm.terr3` is the file-backed 3D map: everything the **3d map window**
+authors — the heightfield, painted materials and shade, water, the walk
+grid, placed props, and markers — loads from a `.terr` asset into
+captured buffers, so map edits replay and rewind exactly. This is the
+hand-authored twin of raw `cm.terr` code (and procedural generation can
+WRITE the same file: `terr3.encode(doc)` + an atomic write).
+
+    local terr3 = cm.require("cm.terr3")
+    local world
+
+    function game.init()
+      world = terr3.use{ path = root .. "/world.terr", name = "world" }
+    end
+
+    function game.step()
+      world = terr3.current() or world          -- follow hot reloads
+      local y = terr3.ground(world.doc, x, z)   -- triangle-exact height
+      local cell = world.doc.tile * 0.5
+      if terr3.walkable(world, x // cell, z // cell) then ... end
+      local routes = terr3.markers(world.doc, "route")  -- npc patrols
+      local door = terr3.get("door")            -- a named placement
+    end
+
+- `terr3.use{ path=, name= }` instances a map into a stable named slot;
+  the editor's Ctrl+S triggers `terr3.reload` so the running game
+  adopts edits the same frame. `terr3.current()` returns the live
+  instance after a reload.
+- Sim readers: `terr3.ground(doc, wx, wz)` and `terr3.walkable`
+  (the derived walk grid: slope + wade + blockers + painted
+  overrides, half-tile cells), `terr3.markers(doc, kind)`,
+  `terr3.spawn(doc)`, `terr3.get(name)` (a named placement handle),
+  `terr3.boxes(doc)` (placement colliders).
+- Render emitters (draw only): `terr3.emit_terrain(out, doc)`,
+  `terr3.emit_water(out, doc)`, and `terr3.emit_props(doc, opts)` —
+  billboards, meshes, and stand-ins as ready draw segments.
+  The **3D vale** starter template is a complete worked example.
+
 ## The terrain texture atlas (`cm.atlas`)
 
 The RO look bakes a **unique texture per terrain tile** (organic blended

@@ -193,6 +193,9 @@ ready to hand to a player on a clean machine.
 - [Writing a game](engine/stock/docs/scripting.md) — the `init/step/draw`
   shape, the module reference, determinism, and every `cm.*` door this
   walkthrough used.
+- [Your first 3D game](engine/stock/docs/getting-started-3d.md) — the 3D
+  vale starter: sculpt a world, model props, pose a character, wire a
+  wandering npc.
 - Read `projects/demo/` for a complete, commented example.
 
 ## The idea
