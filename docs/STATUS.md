@@ -31,7 +31,36 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — the D139 stale-seed follow-up
+**This session (2026-07-19), latest — D139 addendum 2: lighting moved
+into the atlas texels.** The human's third report ("still doing the
+texture disappear thing", with their fond-crow-mink project attached)
+reproduced on their REAL data as a rendering truth, not a state bug:
+tapes driving their journal (undo across the textured boundary, redo,
+re-drop, paint) kept the live atlas sound on Linux AND on the native
+exe via interop — but A/B-ing the shots showed atlas MODE visibly
+flattening the terrain. Root cause: atlas verts carried `lit(WHITE) =
+amb + sun*d`, a vertex color clamps at 1.0, and flat/sun-facing
+ground sits at ~1.12 on the vale — the ENTIRE sunlit range collapsed
+to one tone, so the ground went "solid green" exactly when a textured
+material turned atlas mode on. Fix: `terr3.bake_into` multiplies
+albedo × painted shade × jitter × the per-tile sun/ambient term,
+clamped only at the final byte; atlas verts are PURE WHITE;
+`mat_hash` now covers heights + sun/suncol/amb (bake inputs feed the
+stamp — sculpting stales honestly) and every brush stroke patches the
+live atlas (sculpt moves baked lighting). Old published atlases
+self-orphan (stamp mismatch → vertex fallback until the next save
+republishes) — the graceful migration the freshness contract exists
+for; the human's map heals on their next Ctrl+S. Proof: Linux
+selftest **24,881** (+3: lit flat-texel, the ridge's sun-facing tile
+baking brighter than its away twin, sculpt-changes-stamp; the
+white-verts KAT rewritten) / native Windows **24,883**; `nix run
+.#test` ALL GREEN, goldens byte-identical; all four tapes green on
+fresh copies (terr 18, sprite 13, stale-seed 8, fond-crow-mink 7 — the
+one expected miss is the legacy-stamp seed rejection, i.e. the
+migration working); the before/after captures on the human's own map
+are on llm-feed; Windows stage refreshed (13 durable entries).
+
+**Same session, earlier — the D139 stale-seed follow-up
 (the addendum).** The human's next native pass: adding a custom
 material turned the textured grass SOLID GREEN (painting still worked;
 ctrl+z flashed the texture for a couple frames). Root cause: lat_for's
