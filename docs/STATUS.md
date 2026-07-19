@@ -31,7 +31,30 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — D138 + E4.1 + E5 + the 3D vale
+**This session (2026-07-19), latest — the second native-report batch
+(follow-up to D138, same day).** Four more reports from the human's
+native pass, fixed and proven (Linux selftest **24,851** / native
+Windows **24,853**; suite ALL GREEN, goldens byte-identical; captures
+on llm-feed; Windows stage refreshed, 9 durable entries):
+**edge loops were edge RINGS** — mesh.edge_loop is now the vertex walk
+(next edge shares no face with the current; an extruded waist closes
+around its own middle edges) with the cube dead-end falling back to
+the ring of the face UNDER the cursor ("selecting a cube edge selects
+the face" — the human's expected read); KATs + the mesh tape
+rewritten. **The vale's controls run the openworld kernel verbatim**
+(cm.move → rig.wish → kin.run; cm.rig orbit-follow in a captured
+vale.cam buffer; arrows/drag orbit, c recenters) — fixing w/s
+inversion, the a/d camera snap, and the npc facing bug (the 1-arg
+`m.atan` silently ignoring its second argument; now m.atan2 +
+shortest-arc easing); tape: max per-frame camera step 0.017 rad, npc
+heading err 0.00. **The figure parts tab previews clip 1 key 1**
+instead of the bind pose (floating mitts/boots are POSE-placed — bind
+hid them inside the body) and new figure windows face the front 3/4.
+**A fresh game window spawns at a whole SCREEN multiple** at any Aa
+(the D125 snap unit; world size kept fractional so the snap is exact —
+was world-1:1 = blurry 1.25x at the human's 125%), KAT'd.
+
+**Same session, earlier — D138 + E4.1 + E5 + the 3D vale
 starter: the native-test reports batch and the figure editor.** The
 human's first native session with the D137 editors returned a bug and
 a wish list; all of it landed as six commits, each tape-proven on the
