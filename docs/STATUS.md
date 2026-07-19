@@ -31,7 +31,45 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — D139 addendum 2: lighting moved
+**This session (2026-07-19), latest — D139 addenda 3+4: the native
+crash, billboard yaw, prop scaling, and the stage-preservation
+incident.** Three more native reports, all landed. **(1) The hard
+crash** ("editing the brush sprite and painting again"): the Windows
+minidump (0xC0000005 in SDL3, scene3d_pass on the stack) + the
+crashed process's flushed diagnostics log (dies right after `saved +
+baked <sprite>.spr`, only once an atlas existed) pinned a CLASS bug —
+the PAL's deferred texture free keeps a pend slot `used`, so a Lua
+holder drawing a freed id ONE frame late binds NULL into SDL_GPU. The
+holder: the explore3d template cached the atlas TEXTURE ID in
+terrcache while the assets thumbnail's epoch re-read freed it. Fixed
+at both levels: gfx.c's two flush bind sites guard NULL → bind WHITE
+(a stale draw is a one-frame flicker, never a crash — bench-proven
+drawing a freed id 7 frames on), and the template re-asks gfx.texture
+per frame (a memo hit), caching only the doc-keyed freshness gate.
+Class rule in the ADR: raw texture ids must never be cached across
+frames by consumers of epoch-refreshed sources. **(2) Billboards
+faced "the player, not the camera"**: emit_props expects the ORBIT
+yaw convention; the template passed the rig yaw raw (90° off) — now
+converts (`-yaw - pi/2`), game-shot proven full-face. **(3) Prop
+scaling** existed (-/= on a selection) but was undiscoverable:
+ctrl+wheel now scales the sel-tool selection (props: scale, markers:
+radius); hint + win-terr.md name all three. **(4) The incident**:
+verifying the restage exposed tools/stage-windows.sh preserving ONLY
+`.ed` — native-created projects lost their payload files on every
+restage (mine ate the human's two; four older ones were already
+hollow). All six restored and boot-verified natively — full copies
+where held, else the `.ed` journals (undo-forever paying for real:
+terr/sprite/fig tips, sprite.save re-baking siblings, atlases
+re-baked, scaffolding regenerated via cm.project.scaffold with the
+FIXED template — existing template-instantiated projects carry their
+own main.lua copies, so the human's projects were patched in place).
+The script now preserves any projects/<name> the fresh stage does not
+ship WHOLESALE, verified by a real restage round trip; class rule:
+preserve by deny-list (derived caches), never allow-list. Suite ALL
+GREEN, goldens byte-identical; Linux selftest 24,881 / native
+**24,883** on the twice-refreshed stage; all tapes green.
+
+**Same session, earlier — D139 addendum 2: lighting moved
 into the atlas texels.** The human's third report ("still doing the
 texture disappear thing", with their fond-crow-mink project attached)
 reproduced on their REAL data as a rendering truth, not a state bug:
