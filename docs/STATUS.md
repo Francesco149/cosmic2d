@@ -31,7 +31,26 @@ materialize into the drag-in consumer: dropping a `.ctrace` into any editor
 view opens it as a non-destructive replay clip, mounts its bundled project, and
 Esc/eject restores the untouched live session.**
 
-**This session (2026-07-19), latest — the second native-report batch
+**This session (2026-07-19), latest — the third native-report pair:
+live drops into the 3d map + gizmo clipping.** The human's next pass
+found drag-in DOING NOTHING (placement and brush stamps both): the
+shell's carry dispatch passes SCREEN px to `kind.drop` (the map
+window's convention) but the terr window treated them as WORLD coords
+and ran `cam.w2s` — the over-viewport test always failed and the door
+silently no-oped. The E3/stamp tapes never caught it because they
+called `kind.drop` DIRECTLY with world coords, matching the wrong
+implementation — the new tape drives the SHELL's `g.adrag` release
+itself (billboard placed with sel; the stamp adopted with shd; both
+PASS on the real dispatch line). The tape-convention lesson is the
+takeaway: a door proof must enter through the SHELL, not call the door.
+And route gizmos painted over the inspector strip: the terr window's
+whole projected-overlay block now clips to the viewport rect (the
+figure window's joint dots had the same class and clip too; the mesh
+panes already did) — proof shot shows a route clipping exactly at the
+edge. Linux selftest 24,851 / native 24,853 on the refreshed stage;
+suite ALL GREEN, goldens byte-identical; captures on llm-feed.
+
+**Same session, earlier — the second native-report batch
 (follow-up to D138, same day).** Four more reports from the human's
 native pass, fixed and proven (Linux selftest **24,851** / native
 Windows **24,853**; suite ALL GREEN, goldens byte-identical; captures
