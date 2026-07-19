@@ -441,6 +441,24 @@ asset_epoch; a `.terr` placement of the figure hot-updates on save.
 > (the format + emit carry them; the strip edits colors only),
 > multi-select in the 3d map window, and route double-click-to-end
 > (Enter only).
+>
+> **E4.1 (same session, the human's native-test reports):** the mesh
+> window grew the selection/manipulation layer the E4 slice deferred —
+> **sel**, the universal default mode (click = edge else front face,
+> click-again drills ONE level to the vert/face behind, press-drag on
+> the selection moves it, empty drag box-selects VISIBLE verts,
+> occluded silhouette edges never steal clicks), an **edge mode**, box
+> select in every mode (faces fully boxed, edges both-ends boxed, vtx
+> stays the x-ray box), **ctrl+click edge loops** in every mode (quad
+> walk via opposite edges, tris stop it; face mode takes the walked
+> strip), and **selection continuity across mode switches**
+> (`cm.mesh.convert_sel` — the touched-vert union re-expressed in the
+> target mode). The viewport is a **2x2 quad view by default** (orbit
+> persp + top/front/side orthos sharing focus+zoom via `m4.ortho`;
+> every pane picks/marquees/drags through its own projection; the RT
+> pool grew per-pane subkeys) at a 2x default window size (880x720).
+> The pure substrate lives in cm.mesh (`ekey/eunkey/edges/pick_hits/
+> vert_visible/edge_loop/sel_verts/convert_sel`), KAT'd.
 
 - **E0 — the viewport substrate**: PAL v24 (`x_rt`, view targets),
   `cm.ed.orbit`, and a proving window skeleton (kind `terr` bound to

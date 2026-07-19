@@ -164,17 +164,20 @@ local function pool(ed)
   return t
 end
 
-function M.rt_for(ed, win, w, h)
+-- `sub` names an extra per-window viewport (the mesh window's quad
+-- panes): each (win, sub) pair owns one RT, all pruned with the window.
+function M.rt_for(ed, win, w, h, sub)
   local t = pool(ed)
-  local r = t.rts[win.id]
+  local key = sub and (win.id .. ":" .. sub) or win.id
+  local r = t.rts[key]
   if r and (r.w ~= w or r.h ~= h) then
     pal.tex_free(r.tex)
-    t.rts[win.id] = nil
+    t.rts[key] = nil
     r = nil
   end
   if not r then
-    r = { tex = pal.x_rt(w, h), w = w, h = h }
-    t.rts[win.id] = r
+    r = { tex = pal.x_rt(w, h), w = w, h = h, win = win.id }
+    t.rts[key] = r
     reg_write(t.rts)
   end
   return r
@@ -184,15 +187,21 @@ function M.rt_prune(ed)
   local t = pool(ed)
   local wm = cm.require("cm.ed.wm")
   local gone
-  for id, r in pairs(t.rts) do
-    if not wm.get(ed.doc, id) then
+  for key, r in pairs(t.rts) do
+    if not wm.get(ed.doc, r.win or key) then
       pal.tex_free(r.tex)
-      t.rts[id] = nil
-      t.gest[id] = nil
+      t.rts[key] = nil
+      t.gest[r.win or key] = nil
       gone = true
     end
   end
   if gone then reg_write(t.rts) end
+end
+
+-- per-window transient gesture storage (pruned with the window) for
+-- kinds that run their own pump (the mesh window's quad panes)
+function M.gest(ed)
+  return pool(ed).gest
 end
 
 -- the shared camera gesture pump: focused middle-drag = orbit,

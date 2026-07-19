@@ -478,6 +478,196 @@ function M.remove_faces(doc, set)
   M.compact(doc)
 end
 
+-- ---- topology + selection (pure; the window's universal mode) -----------
+
+-- canonical undirected edge key (u16 vert ids: min*65536+max fits exactly)
+function M.ekey(a, b)
+  if a > b then a, b = b, a end
+  return a * 65536 + b
+end
+
+function M.eunkey(key)
+  return key // 65536, key % 65536
+end
+
+-- every edge in the mesh: array of { a, b, key, fs = {fi...} } (a < b,
+-- first-seen order) plus the key -> record index map. fs is face
+-- adjacency in face order — the loop walk's substrate.
+function M.edges(doc)
+  local list, index = {}, {}
+  for fi, f in ipairs(doc.faces) do
+    local n = #f.v
+    for k = 1, n do
+      local a, b = f.v[k], f.v[k % n + 1]
+      local key = M.ekey(a, b)
+      local e = index[key]
+      if not e then
+        e = { a = m.min(a, b), b = m.max(a, b), key = key, fs = {} }
+        index[key] = e
+        list[#list + 1] = e
+      end
+      e.fs[#e.fs + 1] = fi
+    end
+  end
+  return list, index
+end
+
+-- every ray-face hit, nearest first: [{ fi, t }] — the drill ladder's
+-- substrate (pick_face = hits[1]). Same front-side/doublesided rule.
+function M.pick_hits(doc, ray)
+  local hits = {}
+  for fi, f in ipairs(doc.faces) do
+    local ntri = #f.v - 2
+    local bestt
+    for k = 1, ntri do
+      local a1, a2, a3 = f.v[1], f.v[k + 1], f.v[k + 2]
+      local ax, ay, az = vert3(doc, a1)
+      local bx, by, bz = vert3(doc, a2)
+      local cx, cy, cz = vert3(doc, a3)
+      local e1x, e1y, e1z = bx - ax, by - ay, bz - az
+      local e2x, e2y, e2z = cx - ax, cy - ay, cz - az
+      local px = ray.dy * e2z - ray.dz * e2y
+      local py = ray.dz * e2x - ray.dx * e2z
+      local pz = ray.dx * e2y - ray.dy * e2x
+      local det = e1x * px + e1y * py + e1z * pz
+      local hit = det > 1e-12 or (f.ds and det < -1e-12)
+      if hit then
+        local inv = 1 / det
+        local tx, ty, tz = ray.ox - ax, ray.oy - ay, ray.oz - az
+        local u = (tx * px + ty * py + tz * pz) * inv
+        if u >= 0 and u <= 1 then
+          local qx = ty * e1z - tz * e1y
+          local qy = tz * e1x - tx * e1z
+          local qz = tx * e1y - ty * e1x
+          local v = (ray.dx * qx + ray.dy * qy + ray.dz * qz) * inv
+          if v >= 0 and u + v <= 1 then
+            local t = (e2x * qx + e2y * qy + e2z * qz) * inv
+            if t > 1e-6 and (not bestt or t < bestt) then bestt = t end
+          end
+        end
+      end
+    end
+    if bestt then hits[#hits + 1] = { fi = fi, t = bestt } end
+  end
+  table.sort(hits, function(x, y) return x.t < y.t end)
+  return hits
+end
+
+-- is vert vi visible from origin o (no front-facing face closer along
+-- the ray than the vert itself)? Backface-culled faces are see-through
+-- in render, so front-only occlusion matches what the eye sees. The
+-- 1e-3 slack keeps a vert's own faces (hit AT the vert) from hiding it.
+function M.vert_visible(doc, ox, oy, oz, vi)
+  local x, y, z = vert3(doc, vi)
+  local dx, dy, dz = x - ox, y - oy, z - oz
+  local dist = m.sqrt(dx * dx + dy * dy + dz * dz)
+  if dist < 1e-9 then return true end
+  local ray = { ox = ox, oy = oy, oz = oz,
+                dx = dx / dist, dy = dy / dist, dz = dz / dist }
+  local _, t = M.pick_face(doc, ray)
+  return not t or t >= dist * (1 - 1e-3)
+end
+
+-- the edge loop through (a, b): walk quads via opposite edges in both
+-- directions until a triangle, a boundary, a non-manifold fan, or the
+-- start closes the ring. Returns the edge-key list (start included) and
+-- the quad strip walked — the face-mode loop selection.
+function M.edge_loop(doc, a, b)
+  local _, index = M.edges(doc)
+  local start = M.ekey(a, b)
+  if not index[start] then return { start }, {} end
+  local keys, faces = { start }, {}
+  local seen_e, seen_f = { [start] = true }, {}
+  local function opposite(f, ea, eb)
+    if #f.v ~= 4 then return nil end
+    for k = 1, 4 do
+      local va, vb = f.v[k], f.v[k % 4 + 1]
+      if (va == ea and vb == eb) or (va == eb and vb == ea) then
+        return f.v[(k + 1) % 4 + 1], f.v[(k + 2) % 4 + 1]
+      end
+    end
+    return nil
+  end
+  local function walk(dir)
+    local ea, eb = a, b
+    local e = index[M.ekey(ea, eb)]
+    local fi = e.fs[dir]
+    while fi do
+      local f = doc.faces[fi]
+      local oa, ob = opposite(f, ea, eb)
+      if not oa then break end
+      if not seen_f[fi] then
+        seen_f[fi] = true
+        faces[#faces + 1] = fi
+      end
+      local key = M.ekey(oa, ob)
+      if seen_e[key] then break end
+      seen_e[key] = true
+      keys[#keys + 1] = key
+      -- cross to the other face sharing the opposite edge
+      local oe = index[key]
+      local nxt
+      for _, ofi in ipairs(oe and oe.fs or {}) do
+        if ofi ~= fi then nxt = ofi break end
+      end
+      ea, eb, fi = oa, ob, nxt
+    end
+  end
+  walk(1)
+  walk(2)
+  return keys, faces
+end
+
+-- the union of every vert a mixed selection touches (vsel ids + esel
+-- endpoints + fsel corners), ascending — what a move gesture moves.
+function M.sel_verts(doc, vsel, esel, fsel)
+  local set = {}
+  for _, vi in ipairs(vsel or {}) do set[vi] = true end
+  for _, key in ipairs(esel or {}) do
+    local a, b = M.eunkey(key)
+    set[a], set[b] = true, true
+  end
+  for _, fi in ipairs(fsel or {}) do
+    local f = doc.faces[fi]
+    for _, vi in ipairs(f and f.v or {}) do set[vi] = true end
+  end
+  local out = {}
+  for vi in pairs(set) do out[#out + 1] = vi end
+  table.sort(out)
+  return out
+end
+
+-- selection continuity across mode switches: the touched-vert union
+-- re-expresses as the target mode's elements (verts / edges with both
+-- endpoints touched / faces with every corner touched). "sel" keeps the
+-- mixed selection as-is.
+function M.convert_sel(doc, vsel, esel, fsel, to)
+  if to == "sel" then return vsel, esel, fsel end
+  local union = M.sel_verts(doc, vsel, esel, fsel)
+  local set = {}
+  for _, vi in ipairs(union) do set[vi] = true end
+  if to == "vtx" then return union, {}, {} end
+  if to == "edge" then
+    local out = {}
+    for _, e in ipairs(M.edges(doc)) do
+      if set[e.a] and set[e.b] then out[#out + 1] = e.key end
+    end
+    return {}, out, {}
+  end
+  if to == "face" then
+    local out = {}
+    for fi, f in ipairs(doc.faces) do
+      local all = #f.v > 0
+      for _, vi in ipairs(f.v) do
+        if not set[vi] then all = false break end
+      end
+      if all then out[#out + 1] = fi end
+    end
+    return {}, {}, out
+  end
+  return vsel, esel, fsel
+end
+
 -- the mirror-x partner of a vert (a vert at (-x, y, z) within eps),
 -- for live mirrored editing. nil for center-line or unpaired verts.
 function M.mirror_pair(doc, vi, eps)

@@ -11979,6 +11979,12 @@ local function t_m4()
         and near(P[15], -2.02, 1e-9), "m4.persp depth terms")
   local zero = { 2, 3, 4, 5, 7, 8, 9, 10, 13, 14, 16 }
   for _, i in ipairs(zero) do check(P[i] == 0, "m4.persp zero entry " .. i) end
+  -- ortho: half-extents map to clip +-1, depth stays GL-style
+  local O = m4.ortho(4, 2, 1, 101)
+  check(near(O[1], 0.25, 1e-9) and near(O[6], 0.5, 1e-9),
+        "m4.ortho extent terms")
+  check(near(O[11], -0.02, 1e-9) and near(O[15], -1.02, 1e-9)
+        and O[16] == 1 and O[12] == 0, "m4.ortho depth terms (w stays 1)")
 end
 
 local function t_kin()
@@ -12186,6 +12192,80 @@ local function t_mesh()
     end
   end
   check(unlit_ok, "mesh: unlit face takes the zero-normal slot")
+
+  -- ---- topology + selection (the window's universal mode substrate) ----
+  local bx = ME.fresh("topo")
+
+  -- edge keys are canonical both ways
+  check(ME.ekey(3, 7) == ME.ekey(7, 3), "mesh: ekey is undirected")
+  local ka, kb = ME.eunkey(ME.ekey(7, 3))
+  check(ka == 3 and kb == 7, "mesh: eunkey round trip")
+
+  -- a box has 12 edges, each shared by exactly 2 faces
+  local elist, eindex = ME.edges(bx)
+  check(#elist == 12, "mesh: box has 12 edges")
+  local two = true
+  for _, e in ipairs(elist) do two = two and #e.fs == 2 end
+  check(two, "mesh: every box edge borders 2 faces")
+  check(eindex[ME.ekey(2, 3)] ~= nil, "mesh: edge index by key")
+
+  -- pick_hits orders front-to-back: a +z ray sees front then back
+  local hits = ME.pick_hits(bx, { ox = 0.1, oy = 0.05, oz = 5,
+                                  dx = 0, dy = 0, dz = -1 })
+  check(#hits == 1, "mesh: single-sided backface stays unpicked")
+  check(hits[1].fi == 2, "mesh: pick_hits front face first")
+  bx.faces[1].ds = true -- the back face becomes hittable from inside
+  hits = ME.pick_hits(bx, { ox = 0.1, oy = 0.05, oz = 5,
+                            dx = 0, dy = 0, dz = -1 })
+  check(#hits == 2 and hits[1].fi == 2 and hits[2].fi == 1
+        and hits[1].t < hits[2].t, "mesh: pick_hits drills to the back")
+  bx.faces[1].ds = nil
+
+  -- visibility: from +z the front corners show, the back corners hide
+  check(ME.vert_visible(bx, 0, 0, 5, 6), "mesh: front corner visible")
+  check(not ME.vert_visible(bx, 0.02, 0.03, 5, 1),
+        "mesh: back corner occluded by the front face")
+
+  -- the edge loop around a box's vertical edges: 4 edges, 4 side faces
+  local keys, lfaces = ME.edge_loop(bx, 2, 3)
+  check(#keys == 4, "mesh: box vertical edge loop has 4 edges")
+  local kset = {}
+  for _, k in ipairs(keys) do kset[k] = true end
+  check(kset[ME.ekey(2, 3)] and kset[ME.ekey(1, 4)]
+        and kset[ME.ekey(5, 8)] and kset[ME.ekey(6, 7)],
+        "mesh: the loop is the 4 verticals")
+  check(#lfaces == 4, "mesh: the loop walks the 4 side faces")
+  local fset = {}
+  for _, fi2 in ipairs(lfaces) do fset[fi2] = true end
+  check(fset[1] and fset[2] and fset[3] and fset[4] and not fset[5]
+        and not fset[6], "mesh: the walked strip skips the caps")
+
+  -- a triangle stops the walk (loops are a quad grammar): the wedge's
+  -- base right edge crosses the bottom quad once, then dies at the tris
+  local tw = ME.fresh("tw")
+  ME.add_prim(tw, "wedge", {})
+  local wkeys = ME.edge_loop(tw, 10, 11)
+  check(#wkeys == 2 and wkeys[1] == ME.ekey(10, 11)
+        and wkeys[2] == ME.ekey(9, 12),
+        "mesh: the loop walk stops at triangles")
+
+  -- sel_verts unions a mixed selection
+  local u = ME.sel_verts(bx, { 1 }, { ME.ekey(2, 3) }, { 2 })
+  check(#u == 7, "mesh: sel_verts unions vert+edge+face") -- 1,2,3,5,6,7,8
+
+  -- selection continuity: face -> verts -> face -> edges
+  local vs, es, fs = ME.convert_sel(bx, {}, {}, { 5 }, "vtx")
+  check(#vs == 4 and #es == 0 and #fs == 0,
+        "mesh: face converts to its 4 corners")
+  local vs2, es2, fs2 = ME.convert_sel(bx, vs, {}, {}, "face")
+  check(#fs2 == 1 and fs2[1] == 5 and #vs2 == 0 and #es2 == 0,
+        "mesh: the corners convert back to exactly their face")
+  local _, es3 = ME.convert_sel(bx, vs, {}, {}, "edge")
+  check(#es3 == 4, "mesh: the corners convert to the 4 boundary edges")
+  local kv, ke, kf = ME.convert_sel(bx, { 1 }, { ME.ekey(2, 3) }, { 5 },
+                                    "sel")
+  check(#kv == 1 and #ke == 1 and #kf == 1,
+        "mesh: sel mode keeps a mixed selection as-is")
 end
 
 local function t_terr3()

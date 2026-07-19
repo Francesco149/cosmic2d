@@ -84,6 +84,15 @@ function M.lookat(ex, ey, ez, ax, ay, az, ux, uy, uz)
   }
 end
 
+-- symmetric orthographic projection (GL clip z, persp's conventions):
+-- half-extents hw/hh in world units at any depth
+function M.ortho(hw, hh, zn, zf)
+  return { 1 / hw, 0, 0, 0,
+           0, 1 / hh, 0, 0,
+           0, 0, -2 / (zf - zn), 0,
+           0, 0, -(zf + zn) / (zf - zn), 1 }
+end
+
 function M.persp(fovy_deg, aspect, zn, zf)
   local f = 1 / m.tan(fovy_deg * (m.pi / 180) * 0.5)
   local r = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
