@@ -131,4 +131,90 @@ function M.project(vpm, vw, vh, x, y, z)
   return (cx / cw * 0.5 + 0.5) * vw, (0.5 - cy / cw * 0.5) * vh, cw
 end
 
+-- ---- the offscreen viewport pool (shared by the 3D editor windows) ----
+--
+-- One pal.x_rt per open 3D viewport, sized to the content rect,
+-- recreated on resize, pruned when the window dies, and registered
+-- generationally in the `ed.rt3` buffer so a VM reboot (D052) frees the
+-- previous generation's textures instead of leaking them (the
+-- rc.p3d.texids pattern; the `ed.` prefix keeps pre-merge trace
+-- bundles' sim_buffer rule excluding it — the smoke-kitcheck lesson).
+
+local IDCAP = 32
+
+do -- reboot leak guard, on module load
+  local b = pal.buf("ed.rt3", 4 * (IDCAP + 1))
+  local n = b:u32(0)
+  for i = 1, math.min(n, IDCAP) do pal.tex_free(b:u32(4 * i)) end
+  b:u32(0, 0)
+end
+
+local function reg_write(rts)
+  local b = pal.buf("ed.rt3", 4 * (IDCAP + 1))
+  local n = 0
+  for _, r in pairs(rts) do
+    if n < IDCAP then n = n + 1; b:u32(4 * n, r.tex) end
+  end
+  b:u32(0, n)
+end
+
+local function pool(ed)
+  local t = ed.g.rt3
+  if not t then t = { rts = {}, gest = {} }; ed.g.rt3 = t end
+  return t
+end
+
+function M.rt_for(ed, win, w, h)
+  local t = pool(ed)
+  local r = t.rts[win.id]
+  if r and (r.w ~= w or r.h ~= h) then
+    pal.tex_free(r.tex)
+    t.rts[win.id] = nil
+    r = nil
+  end
+  if not r then
+    r = { tex = pal.x_rt(w, h), w = w, h = h }
+    t.rts[win.id] = r
+    reg_write(t.rts)
+  end
+  return r
+end
+
+function M.rt_prune(ed)
+  local t = pool(ed)
+  local wm = cm.require("cm.ed.wm")
+  local gone
+  for id, r in pairs(t.rts) do
+    if not wm.get(ed.doc, id) then
+      pal.tex_free(r.tex)
+      t.rts[id] = nil
+      t.gest[id] = nil
+      gone = true
+    end
+  end
+  if gone then reg_write(t.rts) end
+end
+
+-- the shared camera gesture pump: focused middle-drag = orbit,
+-- shift+middle = pan, run from a window's draw. Returns true while a
+-- gesture is live.
+function M.gestures(win, ed, ctx, i, vh)
+  local t = pool(ed)
+  if ctx.focused and i.clicked[2] then
+    t.gest[win.id] = { mx = i.wx, my = i.wy, pan = ed.g.shift or false }
+  end
+  local ge = t.gest[win.id]
+  if not ge then return false end
+  if i.buttons[2] then
+    local dx, dy = i.wx - ge.mx, i.wy - ge.my
+    if ge.pan then M.pan(win, dx, dy, vh)
+    else M.orbit(win, dx, dy) end
+    ge.mx, ge.my = i.wx, i.wy
+    ctx.touch()
+    return true
+  end
+  t.gest[win.id] = nil
+  return false
+end
+
 return M

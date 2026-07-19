@@ -12068,6 +12068,126 @@ local function t_kin()
         "kin.lean eases toward the scaled target")
 end
 
+local function t_mesh()
+  -- cm.mesh (E4, D137): the .msh codec + pure geometry ops the mesh
+  -- window drives.
+  local ME = cm.require("cm.mesh")
+
+  local doc = ME.fresh("crate")
+  check(#doc.verts // 3 == 8 and #doc.faces == 6, "mesh.fresh: a unit box")
+  local b1 = ME.encode(doc)
+  check(b1:sub(1, 4) == "CMSH", "mesh: CMSH magic")
+  check(ME.encode(ME.decode(b1)) == b1, "mesh: canonical round trip (box)")
+
+  -- outward normals (the lighting + pick-front contract)
+  local function N(fi) return ME.face_normal(doc, fi) end
+  local _, ny = N(5)
+  check(ny == 1, "mesh: box top normal +y")
+  local _, ny2 = N(6)
+  check(ny2 == -1, "mesh: box bottom normal -y")
+  local nx = N(3)
+  check(nx == 1, "mesh: box right normal +x")
+
+  -- bounds
+  local bb = ME.bounds(doc)
+  check(bb[1] == -0.5 and bb[4] == 0.5 and bb[2] == -0.5 and bb[5] == 0.5,
+        "mesh: unit box bounds")
+
+  -- pick: a ray from +z hits the front face (idx 2), not the back
+  local ray = { ox = 0.1, oy = 0.05, oz = 5, dx = 0, dy = 0, dz = -1 }
+  local fi, t = ME.pick_face(doc, ray)
+  check(fi == 2, "mesh: pick hits the front face")
+  check(math.abs(t - 4.5) < 1e-9, "mesh: pick t at the near plane")
+  ray = { ox = 3, oy = 3, oz = 3, dx = 0, dy = 0, dz = -1 }
+  check(ME.pick_face(doc, ray) == nil, "mesh: pick miss = nil")
+
+  -- features round trip: color, ds, unlit, texture region
+  doc.faces[1].col = { 1, 0, 0 }
+  doc.faces[2].ds = true
+  doc.faces[3].unlit = true
+  doc.tex = "art/crate.png"
+  doc.faces[4].uv = { 0, 0, 16, 0, 16, 16, 0, 16 }
+  local b2 = ME.encode(doc)
+  local d2 = ME.decode(b2)
+  check(ME.encode(d2) == b2, "mesh: canonical round trip (features)")
+  check(d2.faces[1].col[1] == 1 and d2.faces[2].ds and d2.faces[3].unlit
+        and d2.faces[4].uv[5] == 16 and d2.tex == "art/crate.png",
+        "mesh: features survive")
+
+  -- refusals
+  check(not pcall(ME.decode, "XXXX" .. b2:sub(5)), "mesh: bad magic refuses")
+  check(not pcall(ME.decode, b2:sub(1, #b2 - 6)), "mesh: truncation refuses")
+  do
+    local bad = ME.fresh("x")
+    bad.faces[1].v[1] = 99
+    check(not pcall(ME.encode, bad), "mesh: out-of-range vert refuses")
+  end
+
+  -- extrude: the top face gains 4 rim quads + moves up
+  local ed2 = ME.fresh("ex")
+  local nf0 = #ed2.faces
+  ME.extrude(ed2, 5, 0.5) -- the +y top
+  check(#ed2.faces == nf0 + 4, "mesh: extrude adds the rim")
+  local bb2 = ME.bounds(ed2)
+  check(math.abs(bb2[5] - 1.0) < 1e-6, "mesh: extrude moved the cap up")
+  local _, ny3 = ME.face_normal(ed2, 5)
+  check(ny3 == 1, "mesh: extruded cap keeps its normal")
+
+  -- flip reverses the winding
+  local fl = ME.fresh("fl")
+  ME.flip(fl, 5)
+  local _, nyf = ME.face_normal(fl, 5)
+  check(nyf == -1, "mesh: flip reverses the normal")
+
+  -- merge + compact: collapsing an edge kills degenerate faces + verts
+  local mg = ME.fresh("mg")
+  ME.merge_verts(mg, { 3, 7 }) -- a vertical edge of the box
+  local okd = true
+  local nv2 = #mg.verts // 3
+  for _, f in ipairs(mg.faces) do
+    okd = okd and #f.v >= 3
+    for _, vi in ipairs(f.v) do okd = okd and vi >= 1 and vi <= nv2 end
+  end
+  check(okd and nv2 == 7, "mesh: merge welds + compacts")
+
+  -- mirror pairing
+  local mp = ME.fresh("mp")
+  local pair = ME.mirror_pair(mp, 1) -- (-s,-s,-s) pairs (s,-s,-s) = 2
+  check(pair == 2, "mesh: mirror-x pairing")
+
+  -- primitives are well-formed + canonical
+  for _, kind in ipairs({ "plane", "wedge", "prism" }) do
+    local pd = { name = kind, tex = "", verts = {}, faces = {} }
+    ME.add_prim(pd, kind, { n = 6 })
+    check(ME.encode(ME.decode(ME.encode(pd))) == ME.encode(pd),
+          "mesh: " .. kind .. " canonical")
+  end
+
+  -- emit: groups by color; ds doubles tris; unlit takes the zero slot
+  local em = ME.fresh("em")
+  em.faces[1].col = { 1, 0, 0 }
+  em.faces[2].ds = true
+  em.faces[3].unlit = true
+  local groups = ME.bake_groups(em)
+  check(#groups == 2, "mesh: two color groups")
+  local nt = 0
+  local out = {}
+  local m4 = cm.require("cm.m4")
+  nt = ME.emit(out, m4.ident(), m4.ident(), em)
+  check(nt == (6 + 1) * 2, "mesh: emit tris (ds face doubles)")
+  local unlit_ok = false
+  for _, gr in ipairs(groups) do
+    for i = 1, gr.bk.nv do
+      local sl = gr.bk.ni[i]
+      if gr.bk.nrm[sl * 3 + 1] == 0 and gr.bk.nrm[sl * 3 + 2] == 0
+         and gr.bk.nrm[sl * 3 + 3] == 0 then
+        unlit_ok = true
+      end
+    end
+  end
+  check(unlit_ok, "mesh: unlit face takes the zero-normal slot")
+end
+
 local function t_terr3()
   -- cm.terr3 (E1, D137): the .terr codec + pure readers — the 3D map
   -- asset the 3d map window edits and games consume.
@@ -13018,6 +13138,7 @@ function game.init()
   t_cam_aa()
   t_m4()
   t_kin()
+  t_mesh()
   t_terr3()
   t_walk()
   t_rig()

@@ -594,10 +594,13 @@ end
 -- each batch: returns { {tex=, flags=, bytes=, ntris=}, ... }.
 --   opts.tex(path)  -> texid | nil     (image resolver; nil = stand-in)
 --   opts.dims(path) -> px w, px h      (image aspect)
---   opts.mesh(path) -> mesh doc | nil  (the E4 door; nil = stand-in)
+--   opts.mesh(path) -> { doc=, groups= } | nil  (.msh resolver: the
+--                     decoded mesh + cm.mesh.bake_groups; nil = stand-in)
 --   opts.cam_yaw    = camera yaw (billboards Y-face it)
 -- Billboards: upright, feet-anchored, nearest+alphatest (the sprite
--- rule); stand-ins: a lit box in the path's tint.
+-- rule); meshes: pre-lit under the MAP's sun/ambient through the gb
+-- baked path (the x_figverts fast lane); stand-ins: a lit box in the
+-- path's tint.
 function M.emit_props(doc, opts)
   opts = opts or {}
   local segs = {}
@@ -611,10 +614,30 @@ function M.emit_props(doc, opts)
   end
   local cy = opts.cam_yaw or 0
   local rx, rz = -m.sin(cy), m.cos(cy) -- camera-right on the ground
+  local gbm, meshm, m4m, osun, oamb
+  if opts.mesh then -- the map's light drives placed meshes (set/restore)
+    gbm = cm.require("cm.gb")
+    meshm = cm.require("cm.mesh")
+    m4m = cm.require("cm.m4")
+    osun, oamb = gbm.sun, gbm.ambient
+    gbm.sun, gbm.ambient = doc.sun, doc.amb
+  end
   for _, p in ipairs(doc.props) do
     local py = M.prop_y(doc, p)
     local texid = M.is_image(p.path) and opts.tex and opts.tex(p.path)
-    if texid then
+    local mrec = (not texid) and is_mesh(p.path) and opts.mesh
+                 and opts.mesh(p.path)
+    if mrec then
+      local s = p.scale or 1
+      local xf = m4m.mul(m4m.translate(p.x, py, p.z),
+                         m4m.mul(m4m.roty(p.yaw or 0), m4m.scale(s, s, s)))
+      local nxf = m4m.roty(p.yaw or 0)
+      local sg = seg(0, 0)
+      local tmp = {}
+      local nt = meshm.emit(tmp, xf, nxf, mrec.doc, { groups = mrec.groups })
+      sg.parts[#sg.parts + 1] = table.concat(tmp)
+      sg.ntris = sg.ntris + nt
+    elseif texid then
       local w, hgt = M.prop_size(p, opts.dims)
       local hw = w * 0.5
       local x0, z0 = p.x - rx * hw, p.z - rz * hw
@@ -665,6 +688,7 @@ function M.emit_props(doc, opts)
     -- non-visual kinds: named refs — no geometry (the editor overlays
     -- a tag; game code fetches by name)
   end
+  if gbm then gbm.sun, gbm.ambient = osun, oamb end
   for _, s in ipairs(segs) do
     s.bytes = table.concat(s.parts)
     s.parts = nil

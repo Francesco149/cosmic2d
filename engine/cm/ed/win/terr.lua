@@ -66,32 +66,6 @@ local COL = {
   spawn = 0xf0d070ff,
 }
 
--- ---- E0: the RT registry (reboot leak guard) ----
-
-local IDCAP = 32 -- ed.t3rt: [0] n, then n texids (one per open viewport)
-
-do
-  local b = pal.buf("ed.t3rt", 4 * (IDCAP + 1))
-  local n = b:u32(0)
-  for i = 1, math.min(n, IDCAP) do pal.tex_free(b:u32(4 * i)) end
-  b:u32(0, 0)
-end
-
-local function reg_write(rts)
-  local b = pal.buf("ed.t3rt", 4 * (IDCAP + 1))
-  local n = 0
-  for _, r in pairs(rts) do
-    if n < IDCAP then n = n + 1; b:u32(4 * n, r.tex) end
-  end
-  b:u32(0, n)
-end
-
-local function tstate(ed)
-  local t = ed.g.t3
-  if not t then t = { rts = {}, gest = {} }; ed.g.t3 = t end
-  return t
-end
-
 -- ---- the asset citizen ----
 
 local function decode_into(p, bytes)
@@ -676,39 +650,6 @@ local function apply_walk(p, hx, hz, btn, ctrl)
   end)
 end
 
--- ---- RT lifecycle (E0) ----
-
-local function rt_for(ed, win, w, h)
-  local t = tstate(ed)
-  local r = t.rts[win.id]
-  if r and (r.w ~= w or r.h ~= h) then
-    pal.tex_free(r.tex)
-    t.rts[win.id] = nil
-    r = nil
-  end
-  if not r then
-    r = { tex = pal.x_rt(w, h), w = w, h = h }
-    t.rts[win.id] = r
-    reg_write(t.rts)
-  end
-  return r
-end
-
-local function prune(ed)
-  local t = tstate(ed)
-  local wm = cm.require("cm.ed.wm")
-  local gone
-  for id, r in pairs(t.rts) do
-    if not wm.get(ed.doc, id) then
-      pal.tex_free(r.tex)
-      t.rts[id] = nil
-      t.gest[id] = nil
-      gone = true
-    end
-  end
-  if gone then reg_write(t.rts) end
-end
-
 -- ---- the E0 empty scene (unbound windows) ----
 
 local function vert(x, y, z, r, g, b)
@@ -759,7 +700,7 @@ end
 
 function M.draw(win, ctx)
   local ed = ctx.ed
-  prune(ed)
+  ob.rt_prune(ed)
   local i = cm.require("cm.ui").inp
   local g = ed.g
   local z = ctx.z
@@ -785,27 +726,12 @@ function M.draw(win, ctx)
   end
 
   -- ---- camera gestures (focused only; the one gate) ----
-  local t = tstate(ed)
   local over_view = i.wx >= vx and i.wx < vx + vw
                 and i.wy >= vy and i.wy < vy + vh
-  if ctx.focused and i.clicked[2] then
-    t.gest[win.id] = { mx = i.wx, my = i.wy, pan = g.shift or false }
-  end
-  local ge = t.gest[win.id]
-  if ge then
-    if i.buttons[2] then
-      local dx, dy = i.wx - ge.mx, i.wy - ge.my
-      if ge.pan then ob.pan(win, dx, dy, vh)
-      else ob.orbit(win, dx, dy) end
-      ge.mx, ge.my = i.wx, i.wy
-      ctx.touch()
-    else
-      t.gest[win.id] = nil
-    end
-  end
+  ob.gestures(win, ed, ctx, i, vh)
 
   -- ---- the viewport render ----
-  local r = rt_for(ed, win, vw, vh)
+  local r = ob.rt_for(ed, win, vw, vh)
   local vpm = ob.vp(win, vw / vh)
   local clear = { 0.10, 0.11, 0.14, 1 }
   local fogopts = nil
@@ -850,10 +776,31 @@ function M.draw(win, ctx)
       local t = tex_rec(path)
       if t then return t.w, t.h end
     end
+    -- .msh resolver: decoded disk doc + baked groups, cached by
+    -- cm.asset_epoch (the tm_doc pattern — a mesh-window save shows on
+    -- the next frame)
+    local cmmesh = cm.require("cm.mesh")
+    local function mshfn(path)
+      p.msh = p.msh or {}
+      local ep = cm.asset_epoch or 0
+      if p.msh_ep ~= ep then p.msh, p.msh_ep = {}, ep end
+      local rec = p.msh[path]
+      if rec == nil then
+        rec = false
+        local rp = mapwin.res_path(ed, path)
+        local bytes = rp and pal.read_file(rp)
+        if bytes then
+          local ok, md = pcall(cmmesh.decode, bytes)
+          if ok then rec = { doc = md, groups = cmmesh.bake_groups(md) } end
+        end
+        p.msh[path] = rec
+      end
+      return rec or nil
+    end
 
     -- placements through the real emitter (billboards Y-face the orbit)
     local segs = terr3.emit_props(doc, {
-      cam_yaw = win.oyaw, tex = texfn, dims = dimsfn })
+      cam_yaw = win.oyaw, tex = texfn, dims = dimsfn, mesh = mshfn })
     for si, s in ipairs(segs) do
       pal.x_tris(s.tex, scratch(fx_name(win.id) .. ":p" .. si, s.bytes),
                  s.ntris, 0, s.flags)
