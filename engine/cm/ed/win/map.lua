@@ -2457,7 +2457,13 @@ function M.draw(win, ctx)
   -- keys (the tool's — the shell's plain hotkeys suspend via wants_keys)
   if ctx.focused and not ctx.ig.kb and not ctx.alt then
     for _, e in ipairs(i.keys) do
-      if e.down and not e.rep then
+      -- D135: the nudge arrows and z-order brackets are stepping actions
+      -- and repeat while held; everything else (modes, del, clipboard,
+      -- fits) stays edge-triggered
+      if e.down and (not e.rep
+                     or (e.scancode >= KEY.right and e.scancode <= KEY.up)
+                     or e.scancode == KEY.rbracket
+                     or e.scancode == KEY.lbracket) then
         local sc = e.scancode
         if sc == KEY.n1 and g.shift then
           wv.reset(win)

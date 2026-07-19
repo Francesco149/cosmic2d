@@ -6806,3 +6806,61 @@ keyboard-reachable core flows.
 **Revisit triggers.** A user asking for MRU cycle order (the dear-imgui
 model) votes a toggle; a second `x_ig_kb_release` consumer (a future
 keyboard close of transient chrome?) votes promoting it into the kit.
+
+## D135 — key repeat everywhere a key steps: the class rule (2026-07-19)
+
+**Context.** The human voted D121's kit-wide deferral (carried through
+D134): "I don't see any downside to having global key repeat — it's what
+most users expect in the editor." The editor's key handling filtered
+`e.rep` out wholesale at every gate, so nothing repeated: holding an
+arrow nudged once, holding PgDn paged once, holding Ctrl+Tab cycled
+once. imgui edit widgets and cm.ui's nav layer already repeated — the
+gap was exactly the shell + windowkit tier.
+
+**Decision — the class rule, not a blanket flip.** A key REPEATS while
+held iff its action is a STEP; one-shots stay edge-triggered. Blanket
+repeat has real downsides the rule names: a repeating Ctrl+W walks from
+close-focused into the close-the-selection fallback (mass close from one
+long press), a repeating save hammers the disk, a repeating Del eats
+items, repeating toggles (launcher/rewind/selmode/console) oscillate.
+
+- **Shell stepping keys now repeat:** Ctrl+Tab focus-cycle, Ctrl+Z/Y
+  undo/redo walks, `[`/`]` z-order steps, nudge + Alt-resize arrows, the
+  rewind tray's left/right frame scrub, the launcher's up/down list
+  walk. **Shell one-shots stay edge:** Ctrl+S/F/W, Ctrl+Space, copy,
+  grave, Alt+V, Esc, the shift+digit zoom fits, rewind's F4/Esc/space.
+- **The kit hotkey table gains `rep = true`** (opt-in per entry, the
+  same class rule; entries marked: reader pgup/pgdn, palette
+  left/right, synth octave ,/.). A matched edge-only entry CONSUMES
+  repeats without firing, so a held key a kind owns can never leak into
+  the shell's plain-key tier mid-hold (the arrows would have moved the
+  window under a kind's cursor otherwise).
+- **The map window's own key loop** (wants_keys, outside the kit table)
+  applies the rule locally: nudge arrows + brackets repeat; modes, del,
+  clipboard, fits stay edge.
+
+All chrome; recorded input never carries repeat-derived state (game
+input reads downs/ups as before); no sim/doc byte moved.
+
+**Proof.** Linux selftest **24,673** / native Windows **24,675** (+8:
+the kit dispatcher contract in t_kit_rep — edge fires both entry
+classes, repeat steps a rep entry, repeat of a plain entry consumed
+un-fired, gated-off entries pass through, ups pass through; the
+help-paging entries declare rep while the absolute jumps don't; the
+D128-era "repeats never dispatch" KAT rewritten to pin the new
+consume-without-fire contract). `nix run .#test` ALL GREEN, goldens
+byte-identical. A drive tape with synthesized `rep = true` events on a
+fresh smoke copy proved the wiring live: one held Ctrl+Tab (edge + 2
+repeats) walked focus 3 steps; a held arrow moved the window +3 and a
+held Alt+arrow resized +3; a held Ctrl+W with 3 press events closed
+exactly ONE window; a held PgUp paged the reader exactly 3 × 0.9-band;
+a held launcher Down walked sel 1→4.
+
+**Deferred, named honestly.** OS-level repeat delay/rate is inherited
+from SDL (no engine knob — none asked); the picker and player surfaces
+already repeat through cm.ui and stay untouched.
+
+**Revisit triggers.** A first report of an unwanted repeat names its key
+and the fix is one `rep` flag or one edge gate — the rule localizes the
+decision; a kind wanting gesture-state-dependent repeat (hold-to-paint?)
+votes a richer kit contract.

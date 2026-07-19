@@ -802,15 +802,30 @@ doors as before. Factory semantics are KAT'd on a dummy codec
 `M.hotkeys = { { key = "p", hint = "pen", when = fn, fn = fn }, … }`.
 The shell dispatches the FOCUSED window's table after its reserved
 keys (Ctrl+S/F/Z/Y, the Esc ladder, grave, Alt+V — a kind can never
-shadow the shell) and before the shell plain keys; exact-mod matching,
-no key repeats; `when` gates dispatch AND the hint. The **hint strip
-renders itself** under the focused window from the same table (keys
-bright, hints dim). Key names: letters/digits + enter/tab/space/del/
+shadow the shell) and before the shell plain keys; exact-mod matching;
+`when` gates dispatch AND the hint. The **hint strip renders itself**
+under the focused window from the same table (keys bright, hints dim).
+Key names: letters/digits + enter/tab/space/del/
 arrows/brackets/punctuation (kit.SC); combos "ctrl+shift+x".
 sprite/tmap speak it (tool keys p/e/f/k in edit mode, shift+1 refits
 the view — the own_view grammar the map window already had); the map
 window's modal tool keys stay in its draw (gesture-state-dependent
 dispatch is not a table's job).
+
+**Key repeat (D135 — the human's vote, closing D121's kit-wide
+deferral): STEPPING actions repeat while held, one-shots stay
+edge-triggered.** An entry opts in with `rep = true` (reader paging,
+palette prev/next, synth octave); a matched edge-only entry CONSUMES
+repeats without firing, so a held key a kind owns can never leak into
+the shell's plain tier. The shell applies the same class rule to its
+own keys: focus-cycle (Ctrl+Tab), undo/redo walks, z-order brackets,
+nudge/resize arrows, the rewind frame scrub (left/right), and the
+launcher's list walk all repeat; save/find/close/launcher-toggle,
+copy, console, selmode, Esc, the zoom fits, and rewind's space stay
+edge — a repeating Ctrl+W would walk from close-focused into the
+close-the-selection fallback, which is exactly the class of surprise
+the rule exists to prevent. (`cm.ui`'s nav and imgui edit widgets
+already repeated; the map window's nudge arrows and brackets join.)
 
 ### 13.3 One-file kind registration
 

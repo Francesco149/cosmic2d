@@ -158,6 +158,10 @@ all release it, and it re-engages when you click back in.
   **Alt+arrows** resize them from the bottom-right corner instead (same
   Shift step, same size rules as a pointer drag).
 - **Esc** — release the current tool / view lock.
+- **Held keys repeat** wherever the action is a step — cycling focus, nudging
+  and resizing windows, walking undo/redo, paging docs, scrubbing rewind
+  frames, walking launcher results. One-shot actions (save, close, toggles)
+  fire once per press no matter how long you hold them.
 - Each window shows its own hotkeys in a hint strip while it's focused, and a
   **?** button in its title bar opens that window's help (hotkeys + workflow).
 

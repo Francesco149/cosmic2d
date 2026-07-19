@@ -8271,9 +8271,14 @@ local function t_ed_kit()
   kwin.armed = true
   check(kit.hotkey(kind, kwin, ed, ev(10), none) == true and fired.g,
         "ed.kit: passing when() dispatches")
+  -- D135: a repeat of a matched edge-only entry is CONSUMED without
+  -- firing (held keys stay the entry's); rep = true entries step —
+  -- the full contract is pinned in t_kit_rep
+  fired.p = false
   check(kit.hotkey(kind, kwin, ed,
                    { down = true, rep = true, scancode = 19 }, none)
-        == false, "ed.kit: key repeats never dispatch")
+        == true and fired.p == false,
+        "ed.kit: a repeat of an edge-only entry consumes, never fires")
   local hints = kit.hints(kind, kwin, ed)
   check(#hints == 2 and hints[1].hint == "pen" and hints[2].key == "g",
         "ed.kit: hints = when-passing entries with hint text")
@@ -11549,6 +11554,47 @@ local function t_help_keys()
         "help.sb: a drag past the bottom clamps to maxscroll")
   check(help.sb_target(100 + 187.5, 0, 100, 600, 225, 1000) == 500,
         "help.sb: the knob maps linearly over the track")
+
+  -- D135: paging is a stepping action — the entries opt into key repeat
+  check(hk.pgdn.rep == true and hk.pgup.rep == true,
+        "help.keys: paging keys declare rep")
+  check(not hk["home"].rep and not hk["end"].rep,
+        "help.keys: absolute jumps stay edge-triggered")
+end
+
+-- the kit hotkey dispatcher's key-repeat contract (D135): entries opt
+-- into repeat with rep = true (stepping actions); a matched entry
+-- consumes a held key either way, so repeats of an edge-only key the
+-- kind owns can never leak into the shell's plain-key tier
+local function t_kit_rep()
+  local kit = cm.require("cm.ed.kit")
+  local fired = { pg = 0, p = 0 }
+  local kind = { hotkeys = {
+    { key = "pgdn", rep = true,
+      fn = function() fired.pg = fired.pg + 1 end },
+    { key = "p", fn = function() fired.p = fired.p + 1 end },
+    { key = "g", when = function() return false end,
+      fn = function() fired.g = true end },
+  } }
+  local mods = {}
+  local function ev(sc, rep)
+    return { scancode = sc, down = true, rep = rep or false }
+  end
+  check(kit.hotkey(kind, {}, {}, ev(78), mods) and fired.pg == 1,
+        "kit.rep: an edge press fires a rep entry")
+  check(kit.hotkey(kind, {}, {}, ev(19), mods) and fired.p == 1,
+        "kit.rep: an edge press fires a plain entry")
+  check(kit.hotkey(kind, {}, {}, ev(78, true), mods) and fired.pg == 2,
+        "kit.rep: a repeat steps a rep entry")
+  check(kit.hotkey(kind, {}, {}, ev(19, true), mods) == true
+        and fired.p == 1,
+        "kit.rep: a repeat of a plain entry is consumed, not fired")
+  check(kit.hotkey(kind, {}, {}, ev(10, true), mods) == false
+        and fired.g == nil,
+        "kit.rep: a gated-off entry passes the key through")
+  check(kit.hotkey(kind, {}, {}, { scancode = 78, down = false },
+                   mods) == false,
+        "kit.rep: key ups pass through")
 end
 
 -- the game window's Aa-invariant pixel-perfect blit (the human's report:
@@ -12599,6 +12645,7 @@ function game.init()
   t_docs()
   t_help_sel()
   t_help_keys()
+  t_kit_rep()
   t_game_blit()
   t_game_snap()
   t_game_fov()

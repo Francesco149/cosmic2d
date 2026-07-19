@@ -111,10 +111,10 @@ local function palop(fn)
   end
 end
 M.hotkeys = {
-  { key = "left", hint = "prev", when = bound, fn = palop(
+  { key = "left", hint = "prev", when = bound, rep = true, fn = palop(
     function(win, doc, u) win.sel = math.max(1, (win.sel or 1) - 1)
       u.selc = nil end) },
-  { key = "right", hint = "next", when = bound, fn = palop(
+  { key = "right", hint = "next", when = bound, rep = true, fn = palop(
     function(win, doc, u) win.sel = math.min(#doc.colors, (win.sel or 1) + 1)
       u.selc = nil end) },
   { key = "a", hint = "add", when = bound, fn = palop(

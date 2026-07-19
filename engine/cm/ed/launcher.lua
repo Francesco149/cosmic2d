@@ -210,9 +210,12 @@ function M.draw(ed, ig, i)
   -- keyboard nav (read raw keys: the edit field owns typing, but arrows/enter/
   -- esc pass through cm.ui.inp regardless of imgui focus)
   for _, e in ipairs(i.keys) do
-    if e.down and not e.rep then
+    -- D135: walking the result list repeats while held; esc/enter are
+    -- one-shots and stay edge-triggered
+    if e.down then
       if e.scancode == KEY.down then l.sel = n == 0 and 1 or l.sel % n + 1; ed.touch()
       elseif e.scancode == KEY.up then l.sel = n == 0 and 1 or (l.sel - 2) % n + 1; ed.touch()
+      elseif e.rep then -- nothing below repeats
       elseif e.scancode == KEY.esc then M.close(ed); return
       elseif e.scancode == KEY.enter and list[l.sel] then
         activate(ed, list[l.sel], ig); return

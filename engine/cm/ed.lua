@@ -750,7 +750,12 @@ local function hotkeys(ig, i)
   if rw_consumed then return end
   if rewind.opened(M) then
     for _, e in ipairs(i.keys) do
-      if e.down and not e.rep then rewind.key(M, e.scancode, g.shift) end
+      -- D135: the frame scrub steps repeat while held; space (play) is a
+      -- toggle and stays edge-triggered
+      if e.down and (not e.rep
+                     or e.scancode == K.left or e.scancode == K.right) then
+        rewind.key(M, e.scancode, g.shift)
+      end
     end
     return -- no canvas/window hotkey fires through the persistent tray
   end
@@ -760,48 +765,76 @@ local function hotkeys(ig, i)
   -- find are exactly what you reach for mid-typing; cycle/close are the
   -- D134 keyboard window grammar — leaving or closing the window you
   -- are typing in is precisely a mid-typing move, and imgui's own
-  -- Ctrl+Tab gearbox is disabled at ig init so the chord is ours)
+  -- Ctrl+Tab gearbox is disabled at ig init so the chord is ours).
+  -- D135 repeat rule: the focus CYCLE is a stepping action and repeats
+  -- while held; save/find/close/launcher are one-shots — edge only
+  -- (a repeating close would walk from close-focused into the
+  -- close-the-selection fallback).
   for _, e in ipairs(i.keys) do
-    if e.down and not e.rep and g.ctrl then
-      if e.scancode == K.s then kind_call("save")
-      elseif e.scancode == K.f then kind_call("find")
-      elseif e.scancode == K.tab then cycle_focus(g.shift and -1 or 1, ig)
-      elseif e.scancode == K.w then close_by_key()
-      elseif e.scancode == K.space then -- Ctrl+Space: the global launcher
-        local L = cm.require("cm.ed.launcher")
-        if L.active(M) then L.close(M) else L.open(M) end
+    if e.down and g.ctrl then
+      if e.scancode == K.tab then cycle_focus(g.shift and -1 or 1, ig)
+      elseif not e.rep then
+        if e.scancode == K.s then kind_call("save")
+        elseif e.scancode == K.f then kind_call("find")
+        elseif e.scancode == K.w then close_by_key()
+        elseif e.scancode == K.space then -- Ctrl+Space: the global launcher
+          local L = cm.require("cm.ed.launcher")
+          if L.active(M) then L.close(M) else L.open(M) end
+        end
       end
     end
   end
   if ig.kb then return end -- an edit widget owns the keyboard
   local play = playing() -- plain-key hotkeys suspend while a game window
                          -- is focused (§12.3); ALT/Esc/Ctrl stay ours
+  -- D135: stepping actions (undo/redo walks, z-order steps, nudge/resize
+  -- arrows) fire on key repeat; one-shots (copy, console, selmode, Esc,
+  -- the zoom fits) stay edge-triggered. The kind table gets every down —
+  -- kit.hotkey applies each entry's own rep flag and swallows held keys
+  -- it owns either way.
   for _, e in ipairs(i.keys) do
-    if e.down and not e.rep then
+    if e.down then
       local sc = e.scancode
       if g.ctrl and sc == K.y then kind_call("redo")
       elseif g.ctrl and g.shift and sc == K.z then kind_call("redo")
       elseif g.ctrl and sc == K.z then kind_call("undo")
-      elseif g.ctrl and sc == K.c then kind_call("copy")
-      elseif sc == K.grave then summon_console()
+      elseif g.ctrl and sc == K.c then
+        if not e.rep then kind_call("copy") end
+      elseif sc == K.grave then
+        if not e.rep then summon_console() end
       elseif g.alt and sc == K.v then
         -- selection mode: the next press can only select, even over a
         -- window; wm disarms it the moment a select lands something
-        g.selmode = not g.selmode or nil
+        if not e.rep then g.selmode = not g.selmode or nil end
       elseif sc == K.escape then
-        if g.launcher then cm.require("cm.ed.launcher").close(M)
-        elseif g.menu then g.menu = nil
-        elseif g.selmode then g.selmode = nil
-        elseif kind_escape() then -- the focused kind ate it (find bar)
-        elseif cm.require("cm.scrub").paused() then
-          cm.require("cm.scrub").close() -- parked: Esc = back to the present
-        elseif play then doc.focus = 0 -- the universal "get out" of play
-        elseif M.view_locked() then doc.focus = 0 -- release the view lock
-        elseif doc.drill ~= 0 then doc.drill = 0
-        else doc.sel = {} end
-        M.touch()
+        if not e.rep then
+          if g.launcher then cm.require("cm.ed.launcher").close(M)
+          elseif g.menu then g.menu = nil
+          elseif g.selmode then g.selmode = nil
+          elseif kind_escape() then -- the focused kind ate it (find bar)
+          elseif cm.require("cm.scrub").paused() then
+            cm.require("cm.scrub").close() -- parked: Esc = back to present
+          elseif play then doc.focus = 0 -- the universal "get out" of play
+          elseif M.view_locked() then doc.focus = 0 -- release the view lock
+          elseif doc.drill ~= 0 then doc.drill = 0
+          else doc.sel = {} end
+          M.touch()
+        end
       elseif kind_hotkey(e) then -- the focused kind's table (§13)
       elseif play then -- everything below collides with gameplay keys
+      elseif g.shift and (sc == K.n1 or sc == K.n2 or sc == K.n0) then
+        if not e.rep then
+          local t
+          if sc == K.n0 then
+            t = cam.at_100(doc.cam, ig.w, ig.h)
+          else
+            local x, y, w, h
+            if sc == K.n1 then x, y, w, h = wm.all_bounds(doc)
+            else x, y, w, h = wm.sel_bounds(doc) end
+            if x then t = cam.fit(x, y, w, h, ig.w, ig.h) end
+          end
+          if t then anim_to(t) end
+        end
       elseif sc == K.rbracket then
         for _, id in ipairs(doc.sel) do
           if g.shift then wm.to_front(doc, id) else wm.raise(doc, id) end
@@ -812,17 +845,6 @@ local function hotkeys(ig, i)
           if g.shift then wm.to_back(doc, id) else wm.lower(doc, id) end
         end
         M.touch()
-      elseif g.shift and (sc == K.n1 or sc == K.n2 or sc == K.n0) then
-        local t
-        if sc == K.n0 then
-          t = cam.at_100(doc.cam, ig.w, ig.h)
-        else
-          local x, y, w, h
-          if sc == K.n1 then x, y, w, h = wm.all_bounds(doc)
-          else x, y, w, h = wm.sel_bounds(doc) end
-          if x then t = cam.fit(x, y, w, h, ig.w, ig.h) end
-        end
-        if t then anim_to(t) end
       elseif sc >= K.right and sc <= K.up and #doc.sel > 0 then
         local d = g.shift and 10 or 1
         local dx = (sc == K.right and d) or (sc == K.left and -d) or 0

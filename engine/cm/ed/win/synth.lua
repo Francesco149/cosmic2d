@@ -138,12 +138,12 @@ local KEYROW = { -- key name -> semitone offset from win.oct's C
 }
 local bound = function(win) return win.path ~= "" end
 M.hotkeys = {
-  { key = ",", hint = "oct−", when = bound,
+  { key = ",", hint = "oct−", when = bound, rep = true,
     fn = function(win, ed)
       win.oct = math.max(1, (win.oct or 4) - 1)
       ed.touch()
     end },
-  { key = ".", hint = "oct+", when = bound,
+  { key = ".", hint = "oct+", when = bound, rep = true,
     fn = function(win, ed)
       win.oct = math.min(7, (win.oct or 4) + 1)
       ed.touch()

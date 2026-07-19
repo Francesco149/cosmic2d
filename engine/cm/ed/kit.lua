@@ -56,10 +56,16 @@ end
 --     { key = "p", hint = "pen", when = function(win, ed) ... end,
 --       fn = function(win, ed) ... end },
 --     { key = "ctrl+shift+d", ... },
+--     { key = "pgdn", rep = true, ... },
 --   }
 --
 -- `when` (optional) gates both dispatch and the hint; a match consumes
--- the key event.
+-- the key event. `rep = true` (D135) opts the entry into key repeat —
+-- the class rule: STEPPING actions (scroll, walk, nudge) repeat while
+-- held, one-shot actions (tools, toggles, deletes) stay edge-triggered.
+-- A held key always stays the matched entry's: repeats of a non-rep
+-- entry are consumed without firing, so they can never leak a key the
+-- kind owns into the shell's plain-key tier.
 
 -- SDL scancodes by name (the shell's K table, grown)
 local SC = {
@@ -110,7 +116,7 @@ end
 -- one key event against the focused window's table; true = consumed.
 -- mods = the shell's tracked { ctrl, shift, alt } (M.g).
 function M.hotkey(kind, win, ed, e, mods)
-  if not (kind and kind.hotkeys and e.down and not e.rep) then
+  if not (kind and kind.hotkeys and e.down) then
     return false
   end
   for _, spec in ipairs(compiled(kind)) do
@@ -120,8 +126,8 @@ function M.hotkey(kind, win, ed, e, mods)
        and spec.alt == (mods.alt or false) then
       local entry = spec.entry
       if not entry.when or entry.when(win, ed) then
-        entry.fn(win, ed)
-        return true
+        if not e.rep or entry.rep then entry.fn(win, ed) end
+        return true -- held keys stay the entry's, fired or not (D135)
       end
     end
   end
