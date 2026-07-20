@@ -3,51 +3,40 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D148/D149 final alpha polish landed; the code queue is empty and only human usage/taste + release execution remain
+## Current handoff — D150 closes two human usage bugs; the Windows stage is fresh and only continued human usage/release execution remain
 
-**The final non-human polish pass is complete in two commits.** **D148**
-(`be84c26`) makes the shipped reader illustrate its own tutorials: standalone
-local Markdown image blocks render with aspect-preserving layout, culling,
-missing-media fallback, copy-page alt text, and derivation keys covering doc
-path/root/bytes/layout/asset epoch. Six real low-resolution cropped captures
-(386–642 px, 20–142 KiB) now accompany the top-down, sprite, music, palette,
-stock, and terrain lessons. Every one of the five project templates and all 14
-focused authoring tools now has a power walkthrough plus an explicit full-
-reference handoff; the eight small utility tools share a debugging-desk
-walkthrough. The inventory is selftest-pinned. This pass also fixed a latent
-D145 external-project bug: Lua's repeated-capture pattern never stripped
-leading `../`, so stock doc reads/anchors/media/cross-doc links could fail from
-projects outside the engine tree; the reader now strips prefixes explicitly.
+**D150** (`0d2cdbe`) fixes both findings from the first post-polish usage pass.
+Closing a playing music window now goes through one kind-aware shell door:
+`can_close` may refuse, then `on_close` runs while the view still exists, then
+the pure window model removes it. The music hook releases every held sequencer
+voice and audition blip exactly once before clearing playback, so
+`horror-hollow`'s long opening drone cannot lose its note-off when its window
+vanishes. Empty blip tables also stop asking the editor to redraw forever.
 
-**D149** (`0ae4fe6`) closes the audio notes. Track faders now share one
-preview/runtime 0 → preset → 255 law: 0 is exact silence, 128 exactly
-preserves the preset, 255 always reaches full encoded gain, and the curve is
-exhaustively pinned monotone for all 65,536 input pairs. The bossa epiano and
-nylon attacks are gentler; the kick adds a swept 120 Hz knock and stronger
-3.2 kHz beater (bossa stem peak 4,071 → 5,904, +3.23 dB). `noir-sleuth` is
-fully rewritten as a 108 BPM seven-piece crime-jazz arrangement: swung ride,
-cross-stick 2/4, feathered kick, walking D-minor bass, extended rootless vibes,
-minor-blues/b5 reed hook, altered-dominant fall, and muted-horn dialogue.
+Project-assets and stock-assets chips now remember independent captured scroll
+positions in world units. Every draw derives the true current maximum from the
+filtered item count, live columns/tile size, and viewport, then clamps before
+choosing the first row. Switching from a long family to a short/empty one,
+narrowing a filter, changing tile size, or resizing therefore cannot strand
+the viewport below its content; returning to a family restores its own place.
+Legacy sessions retain their current `sy` and migrate naturally on first tab
+switch. The lifecycle/scroll contracts and user help are documented in D150.
 
-**Sweep proof:** Markdown link audit **106 targets / 0 issues**; no unresolved
-shipping TODO/FIXME markers; all stock sources decode canonically and audibly;
-all 14 songs rendered for a full real sequencer/kernel loop with **zero
-clipped samples** (peaks -8.00 to -0.62 dBFS; bossas -2.14/-2.77, noir -7.35);
-release-manifests PASS; Linux selftest **25,094**; `nix run .#test` **ALL
-GREEN** with every trace/pixel golden byte-identical. The Windows dev tree and
-Start Menu shortcut are refreshed (21 durable entries preserved); native
-selftest **25,096** and native `smoke_kitcheck` **830-frame verify PASS**.
-The external-root illustrated-reader capture was inspected and posted to
-llm-feed.
+**Proof:** release manifests PASS; Linux selftest **25,104** (+10); `nix run
+.#test` **ALL GREEN** with every trace and pixel golden byte-identical. A real
+1280x800 stock-window capture injected `sy=10000` on the 14-song tab and
+visibly snapped to its two rows; inspected and posted to llm-feed. The Windows
+dev tree and Start Menu shortcut are refreshed (**23 durable entries
+preserved**); native selftest **25,106** and native `smoke_kitcheck` **830-frame
+verify PASS**. The human reports D149's song mixing feels much better.
 
-**Exact next step — human-only release judgment.** From the refreshed Windows
-stage, listen to both bossas and the new noir at normal speaker volume, skim
-the illustrated template/tool walkthroughs, and do the fresh-user pass on both
-platforms. If taste/usability is accepted, pin the approved presets' PCM
-goldens and execute `docs/RELEASE-CHECKLIST.md` (clean-VM/open-old-project
+**Exact next step — human-only usage/release judgment.** From the refreshed
+Windows stage, recheck closing `horror-hollow` during its opening drone and
+switch between deeply scrolled asset families, then continue the fresh-user
+pass on both platforms. If no more findings surface, pin the approved presets'
+PCM goldens and execute `docs/RELEASE-CHECKLIST.md` (clean-VM/open-old-project
 matrix, README alpha flip, tag/cut). No agent-found P0/P1 or unimplemented
-alpha promise remains; do not invent another code packet without a usage-test
-finding.
+alpha promise remains; further code packets should come from usage findings.
 
 ## Previous handoff — the editor-polish batch (D143–D146) landed; A8 unchanged (human-only)
 
