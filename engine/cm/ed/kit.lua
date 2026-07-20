@@ -159,6 +159,22 @@ function M.snd_alloc(ed, nvoices)
   return g.snd_slot, vbase
 end
 
+-- slot OWNERSHIP (the D147 addendum): the round-robin above never
+-- frees, so a session with enough audio windows WRAPS past 64 and two
+-- live holders share a slot — the later upload silently replaces the
+-- earlier window's patch (the human's "two breaks-alley windows play
+-- different sounds"). Owners stamp the slot before playing:
+-- snd_claim(ed, slot, tag) returns true while the tag still owns the
+-- slot; false means someone else uploaded since the stamp — re-send
+-- your patch (an upload is cheap) before triggering voices.
+function M.snd_claim(ed, slot, tag)
+  local g = ed.g
+  g.snd_owner = g.snd_owner or {}
+  if g.snd_owner[slot] == tag then return true end
+  g.snd_owner[slot] = tag
+  return false
+end
+
 -- ---- per-window UI scratch (R9g) ----
 --
 -- kit.asset's path-keyed plumbing (`p`) is SHARED by every window open on

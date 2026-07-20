@@ -8261,7 +8261,8 @@ local function t_stock_ins()
     "fm-musicbox.ins", "fm-nylon.ins", "fm-upright.ins", "fm-vibes.ins",
     "fm-muted.ins", "fm-clav.ins", "fm-slap.ins", "fm-cowbell.ins",
     "fm-sub.ins", "fm-reese.ins", "fm-ride.ins", "fm-shaker.ins",
-    "fm-rim.ins", "fm-conga.ins", "fm-drone.ins", "fm-glass.ins" }) do
+    "fm-rim.ins", "fm-conga.ins", "fm-drone.ins", "fm-glass.ins",
+    "fm-xylo.ins" }) do
     check(have[n], "stock ins: " .. n .. " ships")
   end
   local all_ok, canon_ok, audible = true, true, true
@@ -8655,6 +8656,28 @@ local function t_stock_songs()
   check(notes_ok, "stock songs: every song flattens to real notes")
   check(ins_ok, "stock songs: every track instrument resolves")
   check(audible, "stock songs: every song's opening note is audible")
+end
+
+local function t_snd_claim()
+  -- D147 addendum: editor-bank slot ownership. snd_alloc round-robins
+  -- 64 slots and never frees, so a long session WRAPS and two live
+  -- audio windows share a slot — the later upload silently replaced
+  -- the earlier window's patch ("two breaks-alley windows play
+  -- differently"). snd_claim is the stamp: owners re-send their patch
+  -- whenever the stamp isn't theirs.
+  local kit = cm.require("cm.ed.kit")
+  local ed = { g = {} }
+  check(kit.snd_claim(ed, 5, "a") == false,
+        "snd_claim: the first claim stamps (caller uploads)")
+  check(kit.snd_claim(ed, 5, "a") == true,
+        "snd_claim: a held stamp needs no re-upload")
+  check(kit.snd_claim(ed, 5, "b") == false,
+        "snd_claim: a foreign stamp flips ownership (b uploads)")
+  check(kit.snd_claim(ed, 5, "a") == false,
+        "snd_claim: the original owner re-claims after the steal")
+  check(kit.snd_claim(ed, 6, "a") == false
+        and kit.snd_claim(ed, 5, "a") == true,
+        "snd_claim: slots stamp independently")
 end
 
 local function t_stock_window()
@@ -14137,6 +14160,7 @@ function game.init()
   t_palette()
   t_song()
   t_stock_songs()
+  t_snd_claim()
   t_stock_window()
   t_ed_lex()
   t_ed_assets()

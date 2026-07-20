@@ -131,11 +131,18 @@ end
 
 local function preview_slots(ed, win, p)
   local doc = p.doc
+  local kit = cm.require("cm.ed.kit")
   p.pslots = p.pslots or {}
   for ti, tr in ipairs(doc.tracks) do
     if not p.pslots[ti] then
-      local slot = cm.require("cm.ed.kit").snd_alloc(ed, 0)
+      local slot = kit.snd_alloc(ed, 0)
       p.pslots[ti] = slot
+    end
+    -- slot ownership (D147 addendum): a long session's allocator wraps
+    -- past 64 and another window's upload replaces ours — a lost claim
+    -- forces the re-send ("two breaks-alley windows play differently")
+    if not kit.snd_claim(ed, p.pslots[ti], "song:" .. win.path .. ":" .. ti) then
+      p.pins_sent = nil
     end
     if tr.ins ~= "" and p.pins_sent ~= true then
       local bytes = pal.read_file(ed.root .. "/" .. tr.ins)

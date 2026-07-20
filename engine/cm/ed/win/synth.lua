@@ -99,10 +99,16 @@ M.dirty, M.save, M.undo, M.redo, M.revert =
 
 local function audition(ed, win, p)
   if not p.doc then return end
+  local kit = cm.require("cm.ed.kit")
   if not p.edslot then
-    local slot, vbase = cm.require("cm.ed.kit").snd_alloc(ed, 4)
+    local slot, vbase = kit.snd_alloc(ed, 4)
     p.edslot, p.vbase, p.vnext = slot, vbase, 0
     p.held = {}
+  end
+  -- another window may have wrapped onto this slot since our last
+  -- upload — a lost claim re-sends the patch (D147 addendum)
+  if not kit.snd_claim(ed, p.edslot, "ins:" .. win.path) then
+    p.send = true
   end
   if p.send then
     ins.upload(p.doc, p.edslot, "ed", "s" .. win.id)
@@ -442,8 +448,16 @@ function M.draw(win, ctx)
         local hov = ctx.hot and i.wx >= x0 and i.wx < x0 + rw - 8 * z
                     and i.wy >= ry and i.wy < ry + px * 1.3
                     and i.wy >= y0 and i.wy < y0 + rail_h
+        -- the last-LOADED preset keeps a marker so the user never
+        -- loses their place in the roster (human, D147 polish round)
+        local last = win.lastpre == item.file
+        if last then
+          pal.x_ig_rect_fill(x0 + 2 * z, ry - 1.5 * z, rw - 10 * z,
+                             px * 1.35, COL.btn_on, 2 * z)
+        end
         pal.x_ig_text(x0 + 6 * z, ry, px * 0.92,
-                      hov and COL.hot or COL.text, item.label, 0)
+                      last and COL.accent or (hov and COL.hot or COL.text),
+                      item.label, 0)
         pal.x_ig_text(x0 + rw - 40 * z, ry, px * 0.75, COL.dim, item.from, 0)
         -- press ARMS a click-or-drag on this row (resolved below): a
         -- click loads the preset; a drag carries it to a sequencer track
@@ -475,12 +489,14 @@ function M.draw(win, ctx)
         end
       else
         local bytes = pal.read_file(p.pdrag.item.file)
+        local file = p.pdrag.item.file
         p.pdrag = nil
         if bytes then
           local ok, d2 = pcall(ins.decode, bytes)
           if ok then
             d2.name = doc.name -- keep the asset's own name
             p.doc = d2
+            win.lastpre = file -- the rail marks the loaded preset
             commit(ed, win.path) -- one journaled, undoable step
             p.send = true
           end
