@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D151/D152 are the first release-candidate cut: authored stereo, recoverable CI, and a public showcase
+## Current handoff — D151–D153 are the first release-candidate cut: authored stereo, recoverable CI, a public showcase, and bounded headless rendering
 
 **D151** (`ff74c42`, with the honest trace recut in `2fccafb`) exposes the
 `.song` format's existing track pan as a real music-window mix control. The
@@ -49,23 +49,31 @@ and both sibling SHA-256 files verify.
 
 The first public Actions rehearsal paid for itself before publication: both
 candidate and nightly passed selftest and all traces, then the hosted
-lavapipe intermittently exited 139 after different long 3D captures (never a
-pixel-byte mismatch after a completed capture). The `rc.3` rehearsal proved a
-one-worker Mesa limit was the wrong fix: it was exact locally but slower and
-less reliable remotely, so it is gone. The workflows now pin Ubuntu 24.04 and
-serialize through one non-cancelling concurrency group. The shared full-render
-golden runner retries only a SIGSEGV process, at most three fresh attempts;
-Lua/product errors and every other exit fail immediately, while any completed
-capture still must byte-match. The full suite is ALL GREEN locally with all
-captures succeeding first try; the next immutable candidate is the remote
-proof of this bounded retry envelope.
+lavapipe exited 139 during long 3D captures (never a pixel-byte mismatch after
+a completed capture). `rc.3` proved a one-worker Mesa limit was the wrong fix:
+it was exact locally but slower and less reliable remotely, so it is gone.
+`rc.4` then disproved the transient-process theory: bounce and the starfield
+each exhausted all three fresh attempts while the other completed tours still
+matched. The workflows pin Ubuntu 24.04 and serialize through one
+non-cancelling concurrency group.
 
-**Exact next step — human release judgment, not more inferred scope.** This is
-still an experimental alpha candidate, not the alpha declaration. Listen to
-the stereo pass on real speakers/headphones, execute the remaining fresh-user
-and clean-machine rows in `docs/RELEASE-CHECKLIST.md`, and only then decide
-whether to pass the A8 human gate. No stability guarantee is made until the
-project is explicitly past alpha.
+**D153** fixes the actual missing bound in the PAL. A live swapchain throttles
+frames in flight, but headless capped runs had submitted every offscreen frame
+without waiting; a slow software renderer could therefore accumulate hundreds
+of outstanding 3D frames. Headless present now submits with a fence and waits
+before accepting the next frame. Live/windowed presentation is untouched, no
+golden was recut, and the complete suite remains **ALL GREEN** with every
+pixel byte-identical. The refreshed Windows stage passes native selftest
+**25,108** and an 830-frame native headless smoke run; the next immutable
+candidate is the hosted proof of the bounded queue.
+
+**Exact next step — after the candidate and nightly cuts are green, human
+release judgment, not more inferred scope.** This is still an experimental
+alpha candidate, not the alpha declaration. Listen to the stereo pass on real
+speakers/headphones, execute the remaining fresh-user and clean-machine rows in
+`docs/RELEASE-CHECKLIST.md`, and only then decide whether to pass the A8 human
+gate. No stability guarantee is made until the project is explicitly past
+alpha.
 
 ## Previous handoff — the editor-polish batch (D143–D146) landed; A8 unchanged (human-only)
 

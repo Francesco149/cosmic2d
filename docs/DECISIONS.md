@@ -8087,3 +8087,29 @@ SIGSEGV capture process up to three fresh attempts; Lua/product errors and all
 other exits remain immediate failures, and a completed attempt still has to
 byte-match the pinned golden. The unchanged full-render suite is ALL GREEN
 locally with every capture succeeding on its first attempt.
+
+## D153 — headless presentation bounds its offscreen GPU queue (2026-07-20)
+
+The hosted rehearsals made the failure shape decisive. `rc.4` gave each
+SIGSEGV capture three fresh processes: the 1,920-frame bounce tour and
+1,740-frame starfield exhausted all three, with individual attempts stretching
+from roughly two to four minutes. In the same job every shorter capture and
+the 1,290-frame openworld and 620-frame rovale tours completed and matched
+their committed PNGs byte-for-byte. Retries did not repair the class, and no
+completed render ever produced a pixel mismatch.
+
+The missing invariant was at the headless presentation boundary. A live
+swapchain naturally limits frames in flight through acquire/present, while the
+offscreen path submitted command buffers as quickly as the simulation and Lua
+draw could produce them. On a slow software Vulkan host, render work could
+therefore accumulate without a bound. `pal_gfx_present` now submits headless
+frames with an SDL GPU fence and waits for completion before beginning the
+next tick. Windowed presentation keeps its asynchronous swapchain path.
+
+This is deliberately a runtime lifetime fix, not a CI exception: the workflow
+still runs the complete release suite, the retry guard remains narrow, and no
+trace or pixel golden changed. Linux `nix run .#test` is **ALL GREEN** with
+selftest **25,106**, every trace exact, and all 19 pixel captures byte-identical
+(including the four historically failing long tours). The Windows tree was
+rebuilt and passes native selftest **25,108** plus an 830-frame native headless
+smoke run.

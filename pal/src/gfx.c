@@ -967,7 +967,26 @@ bool pal_gfx_present(void) {
     }
   }
 
-  SDL_SubmitGPUCommandBuffer(cmd);
+  /* A live swapchain naturally bounds frames in flight. Headless rendering
+   * has no acquire/present throttle, so a capped run can otherwise enqueue
+   * thousands of software-rendered frames faster than lavapipe consumes
+   * them. Keep the offscreen queue bounded: this also makes long screenshot
+   * tours reliable on slower CI hosts without changing their final pixels. */
+  if (G.headless) {
+    SDL_GPUFence *fence = SDL_SubmitGPUCommandBufferAndAcquireFence(cmd);
+    if (!fence) {
+      pal_log("gfx: headless submit: %s", SDL_GetError());
+      return false;
+    }
+    bool waited = SDL_WaitForGPUFences(G.dev, true, &fence, 1);
+    SDL_ReleaseGPUFence(G.dev, fence);
+    if (!waited) {
+      pal_log("gfx: headless wait: %s", SDL_GetError());
+      return false;
+    }
+  } else {
+    SDL_SubmitGPUCommandBuffer(cmd);
+  }
   return true;
 }
 
