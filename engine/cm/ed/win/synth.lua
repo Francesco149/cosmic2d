@@ -346,6 +346,25 @@ local function preset_list(ed, p)
   return out
 end
 
+-- wheel over the open presets rail scrolls it (the D147 roster outgrew
+-- the window height); anywhere else declines so the canvas zooms
+function M.wheel(win, ed, dy)
+  if not win.pre or win.path == "" then return false end
+  local p = ed.g.iw and ed.g.iw[win.path]
+  local r = p and p.rail_rect
+  if not r then return false end
+  local i = cm.require("cm.ui").inp
+  if i.wx < r.x or i.wx >= r.x + r.w
+     or i.wy < r.y or i.wy >= r.y + r.h then
+    return false
+  end
+  local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
+  local u = cm.require("cm.ed.kit").winui(p, win)
+  u.prescroll = math.max(0, (u.prescroll or 0) - dy * 44 * z)
+  ed.touch() -- the draw clamp bounds the far end
+  return true
+end
+
 -- ---- header ----
 
 function M.header(win, ctx)
@@ -399,25 +418,47 @@ function M.draw(win, ctx)
   local patch = doc.patch
   local edited, closed -- live edit / gesture end
 
-  -- presets rail (toggled): eats the left column
+  -- presets rail (toggled): eats the left column. The list outgrew a
+  -- window height at the D147 preset expansion (52 stock + project ins),
+  -- so the rail scrolls: wheel over it (M.wheel below), clamped to the
+  -- content; the offset is per-window UI scratch, not captured state.
   if win.pre then
     local rw = math.min(130 * z, cw * 0.35)
-    pal.x_ig_rect_fill(x0, y0, rw - 4 * z, ctx.ch - 12 * z, COL.rail, 3 * z)
+    local rail_h = ctx.ch - 12 * z
+    pal.x_ig_rect_fill(x0, y0, rw - 4 * z, rail_h, COL.rail, 3 * z)
     local i = cm.require("cm.ui").inp
-    local ry = y0 + 4 * z
-    for _, item in ipairs(preset_list(ed, p)) do
-      if ry > y0 + ctx.ch - 24 * z then break end
-      local hov = ctx.hot and i.wx >= x0 and i.wx < x0 + rw - 8 * z
-                  and i.wy >= ry and i.wy < ry + px * 1.3
-      pal.x_ig_text(x0 + 6 * z, ry, px * 0.92,
-                    hov and COL.hot or COL.text, item.label, 0)
-      pal.x_ig_text(x0 + rw - 40 * z, ry, px * 0.75, COL.dim, item.from, 0)
-      -- press ARMS a click-or-drag on this row (resolved below): a
-      -- click loads the preset; a drag carries it to a sequencer track
-      if hov and i.clicked[1] then
-        p.pdrag = { item = item, sx = i.wx, sy = i.wy }
+    local u = cm.require("cm.ed.kit").winui(p, win)
+    local list = preset_list(ed, p)
+    local row_h = px * 1.45
+    local max_scroll = math.max(0, #list * row_h + 8 * z - rail_h)
+    u.prescroll = math.max(0, math.min(u.prescroll or 0, max_scroll))
+    p.rail_rect = { x = x0, y = y0, w = rw - 4 * z, h = rail_h }
+    pal.x_ig_clip_push(x0, y0, rw - 4 * z, rail_h)
+    local ry = y0 + 4 * z - u.prescroll
+    for _, item in ipairs(list) do
+      if ry > y0 + rail_h then break end
+      if ry + row_h >= y0 then
+        local hov = ctx.hot and i.wx >= x0 and i.wx < x0 + rw - 8 * z
+                    and i.wy >= ry and i.wy < ry + px * 1.3
+                    and i.wy >= y0 and i.wy < y0 + rail_h
+        pal.x_ig_text(x0 + 6 * z, ry, px * 0.92,
+                      hov and COL.hot or COL.text, item.label, 0)
+        pal.x_ig_text(x0 + rw - 40 * z, ry, px * 0.75, COL.dim, item.from, 0)
+        -- press ARMS a click-or-drag on this row (resolved below): a
+        -- click loads the preset; a drag carries it to a sequencer track
+        if hov and i.clicked[1] then
+          p.pdrag = { item = item, sx = i.wx, sy = i.wy }
+        end
       end
-      ry = ry + px * 1.45
+      ry = ry + row_h
+    end
+    pal.x_ig_clip_pop()
+    -- a thin scroll cue when the list overflows
+    if max_scroll > 0 then
+      local frac = rail_h / (max_scroll + rail_h)
+      local ty = y0 + (u.prescroll / (max_scroll + rail_h)) * rail_h
+      pal.x_ig_rect_fill(x0 + rw - 7 * z, ty, 2 * z,
+                         math.max(8 * z, rail_h * frac), 0x4a4370ff, 1 * z)
     end
     -- resolve the armed preset gesture (round 5, the human): moved past
     -- the threshold = a drag-out (the shell's g.adrag carries it — a

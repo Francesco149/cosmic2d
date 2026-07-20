@@ -8240,6 +8240,68 @@ local function t_ins()
   for _ = 1, 6 do pal.snd_render() end
 end
 
+local function t_stock_ins()
+  -- D147: the stock instrument roster — every shipped .ins decodes,
+  -- encodes canonically (byte-identical re-encode), and SOUNDS through
+  -- the real sim bank. The vibe-coverage expansion is pinned by name so
+  -- a lost file fails loud, not silent.
+  local ins = cm.require("cm.ins")
+  local snd = cm.require("cm.snd")
+  local names = {}
+  for _, n in ipairs(pal.list_dir("engine/stock/ins") or {}) do
+    if n:find("%.ins$") then names[#names + 1] = n end
+  end
+  table.sort(names)
+  check(#names >= 52, "stock ins: the D147 roster ships (" .. #names .. ")")
+  local have = {}
+  for _, n in ipairs(names) do have[n] = true end
+  for _, n in ipairs({ -- one pin per D147 vibe family
+    "fm-strings.ins", "fm-choir.ins", "fm-harp.ins", "fm-flute.ins",
+    "fm-reed.ins", "fm-timpani.ins", "fm-orchhit.ins", "fm-harpsi.ins",
+    "fm-musicbox.ins", "fm-nylon.ins", "fm-upright.ins", "fm-vibes.ins",
+    "fm-muted.ins", "fm-clav.ins", "fm-slap.ins", "fm-cowbell.ins",
+    "fm-sub.ins", "fm-reese.ins", "fm-ride.ins", "fm-shaker.ins",
+    "fm-rim.ins", "fm-conga.ins", "fm-drone.ins", "fm-glass.ins" }) do
+    check(have[n], "stock ins: " .. n .. " ships")
+  end
+  local all_ok, canon_ok, audible = true, true, true
+  for _, n in ipairs(names) do
+    local bytes = pal.read_file("engine/stock/ins/" .. n)
+    local ok, doc = pcall(ins.decode, bytes)
+    if not ok then
+      all_ok = false
+      pal.log("stock ins: " .. n .. " failed decode: " .. tostring(doc))
+    else
+      if ins.encode(doc) ~= bytes then
+        canon_ok = false
+        pal.log("stock ins: " .. n .. " is not canonical bytes")
+      end
+      -- the audibility sweep: a slow-attack pad needs a few frames
+      -- before the tap carries signal; render up to 30 (500 ms)
+      ins.upload(doc, 10, "sim", "stock")
+      local v = snd.on(10, doc.patch.type == "fm" and 57 or 60, 110)
+      local heard = false
+      for _ = 1, 30 do
+        pal.snd_render()
+        if pal.x_snd_tap():find("[^%z]") then
+          heard = true
+          break
+        end
+      end
+      if not heard then
+        audible = false
+        pal.log("stock ins: " .. n .. " rendered silence")
+      end
+      snd.off(v)
+      for _ = 1, 10 do pal.snd_render() end
+    end
+  end
+  for _ = 1, 120 do pal.snd_render() end -- long releases tail out
+  check(all_ok, "stock ins: every preset decodes")
+  check(canon_ok, "stock ins: every preset is canonical encode bytes")
+  check(audible, "stock ins: every preset is audible in the sim bank")
+end
+
 local function t_words()
   -- cm.words: the auto-namer / graybox word bank. Data + a pure-over-
   -- the-seeded-stream name generator (dev RNG by default; seed for tests).
@@ -13874,6 +13936,7 @@ function game.init()
   t_ed_kit()
   t_snd()
   t_ins()
+  t_stock_ins()
   t_words()
   t_palette()
   t_song()
