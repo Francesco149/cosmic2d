@@ -531,14 +531,17 @@ local function mesh_for(ed, p, path, atexid)
   return pal.buf(name, want), doc.w * doc.h * 2
 end
 
--- re-emit the tiles covering a touched VERTEX rect and patch the vb rows
+-- re-emit the tiles covering a touched VERTEX rect and patch the vb
+-- rows. One tile wider than the touched rect on every side: a height
+-- edit at vertex v moves the smooth per-vertex normals at v±1 too
+-- (emit_terrain's spill contract)
 local function patch_mesh(ed, p, path, vx0, vz0, vx1, vz1)
   local doc = p.doc
   if p.meshgen ~= p.gen then return end -- full rebuild queued anyway
-  local x0 = mm.clamp(vx0 - 1, 0, doc.w - 1)
-  local x1 = mm.clamp(vx1, 0, doc.w - 1)
-  local z0 = mm.clamp(vz0 - 1, 0, doc.h - 1)
-  local z1 = mm.clamp(vz1, 0, doc.h - 1)
+  local x0 = mm.clamp(vx0 - 2, 0, doc.w - 1)
+  local x1 = mm.clamp(vx1 + 1, 0, doc.w - 1)
+  local z0 = mm.clamp(vz0 - 2, 0, doc.h - 1)
+  local z1 = mm.clamp(vz1 + 1, 0, doc.h - 1)
   local vb = pal.buf(vb_name(path), doc.w * doc.h * 144)
   for zz = z0, z1 do
     local out = {}
@@ -831,15 +834,17 @@ local function live_atlas(ed, p, path)
 end
 
 -- a paint/shade stroke touched the vertex rect: re-bake just those
--- texels so the texture follows the brush live
+-- texels so the texture follows the brush live. One tile wider than
+-- the touched rect on every side: a sculpt at vertex v moves the
+-- smooth per-vertex light at v±1 too (emit_terrain's spill contract)
 local function stroke_patch(ed, p, vx0, vz0, vx1, vz1)
   local lat = p.lat
   if not lat then return end
   local doc = p.doc
-  local x0 = mm.clamp(vx0 - 1, 0, doc.w - 1)
-  local x1 = mm.clamp(vx1, 0, doc.w - 1)
-  local z0 = mm.clamp(vz0 - 1, 0, doc.h - 1)
-  local z1 = mm.clamp(vz1, 0, doc.h - 1)
+  local x0 = mm.clamp(vx0 - 2, 0, doc.w - 1)
+  local x1 = mm.clamp(vx1 + 1, 0, doc.w - 1)
+  local z0 = mm.clamp(vz0 - 2, 0, doc.h - 1)
+  local z1 = mm.clamp(vz1 + 1, 0, doc.h - 1)
   -- rows the loop has not reached yet get baked when it arrives
   local py1 = math.min((z1 + 1) * TS - 1, lat.row - 1)
   local py0 = z0 * TS

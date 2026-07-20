@@ -12671,66 +12671,89 @@ local function t_terr3()
   end
 end
 
-local function t_terr3_trilight()
-  -- D140: terrain lights each drawn TRIANGLE by its own normal — a
-  -- per-quad plane fit gave non-planar quads a tone matching neither
-  -- visible triangle (the stone-dusty-shrew "inconsistent quads")
+local function t_terr3_smoothlight()
+  -- the D140-addendum vote: terrain lighting is SMOOTH per vertex —
+  -- central-difference normals, one color per shared vert, so quad
+  -- seams are impossible by construction (per-face normals turned
+  -- every sculpted tile into a visible plate; openworld's procedural
+  -- field only hid it because its finest octave spans ~5 tiles)
   local T3 = cm.require("cm.terr3")
+  local tm = cm.require("cm.terr")
   local d = T3.fresh("np", 1, 1, 2.0)
-  d.hts[4] = 1.5 -- raise h11 only: a maximally non-planar single tile
+  d.hts[4] = 1.5 -- raise h11 only: the old scheme's worst case
+  -- the emitter's exact per-vertex math (s=2, flat=2, hget clamps)
+  local function vg(doc2, vx, vz)
+    local function h(x, z) return tm.hget(doc2, x, z) end
+    local nx = (h(vx - 1, vz) - h(vx + 1, vz)) / 4
+    local nz = (h(vx, vz - 1) - h(vx, vz + 1)) / 4
+    local nl = m.sqrt(nx * nx + 4 + nz * nz)
+    local dd = m.max(0, -(nx / nl * doc2.sun[1] + 2 / nl * doc2.sun[2]
+                          + nz / nl * doc2.sun[3]))
+    local j = 1 + (tm.hash(31, vx, vz) - 0.5) * 0.10
+    return m.clamp(doc2.mats[1].col[2] * j
+                   * (doc2.amb[2] + doc2.suncol[2] * dd), 0, 1) * 255 // 1
+  end
   local out = {}
-  check(T3.emit_terrain(out, d) == 2, "trilight: 1x1 emits 2 tris")
+  check(T3.emit_terrain(out, d) == 2, "smoothlight: 1x1 emits 2 tris")
   local vb = table.concat(out)
-  -- verts are 24 bytes; A is emitted at index 1 (tri 1) AND 4 (tri 2)
-  local g1 = vb:byte(0 * 24 + 22) -- tri 1's A, green
-  local g2 = vb:byte(3 * 24 + 22) -- tri 2's A, green
-  check(g1 ~= g2,
-        "trilight: a non-planar quad's shared vert lights per triangle")
-  -- exact: each triangle's flat_y-softened true normal (s=2, flat=2)
-  local function litg(nx, nz)
+  -- verts are 24 bytes, A B C A C D; green = byte 22 of each vert
+  check(vb:byte(0 * 24 + 22) == vg(d, 0, 0)
+        and vb:byte(2 * 24 + 22) == vg(d, 1, 1),
+        "smoothlight: verts carry the central-difference vertex tone")
+  -- cross-QUAD continuity: on a 2x1 doc a shared vertex emits the
+  -- IDENTICAL 24 bytes in both quads — the no-seam guarantee
+  local d2 = T3.fresh("cont", 2, 1, 2.0)
+  for i, h in ipairs({ 1, 2, 0, 3, 4, 1 }) do d2.hts[i] = h end
+  local out2 = {}
+  T3.emit_terrain(out2, d2)
+  local vb2 = table.concat(out2)
+  check(vb2:sub(1 * 24 + 1, 2 * 24) == vb2:sub(144 + 1, 144 + 24),
+        "smoothlight: a shared vert is byte-identical across quads (B==A)")
+  check(vb2:sub(2 * 24 + 1, 3 * 24) == vb2:sub(144 + 5 * 24 + 1, 144 + 144),
+        "smoothlight: a shared vert is byte-identical across quads (C==D)")
+  -- a FLAT doc keeps the historical flat-ground tone exactly
+  local df = T3.fresh("fl", 1, 1, 2.0)
+  local outf = {}
+  T3.emit_terrain(outf, df)
+  check(table.concat(outf):byte(22) == vg(df, 0, 0),
+        "smoothlight: flat ground tone is unchanged")
+  -- the atlas bake bilerps the four corner vertex light terms, exact
+  local function jof(vx, vz)
+    return 1 + (tm.hash(31, vx, vz) - 0.5) * 0.10
+  end
+  local function vl(vx, vz)
+    local function h(x, z) return tm.hget(d, x, z) end
+    local nx = (h(vx - 1, vz) - h(vx + 1, vz)) / 4
+    local nz = (h(vx, vz - 1) - h(vx, vz + 1)) / 4
     local nl = m.sqrt(nx * nx + 4 + nz * nz)
     local dd = m.max(0, -(nx / nl * d.sun[1] + 2 / nl * d.sun[2]
                           + nz / nl * d.sun[3]))
-    local c, sh = d.mats[1].col[2], 1
-    local tm = cm.require("cm.terr")
-    local j = 1 + (tm.hash(31, 0, 0) - 0.5) * 0.10
-    return m.clamp(c * j * sh * (d.amb[2] + d.suncol[2] * dd), 0, 1)
+    return d.amb[2] + d.suncol[2] * dd
   end
-  check(g1 == (litg(0, -0.75) * 255) // 1,
-        "trilight: tri 1 carries its own true normal")
-  check(g2 == (litg(-0.75, 0) * 255) // 1,
-        "trilight: tri 2 carries its own true normal")
-  -- a PLANAR slope: both triangles agree with the old plane fit — the
-  -- whole smooth-terrain look is bit-stable by construction
-  local dp = T3.fresh("pl", 1, 1, 2.0)
-  dp.hts[2], dp.hts[4] = 1.0, 1.0 -- h10 = h11 = 1: a pure x slope
-  local outp = {}
-  T3.emit_terrain(outp, dp)
-  local vp = table.concat(outp)
-  check(vp:byte(22) == vp:byte(3 * 24 + 22),
-        "trilight: a planar quad's triangles agree")
-  check(vp:byte(22) == ((litg(-0.5, 0) * 255) // 1),
-        "trilight: the planar tone is the plane-fit tone")
-  -- the atlas bake picks the texel's triangle by fu >= fv: the
-  -- off-diagonal texels carry their OWN triangle's light term, exact
-  local tm2 = cm.require("cm.terr")
-  local function jof(vx, vz)
-    return 1 + (tm2.hash(31, vx, vz) - 0.5) * 0.10
-  end
-  local function bakeg(fu, fv, nx, nz)
+  local function bakeg(fu, fv)
     local jj = jof(0, 0) * (1 - fu) * (1 - fv) + jof(1, 0) * fu * (1 - fv)
              + jof(0, 1) * (1 - fu) * fv + jof(1, 1) * fu * fv
-    local nl = m.sqrt(nx * nx + 4 + nz * nz)
-    local dd = m.max(0, -(nx / nl * d.sun[1] + 2 / nl * d.sun[2]
-                          + nz / nl * d.sun[3]))
-    local L = d.amb[2] + d.suncol[2] * dd
+    local L = (vl(0, 0) * (1 - fu) + vl(1, 0) * fu) * (1 - fv)
+            + (vl(0, 1) * (1 - fu) + vl(1, 1) * fu) * fv
     return m.clamp((d.mats[1].col[2] * jj * L * 255) // 1, 0, 255)
   end
   local px = T3.bake_pixels(d, nil, 2)
-  check(px:byte((0 * 2 + 1) * 4 + 2) == bakeg(0.75, 0.25, 0, -0.75),
-        "trilight: a tri-1 texel bakes tri 1's light")
-  check(px:byte((1 * 2 + 0) * 4 + 2) == bakeg(0.25, 0.75, -0.75, 0),
-        "trilight: a tri-2 texel bakes tri 2's light")
+  check(px:byte((0 * 2 + 1) * 4 + 2) == bakeg(0.75, 0.25)
+        and px:byte((1 * 2 + 0) * 4 + 2) == bakeg(0.25, 0.75),
+        "smoothlight: bake texels bilerp the vertex light exactly")
+  -- the spill contract the editor's stroke_patch rides: after a height
+  -- edit at vertex v, re-baking tiles [v-2 .. v+1] alone reproduces
+  -- the full re-bake byte-exactly (normals move at v+-1, colors at
+  -- the tiles around them — nothing outside the widened rect)
+  local d5 = T3.fresh("spill", 6, 6, 2.0)
+  local px5 = T3.bake_pixels(d5, nil, 2)
+  local buf5 = pal.buf(nil, 12 * 12 * 4)
+  buf5:setstr(0, px5)
+  d5.hts[3 * 7 + 3 + 1] = 2.0 -- sculpt vertex (3,3)
+  local full5 = T3.bake_pixels(d5, nil, 2)
+  T3.bake_into(d5, nil, 2, buf5, 2, 2, 9, 9) -- tiles 1..4 = the rect
+  check(buf5:str(0, 12 * 12 * 4) == full5,
+        "smoothlight: the widened stroke rect covers the light spill")
 end
 
 local function t_lathe_norms()
@@ -13675,7 +13698,7 @@ function game.init()
   t_kin()
   t_mesh()
   t_terr3()
-  t_terr3_trilight()
+  t_terr3_smoothlight()
   t_lathe_norms()
   t_walk()
   t_rig()
