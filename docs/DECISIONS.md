@@ -7684,3 +7684,78 @@ new repo files; the three captures inspected. The workflow's first
 real run is observable only on GitHub — verifying the initial nightly
 (runner disk/time for the nix build, release permissions) is a
 follow-up for the human or a future session with repo access.
+
+## D147 — the FM-preset vibe expansion, stock demo songs, and the stock-assets window (2026-07-20)
+
+The queued packet, the human's words: "make sure we have enough FM
+presets to create the most common vibes + a few demo stock tracks to
+smoke test that … probably also good to have a read only stock asset
+window that you can copy assets from if desired (by copying them to
+your project). opening a stock asset auto opens it with an auto
+generated name unsaved."
+
+- **24 new stock instruments** (engine/stock/ins, patch tables through
+  cm.ins encode — the no-committed-generator convention holds; the
+  generator lived in the session scratchpad): orchestral/classical
+  fm-strings / fm-choir / fm-harp / fm-flute / fm-reed / fm-timpani /
+  fm-orchhit / fm-harpsi / fm-musicbox; jazz-latin-funk fm-nylon /
+  fm-upright / fm-vibes / fm-muted / fm-clav / fm-slap / fm-cowbell;
+  electronic fm-sub / fm-reese / fm-ride / fm-shaker / fm-rim /
+  fm-conga; ambient-spooky fm-drone / fm-glass. Calibrated against the
+  shipped family (modulator levels 20–175, carriers 190–255); the
+  audition renders show clean attack/sustain/decay classes and no
+  clipping (worst peak 11.8k/32767). The synth preset rail outgrew a
+  window height at 52 stock entries, so it **wheel-scrolls** (clamped,
+  per-window winui scratch, a thin scroll cue; a wheel outside the
+  rail still declines to canvas zoom — probe-proven both ways).
+- **14 stock demo songs** (engine/stock/songs — a NEW stock family),
+  one per queued vibe: desert-dunes, water-caverns, noble-court (a 3/4
+  minuet), prelude-soft (the rolling-harp opening), battle-charge,
+  boss-gate, dnb-rush, breaks-alley, bossa-breeze, bossa-fiesta,
+  funk-strut, noir-sleuth (swing), horror-hollow, ambient-drift.
+  Hand-composed beat-time tables through cm.song encode. **Track ins
+  refs are engine-cwd-relative** ("engine/stock/ins/x.ins") — the sim
+  sequencer's read_ins, the music window's preview resolver, and a
+  packaged game (engine/stock ships) all open them from any project
+  with zero copying; pulling the song INTO a project rewrites nothing
+  (the refs still resolve), and per-track drops copy in as before.
+  Full-loop sim renders: every instrument resolves, no clipping
+  (worst 28.5k transient), mixes eyeballed by RMS envelope.
+- **The stock-assets window** (cm.ed.win.stock, on the roster after
+  assets): a read-only grid over the five stock families (ins / songs
+  / art / fig / pal) — family chips, fuzzy filter, previews (sprite
+  textures; palette swatch strips through the D143-safe disp
+  conversion), grid order = family roster order (the fuzzy sort
+  tie-breaks by list index, not path). Three doors, no write surface
+  into stock by construction (no delete/rename/save):
+  **double-click = open an unsaved copy** — the stock bytes seed the
+  working state at a fresh auto name (stem-2/-3 on collision with disk
+  OR unsaved states) and the right window opens DIRTY; ctrl+S keeps
+  it, closing without saving leaves the project untouched. **c/enter =
+  copy into the project** (family dest dirs ins/ sound/ art/ pal/,
+  assets-browser flash, the A7 FIMP import mark). **press-drag**
+  carries the engine-relative path on the shell's g.adrag — music
+  tracks / sprite wells copy in through their existing drop doors.
+- **kit.asset grows `A.seed(ed, path, bytes)`** — the generic
+  open-a-copy half: pre-seed a not-yet-existing project path as
+  unsaved working state; declines existing files or working states
+  (seeding never clobbers); the seed bytes journal as the undo floor
+  through the existing open_asset flow. synth / music / sprite /
+  palette / figure export it as `kind.seed`; a kind without the door
+  falls back to a real copy in stock.open_copy.
+
+Proof: selftest **25,017** (+70: t_stock_ins decode/canonical/audible
+sweep over all 52 with the 24 pinned by name; t_stock_songs
+decode/canonical/flatten/ins-resolution/audible over all 14 pinned;
+t_stock_window list/prune/dest/unique/copy/seed-contract/parked-wall);
+`nix run .#test` ALL GREEN, goldens byte-identical; the synth-rail
+tape (scroll probe exact at 6 notches, off-rail wheel zooms) and the
+stock-window tape (6/6: select, c-copy lands bytes, double-click opens
+ins/fm-bell.ins dirty with no disk write, songs chip) both on fresh
+smoke copies; captures on llm-feed. **The audio taste check NEEDS the
+human**: the presets and all 14 songs want a native listen (synth
+window preset rail + stock window double-click into the music window,
+space to play). Deferred honestly: preset-rail keyboard walk, a song
+"play" door directly in the stock grid (today: open the copy, space in
+the music window), stock-window arrow-key selection, PCM goldens
+pinning the new presets bit-exact once the human approves them.

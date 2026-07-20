@@ -3,7 +3,61 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — the editor-polish batch (D143–D146) landed; ONE polish item still queued; A8 unchanged (human-only)
+## Current handoff — D147 landed: the FM-preset vibe expansion + 14 stock demo songs + the read-only stock-assets window; the polish queue is EMPTY; A8 (human-only) + the NATIVE LISTEN are what remain
+
+**This session (2026-07-20, evening) consumed the queued FM-preset
+packet whole; three commits + docs.** **D147 part 1** — 24 new stock
+instruments covering the vibe list verbatim (orchestral: strings /
+choir / harp / flute / reed / timpani / orchhit / harpsi / musicbox;
+jazz-latin-funk: nylon / upright / vibes / muted / clav / slap /
+cowbell; electronic: sub / reese / ride / shaker / rim / conga;
+ambient-spooky: drone / glass), all patch tables through cm.ins encode
+(no committed generator, the convention held), calibrated against the
+shipped family and render-verified (clean envelope classes, no
+clipping). The synth preset rail outgrew the window at 52 stock
+entries and now WHEEL-SCROLLS (clamped, per-window scratch, scroll
+cue; off-rail wheel still zooms the canvas — probe-proven). **Part
+2** — engine/stock/songs is a NEW stock family: 14 hand-composed demo
+tracks, one per queued vibe (desert-dunes, water-caverns, noble-court
+in 3/4, prelude-soft, battle-charge, boss-gate, dnb-rush,
+breaks-alley, bossa-breeze, bossa-fiesta, funk-strut, noir-sleuth
+swing, horror-hollow, ambient-drift); track ins refs are
+engine-cwd-relative so the sim sequencer, the music-window preview,
+and packaged games resolve them from ANY project with zero copying;
+full-loop renders show every instrument resolving and sane mixes.
+**Part 3** — the stock-assets window (cm.ed.win.stock): a READ-ONLY
+grid over the five stock families (ins/songs/art/fig/pal; chips +
+fuzzy + previews incl. palette swatch strips via the D143-safe disp).
+Double-click OPENS AN UNSAVED COPY (the new kit `A.seed` door: stock
+bytes seed the working state at a fresh auto name, -2/-3 on collision
+with disk or unsaved states; the window opens dirty, the seed is the
+journal undo floor, NOTHING touches disk until the user's own Ctrl+S);
+`c`/enter copies into the project (family dest dirs, browser flash,
+FIMP timeline mark); press-drag carries the engine-relative path into
+the existing drop doors (music tracks, wells). No delete/rename/save
+surface — read-only by construction. Proof: Linux selftest **25,017**
+(+70: t_stock_ins / t_stock_songs / t_stock_window — full-roster
+decode/canonical-bytes/audibility sweeps with every new name pinned,
+the seed contract, the parked wall); `nix run .#test` ALL GREEN,
+goldens byte-identical; two shell tapes green on fresh smoke copies
+(synth rail scroll probes exact; stock window 6/6); captures on
+llm-feed. See DECISIONS `D147`.
+
+**THE NEXT SESSION'S FIRST ASK — the native listen.** The audio taste
+check needs the human's ears: on the Windows stage, open the synth
+window's preset rail and click through the 24 new voices, then open
+the stock-assets window (spawn menu / launcher), double-click a few
+songs and hit space in the music window. All 14 songs + every preset
+are smoke-tested deterministically but ZERO human ears have heard
+them; expect mix/taste notes to fold back as a polish pass. PCM
+goldens pinning the new presets bit-exact land AFTER that approval
+(deferred in the ADR, deliberately). Smaller deferred items live in
+D147's tail (stock-grid arrow keys, a direct play door in the grid)
+and the earlier ADRs (palette alpha pickers, rampbuf snap-back,
+literal `*italic*`, out-of-tree stock-doc links, observing the first
+nightly run on GitHub).
+
+## Previous handoff — the editor-polish batch (D143–D146) landed; A8 unchanged (human-only)
 
 **This session (2026-07-20, daytime) worked the human's editor-use
 polish list; five commits.** **D143** — the palette generator rework:
