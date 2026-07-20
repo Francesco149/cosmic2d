@@ -6,8 +6,16 @@ name: nightly
 
 on:
   schedule:
-    - cron: "0 3 * * *"
+    # UTC. Avoid the top of the hour, where scheduled Actions are most likely
+    # to queue; schedules always run from the default branch.
+    - cron: "17 3 * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Cut another nightly even when HEAD already has one"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -19,23 +27,41 @@ concurrency:
 jobs:
   nightly:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # tags decide whether tonight is a new cut
 
       - name: Skip if nothing new since the last nightly
         id: fresh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCE: ${{ inputs.force }}
         run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$FORCE" = true ]; then
+            echo "manual force requested"
+            echo "new=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           last="$(git tag --list 'nightly-*' --sort=-creatordate | head -1)"
           if [ -n "$last" ] && [ "$(git rev-parse "$last^{commit}")" = "$(git rev-parse HEAD)" ]; then
-            echo "HEAD already cut as $last — skipping"
-            echo "new=false" >> "$GITHUB_OUTPUT"
+            expected="$(printf '%s\n' cosmic2d-linux.tar.gz cosmic2d-linux.tar.gz.sha256 cosmic2d-windows.zip cosmic2d-windows.zip.sha256 | LC_ALL=C sort)"
+            actual="$(gh release view "$last" --json assets --jq '.assets[].name' 2>/dev/null | LC_ALL=C sort || true)"
+            if [ "$actual" = "$expected" ]; then
+              echo "HEAD already published completely as $last — skipping"
+              echo "new=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "HEAD has tag $last but its release is absent/incomplete — rebuilding"
+              echo "new=true" >> "$GITHUB_OUTPUT"
+              echo "reuse_tag=$last" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "new=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - uses: DeterminateSystems/nix-installer-action@v16
+      - uses: DeterminateSystems/determinate-nix-action@2a0be2498974c2b6327e19780488744384637d88 # v3.21.7
         if: steps.fresh.outputs.new == 'true'
 
       - name: Deterministic suite (traces + pixel goldens on pinned lavapipe)
@@ -45,26 +71,44 @@ jobs:
       - name: Build the download archives
         if: steps.fresh.outputs.new == 'true'
         run: |
+          set -euo pipefail
           nix build .#cosmic-linux-release -o result-linux
           nix build .#cosmic-windows-release -o result-windows
           mkdir -p dist
           cp -L result-linux/* result-windows/* dist/
-          (cd dist && sha256sum ./*.tar.gz ./*.zip)
+          (cd dist && sha256sum --check --strict ./*.sha256)
+
+      - name: Retain the verified archives with the workflow run
+        if: steps.fresh.outputs.new == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nightly-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
 
       - name: Tag and publish the nightly prerelease
         if: steps.fresh.outputs.new == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          REUSE_TAG: ${{ steps.fresh.outputs.reuse_tag }}
         run: |
-          base="nightly-$(date -u +%Y%m%d)"
-          tag="$base"
-          n=1
-          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
-            n=$((n + 1))
-            tag="$base.$n" # same-day rerun after a new commit: bump
-          done
-          git tag "$tag"
-          git push origin "$tag"
+          set -euo pipefail
+          tag="$REUSE_TAG"
+          if [ -z "$tag" ]; then
+            base="nightly-$(date -u +%Y%m%d)"
+            tag="$base"
+            n=1
+            while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+              n=$((n + 1))
+              tag="$base.$n" # same-day rerun after a new commit: bump
+            done
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$tag" -m "Automated cosmic2d nightly at $(git rev-parse --short HEAD)"
+            git push origin "refs/tags/$tag"
+          fi
           {
             echo "Automated nightly build of \`main\` at $(git rev-parse --short HEAD)."
             echo
@@ -72,7 +116,11 @@ jobs:
             echo
             echo "Archives are unsigned alpha artifacts — verify the sibling \`.sha256\` before extraction; see THIRD_PARTY_NOTICES.md."
           } > notes.md
-          gh release create "$tag" dist/* \
-            --prerelease \
-            --title "$tag ($(git rev-parse --short HEAD))" \
-            --notes-file notes.md
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" --verify-tag --prerelease --latest=false \
+              --title "$tag ($(git rev-parse --short HEAD))" --notes-file notes.md
+          else
+            gh release create "$tag" dist/* --verify-tag --prerelease --latest=false \
+              --title "$tag ($(git rev-parse --short HEAD))" --notes-file notes.md
+          fi

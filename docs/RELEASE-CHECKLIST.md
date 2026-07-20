@@ -5,6 +5,14 @@ warm machine. A release is the human executing this list top to
 bottom and signing the result. Record outcomes (counts, hashes, dates)
 in `STATUS.md` as you go.
 
+For a rehearsal cut, run `tools/tag-release-candidate.sh --push` from a clean
+`main` after pushing the commit. It creates the next annotated
+`v<VERSION>-rc.N` tag and its tag push runs the release-candidate workflow:
+the deterministic suite, both verified archives, an Actions artifact, and a
+GitHub prerelease. A failed runner can be retried normally or rebuilt with the
+workflow's manual `tag` input; the tag never moves. This does **not** mark the
+project alpha or replace the final checklist below.
+
 ## 1. Tree state
 
 - [ ] Worktree clean on `main`; `STATUS.md` current; no `[ ]` P0/P1

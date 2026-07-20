@@ -1,0 +1,109 @@
+# An annotated v<VERSION>-rc.N tag is an explicit candidate cut. The tag-push
+# path is normal; workflow_dispatch can rebuild an existing tag after a runner
+# failure without moving it or minting a different revision.
+name: release candidate
+
+on:
+  push:
+    tags:
+      - "v*-rc.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release-candidate tag to rebuild"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-candidate-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Validate the immutable candidate identity
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          prefix="v${version}-rc."
+          case "$RELEASE_TAG" in
+            "$prefix"*) ;;
+            *) echo "tag must start with $prefix" >&2; exit 1 ;;
+          esac
+          number="${RELEASE_TAG#"$prefix"}"
+          [[ "$number" =~ ^[1-9][0-9]*$ ]] || {
+            echo "candidate suffix must be a positive integer" >&2
+            exit 1
+          }
+          tagged="$(git rev-list -n 1 "$RELEASE_TAG")"
+          head="$(git rev-parse HEAD)"
+          [ "$tagged" = "$head" ] || {
+            echo "$RELEASE_TAG resolves to $tagged, checkout is $head" >&2
+            exit 1
+          }
+          echo "building $RELEASE_TAG at $head"
+
+      - uses: DeterminateSystems/determinate-nix-action@2a0be2498974c2b6327e19780488744384637d88 # v3.21.7
+
+      - name: Deterministic suite (manifests + traces + pixel goldens)
+        run: nix run .#test
+
+      - name: Build and verify both download archives
+        run: |
+          set -euo pipefail
+          nix build .#cosmic-linux-release -o result-linux
+          nix build .#cosmic-windows-release -o result-windows
+          mkdir -p dist
+          cp -L result-linux/* result-windows/* dist/
+          (cd dist && sha256sum --check --strict ./*.sha256)
+
+      - name: Retain the verified archives with the workflow run
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.RELEASE_TAG }}
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+      - name: Publish the candidate prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          short="$(git rev-parse --short HEAD)"
+          {
+            echo "Release candidate \`$RELEASE_TAG\` for cosmic2d \`$(tr -d '\r\n' < VERSION)\` at \`$short\`."
+            echo
+            echo "This is an early-stage experimental alpha candidate: APIs, assets, and file formats may change without compatibility guarantees."
+            echo
+            echo "Suite: \`nix run .#test\` ALL GREEN on this revision (release manifests, byte-exact traces, and pixel goldens on pinned lavapipe)."
+            echo
+            echo "Archives are unsigned alpha artifacts — verify the sibling \`.sha256\` before extraction; see THIRD_PARTY_NOTICES.md."
+          } > notes.md
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            actual="$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort)"
+            expected="$(printf '%s\n' cosmic2d-linux.tar.gz cosmic2d-linux.tar.gz.sha256 cosmic2d-windows.zip cosmic2d-windows.zip.sha256 | LC_ALL=C sort)"
+            if [ "$actual" = "$expected" ]; then
+              echo "$RELEASE_TAG is already published with all four assets"
+              exit 0
+            fi
+            gh release upload "$RELEASE_TAG" dist/* --clobber
+            gh release edit "$RELEASE_TAG" --verify-tag --prerelease --latest=false \
+              --title "$RELEASE_TAG ($short)" --notes-file notes.md
+          else
+            gh release create "$RELEASE_TAG" dist/* --verify-tag --prerelease --latest=false \
+              --title "$RELEASE_TAG ($short)" --notes-file notes.md
+          fi
