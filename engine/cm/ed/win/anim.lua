@@ -18,7 +18,7 @@ local sprite = cm.require("cm.sprite")
 local paint = cm.require("cm.paint")
 
 M.kind = "anim"
-M.help = "win-sprite"
+M.help = "win-anim"
 M.menu = "animation"
 M.DEF_W, M.DEF_H = 420, 300
 

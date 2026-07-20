@@ -775,6 +775,28 @@ for game SFX. Play a tracker song with:
 Sequencing and audio stepping are handled by the engine. Sound is deterministic
 simulation: trigger it in `step`, not `draw`.
 
+## Songs as data (`cm.song`)
+
+`cm.song` is the `.song` codec behind the music tracker — an ARRANGEMENT
+of clips, each placing a (possibly shared) pattern on a track at a bar.
+`snd.music` plays the file; reach for the codec when you want to
+**generate or inspect music as data** — a procedural jukebox, a rhythm
+game reading note times, or a build step writing stingers:
+
+    local song = cm.require("cm.song")
+    local doc = song.decode(assert(pal.read_file(path)))
+    -- doc = { bpm, beats_per_bar, tracks = {...},
+    --         patterns = { [id] = { len, notes = {{tick,dur,pitch,vel}} } },
+    --         clips = { {track, tick, len, pattern} } }
+    doc.bpm = 140
+    pal.write_file_atomic(path, song.encode(doc))
+
+Time is integer ticks at 96 per beat (`song.PPQ`); `song.normalize(doc)`
+heals any hand-built table into a canonical arrangement (missing
+patterns, empty docs, legacy shapes). The tracker window edits the same
+bytes, so a generated song opens there for hand-polish — the
+procedural-meets-hand door for music.
+
 ## The options menu (`cm.options`)
 
 Every game gets the player menu for free behind **F1**: fullscreen, window
@@ -1391,6 +1413,32 @@ Because the whole bake is a budgeted render-class pass, a golden trace
 replays byte-identically whatever `budget` you pass — the sim reads only
 `terr.sample` and the walk grid, never the atlas.
 
+## Editor meshes (`cm.mesh`)
+
+`cm.mesh` is the `.msh` codec behind the mesh window — one low-poly mesh:
+verts, tri/quad faces with flat per-face colors, optional per-face texture
+regions from one image, doublesided/unlit flags. The picoCAD class, with
+the refusals stated up front: no skinning, no modifiers, no subdivision,
+no UV unwrap. Games usually just PLACE meshes in a 3d map (the terrain
+window's drop door renders them for you), but the codec and the pure
+editing ops are public for procedural modeling:
+
+    local mesh = cm.require("cm.mesh")
+    local doc = mesh.fresh("crate")          -- starts as a unit box
+    mesh.add_prim(doc, "prism", { size = 2 })
+    mesh.save(doc, root .. "/art/crate.msh") -- or encode/decode the bytes
+    local groups = mesh.bake_groups(doc)     -- gb-shaped color bakes
+
+Rendering rides `cm.gb`'s baked path (color-grouped `pal.x_figverts`), so
+a placed mesh costs the same as any graybox figure. The usual route is
+placing `.msh` files in a 3d map and letting `terr3.emit_props` resolve
+them (pass a `mesh` resolver returning `{ doc, groups }` — the explore3d
+template is the worked example); `mesh.emit` is the low-level triangle
+emitter, and the editing ops (`add_prim`, `extrude`, `flip`,
+`merge_verts`, `mirror_pair`) are all pure doc functions. A mesh you
+generate with the codec opens in the mesh window for hand-polish — the
+same procedural-meets-hand contract every editor asset keeps.
+
 ## Figures — rigid-part characters (`cm.fig`)
 
 A **figure** is a character built the SM64 way: a tree of rigid parts (no
@@ -1783,6 +1831,7 @@ the rules that protect your project are already enforced, not merely promised
 - `cm.tmap` — decode/draw/edit tilemap grids.
 - `cm.anim` / `cm.sprite` — animation sidecars and sprite source documents.
 - `cm.snd` / `cm.ins` — deterministic music, voices, and instruments.
+- `cm.song` — the `.song` arrangement codec (patterns, clips, tracks).
 - `cm.options` — the player menu (F1): game-declared settings, volume doors.
 - `cm.save` — per-player save slots/profiles outside the project folder.
 - `cm.palette` / `cm.grade` — palette data and render-only color grading.
@@ -1794,6 +1843,7 @@ The 3D retro pipeline (see [Making a 3D game](#making-a-3d-game-the-retro-pipeli
 - `cm.gb` — graybox meshes (box/prism/lathe/ball), material textures, baked figures.
 - `cm.terr` — heightfield terrain: build, triangle-exact sample, emit, water.
 - `cm.atlas` — the budgeted per-tile terrain-texture atlas (the RO bake).
+- `cm.mesh` — the `.msh` low-poly mesh codec and pure editing ops.
 - `cm.fig` — rigid-part figures: build, pose, cycle clips, emit.
 - `cm.mascot` — the stock mascot figure and its idle/walk/swim/wave clips.
 - `cm.spr` — bake a figure to an 8-way sprite sheet; billboards and decals.

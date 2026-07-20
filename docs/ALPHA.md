@@ -222,18 +222,39 @@ Goal: the mini-demos are concise because shared engine APIs carry routine work.
 
 Implement only after writing each demo naively enough to expose its real pain.
 
-- [ ] Define the actor/world, query/collision, camera, layer/depth, transition,
-  tween/effect, and runtime-UI slices listed in §2.
-- [ ] Keep deterministic state in doc/named buffers; specify stable iteration,
+- [x] Define the actor/world, query/collision, camera, layer/depth, transition,
+  tween/effect, and runtime-UI slices listed in §2. (D090 cm.box, D091
+  cm.actor, D092 cm.camera, D093 parallax/LAYR v2, D094 cm.tween, D095
+  cm.depth, D096 cm.hud, D097 cm.move. The transition slice is honestly
+  DEFERRED per D096: the pain audit found only instant cuts, and A5's own
+  rule forbids building ahead of demo pain — the revisit trigger is a demo
+  hand-rolling one.)
+- [x] Keep deterministic state in doc/named buffers; specify stable iteration,
   lifetime, reload, snapshot, and rewind behavior for every new module.
-- [ ] Add focused selftests and at least one trace for each sim-touching slice.
-- [ ] Provide task-based examples and defaults; advanced users can stay close
-  to primitives and opt out.
-- [ ] Audit performance with representative actor/projectile counts and set
-  honest supported envelopes for alpha.
+  (Every module header carries its determinism spec: sim-touching slices
+  are plain data in state.doc — canon/snapshot/trace/rewind by
+  construction; box/depth/hud/move are pure or render-only with no module
+  state at all. Iteration orders pinned, e.g. actor's ascending-id rule.)
+- [x] Add focused selftests and at least one trace for each sim-touching slice.
+  (t_box/t_actor/t_camera/t_tween/t_depth/t_move/t_hud in the selftest;
+  committed traces cellar_clear, swarm_runs, demo_camtour carry the
+  sim-touching slices — actor/camera/tween each forced an honest re-cut,
+  the pure slices verify against the standing trace hashes.)
+- [x] Provide task-based examples and defaults; advanced users can stay close
+  to primitives and opt out. (scripting.md has a task section per module
+  plus the D099 puzzle/board recipe; naive copies deliberately survive in
+  the other demos as the primitives-only contrast.)
+- [x] Audit performance with representative actor/projectile counts and set
+  honest supported envelopes for alpha. (D098: the perfgauge staircase to
+  8,000 actors on both hosts; the shipped envelope — about 500 live
+  doc-carried actors, the recorder tax named as the real cost — is in
+  scripting.md's performance section with the measured table.)
 
 Exit: each bundled demo's game-specific code mostly expresses its rules, not
 camera math, lifetime bookkeeping, input plumbing, or storage boilerplate.
+**A5 exit closed (D098):** every §2 slice shipped or honestly deferred
+(transition, D096) and the envelope audit is done — the checkboxes above
+were reconciled to the ADR record at the 2026-07-20 gate audit.
 
 ### A6 — bundled demo and starter matrix
 

@@ -25,9 +25,15 @@ switch can proceed.
   Ctrl+click a link to follow it. Ctrl+S saves; Ctrl+Z / Ctrl+Y undo and
   redo. Journals normally preserve undo across restarts, but are still cache
   data rather than a durability guarantee.
-- **sprite editor** (+ **animation**) — paint frames, define clips.
+- **sprite editor** — paint frames on layers (opacity, blend modes,
+  gradient + procedural fills); the paired **animation** window cuts the
+  strip into named clips (the sprite header's **anim** button opens it).
 - **map editor** — collider chains, one-ways, and markers (spawns, portals,
   props). **tilemap** — a grid of tiles placed as one object.
+- **3d map** — sculpt and paint a `.terr` heightfield terrain, place
+  assets and route markers. **mesh** — model low-poly `.msh` meshes
+  (extrude, paint, mirror). **figure** — rig `.fig` characters from
+  parts, pose clips, and bake sprite sheets.
 - **sound player**, **synth** (FM + Game Boy voices with filter and pitch
   sweep), and a **music** tracker.
 - **palette** — design a palette; generate ramps with a hue shift.
@@ -180,7 +186,11 @@ all release it, and it re-engages when you click back in.
 - [Project settings](engine/stock/docs/win-project.md) ·
   [the map editor](engine/stock/docs/win-map.md) ·
   [sprite editor](engine/stock/docs/win-sprite.md) ·
+  [animation](engine/stock/docs/win-anim.md) ·
   [tilemap](engine/stock/docs/win-tmap.md)
+- [3d map](engine/stock/docs/win-terr.md) ·
+  [mesh](engine/stock/docs/win-mesh.md) ·
+  [figure](engine/stock/docs/win-figure.md)
 - [synth](engine/stock/docs/win-synth.md) ·
   [music tracker](engine/stock/docs/win-music.md) ·
   [sound player](engine/stock/docs/win-sound.md)
