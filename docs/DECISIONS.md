@@ -7759,3 +7759,62 @@ space to play). Deferred honestly: preset-rail keyboard walk, a song
 "play" door directly in the stock grid (today: open the copy, space in
 the music window), stock-window arrow-key selection, PCM goldens
 pinning the new presets bit-exact once the human approves them.
+
+### D147 addendum — the polish round (2026-07-20, same day)
+
+The human's notes after browsing (pre-listen): six items, all landed.
+
+- **The multi-window preview divergence** ("two copies of breaks-alley
+  open played differently — restart fixed it", deft-cobble-cider) is a
+  CLASS bug: `kit.snd_alloc` round-robins the editor bank's 64 patch
+  slots and never frees, so enough audio windows in one session WRAP
+  the counter and two live holders share a slot — the later upload
+  silently replaces the earlier window's patch; a restart empties the
+  bank and hides it. Fix: **`kit.snd_claim(ed, slot, tag)`** stamps
+  slot ownership on ed.g; the synth audition (every bound frame) and
+  the music preview_slots (every start/blip) check the stamp and
+  re-send their patch on a lost claim — an upload is cheap, so
+  stealing resolves on the victim's next play instead of persisting
+  to restart. KAT'd (t_snd_claim, 5) + tape-probed (a stolen slot
+  re-claims on the next audition frame). Named edge: two windows
+  BOTH mid-preview on collided slots fight until one restarts its
+  preview — acceptable; simultaneous previews are already a mess.
+- **The rail marks the last-loaded preset** (win.lastpre — captured,
+  survives restarts): filled pill + accent label. Tape-proven.
+- **The bossa rework.** Studied the human's reference ("How to make
+  the silliest bossa nova song", eBm1JEj8wpo) — transcript via yt-dlp
+  (yutu's caption download is owner-only; timedtext/innertube are
+  POT-walled now) + FL piano-roll frame reads at 360p (the only
+  stream YouTube serves this session). What the frames show: FIVE-
+  voice close-position ninth chords (intervals 3-4-3-4 from the root
+  = m9) with ONE voice dropping a semitone (m7→6: the im9→im6/9
+  vamp), anticipated comping, key B♭ ("back to F" bass), rim + paired
+  kicks ("two, two again") + manually-placed quiet rides, a cute
+  2-octave lead, deliberately robotic ("sounds like Undertale").
+  Both songs rebuilt on that recipe: **bossa-breeze** = B♭maj9 / Gm9 /
+  Cm9 / F9 two bars each, soft keys on the dotted-quarter anticipation
+  chain, surdo upright, xylophone lead; **bossa-fiesta** = one-bar
+  changes + a G9 (V/ii) sparkle, busier comping with a bar-crossing
+  anticipation, flute lead + xylophone octave echoes, conga/shaker/
+  ride on top. **fm-xylo** is the new preset (3x quint partial over
+  the fundamental, 10x strike click, fast wooden decay).
+- **noir-sleuth's melody** rewritten in crime-jazz language (Mancini/
+  Peter Gunn traits: chromatic creeps, the ♭5, strolling motifs with
+  silence, shouting brass): F–F#–G–G#–A and B♭–B–C–C#–D half-step
+  climbs on swung 8ths, a D–C–B♭ / A–A♭–G chromatic descent answer,
+  the resolve falling through F# to a hanging D; the muted trumpet
+  stabs land a half-step off in the melody's rests. The rhythm
+  section is untouched (human-approved as-is).
+- **fm-flute / fm-harpsi realistic passes** ("too electronic"): the
+  flute drops the chippy tri carrier for a gently detuned sine pair +
+  soft octave + constant low breath noise (fixed 6.2 kHz, sustain 13);
+  the harpsi drops raw saw carriers + the c14 tine for the classic
+  decaying-FM-index pluck (c3 modulator, index 175 falling to 22) +
+  a 4' octave rank, fb 2 for quill edge at the attack only.
+  noble-court and bossa-fiesta inherit through their ins refs.
+
+Proof: selftest **25,023** (+6: t_snd_claim ×5, the fm-xylo pin);
+`nix run .#test` ALL GREEN, goldens byte-identical; full-loop renders
+clean (fiesta trimmed from a 32.4k peak to 28.3k); the rail-mark tape
+2/2 with the highlight shot on llm-feed. The native listen remains
+the verdict on all of it.

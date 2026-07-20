@@ -43,11 +43,30 @@ goldens byte-identical; two shell tapes green on fresh smoke copies
 (synth rail scroll probes exact; stock window 6/6); captures on
 llm-feed. See DECISIONS `D147`.
 
-**The Windows stage IS refreshed over D147**: `tools/build-windows.sh`
-staged clean (21 preserved durable entries + the Start Menu shortcut)
-and the NATIVE selftest passes at **25,019** = Linux 25,017 + 2 — the
-whole D147 roster (presets, songs, the stock window) is on the
-human's machine, one Start Menu click from the listen.
+**Same day, the polish round (the D147 addendum) landed on the
+human's browse notes**: (1) the two-breaks-alley-windows divergence
+was the editor-bank allocator WRAPPING its 64 slots with no free —
+`kit.snd_claim` slot-ownership stamps now make the synth audition and
+music preview re-send their patch on a lost claim (KAT'd + tape-
+probed); (2) the synth rail highlights the LAST-LOADED preset
+(captured, survives restarts); (3) both bossa songs rebuilt on the
+human's reference video (eBm1JEj8wpo transcript via yt-dlp + FL
+piano-roll frame reads: five-voice close 9th chords, the im9→im6/9
+one-voice move, dotted-quarter anticipated comping, surdo B♭→F bass,
+rim clave + paired kicks + quiet rides, cute quantized lead) — breeze
+gets a xylophone lead over B♭maj9/Gm9/Cm9/F9, fiesta a G9 sparkle +
+flute with xylophone octave echoes; **fm-xylo** is new; (4) noir-
+sleuth's melody rewritten in crime-jazz language (chromatic ♭5 creeps
+on swung 8ths, strolling motifs with silence, muted stabs a half-step
+off — rhythm section untouched per the human); (5) fm-flute +
+fm-harpsi realistic passes (detuned sine pair + breath; decaying-FM-
+index pluck + 4' rank) — noble-court inherits. Selftest **25,023**
+(+6), suite ALL GREEN, mixes re-rendered clean.
+
+**The Windows stage IS refreshed over D147 + the polish round**:
+`tools/build-windows.sh` staged clean and the NATIVE selftest passes
+at **25,025** = Linux 25,023 + 2 — the whole roster is on the human's
+machine, one Start Menu click from the listen.
 
 **THE NEXT SESSION'S FIRST ASK — the native listen.** The audio taste
 check needs the human's ears: on the Windows stage, open the synth
