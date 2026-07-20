@@ -7469,3 +7469,53 @@ guard working. Proof: selftest **24,931** (+3 noise_at KATs), a
 shell tape 6/6 on a fresh smoke copy (kit fresh door, sign-exact
 sculpt, the carve-out probe, the wave chip through a real click,
 full-strength drags for the capture); shot on llm-feed.
+
+## D142 — the release-candidate pass: gate reconcile, the freeze documents, the A7 triage closures (2026-07-20)
+
+The overnight alpha-gating session's audit half, with the standing goal
+"ready for alpha release after human signoff". Three moves:
+
+- **The gates now tell the truth.** A5's five checkboxes had never been
+  ticked although D090–D098 closed every slice (the transition slice's
+  deliberate deferral included) and D098's consequences declared the
+  gate done — each box now ticks WITH its evidence and the exit line
+  lands, symmetric with A4/A6. The README's status paragraph named
+  long-closed gates as open; it now says what actually remains
+  (fresh-user pass + executed release checklist). VERSION 0.1-alpha is
+  declared the intended frozen string.
+- **The freeze documents exist** (A8's third box, now [~] pending only
+  the human's tag): docs/CHANGELOG.md (the 0.1-alpha capability
+  summary — the ADR log stays the detailed record),
+  KNOWN-LIMITATIONS.md (every honest edge with its ADR pointer),
+  ISSUE-TEMPLATE.md (replay-clip-first reporting), and
+  RELEASE-CHECKLIST.md (the reproducible cut: suite → native →
+  artifacts → clean-VM matrix → soak/recovery → tag; every step names
+  its existing script). docs/README.md indexes all four as active.
+- **A7 was triaged at code level and two smalls landed.** (1) The
+  dismissal guard now covers a MOUNTED dropped-replay clip itself, not
+  only its A/B loop — F4/the tray x refuse to eject even after Esc
+  clears the loop (the guard keyed only on has_loop; a loop-less clip
+  was silently ejectable), the Esc ladder stays the deliberate exit
+  (it closes with force). KAT'd in the crash-tail sequence. (2) Asset
+  IMPORTS mark the timeline: trace.note_import appends the new FIMP
+  observer chunk (files activity + the new IMPORT event bit, excluded
+  from replay bytes like FSAV/MARK, so exports stay byte-identical);
+  the sound-import and instrument-preset doors emit it; the tray draws
+  "asset import" at its own tick offset (position, not only color —
+  D130). KAT'd through digest adoption. The three larges stay named
+  with verdicts in the gate text: captured-audio embedding (no audio
+  capture ring EXISTS — a PAL tap + segment store + clip chunk, post-
+  alpha unless voted gating), the wall-clock export name (pal has no
+  date door; one small binding when wanted), and native-crash
+  next-launch synthesis (no signal handler in the PAL; a new C surface
+  + boot reconciler).
+
+Release-candidate validation recorded: `nix run .#test` ALL GREEN
+(twice today), release-manifests staging PASS, long-session soaks —
+400,000 headless swarm frames (~1.9 h of play) max RSS 262 MB clean
+exit; 150,000 editor-shell frames (~42 min) max RSS 275 MB clean exit
+(the pinned-history growth class stays a named limitation, D032).
+Linux selftest **24,933** (+2: the clip-mount F4 guard, the adopted
+import marker). What remains before "alpha" is exactly what only the
+human can do: the fresh-user pass, the native signoff, and executing
+the checklist.

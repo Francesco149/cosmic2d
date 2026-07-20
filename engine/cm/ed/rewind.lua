@@ -248,8 +248,15 @@ end
 
 function M.close(ed, force)
   local r = state(ed)
-  if scrub.has_loop and scrub.has_loop() and not force then
-    flash(r, "Esc clears the clip before rewind can close")
+  -- the dismissal guard (A7): neither an A/B clip NOR a mounted dropped
+  -- replay may vanish through F4 / the tray x / outside clicks — only the
+  -- Esc ladder (which closes with force) walks them out deliberately. A
+  -- dropped clip whose loop was Esc-cleared is still a mounted replay.
+  if not force and ((scrub.has_loop and scrub.has_loop())
+                    or (scrub.is_clip and scrub.is_clip())) then
+    flash(r, scrub.is_clip and scrub.is_clip()
+             and "Esc ejects the replay clip before rewind can close"
+             or "Esc clears the clip before rewind can close")
     return false
   end
   if scrub.paused() then scrub.close() end
@@ -664,6 +671,7 @@ local EVENT_KINDS = {
   { bit = "RESTART", color = "restart", name = "restart",     top = 0, w = 2 },
   { bit = "CODE",    color = "code",    name = "code reload", top = 1, w = 2 },
   { bit = "SAVE",    color = "save",    name = "asset save",  top = 3, w = 2 },
+  { bit = "IMPORT",  color = "save",    name = "asset import", top = 4, w = 2 },
   { bit = "EVAL",    color = "eval",    name = "console",     top = 5, w = 2 },
   { bit = "INPUT",   color = "input",   name = "input",       top = -7, w = 1 },
 }

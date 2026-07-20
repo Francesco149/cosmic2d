@@ -7,11 +7,13 @@ folder containing the engine, editor, tools, and game projects. The source
 checkout is built with Nix and the extract-and-run archives are clean-machine
 tested; the editor can export any opened project with its carried runtime.
 
-**Status: alpha candidate.** The engine, infinite-canvas editor, audio stack,
-and an out-of-the-box demo game are here. The deterministic suite is green,
-but broader project lifecycle, gamepad/player settings, genre demos, rewind
-product UI, and release-candidate validation are still gates; see
-`docs/ALPHA.md`.
+**Status: alpha candidate.** The engine, infinite-canvas editor (2D and 3D
+authoring), audio stack, rewind/replay product, gamepad + player settings,
+project lifecycle/export, and the bundled demo matrix are all here, and the
+deterministic suite is green. What remains before "alpha" is the
+release-candidate validation itself — the fresh-user pass and the executed
+release checklist; see `docs/ALPHA.md` (gate A8), `docs/CHANGELOG.md`, and
+`docs/KNOWN-LIMITATIONS.md`.
 
 ## Try it
 

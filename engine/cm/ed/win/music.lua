@@ -1342,6 +1342,7 @@ function M.resolve_ins(ed, path)
       return nil
     end
     cm.require("cm.ed.win.assets").invalidate(ed)
+    cm.require("cm.trace").note_import(rel, #bytes) -- the A7 tray marker
     pal.log("[ed] imported preset -> " .. rel)
   end
   return rel

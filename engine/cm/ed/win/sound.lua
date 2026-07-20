@@ -174,10 +174,12 @@ function M.to_ins(win, ed)
                           a = 2, d = 0, s = 255, r = 30, gain = 128 } }
   local path = "ins/" .. base .. ".ins"
   pal.mkdir(ed.root .. "/ins")
-  local ok, err = pal.write_file_atomic(ed.root .. "/" .. path,
-                    cm.require("cm.ins").encode(doc), p._create_fail)
+  local bytes = cm.require("cm.ins").encode(doc)
+  local ok, err = pal.write_file_atomic(ed.root .. "/" .. path, bytes,
+                                        p._create_fail)
   if ok then
     cm.require("cm.ed.win.assets").invalidate(ed)
+    cm.require("cm.trace").note_import(path, #bytes) -- the A7 tray marker
     local wm = cm.require("cm.ed.wm")
     local K = ed.kinds.synth
     local sw = wm.spawn(ed.doc, "synth", win.x + win.w + 20, win.y,

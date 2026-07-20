@@ -84,7 +84,7 @@ M.thumb_period = M.thumb_period or 60 * 60
 -- render/dev phase; INPUT/CODE/EVAL are read back out of the sim chunk stream;
 -- SESSION is the adopted<->live structural boundary.
 M.timeline_event = { INPUT = 1, CODE = 2, EVAL = 4, SESSION = 8,
-                     SAVE = 16, ERROR = 32, RESTART = 64 }
+                     SAVE = 16, ERROR = 32, RESTART = 64, IMPORT = 128 }
 
 -- M._R = ring session { project, stream_id, segs, next_id, prev, prev_doc,
 --                       last_frame }
@@ -207,6 +207,10 @@ local function summarize_segment(seg)
       local ok, _, nbytes = pcall(unpack, "<s4I4", c.payload)
       if ok and nbytes > s.files then s.files = nbytes end
       s.events = s.events | E.SAVE
+    elseif c.tag == "FIMP" then
+      local ok, _, nbytes = pcall(unpack, "<s4I4", c.payload)
+      if ok and nbytes > s.files then s.files = nbytes end
+      s.events = s.events | E.IMPORT
     elseif c.tag == "EVAL" then
       s.events = s.events | E.EVAL
     elseif c.tag == "EPOC" then
@@ -1327,6 +1331,19 @@ function M.note_save(path, nbytes)
   R.manifest_dirty = true -- §14: fold the saved bytes into the project manifest
 end
 
+-- An editor asset IMPORT (a file brought in from outside — the sound/preset
+-- import doors): same files-activity shape as a save, its own timeline bit so
+-- the tray distinguishes "brought in" from "authored here" (the A7 marker).
+function M.note_import(path, nbytes)
+  local R = M._R
+  if not R or #R.segs == 0 then return end
+  local seg = R.segs[#R.segs]
+  seg_append(seg, "FIMP",
+    pack("<s4I4", tostring(path or ""), math.max(0, math.floor(nbytes or 0))))
+  seg.summary = nil
+  R.manifest_dirty = true
+end
+
 -- The project tree changed on disk (an editor save, import, delete, or observed
 -- external edit) — the next render-phase manifest_pump re-walks and stores it.
 -- Cheap and idempotent; the actual (I/O-bearing) work is deferred out of the
@@ -1540,13 +1557,13 @@ local function build_trace_blob(project, kf, first_i, last_i, standalone)
     if i > first_i then
       w.chunk("KEYF", 1, state.encode_snapshot(s.kf_bufs, s.kf_doct))
     end
-    -- FSAV/MARK/THMB/PMAN are history chrome (activity, lifecycle, previews,
-    -- the project-manifest hash), not replay state; a standalone clip carries
-    -- its tree through the MFST/BLOB chunks below instead, so a plain export
-    -- stays byte-identical to before (goldens hold).
+    -- FSAV/FIMP/MARK/THMB/PMAN are history chrome (activity, lifecycle,
+    -- previews, the project-manifest hash), not replay state; a standalone
+    -- clip carries its tree through the MFST/BLOB chunks below instead, so a
+    -- plain export stays byte-identical to before (goldens hold).
     for _, c in ipairs(s.chunks) do
-      if c.tag ~= "FSAV" and c.tag ~= "MARK" and c.tag ~= "THMB"
-         and c.tag ~= "PMAN" then
+      if c.tag ~= "FSAV" and c.tag ~= "FIMP" and c.tag ~= "MARK"
+         and c.tag ~= "THMB" and c.tag ~= "PMAN" then
         w.chunk(c.tag, 1, c.payload)
       end
     end
@@ -2134,6 +2151,10 @@ function M.ring_timeline(from_frame, to_frame, bins)
             local ok, _, nbytes = pcall(unpack, "<s4I4", c.payload)
             bump(bucket(frame), "files", ok and nbytes or 0)
             event(frame, E.SAVE)
+          elseif c.tag == "FIMP" then
+            local ok, _, nbytes = pcall(unpack, "<s4I4", c.payload)
+            bump(bucket(frame), "files", ok and nbytes or 0)
+            event(frame, E.IMPORT)
           elseif c.tag == "MARK" then
             local ok, bit = pcall(unpack, "<I4", c.payload)
             if ok then event(frame, bit) end

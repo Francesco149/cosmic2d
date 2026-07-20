@@ -307,13 +307,15 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   history; the presented-frame thumbnails (`THMB`, D101) fill the PREVIEWS lane
   from a live game-FOV sample, one per segment, decimated at wide zoom. Adopted
   cross-session previews (the durable `THMB` blob scan) ride the packaging packet.
-- [~] Show current/live/retention markers plus input transitions, code epochs,
+- [x] Show current/live/retention markers plus input transitions, code epochs,
   asset saves/imports, restarts/session boundaries, errors, and crashes without
   requiring state reconstruction to draw the timeline. Current/live/retention
   markers, input transitions, code epochs, asset saves, restarts, session
   boundaries, and contained errors draw from the persisted digest (D100); a
   dropped crash report draws its own failed-frame boundary wall (D106). Asset
-  *imports* remain the last marker awaiting a packet.
+  *imports* landed 2026-07-20 as the FIMP observer chunk + IMPORT timeline
+  bit (the sound and instrument-preset import doors emit it; KAT'd through
+  digest adoption).
 - [x] Visible disk budget/use, retention controls, pause/clear, and recovery
   behavior across state, thumbnails, audio, and deduplicated project blobs;
   long sessions remain bounded and understandable. (D102: the tray head is a
@@ -328,9 +330,11 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
 - [x] Clock replay/A-B transport to wall time: default 1× replays the recorded
   60 Hz moment in real time, 2×/4×/8× are explicit, and a late renderer drops
   intermediate presentation frames instead of slowing the transport clock.
-- [ ] Extend that dismissal guard to export progress and dropped-replay modes
-  when those modes exist. Export progress is guarded now; dropped replay awaits
-  its mode.
+- [x] Extend that dismissal guard to export progress and dropped-replay modes
+  when those modes exist. Export progress is guarded (a live export job blocks
+  the rewind toggle); and as of 2026-07-20 a MOUNTED dropped-replay clip is
+  itself guarded — F4/the tray x refuse to eject it even after Esc clears its
+  loop; only the Esc ladder walks it out deliberately (KAT'd).
 - [~] Give live history, replay files, and crash-focused views immutable
   timeline sources. Dragging a replay into any editor view opens/fits/loops it;
   dismissing it restores the untouched live ring and present rather than
@@ -361,16 +365,23 @@ Goal: turn the existing mechanics into a flagship debugging and recording tool.
   `reconstruct_bundle` rebuilds the SNAP code from the segment's captured manifest
   (project `.lua` at its frozen source) + the host engine `cm.*`, so `export_clip`
   no longer refuses a cross-session range — only legacy pre-manifest / spill-off
-  history does. Remaining under this item: **captured-audio embedding**.
+  history does. Remaining under this item: **captured-audio embedding** —
+  triaged 2026-07-20: no audio capture ring exists at all (the ring records
+  state, not PCM), so this is a LARGE packet (a PAL tap on snd_render,
+  per-segment persistence, a new clip chunk), not a serialization tweak.
+  Named post-alpha unless the human votes it gating; revisit trigger: the
+  first shared replay where silent playback confuses its recipient.
 - [~] Export a selected clip atomically to a timestamped file in `replays/`
   beside `engine/`, then reveal/select it in Explorer/the platform file manager;
   offer an actionable writable-location path when the engine root is read-only.
   D104: the tray's "export replay" button writes `<project>-clip-<A>-<B>.ctrace`
   (free-suffixed) atomically to `replays/` beside `engine/` and reveals the
   folder; a read-only engine root falls back to `<user_path>replays/`, named in
-  the flash. Deferred: a wall-clock name (needs a PAL date door) and
-  select-the-exact-file reveal (needs `explorer /select,` and has no portable
-  Linux twin) — the folder reveal is §15's stated fallback.
+  the flash. Deferred: a wall-clock name (needs a PAL date door — triaged
+  2026-07-20: pal exposes only monotonic time_ns and file mtimes; one small
+  binding away) and select-the-exact-file reveal (needs `explorer /select,`
+  and has no portable Linux twin) — the folder reveal is §15's stated
+  fallback.
 - [x] Make structured crash reports locate an exact history stream/frame. A
   drop opens and loops up to one minute before the crash, preferring an embedded
   tail and otherwise resolving local retained history; evicted/missing tails
@@ -433,10 +444,22 @@ Goal: validate the whole promise, not isolated subsystems.
   remains open.
 - [ ] Fresh-user usability pass on both platforms; record time-to-first-change
   and every point where external knowledge was required.
-- [ ] Clean-machine artifact matrix, upgrade/open-old-project tests, corrupt
+- [~] Clean-machine artifact matrix, upgrade/open-old-project tests, corrupt
   state recovery, long-session soak, performance budgets, and full goldens.
-- [ ] Freeze an alpha version, changelog, known limitations, issue template,
-  and reproducible release checklist.
+  (2026-07-20 progress: full goldens ALL GREEN continuously; the
+  release-manifests staging test passes; corrupt-state recovery rides the
+  A1 selftest seams every run; performance budgets published since D098;
+  long-session soak recorded — 400k headless game frames (~1.9 h of play)
+  max RSS 262 MB clean exit; 150k editor-shell frames (~42 min) max RSS
+  275 MB clean exit. Remaining: the
+  clean-VM archive matrix and open-old-project pass at release execution —
+  `RELEASE-CHECKLIST.md` §4–5 carries the procedure.)
+- [~] Freeze an alpha version, changelog, known limitations, issue template,
+  and reproducible release checklist. (2026-07-20: `VERSION` 0.1-alpha is
+  the intended frozen string; `CHANGELOG.md`, `KNOWN-LIMITATIONS.md`,
+  `ISSUE-TEMPLATE.md`, and `RELEASE-CHECKLIST.md` are written and indexed.
+  Remaining: the human executes the checklist and tags the cut — the
+  README flips to "alpha" only there.)
 
 Exit: every alpha promise in §1 has direct evidence and no P0/P1 release issue
 is open. The README changes from alpha candidate to alpha only here.

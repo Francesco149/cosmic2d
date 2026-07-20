@@ -9,6 +9,10 @@ mistaken for current work.
 - `STATUS.md` — current state, proof, exact next session packet, blockers.
 - `ALPHA.md` — release scope, genre/demo matrix, gates, order, session hygiene.
 - `PROCESS.md` — build/test/visual verification and repository workflow.
+- `CHANGELOG.md` — user-facing release history (0.1-alpha is the first).
+- `KNOWN-LIMITATIONS.md` — the honest edges of the current release.
+- `RELEASE-CHECKLIST.md` — the reproducible alpha-cut procedure.
+- `ISSUE-TEMPLATE.md` — how to report a problem (replay-clip powered).
 
 ## Contracts and current subsystem designs
 

@@ -10032,6 +10032,7 @@ local function t_timeline_summary()
     sim:i64(0, f0 + i)
     trace.record_frame(irec, nil)
     if i == 3 then trace.note_save("art/hero.spr", 100) end
+    if i == 4 then trace.note_import("ins/kick.ins", 300) end
     if i == 6 then trace.note_event(E.ERROR) end
     if i == 18 then
       trace.note_save("maps/room.map", 250)
@@ -10057,15 +10058,19 @@ local function t_timeline_summary()
   check(ahi == f0 + 20, "timeline summary: adopted the spilled tail")
   local tl = trace.ring_timeline(alo, ahi, 20)
   local sim_hit, files_hit, save_hit, err_hit = false, false, false, false
+  local import_hit = false
   for _, d in ipairs(tl.data) do
     sim_hit = sim_hit or d.sim > 0
     files_hit = files_hit or d.files > 0
     save_hit = save_hit or (d.events & E.SAVE) ~= 0
     err_hit = err_hit or (d.events & E.ERROR) ~= 0
+    import_hit = import_hit or (d.events & E.IMPORT) ~= 0
   end
   check(not tl.missing, "timeline summary: adopted history has no missing gap")
   check(sim_hit and files_hit and save_hit and err_hit,
         "timeline summary: adopted digest carries sim/files/save/error")
+  check(import_hit,
+        "timeline summary: the asset-import marker survives adoption (A7)")
 
   -- Legacy (pre-A7) manifest lines carry only the first four fields; those
   -- segments adopt with no digest and honestly read back as a missing gap.
@@ -11410,6 +11415,10 @@ local function t_crash_tail()
   rewind.escape(ed)
   check(not scrub.has_loop() and scrub.is_clip() and r.crash,
         "crash-tail: Esc clears the loop but keeps the crash clip")
+  -- the A7 dismissal guard covers the MOUNTED CLIP itself, not only the
+  -- loop: F4 (toggle -> close without force) must refuse to eject it
+  check(not rewind.toggle(ed) and scrub.is_clip() and rewind.opened(ed),
+        "crash-tail: F4 cannot eject a mounted clip after the loop clears")
   rewind.escape(ed)
   check(not scrub.is_clip() and not trace.has_stash()
         and not (ed.g.rw and ed.g.rw.crash),
