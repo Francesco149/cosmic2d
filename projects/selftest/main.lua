@@ -8657,6 +8657,117 @@ local function t_stock_songs()
   check(audible, "stock songs: every song's opening note is audible")
 end
 
+local function t_stock_window()
+  -- D147: the read-only stock-assets window — the list spans the five
+  -- shipped families, dest mapping + auto-name uniquifying, the copy
+  -- door, and the kit seed door (open-a-copy = unsaved working state
+  -- on a fresh name, dirty, journaled to the seed floor, disk untouched
+  -- until the user's own save).
+  local S = cm.require("cm.ed.win.stock")
+  local W = cm.require("cm.ed.win.synth")
+  local root = tmproot() .. "/cosmic_selftest_stock"
+  pal.mkdir(root)
+  local journal = cm.require("cm.ed.journal")
+  for _, leftover in ipairs({ "ins/fm-harp.ins", "ins/fm-vibes.ins",
+      "ins/fm-glass.ins", "ins/fm-glass-2.ins",
+      "sound/ambient-drift.song" }) do
+    pal.x_remove(root .. "/" .. leftover) -- prior-run artifacts
+    pal.x_remove(journal.file(root, leftover))
+    pal.x_remove(journal.good_file(root, leftover))
+  end
+  local ed = { root = root, g = {}, doc = { assets = {} }, parked = false,
+               touch = function() end, kinds = cm.require("cm.ed").kinds }
+
+  local list = S.stock_list(ed)
+  local fams, have = {}, {}
+  for _, e in ipairs(list) do
+    fams[e.family] = (fams[e.family] or 0) + 1
+    have[e.rel] = true
+  end
+  check(fams.ins and fams.ins >= 52 and fams.songs and fams.songs >= 14
+        and fams.art and fams.fig and fams.pal,
+        "stock win: the list spans all five families")
+  check(have["engine/stock/ins/fm-strings.ins"]
+        and have["engine/stock/songs/desert-dunes.song"]
+        and have["engine/stock/spr/tiles.spr"]
+        and have["engine/stock/fig/mascot.fig"]
+        and have["engine/stock/pal/db16.pal"],
+        "stock win: one known entry per family")
+  local pruned = true
+  for _, e in ipairs(list) do
+    if e.rel:find("tiles%.png") or e.rel:find("tiles%.meta") then
+      pruned = false
+    end
+  end
+  check(pruned, "stock win: baked sprite siblings are pruned")
+
+  check(S.dest_for("engine/stock/ins/fm-harp.ins") == "ins/fm-harp.ins"
+        and S.dest_for("engine/stock/songs/dnb-rush.song")
+            == "sound/dnb-rush.song"
+        and S.dest_for("engine/stock/spr/tiles.spr") == "art/tiles.spr"
+        and S.dest_for("engine/stock/pal/db16.pal") == "pal/db16.pal",
+        "stock win: dest mapping per family")
+
+  -- unique naming dodges disk files AND unsaved working states
+  check(S.unique_dest(ed, "engine/stock/ins/fm-harp.ins")
+        == "ins/fm-harp.ins", "stock win: a free name stays itself")
+  pal.mkdir(root .. "/ins")
+  pal.write_file(root .. "/ins/fm-harp.ins", "taken")
+  check(S.unique_dest(ed, "engine/stock/ins/fm-harp.ins")
+        == "ins/fm-harp-2.ins", "stock win: a disk collision counts up")
+  ed.doc.assets["ins/fm-harp-2.ins"] = { ins = "working" }
+  check(S.unique_dest(ed, "engine/stock/ins/fm-harp.ins")
+        == "ins/fm-harp-3.ins", "stock win: a working-state collision too")
+  ed.doc.assets["ins/fm-harp-2.ins"] = nil
+
+  -- the copy door writes byte-identical and flashes the browser
+  local dest = S.copy_in(ed, "engine/stock/ins/fm-vibes.ins")
+  check(dest == "ins/fm-vibes.ins"
+        and pal.read_file(root .. "/" .. dest)
+            == pal.read_file("engine/stock/ins/fm-vibes.ins"),
+        "stock win: copy_in lands byte-identical at the dest")
+  check(ed.g.aflash and ed.g.aflash.path == dest,
+        "stock win: copy_in flashes the new asset")
+
+  -- the seed door: open-a-copy is unsaved work, not a disk write
+  local sbytes = pal.read_file("engine/stock/ins/fm-glass.ins")
+  local sdest = S.unique_dest(ed, "engine/stock/ins/fm-glass.ins")
+  check(W.seed(ed, sdest, sbytes) == true, "stock win: seed takes a free path")
+  check(W.seed(ed, sdest, sbytes) == nil,
+        "stock win: seed declines a seeded path")
+  check(W.seed(ed, "ins/fm-harp.ins", sbytes) == nil,
+        "stock win: seed declines an existing file")
+  check(pal.read_file(root .. "/" .. sdest) == nil,
+        "stock win: seeding writes nothing to disk")
+  local win = { path = sdest }
+  local a, p = W.open_win(win, ed)
+  check(a ~= nil and a.ins == sbytes, "stock win: the open adopts the seed")
+  check(W.dirty(win, ed) == true, "stock win: the opened copy is unsaved")
+  check(p.doc ~= nil and p.doc.patch ~= nil,
+        "stock win: the seed decodes as a real instrument")
+  check(#p.j.entries == 1 and p.j.entries[1].bytes == sbytes,
+        "stock win: the seed bytes are the journal undo floor")
+  check(W.save(win, ed) == true
+        and pal.read_file(root .. "/" .. sdest) ~= nil
+        and W.dirty(win, ed) == false,
+        "stock win: the user's own save publishes the copy")
+
+  -- open_copy end to end (no shell: the window-spawn half is tape-proven)
+  local odest = S.open_copy(ed, "engine/stock/songs/ambient-drift.song")
+  check(odest == "sound/ambient-drift.song"
+        and ed.doc.assets[odest] ~= nil
+        and ed.doc.assets[odest].song
+            == pal.read_file("engine/stock/songs/ambient-drift.song")
+        and pal.read_file(root .. "/" .. odest) == nil,
+        "stock win: open_copy seeds the song unsaved on its auto name")
+
+  -- parked = the write wall
+  ed.parked = true
+  check(S.copy_in(ed, "engine/stock/ins/fm-sub.ins") == nil,
+        "stock win: parked copies are walled")
+  ed.parked = false
+end
+
 local function t_ed_kit()
   -- cm.ed.kit (R9a, AUDIO.md §7): the generalized §6 asset citizen —
   -- the factory's semantics pinned on a dummy codec, independent of the
@@ -14026,6 +14137,7 @@ function game.init()
   t_palette()
   t_song()
   t_stock_songs()
+  t_stock_window()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()

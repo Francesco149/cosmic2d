@@ -89,6 +89,7 @@ local plumb, working, open_asset, commit =
   A.plumb, A.working, A.open_asset, A.commit
 
 M.open_win = A.open_win
+M.seed = A.seed -- the stock window's open-a-copy door (D147)
 M.open_path = A.open_asset -- the music window binds tracks through
 M.commit_path = A.commit   -- these doors (R9d)
 M.dirty, M.save, M.undo, M.redo, M.revert =

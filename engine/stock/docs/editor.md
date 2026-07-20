@@ -38,6 +38,9 @@ switch can proceed.
   sweep), and a **music** tracker.
 - **palette** — design a palette; generate ramps with a hue shift.
 - **assets** — browse the project's files; double-click one to open it.
+- **stock assets** — the engine's shipped presets, demo songs, art, and
+  palettes, read-only; double-click opens an unsaved copy in your project,
+  **c** copies it in ([more](engine/stock/docs/win-stock.md)).
 - **console**, **perf**, and this **help** window.
 
 ## The launcher (Ctrl+Space)

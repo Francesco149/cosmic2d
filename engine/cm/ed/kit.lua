@@ -287,6 +287,22 @@ function M.asset(spec)
     if win.path ~= "" then return A.open_asset(ed, win.path) end
   end
 
+  -- seed a NOT-YET-EXISTING project path with working bytes so the next
+  -- open adopts them as unsaved work (the stock-assets window's open-a-
+  -- copy door, D147): the asset opens dirty on a fresh name, the seed
+  -- bytes journal as the undo floor, and nothing touches disk until the
+  -- user's own Ctrl+S. Declines (returns nil) if the path already has a
+  -- file or working state — seeding must never clobber real work.
+  function A.seed(ed, path, bytes)
+    if not bytes or #bytes == 0 then return nil end
+    if pal.read_file(ed.root .. "/" .. path) ~= nil then return nil end
+    ed.doc.assets = ed.doc.assets or {}
+    if ed.doc.assets[path] ~= nil then return nil end
+    ed.doc.assets[path] = { [field] = bytes, jpos = 0 }
+    ed.touch()
+    return true
+  end
+
   -- one finished gesture (codec kinds): re-encode the doc into the
   -- working bytes + journal. Parked edits are ephemeral (REWIND.md §4):
   -- the parked doc updates, the journal file never moves.

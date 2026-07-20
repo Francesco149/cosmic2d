@@ -485,10 +485,10 @@ Playback state (playhead) is ephemeral;
 the bytes are the asset. Ctrl+S writes the .song (and refreshes the
 asset browser via the kit save door).
 
-## 11. Stock presets (ship with the engine)
+## 11. Stock presets + demo songs (ship with the engine)
 
-`engine/stock/ins/` — ~20 .ins files, two families, all engine-made
-(parameter tables, no shipped audio bytes [W]):
+`engine/stock/ins/` — 52 .ins files, all engine-made (parameter
+tables, no shipped audio bytes [W]):
 
 - **gameboy family** (single-op chip voices + LFSR): gb-pulse-50 /
   gb-pulse-25 / gb-pulse-12 (the duty leads), gb-wave-bass (the wave
@@ -498,9 +498,26 @@ asset browser via the kit save door).
 - **FM family** (the DX/OPN staples on 4 ops): fm-epiano, fm-bell,
   fm-bass, fm-pluck, fm-brass, fm-organ, fm-pad, fm-lead, and the FM
   drum kit: fm-kick, fm-snare, fm-tom, fm-hat.
+- **the D147 vibe expansion**: orchestral/classical (fm-strings,
+  fm-choir, fm-harp, fm-flute, fm-reed, fm-timpani, fm-orchhit,
+  fm-harpsi, fm-musicbox), jazz/latin/funk (fm-nylon, fm-upright,
+  fm-vibes, fm-muted, fm-clav, fm-slap, fm-cowbell), electronic
+  (fm-sub, fm-reese, fm-ride, fm-shaker, fm-rim, fm-conga), and
+  ambient/spooky (fm-drone, fm-glass).
+- **sfx family**: sfx-jump/land/coin/hit/laser/dash/explosion/powerup.
+
+`engine/stock/songs/` — 14 demo .song tracks (D147), one per common
+vibe, smoke-testing the roster: desert-dunes, water-caverns,
+noble-court (3/4), prelude-soft, battle-charge, boss-gate, dnb-rush,
+breaks-alley, bossa-breeze, bossa-fiesta, funk-strut, noir-sleuth,
+horror-hollow, ambient-drift. Track ins refs are engine-cwd-relative
+so they play from any project; the stock-assets window (win-stock,
+D147) opens copies into a project on demand.
 
 The preset pass is a human listening session (the taste check) — the
-PCM goldens pin them bit-exact once approved.
+PCM goldens pin them bit-exact once approved. t_stock_ins /
+t_stock_songs pin decode/canonical-bytes/audibility for the whole
+roster meanwhile.
 
 ## 12. Build order (R9a–R9e) + exits
 

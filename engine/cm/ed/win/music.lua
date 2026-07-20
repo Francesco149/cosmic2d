@@ -108,6 +108,7 @@ local A = cm.require("cm.ed.kit").asset {
 local plumb, working, open_asset, commit =
   A.plumb, A.working, A.open_asset, A.commit
 M.open_win = A.open_win
+M.seed = A.seed -- the stock window's open-a-copy door (D147)
 M.dirty, M.save, M.undo, M.redo, M.revert =
   A.dirty, A.save, A.undo, A.redo, A.revert
 

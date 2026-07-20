@@ -257,6 +257,7 @@ local open_asset, commit = A.open_asset, A.commit
 
 -- public open (spawn-time adoption, console driving, proofs)
 M.open_win = A.open_win
+M.seed = A.seed -- the stock window's open-a-copy door (D147)
 
 -- shared working-state door for other kinds over the SAME .spr bytes
 -- (the anim window edits clips through the same journal — both windows
