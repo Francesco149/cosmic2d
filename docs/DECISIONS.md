@@ -7316,7 +7316,7 @@ non-planar quad's shared vert lighting per triangle with exact tones,
 planar quads bit-identical to the old plane fit, the bake's per-tri
 texels exact; t_lathe_norms — one normal per shared ring, the exact
 averaged right-angle point, endpoint perpendiculars, immediate ==
-baked bytes; the pre-existing ridge/flat-texel bake KATs hold); `nix run .#test`
+baked bytes; the pre-existing ridge/flat-texel bake KATs hold) / native Windows 24,895 on the refreshed stage; `nix run .#test`
 ALL GREEN with all 20 traces byte-exact (sim untouched) and the 14
 3D pixel goldens honestly re-cut on pinned lavapipe after A/B
 inspection (figure/openworld/rovale/bounce/bigworld: seams gone,

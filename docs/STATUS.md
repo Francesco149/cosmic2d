@@ -69,7 +69,9 @@ per-tri vert tones exact, planar quads bit-identical to the plane
 fit, per-tri bake texels exact, one normal per shared lathe ring, the
 exact averaged point normal, immediate==baked bytes; the
 bake==immediate and mascot.fig equivalence KATs hold by
-construction), `nix run .#test` ALL GREEN — all 20 traces byte-exact
+construction) / native Windows **24,895** on the refreshed stage (21
+durable entries; all seven user projects preserved wholesale),
+`nix run .#test` ALL GREEN — all 20 traces byte-exact
 (sim untouched), the 14 3D pixel goldens honestly re-cut on pinned
 lavapipe after A/B inspection (seams gone across
 figure/openworld/rovale/bounce/bigworld; the 5 2D goldens
