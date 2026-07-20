@@ -7321,3 +7321,34 @@ ALL GREEN with all 20 traces byte-exact (sim untouched) and the 14
 3D pixel goldens honestly re-cut on pinned lavapipe after A/B
 inspection (figure/openworld/rovale/bounce/bigworld: seams gone,
 terrain unchanged where planar; the 5 2D goldens byte-identical).
+
+**Addendum (same day) — the human voted smooth: terr3 lighting is
+per-vertex.** Follow-up question ("openworld has no visible quad
+seams — what does it do different?") and the measured answer:
+openworld shades with the same flat per-tile family; its procedural
+fbm is simply smooth at tile scale (adjacent-tile light steps mean
+~2/255 vs the sculpted vale's ~49/255 max on flat ground — editor
+brushes put height energy at exactly the 1-tile wavelength where
+per-face shading turns tiles into plates). A 3-way prototype on the
+human's own map (flat per-tri / smooth per-vertex / unlit
+hand-paint-only) went to llm-feed; the vote: smooth. Landed:
+`emit_terrain` lights each VERTEX by its central-difference normal
+(one color per shared vert — quad seams impossible by construction;
+per-call vertex cache), the atlas bake bilerps the four corner vertex
+light terms per texel, and the painted shade plane stays the artistic
+hand-shading multiplier on top. The unlit look needs no code: set
+`suncol` 0 / `amb` 1 in the map's light rig. The spill contract is
+named at the emitter and KAT'd: a height edit at vertex v moves
+normals at v±1, so the editor's stroke_patch/patch_mesh rects widened
+one tile per side (re-baking [v-2..v+1] reproduces the full re-bake
+byte-exactly). mat_hash salt L2→L3 (bake math changed): D140-era
+atlases self-orphan, one Ctrl+S republishes — the heal tape re-ran
+3/3 PASS on a fresh copy of the human's project, and the landed
+editor shot is pixel-identical to the voted prototype panel.
+cm.terr/openworld deliberately untouched (its per-tile look is
+documented era intent on data that never shows the class). Proof:
+Linux selftest 24,892 (the 8 per-tri KATs replaced by 7 smooth KATs:
+exact vertex tones, cross-quad byte-identical shared verts, flat
+ground unchanged, exact bilerped bake texels, the spill rect) /
+native Windows 24,894; `nix run .#test` ALL GREEN with EVERY golden
+byte-identical (no golden uses terr3) and all traces byte-exact.
