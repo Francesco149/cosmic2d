@@ -7818,3 +7818,55 @@ Proof: selftest **25,023** (+6: t_snd_claim ×5, the fm-xylo pin);
 clean (fiesta trimmed from a 32.4k peak to 28.3k); the rail-mark tape
 2/2 with the highlight shot on llm-feed. The native listen remains
 the verdict on all of it.
+
+### D147 addendum 2 — the second polish round (2026-07-20, same day)
+
+Six more notes from the human's listen; the headline is a REAL bug.
+
+- **"The long chords stop after ~1 bar" (dunes)** was the music
+  preview's voice allocation, not the composition and not the kernel
+  (a 6-second held-note probe cleared the envelope first — fm-organ
+  sustains dead flat). The preview picked voices with a blind
+  round-robin (`8 + pvoice % 24`) and `x_snd_ed_on` with an explicit
+  index OVERWRITES that voice — so ~24 note events (about one bar of
+  busy percussion) after a pad started, its voices were stomped
+  mid-note. The SIM path never had the bug (the kernel allocator
+  prefers free voices and steals oldest only when full), which is why
+  exported games sounded right while the editor lied. Fix:
+  **`music.preview_voice(pheld, blips, pvoice)`** — pure, KAT'd —
+  skips voices still held or ringing a blip, wraps, and steals in
+  order only when all 24 are genuinely occupied. Named edge, accepted:
+  the synth window's per-window 4-voice audition blocks can still
+  collide across MANY windows (kit.snd_alloc's vbase also wraps);
+  audition notes are short blips, revisit if reported.
+- **fm-kick had no punch** ("all bass, even at max volume — part of
+  why the bossa rhythm disappears"): it was a static half-rate sine.
+  Punch is the pitch drop: the body now falls 20 semitones over 60 ms
+  from the played note (the gb-noise-kick door, left un-fixed so the
+  note tunes it) + a 3.8 kHz beater snap. Both bossas also push
+  kick/rim gains up now that the ride no longer masks them.
+- **fm-ride was harsh/electronic** ("overpowers everything, only good
+  for harsh electronic styles"): noise2's short-mode LFSR is metallic
+  by construction — swapped for plain white noise, high-passed at 150,
+  level down (105 vs 150, gain 92 vs 118), gentler stick ping.
+- **bossa-fiesta's "odd chord overlaps"**: the and-of-4 comping hit
+  played the CURRENT bar's chord while the next bar restated its own
+  downbeat — two chords ringing across the barline. The hit now plays
+  the NEXT chord and replaces its downbeat (true bossa anticipation;
+  the loop seam anticipates bar 1's chord).
+- **breaks-alley "a good beat with 2 random chords"**: grew a real
+  progression riding the 2-bar bass cells (Gm7 / E♭maj7 / Gm7 / F13
+  rootless) and a G-minor-pentatonic lead hook (fm-lead, modest gain).
+- **noir-sleuth's melody, rewrite two** ("doesn't sound coherent or in
+  key — just rewrite"): the chromatic-creep draft ignored the walking
+  bass's implied changes. Now chord-anchored D-minor phrases following
+  the walk (Dm | descent | B♭7 | A7 | Dm | gm | ii–V | A7→Dm), one
+  swung pickup per phrase, exactly one chromatic descent (C–B–B♭–A)
+  resolving INTO a chord tone; the muted trumpet reduced to four
+  sparse chord-tone answers.
+- **fm-reed** attack eased to ~35 ms + lp 210, dunes lead velocities
+  104→90 (the "softer with a soft attack" ask).
+
+Proof: selftest **25,028** (+5 t_preview_voice); `nix run .#test` ALL
+GREEN, goldens byte-identical; all 14 loops re-rendered clean (peaks
+≤ 28.6k). Still awaiting the human's ears for the final call.

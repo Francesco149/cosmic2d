@@ -63,9 +63,28 @@ fm-harpsi realistic passes (detuned sine pair + breath; decaying-FM-
 index pluck + 4' rank) — noble-court inherits. Selftest **25,023**
 (+6), suite ALL GREEN, mixes re-rendered clean.
 
-**The Windows stage IS refreshed over D147 + the polish round**:
+**Same day, polish round 2 (the D147 addendum 2) landed on the
+human's first listen notes — the headline is a REAL editor bug**: the
+music preview's blind round-robin voice pick STOMPED still-held voices
+(x_snd_ed_on overwrites by index), so any long pad died after ~24
+percussion events — "the dunes chords stop after ~1 bar"; the sim
+path was always correct (kernel allocator), so exported games sounded
+right while the editor lied. Fixed with the pure KAT'd
+music.preview_voice (skip held+blips, wrap, steal only when all 24
+occupied). Also: fm-kick gained real punch (pitch-drop -20st/60ms +
+beater snap — was a static sub sine; "part of why the bossa rhythm
+disappears"), fm-ride went from metallic noise2 to soft high-passed
+white noise ("overpowered everything"), bossa-fiesta's and-of-4 hit
+now plays the NEXT chord replacing its downbeat (the overlap fix),
+breaks-alley grew a Gm7/E♭maj7/Gm7/F13 progression + a pentatonic
+lead hook, noir-sleuth's melody was rewritten chord-anchored to the
+walking bass (the creep draft read out-of-key), and fm-reed's attack
+softened (dunes lead velocities down too). Selftest **25,028** (+5),
+suite ALL GREEN, mixes clean.
+
+**The Windows stage IS refreshed over D147 + both polish rounds**:
 `tools/build-windows.sh` staged clean and the NATIVE selftest passes
-at **25,025** = Linux 25,023 + 2 — the whole roster is on the human's
+at **25,030** = Linux 25,028 + 2 — everything is on the human's
 machine, one Start Menu click from the listen.
 
 **THE NEXT SESSION'S FIRST ASK — the native listen.** The audio taste
