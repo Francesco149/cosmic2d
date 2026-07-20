@@ -1,177 +1,202 @@
 # cosmic2d
 
-A tiny 2D pixel-art engine / fantasy console — with an optional retro-3D
-pipeline (N64-era 3D and Ragnarok-Online-style 2.5D, merged back from the
-cosmic3d fork; see `docs/COSMIC3D.md`). Deterministic to the bit, rewindable
-like an emulator, batteries included, and everything — code, art, maps,
-audio — is authored inside the shipped editor while the game runs.
+[![nightly build](https://github.com/Francesco149/cosmic2d/actions/workflows/nightly.yml/badge.svg)](https://github.com/Francesco149/cosmic2d/actions/workflows/nightly.yml)
 
-<p align="center">
-  <img src="docs/media/hero-rovale.png" alt="rovale — the RO-style 2.5D demo: mascots by a lake" width="480">
-</p>
-<p align="center">
-  <img src="docs/media/hero-bigworld.png" alt="bigworld — the N64-style open world demo" width="320">
-  <img src="docs/media/hero-demo.png" alt="the bundled two-room 2D platformer demo" width="384">
-</p>
+**cosmic2d is a batteries-included game engine and fantasy-console-shaped
+studio for pixel-art 2D, with an optional retro-3D pipeline.** Its core
+philosophy is simple: the simulation is deterministic, everything is
+rewindable, everything hot reloads, and every authoring tool lives on one
+infinite canvas. Extract one folder and draw, code, compose, play, inspect any
+past frame, and export a game without assembling a toolchain.
 
-The intended distribution is one folder containing the engine, editor, tools,
-and game projects. The source checkout is built with Nix and the
-extract-and-run archives are clean-machine tested; the editor can export any
-opened project with its carried runtime. Nightly builds publish from CI as
-prerelease archives (see the repository's Releases page).
+> [!WARNING]
+> cosmic2d is an early-stage experimental project, currently an **alpha
+> candidate**. Until the project is explicitly past alpha, stability is not
+> guaranteed: APIs, file formats, editor sessions, save data, behavior, and
+> backwards compatibility may all break. Keep backups and expect sharp edges.
 
-**Status: alpha candidate.** The engine, infinite-canvas editor (2D and 3D
-authoring), audio stack, rewind/replay product, gamepad + player settings,
-project lifecycle/export, and the bundled demo matrix are all here, and the
-deterministic suite is green. What remains before "alpha" is the
-release-candidate validation itself — the fresh-user pass and the executed
-release checklist; see `docs/ALPHA.md` (gate A8), `docs/CHANGELOG.md`, and
-`docs/KNOWN-LIMITATIONS.md`.
+## Three ways through the engine
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/media/hero-openworld.png" alt="openworld — a mascot overlooking a streamed lake and rolling hills" width="480"><br>
+      <sub><strong>openworld</strong> — a streamed N64-era landscape with a
+      glider-scale draw distance</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/media/hero-rovale.png" alt="rovale — sprite characters walking through a painted 3D vale" width="480"><br>
+      <sub><strong>rovale</strong> — click-to-move sprite characters in a
+      painted RO-style 2.5D world</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="docs/media/hero-demo.png" alt="the bundled two-room 2D platformer" width="560"><br>
+      <sub><strong>demo</strong> — the bundled two-room platformer: movement,
+      collisions, animation, effects, camera, music, and room transitions in a
+      small readable project</sub>
+    </td>
+  </tr>
+</table>
+
+The 2D path is the alpha product. The N64-era and RO-style renderers are real,
+integrated engine projects and authoring tools, but remain an even more
+experimental extension rather than a compatibility promise.
+
+## What is already in the box
+
+| Principle | Working surface |
+|---|---|
+| **Batteries included** | Blank, platformer, top-down, arcade, and 3D-vale starters; actor/world helpers; swept collision, slopes, one-ways, triggers and queries; cameras, animation, particles, tweening, hit pause, dialogue, HUDs, menus, and player saves. |
+| **Deterministic** | A fixed 60 Hz simulation, stable IDs and iteration, deterministic keyboard/mouse/gamepad input, frame-locked synthesis, and regression traces checked against state, pixel, and PCM goldens on a pinned software Vulkan stack. |
+| **Everything is rewindable** | Scrub the live game to any retained frame, inspect it, resume from it, export self-contained trace clips, and use crash reports as exact history-stream/frame entry points. Editor work has a persistent journal and long-lived undo history too. |
+| **Everything hot reloads** | Lua gameplay, engine modules, tools, art, maps, and audio stay editable while the game is running; contained errors preserve the last good world instead of turning a typo into a restart loop. |
+| **Infinite canvas** | Game views, code, console, help, sprite/animation, maps/tilemaps, palette, synth, tracker, timeline, project settings, and 3D tools are movable windows on one zoomable spatial desk. The same intent grammar handles moving, grouping, resizing, cycling, and closing them. |
+| **One-folder shipping** | The picker creates/imports/duplicates/moves/archives projects; in-editor Build/Export validates metadata, shows progress, can cancel safely, and atomically publishes a portable game plus checksums. Exported games remain inspectable projects with the editor deliberately carried inside. |
+
+The runtime also includes rebindable keyboard and hot-plugged gamepad actions,
+per-player options, versioned atomic save profiles, pixel-perfect rendering,
+palettes and grading, parallax/depth helpers, and a diagnostics path that still
+works from read-only installs and Windows GUI launchers.
+
+## The tools are the engine
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="engine/stock/docs/media/music-bossa.png" alt="the music tracker arranging a seven-track bossa loop" width="100%"><br>
+      <sub><strong>Music tracker</strong> — piano roll, patterns, live preview,
+      per-track level and stereo pan, plus reusable stock songs</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="engine/stock/docs/media/terrain-vale.png" alt="the terrain editor sculpting a green vale with water, props, and a route" width="100%"><br>
+      <sub><strong>Terrain editor</strong> — sculpt, paint, shade, place water
+      and props, and author routes directly in the world</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="engine/stock/docs/media/sprite-fills.png" alt="procedural pixel-art fills for water, ice, sand, moss, stone, and gems" width="100%"><br>
+      <sub><strong>Sprite studio</strong> — pixels, animation, selections,
+      transforms, and deterministic procedural fills</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="engine/stock/docs/media/template-topdown.png" alt="a running top-down starter beside its live tutorial on the infinite canvas" width="100%"><br>
+      <sub><strong>Living tutorials</strong> — runnable starters and their docs
+      open together on the same infinite canvas</sub>
+    </td>
+  </tr>
+</table>
+
+Audio is generated inside the same workflow: a deterministic four-operator FM
+and Game-Boy-flavored synth, filters and pitch sweeps, sound playback, a stereo
+tracker, stock instruments/effects, and fourteen arranged stock songs. The
+retro-3D side adds a Vulkan raster pipeline, projected terrain and water,
+billboard figures, world streaming, figure baking, and map/terrain authoring;
+the software renderer remains the deterministic reference.
 
 ## Try it
 
-Grab the latest **nightly** archive from the Releases page (Linux `.tar.gz`
-or Windows `.zip`, each with a sibling `.sha256`) — extract and run
-`cosmic2d-editor`. Or build from source on Linux/WSL2 with
-[Nix](https://nixos.org):
+Download the latest Linux `.tar.gz` or Windows `.zip` from
+**[Releases](https://github.com/Francesco149/cosmic2d/releases)**, verify its
+sibling `.sha256`, extract it, and run `cosmic2d-editor` (`.exe` on Windows).
+Nightlies are moving prereleases; release candidates are versioned prereleases.
+
+Or build from source on Linux/WSL2 with [Nix](https://nixos.org):
 
 ```sh
 nix develop -c make -C pal     # build bin/cosmic
-bin/cosmic                     # the project picker — the front door
+bin/cosmic                     # open the project picker
+bin/cosmic projects/demo       # play the 2D demo directly
+bin/cosmic projects/demo --edit
 ```
 
-The picker lists bundled and recent projects. Open the bundled **demo** (a
-two-room platformer with music that swaps between rooms), press **+ New
-project** to scaffold your own, or choose **open folder** to register an
-existing project wherever it already lives. A tile opens a project in the
-editor; the ▶ zone plays it. Missing recent folders remain visible with
-**repair** and **remove** actions, and the editor's **← projects** button
-returns to this list after safely saving its recovery state. A ready recent
-tile's **...** menu reveals its folder or renames/moves it without overwriting
-an existing destination; move chooses a new parent on the same filesystem.
+The picker is the front door. Open the bundled demo, create a project from one
+of the five starters, or register any existing project folder in place. Recent
+projects are searchable and keyboard-drivable; missing folders can be repaired
+or removed, and ready projects can be revealed, renamed, moved, duplicated,
+archived, or deleted through recovery-aware flows.
+
+Release editor bundles contain only the intentional picker and playable demo;
+developer bundles additionally carry internal fixtures and proofs. Their root
+launchers are:
+
+- `cosmic2d-editor` / `cosmic2d-editor.exe` — picker and editor.
+- `demo` / `demo.exe` — the bundled game, directly in play mode.
+- `bin/cosmic-console.exe` — the same Windows engine with a terminal attached
+  for diagnostics, automation, and headless runs.
+
+## Make and ship a game
+
+Game code is ordinary hot-reloadable Lua. Open **+ New project**, pick a
+starter, and keep its running game beside its source and tools. The bundled
+`projects/demo/` is a compact commented example with two rooms, a complete
+moveset, effects, sound effects, and room-specific music.
+
+To ship without a developer environment, open **project settings →
+Build/Export**. The editor refuses unsaved assets or incomplete metadata,
+streams per-file progress, cancels without partial publication, and writes the
+archive and checksum atomically. Use the matching editor download to export
+for that platform.
+
+Release-shaped editor archives can also be built from the checkout:
 
 ```sh
-bin/cosmic projects/demo            # play the demo directly
-bin/cosmic projects/demo --edit     # open it in the editor
+nix build .#cosmic-linux-release     # .tar.gz + sibling .sha256
+nix build .#cosmic-windows-release   # .zip + sibling .sha256
 ```
 
-The editor release bundles (`nix build .#cosmic` / `.#cosmic-windows`) contain
-only the intentional demo and picker; `.#cosmic-dev` and
-`.#cosmic-windows-dev` additionally carry internal tests and fixtures. Editor
-bundles drop two launchers in their **root**:
-
-- **`cosmic2d-editor`** (`.exe`) — the project picker / editor front door.
-- **`demo`** (`.exe`) — the bundled demo, straight to play.
-
-Windows `.exe` launchers use the GUI subsystem, so opening them normally does
-not create a second console window. For diagnostics, automation, and headless
-runs, use `bin/cosmic-console.exe`; it is the same engine with stdout/stderr
-attached to the calling terminal.
-
-Download-shaped editor archives (plus sibling integrity hashes) build with:
+And the developer packager can turn a source-tree project into a player-facing
+archive:
 
 ```sh
-nix build .#cosmic-linux-release     # result/cosmic2d-linux.tar.gz + .sha256
-nix build .#cosmic-windows-release   # result/cosmic2d-windows.zip + .sha256
+nix run .#package -- demo          # demo-windows.zip + .sha256
+nix run .#package -- demo linux    # demo-linux.tar.gz + .sha256
 ```
 
-Live runs also keep a flushed process log outside the extracted engine folder,
-so diagnostics still work from a read-only install and from GUI launchers. The
-platform-selected folder is `%APPDATA%\cosmic2d\engine\diagnostics\` on
-Windows and `$XDG_DATA_HOME/cosmic2d/engine/diagnostics/` on Linux (falling
-back to `~/.local/share/cosmic2d/engine/diagnostics/`). Contained errors add an
-atomic `.ccrash` report there; it includes the traceback and exact retained-
-history locator. Capped captures and verification runs do not create logs.
+The project declares its title, version, icon, controls, credits, license, and
+save identity in plain data. Packaging validates every reference, carries the
+matching runtime and notices, generates the player README, and includes a full
+extracted-tree `SHA256SUMS`. Alpha artifacts are deliberately unsigned:
+checksums detect changed bytes, but do not establish publisher identity. See
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) for the verification and
+future-signing policy.
 
-## Make a game
+## Technical shape
 
-Everything is authored in the editor (`--edit`, or via the picker): an
-infinite canvas of floating windows. Spawn windows from the right-click
-menu — a **code editor**, a **sprite editor** (+ animation), a **map editor**
-(collider chains, one-ways, markers) and **tilemaps**, a **sound player**, a
-**synth** (FM + Game Boy voices with filter/pitch-sweep), a **music** tracker,
-and a **palette** designer. New assets and projects auto-name themselves with
-three random words, so nothing blocks on a filename.
+cosmic2d has two layers:
 
-The game itself is hot-reloadable Lua: edit `main.lua` while it runs. See
-`projects/demo/` for a complete, commented example — the moveset, two rooms,
-sound effects, and two 30-second BGMs.
+- A small platform layer in C: SDL3, Vulkan through SDL_GPU, embedded Lua 5.4,
+  typed buffers, image/audio codecs, input, filesystem primitives, and the
+  frame-locked synth.
+- A hot-reloadable Lua engine: simulation, physics, rendering policy, editor,
+  tools, project lifecycle, rewind, tests, and games.
 
-## Ship a game
+This split keeps platform variance outside recorded state. The simulation owns
+only serializable data and crosses explicit doors for live input, disk reads,
+and wall-clock effects, which is what makes rewind, replay, cross-platform
+verification, and useful crash capture part of the product instead of debug
+afterthoughts.
 
-From the editor, open **project settings → build/export**. Choose the output
-folder and this download's matching target (Linux `.tar.gz` from Linux,
-Windows `.zip` from Windows), then press **build export**. The job refuses
-unsaved editor assets or incomplete player metadata, shows per-file progress,
-cancels without publication, and atomically publishes a completed archive plus
-its sibling `.sha256`. Use the matching editor download for the other platform.
+Start with [`docs/README.md`](docs/README.md), then see
+[`docs/ALPHA.md`](docs/ALPHA.md) for the active release gates,
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the determinism contract,
+[`docs/EDITOR.md`](docs/EDITOR.md), [`docs/AUDIO.md`](docs/AUDIO.md),
+[`docs/REWIND.md`](docs/REWIND.md), and
+[`docs/COSMIC3D.md`](docs/COSMIC3D.md).
 
-The Nix developer packager remains useful for release automation:
+## Platforms and license
 
-```sh
-nix run .#package -- demo          # -> demo-windows.zip + .sha256
-nix run .#package -- demo linux    # -> demo-linux.tar.gz + .sha256
-```
+Development and portable builds target x86_64 Linux and Windows desktop. The
+Windows binary is cross-built and native-tested; the Linux archive is tested
+from a clean Debian container without a Nix-store dependency. macOS, mobile,
+web, and consoles are not supported at this stage.
 
-The archive root is player-facing: run **`demo`** / **`demo.exe`** there. Its
-README is generated from the project's title, version, description, controls,
-credits, and license metadata, and `icon.png` is the project's release icon.
-The Windows root launcher carries that project title/version/icon in Explorer;
-the live game window uses the same icon on both platforms. The selected
-editable project and engine/editor tooling remain included, with
-`bin/cosmic2d-editor` available as a deliberate authoring entrance.
+MIT — see [LICENSE](LICENSE). Vendored dependencies keep their compatible
+licenses, and packaged builds reproduce their exact notices under `LICENSES/`.
 
-A packaged project supplies these plain-data fields in `project.lua`:
-
-```lua
-icon = "icon.png",             -- square PNG, 32..1024 px
-controls = "CONTROLS.md",
-credits = "CREDITS.md",
-licenses = { "LICENSE.md" },   -- one or more project-local files
-```
-
-All references are jailed forward-slash paths within the project and packaging
-fails before publication if metadata or a referenced file is invalid. The
-bundle also contains the engine/runtime notices, a complete extracted-tree
-`SHA256SUMS`, and the exact carried runtime-library inventory. Verify the
-archive's sibling checksum before extraction and run `sha256sum --check
-SHA256SUMS` from inside the extracted folder afterward. The Nix command builds
-projects captured in the source tree; the in-editor path packages the currently
-open project from any folder without Nix, `tar`, or `zip`.
-
-Alpha artifacts are deliberately unsigned: checksums detect changed bytes but
-do not prove publisher identity. Windows may report an unknown publisher. Do
-not bypass platform warnings for an artifact whose source you do not trust;
-the full verification and future-signing policy is in
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
-
-## Shape of the thing
-
-- **Two layers**: a small per-platform C binary ("PAL": SDL3 + Vulkan via
-  SDL_GPU, embedded Lua 5.4, typed memory buffers, a frame-locked FM/sampler
-  audio synth) under a fully hot-reloadable Lua engine — game code, physics,
-  the editor, and all tools are Lua you can edit while the game runs.
-- **Deterministic to the bit**: fixed 60 Hz sim, snapshot/rewind any frame
-  (emulator-style), input-trace regression tests against state + pixel + PCM
-  goldens on a pinned software Vulkan driver.
-- **Batteries included**: a platformer moveset, sprite/animation + map +
-  tilemap editors, an FM/Game-Boy synth and a music tracker with stock
-  instruments and sound effects, a palette designer with stock palettes, and
-  a demo game to start from.
-
-Deep dives live in `docs/` — `PLAN.md` (vision), `ARCHITECTURE.md` (the
-two-layer design + determinism rules), `EDITOR.md`, `AUDIO.md`, `MAPS.md`.
-
-## Platforms
-
-Development builds run on Linux and Windows desktop; the Windows binary is a
-cross-build. Portable editor and play archives are clean-machine tested on a
-stock x86_64 Debian 13 container and native Windows 11. macOS is not supported
-for this alpha.
-
-## License
-
-MIT — see [LICENSE](LICENSE). Vendored third-party code keeps its own
-(compatible) licenses. Packaged builds reproduce their exact notices plus the
-selected platform runtime notices under `LICENSES/`; see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+Maintainers can cut the next annotated candidate tag after pushing `main` with
+`tools/tag-release-candidate.sh --push`; the tag starts the candidate build and
+prerelease workflow. The complete human gate is in
+[`docs/RELEASE-CHECKLIST.md`](docs/RELEASE-CHECKLIST.md).
