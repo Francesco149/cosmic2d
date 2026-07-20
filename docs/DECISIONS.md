@@ -7996,3 +7996,32 @@ empty content). A real 1280x800 headless stock-window capture injected
 `sy=10000` on the 14-song tab and visibly snapped to its two real rows; the
 capture was inspected and posted to llm-feed. Full deterministic/native proof
 is recorded in STATUS with the session handoff.
+
+## D151 — track pan is an authored, audible mix control (2026-07-20)
+
+The `.song` format and both sequencers already carried per-track pan, but the
+music window exposed only gain. A capability that can only be reached by
+rewriting binary asset bytes is not an editor capability, so the selected
+track's rail now opens a two-row **mix** panel:
+
+- volume keeps its 0..255 useful-fader law; pan adds a matching drag slider
+  and numeric field over **-64 left .. 0 center .. +64 right**. The center is
+  visibly marked and a ±2 drag band snaps exactly to zero. Each drag is one
+  journal entry; typed submits are one entry; a playing preview re-bakes the
+  track patch live.
+- `cm.snd.track_pan` is the single composition door for the instrument's
+  authored pan plus the song-track offset, clamped to the encoded stereo
+  range. Editor-bank preview and recorded/rewindable sim playback both use it.
+- All 14 stock vibe songs and both platformer-demo songs received a deliberate
+  stereo pass. Kick, sub, bass, and other foundations stay centered; hats,
+  rides, hand percussion, pads, harmony, and answering voices spread in
+  complementary positions. The stock-song inventory now pins that every mix
+  contains both left and right placements within range.
+
+Proof: Linux selftest **25,106** (+2: the shared pan-composition door and the
+stock stereo inventory); a real UI tape dragged overworld's selected track
+from -16 to +32 through the new control and observed one dirty working song;
+the 1280x800 capture was inspected and posted to llm-feed. Every stock/demo
+song rendered for a complete loop through the real sim sequencer: **zero
+clipped samples**, maximum channel peak 30,586, and channel RMS imbalance at
+or below 1.50 dB. The human's speakers remain the final taste check.

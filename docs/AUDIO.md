@@ -409,12 +409,16 @@ The human's live rounds shaped the rest:
   `ins/`** so the .song stays self-contained, round 5), mute dots, a
   **del** per row (drops the track + its clips; only when >1),
   + adds a track. Clicking a track drills into its first clip.
-  **Selecting a track expands a VOLUME panel** under its row (round 8 —
-  the human): a drag slider AND a type-in field for the track gain
+  **Selecting a track expands a MIX panel** under its row: matching drag
+  sliders AND type-in fields for track gain and stereo pan. Gain uses
   (0..255; 128 preserves the preset gain, 0 is silence, 255 reaches the
   loudest representable patch gain), one journal entry per drag / per
   submit. The piecewise 0 → preset → 255 law keeps both halves useful:
   loud presets do not saturate early and quiet ones can still come forward.
+  Pan is an offset from the instrument patch, runs -64 (hard left) through
+  0 (center) to +64 (hard right), has a center mark + detent, and re-bakes
+  into a playing preview live. Editor preview and sim playback share the
+  same clamped `cm.snd.track_pan` composition door.
 - **The arrangement strip** (top): clips on tracks × time.
   **Click a clip → drill into its pattern** (the roll follows) +
   select it; press empty → **stamp a NEW clip** with its own fresh

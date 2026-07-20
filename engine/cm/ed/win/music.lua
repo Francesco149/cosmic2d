@@ -8,8 +8,8 @@
 -- (each clip owns its OWN pattern — no accidental sharing); drag moves
 -- a clip, right-edge resizes it, and a clip **LOOPS its pattern to
 -- fill** when resized longer (the "auto loop"). The **track rail**
--- (left) binds instruments (drag an .ins on), mutes, deletes ("del"),
--- and adds tracks.
+-- (left) binds instruments (drag an .ins on), mixes volume + stereo pan,
+-- mutes, deletes ("del"), and adds tracks.
 --
 -- Roll grammar (wstudio four rules + round-3/4 growth): press empty =
 -- ADD (last-used length, grid-snapped); motionless release = DELETE;
@@ -169,8 +169,7 @@ local function preview_slots(ed, win, p)
           -- sequencer (cm.snd.seq) — else the preview ignores the volume
           -- panel (the human: "track volume seems to have no effect")
           idoc.patch.gain = snd.track_gain(idoc.patch.gain, tr.gain)
-          idoc.patch.pan = math.max(-64, math.min(64,
-            (idoc.patch.pan or 0) + (tr.pan or 0)))
+          idoc.patch.pan = snd.track_pan(idoc.patch.pan, tr.pan)
           cm.require("cm.ins").upload(idoc, p.pslots[ti], "ed",
                                       "m" .. win.id .. "t" .. ti)
         end
@@ -546,58 +545,81 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     end
-    -- the selected track expands a VOLUME panel under its row (human,
-    -- round 8): a mouse slider AND a type-in field for the track gain
-    -- (0..255, 128 = unity). One journal entry per drag / per submit.
+    -- The selected track expands a two-row MIX panel: volume and stereo pan,
+    -- each with a mouse slider + type-in field. One journal entry per drag /
+    -- per submit. Pan is an offset from the instrument patch (-64 L..+64 R).
     if sel then
-      local PANEL_H = px * 1.9
+      local PANEL_H = px * 3.45
       local py = ty + px * 2.4
       pal.x_ig_rect_fill(x0 + 2 * z, py, RAIL - 10 * z, PANEL_H, COL.well, 3 * z)
-      pal.x_ig_text(x0 + 6 * z, py + PANEL_H * 0.28, px * 0.78, COL.dim, "vol", 0)
-      local sbx = x0 + 6 * z + pal.x_ig_text_size("vol", px * 0.78, 0) + 5 * z
-      local sbw = math.max(10 * z, (x0 + RAIL - 10 * z) - sbx - 34 * z)
-      local sby = py + PANEL_H * 0.30
-      local sbh = math.max(3, px * 0.5)
-      local gain = tr.gain or 128
-      local f = gain / 255
-      pal.x_ig_rect_fill(sbx, sby, sbw, sbh, COL.btn, 2 * z)
-      pal.x_ig_rect_fill(sbx, sby, sbw * f, sbh, COL.accent, 2 * z)
-      pal.x_ig_rect_fill(sbx + sbw * f - 1.5 * z, sby - 1.5 * z, 3 * z,
-                         sbh + 3 * z, COL.hot, 1 * z)
-      local sover = ctx.hot and i.wx >= sbx - 3 * z and i.wx < sbx + sbw + 3 * z
-                    and i.wy >= sby - 4 * z and i.wy < sby + sbh + 4 * z
-      if sover and i.clicked[1] and not p.g then p.g = { t = "tvol", ti = ti } end
-      if p.g and p.g.t == "tvol" and p.g.ti == ti then
-        if i.buttons[1] then
-          local ng = math.floor(math.max(0, math.min(1,
-            (i.wx - sbx) / sbw)) * 255 + 0.5)
-          if ng ~= tr.gain then
-            tr.gain, p.g.changed, p.flat = ng, true, nil
-            p.pins_sent = nil -- re-bake the track gain into the preview
-            if p.playing or p.blips then preview_slots(ed, win, p) end
-            ctx.touch()
-          end
+      local function mix_row(key, label, lo, hi, def, y, centered)
+        local value = tr[key]
+        if value == nil then value = def end
+        local lx = x0 + 6 * z
+        pal.x_ig_text(lx, y + px * 0.22, px * 0.78, COL.dim, label, 0)
+        local sbx = lx + pal.x_ig_text_size(label, px * 0.78, 0) + 5 * z
+        local fx = x0 + RAIL - 10 * z - 32 * z
+        local sbw = math.max(10 * z, fx - sbx - 3 * z)
+        local sby = y + px * 0.36
+        local sbh = math.max(3, px * 0.5)
+        local f = (value - lo) / (hi - lo)
+        pal.x_ig_rect_fill(sbx, sby, sbw, sbh, COL.btn, 2 * z)
+        if centered then
+          local mid = sbx + sbw * 0.5
+          local vx = sbx + sbw * f
+          pal.x_ig_rect_fill(math.min(mid, vx), sby, math.abs(vx - mid), sbh,
+                             COL.accent, 2 * z)
+          pal.x_ig_line(mid, sby - 2 * z, mid, sby + sbh + 2 * z,
+                        COL.dim, 1)
         else
-          if p.g.changed then commit(ed, win.path) end
-          p.g = nil
+          pal.x_ig_rect_fill(sbx, sby, sbw * f, sbh, COL.accent, 2 * z)
+        end
+        pal.x_ig_rect_fill(sbx + sbw * f - 1.5 * z, sby - 1.5 * z, 3 * z,
+                           sbh + 3 * z, COL.hot, 1 * z)
+        local sover = ctx.hot and i.wx >= sbx - 3 * z
+                      and i.wx < sbx + sbw + 3 * z
+                      and i.wy >= sby - 4 * z and i.wy < sby + sbh + 4 * z
+        local gesture = "tmix_" .. key
+        if sover and i.clicked[1] and not p.g then
+          p.g = { t = gesture, ti = ti }
+        end
+        if p.g and p.g.t == gesture and p.g.ti == ti then
+          if i.buttons[1] then
+            local nf = math.max(0, math.min(1, (i.wx - sbx) / sbw))
+            local nv = math.floor(lo + nf * (hi - lo) + 0.5)
+            if centered and math.abs(nv) <= 2 then nv = 0 end
+            if nv ~= tr[key] then
+              tr[key], p.g.changed = nv, true
+              p.pins_sent = nil -- re-bake the live track mix into the preview
+              if p.playing or p.blips then preview_slots(ed, win, p) end
+              ctx.touch()
+            end
+          else
+            if p.g.changed then commit(ed, win.path) end
+            p.g = nil
+          end
+        end
+        if ctx.occluded then
+          pal.x_ig_text(fx, y + px * 0.14, px * 0.78, COL.text,
+                        tostring(value), 1)
+        else
+          local text, _, _, st = pal.x_ig_edit {
+            id = gesture .. win.id .. "_" .. ti, x = fx, y = y + px * 0.08,
+            w = 30 * z, h = px * 1.15, text = tostring(value), px = px * 0.78,
+            font = 1, enter = true, multiline = false,
+          }
+          if st and st.submit and tonumber(text) then
+            local nv = math.max(lo, math.min(hi, math.floor(tonumber(text))))
+            if nv ~= tr[key] then
+              tr[key], p.pins_sent = nv, nil
+              if p.playing or p.blips then preview_slots(ed, win, p) end
+              commit(ed, win.path)
+            end
+          end
         end
       end
-      local fx = x0 + RAIL - 10 * z - 32 * z
-      if ctx.occluded then
-        pal.x_ig_text(fx, py + PANEL_H * 0.22, px * 0.78, COL.text,
-                      tostring(gain), 1)
-      else
-        local text, _, _, st = pal.x_ig_edit {
-          id = "tvol" .. win.id .. "_" .. ti, x = fx, y = py + PANEL_H * 0.16,
-          w = 30 * z, h = px * 1.15, text = tostring(gain), px = px * 0.78,
-          font = 1, enter = true, multiline = false,
-        }
-        if st and st.submit and tonumber(text) then
-          tr.gain = math.max(0, math.min(255, math.floor(tonumber(text))))
-          p.flat, p.pins_sent = nil, nil -- re-bake into the preview
-          commit(ed, win.path)
-        end
-      end
+      mix_row("gain", "vol", 0, 255, 128, py + px * 0.16, false)
+      mix_row("pan", "pan", -64, 64, 0, py + px * 1.72, true)
       ty = ty + PANEL_H + 3 * z
     end
     ty = ty + px * 2.8

@@ -8061,6 +8061,11 @@ local function t_snd()
   check(snd.track_gain(-9, -2) == 0
         and snd.track_gain(999, 999) == 255,
         "snd track gain: inputs clamp to encoded range")
+  check(snd.track_pan(-20, 12) == -8
+        and snd.track_pan(-60, -20) == -64
+        and snd.track_pan(50, 30) == 64
+        and snd.track_pan(nil, nil) == 0,
+        "snd track pan: instrument + track offset clamps to stereo range")
   local gain_monotone = true
   for base = 0, 255 do
     local prev = -1
@@ -8497,6 +8502,7 @@ local function t_song()
         and doc.patterns[1] ~= nil, "song: fresh = 1 track/clip/pattern")
   doc.bpm = 140
   doc.tracks[1].ins = "x.ins"
+  doc.tracks[1].pan = -23
   doc.patterns[1].len = 96 * 4
   doc.patterns[1].notes = { { tick = 96, dur = 48, pitch = 64, vel = 90 },
                             { tick = 0, dur = 96, pitch = 60, vel = 100 } }
@@ -8505,8 +8511,9 @@ local function t_song()
   check(bytes:sub(1, 4) == "CSNG", "song: container magic")
   local d2 = song.decode(bytes)
   check(d2.bpm == 140 and #d2.tracks == 1 and d2.tracks[1].ins == "x.ins"
+        and d2.tracks[1].pan == -23
         and #d2.clips == 1 and d2.clips[1].len == 96 * 8,
-        "song: tracks + clips round-trip")
+        "song: track mix + clips round-trip")
   check(#d2.patterns[1].notes == 2 and d2.patterns[1].notes[1].tick == 0,
         "song: pattern round-trips, canonical note order")
   check(song.encode(d2) == bytes, "song: canonical encode")
@@ -8702,7 +8709,7 @@ local function t_stock_songs()
         "stock songs: noir keeps swing, walk, comping, and horn dialogue")
   local decode_ok, canon_ok, notes_ok, ins_ok, audible = true, true, true,
                                                          true, true
-  local mix_compat = true
+  local mix_compat, pan_ok, stereo_songs = true, true, 0
   for _, n in ipairs(names) do
     local bytes = pal.read_file("engine/stock/songs/" .. n)
     local ok, doc = pcall(songm.decode, bytes)
@@ -8722,7 +8729,11 @@ local function t_stock_songs()
         pal.log("stock songs: " .. n .. " flattens empty")
       end
       local first_slot
+      local has_left, has_right = false, false
       for ti, tr in ipairs(doc.tracks) do
+        local pan = tr.pan or 0
+        if pan < -64 or pan > 64 then pan_ok = false end
+        if pan < 0 then has_left = true elseif pan > 0 then has_right = true end
         local ib = pal.read_file(tr.ins)
         local iok, idoc = false, nil
         if ib then iok, idoc = pcall(insm.decode, ib) end
@@ -8744,6 +8755,7 @@ local function t_stock_songs()
           end
         end
       end
+      if has_left and has_right then stereo_songs = stereo_songs + 1 end
       if first_slot then -- the song's own first note, audibly
         local note = flat[first_slot][1]
         local v = snd.on(11, note.pitch, note.vel)
@@ -8770,6 +8782,8 @@ local function t_stock_songs()
   check(notes_ok, "stock songs: every song flattens to real notes")
   check(ins_ok, "stock songs: every track instrument resolves")
   check(mix_compat, "stock songs: useful faders preserve the current mixes")
+  check(pan_ok and stereo_songs == #names,
+        "stock songs: every mix has valid left + right placement")
   check(audible, "stock songs: every song's opening note is audible")
 end
 

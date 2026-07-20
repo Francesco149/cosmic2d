@@ -143,6 +143,15 @@ function M.track_gain(base_gain, track_gain)
   return base + (255 - base) * (track - 128) // 127
 end
 
+-- Song pan is an offset from the instrument author's own stereo position.
+-- Keep the addition in one door so editor preview and sim playback cannot
+-- disagree at the hard-left / hard-right edges.
+function M.track_pan(base_pan, track_pan)
+  local base = math.floor(tonumber(base_pan) or 0)
+  local track = math.floor(tonumber(track_pan) or 0)
+  return math.max(-64, math.min(64, base + track))
+end
+
 -- ---- the sequencer (R9d, AUDIO.md §6/§10) ----
 --
 -- Music is SIM STATE: the transport lives in the doc tree
@@ -214,8 +223,7 @@ local function load_song(path)
       local iok, idoc = pcall(cm.require("cm.ins").decode, ibytes)
       if iok then
         idoc.patch.gain = M.track_gain(idoc.patch.gain, tr.gain)
-        idoc.patch.pan = math.max(-64, math.min(64,
-          (idoc.patch.pan or 0) + (tr.pan or 0)))
+        idoc.patch.pan = M.track_pan(idoc.patch.pan, tr.pan)
         cm.require("cm.ins").upload(idoc, slot, "sim", "t" .. ti)
       end
     end
