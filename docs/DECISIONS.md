@@ -7446,3 +7446,26 @@ stock crystal/rock ramp presets (the palette window's ramp generator
 already feeds swatches). Revisit triggers: a shipped demo authoring
 big (>=256px) blended sprites; the human asking for gradient axis
 control in the window.
+
+**Addendum (same day) — the terrain noise brush (the gap audit's
+hand-meets-procedural wall).** The audit's finding: cm.terr ships
+value noise/fbm but the 3d map window exposed only hand tools — the
+one place a hand-author most expects "generate, then sculpt" required
+writing a generator script. Landed as the **nz** brush (`b`), a full
+BRUSH_TOOLS citizen (radius/strength/stamp/atlas-patch/walk-stale all
+generic): each vertex under the falloff moves by
+`str x STEP_FRAC x f x terr3.noise_at(seed, wave, vx, vz)` — a pure,
+KAT'd, POSITION-KEYED bipolar field (two octaves of cm.terr's
+integer-hash value noise), so re-stroking an area carves toward ONE
+coherent relief instead of accumulating a random walk, and the right
+button subtracts the same field (tape-probed: ~1% residual, the
+remainder being the ray hit shifting on the freshly raised ground —
+the field itself is exact). The strip grows sd/wave step chips; the
+seed multiplies by 131 into the field so each reroll is a fresh
+lattice. win-terr.md documents the intended flow (block forms with nz,
+hand-finish with hgt/smo, or roughen hand-built shapes at small wave)
+— and writing it tripped the D127 balanced-span KAT once, which is the
+guard working. Proof: selftest **24,931** (+3 noise_at KATs), a
+shell tape 6/6 on a fresh smoke copy (kit fresh door, sign-exact
+sculpt, the carve-out probe, the wave chip through a real click,
+full-strength drags for the capture); shot on llm-feed.

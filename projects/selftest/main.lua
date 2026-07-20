@@ -12731,6 +12731,23 @@ local function t_terr3()
     -- 4x2 RGBA: left half opaque white, right half transparent black
     local px4 = string.rep("\255\255\255\255", 2)
                 .. string.rep("\0\0\0\0", 2)
+    -- the noise brush field (D141 follow-up): bipolar, repeatable,
+    -- seed-sensitive, wave-clamped — position-keyed so a stroke plus its
+    -- right-button inverse restores the exact height
+    local inr, moved, rep = true, false, true
+    for vz = 0, 9 do
+      for vx = 0, 9 do
+        local n = T3.noise_at(131, 4, vx, vz)
+        if n < -1 or n > 1 then inr = false end
+        if n ~= T3.noise_at(131, 4, vx, vz) then rep = false end
+        if T3.noise_at(262, 4, vx, vz) ~= n then moved = true end
+      end
+    end
+    check(inr and rep, "terr3: noise_at bipolar in [-1,1] + repeatable")
+    check(moved, "terr3: noise_at reseed moves the field")
+    check(T3.noise_at(7, 0, 3, 3) == T3.noise_at(7, 1, 3, 3),
+          "terr3: noise_at clamps wave under 1")
+
     local mk = T3.stamp_mask(px4 .. px4, 4, 2)
     check(mk.w == 4 and mk.h == 2 and mk[1] == 1 and mk[4] == 0,
           "terr3: stamp_mask weights alpha x luminance")

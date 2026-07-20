@@ -253,8 +253,8 @@ end
 -- ctrl+wheel: the brush radius dial (brush tools), or SCALE the
 -- selection (sel tool — the props/billboards size gesture; - = step
 -- the same way from the keyboard). Focused only.
-local BRUSH_TOOLS = { hgt = true, flt = true, smo = true, pnt = true,
-                      shd = true, wlk = true }
+local BRUSH_TOOLS = { hgt = true, flt = true, smo = true, nz = true,
+                      pnt = true, shd = true, wlk = true }
 
 function M.ctrl_wheel(win, ed, notches)
   if ed.doc.focus ~= win.id then return false end
@@ -287,15 +287,16 @@ end
 function M.takes_right(win, ed)
   if win.path == "" or ed.doc.focus ~= win.id then return false end
   local tool = win.tool or "view"
-  return tool == "hgt" or tool == "pnt" or tool == "shd" or tool == "wlk"
+  return tool == "hgt" or tool == "nz" or tool == "pnt" or tool == "shd"
+         or tool == "wlk"
 end
 
 -- ---- tools ----
 
 local TOOLS = {
   { "sel", "sel" }, { "hgt", "hgt" }, { "flt", "flt" }, { "smo", "smo" },
-  { "pnt", "pnt" }, { "shd", "shd" }, { "wtr", "wtr" }, { "wlk", "wlk" },
-  { "mkr", "mkr" },
+  { "nz", "nz" }, { "pnt", "pnt" }, { "shd", "shd" }, { "wtr", "wtr" },
+  { "wlk", "wlk" }, { "mkr", "mkr" },
 }
 
 local MKINDS = { "spawn", "poi", "npc", "portal", "route" }
@@ -447,6 +448,8 @@ M.hotkeys = {
     fn = function(win, ed) set_tool(win, ed, "flt") end },
   { key = "m", hint = "smooth", when = bound_focused,
     fn = function(win, ed) set_tool(win, ed, "smo") end },
+  { key = "b", hint = "noise", when = bound_focused,
+    fn = function(win, ed) set_tool(win, ed, "nz") end },
   { key = "p", hint = "paint", when = bound_focused,
     fn = function(win, ed) set_tool(win, ed, "pnt") end },
   { key = "s", hint = "shade", when = bound_focused,
@@ -885,6 +888,13 @@ local function apply_brush(win, p, tool, hx, hz, btn, ctrl, mask)
                      + terr.hget(doc, vx, vz - 1) + terr.hget(doc, vx, vz + 1))
                      * 0.25
           doc.hts[vi] = hh + (avg - hh) * str * 0.35 * f
+        elseif tool == "nz" then
+          -- the position-keyed bipolar field (terr3.noise_at): left adds
+          -- the relief, right subtracts the exact same field back out
+          local dir = btn == 3 and -1 or 1
+          local n = terr3.noise_at((win.nzseed or 1) * 131,
+                                   win.nzwave or 4, vx, vz)
+          doc.hts[vi] = doc.hts[vi] + dir * str * STEP_FRAC * f * n
         elseif tool == "pnt" then
           local mi = win.mat or 1
           if mi >= 1 and mi <= #doc.mats then
@@ -1377,7 +1387,8 @@ function M.draw(win, ctx)
                         stamp_for(ed, win))
           if vx0 then
             patch_mesh(ed, p, win.path, vx0, vz0, vx1, vz1)
-            if tool == "hgt" or tool == "flt" or tool == "smo" then
+            if tool == "hgt" or tool == "flt" or tool == "smo"
+               or tool == "nz" then
               p.wkgen = nil -- ground moved: the walk overlay is stale
             end
             -- the live atlas follows EVERY brush: paint/shade recolor,
@@ -1697,6 +1708,38 @@ function M.draw(win, ctx)
     elseif tool == "wlk" then
       label(("walk: L block - R walk - ctrl clears  (derived slope<=%.2f"
              .. " wade<=%.2f)"):format(doc.walk.slope, doc.walk.wade))
+    elseif tool == "nz" then
+      -- the noise brush row: seed + wavelength step chips (click +,
+      -- right-click −) beside the shared radius/strength readout
+      local sx = brush_well(vx + 6 * z)
+      local function stepchip(txt)
+        local w = pal.x_ig_text_size(txt, px, 0) + 10 * z
+        local hov = i.wx >= sx and i.wx < sx + w
+                    and i.wy >= sy0 and i.wy < sy0 + INSP
+        pal.x_ig_rect_fill(sx, sy0 + 2 * z, w, INSP - 4 * z,
+                           hov and COL.btn_on or COL.btn, 3 * z)
+        pal.x_ig_text(sx + 5 * z, sy0 + (INSP - px) * 0.45, px,
+                      hov and COL.hot or COL.dim, txt, 0)
+        local d = 0
+        if hov and i.clicked[1] then d = 1
+        elseif hov and i.clicked[3] then d = -1 end
+        sx = sx + w + 3 * z
+        return d
+      end
+      local d = stepchip(("sd %d"):format(win.nzseed or 1))
+      if d ~= 0 then
+        win.nzseed = math.max(1, (win.nzseed or 1) + d)
+        ed.touch()
+      end
+      d = stepchip(("wave %d"):format(win.nzwave or 4))
+      if d ~= 0 then
+        win.nzwave = mm.clamp((win.nzwave or 4) + d, 1, 16)
+        ed.touch()
+      end
+      local txt = ("r=%.1f (ctrl+wheel)  s=%.1f ([ ])  right = carve out")
+            :format(win.brush_r or 3, win.brush_s or 0.5)
+      pal.x_ig_text(sx, sy0 + (INSP - px) * 0.45, px, COL.dim, txt, 0)
+      stamp_chip(sx + pal.x_ig_text_size(txt, px, 0) + 10 * z)
     elseif BRUSH_TOOLS[tool] then
       local sx = brush_well(vx + 6 * z)
       local txt = ("r=%.1f (ctrl+wheel)  s=%.1f ([ ])%s")

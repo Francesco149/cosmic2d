@@ -739,6 +739,22 @@ function M.emit_water(out, doc, opts)
                          opts and opts.ox or 0, opts and opts.oz or 0)
 end
 
+-- ---- the noise brush field (the D141 hand-meets-procedural door for
+-- terrain). A POSITION-KEYED bipolar relief: the same vertex always
+-- reads the same value for a given seed/wave, so re-stroking an area
+-- carves toward ONE coherent field instead of accumulating a random
+-- walk — and the right button subtracts the exact same field back out.
+-- Two octaves of cm.terr's integer-hash value noise; range ~[-1, 1].
+-- wave = wavelength in VERTEX units (tiles), clamped >= 1.
+
+function M.noise_at(seed, wave, vx, vz)
+  local w = wave or 4
+  if w < 1 then w = 1 end
+  local n = terr.vnoise(seed, vx, vz, w) * 2
+          + terr.vnoise(seed + 1013, vx * 2, vz * 2, w)
+  return (n / 3 - 0.5) * 2
+end
+
 -- ---- sprite brush stamps (render/dev: the 3d map window's custom
 -- brushes — an image dropped on an active brush tool becomes the brush
 -- shape; pure math here so the window stays gesture plumbing) ----------

@@ -31,6 +31,15 @@ spawn point.
   (half a tile) — terraces and cliffs the WC3 way.
 - **flt** (`f`) — flatten toward the height under the press.
 - **smo** (`m`) — smooth toward the neighbor average.
+- **nz** (`b`) — the noise brush: paints a coherent procedural relief
+  (hills, roughness, rocky ground) under the falloff. The field is
+  position-keyed — re-stroking an area deepens the SAME shape rather
+  than piling up randomness, and the right button
+  **carves the exact field back out**. The strip's **sd** chip rerolls
+  the field and **wave** sets the feature wavelength in tiles (click
+  steps, right-click steps back). Sculpt broad forms with it, then
+  hand-finish with hgt/smo — or roughen a hand-built shape with a
+  small wave.
 - **pnt** (`p`) — paint the active material's weight; **right erases**.
   The material swatches live in the bottom strip — click to choose,
   `+` adds one (up to 8). Ground colors blend where weights mix.
