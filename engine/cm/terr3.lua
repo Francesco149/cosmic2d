@@ -483,13 +483,15 @@ function M.emit_terrain(out, doc, opts)
       local h10 = terr.hget(doc, x + 1, z)
       local h01 = terr.hget(doc, x, z + 1)
       local h11 = terr.hget(doc, x + 1, z + 1)
-      local nx = (h00 + h01 - h10 - h11) / (2 * s)
-      local nz = (h00 + h10 - h01 - h11) / (2 * s)
-      local nl = m.sqrt(nx * nx + flat * flat + nz * nz)
-      nx, nz = nx / nl, nz / nl
-      local ny = flat / nl
+      -- one true normal PER TRIANGLE (the NW->SE split below): a
+      -- plane-fit per QUAD lit non-planar quads with a tone matching
+      -- neither drawn triangle — random dark plates on sculpt noise
+      local nx1, nz1 = (h00 - h10) / s, (h10 - h11) / s
+      local nl1 = m.sqrt(nx1 * nx1 + flat * flat + nz1 * nz1)
+      local nx2, nz2 = (h01 - h11) / s, (h00 - h01) / s
+      local nl2 = m.sqrt(nx2 * nx2 + flat * flat + nz2 * nz2)
       local wx, wz = ox + x, oz + z
-      local function V(vx, vz, hh)
+      local function V(vx, vz, hh, nx, ny, nz)
         local r, g, b, uu, vv
         if atlas then
           r, g, b = 1, 1, 1
@@ -502,11 +504,13 @@ function M.emit_terrain(out, doc, opts)
         return vpack("<fffffBBBB", vx * s, hh, vz * s, uu, vv,
                      (r * 255) // 1, (g * 255) // 1, (b * 255) // 1, 255)
       end
-      local A = V(wx, wz, h00)
-      local B = V(wx + 1, wz, h10)
-      local C = V(wx + 1, wz + 1, h11)
-      local D = V(wx, wz + 1, h01)
-      out[#out + 1] = A .. B .. C .. A .. C .. D -- NW->SE: T.sample's split
+      local A1 = V(wx, wz, h00, nx1 / nl1, flat / nl1, nz1 / nl1)
+      local B1 = V(wx + 1, wz, h10, nx1 / nl1, flat / nl1, nz1 / nl1)
+      local C1 = V(wx + 1, wz + 1, h11, nx1 / nl1, flat / nl1, nz1 / nl1)
+      local A2 = V(wx, wz, h00, nx2 / nl2, flat / nl2, nz2 / nl2)
+      local C2 = V(wx + 1, wz + 1, h11, nx2 / nl2, flat / nl2, nz2 / nl2)
+      local D2 = V(wx, wz + 1, h01, nx2 / nl2, flat / nl2, nz2 / nl2)
+      out[#out + 1] = A1 .. B1 .. C1 .. A2 .. C2 .. D2 -- NW->SE: T.sample's split
       ntris = ntris + 2
     end
   end
@@ -530,7 +534,10 @@ function M.atlas_path(path)
   return (path:gsub("%.terr$", "") .. "-atlas.png")
 end
 
--- FNV-1a (integer math, bit-stable) over the color inputs
+-- FNV-1a (integer math, bit-stable) over the color inputs. The "L2"
+-- salt versions the BAKE MATH itself (per-triangle lighting): bumping
+-- it orphans every atlas baked by older code, so stale lighting heals
+-- through the ordinary vertex-fallback-then-republish path.
 function M.mat_hash(doc)
   local h = 2166136261
   local function feed(s2)
@@ -538,6 +545,7 @@ function M.mat_hash(doc)
       h = ((h ~ s2:byte(i)) * 16777619) & 0xFFFFFFFF
     end
   end
+  feed("L2")
   feed(pack("<I4I4", doc.w, doc.h))
   for _, mt in ipairs(doc.mats) do
     feed(mt.name or "")
@@ -606,21 +614,26 @@ function M.bake_into(doc, samplers, ts, buf, px0, py0, px1, py1)
     if not shade then return 1 end
     return (shade[vz * stride + vx + 1] or 255) / 255
   end
-  -- the sun/ambient multiplier per TILE (the emitter's exact normal
-  -- math). Lighting bakes into the TEXELS: the product stays unclamped
-  -- until the final byte, where vertex colors would clamp at 1.0 and
-  -- flatten every sun-facing slope to one tone.
+  -- the sun/ambient multiplier per TRIANGLE (the emitter's exact
+  -- normal math; tri 1 = fu >= fv, the NW->SE split). Lighting bakes
+  -- into the TEXELS: the product stays unclamped until the final byte,
+  -- where vertex colors would clamp at 1.0 and flatten every
+  -- sun-facing slope to one tone.
   local lcache = {}
-  local function lof(tx, tz)
-    local key = tz * doc.w + tx
+  local function lof(tx, tz, tri)
+    local key = (tz * doc.w + tx) * 2 + tri
     local l = lcache[key]
     if not l then
       local h00 = terr.hget(doc, tx, tz)
       local h10 = terr.hget(doc, tx + 1, tz)
       local h01 = terr.hget(doc, tx, tz + 1)
       local h11 = terr.hget(doc, tx + 1, tz + 1)
-      local nx = (h00 + h01 - h10 - h11) / (2 * s)
-      local nz = (h00 + h10 - h01 - h11) / (2 * s)
+      local nx, nz
+      if tri == 0 then
+        nx, nz = (h00 - h10) / s, (h10 - h11) / s
+      else
+        nx, nz = (h01 - h11) / s, (h00 - h01) / s
+      end
       local nl = m.sqrt(nx * nx + flat * flat + nz * nz)
       local d = m.max(0, -(nx / nl * sun[1] + flat / nl * sun[2]
                            + nz / nl * sun[3]))
@@ -670,7 +683,7 @@ function M.bake_into(doc, samplers, ts, buf, px0, py0, px1, py1)
                 * (1 - fv)
               + (jof(tx, tzv + 1) * (1 - fu) + jof(tx + 1, tzv + 1) * fu)
                 * fv
-      local L = lof(tx, tzv)
+      local L = lof(tx, tzv, fu >= fv and 0 or 1)
       local k = sh * j
       row[#row + 1] = char(
         m.clamp((r * k * L[1] * 255) // 1, 0, 255),

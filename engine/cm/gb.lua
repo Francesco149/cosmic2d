@@ -257,38 +257,67 @@ function G.prism(out, xf, n, r0, r1, h, col, caps, nrmxf)
   return ntris
 end
 
+-- per-profile-POINT normals in the (r,y) plane: each point averages its
+-- two adjacent segments' perpendiculars (endpoints keep their single
+-- segment), so lighting is smooth ALONG the profile as well as around
+-- it — segment-flat normals gave every ring a hard circular lighting
+-- seam (the mascot's banded body). Returns { nr0,ny0, nr1,ny1, ... }.
+local function lathe_ptnorms(prof)
+  local npts = #prof // 2
+  local sr, sy = {}, {} -- per-SEGMENT perpendicular
+  for j = 0, npts - 2 do
+    local dy = prof[j * 2 + 4] - prof[j * 2 + 2]
+    local dr = prof[j * 2 + 3] - prof[j * 2 + 1]
+    local len = m.sqrt(dy * dy + dr * dr)
+    sr[j] = len > 1e-6 and dy / len or 1
+    sy[j] = len > 1e-6 and -dr / len or 0
+  end
+  local pn = {}
+  for j = 0, npts - 1 do
+    local ar, ay = sr[j - 1] or sr[j], sy[j - 1] or sy[j]
+    local br, by = sr[j] or sr[j - 1], sy[j] or sy[j - 1]
+    local nr, ny = ar + br, ay + by
+    local len = m.sqrt(nr * nr + ny * ny)
+    if len > 1e-6 then nr, ny = nr / len, ny / len else nr, ny = 1, 0 end
+    pn[j * 2 + 1], pn[j * 2 + 2] = nr, ny
+  end
+  return pn
+end
+
 -- revolve a profile of {r,y, r,y, ...} pairs around local Y under xf (proto
--- draw_lathe), n segments per ring. Smooth ring shading: per-vertex normals
--- from the profile-plane slope, so this bypasses quad(). alpha (0-255,
--- nil = opaque) is for blend-segment ghosts (pickup pops). nrmxf (optional):
+-- draw_lathe), n segments per ring. Smooth shading: per-vertex normals
+-- from the averaged profile-point perpendiculars (lathe_ptnorms), so this
+-- bypasses quad(). alpha (0-255, nil = opaque) is for blend-segment ghosts
+-- (pickup pops). nrmxf (optional):
 -- rigid normal transform when xf carries scale (see G.prism). Returns tris.
 function G.lathe(out, xf, prof, n, col, alpha, nrmxf)
   local npts = #prof // 2
   local nxf = nrmxf or xf
+  local pn = lathe_ptnorms(prof)
   local ntris = 0
   for j = 0, npts - 2 do
     local ra, ya = prof[j * 2 + 1], prof[j * 2 + 2]
     local rb, yb = prof[j * 2 + 3], prof[j * 2 + 4]
-    local dy, dr = yb - ya, rb - ra
-    local len = m.sqrt(dy * dy + dr * dr)
-    local nr = len > 1e-6 and dy / len or 1
-    local ny = len > 1e-6 and -dr / len or 0
+    local nra, nya = pn[j * 2 + 1], pn[j * 2 + 2]
+    local nrb, nyb = pn[j * 2 + 3], pn[j * 2 + 4]
     for i = 0, n - 1 do
       local a0, a1 = i * m.tau / n, (i + 1) * m.tau / n
       local c0, s0 = m.cos(a0), m.sin(a0)
       local c1, s1 = m.cos(a1), m.sin(a1)
-      local n0x, n0y, n0z = xfn(nxf, nr * c0, ny, nr * s0)
-      local n1x, n1y, n1z = xfn(nxf, nr * c1, ny, nr * s1)
+      local nb0x, nb0y, nb0z = xfn(nxf, nrb * c0, nyb, nrb * s0)
+      local nb1x, nb1y, nb1z = xfn(nxf, nrb * c1, nyb, nrb * s1)
+      local na0x, na0y, na0z = xfn(nxf, nra * c0, nya, nra * s0)
+      local na1x, na1y, na1z = xfn(nxf, nra * c1, nya, nra * s1)
       local u0, u1 = i / n * 4, (i + 1) / n * 4
       local v0, v1 = j / (npts - 1) * 2, (j + 1) / (npts - 1) * 2
       local ax, ay, az = xfp(xf, rb * c0, yb, rb * s0)
       local bx, by, bz = xfp(xf, rb * c1, yb, rb * s1)
       local cx, cy, cz = xfp(xf, ra * c1, ya, ra * s1)
       local dx, dy_, dz = xfp(xf, ra * c0, ya, ra * s0)
-      local A = vert(ax, ay, az, u0, v1, col, n0x, n0y, n0z, alpha)
-      local B = vert(bx, by, bz, u1, v1, col, n1x, n1y, n1z, alpha)
-      local C = vert(cx, cy, cz, u1, v0, col, n1x, n1y, n1z, alpha)
-      local D = vert(dx, dy_, dz, u0, v0, col, n0x, n0y, n0z, alpha)
+      local A = vert(ax, ay, az, u0, v1, col, nb0x, nb0y, nb0z, alpha)
+      local B = vert(bx, by, bz, u1, v1, col, nb1x, nb1y, nb1z, alpha)
+      local C = vert(cx, cy, cz, u1, v0, col, na1x, na1y, na1z, alpha)
+      local D = vert(dx, dy_, dz, u0, v0, col, na0x, na0y, na0z, alpha)
       out[#out + 1] = A .. B .. C .. A .. C .. D
       ntris = ntris + 2
     end
@@ -342,32 +371,34 @@ local function bk_vert(bk, x, y, z, u, v, slot)
   bk.nv = i + 1
 end
 
--- G.lathe's loop, recorded (A B C A C D per quad; n0 shared by A/D, n1 by
--- B/C — the immediate path's exact sharing)
+-- G.lathe's loop, recorded (A B C A C D per quad; the b-ring point
+-- normal feeds A/B, the a-ring point normal C/D — the immediate path's
+-- exact sharing)
 function G.bake_lathe(prof, n)
   local bk = bk_new()
   local npts = #prof // 2
+  local pn = lathe_ptnorms(prof)
   for j = 0, npts - 2 do
     local ra, ya = prof[j * 2 + 1], prof[j * 2 + 2]
     local rb, yb = prof[j * 2 + 3], prof[j * 2 + 4]
-    local dy, dr = yb - ya, rb - ra
-    local len = m.sqrt(dy * dy + dr * dr)
-    local nr = len > 1e-6 and dy / len or 1
-    local ny = len > 1e-6 and -dr / len or 0
+    local nra, nya = pn[j * 2 + 1], pn[j * 2 + 2]
+    local nrb, nyb = pn[j * 2 + 3], pn[j * 2 + 4]
     for i = 0, n - 1 do
       local a0, a1 = i * m.tau / n, (i + 1) * m.tau / n
       local c0, s0 = m.cos(a0), m.sin(a0)
       local c1, s1 = m.cos(a1), m.sin(a1)
-      local k0 = bk_slot(bk, nr * c0, ny, nr * s0)
-      local k1 = bk_slot(bk, nr * c1, ny, nr * s1)
+      local kb0 = bk_slot(bk, nrb * c0, nyb, nrb * s0)
+      local kb1 = bk_slot(bk, nrb * c1, nyb, nrb * s1)
+      local ka0 = bk_slot(bk, nra * c0, nya, nra * s0)
+      local ka1 = bk_slot(bk, nra * c1, nya, nra * s1)
       local u0, u1 = i / n * 4, (i + 1) / n * 4
       local v0, v1 = j / (npts - 1) * 2, (j + 1) / (npts - 1) * 2
-      bk_vert(bk, rb * c0, yb, rb * s0, u0, v1, k0) -- A
-      bk_vert(bk, rb * c1, yb, rb * s1, u1, v1, k1) -- B
-      bk_vert(bk, ra * c1, ya, ra * s1, u1, v0, k1) -- C
-      bk_vert(bk, rb * c0, yb, rb * s0, u0, v1, k0) -- A
-      bk_vert(bk, ra * c1, ya, ra * s1, u1, v0, k1) -- C
-      bk_vert(bk, ra * c0, ya, ra * s0, u0, v0, k0) -- D
+      bk_vert(bk, rb * c0, yb, rb * s0, u0, v1, kb0) -- A
+      bk_vert(bk, rb * c1, yb, rb * s1, u1, v1, kb1) -- B
+      bk_vert(bk, ra * c1, ya, ra * s1, u1, v0, ka1) -- C
+      bk_vert(bk, rb * c0, yb, rb * s0, u0, v1, kb0) -- A
+      bk_vert(bk, ra * c1, ya, ra * s1, u1, v0, ka1) -- C
+      bk_vert(bk, ra * c0, ya, ra * s0, u0, v0, ka0) -- D
     end
   end
   return bk
