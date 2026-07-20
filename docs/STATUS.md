@@ -33,10 +33,11 @@ and pushes the next safe candidate after proving its ref is on `origin/main`.
 
 The README is now the dense public product surface: the requested philosophy
 and explicit experimental pre-alpha stability warning are first, followed by
-real openworld, rovale, 2D platformer, music, terrain, sprite, and live-tutorial
-captures. It distinguishes the supported 2D alpha path from the even more
-experimental retro-3D extension and keeps download, authoring, export,
-verification, architecture, platform, and license paths close at hand.
+a 2x2 grid of the real rovale, bigworld, openworld, and 2D platformer demos,
+then music, terrain, sprite, and live-tutorial captures. It names 2D, N64-era
+3D, and RO-style 2.5D as first-class paths, leads with the currently stronger
+rovale/bigworld showcases, and keeps download, authoring, export, verification,
+architecture, platform, and license paths close at hand.
 
 **Proof:** `actionlint`, `shellcheck`, and `bash -n` pass; release manifests
 PASS; `nix run .#test` **ALL GREEN** with Linux selftest **25,106**, every trace

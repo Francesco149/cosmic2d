@@ -3,7 +3,7 @@
 [![nightly build](https://github.com/Francesco149/cosmic2d/actions/workflows/nightly.yml/badge.svg)](https://github.com/Francesco149/cosmic2d/actions/workflows/nightly.yml)
 
 **cosmic2d is a batteries-included game engine and fantasy-console-shaped
-studio for pixel-art 2D, with an optional retro-3D pipeline.** Its core
+studio for pixel-art 2D and retro 3D.** Its core
 philosophy is simple: the simulation is deterministic, everything is
 rewindable, everything hot reloads, and every authoring tool lives on one
 infinite canvas. Extract one folder and draw, code, compose, play, inspect any
@@ -15,24 +15,29 @@ past frame, and export a game without assembling a toolchain.
 > guaranteed: APIs, file formats, editor sessions, save data, behavior, and
 > backwards compatibility may all break. Keep backups and expect sharp edges.
 
-## Three ways through the engine
+## The current showcase
 
 <table>
   <tr>
-    <td width="50%" align="center">
-      <img src="docs/media/hero-openworld.png" alt="openworld — a mascot overlooking a streamed lake and rolling hills" width="480"><br>
-      <sub><strong>openworld</strong> — a streamed N64-era landscape with a
-      glider-scale draw distance</sub>
-    </td>
     <td width="50%" align="center">
       <img src="docs/media/hero-rovale.png" alt="rovale — sprite characters walking through a painted 3D vale" width="480"><br>
       <sub><strong>rovale</strong> — click-to-move sprite characters in a
       painted RO-style 2.5D world</sub>
     </td>
+    <td width="50%" align="center">
+      <img src="docs/media/hero-bigworld.png" alt="bigworld — a mascot crossing a broad N64-style landscape" width="480"><br>
+      <sub><strong>bigworld</strong> — the most fleshed-out N64-style
+      traversal demo, with a generated world and distant actors</sub>
+    </td>
   </tr>
   <tr>
-    <td colspan="2" align="center">
-      <img src="docs/media/hero-demo.png" alt="the bundled two-room 2D platformer" width="560"><br>
+    <td width="50%" align="center">
+      <img src="docs/media/hero-openworld.png" alt="openworld — a mascot overlooking a streamed lake and rolling hills" width="480"><br>
+      <sub><strong>openworld</strong> — the streaming-world laboratory: lakes,
+      rolling terrain, NPCs, swimming, and a glider-scale draw distance</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/media/hero-demo.png" alt="the bundled two-room 2D platformer" width="480"><br>
       <sub><strong>demo</strong> — the bundled two-room platformer: movement,
       collisions, animation, effects, camera, music, and room transitions in a
       small readable project</sub>
@@ -40,9 +45,11 @@ past frame, and export a game without assembling a toolchain.
   </tr>
 </table>
 
-The 2D path is the alpha product. The N64-era and RO-style renderers are real,
-integrated engine projects and authoring tools, but remain an even more
-experimental extension rather than a compatibility promise.
+cosmic2d started as a 2D engine; 2D, N64-era 3D, and RO-style 2.5D are now
+first-class engine and editor paths. **rovale** and **bigworld** are currently
+the most developed showcase demos. The compact 2D project remains the clearest
+place to learn the engine's moving parts. All of them share the same
+deterministic simulation, rewind timeline, hot-reload model, and canvas tools.
 
 ## What is already in the box
 
@@ -92,7 +99,7 @@ works from read-only installs and Windows GUI launchers.
 Audio is generated inside the same workflow: a deterministic four-operator FM
 and Game-Boy-flavored synth, filters and pitch sweeps, sound playback, a stereo
 tracker, stock instruments/effects, and fourteen arranged stock songs. The
-retro-3D side adds a Vulkan raster pipeline, projected terrain and water,
+3D path adds a Vulkan raster pipeline, projected terrain and water,
 billboard figures, world streaming, figure baking, and map/terrain authoring;
 the software renderer remains the deterministic reference.
 

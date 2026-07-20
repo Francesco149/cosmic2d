@@ -8062,8 +8062,11 @@ different identities:
 The public README is the matching product surface, not a milestone ledger: its
 first screen states batteries-included + deterministic + rewindable + hot
 reload + infinite canvas, immediately warns that nothing is stable until the
-project is past alpha, and shows the actual openworld, rovale, platformer, and
-authoring-tool captures.
+project is past alpha, and shows a 2x2 of the actual rovale, bigworld,
+openworld, and platformer demos plus authoring-tool captures. Although the
+engine began in 2D, the README treats 2D, N64-era 3D, and RO-style 2.5D as the
+first-class paths they now are; rovale and bigworld lead because they are the
+most developed showcases today.
 
 Proof before the first remote cut: `actionlint`, `shellcheck`, and `bash -n`
 pass; every pinned action commit resolves; `nix run .#test` is **ALL GREEN**
