@@ -3,40 +3,55 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D150 closes two human usage bugs; the Windows stage is fresh and only continued human usage/release execution remain
+## Current handoff — D151/D152 are the first release-candidate cut: authored stereo, recoverable CI, and a public showcase
 
-**D150** (`0d2cdbe`) fixes both findings from the first post-polish usage pass.
-Closing a playing music window now goes through one kind-aware shell door:
-`can_close` may refuse, then `on_close` runs while the view still exists, then
-the pure window model removes it. The music hook releases every held sequencer
-voice and audition blip exactly once before clearing playback, so
-`horror-hollow`'s long opening drone cannot lose its note-off when its window
-vanishes. Empty blip tables also stop asking the editor to redraw forever.
+**D151** (`ff74c42`, with the honest trace recut in `2fccafb`) exposes the
+`.song` format's existing track pan as a real music-window mix control. The
+selected track now has volume and pan rows; pan drags/typed values cover -64
+left through +64 right, visibly mark and detent at center, commit once per
+gesture, and rebake a playing preview live. `cm.snd.track_pan` is the shared
+clamped composition door for editor preview and recorded/rewindable runtime
+playback.
 
-Project-assets and stock-assets chips now remember independent captured scroll
-positions in world units. Every draw derives the true current maximum from the
-filtered item count, live columns/tile size, and viewport, then clamps before
-choosing the first row. Switching from a long family to a short/empty one,
-narrowing a filter, changing tile size, or resizing therefore cannot strand
-the viewport below its content; returning to a family restores its own place.
-Legacy sessions retain their current `sy` and migrate naturally on first tab
-switch. The lifecycle/scroll contracts and user help are documented in D150.
+All 14 stock songs and both platformer songs have deliberate stereo mixes:
+foundations remain centered while hats, rides, percussion, pads, harmony, and
+answering voices spread in complementary positions. Complete-loop renders
+clip zero samples (maximum channel peak 30,586) and keep channel RMS imbalance
+at or below 1.50 dB. The demo camera-tour trace was recut after that intended
+song-state change with all 2,068 raw input records byte-identical; the recut
+also fixed the generic virtual-pad driver to pump an attach before staging a
+non-neutral first record.
 
-**Proof:** release manifests PASS; Linux selftest **25,104** (+10); `nix run
-.#test` **ALL GREEN** with every trace and pixel golden byte-identical. A real
-1280x800 stock-window capture injected `sy=10000` on the 14-song tab and
-visibly snapped to its two rows; inspected and posted to llm-feed. The Windows
-dev tree and Start Menu shortcut are refreshed (**23 durable entries
-preserved**); native selftest **25,106** and native `smoke_kitcheck` **830-frame
-verify PASS**. The human reports D149's song mixing feels much better.
+**D152** (`b15386d` plus this handoff) makes releases recoverable. The scheduled
+and manual nightly only skips a same-commit release with all four assets, can
+repair an incomplete cut, and uses a moving annotated `nightly` tag. Immutable
+`v<VERSION>-rc.N` tags trigger the candidate workflow and an idempotent GitHub
+prerelease. Both paths run the full suite, build Linux/Windows archives, verify
+sibling hashes, retain workflow artifacts, use timeouts/narrow permissions,
+and pin current action commits. `tools/tag-release-candidate.sh --push` derives
+and pushes the next safe candidate after proving its ref is on `origin/main`.
 
-**Exact next step — human-only usage/release judgment.** From the refreshed
-Windows stage, recheck closing `horror-hollow` during its opening drone and
-switch between deeply scrolled asset families, then continue the fresh-user
-pass on both platforms. If no more findings surface, pin the approved presets'
-PCM goldens and execute `docs/RELEASE-CHECKLIST.md` (clean-VM/open-old-project
-matrix, README alpha flip, tag/cut). No agent-found P0/P1 or unimplemented
-alpha promise remains; further code packets should come from usage findings.
+The README is now the dense public product surface: the requested philosophy
+and explicit experimental pre-alpha stability warning are first, followed by
+real openworld, rovale, 2D platformer, music, terrain, sprite, and live-tutorial
+captures. It distinguishes the supported 2D alpha path from the even more
+experimental retro-3D extension and keeps download, authoring, export,
+verification, architecture, platform, and license paths close at hand.
+
+**Proof:** `actionlint`, `shellcheck`, and `bash -n` pass; release manifests
+PASS; `nix run .#test` **ALL GREEN** with Linux selftest **25,106**, every trace
+verifying (including the recut 2,068-frame demo), and every pixel golden
+byte-identical. The Windows dev tree and shortcut are refreshed (**23 durable
+entries preserved**); native selftest **25,108** and native 830-frame
+`smoke_kitcheck` verify PASS. Both exact release derivations build locally
+and both sibling SHA-256 files verify.
+
+**Exact next step — human release judgment, not more inferred scope.** This is
+still an experimental alpha candidate, not the alpha declaration. Listen to
+the stereo pass on real speakers/headphones, execute the remaining fresh-user
+and clean-machine rows in `docs/RELEASE-CHECKLIST.md`, and only then decide
+whether to pass the A8 human gate. No stability guarantee is made until the
+project is explicitly past alpha.
 
 ## Previous handoff — the editor-polish batch (D143–D146) landed; A8 unchanged (human-only)
 

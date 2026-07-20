@@ -8030,3 +8030,43 @@ byte-identical to the prior trace, and the replacement verifies end to end.
 That recut also fixed the generic driver to pump a newly attached virtual pad
 before staging a non-neutral first record. The human's speakers remain the
 final taste check.
+
+## D152 — nightlies move; candidates do not, and both cuts are recoverable (2026-07-20)
+
+The first public automation should not turn a network interruption into either
+a false-green release or a tag that has to be edited by hand. The two release
+classes therefore share the same tested build spine but keep intentionally
+different identities:
+
+- `nightly` is the one moving prerelease. Its workflow runs at 03:17 UTC (and
+  manually), skips only when the existing release targets the same commit
+  **and** carries all four expected archive/checksum assets, and resumes an
+  incomplete same-commit cut. It verifies the complete deterministic suite,
+  builds both release derivations, checks both sibling hashes, creates an
+  annotated moving tag, and replaces the release assets idempotently.
+- A candidate is an immutable annotated `v<VERSION>-rc.N` tag. Pushing that
+  shape starts `release-candidate.yml`, which rejects any mismatch with the
+  checked-out `VERSION`, runs the same suite/build/hash spine, and creates or
+  repairs the matching GitHub **prerelease** without moving the tag. Its notes
+  repeat the experimental-alpha/no-stability contract.
+- `tools/tag-release-candidate.sh [--push] [REF]` is the single easy local
+  door. It requires a clean tree, derives the next positive candidate number,
+  and, before a push, refuses a ref that is not already contained by
+  `origin/main`. Normal use is therefore `tools/tag-release-candidate.sh
+  --push` after the main push; the tag push itself triggers the build.
+- Third-party actions are pinned to current full commit SHAs, workflow tokens
+  are narrowed to `contents: write`, jobs have timeouts, build outputs remain
+  inspectable as Actions artifacts, and a failed checksum can never reach a
+  release upload.
+
+The public README is the matching product surface, not a milestone ledger: its
+first screen states batteries-included + deterministic + rewindable + hot
+reload + infinite canvas, immediately warns that nothing is stable until the
+project is past alpha, and shows the actual openworld, rovale, platformer, and
+authoring-tool captures.
+
+Proof before the first remote cut: `actionlint`, `shellcheck`, and `bash -n`
+pass; every pinned action commit resolves; `nix run .#test` is **ALL GREEN**
+(Linux selftest **25,106**, all traces and pixels); the fresh Windows stage
+passes native selftest **25,108** and the 830-frame cross-platform trace; both
+release derivations build and their sibling SHA-256 files verify.
