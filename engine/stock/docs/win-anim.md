@@ -23,6 +23,24 @@ baked beside the `.png`).
    (pausing the preview), **+f / -f** add/remove entries, and the **name**
    and **dur** fields edit the selected clip and entry.
 
+## Walkthrough: idle, walk, blink
+
+Three clips carry most characters, and the timing tricks matter more
+than the art:
+
+1. Draw 6 frames in the sprite editor: 2 idle (base + a 1px chest
+   shift), 3 walk (contact, passing, contact — mirror the arms), 1
+   blink (eyes shut).
+2. **idle**: `1:40 2:8` — long base, short shift. Uneven durations are
+   what makes idles breathe; equal ones read as a metronome.
+3. **walk**: `3:7 4:6 5:7 4:6`, loop — reusing the passing frame (4)
+   between contacts buys a 4-beat walk from 3 drawings.
+4. **blink**: `1:1 6:3 1:1`, **once** — play it from code on a random
+   timer over the idle; a whole-strip blink clip is never needed.
+5. **space** to preview each at real speed, then **ctrl+s** — the same
+   save as the sprite window; the game's `.anim` sidecar bakes beside
+   the strip.
+
 ## In the game
 
 ```lua

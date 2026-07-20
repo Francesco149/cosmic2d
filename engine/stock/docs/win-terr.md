@@ -125,3 +125,30 @@ map; `terr3.ground(x, z)` is the exact rendered height, walkability
 comes from the derived grid + your overrides, colliders come from prop
 collider boxes, and markers/props are readable by name and kind. See
 the scripting guide's 3D sections.
+
+## Walkthrough: a lakeside vale
+
+One sitting, every tool once, in the order that works:
+
+1. **Big forms with nz** (`b`): large radius, wave ~8 — one pass of
+   coherent hills. Re-stroke where the shape should deepen (it deepens
+   the *same* relief); right-drag carves back anything overdone.
+2. **The cliff**: hgt (`h`) with **ctrl** held — level-snapped strokes
+   stack real terraces. Smooth (`m`) only the path that climbs them;
+   leaving the rest stepped is the era look.
+3. **Water** (`w`): press on the low ground and drag until the lake
+   fills the basin. Shorelines land wherever the nz pass dipped —
+   which is why water comes after sculpting.
+4. **Materials**: draw two 16x16 tiles in the sprite editor (grass,
+   dirt), drop the grass onto the ground (pnt active — it arrives as a
+   textured material, selected), paint the walkable areas; drop dirt
+   and paint the climbing path. Blend edges with low strength.
+5. **Shade** (`s`): darken under the cliff line and along the shore,
+   lighten the terrace tops. Painted shadow sells the sun more than
+   any real light would.
+6. **Props + markers**: drag in your watchtower `.msh` (it lands with
+   a collider; tick **caster**), a spawn marker on the path, and an
+   **npc** marker by the lake with a **route** polyline for its patrol.
+7. **Walkability** (`k`): the overlay shows what the slopes derived;
+   force-block the shortcut up the cliff face, clear-check the terrace
+   path. **ctrl+s** — atlas published, game hot-reloads.

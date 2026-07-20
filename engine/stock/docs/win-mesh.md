@@ -81,3 +81,31 @@ era characters live at 250–800 triangles.
 Drag a `.msh` from the assets window into a **3d map** to place it (it
 arrives with an automatic collider), or reference it from a figure as a
 part mesh. Meshes render pre-lit through the engine's fast baked path.
+
+## Walkthrough: a watchtower from one box
+
+Every era prop is a box plus extrudes. This one exercises the whole
+tool in a few minutes:
+
+1. **The shaft**: start from the fresh unit box. Face mode (`4`),
+   click the top face, then **e e e** — three extrudes stack the tower.
+   In the front view, box-select each ring of points (sel drag on
+   empty space) and nudge alternate rings slightly inward for a taper.
+2. **The flare**: click the top face and **e** once more, then switch
+   to vtx mode (`2`) — the selection arrives as the four corner
+   points. In the **top view**, turn on **mirror** and drag each
+   corner outward (x-lock, then z-lock): the overhanging platform, and
+   mirror halves the work.
+3. **The roof**: face mode, top face, **e**, then vtx mode and **m** —
+   the four points merge into one and the extrusion becomes a pyramid
+   roof.
+4. **Paint**: face mode, box-select the shaft faces, click a stone
+   swatch; the roof gets a dark red; the underside of the flare a
+   deeper shadow tone (painted shading is most of the era look).
+5. Check **t=** in the strip (a prop like this should sit well under
+   100), **ctrl+s**, and drag the `.msh` into a 3d map — it lands
+   standing on the ground with a collider.
+
+Corners read better slightly irregular: pull a few points a half-step
+off-grid at the end, exactly the opposite of what a modern modeler's
+instincts say.

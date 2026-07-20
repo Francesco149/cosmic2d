@@ -7586,3 +7586,32 @@ honestly: alpha in the pickers (palette colors CAN carry alpha; the
 mix edits opaque), a rampbuf snap-back on blur (a typed "5"+"32"
 shows "532" while meaning 32), palette-window scroll past the
 auto-shrink floor (~560 swatches on the default size).
+
+## D144 — asset rename/move + the wrapped hint strip (2026-07-20)
+
+Two editor-polish asks from the human's use notes. **(1) Rename.** The
+assets window's `r` opens a rename bar prefilled with the full relative
+path (editing the folder part MOVES the asset; a basename typed without
+an extension keeps the old one). The contract: code refs by the old
+name break by design — the engine's invalid-asset fallbacks are the
+graceful floor — but everything the EDITOR holds follows: the file
+(read → atomic write → remove, no new PAL surface), a .spr's baked
+siblings (.png/.anim/.meta, the delete set), the unsaved working state
+(ed.doc.assets key moves, so a dirty asset stays dirty with the same
+bytes), the undo journal + its .good twin (undo-forever survives a
+rename), and open windows (each kind's own rebind door).
+cm.asset_epoch bumps so a live game's texture memo re-reads instead of
+serving the old path stale. Collisions (disk OR working-state) refuse
+with a visible error; esc cancels; the delete and rename bars share
+the bottom strip and disarm each other. En route the tape caught a
+real interaction bug: grid tiles under the armed bar stole the
+field-focusing click and flipped the selection, which silently
+disarmed the bar — clicks in the bar's strip now belong to the bar.
+**(2) The hint strip wraps**: the focused window's keybind hints break
+to a new line at the window's right edge (whole key+hint pairs) instead
+of running past the width — the palette window's grown table was the
+reporter. Proof: an 18/18 shell tape (spawn menu → assets window; a
+launcher-bound sprite window rebound live across the rename; disk +
+journal + working-state + selection probes; collision refusal; esc;
+the narrow-palette wrap shot inspected + on llm-feed); selftest
+24,936; `nix run .#test` ALL GREEN, goldens byte-identical.

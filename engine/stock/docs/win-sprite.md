@@ -96,6 +96,45 @@ The dials underneath tune it live:
 The ramp is created from your two active colors when the fill is born, so
 pick the colors first (a transparent secondary makes speckle overlays).
 
+## Fill recipes
+
+Every recipe is: pick secondary (dark) + primary (light), set the fill,
+tune dials. All results stay live — reroll **sd** until it looks right.
+
+- **Water tile** — deep blue secondary, pale cyan primary; *noise*,
+  **solid**, px ~8, lv 4, a little **di**. The dither bands read as
+  ripples; a second layer of *noise* at **mix mul** + low **op**
+  roughens the surface.
+- **Sand / dunes** — dark red-brown secondary, cream primary; *fbm*,
+  **solid**, px 10–14, oct 3. The cloudy octaves make dune shadows.
+- **Moss / foliage** — near-black green secondary, yellow-green primary;
+  *cells*, **solid**, px 6–10. Reads as leaf clumps; larger px = bushes,
+  smaller = lichen.
+- **Cobblestone** — near-black blue secondary, light blue-gray primary;
+  *shards*, **solid**, px 10–16. The F2−F1 cracks are the mortar lines;
+  raise **lv** for flatter stones.
+- **Crystal wall** — deep violet secondary, pale lavender primary;
+  *facets*, **solid**, px 10–16, di 0. Flat tone per cell = mineral
+  planes.
+- **A shaded boulder** — draw the silhouette with the pen first (any
+  color), keep the fill **masked** (solid off), pick dark slate → warm
+  gray, *ridged*, px 8, oct 2–3, lv 4. The strata shade your shape;
+  the silhouette stays yours.
+- **A cut gem** — draw a diamond silhouette; *facets* masked, deep blue →
+  ice blue, px large (few big cells). **bake**, then hand-touch: a
+  1px darker outline and a 2px white sparkle at the top facet.
+- **Speckle / stars overlay** — transparent secondary, white primary;
+  *noise* on an empty **solid** layer, high lv, then **mix screen** over
+  the scene below.
+
+## Layer mixes to taste
+
+Blend-mode staples on top of any base: a *mul* + *fbm* layer at ~40%
+**op** is instant grime/shadow; an *add* + *noise* layer at low op is
+sparkle/heat; *overlay* + *ridged* deepens rock contrast without
+touching the palette. Because generated pixels are exact ramp colors,
+baking any of these keeps the sprite palette-clean.
+
 ## Colors & palettes
 
 New assets auto-name with three random words, so nothing blocks on a filename —

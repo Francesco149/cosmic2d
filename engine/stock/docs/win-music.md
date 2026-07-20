@@ -35,4 +35,31 @@ linked copy.
 - **ctrl+c/x/v** clipboard · **ctrl+z / ctrl+y** undo / redo · **ctrl+s** save
 - **wheel** zoom · **middle-drag** pan (while focused)
 
+## Walkthrough: a 4-track loop, arranged
+
+An eight-bar loop that exercises the tracker's real strengths —
+patterns that loop as stretched clips, linked copies, and an
+arrangement you can rework without retyping notes.
+
+1. **Bind sounds**: drag `gb-noise-kick` to track 1, `gb-noise-hat` to
+   track 2, your `ins/bass.ins` to track 3, a pulse lead
+   (`gb-pulse-12`) to track 4.
+2. **Drums, one bar**: grid **4** — kicks on the beats, then hats on
+   the off-beats one track down. A motionless click deletes a
+   misplaced note; **ctrl** places off-grid ghosts.
+3. **Bass, two bars**: root notes on the beat, then drag a few right
+   edges longer so they slur. Keep it to 4–5 notes; space is groove.
+4. **Loop them**: in the arrangement strip, stretch the drum clip to 8
+   bars (a clip loops its pattern), stretch the bass to 8.
+5. **Lead, four bars**: write it once, then **ctrl+drag** the clip to
+   place a *linked* copy for bars 5–8 — edit either and both change.
+   When the second phrase should answer instead of repeat, drag a plain
+   copy and bend just its tail notes.
+6. **Arrange**: **space** from the top. Pull the lead clip off bars 1–4
+   entirely — starting with drums+bass and letting the lead enter at
+   bar 5 is the oldest arrangement trick and it works in eight bars.
+7. **ctrl+s**, then `snd.music(..., { loop = true })` in `game.init`
+   (the scripting guide's sound section has the exact call). Leave it
+   playing while you keep editing — saves hot-swap the song.
+
 Next: [The synth](engine/stock/docs/win-synth.md)

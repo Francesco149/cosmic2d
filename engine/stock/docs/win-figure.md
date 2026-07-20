@@ -54,3 +54,30 @@ preview IS the real bake, rendered by the same rasterizer.
 **bake .spx** writes `spr/<name>.spx` next to your project's sprites — place
 it in a 3d map or draw it as billboards, and your one model covers 3D
 and sprite games alike.
+
+## Walkthrough: a critter with a walk, from the mascot
+
+Copying and bending a working figure teaches the tool faster than a
+blank tree. Copy `engine/stock/fig/mascot.fig` into your project (the
+assets window's **r** can rename it to `fig/critter.fig`), open it, and:
+
+1. **Resculpt the silhouette** (parts tab): select the body, cycle its
+   **shape** chip, drag the size dial chunkier, recolor with the
+   swatches. Move the head's joint dot lower for a hunched read —
+   silhouette changes do more than any detail.
+2. **One prop**: model a 20-triangle hat in the mesh editor, then drop
+   the `.msh` onto the figure with the head selected. It rides every
+   pose from now on.
+3. **A left arm the right gets free**: name it `arm_l`, place it, then
+   **mirror L>R** — the right side appears x-flipped and stays a twin.
+4. **The walk** (pose tab): the mascot's clips are already there —
+   select the walk, **space**, and watch what keys it actually takes
+   (four: contact, up, contact, up). Now make it yours: on each
+   contact key, rotate the body a touch further forward; **shift+drag**
+   the hands lower. Play again. A walk reads through exactly two
+   things — body lean and hand height.
+5. **An attack clip**: **+ clip**, two keys: a windup (body twisted
+   back, ctrl-snapped 15°) and the swing (twisted forward, hat tilted).
+   Short **rate**, loop off.
+6. **ctrl+s**, drag it into a 3d map, and (bake tab) **bake .spx** the
+   same critter into an 8-direction sheet for the 2D games.
