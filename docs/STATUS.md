@@ -3,103 +3,51 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D147 landed: the FM-preset vibe expansion + 14 stock demo songs + the read-only stock-assets window; the polish queue is EMPTY; A8 (human-only) + the NATIVE LISTEN are what remain
+## Current handoff — D148/D149 final alpha polish landed; the code queue is empty and only human usage/taste + release execution remain
 
-**This session (2026-07-20, evening) consumed the queued FM-preset
-packet whole; three commits + docs.** **D147 part 1** — 24 new stock
-instruments covering the vibe list verbatim (orchestral: strings /
-choir / harp / flute / reed / timpani / orchhit / harpsi / musicbox;
-jazz-latin-funk: nylon / upright / vibes / muted / clav / slap /
-cowbell; electronic: sub / reese / ride / shaker / rim / conga;
-ambient-spooky: drone / glass), all patch tables through cm.ins encode
-(no committed generator, the convention held), calibrated against the
-shipped family and render-verified (clean envelope classes, no
-clipping). The synth preset rail outgrew the window at 52 stock
-entries and now WHEEL-SCROLLS (clamped, per-window scratch, scroll
-cue; off-rail wheel still zooms the canvas — probe-proven). **Part
-2** — engine/stock/songs is a NEW stock family: 14 hand-composed demo
-tracks, one per queued vibe (desert-dunes, water-caverns, noble-court
-in 3/4, prelude-soft, battle-charge, boss-gate, dnb-rush,
-breaks-alley, bossa-breeze, bossa-fiesta, funk-strut, noir-sleuth
-swing, horror-hollow, ambient-drift); track ins refs are
-engine-cwd-relative so the sim sequencer, the music-window preview,
-and packaged games resolve them from ANY project with zero copying;
-full-loop renders show every instrument resolving and sane mixes.
-**Part 3** — the stock-assets window (cm.ed.win.stock): a READ-ONLY
-grid over the five stock families (ins/songs/art/fig/pal; chips +
-fuzzy + previews incl. palette swatch strips via the D143-safe disp).
-Double-click OPENS AN UNSAVED COPY (the new kit `A.seed` door: stock
-bytes seed the working state at a fresh auto name, -2/-3 on collision
-with disk or unsaved states; the window opens dirty, the seed is the
-journal undo floor, NOTHING touches disk until the user's own Ctrl+S);
-`c`/enter copies into the project (family dest dirs, browser flash,
-FIMP timeline mark); press-drag carries the engine-relative path into
-the existing drop doors (music tracks, wells). No delete/rename/save
-surface — read-only by construction. Proof: Linux selftest **25,017**
-(+70: t_stock_ins / t_stock_songs / t_stock_window — full-roster
-decode/canonical-bytes/audibility sweeps with every new name pinned,
-the seed contract, the parked wall); `nix run .#test` ALL GREEN,
-goldens byte-identical; two shell tapes green on fresh smoke copies
-(synth rail scroll probes exact; stock window 6/6); captures on
-llm-feed. See DECISIONS `D147`.
+**The final non-human polish pass is complete in two commits.** **D148**
+(`be84c26`) makes the shipped reader illustrate its own tutorials: standalone
+local Markdown image blocks render with aspect-preserving layout, culling,
+missing-media fallback, copy-page alt text, and derivation keys covering doc
+path/root/bytes/layout/asset epoch. Six real low-resolution cropped captures
+(386–642 px, 20–142 KiB) now accompany the top-down, sprite, music, palette,
+stock, and terrain lessons. Every one of the five project templates and all 14
+focused authoring tools now has a power walkthrough plus an explicit full-
+reference handoff; the eight small utility tools share a debugging-desk
+walkthrough. The inventory is selftest-pinned. This pass also fixed a latent
+D145 external-project bug: Lua's repeated-capture pattern never stripped
+leading `../`, so stock doc reads/anchors/media/cross-doc links could fail from
+projects outside the engine tree; the reader now strips prefixes explicitly.
 
-**Same day, the polish round (the D147 addendum) landed on the
-human's browse notes**: (1) the two-breaks-alley-windows divergence
-was the editor-bank allocator WRAPPING its 64 slots with no free —
-`kit.snd_claim` slot-ownership stamps now make the synth audition and
-music preview re-send their patch on a lost claim (KAT'd + tape-
-probed); (2) the synth rail highlights the LAST-LOADED preset
-(captured, survives restarts); (3) both bossa songs rebuilt on the
-human's reference video (eBm1JEj8wpo transcript via yt-dlp + FL
-piano-roll frame reads: five-voice close 9th chords, the im9→im6/9
-one-voice move, dotted-quarter anticipated comping, surdo B♭→F bass,
-rim clave + paired kicks + quiet rides, cute quantized lead) — breeze
-gets a xylophone lead over B♭maj9/Gm9/Cm9/F9, fiesta a G9 sparkle +
-flute with xylophone octave echoes; **fm-xylo** is new; (4) noir-
-sleuth's melody rewritten in crime-jazz language (chromatic ♭5 creeps
-on swung 8ths, strolling motifs with silence, muted stabs a half-step
-off — rhythm section untouched per the human); (5) fm-flute +
-fm-harpsi realistic passes (detuned sine pair + breath; decaying-FM-
-index pluck + 4' rank) — noble-court inherits. Selftest **25,023**
-(+6), suite ALL GREEN, mixes re-rendered clean.
+**D149** (`0ae4fe6`) closes the audio notes. Track faders now share one
+preview/runtime 0 → preset → 255 law: 0 is exact silence, 128 exactly
+preserves the preset, 255 always reaches full encoded gain, and the curve is
+exhaustively pinned monotone for all 65,536 input pairs. The bossa epiano and
+nylon attacks are gentler; the kick adds a swept 120 Hz knock and stronger
+3.2 kHz beater (bossa stem peak 4,071 → 5,904, +3.23 dB). `noir-sleuth` is
+fully rewritten as a 108 BPM seven-piece crime-jazz arrangement: swung ride,
+cross-stick 2/4, feathered kick, walking D-minor bass, extended rootless vibes,
+minor-blues/b5 reed hook, altered-dominant fall, and muted-horn dialogue.
 
-**Same day, polish round 2 (the D147 addendum 2) landed on the
-human's first listen notes — the headline is a REAL editor bug**: the
-music preview's blind round-robin voice pick STOMPED still-held voices
-(x_snd_ed_on overwrites by index), so any long pad died after ~24
-percussion events — "the dunes chords stop after ~1 bar"; the sim
-path was always correct (kernel allocator), so exported games sounded
-right while the editor lied. Fixed with the pure KAT'd
-music.preview_voice (skip held+blips, wrap, steal only when all 24
-occupied). Also: fm-kick gained real punch (pitch-drop -20st/60ms +
-beater snap — was a static sub sine; "part of why the bossa rhythm
-disappears"), fm-ride went from metallic noise2 to soft high-passed
-white noise ("overpowered everything"), bossa-fiesta's and-of-4 hit
-now plays the NEXT chord replacing its downbeat (the overlap fix),
-breaks-alley grew a Gm7/E♭maj7/Gm7/F13 progression + a pentatonic
-lead hook, noir-sleuth's melody was rewritten chord-anchored to the
-walking bass (the creep draft read out-of-key), and fm-reed's attack
-softened (dunes lead velocities down too). Selftest **25,028** (+5),
-suite ALL GREEN, mixes clean.
+**Sweep proof:** Markdown link audit **106 targets / 0 issues**; no unresolved
+shipping TODO/FIXME markers; all stock sources decode canonically and audibly;
+all 14 songs rendered for a full real sequencer/kernel loop with **zero
+clipped samples** (peaks -8.00 to -0.62 dBFS; bossas -2.14/-2.77, noir -7.35);
+release-manifests PASS; Linux selftest **25,094**; `nix run .#test` **ALL
+GREEN** with every trace/pixel golden byte-identical. The Windows dev tree and
+Start Menu shortcut are refreshed (21 durable entries preserved); native
+selftest **25,096** and native `smoke_kitcheck` **830-frame verify PASS**.
+The external-root illustrated-reader capture was inspected and posted to
+llm-feed.
 
-**The Windows stage IS refreshed over D147 + both polish rounds**:
-`tools/build-windows.sh` staged clean and the NATIVE selftest passes
-at **25,030** = Linux 25,028 + 2 — everything is on the human's
-machine, one Start Menu click from the listen.
-
-**THE NEXT SESSION'S FIRST ASK — the native listen.** The audio taste
-check needs the human's ears: on the Windows stage, open the synth
-window's preset rail and click through the 24 new voices, then open
-the stock-assets window (spawn menu / launcher), double-click a few
-songs and hit space in the music window. All 14 songs + every preset
-are smoke-tested deterministically but ZERO human ears have heard
-them; expect mix/taste notes to fold back as a polish pass. PCM
-goldens pinning the new presets bit-exact land AFTER that approval
-(deferred in the ADR, deliberately). Smaller deferred items live in
-D147's tail (stock-grid arrow keys, a direct play door in the grid)
-and the earlier ADRs (palette alpha pickers, rampbuf snap-back,
-literal `*italic*`, out-of-tree stock-doc links, observing the first
-nightly run on GitHub).
+**Exact next step — human-only release judgment.** From the refreshed Windows
+stage, listen to both bossas and the new noir at normal speaker volume, skim
+the illustrated template/tool walkthroughs, and do the fresh-user pass on both
+platforms. If taste/usability is accepted, pin the approved presets' PCM
+goldens and execute `docs/RELEASE-CHECKLIST.md` (clean-VM/open-old-project
+matrix, README alpha flip, tag/cut). No agent-found P0/P1 or unimplemented
+alpha promise remains; do not invent another code packet without a usage-test
+finding.
 
 ## Previous handoff — the editor-polish batch (D143–D146) landed; A8 unchanged (human-only)
 

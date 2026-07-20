@@ -7957,5 +7957,7 @@ complete loop through the real sim sequencer/kernel with **zero clipped
 samples** (peaks -8.00 to -0.62 dBFS; bossa-breeze -2.14, bossa-fiesta -2.77,
 noir -7.35); stock instruments/songs remain canonical and audible;
 release-manifests PASS; `nix run .#test` **ALL GREEN** with every committed
-trace and pixel golden byte-identical. The final musical verdict remains the
+trace and pixel golden byte-identical. The refreshed Windows stage passes the
+native selftest at **25,096** (Linux +2 platform checks) and the 830-frame
+`smoke_kitcheck` trace byte-exact. The final musical verdict remains the
 explicit human native listen.
