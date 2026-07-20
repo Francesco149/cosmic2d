@@ -5,6 +5,8 @@ every gem, one editable `main.lua`. This tutorial grows it into a real
 top-down world — rooms as data, art from the tile tools, sound — one
 strong tool per step, each linking its full guide.
 
+![The running top-down starter beside this tutorial](media/template-topdown.png)
+
 ## 1. Feel first
 
 Play, then edit `SPEED` in `main.lua` and **ctrl+s** — the running game
@@ -63,3 +65,14 @@ player-saves section is short and exact.
 Keep going: a patrolling enemy walking marker-to-marker, keys and
 doors as paired markers, a dark dungeon variant by swapping the
 tileset. The room-as-data step makes all of these cheap.
+
+## Full reference
+
+[Sprite](engine/stock/docs/win-sprite.md) ·
+[animation](engine/stock/docs/win-anim.md) ·
+[tilemap](engine/stock/docs/win-tmap.md) ·
+[map](engine/stock/docs/win-map.md) ·
+[synth](engine/stock/docs/win-synth.md) ·
+[music](engine/stock/docs/win-music.md) are the complete tool guides.
+[Writing a game](engine/stock/docs/scripting.md) is the runtime/API reference,
+including movement, maps, markers, audio, and player saves.

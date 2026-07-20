@@ -34,7 +34,9 @@ grayer at both ends). Set **shades** (2–32, typed or dragged) and **hue**
 - **append ramp** — adds N shades of the *working color* to the palette;
 - **replace all** — restarts the whole palette as that one ramp.
 
-## Making a cohesive palette
+## Walkthrough: making a cohesive palette
+
+![Hue-shifted ramps built around one working color](media/palette-ramps.png)
 
 The workhorse recipe — **N shades of each fundamental, flavored to the vibe**:
 
@@ -91,4 +93,5 @@ Swatches are eyedropper-pickable from the canvas: arm the sprite editor's pick
 tool and click a swatch to sample it. Game code reads the file with
 `cm.palette.load(...)`.
 
-Next: [The sprite editor](engine/stock/docs/win-sprite.md)
+Full reference: [The sprite editor](engine/stock/docs/win-sprite.md) and
+[palettes in game code](engine/stock/docs/scripting.md#palettes-and-color-grading-cmpalette-cmgrade).

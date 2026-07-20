@@ -31,6 +31,26 @@ From a shell you can also run a project straight:
     bin/cosmic projects/demo          # play
     bin/cosmic projects/demo --edit   # edit on the infinite canvas
 
+## Blank starter walkthrough
+
+If this page opened with a new **blank** project, its one-file hello is the
+smallest useful engine tour. Click the game and move/jump, open `main.lua`,
+then keep the game beside the code:
+
+1. Change both `d.x` movement steps from `2` to `3.5`, **Ctrl+S**, and feel the
+   live reload immediately — current position stays intact.
+2. Change jump velocity `-5.2` and gravity `0.3` together until the arc feels
+   deliberate. The mutable values live in `state.doc`, while tuning constants
+   stay in code: that split is the engine's central rewind rule.
+3. Press **F4**, scrub across a jump, and resume from before takeoff. The same
+   input and fixed 60 Hz math reproduce the same arc bit-for-bit.
+4. Replace the player `pal.quad` color, then follow steps 5–8 below to graduate
+   the rectangle into a sprite, add a room marker and sound, and export it.
+
+The blank starter's power is precisely that there is nowhere for behavior to
+hide: one readable `init/step/draw` loop. The complete lifecycle and module
+reference is [Writing a game](engine/stock/docs/scripting.md).
+
 ## Your first game
 
 The rest of this page builds a small platformer from nothing: create it,
@@ -193,7 +213,7 @@ Open **project settings** (right-click menu or the launcher):
 That archive is your game: engine, runtime, icon, licenses, and a README —
 ready to hand to a player on a clean machine.
 
-## Where to go next
+## Full reference and next steps
 
 - [Using the editor](engine/stock/docs/editor.md) — the infinite canvas,
   the window kinds, and the keys that matter.

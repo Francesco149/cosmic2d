@@ -12083,6 +12083,8 @@ local function t_docs()
   local live = docs.list()
   check(#live > 0 and live[1].name and live[1].title and live[1].src,
         "docs.list: the shipped corpus loads with name/title/src")
+  local live_by_name = {}
+  for _, d in ipairs(live) do live_by_name[d.name] = d end
   local la = docs.search("cm.actor")
   local saw_scripting = false
   for _, h in ipairs(la) do
@@ -12123,6 +12125,90 @@ local function t_docs()
       check(found, "getting-started: the '" .. want .. "' step is a section")
     end
   end
+  -- Alpha tutorial coverage is a release contract, not just prose taste.
+  -- Every picker starter lands on a guide that performs real work and then
+  -- hands off to the full scripting reference. Blank shares getting-started;
+  -- the other four have their focused guide (engine/cm/ed.lua's mapping).
+  local template_guides = {
+    blank = "getting-started.md", platformer = "make-platformer.md",
+    topdown = "make-topdown.md", arcade = "make-arcade.md",
+    explore3d = "getting-started-3d.md",
+  }
+  for _, tmpl in ipairs(cm.require("cm.project").TEMPLATES) do
+    local d = live_by_name[template_guides[tmpl.key]]
+    check(d ~= nil, "docs.tutorials: " .. tmpl.key .. " starter has a guide")
+    if d then
+      local lower = d.src:lower()
+      check(lower:find("walkthrough", 1, true) ~= nil
+            or lower:find("tutorial", 1, true) ~= nil,
+            "docs.tutorials: " .. tmpl.key .. " guide is task-led")
+      check(d.src:find("## Full reference", 1, true) ~= nil
+            and d.src:find("(engine/stock/docs/scripting.md", 1, true) ~= nil,
+            "docs.tutorials: " .. tmpl.key .. " hands off to full reference")
+    end
+  end
+  check(gs and gs.src:find("## Blank starter walkthrough", 1, true) ~= nil,
+        "docs.tutorials: blank exercises its one-file init/step/draw loop")
+
+  -- Each focused authoring tool's own guide has a power walkthrough and an
+  -- explicit full-reference handoff. The small utility tools are exercised as
+  -- one useful debugging desk in editor.md (their shared '?' destination).
+  for _, name in ipairs({ "anim", "assets", "figure", "map", "mesh", "music",
+      "palette", "project", "sound", "sprite", "stock", "synth", "terr",
+      "tmap" }) do
+    local d = live_by_name["win-" .. name .. ".md"]
+    check(d and d.src:find("## Walkthrough:", 1, true) ~= nil,
+          "docs.tutorials: " .. name .. " has a power walkthrough")
+    check(d and d.src:find("Full reference:", 1, true) ~= nil
+          and d.src:find("](engine/stock/docs/", 1, true) ~= nil,
+          "docs.tutorials: " .. name .. " links onward to full reference")
+  end
+  local editor_guide = live_by_name["editor.md"]
+  local utility_ok = editor_guide
+                     and editor_guide.src:find(
+                       "## Walkthrough: build a debugging desk", 1, true)
+  for _, label in ipairs({ "**game**", "**code**", "**assets**", "**image**",
+      "**console**", "**perf**", "**note**", "**settings**", "**help**" }) do
+    utility_ok = utility_ok and editor_guide.src:find(label, 1, true)
+  end
+  check(utility_ok ~= nil,
+        "docs.tutorials: utility tools share a complete debugging-desk tutorial")
+
+  -- Standalone markdown images in the shipped corpus must resolve, decode,
+  -- describe themselves, and stay intentionally small. This pins both the
+  -- reader feature and the release-size/cropping discipline of the tutorial
+  -- screenshot set.
+  local help = cm.require("cm.ed.win.help")
+  local image_refs, image_paths, image_ok, image_small = 0, {}, true, true
+  for _, d in ipairs(live) do
+    local _, lines, count = docs.line_kinds(d.src)
+    for j = 1, count do
+      local alt, target = help.image_line(lines[j])
+      if target then
+        image_refs = image_refs + 1
+        local _, physical = help.resolve_doc_file(
+          { root = cm.main.args.project },
+          "../../engine/stock/docs/" .. d.name, target)
+        local bytes = physical and pal.read_file(physical)
+        local pix, iw, ih
+        if bytes then pix, iw, ih = pal.png_read(bytes) end
+        if alt == "" or not pix then
+          image_ok = false
+          pal.log("docs image failed: " .. d.name .. " -> " .. tostring(target))
+        else
+          image_paths[target] = true
+          if iw > 700 or ih > 550 then image_small = false end
+        end
+      end
+    end
+  end
+  local unique_images = 0
+  for _ in pairs(image_paths) do unique_images = unique_images + 1 end
+  check(image_refs >= 6 and unique_images >= 6,
+        "docs.images: tutorials bundle a useful screenshot set ("
+        .. image_refs .. " refs / " .. unique_images .. " files)")
+  check(image_ok, "docs.images: every image has alt text and decodes")
+  check(image_small, "docs.images: every bundled capture is at most 700x550")
   -- the A8 searchable-reference bar: every supported cm.* lands a scripting.md
   -- hit whose SECTION heading names the module (tolerant of retitles that keep
   -- the module name in the heading — the D110 loop: what is written must be
@@ -12279,6 +12365,47 @@ local function t_help_sel()
         "help.escape: clears the selection and consumes")
   check(help.escape({ id = 990002 }) == false,
         "help.escape: nothing selected, nothing consumed")
+end
+
+-- the block-image half of the rendered reader: strict standalone markdown
+-- parsing, aspect-fit math, and the external-project fallback for stock media
+-- and cross-doc links. The latter is the D145 path that used to render the
+-- first stock page but fail as soon as a project outside this tree followed a
+-- link from it.
+local function t_help_images()
+  local help = cm.require("cm.ed.win.help")
+  local alt, target = help.image_line("  ![map layers](media/map.png)  ")
+  check(alt == "map layers" and target == "media/map.png",
+        "help.image: a standalone markdown image parses")
+  alt, target = help.image_line("![](engine/stock/spr/tiles.png)")
+  check(alt == "" and target == "engine/stock/spr/tiles.png",
+        "help.image: empty alt text is valid")
+  check(help.image_line("before ![inline](x.png) after") == nil
+        and help.image_line("![missing target]()") == nil,
+        "help.image: inline prose and empty targets stay prose")
+
+  local w, h = help.image_fit(320, 180, 400, 1)
+  check(w == 320 and h == 180, "help.image: small media stays intrinsic at 1x")
+  w, h = help.image_fit(640, 360, 400, 1)
+  check(w == 400 and h == 225, "help.image: wide media aspect-fits the band")
+  w, h = help.image_fit(320, 180, 800, 1.5)
+  check(w == 480 and h == 270, "help.image: media follows canvas/Aa scale")
+
+  local ed = { root = (os.getenv("TMPDIR") or "/tmp")
+                      .. "/cosmic_help_external_project" }
+  local logical, physical = help.resolve_doc_file(
+    ed, "../../engine/stock/docs/getting-started.md", "../spr/tiles.png")
+  check(logical == "../../engine/stock/spr/tiles.png"
+        and physical and (pal.mtime(physical) or 0) > 0,
+        "help.image: relative stock media resolves outside the source tree")
+  logical, physical = help.resolve_doc_file(
+    ed, "../../engine/stock/docs/getting-started.md",
+    "engine/stock/docs/scripting.md#cmstate")
+  check(logical == "engine/stock/docs/scripting.md"
+        and physical and (pal.mtime(physical) or 0) > 0,
+        "help.link: stock cross-doc target resolves outside the source tree")
+  check(help.resolve_doc_file(ed, "x.md", "missing/nope.png") == nil,
+        "help.image: a missing local image resolves honestly to nil")
 end
 
 -- the reader's keyboard scrolling: the paging hotkeys are declarative kit
@@ -14211,6 +14338,7 @@ function game.init()
   t_ed_domain()
   t_docs()
   t_help_sel()
+  t_help_images()
   t_help_keys()
   t_kit_rep()
   t_game_blit()

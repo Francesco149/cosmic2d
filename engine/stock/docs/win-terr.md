@@ -130,6 +130,8 @@ the scripting guide's 3D sections.
 
 One sitting, every tool once, in the order that works:
 
+![A sculpted vale with textured ground, props, water, and a route](media/terrain-vale.png)
+
 1. **Big forms with nz** (`b`): large radius, wave ~8 — one pass of
    coherent hills. Re-stroke where the shape should deepen (it deepens
    the *same* relief); right-drag carves back anything overdone.
@@ -152,3 +154,6 @@ One sitting, every tool once, in the order that works:
 7. **Walkability** (`k`): the overlay shows what the slopes derived;
    force-block the shortcut up the cliff face, clear-check the terrace
    path. **ctrl+s** — atlas published, game hot-reloads.
+
+Full reference: [3D maps in game code](engine/stock/docs/scripting.md#3d-maps-from-the-editor-cmterr3)
+and [the first 3D game tutorial](engine/stock/docs/getting-started-3d.md).

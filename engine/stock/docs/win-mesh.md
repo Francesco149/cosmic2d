@@ -109,3 +109,6 @@ tool in a few minutes:
 Corners read better slightly irregular: pull a few points a half-step
 off-grid at the end, exactly the opposite of what a modern modeler's
 instincts say.
+
+Full reference: [meshes in game code](engine/stock/docs/scripting.md#editor-meshes-cmmesh)
+and [the 3D map editor](engine/stock/docs/win-terr.md).

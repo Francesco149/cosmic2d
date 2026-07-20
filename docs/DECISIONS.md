@@ -7870,3 +7870,51 @@ Six more notes from the human's listen; the headline is a REAL bug.
 Proof: selftest **25,028** (+5 t_preview_voice); `nix run .#test` ALL
 GREEN, goldens byte-identical; all 14 loops re-rendered clean (peaks
 ≤ 28.6k). Still awaiting the human's ears for the final call.
+
+## D148 — rendered tutorial images + complete starter/tool walkthrough coverage (2026-07-20)
+
+The alpha docs now SHOW the tools they teach, and the tutorial promise is a
+tested inventory rather than an impression.
+
+- The help reader supports strict standalone Markdown image blocks,
+  `![alt](local-path)`. Images resolve relative to the current document (with
+  the historical project-root spelling retained), load through `cm.gfx`, keep
+  their aspect, stay intrinsic at 1x until the text band caps them, scale with
+  canvas/Aa, cull with the retained layout, and become `[image: alt]` in
+  copy-page text. Missing media renders an honest labelled well. Inline images
+  and HTTP fetches remain deliberately unsupported: shipped help must work
+  offline and a block is the readable unit in a narrow canvas window.
+- The retained layout's derivation key now names every input that can change an
+  image: Markdown bytes, document path + editor root, width/font/zoom, and
+  `cm.asset_epoch`. A saved replacement therefore reflows dimensions instead
+  of leaving a stale texture/layout.
+- Implementing the external-project path exposed a real D145 latent bug:
+  Lua patterns cannot repeat a capture, so `gsub("^(%.%./)+", "")` matched
+  nothing. An explicit leading-`../` loop now backs `read_doc`, anchor lookup,
+  media resolution, and cross-doc navigation. The proof capture opens the
+  stock top-down guide from `/tmp/.../project`, not a conveniently nested
+  repository project.
+- Six truthful, cropped PNGs ship under `engine/stock/docs/media` (386–642 px
+  wide, 20–142 KiB): a running top-down starter beside its guide, procedural
+  sprite fills, a real seven-track bossa arrangement, palette ramps, the stock
+  song grid, and the 3D terrain editor. No generated/mock UI and no full-screen
+  1280/1400 px payloads.
+- Every picker starter is covered: blank gains its one-file
+  `init/step/draw` walkthrough; platformer/top-down/arcade/3D retain focused
+  tutorials and now end in explicit full-reference handoffs. Every focused
+  authoring guide (14: project/assets/stock, 2D/3D art+maps, sound/synth/music,
+  palette) has a `Walkthrough:` exercising its power move and a full-reference
+  link. The smaller shared-help tools (game/code/image/console/perf/note/
+  settings/help) are taught together as a debugging desk in `editor.md`.
+- Selftest pins the five-template mapping, all 14 authoring guides, the utility
+  roster, reference handoffs, image parsing/aspect/path fallback, six distinct
+  decodable media files with nonempty alt text, and the 700x550 maximum.
+
+Proof: Linux selftest **25,085** (+57 over D147 addendum 2); Markdown link
+audit **106 targets / 0 issues**; release-manifests PASS; the external-root
+reader capture inspected and posted to llm-feed; `nix run .#test` **ALL GREEN**
+with every trace and pixel golden byte-identical. One harness catch paid for
+itself: the first clean Nix run correctly omitted the untracked PNGs and failed
+the new media contract; staging the coherent unit made the clean-source run
+pass, demonstrating the test is checking shipped input rather than the loose
+worktree.

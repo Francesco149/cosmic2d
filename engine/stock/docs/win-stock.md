@@ -33,10 +33,29 @@ deleted in place; every door pulls a copy INTO your project.
 - **art / fig / pal** — the stock tileset, the mascot figure, and the
   shipped palettes.
 
+![The shipped song starters filtered in the stock browser](media/stock-songs.png)
+
+## Walkthrough: borrow a groove without risking the original
+
+1. Choose **songs**, filter for a mood, and double-click one. It opens as an
+   unsaved project copy — press Space, click its clips, and inspect how short
+   patterns become a longer arrangement.
+2. Delete a lead clip, lower one track, and drag a different stock instrument
+   onto that lane. The stock source remains unchanged, so experimentation is
+   free.
+3. **Ctrl+S** only when the direction works. The generated project path becomes
+   your own song and every borrowed instrument is copied into the project.
+4. Return here, choose **ins**, and press **c** on one contrasting voice. Open
+   it in the synth, bend its envelope/filter, save under a clear name, then
+   replace one more track. You now have a derived arrangement rather than an
+   opaque demo file.
+
 ## Keys
 
 - **c** copy the selection into the project · **enter** same
 - **ctrl+wheel** dials the preview tile size · type in the filter to
   fuzzy-find · the chips filter by family
 
-Next: [The assets browser](engine/stock/docs/win-assets.md)
+Full reference: [The assets browser](engine/stock/docs/win-assets.md),
+[the synth](engine/stock/docs/win-synth.md), and
+[the music tracker](engine/stock/docs/win-music.md).

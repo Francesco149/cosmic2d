@@ -78,3 +78,13 @@ volume, rebinds, and accessibility without you writing anything.
 Keep going: a second room via a `portal` marker, coins that
 `cm.save` remembers, weather from a parallax layer. One tool at a
 time, always with the game running.
+
+## Full reference
+
+[Sprite](engine/stock/docs/win-sprite.md) ·
+[animation](engine/stock/docs/win-anim.md) ·
+[map](engine/stock/docs/win-map.md) ·
+[synth](engine/stock/docs/win-synth.md) ·
+[music](engine/stock/docs/win-music.md) are the complete tool guides.
+[Writing a game](engine/stock/docs/scripting.md) is the runtime/API reference,
+including map collision, animation, audio, saves, and reduced effects.

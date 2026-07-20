@@ -96,7 +96,9 @@ The dials underneath tune it live:
 The ramp is created from your two active colors when the fill is born, so
 pick the colors first (a transparent secondary makes speckle overlays).
 
-## Fill recipes
+## Walkthrough: fill recipes
+
+![Procedural water, crystal, sand, moss, stone, and gem fills](media/sprite-fills.png)
 
 Every recipe is: pick secondary (dark) + primary (light), set the fill,
 tune dials. All results stay live — reroll **sd** until it looks right.
@@ -149,4 +151,6 @@ with transparency erases a whole region in one click.
 as many as you like; each row has a **×** to remove it. Left/right-click its
 swatches to set the primary/secondary color.
 
-Next: [Using the editor](engine/stock/docs/editor.md)
+Full reference: [Using the editor](engine/stock/docs/editor.md),
+[the animation window](engine/stock/docs/win-anim.md), and
+[sprites in game code](engine/stock/docs/scripting.md#animation-clips-and-sprites-cmanim-cmsprite).

@@ -51,4 +51,5 @@ local anim = cm.require("cm.anim")
 The scripting guide's sprite section covers drawing a clip's current
 frame; the demos' player code is the worked example.
 
-Next: [the sprite editor](engine/stock/docs/win-sprite.md)
+Full reference: [the sprite editor](engine/stock/docs/win-sprite.md) and
+[animation in game code](engine/stock/docs/scripting.md#animation-clips-and-sprites-cmanim-cmsprite).

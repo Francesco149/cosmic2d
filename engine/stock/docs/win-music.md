@@ -41,6 +41,8 @@ An eight-bar loop that exercises the tracker's real strengths —
 patterns that loop as stretched clips, linked copies, and an
 arrangement you can rework without retyping notes.
 
+![A seven-track bossa loop with arranged clips and piano-roll notes](media/music-bossa.png)
+
 1. **Bind sounds**: drag `gb-noise-kick` to track 1, `gb-noise-hat` to
    track 2, your `ins/bass.ins` to track 3, a pulse lead
    (`gb-pulse-12`) to track 4.
@@ -62,4 +64,5 @@ arrangement you can rework without retyping notes.
    (the scripting guide's sound section has the exact call). Leave it
    playing while you keep editing — saves hot-swap the song.
 
-Next: [The synth](engine/stock/docs/win-synth.md)
+Full reference: [The synth](engine/stock/docs/win-synth.md) and
+[songs in game code](engine/stock/docs/scripting.md#songs-as-data-cmsong).

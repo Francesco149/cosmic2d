@@ -40,6 +40,27 @@ inside the window before anything reaches disk. Resolution and window changes
 take effect on the next launch; saving never rebuilds a running render target
 under the game.
 
+## Walkthrough: a release-candidate export
+
+1. In **general**, set the real name, author, semantic version, and one-sentence
+   description. Confirm the internal size and initial scale still produce the
+   player window you actually tested.
+2. In **player files**, choose a square PNG icon and write short
+   `controls.md`, `credits.md`, and `license.txt` files in code windows. Fix
+   every inline validator until the complete release check is green.
+3. **Ctrl+S** the form and every open authoring window. Build preflight names
+   the first dirty source instead of quietly exporting stale bytes.
+4. Open **build/export**, choose the target carried by this editor, and build
+   into a clean output folder. Keep working while it streams; progress remains
+   visible. Exercise **cancel export** once before the final build — no partial
+   archive should appear.
+5. Let the final job finish. Keep the archive and sibling `.sha256` together,
+   extract it elsewhere, read its README/credits/licenses, and launch that
+   player rather than the development project.
+
+That is the whole release door; it deliberately makes identity, legal files,
+saved source, atomic publication, and a verifiable checksum one workflow.
+
 ## Build / Export
 
 Open **build/export**, choose **Linux .tar.gz** or **Windows .zip**, and enter
@@ -80,5 +101,5 @@ The editor, streaming exporter, and developer packager call the same release
 schema and referenced-byte validator. Export choices and progress are ephemeral
 machine state: they never enter `project.lua`, the editor session, or rewind.
 
-Back to [Using the editor](engine/stock/docs/editor.md), or read the complete
+Full reference: [Using the editor](engine/stock/docs/editor.md) and the complete
 [project scripting contract](engine/stock/docs/scripting.md).

@@ -81,3 +81,6 @@ assets window's **r** can rename it to `fig/critter.fig`), open it, and:
    Short **rate**, loop off.
 6. **ctrl+s**, drag it into a 3d map, and (bake tab) **bake .spx** the
    same critter into an 8-direction sheet for the 2D games.
+
+Full reference: [figures in game code](engine/stock/docs/scripting.md#figures-rigid-part-characters-cmfig)
+and [the first 3D game tutorial](engine/stock/docs/getting-started-3d.md).

@@ -1,7 +1,7 @@
 -- cm.ed.win.help — the documentation reader (D061). A proper RENDERED
 -- single-window markdown view (not the code-grid): headings, wrapped
--- paragraphs, bullet lists, code spans/fences, and links drawn as their
--- link TEXT (not the `[..](..)` source). One window navigates in place:
+-- paragraphs, bullet lists, code spans/fences, local images, and links drawn
+-- as their link TEXT (not the `[..](..)` source). One window navigates in place:
 --   click a link          → follow it in THIS window (history pushes)
 --   ctrl+click a link      → open it in a NEW help window BESIDE this one
 --   a link to an ASSET     → opens in the right editor window (sprite/map/…)
@@ -176,9 +176,20 @@ M.hotkeys = {
     fn = function(win) scroll_by(win, math.huge) end },
 }
 
+-- Lua patterns cannot repeat a capture the way a regular expression's
+-- `^(../)+` would. Keep this tiny path operation explicit; the old gsub
+-- spelling matched nothing and silently defeated the external-project stock
+-- fallback it was meant to implement.
+local function strip_parent_prefix(path)
+  path = tostring(path or "")
+  while path:sub(1, 3) == "../" do path = path:sub(4) end
+  return path
+end
+
 -- the source line of a doc's #anchor (the heading whose slug matches), or nil
 local function anchor_line(ed, rp, frag)
   local src = pal.read_file(ed.root .. "/" .. rp)
+              or pal.read_file(strip_parent_prefix(rp))
   if not src then return nil end
   frag = frag:lower()
   for _, s in ipairs(docs.sections(src)) do
@@ -186,6 +197,58 @@ local function anchor_line(ed, rp, frag)
   end
   return nil
 end
+
+-- Resolve a file mentioned by a rendered doc. `logical` is what navigation
+-- keeps in the help window; `physical` is what texture loading reads. The
+-- first spelling is standard markdown (relative to the current doc), followed
+-- by the engine's historical project-root spelling. For stock docs opened from
+-- an arbitrary external project, stripping the leading ../../ reaches the
+-- engine-root cwd fallback used by read_doc. This also closes D145's deferred
+-- out-of-tree stock-doc LINK case.
+local function clean_path(path)
+  path = tostring(path or ""):gsub("\\", "/")
+  local abs, parts = path:sub(1, 1) == "/", {}
+  for part in path:gmatch("[^/]+") do
+    if part == ".." and #parts > 0 and parts[#parts] ~= ".." then
+      parts[#parts] = nil
+    elseif part ~= "." and part ~= "" then
+      parts[#parts + 1] = part
+    end
+  end
+  return (abs and "/" or "") .. table.concat(parts, "/")
+end
+
+local function resolve_doc_file(ed, docpath, target)
+  target = tostring(target or ""):gsub("#.*$", ""):gsub("^%./", "")
+  if target == "" or target:match("^https?://") then return nil end
+  local logicals, seen = {}, {}
+  local function add(s)
+    s = clean_path(s)
+    if s and s ~= "" and not seen[s] then
+      logicals[#logicals + 1], seen[s] = s, true
+    end
+  end
+  local dir = tostring(docpath or ""):match("^(.*)/[^/]*$")
+  if dir and not target:match("^/") then add(dir .. "/" .. target) end
+  add(target)
+  if target:find("^docs/") or target:find("^engine/") then
+    add("../../" .. target)
+  end
+  for _, logical in ipairs(logicals) do
+    local physicals = { clean_path(ed.root .. "/" .. logical),
+                        clean_path(strip_parent_prefix(logical)), logical }
+    local pseen = {}
+    for _, physical in ipairs(physicals) do
+      if not pseen[physical] then
+        pseen[physical] = true
+        local mt = pal.mtime(physical)
+        if mt and mt > 0 then return logical, physical end
+      end
+    end
+  end
+  return nil
+end
+M.resolve_doc_file = resolve_doc_file
 
 -- follow a link target: markdown navigates the reader (ctrl = a new reader
 -- window); a `#anchor` reveals that heading (same-doc anchors jump in place);
@@ -199,6 +262,7 @@ local function follow(win, ed, target, newwin)
     return
   end
   local rp = text.resolve_link(ed, target)
+  if not rp then rp = resolve_doc_file(ed, win.path, target) end
   if not rp then
     pal.log("[help] dead link: " .. tostring(target))
     return
@@ -252,6 +316,24 @@ local function parse_inline(s)
     end
   end
   return segs
+end
+
+-- A markdown image occupies its own source line. Keeping images block-level
+-- gives them a predictable readable width in a narrow canvas window and keeps
+-- prose selection/copy semantics simple. Returns alt,target or nil.
+function M.image_line(s)
+  local alt, target = tostring(s or ""):match(
+    "^%s*!%[([^%]]*)%]%(([^%)]+)%)%s*$")
+  if not target or target == "" then return nil end
+  return alt, target
+end
+
+-- Intrinsic screenshot pixels follow the reader's canvas/Aa scale, but never
+-- overflow the text band. Returned sizes preserve aspect and stay nonzero.
+function M.image_fit(w, h, maxw, z)
+  w, h = math.max(1, tonumber(w) or 1), math.max(1, tonumber(h) or 1)
+  local s = math.min(tonumber(z) or 1, math.max(1, maxw) / w)
+  return math.max(1, w * s), math.max(1, h * s)
 end
 
 -- ---- the selection row model (true drag-select + copy) ----
@@ -435,7 +517,7 @@ local function read_doc(win, ed)
   -- "open folder" project elsewhere) falls back to the engine-root
   -- (cwd) spelling, so shipped pages still render there
   win._src = pal.read_file(ed.root .. "/" .. win.path)
-             or pal.read_file((win.path:gsub("^(%.%./)+", "")))
+             or pal.read_file(strip_parent_prefix(win.path))
              or ""
   win._srcpath = win.path
   return win._src
@@ -478,9 +560,12 @@ local function page_text(src)
   for ln = 1, n do
     local line = ls[ln]
     local k = kind[ln]
+    local alt, target = M.image_line(line)
     if k == "fence" then                                    -- drop the ``` line
     elseif k == "code" then
       out[#out + 1] = (line:gsub("^    ", ""))
+    elseif target then
+      out[#out + 1] = "[image: " .. (alt ~= "" and alt or target) .. "]"
     elseif line:match("^#+%s") then
       out[#out + 1] = line:gsub("^#+%s*", "")
     elseif line:match("^%s*[%-%*]%s") then
@@ -497,7 +582,7 @@ end
 
 -- lay out the whole markdown body into doc-space rows/decor/links (see the
 -- D113 note above layout_inline); everything else about a frame is paint.
-local function layout_doc(src, maxw, px, z)
+local function layout_doc(src, maxw, px, z, image_load)
   local L = { rows = {}, decor = {}, links = {}, liney = {} }
   local y = 0
   -- classify code vs prose once (pure, KAT-pinned) over the SAME line split
@@ -551,8 +636,34 @@ local function layout_doc(src, maxw, px, z)
       y = y + lh
       if ln == b.hi then y = y + bpad end
     else
+      local alt, target = M.image_line(line)
       local h = line:match("^(#+)%s")
-      if h then
+      if target then
+        y = y + px * 0.35
+        L.liney[ln] = y
+        local tex = image_load and image_load(target)
+        if tex then
+          local dw, dh = M.image_fit(tex.w, tex.h, maxw, z)
+          local ix = (maxw - dw) * 0.5
+          L.decor[#L.decor + 1] = { t = "rect", x = ix - 2 * z,
+                                    y = y - 2 * z, w = dw + 4 * z,
+                                    h = dh + 4 * z, col = COL.field,
+                                    rad = 4 * z }
+          L.decor[#L.decor + 1] = { t = "image", x = ix, y = y,
+                                    w = dw, h = dh, tex = tex }
+          y = y + dh + px * 0.55
+        else
+          local shown = "image unavailable: "
+                        .. (alt ~= "" and alt or target)
+          local row = lrow(L, y, lh, ln)
+          lrun(row, 6 * z, pal.x_ig_text_size(shown, px, 0), shown,
+               0, px, COL.dim)
+          L.decor[#L.decor + 1] = { t = "rect", x = 0, y = y - 3 * z,
+                                    w = maxw, h = lh + 6 * z,
+                                    col = COL.field, rad = 4 * z }
+          y = y + lh + px * 0.55
+        end
+      elseif h then
         local lvl = #h
         local hpx = lvl == 1 and px * 1.7 or lvl == 2 and px * 1.32 or px * 1.12
         local face = lvl == 1 and COL.h1 or lvl == 2 and COL.h2 or COL.h3
@@ -594,6 +705,8 @@ local function paint_doc(win, L, x0, yoff, maxw, px, z, i, ctx, hlmap, sh)
     if d.y + dh >= lo - px and d.y <= hi + px then
       if d.t == "rect" then
         pal.x_ig_rect_fill(x0 + d.x, yoff + d.y, d.w, d.h, d.col, d.rad)
+      elseif d.t == "image" then
+        pal.x_ig_image(d.tex.id, x0 + d.x, yoff + d.y, d.w, d.h)
       elseif d.t == "circle" then
         pal.x_ig_circle_fill(x0 + d.x, yoff + d.y, d.rad, d.col)
       else
@@ -905,10 +1018,23 @@ function M.draw(win, ctx)
     contenth = (y + win.scroll) - sy0
   else
     local src = read_doc(win, ed)
-    -- layout once per (doc, width, font, zoom); every other frame is paint
+    -- Layout derivation inputs, named per PROCESS's cache rule: markdown
+    -- bytes, logical doc path/root (relative image resolution), text-band
+    -- width, font size/zoom, and cm.asset_epoch (image bytes/dimensions).
+    -- Every editor save bumps the epoch, so a re-saved tutorial image follows
+    -- its source instead of leaving stale dimensions or a stale texture.
+    local epoch = cm.asset_epoch or 0
+    local function image_load(target)
+      local _, physical = resolve_doc_file(ed, win.path, target)
+      if not physical then return nil end
+      local ok, tex = pcall(cm.require("cm.gfx").texture, physical)
+      return ok and tex or nil
+    end
+    -- layout once per derivation key; every other frame is paint
     local L = sl.L
     if not L or sl.k_src ~= src or sl.k_w ~= maxw or sl.k_px ~= px
-       or sl.k_z ~= z then
+       or sl.k_z ~= z or sl.k_root ~= ed.root or sl.k_path ~= win.path
+       or sl.k_epoch ~= epoch then
       -- a reflow of the SAME doc (canvas zoom, Aa scale, window resize)
       -- keeps the view anchored: scroll is content-space px, so it must
       -- scale with the content height — else zooming visibly scrolls the
@@ -916,12 +1042,13 @@ function M.draw(win, ctx)
       -- zoom-scaled content needs this; winview's world-unit scroll and
       -- the console's row scroll are immune by construction.)
       local oldh = (L and sl.k_src == src) and L.contenth or nil
-      L = layout_doc(src, maxw, px, z)
+      L = layout_doc(src, maxw, px, z, image_load)
       if oldh and oldh > 0 and L.contenth > 0 and (win.scroll or 0) > 0 then
         win.scroll = win.scroll * (L.contenth / oldh)
       end
       sl.L, sl.rows = L, L.rows
       sl.k_src, sl.k_w, sl.k_px, sl.k_z = src, maxw, px, z
+      sl.k_root, sl.k_path, sl.k_epoch = ed.root, win.path, epoch
       sl.a, sl.b, sl.drag = nil, nil, nil -- a reflow drops the selection
       hlmap = nil
     end

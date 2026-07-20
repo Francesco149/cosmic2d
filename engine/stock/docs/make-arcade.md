@@ -65,3 +65,12 @@ Keep going: a second enemy type on a sine path (`cm.math`'s sin — sim
 code never calls host math), waves announced with `cm.text`, a
 two-ship co-op run off pad 2. Small game, every feature lands the
 same day.
+
+## Full reference
+
+[Sprite](engine/stock/docs/win-sprite.md) ·
+[animation](engine/stock/docs/win-anim.md) ·
+[synth](engine/stock/docs/win-synth.md) ·
+[music](engine/stock/docs/win-music.md) are the complete tool guides.
+[Writing a game](engine/stock/docs/scripting.md) is the runtime/API reference,
+including deterministic randomness, juice, audio, saves, and gamepads.

@@ -124,5 +124,5 @@ couple of sprite-editor layers feeding it.
 8. **ctrl+s** — the running game hot-reloads the map in place. Walk it,
    feel the gap width, come back, nudge, save again.
 
-Next: [Using the editor](engine/stock/docs/editor.md) ·
-[Writing a game](engine/stock/docs/scripting.md)
+Full reference: [Using the editor](engine/stock/docs/editor.md) and
+[maps in game code](engine/stock/docs/scripting.md#loading-and-drawing-a-map-cmmap).

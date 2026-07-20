@@ -37,4 +37,5 @@ one good ruin and stamp it everywhere:
    one object; **ctrl+d** duplicates copies along the level. Colliders
    stay the map's job (trace the wall top with a chain there).
 
-Next: [The map editor](engine/stock/docs/win-map.md)
+Full reference: [The map editor](engine/stock/docs/win-map.md) and
+[tilemaps in game code](engine/stock/docs/scripting.md#tilemaps-cmtmap).

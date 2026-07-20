@@ -49,4 +49,5 @@ yours*.
    against the drums before writing a line — a bass that sounds dull
    alone often sits perfectly.
 
-Next: [The music tracker](engine/stock/docs/win-music.md)
+Full reference: [The music tracker](engine/stock/docs/win-music.md) and
+[sound in game code](engine/stock/docs/scripting.md#sound-effects-and-music-cmsnd-cmins).

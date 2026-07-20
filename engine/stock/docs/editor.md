@@ -151,6 +151,41 @@ the cursor comes back exactly where it was. The capture never survives
 leaving play: the launcher, an edit field, time travel, or the player menu
 all release it, and it re-engages when you click back in.
 
+## Walkthrough: build a debugging desk
+
+This short layout exercises the smaller canvas tools together — the useful
+way to learn them, because each one answers a different question while the
+game keeps running.
+
+1. Keep a **game** window on the left and `main.lua` in a **code** window on
+   the right. Change one feel constant, **Ctrl+S**, and use the game's
+   **restart** chip only when you truly want boot state. The two mute chips
+   isolate music or effects without changing deterministic audio state.
+2. Open **assets**, filter to one PNG, and press Enter. The read-only
+   **image** window is a clean reference-sheet inspector; drag the same asset
+   from the browser onto a sprite's stamp well or a map to prove its real use.
+3. Spawn **console** and enter `cm.state.frame()`. The result lands on the
+   next recorded sim frame, so even a state-changing console experiment is
+   replayable. Use Up/Down for command history, type in the header filter to
+   isolate reload/errors, and drag across scrollback plus **Ctrl+C** when a
+   report is worth keeping.
+4. Put **perf** beside the game. Watch the 60-frame fps and sim/draw averages,
+   frame-budget bars, quads, buffers, textures, and Lua memory while you open
+   the busy room. It has no saved working state, so close it fearlessly.
+5. Add a **note** with the three things you are checking. Notes are canvas
+   furniture saved with this editor session, deliberately not project files.
+6. Open **settings** and turn down music, exercise reduced flashes/shake, and
+   tune stick thresholds against the live game. If declared project options
+   now have the right defaults, **save values as defaults** writes them into
+   the shared `project.lua` working copy.
+7. Finish with **help**: search for the module behind the behavior you just
+   changed, open its section, and Ctrl+click a link to keep the reference next
+   to the walkthrough.
+
+That desk covers the utility tools; the authoring tools each have a focused
+walkthrough in their per-window guide below. Their complete code-facing
+reference is [Writing a game](engine/stock/docs/scripting.md).
+
 ## Keys that matter
 
 - **Ctrl+Space** — the launcher (find/open anything, pan to a window). Its
@@ -198,9 +233,10 @@ all release it, and it re-engages when you click back in.
   [music tracker](engine/stock/docs/win-music.md) ·
   [sound player](engine/stock/docs/win-sound.md)
 - [palette](engine/stock/docs/win-palette.md) ·
-  [assets browser](engine/stock/docs/win-assets.md)
+  [assets browser](engine/stock/docs/win-assets.md) ·
+  [stock assets](engine/stock/docs/win-stock.md)
 
 New assets and projects auto-name themselves with three random words, so
 nothing blocks on inventing a filename — just press Enter to create.
 
-Next: [Writing a game](engine/stock/docs/scripting.md).
+Full reference: [Writing a game](engine/stock/docs/scripting.md).

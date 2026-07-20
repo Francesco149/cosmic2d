@@ -37,6 +37,8 @@ get a 3D viewport: middle-drag orbits, wheel zooms.
 The full tool set (flatten, smooth, shade, water, walk overrides,
 markers) is in [the 3d map editor](engine/stock/docs/win-terr.md).
 
+![A sculpted vale with props, route markers, and water](media/terrain-vale.png)
+
 ## 3. Model a prop
 
 Spawn a **mesh** window and type a path like `art/tree.msh` — you get
@@ -104,3 +106,13 @@ code edits without restarting, position preserved.
   it, pick an icon, and **build** ships a portable player — the same
   export path as any 2D project ([Getting started](engine/stock/docs/getting-started.md)
   walks it).
+
+## Full reference
+
+- [3D map](engine/stock/docs/win-terr.md),
+  [mesh](engine/stock/docs/win-mesh.md), and
+  [figure](engine/stock/docs/win-figure.md) are the complete tool guides.
+- [Making a 3D game](engine/stock/docs/scripting.md#making-a-3d-game-the-retro-pipeline)
+  continues into every runtime call, performance budget, and determinism rule.
+- [Project settings](engine/stock/docs/win-project.md) covers release metadata,
+  validation, and portable builds.
