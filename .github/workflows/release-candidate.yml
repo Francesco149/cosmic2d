@@ -18,12 +18,14 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-candidate-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  # Serialize against nightlies too: both cuts run the same heavyweight
+  # software-rendered proof and publish from the same repository.
+  group: cosmic-release-publish
   cancel-in-progress: false
 
 jobs:
   candidate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -58,6 +60,11 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@2a0be2498974c2b6327e19780488744384637d88 # v3.21.7
 
       - name: Deterministic suite (manifests + traces + pixel goldens)
+        # Bound lavapipe's worker pool on the hosted VM. The output is
+        # byte-identical; this avoids intermittent Mesa stalls/crashes on the
+        # longest 3D captures seen by the first public rehearsal.
+        env:
+          LP_NUM_THREADS: "1"
         run: nix run .#test
 
       - name: Build and verify both download archives

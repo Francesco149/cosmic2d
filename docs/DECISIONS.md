@@ -8073,3 +8073,15 @@ pass; every pinned action commit resolves; `nix run .#test` is **ALL GREEN**
 (Linux selftest **25,106**, all traces and pixels); the fresh Windows stage
 passes native selftest **25,108** and the 830-frame cross-platform trace; both
 release derivations build and their sibling SHA-256 files verify.
+
+The first hosted rehearsal then exposed a runner-specific constraint rather
+than a game mismatch: both independent Ubuntu jobs passed selftest and every
+trace, but lavapipe intermittently stalled for minutes and segfaulted on
+different long 3D pixel captures. The standard public VM has ample nominal
+memory, and the failure set changed by run; the goldens all remained exact
+when the processes completed. Both workflows now explicitly pin Ubuntu 24.04,
+share one non-cancelling concurrency group, and set `LP_NUM_THREADS=1` for the
+suite. That bounds Mesa's worker pool and prevents candidate/nightly copies of
+the heavyweight proof from running together. The four captures observed to
+fail remotely (bounce tour, openworld stars/tour, rovale tour) each pass
+byte-identically under that exact one-worker setting locally.

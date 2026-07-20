@@ -21,12 +21,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: nightly
+  # Candidate and nightly cuts exercise the same CPU renderer and release
+  # payloads. Queue them behind one another instead of paying for two copies
+  # of the identical proof at once.
+  group: cosmic-release-publish
   cancel-in-progress: false
 
 jobs:
   nightly:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -66,6 +69,11 @@ jobs:
 
       - name: Deterministic suite (traces + pixel goldens on pinned lavapipe)
         if: steps.fresh.outputs.new == 'true'
+        # Lavapipe otherwise sizes its worker pool from the hosted VM topology.
+        # On Actions that made the longest 3D captures intermittently stall and
+        # die in Mesa; one worker is slower but stable and pixel-identical.
+        env:
+          LP_NUM_THREADS: "1"
         run: nix run .#test
 
       - name: Build the download archives

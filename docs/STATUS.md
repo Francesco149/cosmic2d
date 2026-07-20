@@ -47,6 +47,15 @@ entries preserved**); native selftest **25,108** and native 830-frame
 `smoke_kitcheck` verify PASS. Both exact release derivations build locally
 and both sibling SHA-256 files verify.
 
+The first public Actions rehearsal paid for itself before publication: both
+candidate and nightly passed selftest and all traces, then the hosted
+lavapipe intermittently stalled and segfaulted on different long 3D captures
+(never a pixel-byte mismatch after a completed capture). The release workflows
+now pin Ubuntu 24.04, serialize through one non-cancelling concurrency group,
+and bound the suite to `LP_NUM_THREADS=1`. The four remotely affected captures
+all pass their exact goldens locally under that setting; the next immutable
+candidate is the remote proof of the corrected runner envelope.
+
 **Exact next step — human release judgment, not more inferred scope.** This is
 still an experimental alpha candidate, not the alpha declaration. Listen to
 the stereo pass on real speakers/headphones, execute the remaining fresh-user
