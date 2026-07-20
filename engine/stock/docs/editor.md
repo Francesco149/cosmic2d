@@ -37,7 +37,9 @@ switch can proceed.
 - **sound player**, **synth** (FM + Game Boy voices with filter and pitch
   sweep), and a **music** tracker.
 - **palette** — design a palette; generate ramps with a hue shift.
-- **assets** — browse the project's files; double-click one to open it.
+- **assets** — browse the project's files; double-click one to open it, or
+  press **c** to copy the selected saved asset to another known project
+  ([more](engine/stock/docs/win-assets.md)).
 - **stock assets** — the engine's shipped presets, demo songs, art, and
   palettes, read-only; double-click opens an unsaved copy in your project,
   **c** copies it in ([more](engine/stock/docs/win-stock.md)).

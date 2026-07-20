@@ -45,6 +45,9 @@ The first release: everything below is new.
   clip-arrangement tracker, stock presets including the gameboy family.
 - Every asset window shares one contract: atomic transactional saves,
   undo journals, dirty marks, hot reload into the running game.
+- The project assets browser copies a saved asset directly into another
+  known project with collision refusal and staged rollback; sprite bakes and
+  textured-terrain atlases travel with their editable source.
 
 ### Playing
 

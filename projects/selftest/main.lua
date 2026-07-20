@@ -9272,6 +9272,97 @@ local function t_ed_assets()
         and pruned[2] == "art/plank.png" and pruned[3] == "art/girl.lua"
         and pruned[4] == "sound/girl.ogg",
         "ed.assets: prune_baked hides the .spr bakes, keeps the rest")
+
+  -- Cross-project copy: saved bytes only, validated project roots, relative
+  -- path preserved, generated families staged together, no overwrite, and a
+  -- late family failure rolls every already-published companion back.
+  local X = cm.require("cm.asset_transfer")
+  check(#X.companions("art/hero.spr") == 3
+        and X.companions("maps/vale.terr")[1] == "maps/vale-atlas.png"
+        and #X.companions("maps/room.map") == 0,
+        "asset copy: generated companion roster")
+  local base = tmproot() .. "/cosmic_selftest_asset_copy_" .. pal.time_ns()
+  local srcroot, dstroot = base .. "/source", base .. "/destination"
+  pal.mkdir(base)
+  local project = cm.require("cm.project")
+  check(project.scaffold(srcroot, "copy source") == true
+        and project.scaffold(dstroot, "copy destination") == true,
+        "asset copy: fixture projects scaffold")
+  pal.mkdir(srcroot .. "/art")
+  for rel, bytes in pairs {
+    ["art/hero.spr"] = "source",
+    ["art/hero.png"] = "pixels",
+    ["art/hero.anim"] = "clips",
+    ["art/hero.meta"] = "metadata",
+  } do pal.write_file(srcroot .. "/" .. rel, bytes) end
+  local copied, copyerr = X.copy(srcroot, dstroot, "art/hero.spr",
+                                  { nonce = "success" })
+  check(copied and copied.path == "art/hero.spr" and #copied.paths == 4
+        and copied.project == "copy destination", "asset copy: family result")
+  check(pal.read_file(dstroot .. "/art/hero.spr") == "source"
+        and pal.read_file(dstroot .. "/art/hero.png") == "pixels"
+        and pal.read_file(dstroot .. "/art/hero.anim") == "clips"
+        and pal.read_file(dstroot .. "/art/hero.meta") == "metadata",
+        "asset copy: sprite source + every bake land byte-identical")
+  copied, copyerr = X.copy(srcroot, dstroot, "art/hero.spr",
+                           { nonce = "collision" })
+  check(not copied and copyerr:find("destination already has", 1, true)
+        and pal.read_file(dstroot .. "/art/hero.spr") == "source",
+        "asset copy: collision refuses without replacing destination bytes")
+
+  pal.write_file(srcroot .. "/art/rollback.spr", "source-2")
+  pal.write_file(srcroot .. "/art/rollback.png", "pixels-2")
+  copied, copyerr = X.copy(srcroot, dstroot, "art/rollback.spr",
+    { nonce = "rollback", fail = { publish_at = 2 } })
+  check(not copied and copyerr:find("cannot publish", 1, true)
+        and pal.read_file(dstroot .. "/art/rollback.spr") == nil
+        and pal.read_file(dstroot .. "/art/rollback.png") == nil,
+        "asset copy: failed primary publish rolls its published companion back")
+  local leftovers = pal.x_list_dir_all(dstroot) or {}
+  local staging_left = false
+  for _, path in ipairs(leftovers) do
+    if path:find(".cosmic%-asset%-copy", 1) then staging_left = true end
+  end
+  check(not staging_left, "asset copy: rollback removes private staging")
+
+  pal.write_file(srcroot .. "/changing.map", "v1")
+  local changing_reads = 0
+  local changing_fs = {
+    read = function(path)
+      if path == srcroot .. "/changing.map" then
+        changing_reads = changing_reads + 1
+        return changing_reads == 1 and "v1" or "v2"
+      end
+      return pal.read_file(path)
+    end,
+    info = pal.x_path_info, mkdir = pal.mkdir, remove = pal.x_remove,
+    write_atomic = pal.write_file_atomic, publish = pal.x_file_publish,
+  }
+  copied, copyerr = X.copy(srcroot, dstroot, "changing.map",
+    { nonce = "changing", fs = changing_fs })
+  check(not copied and copyerr:find("changed during", 1, true)
+        and pal.read_file(dstroot .. "/changing.map") == nil,
+        "asset copy: a concurrent source save aborts before publication")
+
+  local plan, planerr = X.plan(srcroot, dstroot, "../escape.spr")
+  check(not plan and planerr:find("unsafe path segment", 1, true),
+        "asset copy: project path grammar blocks traversal")
+  plan, planerr = X.plan(srcroot, base .. "/not-a-project", "art/hero.spr")
+  check(not plan and planerr:find("not a cosmic2d project", 1, true),
+        "asset copy: destination must validate as a cosmic2d project")
+
+  local ted = { root = srcroot, doc = { assets = {} } }
+  local targets = A.copy_targets(ted, { srcroot, dstroot,
+                                         base .. "/not-a-project", dstroot })
+  check(#targets == 1 and targets[1].root == dstroot
+        and targets[1].name == "copy destination",
+        "asset copy: chooser excludes current/invalid/duplicate projects")
+  ted.doc.assets["art/hero.spr"] = { spr = "newer working bytes" }
+  check(A.has_unsaved(ted, "art/hero.spr"),
+        "asset copy: a dirty working source is detected")
+  ted.doc.assets["art/hero.spr"].spr = "source"
+  check(not A.has_unsaved(ted, "art/hero.spr"),
+        "asset copy: a saved working source is eligible")
 end
 
 local function t_ed_map()
@@ -14317,6 +14408,25 @@ local function t_ui_nav()
         "uinav: an edge-cursored scroll rests at exactly 0, no limit cycle"
         .. " (scroll=" .. tostring(ss.scroll)
         .. " vel=" .. tostring(ss.vel) .. ")")
+
+  -- A standing nav cursor is a focus ring, not a permanent scroll anchor.
+  -- The F1 controls page always has one, so the old every-frame reveal made
+  -- mouse-wheel movement snap straight back to the selected binding. Wheel
+  -- away from b1, let the glide advance, then prove a NEW arrow move still
+  -- performs the accessibility reveal.
+  sframe({ { type = "motion", x = 10, y = 10, ui_x = 10, ui_y = 10,
+             wx = 10, wy = 10 },
+           { type = "wheel", dy = -1 } })
+  sframe()
+  sframe()
+  ss = ui.s["t_nav2/scr"]
+  local wheel_scroll = ss.scroll
+  check(wheel_scroll > 0,
+        "uinav: wheel can leave the standing cursor behind (scroll="
+        .. tostring(wheel_scroll) .. ")")
+  sframe({ key(81) }) -- b1 -> b2: a real nav move must reveal again
+  check(ui.nav.id == "t_nav2/scr/b2" and ss.scroll < wheel_scroll,
+        "uinav: arrow movement still reveals its newly cursored row")
 
   -- page-vanish prune: stop drawing; the cursor clears with the scope
   ui.frame({})

@@ -112,6 +112,7 @@ M.nav.held = M.nav.held or {} -- pad dpad buttons currently down
 M.nav.ax = M.nav.ax or { 0, 0 } -- left-stick x/y as -1/0/1 (hysteresis)
 M.nav.act = M.nav.act or false -- activate edge this frame (consumed once)
 M.nav.adj = M.nav.adj or 0 -- slider/number steps this frame (consumed once)
+M.nav.reveal = M.nav.reveal or nil -- cursor move waiting to scroll into view
 
 -- ---- internals (rebuilt every frame; plain locals are fine) ----
 
@@ -277,8 +278,9 @@ function M.nav_pick(items, cur_id, dir)
   return hit and hit.id or nil
 end
 
--- register an interactive widget as a nav target; keeps the cursored
--- widget scrolled into view and syncs the cursor onto mouse presses so
+-- register an interactive widget as a nav target; reveals the cursored
+-- widget after a NAV MOVE (not forever) and syncs the cursor onto mouse
+-- presses so
 -- mixed mouse/pad use never strands the ring somewhere stale. Gated on
 -- want (claimed THIS frame, during draw): only widgets drawn AFTER the
 -- scope claim register, so panels beneath the claiming overlay (perf/
@@ -289,7 +291,7 @@ local function nav_item(id, x, y, w, h, adj)
   if not (nav.on and nav.want) then return end
   nav.items[#nav.items + 1] = { id = id, x = x, y = y, w = w, h = h,
                                 adj = adj or false }
-  if id == nav.id then
+  if id == nav.id and nav.reveal == id then
     local sc = scroll_stack[#scroll_stack]
     if sc then
       local r, s = sc.rect, widget_state(sc.id)
@@ -311,8 +313,14 @@ local function nav_item(id, x, y, w, h, adj)
         end
       end
     end
+    -- One correction is exact: d is the distance to the legal visible band.
+    -- Keeping this armed forever would make a standing keyboard cursor fight
+    -- every wheel/scrollbar gesture and snap the list back on the next frame.
+    nav.reveal = nil
   end
-  if M.inp.clicked[1] and mouse_in(x, y, w, h) then nav.id = id end
+  if M.inp.clicked[1] and mouse_in(x, y, w, h) then
+    nav.id, nav.reveal = id, nil -- the clicked item is already visible
+  end
 end
 
 -- did nav activate this widget this frame? (consumes the edge)
@@ -413,6 +421,7 @@ local function nav_input()
       local nid = M.nav_pick(nav.list, nav.id, d)
       if nid then
         nav.id = nid
+        nav.reveal = nid
         cur = nil
         for _, it in ipairs(nav.list) do
           if it.id == nid then cur = it break end
@@ -538,11 +547,14 @@ function M.frame_end()
     for _, it in ipairs(nav.items) do
       if it.id == nav.id then found = true break end
     end
-    if not found then nav.id = nil end
+    if not found then nav.id, nav.reveal = nil, nil end
   end
   nav.list = nav.items
   nav.on = nav.want == true
-  if nav.on and not nav.id and nav.list[1] then nav.id = nav.list[1].id end
+  if nav.on and not nav.id and nav.list[1] then
+    nav.id = nav.list[1].id
+    nav.reveal = nav.id
+  end
   nav.act, nav.adj = false, 0
 end
 

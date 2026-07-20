@@ -28,6 +28,14 @@ local function publish(lines, fail)
   return pal.write_file_atomic(M.path, table.concat(lines, "\n"), fail)
 end
 
+-- Read-only, canonical newest-first view for editor surfaces that need to
+-- target another known project (the cross-project asset-copy chooser). A
+-- caller can inspect each root through cm.project before presenting it; stale
+-- repair handles remain useful to the picker but are not valid destinations.
+function M.list()
+  return prior()
+end
+
 function M.note(path, fail)
   path = canonical(path)
   if not path then return nil, "invalid recent project path" end

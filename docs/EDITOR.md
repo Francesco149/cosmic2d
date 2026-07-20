@@ -643,6 +643,14 @@ vendored-pin-internal, revisited on any imgui bump.
   **re-targets to the file** (code ed opens it into its history; sprite
   ed re-binds; image swaps); over empty canvas → spawns the right window
   there.
+- **`c` = copy to another project**: a target chooser lists freshly
+  validated recent/bundled projects (the current and stale/broken roots
+  are absent). `cm.asset_transfer` preserves the selected project-relative
+  path, refuses dirty working bytes, links, and every destination collision,
+  stages all bytes before publication, re-reads the source to catch a
+  concurrent save, and rolls a reported partial publication back. `.spr`
+  bakes and a `.terr` atlas travel with their editable source; referenced
+  assets are explicit follow-up copies, never an inferred dependency crawl.
 - **Drag-in from the OS = add to project**: new PAL event
   `{type="drop", path, wx, wy}` (SDL_EVENT_DROP_FILE; additive event
   kind, absent headless). Dropped **onto an assets window**, the file is

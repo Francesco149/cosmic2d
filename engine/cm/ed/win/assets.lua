@@ -9,7 +9,10 @@
 -- the file into the project — image→art/, sound→sound/, code→root — and
 -- the new tile flashes; non-png images convert to .png on the way in,
 -- and a drop outside asset/map windows opens the right window at the
--- drop point).
+-- drop point). `c` copies the selected SAVED asset to another known
+-- project through cm.asset_transfer: project-relative paths are preserved,
+-- generated companions follow, collisions never overwrite, and a failed
+-- family copy rolls back.
 --
 -- Captured (win fields): filter, chip (type filter), tile (size), sel,
 -- sy (active grid scroll) + sy_tabs (inactive tab scrolls).
@@ -44,6 +47,7 @@ end
 -- ctrl+wheel over the content: the preview-size dial (same 48..160 range
 -- as the header slider; the shell routes it, EDITOR.md §12.7)
 function M.ctrl_wheel(win, ed, notches)
+  if ed and ed.g and ed.g.acopy and ed.g.acopy.id == win.id then return true end
   win.tile = math.max(48, math.min(160, (win.tile or 84) + 8 * notches))
   ed.touch()
 end
@@ -184,6 +188,130 @@ function M.invalidate(ed)
   ed.g.files = nil -- the text picker's list too
   ed.g.arelease = nil -- project-settings icon/text/legal candidates
   ed.g.project_ref_checks = nil
+end
+
+-- ---- cross-project copy (the `c` door) ----
+
+local function root_key(path)
+  local out = cm.require("cm.project").normalize_root(path)
+  if out and pal.platform == "windows" then out = out:lower() end
+  return out
+end
+
+-- Other projects the editor already knows: recents first, then bundled
+-- projects not in recents. Every candidate is freshly decoded/validated;
+-- stale recent repair handles never become write targets. `candidates` is a
+-- proof seam and also makes this list useful to scripted editor extensions.
+function M.copy_targets(ed, candidates)
+  local paths = {}
+  if candidates then
+    for _, path in ipairs(candidates) do paths[#paths + 1] = path end
+  else
+    for _, path in ipairs(cm.require("cm.recent").list()) do
+      paths[#paths + 1] = path
+    end
+    local bundled = pal.list_dir("projects") or {}
+    table.sort(bundled)
+    for _, path in ipairs(bundled) do
+      local dir = path:match("^([^/]+)/project%.lua$")
+      if dir and dir ~= "picker" then paths[#paths + 1] = "projects/" .. dir end
+    end
+  end
+  local current, seen = root_key(ed.root), {}
+  local out, project = {}, cm.require("cm.project")
+  for _, path in ipairs(paths) do
+    local root, meta = project.inspect_root(path)
+    local key = root and root_key(root)
+    if root and key ~= current and not seen[key] then
+      seen[key] = true
+      out[#out + 1] = {
+        root = root,
+        name = (meta and meta.name) or root:match("([^/]+)$") or root,
+      }
+    end
+  end
+  return out
+end
+
+-- Asset-browser tiles are disk files, but one can also have an editor working
+-- copy. Copying the disk version while the UI shows newer bytes is never
+-- acceptable: refuse and tell the author to Ctrl+S first. All kit asset field
+-- names live here; unknown/non-editor files simply have no working state.
+local WORK_FIELDS = {
+  "text", "spr", "map", "tm", "terr", "msh", "fig", "pal", "ins", "song",
+}
+function M.has_unsaved(ed, path)
+  local a = ed.doc and ed.doc.assets and ed.doc.assets[path]
+  if not a then return false end
+  local disk = pal.read_file(ed.root .. "/" .. path)
+  for _, field in ipairs(WORK_FIELDS) do
+    if type(a[field]) == "string" then return a[field] ~= disk end
+  end
+  return false
+end
+
+local function copy_for(win, ed)
+  local c = ed and ed.g and ed.g.acopy
+  return c and c.id == win.id and c or nil
+end
+
+function M.begin_copy(win, ed)
+  if ed.parked then
+    ed.g.acopy_note = { id = win.id, bad = true,
+                        text = "parked in the past — writes are walled" }
+    return nil
+  end
+  local path = win.sel
+  if not path or path == "" then return nil end
+  ed.g.adel, ed.g.arn = nil, nil
+  ed.g.acopy_note = nil
+  local state = { id = win.id, path = path, cursor = 1,
+                  targets = M.copy_targets(ed) }
+  if M.has_unsaved(ed, path) then
+    state.note = "save this asset first — the working copy differs from disk"
+    state.bad, state.blocked = true, true
+  elseif #state.targets == 0 then
+    state.note = "no other known project — open the target once from the picker"
+    state.bad, state.blocked = true, true
+  end
+  ed.g.acopy = state
+  ed.touch()
+  return true
+end
+
+local function copy_move(win, ed, delta)
+  local c = copy_for(win, ed)
+  if not c or #c.targets == 0 then return end
+  c.cursor = (c.cursor - 1 + delta) % #c.targets + 1
+  if not c.blocked then c.note, c.bad = nil, nil end
+  ed.touch()
+end
+
+function M.copy_commit(win, ed)
+  local c = copy_for(win, ed)
+  local target = c and c.targets[c.cursor]
+  if not target then return nil end
+  if M.has_unsaved(ed, c.path) then
+    c.note = "save this asset first — the working copy differs from disk"
+    c.bad, c.blocked = true, true
+    return nil
+  end
+  local result, err = cm.require("cm.asset_transfer").copy(
+    ed.root, target.root, c.path)
+  if not result then
+    c.note, c.bad = tostring(err), true
+    pal.log("[ed] project asset copy FAILED: " .. tostring(err))
+    if ed.summon_console then ed.summon_console() end
+    return nil, err
+  end
+  local n = #result.paths
+  local text = ("copied %s to %s%s"):format(
+    result.path, target.name, n > 1 and (" (" .. n .. " files)") or "")
+  ed.g.acopy = nil
+  ed.g.acopy_note = { id = win.id, text = text }
+  pal.log("[ed] " .. text .. " · " .. target.root)
+  ed.touch()
+  return result
 end
 
 -- a cached preview object for a path (nil = fall back to a glyph). An image
@@ -444,9 +572,99 @@ local function rename_asset(ed, old, new)
 end
 M.rename_asset = rename_asset -- proof scripting
 
+local function draw_copy_chooser(win, ctx, i)
+  local ed, c = ctx.ed, copy_for(win, ctx.ed)
+  if not c then return end
+  local z = ctx.z
+  local px = math.max(4, 10.5 * z)
+  local row_h = 31 * z
+  local max_rows = math.max(1, math.min(6,
+    math.floor((ctx.ch - 94 * z) / row_h)))
+  local rows = math.min(max_rows, #c.targets)
+  local pw = math.min(ctx.cw - 16 * z, 430 * z)
+  local ph = 68 * z + math.max(row_h, rows * row_h)
+  local x = ctx.cx + (ctx.cw - pw) * 0.5
+  local y = ctx.cy + math.max(8 * z, (ctx.ch - ph) * 0.5)
+  local interactive = ctx.hot and not ctx.occluded
+
+  -- Modal within this canvas window: the grid still renders beneath it for
+  -- context, but its click path is gated while c is up.
+  pal.x_ig_rect_fill(ctx.cx, ctx.cy, ctx.cw, ctx.ch, 0x141220dd, 0)
+  pal.x_ig_rect_fill(x, y, pw, ph, 0x1e1b2eff, 7 * z)
+  pal.x_ig_rect(x, y, pw, ph, 0x4a4370ff, math.max(1, z), 7 * z)
+  pal.x_ig_text(x + 10 * z, y + 8 * z, px, COL.name,
+                "copy to another project", 0)
+  pal.x_ig_clip_push(x + 10 * z, y + 25 * z, pw - 20 * z, px * 1.3)
+  pal.x_ig_text(x + 10 * z, y + 25 * z, px * 0.85, COL.dim, c.path, 0)
+  pal.x_ig_clip_pop()
+
+  local list_y = y + 42 * z
+  if #c.targets > 0 then
+    local first = math.max(1, math.min(#c.targets - rows + 1,
+      c.cursor - math.floor(rows / 2)))
+    for ri = 0, rows - 1 do
+      local index = first + ri
+      local target = c.targets[index]
+      local ry = list_y + ri * row_h
+      local hov = interactive and i.wx >= x + 7 * z
+                  and i.wx < x + pw - 7 * z
+                  and i.wy >= ry and i.wy < ry + row_h - 2 * z
+      local selected = index == c.cursor
+      pal.x_ig_rect_fill(x + 7 * z, ry, pw - 14 * z, row_h - 2 * z,
+                         hov and COL.tile_hot or COL.tile, 4 * z)
+      if selected then
+        pal.x_ig_rect(x + 7 * z, ry, pw - 14 * z, row_h - 2 * z,
+                      COL.tile_sel, math.max(1, z), 4 * z)
+      end
+      pal.x_ig_text(x + 13 * z, ry + 3 * z, px * 0.9,
+                    selected and COL.name or COL.dim, target.name, 0)
+      pal.x_ig_clip_push(x + 13 * z, ry + 16 * z,
+                         pw - 26 * z, px * 0.9)
+      pal.x_ig_text(x + 13 * z, ry + 16 * z, px * 0.72, COL.dim,
+                    target.root, 0)
+      pal.x_ig_clip_pop()
+      if hov and i.clicked[1] then c.cursor = index; ed.touch() end
+    end
+  else
+    pal.x_ig_text(x + 12 * z, list_y + 8 * z, px * 0.85, COL.dim,
+                  "Open the target once from ← projects, then retry.", 0)
+  end
+
+  if c.note then
+    pal.x_ig_clip_push(x + 10 * z, y + ph - 24 * z,
+                       pw - 150 * z, 18 * z)
+    pal.x_ig_text(x + 10 * z, y + ph - 22 * z, px * 0.78,
+                  c.bad and 0xf07a7aff or COL.dim, c.note, 0)
+    pal.x_ig_clip_pop()
+  end
+  local function button(bx, label, enabled)
+    local bw, bh = 62 * z, 20 * z
+    local by = y + ph - 27 * z
+    local hov = enabled and interactive and i.wx >= bx and i.wx < bx + bw
+                and i.wy >= by and i.wy < by + bh
+    pal.x_ig_rect_fill(bx, by, bw, bh, hov and COL.tile_hot or COL.tile, 4 * z)
+    pal.x_ig_rect(bx, by, bw, bh, enabled and 0x4a4370ff or 0x343048ff,
+                  math.max(1, z), 4 * z)
+    local tw = pal.x_ig_text_size(label, px * 0.82, 0)
+    pal.x_ig_text(bx + (bw - tw) * 0.5, by + 4 * z, px * 0.82,
+                  enabled and COL.name or COL.dim, label, 0)
+    return hov and i.clicked[1]
+  end
+  local cancel_x = x + pw - 70 * z
+  local copy_x = cancel_x - 68 * z
+  if button(copy_x, "copy", #c.targets > 0 and not c.blocked) then
+    M.copy_commit(win, ed)
+  elseif button(cancel_x, "cancel", true) then
+    ed.g.acopy = nil
+    ed.touch()
+  end
+end
+
 M.hotkeys = {
   { key = "del", hint = "delete",
-    when = function(win) return (win.sel or "") ~= "" end,
+    when = function(win, ed)
+      return (win.sel or "") ~= "" and not copy_for(win, ed)
+    end,
     fn = function(win, ed)
       ed.g.arn = nil -- the two bottom bars share the strip
       local armed = ed.g.adel
@@ -460,15 +678,39 @@ M.hotkeys = {
       ed.touch()
     end },
   { key = "r", hint = "rename",
-    when = function(win) return (win.sel or "") ~= "" end,
+    when = function(win, ed)
+      return (win.sel or "") ~= "" and not copy_for(win, ed)
+    end,
     fn = function(win, ed)
       ed.g.adel = nil
       ed.g.arn = { id = win.id, path = win.sel, buf = win.sel }
       ed.touch()
     end },
+  { key = "c", hint = "copy to project",
+    when = function(win, ed)
+      return (win.sel or "") ~= "" and not copy_for(win, ed)
+    end,
+    fn = function(win, ed) M.begin_copy(win, ed) end },
+  { key = "up", hint = "choose target", rep = true,
+    when = function(win, ed) return copy_for(win, ed) ~= nil end,
+    fn = function(win, ed) copy_move(win, ed, -1) end },
+  { key = "down", rep = true,
+    when = function(win, ed) return copy_for(win, ed) ~= nil end,
+    fn = function(win, ed) copy_move(win, ed, 1) end },
+  { key = "enter", hint = "copy",
+    when = function(win, ed)
+      local c = copy_for(win, ed)
+      return c ~= nil and #c.targets > 0 and not c.blocked
+    end,
+    fn = function(win, ed) M.copy_commit(win, ed) end },
 }
 
 function M.escape(win, ed)
+  if copy_for(win, ed) then
+    ed.g.acopy = nil
+    ed.touch()
+    return true
+  end
   if ed.g.arn and ed.g.arn.id == win.id then
     ed.g.arn = nil
     ed.touch()
@@ -482,14 +724,27 @@ function M.escape(win, ed)
   return false
 end
 
+function M.on_close(win, ed)
+  if copy_for(win, ed) then ed.g.acopy = nil end
+end
+
 function M.draw(win, ctx)
   local ed = ctx.ed
   local g = ed.g
   local z = ctx.z
   local px = math.max(4, 10.5 * z)
   local i = cm.require("cm.ui").inp
+  local copy_up = copy_for(win, ed)
 
-  local top = chip_row(win, ctx, i)
+  -- Keep the underlying grid visible as context, but make every one of its
+  -- controls inert while the in-window target chooser owns interaction.
+  local base_i = i
+  if copy_up then
+    base_i = setmetatable({ clicked = {}, released = {}, buttons = {} },
+                          { __index = i })
+  end
+
+  local top = chip_row(win, ctx, base_i)
 
   -- filter box under the chips
   local fy = ctx.cy + top
@@ -498,7 +753,7 @@ function M.draw(win, ctx)
   if (win.filter or "") == "" then
     pal.x_ig_text(ctx.cx + 8 * z + 4, fy + 3, px, 0x8a84b066, "fuzzy search", 1)
   end
-  if not ctx.occluded then
+  if not ctx.occluded and not copy_up then
     local text, changed = pal.x_ig_edit {
       id = "af" .. win.id, x = ctx.cx + 6 * z, y = fy + 1,
       w = ctx.cw - 12 * z, h = fh - 2, text = win.filter or "",
@@ -618,7 +873,7 @@ function M.draw(win, ctx)
     local bar_up = (g.arn and g.arn.id == win.id)
                    or (g.adel and g.adel.id == win.id)
     local in_bar = bar_up and i.wy >= ctx.cy + ctx.ch - px * 1.8
-    if hov and i.clicked[1] and not in_bar then
+    if hov and i.clicked[1] and not in_bar and not copy_up then
       local dbl = win.sel == e.rel and g.aclick
                   and (now - g.aclick) < 320 * 1e6
       win.sel = e.rel
@@ -702,6 +957,16 @@ function M.draw(win, ctx)
       end
     end
   end
+  draw_copy_chooser(win, ctx, i)
+  local copy_note = g.acopy_note
+  if copy_note and copy_note.id == win.id and not copy_for(win, ed) then
+    pal.x_ig_clip_push(ctx.cx + 6 * z, ctx.cy + ctx.ch - px * 1.35,
+                       math.max(0, ctx.cw - 72 * z), px * 1.2)
+    pal.x_ig_text(ctx.cx + 6 * z, ctx.cy + ctx.ch - px * 1.3,
+                  px * 0.78, copy_note.bad and 0xf07a7aff or COL.dim,
+                  copy_note.text, 0)
+    pal.x_ig_clip_pop()
+  end
   -- footer count
   pal.x_ig_text(ctx.cx + ctx.cw - 60 * z, ctx.cy + ctx.ch - px * 1.3,
                 px * 0.85, COL.dim, tostring(#shown), 1)
@@ -710,6 +975,7 @@ end
 -- content wheel: scroll the grid (§12.7). win.sy holds WORLD units
 -- (cm.ed.winview) so the top row stays put under canvas zoom.
 function M.wheel(win, ed, dy)
+  if copy_for(win, ed) then return true end
   local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
   cm.require("cm.ed.winview").scroll_by(win, "sy", z,
                                         -dy * 40)
