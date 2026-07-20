@@ -153,8 +153,7 @@ local function preview_slots(ed, win, p)
           -- bake the TRACK gain/pan into the patch, same as the sim
           -- sequencer (cm.snd.seq) — else the preview ignores the volume
           -- panel (the human: "track volume seems to have no effect")
-          idoc.patch.gain = math.min(255, ((idoc.patch.gain or 128)
-                                            * (tr.gain or 128)) // 128)
+          idoc.patch.gain = snd.track_gain(idoc.patch.gain, tr.gain)
           idoc.patch.pan = math.max(-64, math.min(64,
             (idoc.patch.pan or 0) + (tr.pan or 0)))
           cm.require("cm.ins").upload(idoc, p.pslots[ti], "ed",

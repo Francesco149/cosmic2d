@@ -8,8 +8,10 @@ instruments you designed in the synth.
 1. Drag an instrument (`.ins`) onto a track row to bind it.
 2. In the piano roll, place notes; arrange patterns as **clips** on the timeline
    (a clip loops its pattern when you stretch it).
-3. Set per-track volume; **ctrl+s** saves. The game plays it with
-   `cm.snd.music(...)`.
+3. Set per-track volume. **128** preserves the preset's authored level,
+   **0** is silence, and **255** can bring even a quiet preset all the way
+   forward; the whole slider remains useful. **ctrl+s** saves. The game plays
+   it with `cm.snd.music(...)`.
 
 ## The arrangement (top strip)
 

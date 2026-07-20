@@ -411,7 +411,10 @@ The human's live rounds shaped the rest:
   + adds a track. Clicking a track drills into its first clip.
   **Selecting a track expands a VOLUME panel** under its row (round 8 —
   the human): a drag slider AND a type-in field for the track gain
-  (0..255, 128 = unity), one journal entry per drag / per submit.
+  (0..255; 128 preserves the preset gain, 0 is silence, 255 reaches the
+  loudest representable patch gain), one journal entry per drag / per
+  submit. The piecewise 0 → preset → 255 law keeps both halves useful:
+  loud presets do not saturate early and quiet ones can still come forward.
 - **The arrangement strip** (top): clips on tracks × time.
   **Click a clip → drill into its pattern** (the roll follows) +
   select it; press empty → **stamp a NEW clip** with its own fresh

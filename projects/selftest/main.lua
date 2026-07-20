@@ -8010,6 +8010,29 @@ local function t_snd()
         and su.loop and su.loop0 == 100 and su.loop1 == 400,
         "snd: sample patch round-trips")
 
+  -- Track gain has three exact anchors, including a reachable full-scale
+  -- endpoint for quiet presets. It must stay monotone for every encoded
+  -- base/fader pair: no dead upper range and no surprise dip while dragging.
+  check(snd.track_gain(37, 0) == 0
+        and snd.track_gain(37, 128) == 37
+        and snd.track_gain(37, 255) == 255,
+        "snd track gain: 0 / unity / full-scale anchors")
+  check(snd.track_gain(-9, -2) == 0
+        and snd.track_gain(999, 999) == 255,
+        "snd track gain: inputs clamp to encoded range")
+  local gain_monotone = true
+  for base = 0, 255 do
+    local prev = -1
+    for track = 0, 255 do
+      local mixed = snd.track_gain(base, track)
+      if mixed < prev or mixed < 0 or mixed > 255 then
+        gain_monotone = false
+      end
+      prev = mixed
+    end
+  end
+  check(gain_monotone, "snd track gain: every fader is monotone and in range")
+
   -- the kernel: PCM is a pure function of the bank bytes (the rewind
   -- contract) — snapshot the bank mid-note, render on, restore, render
   -- again: byte-identical PCM
@@ -8265,6 +8288,27 @@ local function t_stock_ins()
     "fm-xylo.ins" }) do
     check(have[n], "stock ins: " .. n .. " ships")
   end
+  -- Alpha mix polish: preserve the deliberately gentler bossa attacks and
+  -- the kick's small-speaker knock. These are source-shape pins; the sweep,
+  -- codec, and real-render checks below still exercise the audio path.
+  local ep = ins.decode(assert(pal.read_file(
+    "engine/stock/ins/fm-epiano.ins"))).patch
+  check(ep.filter == "lp" and ep.cutoff == 218
+        and ep.ops[2].a == 10 and ep.ops[4].a == 10
+        and ep.ops[3].coarse == 14 and ep.ops[3].level == 36,
+        "stock ins: epiano keeps its softened tine attack")
+  local nylon = ins.decode(assert(pal.read_file(
+    "engine/stock/ins/fm-nylon.ins"))).patch
+  check(nylon.ops[1].a == 5 and nylon.ops[2].a == 8
+        and nylon.ops[3].a == 5 and nylon.ops[4].a == 8,
+        "stock ins: nylon keeps its softened pluck attack")
+  local kick = ins.decode(assert(pal.read_file(
+    "engine/stock/ins/fm-kick.ins"))).patch
+  check(kick.gain == 160 and kick.sweep == -20 and kick.sweep_ms == 70
+        and kick.ops[2].wave == "noise" and kick.ops[2].fixed == 3200
+        and kick.ops[2].level == 100 and kick.ops[3].fixed == 120
+        and kick.ops[3].level == 150,
+        "stock ins: kick keeps beater, knock, and sub drop")
   local all_ok, canon_ok, audible = true, true, true
   for _, n in ipairs(names) do
     local bytes = pal.read_file("engine/stock/ins/" .. n)
@@ -8596,8 +8640,28 @@ local function t_stock_songs()
     "noir-sleuth.song", "horror-hollow.song", "ambient-drift.song" }) do
     check(have[n], "stock songs: " .. n .. " ships")
   end
+  -- The third noir request replaced the whole rhythm/harmony/lead stack.
+  -- Pin the arrangement vocabulary so it cannot quietly regress to the old
+  -- four-track melody-over-loop draft.
+  local noir = songm.decode(assert(pal.read_file(
+    "engine/stock/songs/noir-sleuth.song")))
+  local noir_flat = songm.flatten(noir)
+  check(noir.bpm == 108 and #noir.tracks == 7
+        and noir.tracks[1].name == "ride" and noir.tracks[2].name == "rim"
+        and noir.tracks[3].name == "kick"
+        and noir.tracks[4].name == "upright"
+        and noir.tracks[5].name == "vibes"
+        and noir.tracks[6].name == "reed"
+        and noir.tracks[7].name == "muted",
+        "stock songs: noir is the full crime-jazz ensemble")
+  check(#noir_flat[1] == 48 and #noir_flat[2] == 16
+        and #noir_flat[3] == 18 and #noir_flat[4] == 32
+        and #noir_flat[5] == 64 and #noir_flat[6] == 36
+        and #noir_flat[7] == 9,
+        "stock songs: noir keeps swing, walk, comping, and horn dialogue")
   local decode_ok, canon_ok, notes_ok, ins_ok, audible = true, true, true,
                                                          true, true
+  local mix_compat = true
   for _, n in ipairs(names) do
     local bytes = pal.read_file("engine/stock/songs/" .. n)
     local ok, doc = pcall(songm.decode, bytes)
@@ -8625,9 +8689,18 @@ local function t_stock_songs()
           ins_ok = false
           pal.log("stock songs: " .. n .. " track " .. ti
                   .. " ins unresolvable: " .. tostring(tr.ins))
-        elseif not first_slot and #(flat[ti] or {}) > 0 then
-          insm.upload(idoc, 11, "sim", "ss")
-          first_slot = ti
+        else
+          local base, track = idoc.patch.gain or 128, tr.gain or 128
+          local legacy = math.min(255, base * track // 128)
+          if math.abs(snd.track_gain(base, track) - legacy) > 1 then
+            mix_compat = false
+            pal.log("stock songs: " .. n .. " track " .. ti
+                    .. " changes unexpectedly under the useful fader law")
+          end
+          if not first_slot and #(flat[ti] or {}) > 0 then
+            insm.upload(idoc, 11, "sim", "ss")
+            first_slot = ti
+          end
         end
       end
       if first_slot then -- the song's own first note, audibly
@@ -8655,6 +8728,7 @@ local function t_stock_songs()
   check(canon_ok, "stock songs: every song is canonical encode bytes")
   check(notes_ok, "stock songs: every song flattens to real notes")
   check(ins_ok, "stock songs: every track instrument resolves")
+  check(mix_compat, "stock songs: useful faders preserve the current mixes")
   check(audible, "stock songs: every song's opening note is audible")
 end
 

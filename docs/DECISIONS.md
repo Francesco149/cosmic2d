@@ -7918,3 +7918,44 @@ itself: the first clean Nix run correctly omitted the untracked PNGs and failed
 the new media contract; staging the coherent unit made the clean-source run
 pass, demonstrating the test is checking shipped input rather than the loose
 worktree.
+
+## D149 — useful track faders + final stock-audio mix pass (2026-07-20)
+
+The last audio taste notes exposed one general control-law defect and three
+source-level mix problems. They land together because the preset, track fader,
+editor preview, and runtime sequencer form one audible contract.
+
+- Track gain no longer uses a plain `preset * track / 128` multiply. That law
+  made loud presets saturate before the slider ended and prevented quiet
+  presets from ever reaching 255. `cm.snd.track_gain` is now the single
+  preview/runtime door and piecewise-interpolates **0 → preset → 255**:
+  track 0 is exact silence, 128 exactly preserves the authored preset, and 255
+  reaches full encoded gain. Below-unity stock mix values keep the historical
+  math byte-for-byte; only two shipped tracks sit above 128, and an inventory
+  audit finds their baked gain moves by at most one encoded step. An
+  exhaustive 256×256 KAT pins range and monotonicity with the three anchors.
+- `fm-epiano` keeps its tine identity but gains an LP 218 ceiling, 8–10 ms
+  operator attacks, and a quieter high-ratio strike. `fm-nylon` keeps the
+  pluck with 5–8 ms attacks instead of a zero-time digital edge. Both bossa
+  songs inherit those source changes without arrangement duplication.
+- `fm-kick` retains the tuned -20-semitone sub drop, but now adds a short
+  swept 120 Hz knock and a stronger 3.2 kHz beater. In the exact
+  bossa-breeze kick stem its peak rises **4,071 → 5,904** samples
+  (**+3.23 dB**) and RMS rises 796 → 977, while the complete mix still peaks
+  at only -2.14 dBFS. The request's rhythm is therefore materially more
+  present at ordinary volume without spending the song's headroom.
+- `noir-sleuth` is a whole new 108 BPM seven-piece arrangement, not a third
+  melody patch over the rejected backing. Its crime-jazz grammar is structural:
+  swung ride skip-beats, cross-stick 2/4, feathered kick, a walking D-minor
+  bass through Dm(maj9), Gm9, A7b9, Bb7#11, and iiø–V, sparse rootless
+  vibraphone comping, a reed minor-blues/b5 title hook, one altered-dominant
+  chromatic fall, and muted-horn call/response in the deliberate gaps. Source
+  pins retain the ensemble and per-lane note vocabulary.
+
+Proof: selftest **25,094** (+9 over D148); all 14 stock songs rendered for a
+complete loop through the real sim sequencer/kernel with **zero clipped
+samples** (peaks -8.00 to -0.62 dBFS; bossa-breeze -2.14, bossa-fiesta -2.77,
+noir -7.35); stock instruments/songs remain canonical and audible;
+release-manifests PASS; `nix run .#test` **ALL GREEN** with every committed
+trace and pixel golden byte-identical. The final musical verdict remains the
+explicit human native listen.

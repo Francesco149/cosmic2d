@@ -129,6 +129,20 @@ end
 M.ed_on = pal and pal.x_snd_ed_on
 M.ed_off = pal and pal.x_snd_ed_off
 
+-- A track fader is centred on the instrument author's chosen gain, but both
+-- halves of its 0..255 travel must stay useful. A straight multiply clips a
+-- loud preset early and can never bring a quiet preset all the way forward.
+-- Interpolate 0 -> preset -> 255 instead: 128 remains exact unity while the
+-- endpoints are real silence and the loudest representable patch gain.
+function M.track_gain(base_gain, track_gain)
+  local base = math.max(0, math.min(255,
+    math.floor(tonumber(base_gain) or 128)))
+  local track = math.max(0, math.min(255,
+    math.floor(tonumber(track_gain) or 128)))
+  if track <= 128 then return base * track // 128 end
+  return base + (255 - base) * (track - 128) // 127
+end
+
 -- ---- the sequencer (R9d, AUDIO.md §6/§10) ----
 --
 -- Music is SIM STATE: the transport lives in the doc tree
@@ -199,8 +213,7 @@ local function load_song(path)
     if ibytes then
       local iok, idoc = pcall(cm.require("cm.ins").decode, ibytes)
       if iok then
-        idoc.patch.gain = math.min(255, ((idoc.patch.gain or 128)
-                                          * (tr.gain or 128)) // 128)
+        idoc.patch.gain = M.track_gain(idoc.patch.gain, tr.gain)
         idoc.patch.pan = math.max(-64, math.min(64,
           (idoc.patch.pan or 0) + (tr.pan or 0)))
         cm.require("cm.ins").upload(idoc, slot, "sim", "t" .. ti)
