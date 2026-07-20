@@ -2,10 +2,23 @@
 
 A tiny 2D pixel-art engine / fantasy console — with an optional retro-3D
 pipeline (N64-era 3D and Ragnarok-Online-style 2.5D, merged back from the
-cosmic3d fork; see `docs/COSMIC3D.md`). The intended distribution is one
-folder containing the engine, editor, tools, and game projects. The source
-checkout is built with Nix and the extract-and-run archives are clean-machine
-tested; the editor can export any opened project with its carried runtime.
+cosmic3d fork; see `docs/COSMIC3D.md`). Deterministic to the bit, rewindable
+like an emulator, batteries included, and everything — code, art, maps,
+audio — is authored inside the shipped editor while the game runs.
+
+<p align="center">
+  <img src="docs/media/hero-rovale.png" alt="rovale — the RO-style 2.5D demo: mascots by a lake" width="480">
+</p>
+<p align="center">
+  <img src="docs/media/hero-bigworld.png" alt="bigworld — the N64-style open world demo" width="320">
+  <img src="docs/media/hero-demo.png" alt="the bundled two-room 2D platformer demo" width="384">
+</p>
+
+The intended distribution is one folder containing the engine, editor, tools,
+and game projects. The source checkout is built with Nix and the
+extract-and-run archives are clean-machine tested; the editor can export any
+opened project with its carried runtime. Nightly builds publish from CI as
+prerelease archives (see the repository's Releases page).
 
 **Status: alpha candidate.** The engine, infinite-canvas editor (2D and 3D
 authoring), audio stack, rewind/replay product, gamepad + player settings,
@@ -17,7 +30,10 @@ release checklist; see `docs/ALPHA.md` (gate A8), `docs/CHANGELOG.md`, and
 
 ## Try it
 
-Linux/WSL2 with [Nix](https://nixos.org):
+Grab the latest **nightly** archive from the Releases page (Linux `.tar.gz`
+or Windows `.zip`, each with a sibling `.sha256`) — extract and run
+`cosmic2d-editor`. Or build from source on Linux/WSL2 with
+[Nix](https://nixos.org):
 
 ```sh
 nix develop -c make -C pal     # build bin/cosmic

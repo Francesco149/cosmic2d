@@ -7654,3 +7654,33 @@ sweeps over the new pages); `nix run .#test` ALL GREEN. Deferred
 honestly: the reader renders `*italic*` literally (pre-existing — the
 new pages avoid single-asterisk emphasis; shipped tool docs still
 carry some), out-of-tree stock-doc LINK resolution.
+
+## D146 — the nightly CI cut + the public README hero pass (2026-07-20)
+
+The human's ask: a CI nightly build with an auto release tag bump, and
+a public-facing README with hero screenshots of bigworld, rovale, and
+the 2D platformer.
+
+- **`.github/workflows/nightly.yml`**: a scheduled (03:00 UTC) +
+  manually-dispatchable job that skips when `main` hasn't moved since
+  the last `nightly-*` tag, runs the FULL deterministic suite
+  (`nix run .#test` — the same gate as local), builds both existing
+  flake archive outputs (`cosmic-linux-release` / `cosmic-windows-
+  release`, which already carry sibling .sha256s and pass
+  release-integrity inside the build), tags `nightly-YYYYMMDD`
+  (same-day rerun after a new commit bumps a `.N` suffix), and
+  publishes a PRERELEASE with the archives. actionlint-clean.
+  Deliberately not the alpha cut: RELEASE-CHECKLIST.md remains the
+  human-executed path for versioned releases; nightlies are unsigned
+  prerelease artifacts and say so.
+- **README**: a hero block up top (rovale's lakeside mascots,
+  bigworld's pine hills, the demo platformer — headless captures,
+  committed under docs/media/), a plainer opening paragraph
+  (deterministic / rewindable / authored-in-editor), and a "grab the
+  nightly from Releases" line ahead of the build-from-source path.
+
+Proof: actionlint clean; `tests/release-manifests.sh` PASS with the
+new repo files; the three captures inspected. The workflow's first
+real run is observable only on GitHub — verifying the initial nightly
+(runner disk/time for the nix build, release permissions) is a
+follow-up for the human or a future session with repo access.

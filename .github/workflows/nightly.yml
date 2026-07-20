@@ -1,0 +1,78 @@
+# The nightly cut: run the deterministic suite from a clean checkout,
+# build both download archives, and publish them under an auto-bumped
+# nightly tag — but only when main actually moved since the last one.
+# Manual runs (workflow_dispatch) follow the same path.
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags decide whether tonight is a new cut
+
+      - name: Skip if nothing new since the last nightly
+        id: fresh
+        run: |
+          last="$(git tag --list 'nightly-*' --sort=-creatordate | head -1)"
+          if [ -n "$last" ] && [ "$(git rev-parse "$last^{commit}")" = "$(git rev-parse HEAD)" ]; then
+            echo "HEAD already cut as $last — skipping"
+            echo "new=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: DeterminateSystems/nix-installer-action@v16
+        if: steps.fresh.outputs.new == 'true'
+
+      - name: Deterministic suite (traces + pixel goldens on pinned lavapipe)
+        if: steps.fresh.outputs.new == 'true'
+        run: nix run .#test
+
+      - name: Build the download archives
+        if: steps.fresh.outputs.new == 'true'
+        run: |
+          nix build .#cosmic-linux-release -o result-linux
+          nix build .#cosmic-windows-release -o result-windows
+          mkdir -p dist
+          cp -L result-linux/* result-windows/* dist/
+          (cd dist && sha256sum ./*.tar.gz ./*.zip)
+
+      - name: Tag and publish the nightly prerelease
+        if: steps.fresh.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          base="nightly-$(date -u +%Y%m%d)"
+          tag="$base"
+          n=1
+          while git rev-parse -q --verify "refs/tags/$tag" >/dev/null; do
+            n=$((n + 1))
+            tag="$base.$n" # same-day rerun after a new commit: bump
+          done
+          git tag "$tag"
+          git push origin "$tag"
+          {
+            echo "Automated nightly build of \`main\` at $(git rev-parse --short HEAD)."
+            echo
+            echo "Suite: \`nix run .#test\` ALL GREEN on this revision (traces byte-exact, pixel goldens on pinned lavapipe)."
+            echo
+            echo "Archives are unsigned alpha artifacts — verify the sibling \`.sha256\` before extraction; see THIRD_PARTY_NOTICES.md."
+          } > notes.md
+          gh release create "$tag" dist/* \
+            --prerelease \
+            --title "$tag ($(git rev-parse --short HEAD))" \
+            --notes-file notes.md
