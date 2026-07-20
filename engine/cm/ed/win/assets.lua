@@ -370,10 +370,82 @@ local function delete_asset(ed, path)
   pal.log("[ed] deleted " .. path)
 end
 
+-- ---- rename / move (human, D144): `r` on the selected tile opens the
+-- rename bar prefilled with the full relative path — editing the folder
+-- part MOVES the asset. Code refs by the old name break by design (the
+-- engine's invalid-asset fallbacks are the graceful floor); everything
+-- the EDITOR holds follows: the file, a .spr's baked siblings, the
+-- unsaved working state, the undo journal (+.good), and open windows
+-- (kind.rebind). ----
+
+local function rename_asset(ed, old, new)
+  if ed.parked then
+    return nil, "parked in the past — writes are walled"
+  end
+  if new == old then return true end
+  local src = ed.root .. "/" .. old
+  local bytes = pal.read_file(src)
+  if not bytes then return nil, "unreadable: " .. old end
+  if pal.read_file(ed.root .. "/" .. new) ~= nil
+     or (ed.doc.assets and ed.doc.assets[new] ~= nil) then
+    return nil, "already exists: " .. new
+  end
+  local dir = new:match("^(.*)/[^/]+$")
+  if dir then pal.mkdir(ed.root .. "/" .. dir) end
+  local ok, err = pal.write_file_atomic(ed.root .. "/" .. new, bytes)
+  if not ok then return nil, tostring(err) end
+  pal.x_remove(src)
+  -- a .spr's baked build products follow (same set delete takes)
+  local ob = old:match("^(.*)%.[sS][pP][rR]$")
+  local nb = new:match("^(.*)%.[sS][pP][rR]$")
+  if ob and nb then
+    for _, ext in ipairs { ".png", ".anim", ".meta" } do
+      local b = pal.read_file(ed.root .. "/" .. ob .. ext)
+      if b and not pal.read_file(ed.root .. "/" .. nb .. ext)
+         and pal.write_file_atomic(ed.root .. "/" .. nb .. ext, b) then
+        pal.x_remove(ed.root .. "/" .. ob .. ext)
+      end
+    end
+  end
+  -- the unsaved working state + the undo journal follow, so a dirty
+  -- asset stays dirty (same bytes) and ctrl+z history survives the move
+  if ed.doc.assets and ed.doc.assets[old] ~= nil then
+    ed.doc.assets[new] = ed.doc.assets[old]
+    ed.doc.assets[old] = nil
+  end
+  local journal = cm.require("cm.ed.journal")
+  for _, pair in ipairs {
+    { journal.file(ed.root, old), journal.file(ed.root, new) },
+    { journal.good_file(ed.root, old), journal.good_file(ed.root, new) },
+  } do
+    local b = pal.read_file(pair[1])
+    if b and pal.write_file_atomic(pair[2], b) then
+      pal.x_remove(pair[1])
+    end
+  end
+  -- open windows follow through each kind's own rebind door
+  for _, w in ipairs(ed.doc.wins) do
+    if w.path == old then
+      local kind = ed.kinds[w.kind]
+      if kind and kind.rebind then kind.rebind(w, ed, new)
+      else w.path = new end
+    end
+  end
+  M.invalidate(ed)
+  if ed.g.athumb then ed.g.athumb[old] = nil end
+  -- every epoch-keyed consumer re-reads (a live game's texture memo for
+  -- the old path must fall to the invalid-asset floor, not a stale hit)
+  cm.asset_epoch = (cm.asset_epoch or 0) + 1
+  pal.log("[ed] renamed " .. old .. " -> " .. new)
+  return true
+end
+M.rename_asset = rename_asset -- proof scripting
+
 M.hotkeys = {
   { key = "del", hint = "delete",
     when = function(win) return (win.sel or "") ~= "" end,
     fn = function(win, ed)
+      ed.g.arn = nil -- the two bottom bars share the strip
       local armed = ed.g.adel
       if armed and armed.id == win.id and armed.path == win.sel then
         delete_asset(ed, win.sel)
@@ -384,9 +456,21 @@ M.hotkeys = {
       end
       ed.touch()
     end },
+  { key = "r", hint = "rename",
+    when = function(win) return (win.sel or "") ~= "" end,
+    fn = function(win, ed)
+      ed.g.adel = nil
+      ed.g.arn = { id = win.id, path = win.sel, buf = win.sel }
+      ed.touch()
+    end },
 }
 
 function M.escape(win, ed)
+  if ed.g.arn and ed.g.arn.id == win.id then
+    ed.g.arn = nil
+    ed.touch()
+    return true
+  end
   if ed.g.adel and ed.g.adel.id == win.id then
     ed.g.adel = nil
     ed.touch()
@@ -517,8 +601,14 @@ function M.draw(win, ctx)
                   px * 0.9, hov and COL.name or COL.dim, name, 0)
     pal.x_ig_clip_pop()
 
-    -- press: select + arm the drag (the shell carries it); double = open
-    if hov and i.clicked[1] then
+    -- press: select + arm the drag (the shell carries it); double = open.
+    -- With a bottom bar armed (rename/delete), clicks in the bar's strip
+    -- belong to the bar — a grid tile under it must not steal them and
+    -- flip the selection (which disarms the bar; the tape caught it).
+    local bar_up = (g.arn and g.arn.id == win.id)
+                   or (g.adel and g.adel.id == win.id)
+    local in_bar = bar_up and i.wy >= ctx.cy + ctx.ch - px * 1.8
+    if hov and i.clicked[1] and not in_bar then
       local dbl = win.sel == e.rel and g.aclick
                   and (now - g.aclick) < 320 * 1e6
       win.sel = e.rel
@@ -548,6 +638,58 @@ function M.draw(win, ctx)
       pal.x_ig_text(ctx.cx + 6 * z, by + px * 0.2, px * 0.9, 0xf07a7aff,
                     "delete " .. armed.path .. "?  del confirms · esc cancels",
                     0)
+    end
+  end
+  -- the armed rename bar (bottom, accent): full-path field — a changed
+  -- folder part moves the asset; enter commits, esc cancels
+  local arn = g.arn
+  if arn and arn.id == win.id then
+    if arn.path ~= win.sel then -- selection moved: disarm
+      g.arn = nil
+    else
+      local by = ctx.cy + ctx.ch - px * 1.6
+      pal.x_ig_rect_fill(ctx.cx + 2 * z, by, ctx.cw - 4 * z, px * 1.5,
+                         0x7fd8a833, 3 * z)
+      local lx = ctx.cx + 6 * z
+      pal.x_ig_text(lx, by + px * 0.2, px * 0.9, 0x7fd8a8ff, "rename:", 0)
+      lx = lx + pal.x_ig_text_size("rename:", px * 0.9, 0) + 6 * z
+      if arn.err then
+        pal.x_ig_text(ctx.cx + 6 * z, by - px * 1.2, px * 0.85,
+                      0xf07a7aff, arn.err, 0)
+      end
+      if not ctx.occluded then
+        local text, _, _, st = pal.x_ig_edit {
+          id = "arn" .. win.id, x = lx, y = by + 1,
+          w = ctx.cx + ctx.cw - lx - 8 * z, h = px * 1.3,
+          text = arn.buf or "", px = px * 0.9, font = 1,
+          enter = true, multiline = false,
+        }
+        arn.buf = text
+        if st and st.submit then
+          local new = (text or ""):gsub("[\r\n\t]", "")
+                      :gsub("^%s+", ""):gsub("%s+$", "")
+          if new == "" or new:find("/$") then
+            arn.err = "type a file path"
+          elseif new == arn.path then
+            g.arn = nil
+          else
+            -- a basename with no extension keeps the old one
+            if not new:match("([^/]*)$"):find("%.") then
+              local oext = arn.path:match("%.([%w]+)$")
+              if oext then new = new .. "." .. oext end
+            end
+            local ok, err = rename_asset(ed, arn.path, new)
+            if ok then
+              win.sel = new
+              g.aflash = { path = new, t = pal.time_ns() }
+              g.arn = nil
+            else
+              arn.err = err
+            end
+          end
+          ed.touch()
+        end
+      end
     end
   end
   -- footer count

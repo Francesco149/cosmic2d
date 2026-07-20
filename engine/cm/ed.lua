@@ -1399,10 +1399,18 @@ local function draw_win(ig, win, zi)
       local hpx = math.max(4, 10 * z)
       local hx2, hy2 = x + 2 * z, y + h + 5 * z
       for _, hint in ipairs(hints) do
+        -- wrap whole key+hint pairs at the window's right edge (a long
+        -- table used to run past the window into the canvas)
+        local kw = pal.x_ig_text_size(hint.key, hpx, 0)
+        local hw = pal.x_ig_text_size(hint.hint, hpx, 0)
+        if hx2 > x + 2 * z and hx2 + kw + 4 * z + hw > x + w then
+          hx2 = x + 2 * z
+          hy2 = hy2 + hpx * 1.35
+        end
         pal.x_ig_text(hx2, hy2, hpx, C.hud, hint.key, 0)
-        hx2 = hx2 + pal.x_ig_text_size(hint.key, hpx, 0) + 4 * z
+        hx2 = hx2 + kw + 4 * z
         pal.x_ig_text(hx2, hy2, hpx, C.hud_dim, hint.hint, 0)
-        hx2 = hx2 + pal.x_ig_text_size(hint.hint, hpx, 0) + 14 * z
+        hx2 = hx2 + hw + 14 * z
       end
     end
   end
