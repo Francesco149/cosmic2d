@@ -7400,22 +7400,35 @@ local function t_ed_wm()
 
   -- A-rightclick normally closes; an external-operation kind may hold the
   -- window until its explicit safe cancel door completes.
+  local close_calls = 0
+  local function refuse_close()
+    close_calls = close_calls + 1
+    return false
+  end
   g = {}
   wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
                           down3 = true, clicked3 = true,
-                          can_close = function() return false end }))
+                          close = refuse_close }))
   wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
-                          can_close = function() return false end }))
-  check(wm.get(doc, b.id) ~= nil and g.state == nil,
-        "ed.wm: a kind can guard A-rightclick dismissal")
+                          close = refuse_close }))
+  check(wm.get(doc, b.id) ~= nil and g.state == nil and close_calls == 1,
+        "ed.wm: shell close door can guard A-rightclick dismissal")
 
-  -- Without a guard, asset state survives the fearless close by design (§6).
+  -- Accepted shell close owns kind teardown, then delegates the model removal.
+  local closed_id
+  local function shell_close(id)
+    closed_id = id
+    return wm.close(doc, id)
+  end
   g = {}
   wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
-                          down3 = true, clicked3 = true }))
+                          down3 = true, clicked3 = true,
+                          close = shell_close }))
   check(g.state == "alt_rpend", "ed.wm: A-rpress arms")
-  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true }))
-  check(wm.get(doc, b.id) == nil, "ed.wm: A-rightclick closes")
+  wm.update(doc, g, inp({ wx = 160, wy = 60, sx = 160, sy = 60, alt = true,
+                          close = shell_close }))
+  check(wm.get(doc, b.id) == nil and closed_id == b.id,
+        "ed.wm: A-rightclick routes through the shell close door")
   check(#doc.wins == 1, "ed.wm: one window left")
 
   -- marquee: A-drag on empty selects the intersecting set
@@ -7465,6 +7478,34 @@ local function t_ed_wm()
   doc.focus = c.id
   wm.close(doc, c.id)
   check(#doc.sel == 0 and doc.focus == 0, "ed.wm: close cleans refs")
+
+  -- The real shell door composes guard -> lifecycle hook -> model removal for
+  -- BOTH pointer and keyboard callers. Pin the ordering independently of any
+  -- particular kind so a future close path cannot bypass resource teardown.
+  local ed = cm.require("cm.ed")
+  local was_doc, was_kind = ed.doc, ed.kinds.closeprobe
+  local life_doc = wm.init({ cam = { x = 0, y = 0, zoom = 1 } })
+  local life = wm.spawn(life_doc, "closeprobe", 0, 0, 100, 100)
+  local allow, guards, hooks, hook_saw_window = false, 0, 0, false
+  ed.doc = life_doc
+  ed.kinds.closeprobe = {
+    can_close = function()
+      guards = guards + 1
+      return allow
+    end,
+    on_close = function(win, host)
+      hooks = hooks + 1
+      hook_saw_window = wm.get(host.doc, win.id) ~= nil
+    end,
+  }
+  check(not ed.close_window(life.id) and wm.get(life_doc, life.id)
+        and guards == 1 and hooks == 0,
+        "ed close: a refused guard leaves the window and skips teardown")
+  allow = true
+  check(ed.close_window(life.id) and not wm.get(life_doc, life.id)
+        and guards == 2 and hooks == 1 and hook_saw_window,
+        "ed close: accepted teardown runs exactly once before removal")
+  ed.kinds.closeprobe, ed.doc = was_kind, was_doc
 
   -- ---- live round 3 (D054): the no-modifier grammar ----
   -- plain press on EMPTY canvas = marquee: a drag selects, a still-click
@@ -8772,6 +8813,26 @@ local function t_preview_voice()
   for i = 8, 31 do all["h" .. i] = i end
   v = pv(all, {}, 14)
   check(v == 14, "preview_voice: every voice held steals in order")
+
+  -- A closed music window no longer draws, so its lifecycle hook must release
+  -- both sequencer-held notes and frame-expiring audition blips itself. The
+  -- horror-hollow opening drone exposed the missing owner transition.
+  local music = cm.require("cm.ed.win.music")
+  local old_off = pal.x_snd_ed_off
+  local stopped = {}
+  pal.x_snd_ed_off = function(voice)
+    stopped[voice] = (stopped[voice] or 0) + 1
+  end
+  local p = { playing = true,
+              pheld = { drone = 8, shared = 10 },
+              blips = { [10] = 9, [11] = 1 } }
+  music.on_close({ path = "sound/horror-hollow.song" },
+    { g = { muw = { ["sound/horror-hollow.song"] = p } } })
+  pal.x_snd_ed_off = old_off
+  check(stopped[8] == 1 and stopped[10] == 1 and stopped[11] == 1,
+        "music close: every owned preview voice releases exactly once")
+  check(not p.playing and next(p.pheld) == nil and p.blips == nil,
+        "music close: held/blip ownership is cleared with playback")
 end
 
 local function t_stock_window()
@@ -10109,6 +10170,31 @@ local function t_ed_winview()
         "winview: top row stable under canvas zoom")
   wv.scroll_by(aw, "sy", 2, -1000)
   check(aw.sy == nil, "winview: scroll clamps at 0 (and re-nils)")
+
+  -- Asset families remember their own world-space offsets. A tab with no
+  -- prior history begins at its top; returning restores the prior position.
+  local tw = { sy = 120 }
+  check(wv.scroll_switch(tw, "sy", "all", "image")
+        and tw.sy == nil and tw.sy_tabs.all == 120,
+        "winview: first tab switch saves the legacy active offset")
+  tw.sy = 35
+  wv.scroll_switch(tw, "sy", "image", "all")
+  check(tw.sy == 120 and tw.sy_tabs.image == 35,
+        "winview: returning to a tab restores its own offset")
+  wv.scroll_switch(tw, "sy", "all", "image")
+  check(tw.sy == 35, "winview: inactive tab offsets survive repeated switches")
+
+  -- A filter/tab/tile/window-size change can shrink the live content. Clamp
+  -- in screen space, store in world space, and re-nil an empty collection.
+  tw.sy = 120
+  local spx, changed = wv.clamp_scroll(tw, "sy", 2, 80)
+  check(spx == 80 and tw.sy == 40 and changed,
+        "winview: live content maximum clamps overscroll zoom-correctly")
+  spx, changed = wv.clamp_scroll(tw, "sy", 2, 80)
+  check(spx == 80 and not changed, "winview: an in-range clamp is inert")
+  spx, changed = wv.clamp_scroll(tw, "sy", 2, -10)
+  check(spx == 0 and tw.sy == nil and changed,
+        "winview: an empty/short collection snaps to its content top")
 end
 
 local function t_ed_orbit()

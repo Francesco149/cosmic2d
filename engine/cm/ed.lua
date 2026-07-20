@@ -694,6 +694,18 @@ local function kind_can_close(id)
   return not (kind and kind.can_close) or kind.can_close(win, M)
 end
 
+-- One close door for pointer + keyboard dismissal. Asset working state lives
+-- beyond windows, but ephemeral resources owned by a view (preview voices,
+-- later timers/jobs) must be released before the last drawing owner vanishes.
+local function close_window(id)
+  local win = wm.get(M.doc, id)
+  if not win or not kind_can_close(id) then return false end
+  local kind = M.kinds[win.kind]
+  if kind and kind.on_close then kind.on_close(win, M) end
+  return wm.close(M.doc, id)
+end
+M.close_window = close_window
+
 -- keyboard focus-cycle (D134): reading order, select+focus, reveal if
 -- offscreen; the imgui keyboard releases so a ghost edit in the window
 -- being left stops eating keystrokes (what a click elsewhere does)
@@ -716,7 +728,7 @@ local function close_by_key()
   else for i, id in ipairs(doc.sel) do ids[i] = id end end
   local closed = false
   for _, id in ipairs(ids) do
-    if kind_can_close(id) and wm.close(doc, id) then closed = true end
+    if close_window(id) then closed = true end
   end
   if closed then
     if pal.x_ig_kb_release then pal.x_ig_kb_release() end
@@ -1111,7 +1123,7 @@ local function interact(ig)
     bo = wm.EDGE_OUT / cam.screen_zoom(doc.cam),
     bi = wm.EDGE_IN / cam.screen_zoom(doc.cam),
     alt = g.alt or false, ctrl = g.ctrl or false, hdrid = hdrid,
-    constrain = kind_constrain, can_close = kind_can_close,
+    constrain = kind_constrain, close = close_window,
     down1 = i.buttons[1] or false, down3 = i.buttons[3] or false,
     clicked1 = i.clicked[1] or false, clicked3 = i.clicked[3] or false,
   }

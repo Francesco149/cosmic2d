@@ -78,4 +78,32 @@ function M.scroll_by(win, key, z, dpx, max_wu) -- dpx in screen px
   win[key] = v ~= 0 and v or nil
 end
 
+-- Switch one captured scroll field between named content tabs. The active
+-- tab keeps using win[key] (so old sessions remain valid); inactive offsets
+-- live in a small captured side table, also in world units.
+function M.scroll_switch(win, key, from, to)
+  if from == to then return false end
+  local tk = key .. "_tabs"
+  local tabs = win[tk]
+  if not tabs then
+    tabs = {}
+    win[tk] = tabs
+  end
+  tabs[from] = win[key] or 0
+  local v = tabs[to] or 0
+  win[key] = v ~= 0 and v or nil
+  return true
+end
+
+-- Clamp against the CURRENT content/layout extent. max_px is screen-space
+-- because grids already know their rendered row heights; storage stays world
+-- space. Returns the screen offset and whether captured state changed.
+function M.clamp_scroll(win, key, z, max_px)
+  local old = win[key] or 0
+  local hi = math.max(0, max_px or 0) / z
+  local v = math.max(0, math.min(hi, old))
+  win[key] = v ~= 0 and v or nil
+  return v * z, v ~= old
+end
+
 return M

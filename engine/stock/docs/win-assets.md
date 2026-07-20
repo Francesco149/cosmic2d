@@ -14,6 +14,10 @@ drag one onto the canvas (or a map) to place or bind it.
 - **del** delete (arms a red confirm; **del** again to execute, **esc** cancels)
 - **ctrl+wheel** dials the preview tile size · type in the filter to fuzzy-find
 
+Each type chip remembers its own scroll position. Switching to a shorter list,
+changing the filter or tile size, or resizing the window always snaps the view
+back inside the content, so an empty-looking tab really has no matches.
+
 Dropping an OS file anywhere imports it (images convert to `.png`) and opens the
 right window at the drop point.
 

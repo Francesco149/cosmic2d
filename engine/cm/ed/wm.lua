@@ -32,6 +32,8 @@
 --                    zone) is under the cursor, or nil (shell-computed),
 --     constrain    = optional fn(win, part, r0, ww, wh, ctrl) -> w, h —
 --                    a kind's resize constraint (aspect/res locks),
+--     close        = optional fn(id) -> closed — the shell's kind-aware
+--                    guard + teardown door (nil falls back to plain close),
 --     down1, down3 = left/right button held,
 --     clicked1, clicked3 = press edges this frame }
 -- Returns true while wm owns the mouse (the shell then skips pan/menu).
@@ -380,11 +382,11 @@ function M.update(doc, g, inp)
   elseif st == "alt_rpend" then
     if not inp.down3 then
       if dist2(inp.sx, inp.sy, g.px, g.py) <= M.DRAG_PX * M.DRAG_PX then
-        -- Most windows close fearlessly because their working assets survive
-        -- (§6). A kind may guard a live external operation (player export):
-        -- the shell resolves that policy through this optional callback.
-        if not inp.can_close or inp.can_close(g.target) then
-          M.close(doc, g.target) -- A-rightclick: close
+        -- The shell callback owns kind guards + teardown; the fallback keeps
+        -- this pure model independently usable in tests/small hosts.
+        local closed = inp.close and inp.close(g.target)
+                       or (not inp.close and M.close(doc, g.target))
+        if closed then
           g.changed = true
         end
       end

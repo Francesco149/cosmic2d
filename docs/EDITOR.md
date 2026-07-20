@@ -225,7 +225,9 @@ crossing 4 px; double-click = **320 ms / 6 px**, teidraw's thresholds):
   state + journal live keyed by asset (§7), not by window, so reopening
   the asset restores exactly where you were. (The unsaved-persists model
   is what makes fearless close possible; this is a feature, state it in
-  the UI copy.)
+  the UI copy.) The shell runs the kind's optional `on_close` hook before
+  removal, so view-owned ephemeral work (notably held music-preview voices)
+  cannot outlive the window that advances it.
 - **A-drag on empty canvas** → marquee-select windows (teidraw's
   marquee; cheap, and the grammar slot is obviously right).
 - **Bring-to-front hotkeys** (selection): `]` forward one, `[` backward
@@ -252,8 +254,8 @@ crossing 4 px; double-click = **320 ms / 6 px**, teidraw's thresholds):
   `cam.contains` gate, so cycling across visible windows never moves
   the camera).
 - **Ctrl+W** closes the focused window (else the selection), through the
-  same `can_close` guard as A-rightclick — fearless by the same §6
-  construction.
+  same kind-aware close door as A-rightclick (`can_close`, then `on_close`) —
+  fearless by the same §6 construction.
 - All three ride the **pre-`ig.kb` ctrl-combo tier** (beside Ctrl+S/F):
   they fire mid-typing — leaving or closing the window you are typing in
   is precisely a mid-typing move — and while a game window is playing
@@ -833,7 +835,11 @@ ed.lua holds ONE roster list (order = spawn-menu order). A kind module
 self-describes: `M.menu = "tilemap"` puts it on the spawn menu,
 `M.exts = { "tm" }` routes asset double-clicks/drops (assets.kind_for
 reads the roster; class fallbacks image→image, code→text stay). Adding
-a kind = write the module, add its name to the roster.
+a kind = write the module, add its name to the roster. Two lifecycle doors
+are optional: `can_close(win, ed)` may refuse while a live external operation
+is unsafe to abandon; after it accepts, `on_close(win, ed)` releases ephemeral
+resources owned by that view before `wm.close` removes it. Pointer and keyboard
+dismissal share this exact order.
 
 ### 13.4 `kit.viewlock(K, opts)` + `cm.ed.chips`
 

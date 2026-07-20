@@ -124,9 +124,24 @@ end
 -- ---- the editor-bank preview (render-only, wall clock) ----
 
 local function preview_stop(p)
-  if not p.playing then return end
-  for _, h in pairs(p.pheld or {}) do pal.x_snd_ed_off(h) end
-  p.pheld, p.playing = {}, false
+  if not p then return end
+  local voices = {}
+  for _, h in pairs(p.pheld or {}) do voices[h] = true end
+  for v in pairs(p.blips or {}) do voices[v] = true end
+  -- This window owns editor voices 8..31. Walk the fixed range so cleanup is
+  -- deterministic and a voice present in both tables is released only once.
+  for v = 8, 31 do
+    if voices[v] then pal.x_snd_ed_off(v) end
+  end
+  p.pheld, p.blips, p.playing = {}, nil, false
+end
+
+-- Window lifecycle hook: once draw stops running, nobody remains to advance
+-- the sequencer or expire audition blips. Release them before wm forgets the
+-- window (the horror-hollow opening drone made this ownership hole obvious).
+function M.on_close(win, ed)
+  local p = ed.g.muw and ed.g.muw[win.path]
+  if p then preview_stop(p) end
 end
 
 local function preview_slots(ed, win, p)
@@ -443,6 +458,7 @@ function M.draw(win, ctx)
         p.blips[v] = left - 1
       end
     end
+    if not next(p.blips) then p.blips = nil end
     ctx.touch()
   end
 

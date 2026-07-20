@@ -56,6 +56,10 @@ deleted in place; every door pulls a copy INTO your project.
 - **ctrl+wheel** dials the preview tile size · type in the filter to
   fuzzy-find · the chips filter by family
 
+Each family remembers its own scroll position. A shorter family, a narrower
+filter, a new tile size, or a resized window is clamped to real content instead
+of leaving the grid apparently blank below its last row.
+
 Full reference: [The assets browser](engine/stock/docs/win-assets.md),
 [the synth](engine/stock/docs/win-synth.md), and
 [the music tracker](engine/stock/docs/win-music.md).

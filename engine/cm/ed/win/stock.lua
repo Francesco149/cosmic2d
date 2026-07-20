@@ -21,6 +21,8 @@
 -- Stock paths are engine-cwd-relative by the D061 convention; nothing
 -- here writes into engine/stock (read-only by construction — there is
 -- no delete/rename/save door).
+-- Captured scrolling matches the project browser: sy is the active family's
+-- world-unit offset; sy_tabs remembers inactive families.
 
 local M = select(2, ...) or {}
 
@@ -243,6 +245,8 @@ function M.draw(win, ctx)
     pal.x_ig_text(x + 7 * z, y + px * 0.3, px,
                   (on or hov) and COL.hot or COL.dim, c, 0)
     if hov and i.clicked[1] then
+      cm.require("cm.ed.winview").scroll_switch(
+        win, "sy", win.chip or "all", c)
       win.chip = c
       ctx.touch()
     end
@@ -302,10 +306,17 @@ function M.draw(win, ctx)
   local cell = tile + 8 * z
   local gy0 = ctx.cy + top
   local cols = math.max(1, math.floor((ctx.cw - 8 * z) / cell))
-  local rows_vis = math.ceil((ctx.ch - top) / (cell + name_h)) + 1
-  local scroll = cm.require("cm.ed.winview").scroll_px(win, "sy", z)
+  local grid_h = math.max(0, ctx.ch - top)
+  local rows_vis = math.ceil(grid_h / (cell + name_h)) + 1
+  local rows = math.ceil(#shown / cols)
+  local content_h = rows > 0
+                    and (rows - 1) * (cell + name_h) + tile + name_h or 0
+  local view = cm.require("cm.ed.winview")
+  local scroll, clamped = view.clamp_scroll(
+    win, "sy", z, content_h - grid_h)
+  if clamped then ctx.touch() end
   local r0 = math.floor(scroll / (cell + name_h))
-  pal.x_ig_clip_push(ctx.cx, gy0, ctx.cw, ctx.ch - top)
+  pal.x_ig_clip_push(ctx.cx, gy0, ctx.cw, grid_h)
   local now = pal.time_ns()
   for idx = r0 * cols + 1, math.min(#shown, (r0 + rows_vis) * cols) do
     local e = shown[idx].e

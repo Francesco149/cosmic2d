@@ -7961,3 +7961,38 @@ trace and pixel golden byte-identical. The refreshed Windows stage passes the
 native selftest at **25,096** (Linux +2 platform checks) and the 830-frame
 `smoke_kitcheck` trace byte-exact. The final musical verdict remains the
 explicit human native listen.
+
+## D150 — window teardown owns previews; asset scroll belongs to each tab (2026-07-20)
+
+Two human reports exposed the same lifecycle class: persistent state retained
+an offset/voice after the UI owner that made it meaningful had changed or
+vanished.
+
+- Every shell dismissal now routes through one `ed.close_window` door. It
+  resolves the existing optional `kind.can_close` guard, then invokes a new
+  optional `kind.on_close(win, ed)` teardown while the window still exists,
+  then delegates structural removal to pure `wm.close`. A-rightclick and
+  Ctrl+W share the door; `wm.update` accepts it as one callback instead of
+  knowing kind policy. A refused guard never tears down.
+- Music uses `on_close` to release every editor-bank voice in both its held
+  sequencer table and short audition-blip table, deduplicated over the fixed
+  8..31 range, before clearing playback ownership. Previously the closed
+  window stopped calling `preview_step`, so horror-hollow's opening drone had
+  no remaining code path to send note-off. Empty blip tables now nil
+  themselves instead of requesting redraw forever.
+- Project and stock asset browsers keep the active tab offset in the legacy
+  `win.sy` field and inactive offsets in captured `win.sy_tabs`, all in the
+  shared winview world-unit convention. On every draw, the current filtered
+  item count, column count, tile size, and viewport derive the actual maximum;
+  `winview.clamp_scroll` snaps into it before choosing the first row. Thus a
+  newly selected short/empty tab starts visibly at its content, returning to a
+  long tab restores its place, and filter/tile/window changes cannot strand the
+  viewport below the final row. Old sessions remain valid because their live
+  `sy` is saved into the side table only on the first switch.
+
+Proof: Linux selftest **25,104** (+10: shell guard/hook ordering, exact music
+voice release/state clear, per-tab restore, zoom-correct live clamp including
+empty content). A real 1280x800 headless stock-window capture injected
+`sy=10000` on the 14-song tab and visibly snapped to its two real rows; the
+capture was inspected and posted to llm-feed. Full deterministic/native proof
+is recorded in STATUS with the session handoff.
