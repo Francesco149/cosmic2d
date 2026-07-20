@@ -43,6 +43,12 @@ goldens byte-identical; two shell tapes green on fresh smoke copies
 (synth rail scroll probes exact; stock window 6/6); captures on
 llm-feed. See DECISIONS `D147`.
 
+**The Windows stage IS refreshed over D147**: `tools/build-windows.sh`
+staged clean (21 preserved durable entries + the Start Menu shortcut)
+and the NATIVE selftest passes at **25,019** = Linux 25,017 + 2 — the
+whole D147 roster (presets, songs, the stock window) is on the
+human's machine, one Start Menu click from the listen.
+
 **THE NEXT SESSION'S FIRST ASK — the native listen.** The audio taste
 check needs the human's ears: on the Windows stage, open the synth
 window's preset rail and click through the 24 new voices, then open
