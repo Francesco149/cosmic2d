@@ -7255,3 +7255,69 @@ sources": name the inputs at the derivation site, epoch-key every
 in-memory cache, published bakes follow or self-orphan visibly, raw
 GPU ids never cross frames outside their owning cache, and every
 derivation's proof tape EDITS A SOURCE and watches it follow.
+
+## D140 — light the verts that are drawn: lathe point normals + terrain per-triangle light (2026-07-20)
+
+The human's native report on stone-dusty-shrew: two terrain quads
+"significantly more shaded, not consistent with nearby quads", and the
+mascot's "very obvious circular seams" — with the direct ask: double
+check we light each vert correctly and that the normals face the right
+way. The audit found the normals correctly ORIENTED everywhere (signs
+verified against the sun convention in both emitters) but two places
+lighting a vert with a normal that does not belong to the surface
+actually drawn at it:
+
+- **`gb.lathe`/`bake_lathe` shaded per profile SEGMENT.** One
+  perpendicular per profile span means every vert on a shared ring is
+  emitted twice with two different normals — smooth AROUND the
+  circumference, hard-stepped ALONG the profile: every latitude ring of
+  every ball/lathe is a lighting seam (the mascot's bands). The
+  comment claimed "smooth ring shading"; the meridional half never
+  was. Now `lathe_ptnorms` computes per-profile-POINT normals (each
+  point averages its two adjacent segment perpendiculars, endpoints
+  keep their single segment) and both the immediate and baked paths
+  share verts on the SAME point normal. The mascot/balls/tree-tops
+  shade smoothly; silhouettes are untouched (geometry identical);
+  prisms stay facet-flat by design. Both paths moved together, so the
+  bake==immediate byte KATs and the mascot.fig equivalence KAT hold
+  unchanged.
+- **`terr3.emit_terrain`/`bake_into` lit per-quad plane fits.** One
+  normal per tile from a 4-corner plane fit, while the drawn geometry
+  is two triangles (the NW->SE split T.sample walks): on a NON-PLANAR
+  quad — hand-sculpted maps are full of them; brush stamps make height
+  noise — the tone matches NEITHER visible triangle, so plates pop
+  that agree with nothing you can see. Now each triangle is lit by its
+  own true (flat_y-softened) normal, in the vertex emitter and in the
+  atlas bake (`lof` keys tile x tri; a texel picks its triangle by
+  `fu >= fv`). Planar tiles produce bit-identical values to the old
+  plane fit, so smooth terrain is visually unchanged; only sculpt
+  noise resolves. The flat "painted era" per-face look is KEPT — this
+  is not Gouraud smoothing.
+- **cm.terr's `T.emit` deliberately unchanged**: its per-tile flattened
+  normal is documented intent ("painted era look") and the procedural
+  openworld/bigworld/rovale grounds are smooth enough that the
+  non-planar mismatch class never bites. Revisit trigger: a hand-
+  sculpted asset pipeline ever feeding cm.terr chunks.
+- **Migration**: baked lighting lives in atlas TEXELS, so old published
+  atlases carry the old per-quad tones with no data input changed.
+  `mat_hash` gains an "L2" bake-math version salt: every pre-D140
+  atlas self-orphans (stamp mismatch → vertex fallback, correctly lit)
+  and one Ctrl+S on the map republishes — tape-proven on the human's
+  own project copy (orphan probe, shell-driven Ctrl+S, new stamp +
+  changed png bytes: 3/3 PASS). The editor's live atlas never shows
+  the stale bake (a fresh fill refuses the seed by the same check).
+
+On the human's actual two quads: the heightfield really dips/bumps
+there (sculpt noise, likely stamp-brush residue) — the darkness is
+correct shading of real geometry; per-triangle light makes the plates
+match the drawn creases, and the smo tool is the cure for the noise
+itself. Proof: Linux selftest 24,893 (+12: t_terr3_trilight — the
+non-planar quad's shared vert lighting per triangle with exact tones,
+planar quads bit-identical to the old plane fit, the bake's per-tri
+texels exact; t_lathe_norms — one normal per shared ring, the exact
+averaged right-angle point, endpoint perpendiculars, immediate ==
+baked bytes; the pre-existing ridge/flat-texel bake KATs hold); `nix run .#test`
+ALL GREEN with all 20 traces byte-exact (sim untouched) and the 14
+3D pixel goldens honestly re-cut on pinned lavapipe after A/B
+inspection (figure/openworld/rovale/bounce/bigworld: seams gone,
+terrain unchanged where planar; the 5 2D goldens byte-identical).
