@@ -8572,6 +8572,91 @@ local function t_song()
         "music.group_val: length offset (-2) clamps to >=1")
 end
 
+local function t_stock_songs()
+  -- D147: the stock demo tracks — every shipped .song decodes to
+  -- canonical bytes, flattens to real notes, resolves every track
+  -- instrument (engine-relative stock refs), and SOUNDS through the
+  -- sim bank. One pin per queued vibe family.
+  local songm = cm.require("cm.song")
+  local insm = cm.require("cm.ins")
+  local snd = cm.require("cm.snd")
+  local names = {}
+  for _, n in ipairs(pal.list_dir("engine/stock/songs") or {}) do
+    if n:find("%.song$") then names[#names + 1] = n end
+  end
+  table.sort(names)
+  check(#names >= 14, "stock songs: the D147 set ships (" .. #names .. ")")
+  local have = {}
+  for _, n in ipairs(names) do have[n] = true end
+  for _, n in ipairs({ "desert-dunes.song", "water-caverns.song",
+    "noble-court.song", "prelude-soft.song", "battle-charge.song",
+    "boss-gate.song", "dnb-rush.song", "breaks-alley.song",
+    "bossa-breeze.song", "bossa-fiesta.song", "funk-strut.song",
+    "noir-sleuth.song", "horror-hollow.song", "ambient-drift.song" }) do
+    check(have[n], "stock songs: " .. n .. " ships")
+  end
+  local decode_ok, canon_ok, notes_ok, ins_ok, audible = true, true, true,
+                                                         true, true
+  for _, n in ipairs(names) do
+    local bytes = pal.read_file("engine/stock/songs/" .. n)
+    local ok, doc = pcall(songm.decode, bytes)
+    if not ok then
+      decode_ok = false
+      pal.log("stock songs: " .. n .. " failed decode: " .. tostring(doc))
+    else
+      if songm.encode(doc) ~= bytes then
+        canon_ok = false
+        pal.log("stock songs: " .. n .. " is not canonical bytes")
+      end
+      local flat = songm.flatten(doc)
+      local total = 0
+      for _, lane in ipairs(flat) do total = total + #lane end
+      if total == 0 or songm.length(doc) <= 0 then
+        notes_ok = false
+        pal.log("stock songs: " .. n .. " flattens empty")
+      end
+      local first_slot
+      for ti, tr in ipairs(doc.tracks) do
+        local ib = pal.read_file(tr.ins)
+        local iok, idoc = false, nil
+        if ib then iok, idoc = pcall(insm.decode, ib) end
+        if not iok then
+          ins_ok = false
+          pal.log("stock songs: " .. n .. " track " .. ti
+                  .. " ins unresolvable: " .. tostring(tr.ins))
+        elseif not first_slot and #(flat[ti] or {}) > 0 then
+          insm.upload(idoc, 11, "sim", "ss")
+          first_slot = ti
+        end
+      end
+      if first_slot then -- the song's own first note, audibly
+        local note = flat[first_slot][1]
+        local v = snd.on(11, note.pitch, note.vel)
+        local heard = false
+        for _ = 1, 30 do
+          pal.snd_render()
+          if pal.x_snd_tap():find("[^%z]") then
+            heard = true
+            break
+          end
+        end
+        if not heard then
+          audible = false
+          pal.log("stock songs: " .. n .. " first note rendered silence")
+        end
+        snd.off(v)
+        for _ = 1, 10 do pal.snd_render() end
+      end
+    end
+  end
+  for _ = 1, 120 do pal.snd_render() end
+  check(decode_ok, "stock songs: every song decodes")
+  check(canon_ok, "stock songs: every song is canonical encode bytes")
+  check(notes_ok, "stock songs: every song flattens to real notes")
+  check(ins_ok, "stock songs: every track instrument resolves")
+  check(audible, "stock songs: every song's opening note is audible")
+end
+
 local function t_ed_kit()
   -- cm.ed.kit (R9a, AUDIO.md §7): the generalized §6 asset citizen —
   -- the factory's semantics pinned on a dummy codec, independent of the
@@ -13940,6 +14025,7 @@ function game.init()
   t_words()
   t_palette()
   t_song()
+  t_stock_songs()
   t_ed_lex()
   t_ed_assets()
   t_ed_map()
