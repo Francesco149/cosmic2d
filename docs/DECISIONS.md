@@ -7519,3 +7519,70 @@ Linux selftest **24,933** (+2: the clip-mount F4 guard, the adopted
 import marker). What remains before "alpha" is exactly what only the
 human can do: the fresh-user pass, the native signoff, and executing
 the checklist.
+
+## D143 — the palette generator rework: the working color, pickers, and the channel-rotated swatch bug (2026-07-20)
+
+The human's editor-use report, verbatim asks: appending ramps back to
+back was confusing (editing "the current color" after an append edited
+the previous ramp's tail; add-then-edit-then-ramp duplicated the base),
+HSV alone is hard to hit an imagined color with, the working color
+should stay separate from saved colors (loading only on double-click /
+enter), and a typed shade count past the slider span drew off the
+scale.
+
+**The working color model.** The mix is a per-window scratch
+(win.wcol packed + the HSV scratch in kit.winui — HSV stays master
+while mixing so grays keep their hue), deliberately not a live edit of
+any saved swatch. Movement is always explicit: double-click a swatch
+or press enter to ADOPT it into the mix (exact bytes, alpha included);
+`+add` inserts the mix after the selection, `set` overwrites the
+selection with it; the ramp generator reads the mix, so append/append
+/append never disturbs saved colors and never needs the base added
+first. Working-color edits touch no doc byte — journal entries exist
+only for real palette mutations. The `a` hotkey now adds the working
+color (was: white).
+
+**Pickers.** Mode chips sv / hsv / rgb + the always-present hex field:
+the 2D SV square (hue slider + drag surface — pick-by-eye; baked to a
+96x64 texture only when the hue bucket moves, the sprite window's
+tex_create/tex_update pipeline, freed in drop_ephemeral) joins the HSV
+sliders and new RGB sliders. The hex field writes back on an
+RGB-difference only — comparing full packed values re-stripped an
+adopted swatch's alpha every frame (the tape caught it).
+
+**The shades bound.** The typed count and the slider now share one
+range (2–32) and the slider widget clamps its drawn fraction — the
+class rule: a legal value past a slider's span must never render off
+the scale.
+
+**Two latent bugs the proof tape exposed, both the D141
+display-packed class:** (1) cm.palette.fresh's starter ramp was
+authored as 0xRRGGBBAA literals in cm.paint packing — every starter
+color was near-transparent and channel-swapped; now built via
+paint.pack and KAT-pinned opaque. (2) The window's disp() produced
+ARGB for the ig boundary, which wants 0xRRGGBBAA (the sprite window's
+disp comment says exactly this): every swatch had always rendered
+channel-ROTATED — pure red drew invisible (alpha 0), pure blue drew
+red. Pixel-probed empirically (an R/G/B/W palette screenshotted and
+sampled: (30,27,46)=background, background, (255,0,0), white), then
+fixed to the sprite window's conversion verbatim. Swatch grids now
+auto-shrink tiles so a few 32-shade ramps stay fully visible.
+
+win-palette.md is rewritten around the model, with the cohesive-
+palette guide the human asked for: the N-shades-of-each-fundamental
+recipe (fixed shade count, mid-tone bases, vibe flavoring via hue
+shift + base tint), the shared-shadow and shared-accent glue tricks,
+and the wide vs narrow (film / near-monochrome) inversion — one long
+dominant ramp + short counter-ramps.
+
+Proof: Linux selftest **24,936** (+3: fresh opaque + dark→light, the
+32-shade ramp cap); a 20/20 shell tape on a fresh smoke copy (launcher
+open, select-vs-adopt, sv pick with doc-untouched probe, +add/set,
+532→32 clamp, 32-shade append, one ctrl+z per append, enter adopt, rgb
+drag to exactly 255, ctrl+s disk round trip + clean dirty read), run
+twice; the R/G/B/W pixel probe; `nix run .#test` ALL GREEN, goldens
+byte-identical (editor chrome only). Captures on llm-feed. Deferred
+honestly: alpha in the pickers (palette colors CAN carry alpha; the
+mix edits opaque), a rampbuf snap-back on blur (a typed "5"+"32"
+shows "532" while meaning 32), palette-window scroll past the
+auto-shrink floor (~560 swatches on the default size).

@@ -23,10 +23,17 @@ M.MAGIC = "CPAL"
 M.MAX = 256
 
 function M.fresh(name)
-  -- a small hue-shifted starter ramp so a new palette isn't blank
+  -- a small hue-shifted starter ramp so a new palette isn't blank.
+  -- cm.paint packing (R low byte, A high) — the original constants here
+  -- were display-packed 0xRRGGBBAA (the D141 transparent-red class):
+  -- every starter color carried a near-transparent alpha and swapped
+  -- channels. The proof tape caught it via the working-color adopt.
+  local paint = cm.require("cm.paint")
+  local function c(r, g, b) return paint.pack(r, g, b, 255) end
   return { name = name or "palette",
-           colors = { 0x1a1420ff, 0x3b2a44ff, 0x6b4a6eff, 0xa87ba0ff,
-                      0xd8b9c8ff, 0xf4e6d8ff } }
+           colors = { c(0x1a, 0x14, 0x20), c(0x3b, 0x2a, 0x44),
+                      c(0x6b, 0x4a, 0x6e), c(0xa8, 0x7b, 0xa0),
+                      c(0xd8, 0xb9, 0xc8), c(0xf4, 0xe6, 0xd8) } }
 end
 
 -- ---- codec ----

@@ -8304,6 +8304,21 @@ local function t_palette()
   local _, _, v1 = paint.to_hsv(ramp[1])
   local _, _, v5 = paint.to_hsv(ramp[5])
   check(#ramp == 5 and v5 > v1, "palette: ramp is n colors, dark -> light")
+  check(#pl.ramp(0x804020ff, 32) == 32, "palette: ramp at the 32-shade cap")
+  -- fresh starter colors are cm.paint-packed OPAQUE (the D141
+  -- display-packed-constant class: a 0xRRGGBBAA literal here reads as
+  -- near-transparent + channel-swapped; the palette tape caught it via
+  -- the working-color adopt comparing exact bytes)
+  local fr = pl.fresh("x")
+  local allop = true
+  for _, fc in ipairs(fr.colors) do
+    if (fc >> 24) & 255 ~= 255 then allop = false end
+  end
+  check(allop and #fr.colors >= 4,
+        "palette: fresh colors opaque in paint packing")
+  local _, _, fv1 = paint.to_hsv(fr.colors[1])
+  local _, _, fvn = paint.to_hsv(fr.colors[#fr.colors])
+  check(fvn > fv1, "palette: fresh ramp runs dark -> light")
   -- the load() door (file-backed, cached)
   pal.write_file("/tmp/cosmic_selftest.pal", bytes)
   local ld = pl.load("/tmp/cosmic_selftest.pal")
