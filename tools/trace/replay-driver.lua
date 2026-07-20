@@ -99,6 +99,13 @@ local function drive()
   if pe == nil then return end  -- pre-attach frames keep the pad away
   if vid == nil then
     vid = assert(pal.x_pad_virtual(), "virtual pad refused")
+    -- SDL exposes the attached joystick to SetJoystickVirtual* only after its
+    -- hot-plug event is pumped and the PAL opens it. Some traces carry a
+    -- non-neutral axis in their very first PAD record, so waiting for the
+    -- ordinary end-of-drive pump makes that first poke fail instead of merely
+    -- delaying it. Pump once to open, then stage the wanted state below; the
+    -- final pump emits those button/axis events into the same polled frame.
+    pal.x_events_pump()
     pal.log("[recut] virtual pad attached before frame " .. (f + 1))
   end
   if not pe.none then

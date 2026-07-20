@@ -8024,4 +8024,9 @@ from -16 to +32 through the new control and observed one dirty working song;
 the 1280x800 capture was inspected and posted to llm-feed. Every stock/demo
 song rendered for a complete loop through the real sim sequencer: **zero
 clipped samples**, maximum channel peak 30,586, and channel RMS imbalance at
-or below 1.50 dB. The human's speakers remain the final taste check.
+or below 1.50 dB. The 2,068-frame demo camera-tour trace was honestly recut
+after the song-state change: its decoded and raw `FRAM` input records are
+byte-identical to the prior trace, and the replacement verifies end to end.
+That recut also fixed the generic driver to pump a newly attached virtual pad
+before staging a non-neutral first record. The human's speakers remain the
+final taste check.
