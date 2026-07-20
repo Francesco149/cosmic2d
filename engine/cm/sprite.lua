@@ -55,7 +55,8 @@ end
 local function new_layer(name, w, h, frames)
   local cells = {}
   for f = 1, frames do cells[f] = paint.image(w, h) end -- transparent
-  return { name = name, opacity = 255, hidden = false, locked = false, cells = cells }
+  return { name = name, opacity = 255, hidden = false, locked = false,
+           blend = "normal", cells = cells }
 end
 
 -- a blank document: one transparent layer, one frame, the default palette.
@@ -87,22 +88,25 @@ local function clone_cell(src, w, h)
   return img
 end
 
--- deep-copy a layer's gradient fill (so a snapshot / dup is independent of the
--- live one — nested p0/p1/stops cloned). nil stays nil.
+-- deep-copy a layer's fill (so a snapshot / dup is independent of the live
+-- one — nested p0/p1/stops cloned). nil stays nil. Carries the procedural
+-- fields (seed/scale/oct/solid, D141) beside the gradient ones.
 local function clone_fill(f)
   if not f then return nil end
   local stops = {}
   for i, s in ipairs(f.stops) do stops[i] = { pos = s.pos, rgba = s.rgba } end
   return { type = f.type, p0 = { x = f.p0.x, y = f.p0.y },
            p1 = { x = f.p1.x, y = f.p1.y }, stops = stops,
-           levels = f.levels, dither = f.dither, bayer = f.bayer, phase = f.phase }
+           levels = f.levels, dither = f.dither, bayer = f.bayer, phase = f.phase,
+           seed = f.seed, scale = f.scale, oct = f.oct, solid = f.solid }
 end
 
 local function clone_layer(l, w, h, frames)
   local cells = {}
   for f = 1, frames do cells[f] = clone_cell(l.cells[f], w, h) end
   return { name = l.name, opacity = l.opacity, hidden = l.hidden,
-           locked = l.locked, cells = cells, fill = clone_fill(l.fill) }
+           locked = l.locked, blend = l.blend, cells = cells,
+           fill = clone_fill(l.fill) }
 end
 
 -- deep-copy the clip list (so a snapshot / undo is independent of the live one).
@@ -453,6 +457,7 @@ function M.set_size(doc, nw, nh, opts)
       local f = l.fill
       if f then
         f.p0.x, f.p0.y, f.p1.x, f.p1.y = f.p0.x * sx, f.p0.y * sy, f.p1.x * sx, f.p1.y * sy
+        if f.scale then f.scale = f.scale * (sx + sy) / 2 end -- procedural feature size follows
       end
     end
   else
@@ -506,20 +511,27 @@ end
 
 -- bake a layer's fill into its pixels (DESTRUCTIVE) and drop the fill object —
 -- one undo step (a structural snapshot covers both the recolored pixels and the
--- removed fill). Recolors every frame's visible pixels by the same geometry.
+-- removed fill). Recolors every frame's visible pixels by the same geometry; a
+-- SOLID fill (D141) writes the whole canvas instead of masking to the cell.
 function M.stamp_fill(doc, li)
   li = li or doc.cur_layer
   local l = doc.layers[li]
   if not l or not l.fill then return end
   local before = capture_struct(doc)
-  for f = 1, doc.frames do paint.grad_fill(l.cells[f], l.fill, l.cells[f]) end
+  for f = 1, doc.frames do
+    -- NOTE: `solid and nil or cell` would fall through to cell — spell it out
+    local mask; if not l.fill.solid then mask = l.cells[f] end
+    paint.grad_fill(l.cells[f], l.fill, mask)
+  end
   l.fill = nil
   push_struct(doc, before)
 end
 
--- the cell to composite for a layer+frame: the raw cell, or — if the layer has a
--- gradient fill — a shaded copy (the fill recolored over the cell's alpha) in a
--- per-doc reuse scratch. The shade is transient; the live pixels are untouched.
+-- the cell to composite for a layer+frame: the raw cell, or — if the layer has
+-- a fill — a shaded copy in a per-doc reuse scratch: masked fills recolor over
+-- the cell's alpha; SOLID fills (D141) render the whole canvas (the generated
+-- layer — noise/gradient over everything, the cell's paint ignored while the
+-- fill is live). The shade is transient; the live pixels are untouched.
 local function shaded_cell(doc, l, fi)
   local cell = l.cells[fi]
   if not l.fill then return cell end
@@ -528,33 +540,40 @@ local function shaded_cell(doc, l, fi)
     s = paint.image(doc.w, doc.h); doc._shade = s
   end
   paint.fill(s, 0)
-  paint.grad_fill(s, l.fill, cell)
+  local mask; if not l.fill.solid then mask = cell end
+  paint.grad_fill(s, l.fill, mask)
   return s
 end
 
 -- ---- compositing + bake ----
 
 -- flatten the VISIBLE layers of one frame into `out` (a w*h image), bottom→top,
--- honoring per-layer opacity. out is cleared first. This is what the canvas
--- previews and what bake lays into the strip.
+-- honoring per-layer opacity and blend mode (D141). out is cleared first. This
+-- is what the canvas previews and what bake lays into the strip.
 function M.composite_into(doc, fi, out)
   paint.fill(out, 0)
   for _, l in ipairs(doc.layers) do
     if not l.hidden and l.opacity > 0 then
       local cell = shaded_cell(doc, l, fi)
-      -- one C src-over blit per layer (mode 1), the per-layer opacity scaling
-      -- source alpha — byte-identical to the old per-pixel paint.over loop.
-      pal.blit32(out.buf, doc.w, doc.h, 0, 0, cell.buf, doc.w, doc.h, 0, 0,
-                 doc.w, doc.h, 1, l.opacity)
+      if (l.blend or "normal") ~= "normal" then
+        -- per-pixel integer blend (mul/add/screen/overlay) — cm.paint.blend_blit
+        paint.blend_blit(out, cell, l.blend, l.opacity)
+      else
+        -- one C src-over blit per layer (mode 1), the per-layer opacity scaling
+        -- source alpha — byte-identical to the old per-pixel paint.over loop.
+        pal.blit32(out.buf, doc.w, doc.h, 0, 0, cell.buf, doc.w, doc.h, 0, 0,
+                   doc.w, doc.h, 1, l.opacity)
+      end
     end
   end
   return out
 end
 
 -- merge layer `li` DOWN onto the layer below (li-1): flatten li's visible pixels
--- (honoring its opacity + gradient fill) over the layer below, per frame, then
--- drop li. The layer below's own fill is baked first so the flattened result
--- stays faithful. One undo step; a no-op for the bottom layer.
+-- (honoring its opacity, blend mode, and fill) over the layer below, per frame,
+-- then drop li. The layer below's own fill is baked first so the flattened
+-- result stays faithful; the merged layer keeps the BOTTOM's blend mode (its
+-- own is consumed by the flatten). One undo step; a no-op for the bottom layer.
 function M.merge_down(doc, li)
   li = li or doc.cur_layer
   if li <= 1 then return end
@@ -562,10 +581,17 @@ function M.merge_down(doc, li)
   local top, bot = doc.layers[li], doc.layers[li - 1]
   local op = top.opacity
   for f = 1, doc.frames do
-    if bot.fill then paint.grad_fill(bot.cells[f], bot.fill, bot.cells[f]) end
+    if bot.fill then
+      local mask; if not bot.fill.solid then mask = bot.cells[f] end
+      paint.grad_fill(bot.cells[f], bot.fill, mask)
+    end
     local src = shaded_cell(doc, top, f) -- top's pixels incl. its own fill
-    pal.blit32(bot.cells[f].buf, doc.w, doc.h, 0, 0, src.buf, doc.w, doc.h,
-               0, 0, doc.w, doc.h, 1, op) -- src-over with the top's opacity
+    if (top.blend or "normal") ~= "normal" then
+      paint.blend_blit(bot.cells[f], src, top.blend, op)
+    else
+      pal.blit32(bot.cells[f].buf, doc.w, doc.h, 0, 0, src.buf, doc.w, doc.h,
+                 0, 0, doc.w, doc.h, 1, op) -- src-over with the top's opacity
+    end
   end
   bot.fill = nil
   table.remove(doc.layers, li)
@@ -592,10 +618,19 @@ local function layer_flags(l)
   return (l.hidden and 1 or 0) | (l.locked and 2 or 0)
 end
 
--- gradient-fill type <-> a stable u8 id for the FILL chunk
-local FILL_TYPES = { "linear", "radial", "angular", "mirror" }
+-- fill type <-> a stable u8 id for the FILL chunk. 1..4 are the gradient
+-- geometries (v1-era ids, frozen); 5..10 are the procedural value fields
+-- (D141) — only ever written in FILL v2 records.
+local FILL_TYPES = { "linear", "radial", "angular", "mirror",
+                     "noise", "fbm", "ridged", "cells", "shards", "facets" }
 local FILL_TID = {}
 for i, t in ipairs(FILL_TYPES) do FILL_TID[t] = i end
+
+-- layer blend mode <-> a stable u8 id for the BLND chunk (D141)
+local BLEND_MODES = { "normal", "mul", "add", "screen", "overlay" }
+local BLEND_ID = {}
+for i, t in ipairs(BLEND_MODES) do BLEND_ID[t] = i end
+M.BLEND_MODES = BLEND_MODES -- shared with the studio's blend chip
 
 -- clip loop mode <-> a stable u8 id for the CLIP chunk
 local LOOP_MODES = { "loop", "once", "pingpong" }
@@ -604,11 +639,15 @@ for i, t in ipairs(LOOP_MODES) do LOOP_ID[t] = i end
 
 -- one fill record: layer index (the binding) + the def. Floats keep fractional
 -- handle coords; spaces in the pack format are ignored (readability only).
+-- v1 is the frozen gradient-only record (still decoded); v2 (D141) appends the
+-- procedural fields — seed, oct, solid, scale — before the stop count.
 local FILL_FMT = "<I4 I1 ffff ff I2 I1 I1"
+local FILL_FMT2 = "<I4 I1 ffff ff I2 I1 I4 I1 I1 f I1"
 local function encode_fill(idx, f)
-  local parts = { pack(FILL_FMT, idx, FILL_TID[f.type] or 1,
+  local parts = { pack(FILL_FMT2, idx, FILL_TID[f.type] or 1,
     f.p0.x, f.p0.y, f.p1.x, f.p1.y, f.dither or 0, f.phase or 0,
-    f.levels or 2, f.bayer or 4, #f.stops) }
+    f.levels or 2, f.bayer or 4, f.seed or 0, f.oct or 4,
+    f.solid and 1 or 0, f.scale or 8, #f.stops) }
   for _, s in ipairs(f.stops) do parts[#parts + 1] = pack("<fI4", s.pos, s.rgba) end
   return table.concat(parts)
 end
@@ -627,13 +666,24 @@ function M.encode(doc)
     for f = 1, doc.frames do parts[#parts + 1] = l.cells[f].buf:str(0, cellbytes) end
     w.chunk("LAYR", 1, table.concat(parts))
   end
-  -- FILL: the non-destructive gradient fills (one record per layer that has one)
+  -- BLND: layer blend modes (D141) — one record per non-normal layer; a
+  -- separate chunk (the FILL precedent) so pre-D141 readers keep every layer
+  -- and just composite normal. Absent when everything is normal.
+  local blends = {}
+  for i, l in ipairs(doc.layers) do
+    local bid = BLEND_ID[l.blend or "normal"] or 1
+    if bid ~= 1 then blends[#blends + 1] = pack("<I4I1", i, bid) end
+  end
+  if #blends > 0 then
+    w.chunk("BLND", 1, pack("<I4", #blends) .. table.concat(blends))
+  end
+  -- FILL: the non-destructive fills (one v2 record per layer that has one)
   local fills = {}
   for i, l in ipairs(doc.layers) do
     if l.fill then fills[#fills + 1] = encode_fill(i, l.fill) end
   end
   if #fills > 0 then
-    w.chunk("FILL", 1, pack("<I4", #fills) .. table.concat(fills))
+    w.chunk("FILL", 2, pack("<I4", #fills) .. table.concat(fills))
   end
   -- CLIP: the animation clips (names, loop modes, frame sequences) — Phase 4
   if #doc.clips > 0 then
@@ -678,7 +728,7 @@ function M.decode(blob)
     elseif c.tag == "LAYR" and c.version == 1 and doc then
       li = li + 1
       local name, opacity, flags, pos = unpack("<s2I1I1", c.payload)
-      local l = { name = name, opacity = opacity,
+      local l = { name = name, opacity = opacity, blend = "normal",
                   hidden = (flags & 1) ~= 0, locked = (flags & 2) ~= 0, cells = {} }
       for f = 1, doc.frames do
         local img = paint.image(doc.w, doc.h)
@@ -687,13 +737,29 @@ function M.decode(blob)
         pos = pos + cellbytes
       end
       doc.layers[li] = l
-    elseif c.tag == "FILL" and c.version == 1 and doc then
+    elseif c.tag == "BLND" and c.version == 1 and doc then
       -- comes after the LAYR chunks (encode order), so the layers exist
+      local nb, pos = unpack("<I4", c.payload)
+      for _ = 1, nb do
+        local idx, bid
+        idx, bid, pos = unpack("<I4I1", c.payload, pos)
+        local l = doc.layers[idx]
+        if l then l.blend = BLEND_MODES[bid] or "normal" end
+      end
+    elseif c.tag == "FILL" and (c.version == 1 or c.version == 2) and doc then
+      -- comes after the LAYR chunks (encode order), so the layers exist.
+      -- v1 = the frozen gradient-only record; v2 adds seed/oct/solid/scale.
       local nf, pos = unpack("<I4", c.payload)
       for _ = 1, nf do
         local idx, tid, p0x, p0y, p1x, p1y, dith, ph, lv, by, ns
-        idx, tid, p0x, p0y, p1x, p1y, dith, ph, lv, by, ns, pos =
-          unpack(FILL_FMT, c.payload, pos)
+        local seed, oct, solid, scale = 0, 4, 0, 8
+        if c.version == 2 then
+          idx, tid, p0x, p0y, p1x, p1y, dith, ph, lv, by,
+            seed, oct, solid, scale, ns, pos = unpack(FILL_FMT2, c.payload, pos)
+        else
+          idx, tid, p0x, p0y, p1x, p1y, dith, ph, lv, by, ns, pos =
+            unpack(FILL_FMT, c.payload, pos)
+        end
         local stops = {}
         for i = 1, ns do
           stops[i] = {}
@@ -703,7 +769,9 @@ function M.decode(blob)
         if l then
           l.fill = { type = FILL_TYPES[tid] or "linear",
                      p0 = { x = p0x, y = p0y }, p1 = { x = p1x, y = p1y },
-                     stops = stops, dither = dith, phase = ph, levels = lv, bayer = by }
+                     stops = stops, dither = dith, phase = ph, levels = lv,
+                     bayer = by, seed = seed, oct = oct,
+                     solid = solid ~= 0, scale = scale }
         end
       end
     elseif c.tag == "CLIP" and c.version == 1 and doc then

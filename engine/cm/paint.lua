@@ -509,6 +509,104 @@ function M.ramp(stops, t)
   return stops[n].rgba
 end
 
+-- ---- procedural value fields (fills that GENERATE; D141) ----
+--
+-- A procedural fill is the same object as a gradient fill — stops + levels +
+-- dither + phase all apply — but its t comes from a deterministic value field
+-- instead of geometry: noise (one octave of value noise), fbm (oct octaves),
+-- ridged (creased fbm — rock strata / veins), cells (Worley F1 — organic
+-- cells / scales), shards (Worley F2−F1 — cracks between crystal facets),
+-- facets (flat random tone per Worley cell — the crystal look). Extra fields:
+-- seed (integer), scale (px per feature, default 8), oct (octaves, default 4),
+-- solid (render unmasked — see grad_fill). The lattice hash is the terr.lua
+-- family: pure IEEE integer arithmetic, no libm, identical on every platform.
+
+local function phash(seed, ix, iy)
+  local s = (seed ~ (ix * 374761393) ~ (iy * 668265263)) & 0xffffffff
+  s = (s ~ (s << 13)) & 0xffffffff
+  s = s ~ (s >> 17)
+  s = (s ~ (s << 5)) & 0xffffffff
+  return (s & 0xffff) / 65535.0
+end
+
+-- value noise at a unit lattice (x/y in lattice units), smoothstep-blended.
+local function vnoise(seed, x, y)
+  local gx, gy = floor(x), floor(y)
+  local fx, fy = x - gx, y - gy
+  local a = phash(seed, gx, gy)
+  local b = phash(seed, gx + 1, gy)
+  local c = phash(seed, gx, gy + 1)
+  local d = phash(seed, gx + 1, gy + 1)
+  local u = fx * fx * (3 - 2 * fx)
+  local v = fy * fy * (3 - 2 * fy)
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v
+end
+
+-- fbm: oct octaves of value noise, lacunarity 2, gain 0.5, normalized to 0..1.
+-- ridge=true creases each octave (1 - |2v-1|) — the rock/vein variant.
+local function fbm(seed, x, y, oct, ridge)
+  local sum, amp, norm, freq = 0, 1, 0, 1
+  for o = 1, oct do
+    local v = vnoise(seed + o * 1013, x * freq, y * freq)
+    if ridge then v = 1 - abs(2 * v - 1) end
+    sum = sum + v * amp
+    norm = norm + amp
+    amp = amp * 0.5
+    freq = freq * 2
+  end
+  return sum / norm
+end
+
+-- Worley: one feature point per lattice cell (jittered by hash); scan the 3x3
+-- neighborhood for the two nearest. Returns f1, f2 (cell-unit distances) and
+-- the nearest point's own hash (the flat per-cell tone for "facets").
+local function worley(seed, x, y)
+  local gx, gy = floor(x), floor(y)
+  local f1, f2, id = 1e9, 1e9, 0
+  for oy = -1, 1 do
+    for ox = -1, 1 do
+      local cx, cy = gx + ox, gy + oy
+      local px = cx + phash(seed, cx, cy)
+      local py = cy + phash(seed + 7177, cx, cy)
+      local dx, dy = px - x, py - y
+      local d = sqrt(dx * dx + dy * dy)
+      if d < f1 then
+        f2, f1, id = f1, d, phash(seed + 3313, cx, cy)
+      elseif d < f2 then
+        f2 = d
+      end
+    end
+  end
+  return f1, f2, id
+end
+
+-- the procedural types and their raw t at a lattice point (each ~0..1; the
+-- caller clamps). Exposed as a set so grad_shade / the studio can route.
+local PROC = {
+  noise = function(f, x, y) return vnoise(f.seed or 0, x, y) end,
+  fbm = function(f, x, y) return fbm(f.seed or 0, x, y, f.oct or 4) end,
+  ridged = function(f, x, y) return fbm(f.seed or 0, x, y, f.oct or 4, true) end,
+  cells = function(f, x, y) return min(1, (worley(f.seed or 0, x, y))) end,
+  shards = function(f, x, y)
+    local f1, f2 = worley(f.seed or 0, x, y)
+    return min(1, f2 - f1)
+  end,
+  facets = function(f, x, y)
+    local _, _, id = worley(f.seed or 0, x, y)
+    return id
+  end,
+}
+
+function M.is_proc(type) return PROC[type] ~= nil end
+
+-- the procedural t for one pixel: p0 is the drag offset, scale the feature
+-- size in px (min 2 keeps the field from degenerating into per-pixel hash).
+function M.proc_t(fill, x, y)
+  local s = max(2, fill.scale or 8)
+  local p0 = fill.p0 or { x = 0, y = 0 }
+  return PROC[fill.type](fill, (x - p0.x) / s, (y - p0.y) / s)
+end
+
 -- the classic recursive Bayer index matrices (ordered-dither thresholds).
 local BAYER = {
   [2] = { 0, 2, 3, 1 },
@@ -575,14 +673,21 @@ local function fold_tri(t) -- period-2 triangle wave 0→1→0 (for the mirror t
   return m > 1 and 2 - m or m
 end
 
--- the gradient color at one pixel: geometry → +phase → per-type normalize →
--- ordered-dither band snap → ramp sample. A complete, pure "color at (x,y)".
+-- the fill color at one pixel: value (geometry OR procedural field) → +phase →
+-- per-type normalize → ordered-dither band snap → ramp sample. A complete,
+-- pure "color at (x,y)".
 function M.grad_shade(fill, x, y)
-  local p0, p1 = fill.p0, fill.p1
-  local t = M.grad_t(fill.type, x, y, p0.x, p0.y, p1.x, p1.y) + (fill.phase or 0)
-  if fill.type == "angular" then t = t - floor(t)
-  elseif fill.type == "mirror" then t = fold_tri(t)
-  else t = t < 0 and 0 or (t > 1 and 1 or t) end
+  local t
+  if PROC[fill.type] then
+    t = M.proc_t(fill, x, y) + (fill.phase or 0)
+    t = t < 0 and 0 or (t > 1 and 1 or t)
+  else
+    local p0, p1 = fill.p0, fill.p1
+    t = M.grad_t(fill.type, x, y, p0.x, p0.y, p1.x, p1.y) + (fill.phase or 0)
+    if fill.type == "angular" then t = t - floor(t)
+    elseif fill.type == "mirror" then t = fold_tri(t)
+    else t = t < 0 and 0 or (t > 1 and 1 or t) end
+  end
   t = M.dither_t(t, fill.levels or 2, fill.dither or 0, M.bayer(fill.bayer or 4, x, y))
   return M.ramp(fill.stops, t)
 end
@@ -592,15 +697,83 @@ end
 -- shape is the layer's, the color is the ramp's; STUDIO.md §6). Masked-out
 -- pixels are left untouched, so pass a cleared scratch (composite) or the cell
 -- itself (in-place destructive stamp). img and mask must share dimensions.
+-- mask == nil renders UNMASKED over the whole image (a SOLID fill, D141):
+-- every pixel takes the ramp color with the ramp's own alpha — the "add a
+-- layer of noise and blend it to taste" door.
 function M.grad_fill(img, fill, mask)
   for y = 0, img.h - 1 do
     for x = 0, img.w - 1 do
-      local ma = (M.get(mask, x, y) >> 24) & 255
-      if ma ~= 0 then
-        local c = M.grad_shade(fill, x, y)
-        local ca = (c >> 24) & 255
-        local oa = ca == 255 and ma or (ca * ma + 127) // 255
-        M.set(img, x, y, (c & 0x00ffffff) | (oa << 24))
+      if mask == nil then
+        M.set(img, x, y, M.grad_shade(fill, x, y))
+      else
+        local ma = (M.get(mask, x, y) >> 24) & 255
+        if ma ~= 0 then
+          local c = M.grad_shade(fill, x, y)
+          local ca = (c >> 24) & 255
+          local oa = ca == 255 and ma or (ca * ma + 127) // 255
+          M.set(img, x, y, (c & 0x00ffffff) | (oa << 24))
+        end
+      end
+    end
+  end
+end
+
+-- ---- layer blend modes (composite-time; D141) ----
+--
+-- The pixel-art roster, deliberately small: normal (src-over — the C blit32
+-- fast path, not here), mul (shadows / tinting), add (glows / light), screen
+-- (soft light — mul's dual), overlay (contrast: mul below 50%, screen above).
+-- Math is the W3C compositing model in 0..255 integers: the source color is
+-- first blended against the BACKDROP color where the backdrop has coverage
+-- (cs' = (1-da)·cs + da·B(cb,cs)), then ordinary src-over composites cs' with
+-- the source's (opacity-scaled) alpha. Where the backdrop is transparent a
+-- blend layer degrades to normal — mul over nothing paints, not blackens.
+
+M.BLEND = { "normal", "mul", "add", "screen", "overlay" }
+
+local function blend_ch(mode, cb, cs)
+  if mode == "mul" then return (cb * cs + 127) // 255 end
+  if mode == "add" then return min(255, cb + cs) end
+  if mode == "screen" then return 255 - ((255 - cb) * (255 - cs) + 127) // 255 end
+  -- overlay
+  if cb < 128 then return (2 * cb * cs + 127) // 255 end
+  return 255 - (2 * (255 - cb) * (255 - cs) + 127) // 255
+end
+
+-- composite src over dst (same dimensions) with blend `mode` and layer
+-- opacity 0..255. Pure integer, per-pixel — the non-normal path only; normal
+-- layers ride pal.blit32 mode 1. sa==0 pixels are skipped, so a blend layer's
+-- transparent texels leave the backdrop untouched (like any other layer).
+function M.blend_blit(dst, src, mode, opacity)
+  opacity = opacity or 255
+  local n = dst.w * dst.h
+  local db, sb = dst.buf, src.buf
+  for i = 0, n - 1 do
+    local off = i * 4
+    local s = sb:u32(off)
+    local sa = (s >> 24) & 255
+    if sa ~= 0 and opacity ~= 0 then
+      sa = opacity == 255 and sa or (sa * opacity + 127) // 255
+      local d = db:u32(off)
+      local da = (d >> 24) & 255
+      local sr, sg, sbl = s & 255, (s >> 8) & 255, (s >> 16) & 255
+      local dr, dg, dbl = d & 255, (d >> 8) & 255, (d >> 16) & 255
+      if da ~= 0 then -- blend against the backdrop where it has coverage
+        local ia = 255 - da
+        sr = (ia * sr + da * blend_ch(mode, dr, sr) + 127) // 255
+        sg = (ia * sg + da * blend_ch(mode, dg, sg) + 127) // 255
+        sbl = (ia * sbl + da * blend_ch(mode, dbl, sbl) + 127) // 255
+      end
+      -- ordinary src-over with the blended source color
+      local dterm = (da * (255 - sa) + 127) // 255
+      local oa = sa + dterm
+      if oa == 0 then
+        db:u32(off, 0)
+      else
+        local orr = (sr * sa + dr * dterm + oa // 2) // oa
+        local og = (sg * sa + dg * dterm + oa // 2) // oa
+        local ob = (sbl * sa + dbl * dterm + oa // 2) // oa
+        db:u32(off, M.pack(orr, og, ob, oa))
       end
     end
   end

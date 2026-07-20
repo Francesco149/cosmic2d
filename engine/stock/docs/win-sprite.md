@@ -50,6 +50,52 @@ stamp tool; right-click the well (or the strip's `x` chip) to clear it.
   **straight line from the last pixel you painted** (a preview line
   shows first).
 
+## Layers: opacity, blend modes, lock and order
+
+The right rail lists the layers top-down. Click a row to select it, click
+the **eye dot** to hide/show, **right-click a row to lock it** (a locked
+layer refuses paint; a small red dot marks it). Under the list, **+ -**
+add/delete and **^ v** move the selected layer up/down the stack.
+
+Below that sit the selected layer's **mix controls**:
+
+- **op** — layer opacity (drag the dial; 5% steps).
+- **mix** — the blend mode: **normal, mul, add, screen, overlay**
+  (click cycles forward, right-click back). *mul* darkens (shadows,
+  texture), *add* glows, *screen* lightens softly, *overlay* adds
+  contrast. Over empty pixels every mode just paints, so a blend layer
+  never blackens transparent canvas.
+
+## Fills: gradients and procedural fields
+
+The **fill** chip gives the selected layer a live, non-destructive fill —
+saved in the `.spr`, re-rendered every time the sprite composites, and
+adjustable forever until you **bake** it. Click to cycle (right-click goes
+back): four gradients (**linear, radial, angular, mirror**) and six
+**procedural fields** — **noise** (soft value noise), **fbm** (cloudy
+fractal), **ridged** (creased strata — rock veins), **cells** (organic
+cells/scales), **shards** (cracks between cells — cobblestone), and
+**facets** (flat random tone per cell — crystal planes).
+
+By default a fill **recolors the layer's painted pixels** (the shape is
+yours, the colors are the ramp's — draw a rock silhouette, pick *ridged*,
+and it shades itself). Toggle **solid** to cover the whole canvas instead:
+an empty layer + a solid *fbm* + *mix mul* + a low **op** is "a layer of
+noise, blended to taste".
+
+The dials underneath tune it live:
+
+- **sd** — the random seed (drag to reroll the field).
+- **px** — feature size in pixels (procedural types).
+- **oct** — detail octaves (fbm/ridged).
+- **lv** — color bands; **di** — dither strength between bands. Every
+  output pixel is an exact ramp color — dithered bands, never a blur.
+- **cols** re-ramps the fill from your secondary → primary color;
+  **bake** stamps the fill into the layer's pixels and removes it.
+
+The ramp is created from your two active colors when the fill is born, so
+pick the colors first (a transparent secondary makes speckle overlays).
+
 ## Colors & palettes
 
 New assets auto-name with three random words, so nothing blocks on a filename —

@@ -11,11 +11,16 @@
 -- by path. One gesture (stroke / fill / structure op) = one encode + one
 -- journal push — the studio's in-memory undo is not used.
 --
--- v1 roster (D051 — deliberately lean): pencil / eraser / bucket /
--- eyedropper, the doc palette + hex add, layer list (select/eye/add/del),
--- frame chips (select/add/dup/del), wheel zoom + middle-drag pan.
--- Gradients/transforms/clips/pivot editing return as content work
--- demands them (.spr carries them; saving preserves what we don't show).
+-- roster: pencil / eraser / bucket / eyedropper / curve / stamp, the doc
+-- palette + hex add, frame chips (select/add/dup/del), wheel zoom +
+-- middle-drag pan, and the layers rail (D051 lean v1, grown at D141):
+-- select/eye/add/del plus reorder (^ v), right-click lock, and the
+-- selected layer's MIX controls — opacity dial, blend-mode chip
+-- (normal/mul/add/screen/overlay), and the fill chip (the four gradients
+-- + the six procedural fields) with seed/scale/oct/levels/dither dials,
+-- the solid toggle, cols re-ramp, and bake (cm.sprite.stamp_fill).
+-- Transforms/clips/pivot editing return as content work demands them
+-- (.spr carries them; saving preserves what we don't show).
 --
 -- The brush row (the human's ask): pen + eraser carry a size (1..32,
 -- default 1), a shape (circle/square) and an opacity, dialed in the
@@ -50,7 +55,7 @@ local TOOLS = { { "pen", "P" }, { "eraser", "E" }, { "fill", "F" },
 
 function M.defaults()
   return { path = "", edit = false, tool = "pen", color = 0xffffffff,
-           color2 = 0x000000ff, palettes = {},
+           color2 = 0xff000000, palettes = {},
            bsize = 1, bshape = "circle", bop = 1 }
 end
 
@@ -98,7 +103,7 @@ M.hotkeys = {
     end },
   { key = "x", hint = "swap colors", when = editing,
     fn = function(win, ed)
-      win.color, win.color2 = win.color2 or 0x000000ff, win.color or 0xffffffff
+      win.color, win.color2 = win.color2 or 0xff000000, win.color or 0xffffffff
       ed.touch()
     end },
   { key = "shift+1", hint = "fit",
@@ -211,9 +216,16 @@ end
 -- working CSPR bytes in doc.assets[path].spr, the §6 contract generated
 
 local function decode_into(p, bytes)
+  -- keep the layer/frame cursors across a re-adopt (undo/redo/save walk the
+  -- journal through here; the codec doesn't carry cursors, and snapping back
+  -- to layer 1 mid-edit reads as lost state)
+  local pl = p.doc and p.doc.cur_layer
+  local pf = p.doc and p.doc.cur_frame
   local ok, doc = pcall(sprite.decode, bytes)
   if ok then
     p.doc = doc
+    if pl then doc.cur_layer = math.min(pl, #doc.layers) end
+    if pf then doc.cur_frame = math.min(pf, doc.frames) end
     p.err = nil
   else
     p.doc = nil
@@ -534,14 +546,14 @@ function M.draw(win, ctx)
   local sbx, sby = ctx.cx + 3 * z, ctx.cy + cvh - TR + 2 * z
   local s2 = swz * 0.62
   pal.x_ig_rect_fill(sbx + swz - s2, sby + swz - s2, s2, s2,
-                     disp(win.color2 or 0x000000ff), 2 * z)
+                     disp(win.color2 or 0xff000000), 2 * z)
   pal.x_ig_rect(sbx + swz - s2, sby + swz - s2, s2, s2, 0x000000aa, 1, 2 * z)
   pal.x_ig_rect_fill(sbx, sby, swz * 0.78, swz * 0.78,
                      disp(win.color or 0xffffffff), 2 * z)
   pal.x_ig_rect(sbx, sby, swz * 0.78, swz * 0.78, 0x000000aa, 1, 2 * z)
   if ctx.hot and i.wx >= sbx and i.wx < sbx + swz and i.wy >= sby
      and i.wy < sby + swz and i.clicked[3] then
-    win.color, win.color2 = win.color2 or 0x000000ff, win.color or 0xffffffff
+    win.color, win.color2 = win.color2 or 0xff000000, win.color or 0xffffffff
     ctx.touch()
   end
 
@@ -606,7 +618,7 @@ function M.draw(win, ctx)
   -- 2-color ask); the eraser always clears
   local function paintcol(rmb)
     if win.tool == "eraser" then return 0 end
-    return rmb and (win.color2 or 0x000000ff) or (win.color or 0xffffffff)
+    return rmb and (win.color2 or 0xff000000) or (win.color or 0xffffffff)
   end
   local mx, my = pixel_at(i.wx, i.wy)
   local paintable = over_canvas and cell and not (layer and layer.locked)
@@ -730,9 +742,12 @@ function M.draw(win, ctx)
     end
   end
 
-  -- layers rail (right)
+  -- layers rail (right): the list (click = select, eye = hide, RIGHT-click =
+  -- lock), + - ↑ ↓, then the CURRENT layer's mix controls — opacity, blend
+  -- mode, and the fill (gradients + the procedural fields; D141)
   local lx = ctx.cx + ctx.cw - LR + 3 * z
   pal.x_ig_rect_fill(lx - 3 * z, ctx.cy, LR, cvh, COL.rail, 4 * z)
+  pal.x_ig_clip_push(lx - 3 * z, ctx.cy, LR, cvh)
   local ly = ctx.cy + 4 * z
   local rh = px * 1.6
   pal.x_ig_text(lx + 2 * z, ly, px * 0.85, COL.dim, "layers", 0)
@@ -746,10 +761,13 @@ function M.draw(win, ctx)
       pal.x_ig_rect_fill(lx, ly, LR - 9 * z, rh,
                          on and COL.btn_on or COL.btn_hot, 3 * z)
     end
-    -- eye toggle
+    -- eye toggle (locked layers carry a small danger dot at the row's right)
     local ex = lx + 2 * z
     local eyec = l.hidden and COL.dim or COL.accent
     pal.x_ig_circle_fill(ex + 4 * z, ly + rh * 0.5, 2.5 * z, eyec)
+    if l.locked then
+      pal.x_ig_circle_fill(lx + LR - 14 * z, ly + rh * 0.5, 2 * z, COL.danger)
+    end
     if hov and i.clicked[1] then
       if i.wx < ex + 9 * z then
         l.hidden = not l.hidden
@@ -759,6 +777,9 @@ function M.draw(win, ctx)
         doc.cur_layer = li
         ctx.touch()
       end
+    elseif hov and i.clicked[3] then
+      l.locked = not l.locked
+      commit(ed, win.path)
     end
     pal.x_ig_clip_push(lx + 10 * z, ly, LR - 22 * z, rh)
     pal.x_ig_text(lx + 12 * z, ly + (rh - px) * 0.45, px * 0.95,
@@ -766,18 +787,185 @@ function M.draw(win, ctx)
     pal.x_ig_clip_pop()
     ly = ly + rh + 2 * z
   end
-  local bw = (LR - 14 * z) / 2
-  if button(i, ctx, lx, ly, bw, rh, "+", false, px) then
-    sprite.add_layer(doc)
-    p.comp_dirty = true
-    commit(ed, win.path)
+  local bw = (LR - 18 * z) / 4
+  local lops = {
+    { "+", function() sprite.add_layer(doc) end },
+    { "-", function()
+        if #doc.layers > 1 then sprite.delete_layer(doc, doc.cur_layer) end
+      end },
+    { "^", function() sprite.move_layer(doc, doc.cur_layer, 1) end },
+    { "v", function() sprite.move_layer(doc, doc.cur_layer, -1) end },
+  }
+  for oi, op in ipairs(lops) do
+    if button(i, ctx, lx + (oi - 1) * (bw + 2 * z), ly, bw, rh, op[1],
+              false, px) then
+      op[2]()
+      p.comp_dirty = true
+      commit(ed, win.path)
+    end
   end
-  if button(i, ctx, lx + bw + 2 * z, ly, bw, rh, "-", false, px)
-     and #doc.layers > 1 then
-    sprite.delete_layer(doc, doc.cur_layer)
-    p.comp_dirty = true
-    commit(ed, win.path)
+  ly = ly + rh + 4 * z
+
+  -- the mix controls live on p-dials: drag steps the value live (the
+  -- composite follows), releasing the drag commits ONE journal entry.
+  local function mixdial(id, x, y, w, txt)
+    local hov = ctx.hot and i.wx >= x and i.wx < x + w
+                and i.wy >= y and i.wy < y + rh
+    pal.x_ig_rect_fill(x, y, w, rh,
+                       (p.bg and p.bg.id == id) and COL.btn_on
+                       or (hov and COL.btn_hot or COL.btn), 3 * z)
+    pal.x_ig_text(x + 4 * z, y + (rh - px * 0.9) * 0.45, px * 0.9,
+                  hov and COL.hot or COL.dim, txt, 0)
+    if hov and i.clicked[1] then p.bg = { id = id, mx = i.wx } end
+    if p.bg and p.bg.id == id then
+      if i.buttons[1] then
+        local stp = 6 * z
+        local d = math.floor((i.wx - p.bg.mx) / stp)
+        if d ~= 0 then
+          p.bg.mx = p.bg.mx + d * stp
+          ctx.touch()
+          return d, false
+        end
+      else
+        p.bg = nil
+        return 0, true
+      end
+    end
+    return 0, false
   end
+  local function mixstep(d, rel)
+    if d ~= 0 then p.comp_dirty, p.mixdirty = true, true end
+    if rel and p.mixdirty then
+      p.mixdirty = nil
+      commit(ed, win.path)
+    end
+  end
+  -- a chip that cycles a mode list: left-click forward, right-click back
+  local function cyclechip(x, y, w, label, on)
+    local hov = ctx.hot and i.wx >= x and i.wx < x + w
+                and i.wy >= y and i.wy < y + rh
+    pal.x_ig_rect_fill(x, y, w, rh, on and COL.btn_on
+                       or (hov and COL.btn_hot or COL.btn), 3 * z)
+    pal.x_ig_clip_push(x, y, w, rh)
+    pal.x_ig_text(x + 4 * z, y + (rh - px * 0.9) * 0.45, px * 0.9,
+                  (on or hov) and COL.hot or COL.text, label, 0)
+    pal.x_ig_clip_pop()
+    if hov and i.clicked[1] then return 1 end
+    if hov and i.clicked[3] then return -1 end
+    return 0
+  end
+
+  local lcur = doc.layers[doc.cur_layer]
+  if lcur then
+    local rw = LR - 9 * z
+    local half = (rw - 2 * z) / 2
+    -- opacity (0..100%, 5% steps)
+    local opct = math.floor((lcur.opacity or 255) / 255 * 100 + 0.5)
+    local d, rel = mixdial("lop", lx, ly, rw, ("op %d%%"):format(opct))
+    if d ~= 0 then
+      opct = math.max(0, math.min(100, opct + d * 5))
+      lcur.opacity = math.floor(opct * 2.55 + 0.5)
+    end
+    mixstep(d, rel)
+    ly = ly + rh + 2 * z
+    -- blend mode (the sprite codec's roster; normal = the C fast path)
+    local modes = sprite.BLEND_MODES
+    local mi = 1
+    for k, m in ipairs(modes) do if m == (lcur.blend or "normal") then mi = k end end
+    local dm = cyclechip(lx, ly, rw, "mix " .. modes[mi], mi ~= 1)
+    if dm ~= 0 then
+      mi = (mi - 1 + dm) % #modes + 1
+      lcur.blend = modes[mi]
+      p.comp_dirty = true
+      commit(ed, win.path)
+    end
+    ly = ly + rh + 2 * z
+    -- the fill: none → the gradient geometries → the procedural fields.
+    -- A fresh fill ramps secondary → primary at creation ("cols" re-grabs).
+    local FILLS = { "none", "linear", "radial", "angular", "mirror",
+                    "noise", "fbm", "ridged", "cells", "shards", "facets" }
+    local fi2 = 1
+    if lcur.fill then
+      for k, t in ipairs(FILLS) do if t == lcur.fill.type then fi2 = k end end
+    end
+    local df = cyclechip(lx, ly, rw, "fill " .. FILLS[fi2], fi2 ~= 1)
+    if df ~= 0 then
+      fi2 = (fi2 - 1 + df) % #FILLS + 1
+      if fi2 == 1 then
+        lcur.fill = nil
+      elseif lcur.fill then
+        lcur.fill.type = FILLS[fi2]
+      else
+        lcur.fill = {
+          type = FILLS[fi2], p0 = { x = 0, y = 0 },
+          p1 = { x = 0, y = math.max(1, doc.h - 1) },
+          stops = { { pos = 0, rgba = win.color2 or 0xff000000 },
+                    { pos = 1, rgba = win.color or 0xffffffff } },
+          levels = 4, dither = 1, bayer = 4, phase = 0,
+          seed = 1, scale = 8, oct = 4, solid = false,
+        }
+      end
+      p.comp_dirty = true
+      commit(ed, win.path)
+    end
+    ly = ly + rh + 2 * z
+    local fl = lcur.fill
+    if fl then
+      local proc = paint.is_proc(fl.type)
+      -- seed | solid
+      d, rel = mixdial("fsd", lx, ly, half, ("sd %d"):format(fl.seed or 0))
+      if d ~= 0 then fl.seed = math.max(0, (fl.seed or 0) + d) end
+      mixstep(d, rel)
+      if button(i, ctx, lx + half + 2 * z, ly, half, rh, "solid",
+                fl.solid == true, px * 0.9) then
+        fl.solid = not fl.solid
+        p.comp_dirty = true
+        commit(ed, win.path)
+      end
+      ly = ly + rh + 2 * z
+      -- feature size (procedural) | octaves (the fractal fields)
+      if proc then
+        d, rel = mixdial("fsc", lx, ly, half, ("px %d"):format(fl.scale or 8))
+        if d ~= 0 then
+          fl.scale = math.max(2, math.min(64, (fl.scale or 8) + d))
+        end
+        mixstep(d, rel)
+        if fl.type == "fbm" or fl.type == "ridged" then
+          d, rel = mixdial("foc", lx + half + 2 * z, ly, half,
+                           ("oct %d"):format(fl.oct or 4))
+          if d ~= 0 then fl.oct = math.max(1, math.min(8, (fl.oct or 4) + d)) end
+          mixstep(d, rel)
+        end
+        ly = ly + rh + 2 * z
+      end
+      -- bands | dither strength
+      d, rel = mixdial("flv", lx, ly, half, ("lv %d"):format(fl.levels or 2))
+      if d ~= 0 then fl.levels = math.max(2, math.min(16, (fl.levels or 2) + d)) end
+      mixstep(d, rel)
+      d, rel = mixdial("fdi", lx + half + 2 * z, ly, half,
+                       ("di %d%%"):format(math.floor((fl.dither or 0) * 100 + 0.5)))
+      if d ~= 0 then
+        fl.dither = math.max(0, math.min(1, (fl.dither or 0) + d * 0.1))
+      end
+      mixstep(d, rel)
+      ly = ly + rh + 2 * z
+      -- cols (re-ramp from the active colors) | bake (stamp into pixels)
+      if button(i, ctx, lx, ly, half, rh, "cols", false, px * 0.9) then
+        fl.stops = { { pos = 0, rgba = win.color2 or 0xff000000 },
+                     { pos = 1, rgba = win.color or 0xffffffff } }
+        p.comp_dirty = true
+        commit(ed, win.path)
+      end
+      if button(i, ctx, lx + half + 2 * z, ly, half, rh, "bake",
+                false, px * 0.9) then
+        sprite.stamp_fill(doc, doc.cur_layer)
+        p.comp_dirty = true
+        commit(ed, win.path)
+      end
+      ly = ly + rh + 2 * z
+    end
+  end
+  pal.x_ig_clip_pop()
 
   -- palette row — led by the TRANSPARENT swatch (paint/fill with
   -- transparency: pen = erase, bucket = the "transparency fill")

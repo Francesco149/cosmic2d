@@ -3558,6 +3558,122 @@ local function t_grad()
   check(paint.get(outg, 3, 0) == paint.pack(255, 255, 255, 128), "grad: grad_fill keeps the mask alpha")
 end
 
+-- ---- cm.paint: procedural value fields (fills that generate; D141) ----
+local function t_procfill()
+  local paint = cm.require("cm.paint")
+  local BLK, WHT = paint.pack(0, 0, 0), paint.pack(255, 255, 255)
+  local two = { { pos = 0, rgba = BLK }, { pos = 1, rgba = WHT } }
+  local TYPES = { "noise", "fbm", "ridged", "cells", "shards", "facets" }
+
+  check(paint.is_proc("fbm") and paint.is_proc("facets")
+        and not paint.is_proc("linear") and not paint.is_proc("radial"),
+        "proc: is_proc routes the six fields, not the gradients")
+
+  -- every field: in range, deterministic (same call = same value), and
+  -- seed-sensitive (a reseed actually moves the field)
+  for _, ty in ipairs(TYPES) do
+    local f = { type = ty, p0 = { x = 0, y = 0 }, p1 = { x = 8, y = 0 },
+                seed = 1, scale = 4, oct = 3 }
+    local ok_range, moved = true, false
+    for y = 0, 7 do
+      for x = 0, 7 do
+        local t = paint.proc_t(f, x, y)
+        if t < 0 or t > 1 then ok_range = false end
+        if t ~= paint.proc_t(f, x, y) then ok_range = false end
+        local t2 = paint.proc_t({ type = ty, p0 = f.p0, p1 = f.p1,
+                                  seed = 99, scale = 4, oct = 3 }, x, y)
+        if t2 ~= t then moved = true end
+      end
+    end
+    check(ok_range, "proc: " .. ty .. " in [0,1] + repeatable")
+    check(moved, "proc: " .. ty .. " reseed moves the field")
+  end
+
+  -- p0 is a pure translation of the field
+  local fa = { type = "fbm", p0 = { x = 0, y = 0 }, seed = 5, scale = 4, oct = 4 }
+  local fb = { type = "fbm", p0 = { x = 3, y = 2 }, seed = 5, scale = 4, oct = 4 }
+  check(paint.proc_t(fa, 1, 1) == paint.proc_t(fb, 4, 3),
+        "proc: p0 translates the field exactly")
+
+  -- facets is FLAT inside a cell: at a huge scale every canvas px shares one
+  -- Worley cell, so the tone is constant (the crystal-facet read)
+  local ff = { type = "facets", p0 = { x = 0, y = 0 }, seed = 2, scale = 1000 }
+  check(paint.proc_t(ff, 0, 0) == paint.proc_t(ff, 7, 5),
+        "proc: facets flat per cell")
+
+  -- a proc fill shades through the same band/ramp pipe: 2 hard bands can only
+  -- ever emit exact ramp endpoint colors
+  local pf = { type = "noise", p0 = { x = 0, y = 0 }, p1 = { x = 8, y = 0 },
+               stops = two, levels = 2, dither = 0, bayer = 2, phase = 0,
+               seed = 3, scale = 3 }
+  local okc = true
+  for y = 0, 5 do
+    for x = 0, 5 do
+      local c = paint.grad_shade(pf, x, y)
+      if c ~= BLK and c ~= WHT then okc = false end
+    end
+  end
+  check(okc, "proc: shades to exact ramp band colors")
+
+  -- solid render: grad_fill with a nil mask writes EVERY pixel (ramp alpha)
+  local img = paint.image(4, 2)
+  paint.grad_fill(img, pf, nil)
+  local all = true
+  for y = 0, 1 do
+    for x = 0, 3 do
+      local c = paint.get(img, x, y)
+      if c ~= BLK and c ~= WHT then all = false end
+    end
+  end
+  check(all, "proc: solid grad_fill covers the whole canvas")
+end
+
+-- ---- cm.paint: layer blend modes (composite-time; D141) ----
+local function t_blend()
+  local paint = cm.require("cm.paint")
+  local function img1(c)
+    local i = paint.image(1, 1)
+    paint.set(i, 0, 0, c)
+    return i
+  end
+  local function bl(dstc, srcc, mode, op)
+    local d = img1(dstc)
+    paint.blend_blit(d, img1(srcc), mode, op or 255)
+    return paint.get(d, 0, 0)
+  end
+  local RED = paint.pack(255, 0, 0)
+  local WHT = paint.pack(255, 255, 255)
+  local BLK = paint.pack(0, 0, 0)
+  local GRY = paint.pack(128, 128, 128)
+
+  check(bl(RED, WHT, "mul") == RED, "blend: mul by white is identity")
+  check(bl(RED, BLK, "mul") == BLK, "blend: mul by black is black")
+  check(bl(RED, GRY, "mul") == paint.pack(128, 0, 0), "blend: mul halves")
+  check(bl(paint.pack(200, 0, 0), paint.pack(100, 0, 50), "add")
+        == paint.pack(255, 0, 50), "blend: add clamps per channel")
+  check(bl(GRY, GRY, "screen") == paint.pack(192, 192, 192), "blend: screen brightens")
+  check(bl(paint.pack(64, 200, 0), GRY, "overlay")
+        == paint.pack(64, 200, 0), "blend: overlay muls dark / screens light")
+
+  -- a blend layer over TRANSPARENT backdrop degrades to normal (paints, not
+  -- blackens) — the W3C backdrop-weighted source color
+  check(bl(0, GRY, "mul") == GRY, "blend: over transparent = plain paint")
+  -- transparent source pixels leave the backdrop untouched
+  check(bl(RED, 0, "mul") == RED, "blend: transparent src skipped")
+  -- layer opacity scales the source alpha before compositing: half-op white
+  -- mul over opaque red keeps full coverage, color halfway red→red = red;
+  -- over black it lands halfway black→black... use add for a visible mid
+  check(bl(BLK, paint.pack(255, 255, 255, 255), "add", 128)
+        == paint.pack(128, 128, 128), "blend: opacity scales the source")
+  -- semi-alpha source composites with correct coverage: 50% white mul over
+  -- opaque red → blend color red, half-covered → (191,0,0)-ish exact math:
+  -- sa=128, blended src = red; out = (255*128 + 255*127+127)//255-weighted
+  local out = bl(RED, paint.pack(255, 255, 255, 128), "mul")
+  local r, g, b, a = paint.unpack(out)
+  check(r == 255 and g == 0 and b == 0 and a == 255,
+        "blend: semi-alpha mul keeps the backdrop channel math")
+end
+
 -- ---- cm.sprite: the studio document — model, .spr codec, bake, undo (M10) ----
 local function t_sprite()
   local sprite = cm.require("cm.sprite")
@@ -3593,6 +3709,63 @@ local function t_sprite()
   check(paint.get(sprite.cell(doc2, 1, 1), 2, 3) == RED, "sprite: decode layer 1 px")
   check(paint.get(sprite.cell(doc2, 2, 1), 2, 3) == GRN, "sprite: decode layer 2 px")
   check(doc2.palette[12] == doc.palette[12], "sprite: decode palette")
+
+  -- blend modes composite + round-trip (BLND chunk, D141)
+  local WHT = paint.pack(255, 255, 255)
+  paint.set(l2.cells[1], 2, 3, paint.pack(128, 128, 128))
+  l2.blend = "mul"
+  sprite.composite_into(doc, 1, out)
+  check(paint.get(out, 2, 3) == paint.pack(128, 0, 0),
+        "sprite: mul layer multiplies the backdrop")
+  local docb = sprite.decode(sprite.encode(doc))
+  check(docb.layers[2].blend == "mul" and docb.layers[1].blend == "normal",
+        "sprite: BLND round-trips (normal stays implicit)")
+  l2.blend = "normal"
+  paint.set(l2.cells[1], 2, 3, GRN)
+
+  -- procedural fill v2 round-trip (seed/scale/oct/solid ride the FILL chunk)
+  local pfill = { type = "fbm", p0 = { x = 1, y = 2 }, p1 = { x = 5, y = 2 },
+                  stops = { { pos = 0, rgba = RED }, { pos = 1, rgba = WHT } },
+                  levels = 3, dither = 0.5, bayer = 4, phase = 0,
+                  seed = 42, scale = 5, oct = 3, solid = true }
+  doc.layers[1].fill = pfill
+  local docf = sprite.decode(sprite.encode(doc))
+  local rf = docf.layers[1].fill
+  check(rf and rf.type == "fbm" and rf.seed == 42 and rf.oct == 3
+        and rf.solid == true and rf.scale == 5 and #rf.stops == 2
+        and rf.levels == 3, "sprite: FILL v2 round-trips the procedural fields")
+  -- a solid fill composites over the whole canvas (the generated layer);
+  -- both docs shade identically (the codec carried everything the shade reads)
+  local o1, o2 = paint.image(8, 6), paint.image(8, 6)
+  sprite.composite_into(doc, 1, o1)
+  sprite.composite_into(docf, 1, o2)
+  local samec = true
+  for yy = 0, 5 do
+    for xx = 0, 7 do
+      if paint.get(o1, xx, yy) ~= paint.get(o2, xx, yy) then samec = false end
+      if (paint.get(o1, xx, yy) >> 24) & 255 == 0 then samec = false end
+    end
+  end
+  check(samec, "sprite: solid fill covers the canvas + decoded doc shades byte-identically")
+  doc.layers[1].fill = nil
+
+  -- FILL v1 (a pre-D141 file) still decodes, procedural fields defaulted
+  local ch = cm.require("cm.chunk")
+  local wv1 = ch.writer("CSPR")
+  wv1.chunk("HEAD", 1, string.pack("<I4I4I4I4I4i4i4s2", 4, 4, 1, 1, 0, 0, 0, "v1"))
+  wv1.chunk("PALT", 1, string.pack("<I4", 0))
+  wv1.chunk("LAYR", 1, string.pack("<s2I1I1", "l", 255, 0)
+            .. string.rep("\0", 4 * 4 * 4))
+  wv1.chunk("FILL", 1, string.pack("<I4", 1)
+            .. string.pack("<I4 I1 ffff ff I2 I1 I1", 1, 2, 0, 0, 3, 3,
+                           0.5, 0, 3, 4, 1)
+            .. string.pack("<fI4", 0, RED))
+  wv1.chunk("TAIL", 1, string.pack("<I4I4", 1, 1))
+  local dv1 = sprite.decode(wv1.result())
+  local fv1 = dv1.layers[1].fill
+  check(fv1 and fv1.type == "radial" and fv1.levels == 3 and fv1.solid == false
+        and fv1.scale == 8 and fv1.oct == 4 and fv1.seed == 0,
+        "sprite: FILL v1 decodes with procedural defaults")
 
   -- bake: flattened strip (1 frame here), top layer wins at (2,3)
   local strip = sprite.bake_image(doc)
@@ -11632,8 +11805,8 @@ local function t_docs()
       "cm.hud", "cm.move", "cm.tmap", "cm.anim", "cm.sprite", "cm.snd",
       "cm.ins", "cm.options", "cm.save", "cm.palette", "cm.grade", "cm.rand",
       "cm.math", "cm.ease", "cm.m4", "cm.gb", "cm.terr", "cm.terr3",
-      "cm.atlas", "cm.fig", "cm.mascot", "cm.spr", "cm.rig", "cm.kin",
-      "cm.walk" }) do
+      "cm.atlas", "cm.mesh", "cm.song", "cm.fig", "cm.mascot", "cm.spr",
+      "cm.rig", "cm.kin", "cm.walk" }) do
     local named = false
     for _, h in ipairs(docs.search(mod)) do
       if h.name == "scripting.md" and h.section
@@ -13633,6 +13806,8 @@ function game.init()
   t_paint()
   t_brush()
   t_grad()
+  t_procfill()
+  t_blend()
   t_sprite()
   t_anim()
   t_asset_reload()

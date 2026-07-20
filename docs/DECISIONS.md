@@ -7352,3 +7352,97 @@ exact vertex tones, cross-quad byte-identical shared verts, flat
 ground unchanged, exact bilerped bake texels, the spill rect) /
 native Windows 24,894; `nix run .#test` ALL GREEN with EVERY golden
 byte-identical (no golden uses terr3) and all traces byte-exact.
+
+## D141 — the sprite ed mixes: layer blend modes, procedural fills, the mix rail (2026-07-20)
+
+The human's ask, verbatim intent: "layer opacity and a few basic
+blending modes + a few procedural primitives to choose from in the
+sprite editor... e.g. add a layer of noise and blend it to taste, with
+a good roster of procedural primitives to produce various interesting
+results like crystal/rock structures from noise". The audit found the
+document model half-ready — per-layer opacity existed but had NO
+editor control, and the non-destructive gradient-fill system (stops +
+levels + ordered dither, D051/STUDIO §6) had no UI at all. Decision:
+procedural primitives are NEW FILL TYPES — a procedural fill computes
+its t from a deterministic value field instead of geometry and feeds
+the SAME stops/levels/dither/ramp pipe, so every generated pixel is an
+exact ramp band color (pixel-art quantized by construction, crystal /
+rock ramps come free from the stops) and the .spr keeps it live,
+reseedable, re-rampable forever until baked.
+
+- **cm.paint value fields**: `phash`/`vnoise` (the terr.lua integer-
+  hash family — pure IEEE arithmetic, platform-identical), fbm (oct
+  octaves, lacunarity 2), and one 3x3 Worley walk serving three
+  types. The roster: **noise** (one octave), **fbm** (clouds),
+  **ridged** (creased octaves — strata/veins), **cells** (Worley F1 —
+  organic cells), **shards** (F2−F1 — cracks/cobble), **facets**
+  (nearest-point hash — flat tone per cell, the crystal read).
+  `proc_t` maps px → field via `scale` (feature size, min 2) offset by
+  p0; `grad_shade` routes `is_proc` types; phase still slides the ramp.
+- **Blend modes**: layer.blend ∈ normal/mul/add/screen/overlay.
+  `paint.blend_blit` is the per-pixel integer W3C model — the source
+  color is backdrop-weighted (cs' = (1−da)·cs + da·B(cb,cs)) then
+  src-over composites with the opacity-scaled source alpha, so a blend
+  layer over transparent canvas PAINTS instead of blackening. Normal
+  layers keep the C blit32 fast path byte-identically; composite_into
+  and merge_down both honor the mode (a merged layer consumes its own).
+- **Solid fills**: fill.solid renders the fill UNMASKED over the whole
+  canvas (grad_fill's mask arg goes nil) — the "layer of noise" door;
+  default stays the D051 semantic (recolor the layer's own alpha — draw
+  a silhouette, let ridged shade it). stamp_fill/merge_down honor it.
+- **Codec**: FILL chunk v2 appends seed/oct/solid/scale (v1 still
+  decodes, procedural fields defaulted — KAT'd on hand-built v1
+  bytes); type ids 5..10 append to the frozen 1..4. Blend rides a NEW
+  `BLND` chunk (index + mode id, non-normal layers only, the FILL
+  binding precedent) so a pre-D141 reader keeps every layer and just
+  composites normal. set_size scales fill.scale with the doc.
+- **The mix rail** (win/sprite.lua): the layers list gains right-click
+  LOCK (red dot; paint already honored `locked` — the toggle was the
+  missing half) and `^ v` reorder beside +/-; below it the selected
+  layer's controls — **op** dial (5% steps), **mix** chip, **fill**
+  chip (cycle fwd/back through none + 10 types), and per-fill dials
+  **sd/px/oct/lv/di** + **solid** toggle + **cols** (re-ramp from the
+  active secondary→primary) + **bake** (stamp_fill). Dial drags mutate
+  the live doc and commit ONE journal entry on release; chips commit
+  per click; everything composites live through comp_dirty.
+- **Two class bugs found by the work**: (1) `solid and nil or cell` —
+  the Lua and/or fall-through (the D128 class, AGAIN) silently kept
+  the mask; spelled out with an explicit if at all three grad_fill
+  call sites and the tape's flat-canvas probe now pins it. (2) the
+  window's default secondary color was `0x000000ff` — DISPLAY-packed
+  "opaque black" but the win.color fields are cm.paint-packed (R low
+  byte), so the shipped default secondary was TRANSPARENT RED: rmb
+  paint with the untouched default painted invisible red pixels, and
+  the first fill ramp lerped through half-alpha pink. All seven
+  fallbacks now 0xff000000 (paint-packed black). (3, small) journal
+  re-adopts (undo/redo/save) rebuilt the decoded doc and snapped
+  cur_layer/cur_frame back to 1 — decode_into now carries the cursors
+  across, clamped.
+
+Proof: Linux selftest **24,924** (+32: t_procfill — six-type
+range/repeatability/reseed sweeps, p0 translation exactness, facets
+flat-per-cell, band-exact shading, solid full-coverage; t_blend —
+per-mode known answers incl. clamp, transparent-backdrop degrade,
+transparent-src skip, opacity scaling, semi-alpha compositing;
+t_sprite — mul composite known answer, BLND round-trip with implicit
+normal, FILL v2 procedural round-trip + byte-identical decoded
+composite, FILL v1 decode with defaults). A shell-driven tape on a
+fresh smoke copy proved the REAL rail 12/12: kit fresh door → flood
+coat → + adds layer 2 → fill chip cycled to fbm → solid on → mix mul
+→ opacity dialed to exactly 75% → one ctrl+z undid the whole dial
+gesture / ctrl+y returned it → ctrl+s → the DISK .spr round-trips
+blend+fill and the baked .png published. The six-field montage +
+procedural-meets-hand panels (masked ridged rock, drawn-gem facets)
+and the tape's final frame are on llm-feed. `nix run .#test` ALL
+GREEN, goldens byte-identical (the sprite compositor's normal path
+is the untouched C blit; no shipped asset carries a blend/fill yet).
+
+Deferred honestly: gradient p0/p1 handle dragging (gradients ship
+with a vertical default axis; the dials cover procedural needs), a
+per-stop ramp editor (cols re-grabs two stops), layer rename, the
+mix rail clipping (not scrolling) past ~8 layers, blend modes in the
+C blit path (Lua per-pixel is fine at sprite sizes), and dedicated
+stock crystal/rock ramp presets (the palette window's ramp generator
+already feeds swatches). Revisit triggers: a shipped demo authoring
+big (>=256px) blended sprites; the human asking for gradient axis
+control in the window.
