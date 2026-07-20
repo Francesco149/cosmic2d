@@ -8680,6 +8680,26 @@ local function t_snd_claim()
         "snd_claim: slots stamp independently")
 end
 
+local function t_preview_voice()
+  -- D147 addendum 2: the music preview's voice picker. The old blind
+  -- round-robin OVERWROTE still-held voices (x_snd_ed_on with an
+  -- explicit index) — a chord dragged across bars died after ~24
+  -- percussion events ("the long chords stop after ~1 bar", dunes).
+  local pv = cm.require("cm.ed.win.music").preview_voice
+  local v, nxt = pv({}, {}, nil)
+  check(v == 8 and nxt == 9, "preview_voice: fresh state starts at 8")
+  v = pv({ a = 8, b = 9 }, {}, 8)
+  check(v == 10, "preview_voice: held voices are skipped, never stomped")
+  v = pv({ x = 31 }, {}, 31)
+  check(v == 8, "preview_voice: the scan wraps 31 -> 8")
+  v = pv({}, { [10] = 5 }, 10)
+  check(v == 11, "preview_voice: ringing blips are skipped too")
+  local all = {}
+  for i = 8, 31 do all["h" .. i] = i end
+  v = pv(all, {}, 14)
+  check(v == 14, "preview_voice: every voice held steals in order")
+end
+
 local function t_stock_window()
   -- D147: the read-only stock-assets window — the list spans the five
   -- shipped families, dest mapping + auto-name uniquifying, the copy
@@ -14161,6 +14181,7 @@ function game.init()
   t_song()
   t_stock_songs()
   t_snd_claim()
+  t_preview_voice()
   t_stock_window()
   t_ed_lex()
   t_ed_assets()

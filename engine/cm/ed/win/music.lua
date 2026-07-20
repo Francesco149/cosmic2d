@@ -226,8 +226,8 @@ local function preview_step(ed, win, p)
         for _, n in ipairs(lane) do
           if n.tick >= t1 then break end
           if n.tick >= t0 then
-            local v = 8 + (p.pvoice % 24)
-            p.pvoice = p.pvoice + 1
+            local v
+            v, p.pvoice = M.preview_voice(p.pheld, p.blips, p.pvoice)
             pal.x_snd_ed_on(v, p.pslots[ti], n.pitch, n.vel)
             p.pheld[ti .. ":" .. n.tick .. ":" .. n.pitch .. ":"
                     .. (n.tick + n.dur)] = v
@@ -238,13 +238,33 @@ local function preview_step(ed, win, p)
   end
 end
 
+-- pick a preview voice (8..31) that is NOT still holding a note or
+-- ringing a blip. The old blind round-robin killed a long chord the
+-- moment ~24 busy-percussion events had passed — x_snd_ed_on with an
+-- explicit index OVERWRITES the voice, so a pad dragged across bars
+-- died after ~one bar of beat (the D147 dunes report). Steals the
+-- round-robin voice only when all 24 are genuinely held. Pure over
+-- (pheld, blips, pvoice) — KAT'd.
+function M.preview_voice(pheld, blips, pvoice)
+  pvoice = pvoice or 8
+  local used = {}
+  for _, hv in pairs(pheld or {}) do used[hv] = true end
+  for bv in pairs(blips or {}) do used[bv] = true end
+  for k = 0, 23 do
+    local v = 8 + (pvoice - 8 + k) % 24
+    if not used[v] then return v, 8 + (v - 8 + 1) % 24 end
+  end
+  local v = 8 + (pvoice - 8) % 24 -- every voice held: steal in order
+  return v, 8 + (v - 8 + 1) % 24
+end
+
 -- a one-note audition blip (add/drag feedback)
 local function blip(ed, win, p, pitch, vel)
   preview_slots(ed, win, p)
   local slot = p.pslots[win.trk or 1]
   if not slot then return end
-  local v = 8 + ((p.pvoice or 8) % 24)
-  p.pvoice = (p.pvoice or 8) + 1
+  local v
+  v, p.pvoice = M.preview_voice(p.pheld, p.blips, p.pvoice)
   pal.x_snd_ed_on(v, slot, pitch, vel or 100)
   p.blips = p.blips or {}
   p.blips[v] = 10
