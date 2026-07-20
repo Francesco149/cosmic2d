@@ -6756,6 +6756,8 @@ local function t_project_templates()
           and (t.key == "blank"
                or pmeta.description:find(t.label, 1, true) ~= nil),
           "templates: " .. t.key .. " metadata boots and names provenance")
+    check(pmeta ~= nil and pmeta.template == t.key,
+          "templates: " .. t.key .. " records its starter key (D145)")
     local chunk, cerr = load(bytes, "@" .. dir .. "/main.lua")
     check(chunk ~= nil,
           "templates: " .. t.key .. " loads (" .. tostring(cerr) .. ")")

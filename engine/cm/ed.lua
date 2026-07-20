@@ -119,24 +119,32 @@ local K = { escape = 41, lbracket = 47, rbracket = 48, space = 44,
 
 -- ---- boot ----
 
-local function fresh_doc()
+-- a fresh session's first window pair: the game + the doc reader opened
+-- on the make-a-game walkthrough for the project's starter template
+-- (D145 — was the R3 welcome-note key list; the canvas grammar lives in
+-- the bottom hint pill and editor.md). project.lua's `template` key maps
+-- to a guide; projects that predate the key get the generic path.
+local TEMPLATE_GUIDE = {
+  platformer = "make-platformer.md",
+  topdown = "make-topdown.md",
+  arcade = "make-arcade.md",
+  explore3d = "getting-started-3d.md",
+}
+local function guide_page(root)
+  local meta = cm.require("cm.project").read(root)
+  local page = meta and TEMPLATE_GUIDE[meta.template] or "getting-started.md"
+  -- the reader's ed.root-relative stock-doc convention (win.help)
+  return "../../engine/stock/docs/" .. page
+end
+
+local function fresh_doc(root)
   local doc = wm.init({ v = 1, cam = cam.new() })
   local gkind = cm.require("cm.ed.win.game")
   local extra, gw, gh = gkind.defaults() -- padded so the image sits 1:1
   wm.spawn(doc, "game", 40, 40, gw, gh, extra)
-  local n = wm.spawn(doc, "note", 40 + gw + 40, 40, 280, 220)
-  n.text = "welcome to the editor shell (R3).\n\n" ..
-           "wheel  zoom at cursor\nmiddle-drag / space  pan\n" ..
-           "drag a title bar   move a window\n" ..
-           "click/drag canvas  select\n" ..
-           "alt+drag    move from anywhere\n" ..
-           "alt+rclick  close (never loses work)\n" ..
-           "alt+v       selection mode\n" ..
-           "edges       drag to resize\nrclick      spawn menu\n" ..
-           "ctrl+space  the launcher — find/open anything\n" ..
-           "ctrl+tab    cycle window focus (+shift back)\n" ..
-           "ctrl+w      close the focused window\n" ..
-           "arrows      nudge selected (alt resize, shift x10)"
+  local h = wm.spawn(doc, "help", 40 + gw + 40, 40, 460, 560,
+                     cm.require("cm.ed.win.help").defaults())
+  h.path = guide_page(root)
   doc.sel, doc.focus = {}, 0
   return doc
 end
@@ -159,7 +167,7 @@ function M.launch(root)
     wm.init(M.doc)
     M.doc.cam = M.doc.cam or cam.new()
   else
-    M.doc = fresh_doc()
+    M.doc = fresh_doc(root)
   end
   M.on = true
   if recovery then

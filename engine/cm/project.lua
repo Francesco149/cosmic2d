@@ -25,6 +25,9 @@ return {
   author = "",
   version = "0.1",
   description = "__DESC__",
+  template = "__TEMPLATE__", -- the starter this scaffolded from; the editor
+                             -- opens the matching make-a-game guide on the
+                             -- project's first-ever session (D145)
   -- A player export additionally needs project-local icon/controls/credits
   -- files and at least one license. The project settings UI will fill these;
   -- see the scripting guide for the declarative metadata contract.
@@ -833,6 +836,7 @@ function M.scaffold(dir, name, fail, template)
   local subs = {
     __NAME__ = (name:gsub('[\\"]', "\\%1")),
     __SAVEID__ = M.save_slug(name), -- grammar-safe by construction
+    __TEMPLATE__ = tmpl.key, -- registry keys are grammar-safe literals
     __DESC__ = tmpl.main
       and ("started from the " .. tmpl.label .. " starter template") or "",
   }

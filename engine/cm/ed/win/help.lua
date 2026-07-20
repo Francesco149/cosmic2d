@@ -430,7 +430,13 @@ end
 
 local function read_doc(win, ed)
   if win._srcpath == win.path then return win._src end
-  win._src = pal.read_file(ed.root .. "/" .. win.path) or ""
+  -- root-relative first (the convention); a stock doc opened from a
+  -- project that does NOT sit two levels under the engine root (an
+  -- "open folder" project elsewhere) falls back to the engine-root
+  -- (cwd) spelling, so shipped pages still render there
+  win._src = pal.read_file(ed.root .. "/" .. win.path)
+             or pal.read_file((win.path:gsub("^(%.%./)+", "")))
+             or ""
   win._srcpath = win.path
   return win._src
 end

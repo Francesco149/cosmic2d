@@ -41,10 +41,17 @@ finally a portable player build. Every step uses only what ships in the box.
 
 Click **+ New project** on the picker (it is always the last tile). The
 chooser offers an editable three-word folder name — keep it or type your
-own — and four starters: **blank**, **platformer**, **top-down**, and
-**arcade**. Pick **platformer** and press **create**. The editor opens on
-your fresh project: a **game window** already running the starter, and a
-welcome note with the canvas keys.
+own — and five starters: **blank**, **platformer**, **top-down**,
+**arcade**, and the **3D vale**. Pick **platformer** and press
+**create**. The editor opens on your fresh project: a **game window**
+already running the starter, and this doc reader opened on that
+starter's own make-a-game walkthrough
+([platformer](engine/stock/docs/make-platformer.md) ·
+[top-down](engine/stock/docs/make-topdown.md) ·
+[arcade](engine/stock/docs/make-arcade.md) ·
+[3D](engine/stock/docs/getting-started-3d.md)). The canvas keys live in
+the hint pill at the bottom of the screen and in
+[using the editor](engine/stock/docs/editor.md).
 
 ### 2. Play it
 

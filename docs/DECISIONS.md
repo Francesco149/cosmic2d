@@ -7615,3 +7615,42 @@ launcher-bound sprite window rebound live across the rename; disk +
 journal + working-state + selection probes; collision refusal; esc;
 the narrow-palette wrap shot inspected + on llm-feed); selftest
 24,936; `nix run .#test` ALL GREEN, goldens byte-identical.
+
+## D145 — fresh projects open on their make-a-game walkthrough (2026-07-20)
+
+The human's ask: instead of the "welcome to the editor shell" note,
+open the doc reader on a walkthrough of MAKING A GAME appropriate to
+the picked project preset — tutorial style like the tool walkthroughs,
+not a feature reference. Landed as three pieces:
+
+- **Three new tutorial pages** (auto-indexed by cm.docs.list, so the
+  launcher/search find them): `make-platformer.md` (feel knobs → hero
+  sprite + anim → the SOLIDS-to-.map upgrade with room.world:move →
+  sfx/music → export), `make-topdown.md` (tiles → the room-becomes-
+  data move: gems as markers, portals via map.extras → mood), and
+  `make-arcade.md` (art pass → juice through the tween.flash /
+  camera.offset accessibility doors → cm.save best score). The 3D
+  starter maps to the existing getting-started-3d.md; blank and
+  pre-D145 projects get getting-started.md. Every code claim was
+  checked against scripting.md's actual API (the first draft invented
+  a `snd.play` door and a pad rumble; both caught and corrected).
+- **project.lua records its starter**: scaffold substitutes
+  `template = "<key>"` (a new PROJECT_TMPL field; registry keys are
+  grammar-safe literals). KAT'd per template in the boot-smoke loop.
+- **fresh_doc(root) spawns game + reader** (the note is gone; the
+  canvas keys live in the bottom hint pill and editor.md — the
+  getting-started text that pointed at the note now points at the
+  guides). The reader's `read_doc` gains a one-line fallback: a stock
+  doc path that misses root-relative retries at the engine root (cwd),
+  so an out-of-tree "open folder" project still RENDERS shipped pages
+  (link resolution there remains the pre-existing depth-2 limitation,
+  deliberately untouched).
+
+Proof: scaffold→open probes for platformer (in-tree AND out-of-tree —
+the fallback's live case) and topdown: wins = game+help, help.path =
+the right guide, the rendered page inspected (shot on llm-feed);
+selftest **24,947** (+11: the per-template `template` key, the docs
+sweeps over the new pages); `nix run .#test` ALL GREEN. Deferred
+honestly: the reader renders `*italic*` literally (pre-existing — the
+new pages avoid single-asterisk emphasis; shipped tool docs still
+carry some), out-of-tree stock-doc LINK resolution.
