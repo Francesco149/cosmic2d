@@ -477,7 +477,24 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
               mapfile -t args < "$a"
               echo "== pixels ''${a} =="
               shot="''${TMPDIR:-/tmp}/cosmic-pixel.png"
-              if ./bin/cosmic "''${args[@]}" --shot "$shot" >/dev/null \
+              run_ok=0
+              for attempt in 1 2 3; do
+                rm -f "$shot"
+                if ./bin/cosmic "''${args[@]}" --shot "$shot" >/dev/null; then
+                  run_ok=1
+                  break
+                else
+                  status=$?
+                fi
+                echo "pixel process failed (exit $status; attempt $attempt/3)"
+                # Hosted lavapipe can very occasionally die during a long
+                # software-rendered tour. Retry only SIGSEGV: Lua
+                # errors and all other product failures remain immediate, and
+                # every successful rerun must still byte-match the same golden.
+                if [ "$status" != 139 ] || [ "$attempt" = 3 ]; then break; fi
+                echo "retrying transient renderer crash"
+              done
+              if [ "$run_ok" = 1 ] \
                  && cmp -s "$shot" "''${a%.args}.png"; then
                 echo "pixel match"
               else
@@ -490,7 +507,9 @@ $(${pkgs.patchelf}/bin/patchelf --print-interpreter "$f" 2>/dev/null || true)"
           '';
           runner = pkgs.writeShellApplication {
             name = "cosmic-test";
-            runtimeInputs = [ pkgs.diffutils pkgs.findutils pkgs.lua5_4 ];
+            runtimeInputs = [
+              pkgs.coreutils pkgs.diffutils pkgs.findutils pkgs.lua5_4
+            ];
             text = suite;
           };
 

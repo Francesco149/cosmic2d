@@ -60,11 +60,6 @@ jobs:
       - uses: DeterminateSystems/determinate-nix-action@2a0be2498974c2b6327e19780488744384637d88 # v3.21.7
 
       - name: Deterministic suite (manifests + traces + pixel goldens)
-        # Bound lavapipe's worker pool on the hosted VM. The output is
-        # byte-identical; this avoids intermittent Mesa stalls/crashes on the
-        # longest 3D captures seen by the first public rehearsal.
-        env:
-          LP_NUM_THREADS: "1"
         run: nix run .#test
 
       - name: Build and verify both download archives

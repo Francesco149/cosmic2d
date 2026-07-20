@@ -49,12 +49,16 @@ and both sibling SHA-256 files verify.
 
 The first public Actions rehearsal paid for itself before publication: both
 candidate and nightly passed selftest and all traces, then the hosted
-lavapipe intermittently stalled and segfaulted on different long 3D captures
-(never a pixel-byte mismatch after a completed capture). The release workflows
-now pin Ubuntu 24.04, serialize through one non-cancelling concurrency group,
-and bound the suite to `LP_NUM_THREADS=1`. The four remotely affected captures
-all pass their exact goldens locally under that setting; the next immutable
-candidate is the remote proof of the corrected runner envelope.
+lavapipe intermittently exited 139 after different long 3D captures (never a
+pixel-byte mismatch after a completed capture). The `rc.3` rehearsal proved a
+one-worker Mesa limit was the wrong fix: it was exact locally but slower and
+less reliable remotely, so it is gone. The workflows now pin Ubuntu 24.04 and
+serialize through one non-cancelling concurrency group. The shared full-render
+golden runner retries only a SIGSEGV process, at most three fresh attempts;
+Lua/product errors and every other exit fail immediately, while any completed
+capture still must byte-match. The full suite is ALL GREEN locally with all
+captures succeeding first try; the next immutable candidate is the remote
+proof of this bounded retry envelope.
 
 **Exact next step — human release judgment, not more inferred scope.** This is
 still an experimental alpha candidate, not the alpha declaration. Listen to

@@ -8074,14 +8074,16 @@ pass; every pinned action commit resolves; `nix run .#test` is **ALL GREEN**
 passes native selftest **25,108** and the 830-frame cross-platform trace; both
 release derivations build and their sibling SHA-256 files verify.
 
-The first hosted rehearsal then exposed a runner-specific constraint rather
-than a game mismatch: both independent Ubuntu jobs passed selftest and every
-trace, but lavapipe intermittently stalled for minutes and segfaulted on
-different long 3D pixel captures. The standard public VM has ample nominal
-memory, and the failure set changed by run; the goldens all remained exact
-when the processes completed. Both workflows now explicitly pin Ubuntu 24.04,
-share one non-cancelling concurrency group, and set `LP_NUM_THREADS=1` for the
-suite. That bounds Mesa's worker pool and prevents candidate/nightly copies of
-the heavyweight proof from running together. The four captures observed to
-fail remotely (bounce tour, openworld stars/tour, rovale tour) each pass
-byte-identically under that exact one-worker setting locally.
+The first hosted rehearsals then exposed a runner-specific constraint rather
+than a game mismatch: every Ubuntu job passed selftest and every trace, but
+lavapipe intermittently exited 139 during different long 3D
+pixel tours. Every capture that completed matched its golden byte-for-byte,
+and the failure set changed by run. A one-worker Mesa experiment was exact
+locally but made the hosted envelope worse (`rc.3` took longer and lost all
+four heavy tours), so it was removed rather than laundering a failed theory
+into permanent CI. Both workflows explicitly pin Ubuntu 24.04 and share one
+non-cancelling concurrency group. The common golden runner now gives only a
+SIGSEGV capture process up to three fresh attempts; Lua/product errors and all
+other exits remain immediate failures, and a completed attempt still has to
+byte-match the pinned golden. The unchanged full-render suite is ALL GREEN
+locally with every capture succeeding on its first attempt.

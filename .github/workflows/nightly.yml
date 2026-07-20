@@ -69,11 +69,6 @@ jobs:
 
       - name: Deterministic suite (traces + pixel goldens on pinned lavapipe)
         if: steps.fresh.outputs.new == 'true'
-        # Lavapipe otherwise sizes its worker pool from the hosted VM topology.
-        # On Actions that made the longest 3D captures intermittently stall and
-        # die in Mesa; one worker is slower but stable and pixel-identical.
-        env:
-          LP_NUM_THREADS: "1"
         run: nix run .#test
 
       - name: Build the download archives
