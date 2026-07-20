@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D151–D153 are the first release-candidate cut: authored stereo, recoverable CI, a public showcase, and bounded headless rendering
+## Current handoff — D151–D154 are the first release-candidate cut: authored stereo, recoverable CI, a public showcase, and bounded headless rendering
 
 **D151** (`ff74c42`, with the honest trace recut in `2fccafb`) exposes the
 `.song` format's existing track pan as a real music-window mix control. The
@@ -66,6 +66,14 @@ golden was recut, and the complete suite remains **ALL GREEN** with every
 pixel byte-identical. The refreshed Windows stage passes native selftest
 **25,108** and an 830-frame native headless smoke run; the next immutable
 candidate is the hosted proof of the bounded queue.
+
+**D154** closes the publication-path issue found only after that proof passed.
+`rc.5` completed the hosted suite, built and checksum-verified both archives,
+and retained them as an Actions artifact; its final upload then encountered
+the repository's tracked `dist/manifests/` directory because release files had
+been staged beside it. Candidate and nightly now stage exclusively in
+`release-dist/`, so their artifact and `gh release` globs contain exactly the
+two archives and two sibling checksums.
 
 **Exact next step — after the candidate and nightly cuts are green, human
 release judgment, not more inferred scope.** This is still an experimental

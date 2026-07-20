@@ -77,16 +77,16 @@ jobs:
           set -euo pipefail
           nix build .#cosmic-linux-release -o result-linux
           nix build .#cosmic-windows-release -o result-windows
-          mkdir -p dist
-          cp -L result-linux/* result-windows/* dist/
-          (cd dist && sha256sum --check --strict ./*.sha256)
+          mkdir -p release-dist
+          cp -L result-linux/* result-windows/* release-dist/
+          (cd release-dist && sha256sum --check --strict ./*.sha256)
 
       - name: Retain the verified archives with the workflow run
         if: steps.fresh.outputs.new == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nightly-${{ github.sha }}
-          path: dist/
+          path: release-dist/
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -120,10 +120,10 @@ jobs:
             echo "Archives are unsigned alpha artifacts — verify the sibling \`.sha256\` before extraction; see THIRD_PARTY_NOTICES.md."
           } > notes.md
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" dist/* --clobber
+            gh release upload "$tag" release-dist/* --clobber
             gh release edit "$tag" --verify-tag --prerelease --latest=false \
               --title "$tag ($(git rev-parse --short HEAD))" --notes-file notes.md
           else
-            gh release create "$tag" dist/* --verify-tag --prerelease --latest=false \
+            gh release create "$tag" release-dist/* --verify-tag --prerelease --latest=false \
               --title "$tag ($(git rev-parse --short HEAD))" --notes-file notes.md
           fi

@@ -8113,3 +8113,18 @@ selftest **25,106**, every trace exact, and all 19 pixel captures byte-identical
 (including the four historically failing long tours). The Windows tree was
 rebuilt and passes native selftest **25,108** plus an 830-frame native headless
 smoke run.
+
+## D154 — release payloads stage outside the tracked distribution manifests (2026-07-20)
+
+`rc.5` proved D153 remotely: its full deterministic suite passed, both release
+derivations built, both sibling checksums verified, and the workflow artifact
+was retained. Publication alone failed because the workflow copied those four
+files into the repository's existing `dist/` tree, then passed `dist/*` to
+`gh release`. That glob correctly included the tracked `dist/manifests/`
+directory, which the GitHub release uploader refuses as a non-file.
+
+Both candidate and nightly workflows now use a fresh `release-dist/` staging
+directory for copying, checksum verification, Actions artifact retention, and
+GitHub release upload. The staging namespace cannot collide with shipped
+source directories, and every publication glob therefore contains exactly
+the Linux archive, Windows archive, and their two sibling SHA-256 files.
