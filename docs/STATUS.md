@@ -3,7 +3,50 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D157: the music roll grammar, round 9
+## Current handoff — D158: the music roll, round 10
+
+**This session (2026-07-21, later still): the human's three music
+asks — all landed as D158** (`a6eedda`). (1) **The .ins-drop hitbox
+report was real and diagnosed**: `M.drop` re-derived the track row
+with HARDCODED z=1 math off a guessed origin and never learned about
+D151's mix panel (the selected row is `px*3.45+3z` taller), so drops
+below the selection resolved one-plus rows high — often out of range,
+silently falling back to the SELECTED track ("it changes the track
+above"). The fix is class-level: the DRAW records the rail's real row
+bands into ephemeral plumbing (`p.rdrop[win.id]`) and drop resolves
+through pure `M.rail_hit` (KAT'd) — the drop can't disagree with the
+pixels because the pixels are the source. An in-flight `.ins` drag
+(`ed.g.adrag`) now OUTLINES the row it would bind. (2) **The piano
+keys column** on the roll's left edge (18z wide): one shared shift
+moves ruler + roll + velocity lane so tick axes stay aligned;
+white/black keys, B|C and E|F seams, octave labels moved onto the
+keys; click/drag auditions pitches through the existing blip door and
+the hovered pitch's key highlights. (3) **Add-drag SUSTAINS**: press
+empty arms the resize gesture (not move) on the fresh note past a 3z
+threshold — the end follows the cursor like an edge drag and the
+result becomes the new last-used length; a plain click still places
+at the last-used length. Round 9's drag-moves-the-fresh-note is
+superseded deliberately (the note is selected on release; move is one
+more drag away). **Proof:** a 24/24 probe tape on a fresh smoke copy
+(keys shift geometry, click add 48/48, sustained add 384/336 with
+lastdur adopting, keys audition arm/release, bands taller-when-
+selected, a drop over track 3's band binding track 3 where the old
+math provably resolved "row 4", rail-outside fallback) plus a 3/3
+tape driving the SHELL's own adrag release through kind.drop
+end-to-end; both captures on llm-feed (the mid-drag shot shows the
+ghost + the outlined target row). Selftest **25,150** (+4); `nix run
+.#test` ALL GREEN, every golden byte-identical (window chrome only);
+win-music.md carries the round-10 grammar; ADR **D158**. **The
+Windows stage is REFRESHED** (11 durable entries preserved + the
+Start Menu shortcut) and the NATIVE selftest passes at **25,152** =
+Linux + 2. Deferred honestly: .ins drops onto arrangement lanes,
+playback lighting the piano keys, a keys-width preference. **Exact
+next step:** the human's native taste pass on the keys column feel,
+the sustain threshold, and the drag-highlight visibility — alongside
+the still-queued round-9 roll feel and waterwall/uv-tab/marquee items
+below.
+
+## Previous handoff — D157: the music roll grammar, round 9
 
 **This session (2026-07-21, later): the human's song-editor UX list —
 all landed as D157** (`c6203d4`). (1) **A click on a note SELECTS
