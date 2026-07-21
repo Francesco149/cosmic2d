@@ -9991,6 +9991,35 @@ local function t_ed_synth()
     if math.abs(rt - ms) > math.max(1, ms * 0.02) then rt_ok = false end
   end
   check(rt_ok, "ed.synth: ms->fx->ms round-trips (draw==drag)")
+
+  -- the fixed-frequency slider mapping (the HELPDOCS synth session): index
+  -- 0 = track the note (nil hz); 1..255 sweep 20 Hz..12 kHz on the same
+  -- log rule as the envelopes. Integer-Hz quantization packs the low end
+  -- tighter than the notch spacing, so idx->hz->idx is pinned to +-1 notch
+  -- (no cumulative creep) and the stock drum anchors must be reachable.
+  check(W.fix_idx_to_hz(0) == nil, "ed.synth: fix idx 0 = track the note")
+  check(W.fix_idx_to_hz(1) == 20, "ed.synth: fix idx 1 = 20 Hz")
+  check(W.fix_idx_to_hz(255) == 12000, "ed.synth: fix idx 255 = 12 kHz")
+  check(W.fix_hz_to_idx(nil) == 0 and W.fix_hz_to_idx(0) == 0,
+        "ed.synth: no fixed hz maps to idx 0")
+  local fix_rt = true
+  for idx = 1, 255 do
+    local hz = W.fix_idx_to_hz(idx)
+    local rt = W.fix_hz_to_idx(hz)
+    if math.abs(rt - idx) > 1 then fix_rt = false end
+    -- regrab stability: one more cycle may not move the stored hz again
+    if W.fix_idx_to_hz(rt) ~= hz
+       and W.fix_hz_to_idx(W.fix_idx_to_hz(rt)) ~= rt then
+      fix_rt = false
+    end
+  end
+  check(fix_rt, "ed.synth: fix idx->hz->idx stays within one notch, no creep")
+  local anchors_ok = true
+  for _, hz in ipairs({ 120, 150, 3200, 5000, 9000, 11000 }) do
+    local got = W.fix_idx_to_hz(W.fix_hz_to_idx(hz))
+    if math.abs(got - hz) > hz * 0.03 then anchors_ok = false end
+  end
+  check(anchors_ok, "ed.synth: the stock drum hz anchors land within 3%")
 end
 
 local function t_ed_filter()
@@ -12485,6 +12514,35 @@ local function t_docs()
   end
   check(utility_ok ~= nil,
         "docs.tutorials: utility tools share a complete debugging-desk tutorial")
+
+  -- the HELPDOCS ref-doc contract (D160): a finished tool-docs session
+  -- ships a complete ref-<tool>.md; the tool's guide links it near the
+  -- top; the ref links back; and every per-window hotkey the windowkit
+  -- binds for that kind is findable in the ref — multi-char keys
+  -- verbatim, hint labels verbatim (the D120 loop: what the UI binds
+  -- must be documented). Grows one row per completed HELPDOCS session.
+  local REF_DOCS = { { "synth", "ref-synth.md" }, { "sound", "ref-sound.md" } }
+  for _, row in ipairs(REF_DOCS) do
+    local kindname, refname = row[1], row[2]
+    local rd = live_by_name[refname]
+    check(rd ~= nil, "docs.ref: " .. refname .. " ships")
+    local wd = live_by_name["win-" .. kindname .. ".md"]
+    check(wd and wd.src:sub(1, 500):find(refname, 1, true) ~= nil,
+          "docs.ref: win-" .. kindname .. " links its reference up top")
+    check(rd and rd.src:find("win-" .. kindname .. ".md", 1, true) ~= nil,
+          "docs.ref: " .. refname .. " links back to the tutorial")
+    local K = cm.require("cm.ed.win." .. kindname)
+    for _, e in ipairs(K.hotkeys or {}) do
+      if #e.key > 1 then
+        check(rd and rd.src:find(e.key, 1, true) ~= nil, "docs.ref: "
+              .. refname .. " documents the '" .. e.key .. "' key")
+      end
+      if e.hint then
+        check(rd and rd.src:find(e.hint, 1, true) ~= nil, "docs.ref: "
+              .. refname .. " carries the '" .. e.hint .. "' hint label")
+      end
+    end
+  end
 
   -- Standalone markdown images in the shipped corpus must resolve, decode,
   -- describe themselves, and stay intentionally small. This pins both the

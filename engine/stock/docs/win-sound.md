@@ -3,10 +3,14 @@
 Drop any `.wav` / `.mp3` / `.ogg` to inspect and audition it. The header **→ins**
 button mono-mixes it into a sampler instrument and opens it in the synth.
 
+Every knob and button: [the sound player reference](engine/stock/docs/ref-sound.md).
+
 ## Keys
 
 - **space** play / pause · **home** jump to the start · **l** loop toggle
 - **click the waveform** to seek
+
+![A recording in the player: peaks, playhead, transport chips](media/sound-player.png)
 
 ## Walkthrough: turn a recording into an instrument
 
@@ -23,6 +27,7 @@ button mono-mixes it into a sampler instrument and opens it in the synth.
    once and trigger it from `game.step`. Compare it against the mix with the
    sound player's volume at a comfortable level, not only at maximum output.
 
-Full reference: [The synth](engine/stock/docs/win-synth.md),
+Full reference: [every knob and button](engine/stock/docs/ref-sound.md),
+[the synth](engine/stock/docs/win-synth.md),
 [the music tracker](engine/stock/docs/win-music.md), and
 [sound in game code](engine/stock/docs/scripting.md#sound-effects-and-music-cmsnd-cmins).
