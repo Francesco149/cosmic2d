@@ -13,6 +13,9 @@ mistaken for current work.
 - `KNOWN-LIMITATIONS.md` — the honest edges of the current release.
 - `RELEASE-CHECKLIST.md` — the reproducible alpha-cut procedure.
 - `ISSUE-TEMPLATE.md` — how to report a problem (replay-clip powered).
+- `HELPDOCS.md` — the in-engine help polish program: per-tool tutorial +
+  complete-reference contract, screenshot/tape protocol, and the session
+  queue (H1–H18, checked off as sessions land).
 
 ## Contracts and current subsystem designs
 

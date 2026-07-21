@@ -3,7 +3,36 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — round 13: moves ring too; the rc.9 cut (D159 addendum 2)
+## Current handoff — the help-docs polish program is scoped and queued (HELPDOCS.md)
+
+**This session (2026-07-22): the human's docs ask scoped into a queued
+program** — "each tool's help starts with a sizable engaging tutorial
+making something meaningful, plus a truly complete reference of every
+knob and button as a separate doc linked at the top, with a good amount
+of screenshots (UI-at-step + visual results); test the tutorials as you
+screenshot them and fix UX rough edges; same treatment for the project
+presets; one focused session per tool." **`docs/HELPDOCS.md` is the
+program**: the per-tool done-contract (tutorial doc + `ref-<tool>.md` +
+taped screenshots + the-tape-is-the-test + sweeps green), the reader
+constraints every session must respect (no `|` tables, per-line span
+balance, block-level images — the D127 KATs), the shared scaffolding H1
+builds (a kind→ref-doc mapping with a D120-style hotkey-completeness
+sweep KAT, a top-link sweep, a dead-image sweep, the capture recipe),
+and the queue: **H1–H13** one session per tool (sprite exemplar → anim →
+palette → assets+stock → map → tmap → synth+sound → music → terr → mesh
+→ figure → project+settings → editor shell) then **H14–H18** one per
+preset (platformer, topdown, arcade, explore3d, blank), presets last so
+they cross-link finished tool docs. Grounding checked against the tree:
+the reader already renders block images/links (win/help.lua), 6 captures
+exist in `engine/stock/docs/media/` (436K), `kind.hotkeys` is data so
+the completeness sweep is KAT-able, and `tools/drive/drive.lua` is the
+proven execute-the-doc-as-written mechanism (D127). Docs-only session:
+no engine byte moved, no tests run needed. **Exact next step (agent):
+run H1 from HELPDOCS.md §4 after `/clear`.** The human items from
+round 13 below (native feel pass on the held-audition contract, the
+rc.9 workflow/release check) remain open in parallel.
+
+## Previous handoff — round 13: moves ring too; the rc.9 cut (D159 addendum 2)
 
 **This session (2026-07-21, last ask): "the same sustain when I move
 notes, then push another RC build" — landed as round 13** (`a5e809a`,
