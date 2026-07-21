@@ -8253,3 +8253,52 @@ checker faces keeping custom UVs, editor-side livery preview in the
 3d map window (placed props pin frame 0). Revisit triggers: a real
 project texturing a character head (rotate/flip), or wanting per-face
 animation phase.
+
+## D156 — the sprite ed marquee + the session-wide pixel clipboard (2026-07-21)
+
+**The ask (the human, mid-session):** "add a marquee selection and
+copypaste to the sprite editor (ideally allow it to paste to another
+instance of the sprite editor too)."
+
+**The decision.** A sixth rail tool, **`m` marquee**: drag a rectangle
+on the canvas (clamped to it), a plain click deselects, right-click
+cancels the drag, Esc clears — selection is a READ (locked layers
+select fine) and lives on the window (`win.msel`, sprite px). The
+clipboard is **`ed.g.sprclip`** `{ w, h, bytes, gen }` — ephemeral on
+the editor global exactly like `g.mapclip` and the music clip (the
+established convention: crosses windows and assets within the session,
+dropped with `ed.g` on rewind seeks, never serialized). **Ctrl+C**
+copies the selection from the ACTIVE layer's current cell (no
+selection = the whole cell) — it arrives through the shell's existing
+`kind_call("copy")` tier, so the sprite kind simply grew `M.copy`; a
+kit `ctrl+c` entry rides along purely as the hint. **Ctrl+X** copies
+then clears the region to transparency — one journal entry.
+**Ctrl+V** arms the **paste tool**: the clip ghosts on the cursor
+(the stamp well's exact idiom — same translucent preview, same
+center anchor) and each click lays its opaque pixels
+(`paint.blit "stamp"`) as one journal entry; Esc drops back to the
+pen. Because the clip is plain bytes on `ed.g`, pasting into a second
+sprite window — including one bound to a DIFFERENT `.spr` — is the
+same code path; the ghost texture is per-window plumbing keyed by the
+clip generation and freed in `drop_ephemeral` (the D139 raw-id rule).
+
+**Why not a floating/movable pasted selection** (aseprite's model):
+the stamp idiom already ships and reads instantly; a floating layer
+adds a modal state machine the window doesn't otherwise have.
+Revisit trigger: wanting to nudge a paste before committing, or
+marquee-drag-to-move within the canvas.
+
+**Proof.** A 10/10 probe tape on a fresh two-sprite project drove the
+REAL window end to end: launcher-open truck.spr → `m` → a real 11px
+pointer drag → `win.msel` exactly {2,2,12x12} → Ctrl+C fills
+g.sprclip (576 bytes) without touching pixels → Ctrl+X zeroes exactly
+the region (outside probed intact) → ONE Ctrl+Z restores the probed
+byte → launcher-open rock.spr in a SECOND window → Ctrl+V arms paste
+→ one click lands the truck clip's center pixel byte-exact at the
+click point with the rock window journal-dirty. Marquee + cross-window
+paste captures on llm-feed. Suite ALL GREEN; selftest count unchanged
+(the feature is window chrome over KAT'd paint doors).
+
+**Deferred honestly:** floating paste / move-selection, marquee as a
+paint mask (`paint.set_clip` exists for it), copy-merged (composite)
+instead of active-layer, system-clipboard PNG interop.

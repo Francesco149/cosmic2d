@@ -31,6 +31,16 @@
 -- a dropped .spr/.png and becomes the stamp brush: click the well (or
 -- `t`) for the stamp tool, click the canvas to stamp the image's
 -- opaque pixels; right-click the well (or the row's x chip) clears.
+--
+-- Marquee + clipboard (the human's ask): `m` / the M chip drags a
+-- rectangle selection on the active layer (click deselects, Esc
+-- clears, right-click cancels). Ctrl+C copies the selection (whole
+-- layer cell when nothing is selected), Ctrl+X also clears it (one
+-- journal entry), Ctrl+V arms the PASTE mode — the clip ghosts on the
+-- cursor and each click lays its opaque pixels (the stamp rule) as
+-- one journal entry. The clip lives on ed.g (the map/music clipboard
+-- convention), so it pastes across sprite windows — including a
+-- window on a DIFFERENT .spr.
 
 local M = select(2, ...) or {}
 local sprite = cm.require("cm.sprite")
@@ -51,7 +61,7 @@ local COL = {
 }
 
 local TOOLS = { { "pen", "P" }, { "eraser", "E" }, { "fill", "F" },
-                { "pick", "K" }, { "curve", "~" } }
+                { "pick", "K" }, { "curve", "~" }, { "sel", "M" } }
 
 function M.defaults()
   return { path = "", edit = false, tool = "pen", color = 0xffffffff,
@@ -76,6 +86,8 @@ local function set_tool(t)
     ed.touch()
   end
 end
+-- clipboard doors (assigned below the kit plumbing they need)
+local do_copy, do_cut, do_paste, can_cut
 M.hotkeys = {
   { key = "p", hint = "pen", when = editing, fn = set_tool("pen") },
   { key = "e", hint = "eraser", when = editing, fn = set_tool("eraser") },
@@ -106,6 +118,17 @@ M.hotkeys = {
       win.color, win.color2 = win.color2 or 0xff000000, win.color or 0xffffffff
       ed.touch()
     end },
+  { key = "m", hint = "marquee", when = editing, fn = set_tool("sel") },
+  -- ctrl+c actually arrives as the shell's kind_call("copy") — this
+  -- entry is the hint (and a harmless second door should the tiers move)
+  { key = "ctrl+c", hint = "copy", when = editing,
+    fn = function(win, ed) do_copy(win, ed) end },
+  { key = "ctrl+x", hint = "cut",
+    when = function(win, ed) return can_cut(win, ed) end,
+    fn = function(win, ed) do_cut(win, ed) end },
+  { key = "ctrl+v", hint = "paste",
+    when = function(win, ed) return editing(win) and ed.g.sprclip ~= nil end,
+    fn = function(win, ed) do_paste(win, ed) end },
   { key = "shift+1", hint = "fit",
     when = function(win) return win.path ~= "" end,
     fn = function(win, ed)
@@ -255,6 +278,89 @@ local A = cm.require("cm.ed.kit").asset {
 
 local open_asset, commit = A.open_asset, A.commit
 
+-- ---- marquee clipboard (m / ctrl+c / ctrl+x / ctrl+v) ----
+
+-- the marquee clamped to the CURRENT canvas (a resize may have shrunk
+-- it); nil when it no longer overlaps
+local function sel_rect(win, doc)
+  local s = win.msel
+  if not s then return nil end
+  local x0, y0 = math.max(s.x, 0), math.max(s.y, 0)
+  local x1 = math.min(s.x + s.w, doc.w)
+  local y1 = math.min(s.y + s.h, doc.h)
+  if x1 <= x0 or y1 <= y0 then return nil end
+  return x0, y0, x1 - x0, y1 - y0
+end
+
+local function copy_ctx(win, ed)
+  if not editing(win) then return nil end
+  local _, p = open_asset(ed, win.path)
+  local doc = p and p.doc
+  local layer = doc and doc.layers[doc.cur_layer]
+  if not layer then return nil end
+  return p, doc, layer, sprite.cell(doc, doc.cur_layer, doc.cur_frame)
+end
+
+-- copy the selection (whole layer cell without one) from the ACTIVE
+-- layer into ed.g.sprclip — ephemeral, shared by every sprite window
+-- in the session (the map/music clipboard convention), so it pastes
+-- across windows and across different .spr files
+do_copy = function(win, ed)
+  local _, doc, _, cell = copy_ctx(win, ed)
+  if not cell then return end
+  local x, y, w, h = sel_rect(win, doc)
+  if not x then x, y, w, h = 0, 0, doc.w, doc.h end
+  local img = paint.copy_region(cell, x, y, w, h)
+  local g = ed.g
+  g.sprclip = { w = w, h = h, bytes = img.buf:str(0, w * h * 4),
+                gen = ((g.sprclip and g.sprclip.gen) or 0) + 1 }
+  ed.touch()
+end
+
+can_cut = function(win, ed)
+  if not editing(win) or not win.msel then return false end
+  local _, doc, layer = copy_ctx(win, ed)
+  return doc ~= nil and not layer.locked and sel_rect(win, doc) ~= nil
+end
+
+-- cut = copy + clear the region to transparency, one journal entry
+do_cut = function(win, ed)
+  local p, doc, layer, cell = copy_ctx(win, ed)
+  if not cell or layer.locked then return end
+  local x, y, w, h = sel_rect(win, doc)
+  if not x then return end
+  do_copy(win, ed)
+  paint.rect(cell, x, y, w, h, 0, true)
+  p.comp_dirty = true
+  commit(ed, win.path)
+end
+
+do_paste = function(win, ed)
+  if not editing(win) or not ed.g.sprclip then return end
+  win.tool = "paste"
+  ed.touch()
+end
+
+-- the paste ghost: ed.g.sprclip rebuilt as an image + texture on the
+-- window plumbing, keyed by the clip generation (freed with the other
+-- ephemera in drop_ephemeral — raw tex ids never outlive their cache)
+local function clip_img(ed, p)
+  local cb = ed.g.sprclip
+  if not cb then return nil end
+  local s = p.climg
+  if s and s.gen == cb.gen then return s end
+  if s and s.tex then pal.tex_free(s.tex) end
+  local img = paint.image(cb.w, cb.h)
+  img.buf:setstr(0, cb.bytes)
+  s = { gen = cb.gen, img = img,
+        tex = pal.tex_create(cb.w, cb.h, cb.bytes) }
+  p.climg = s
+  return s
+end
+
+-- the shell's Ctrl+C arrives as the focused-kind "copy" command
+M.copy = function(win, ed) do_copy(win, ed) end
+
 -- public open (spawn-time adoption, console driving, proofs)
 M.open_win = A.open_win
 M.seed = A.seed -- the stock window's open-a-copy door (D147)
@@ -283,6 +389,10 @@ function M.drop_ephemeral(ed)
     if p.simg then
       if p.simg.tex then pal.tex_free(p.simg.tex) end
       p.simg = nil
+    end
+    if p.climg then
+      if p.climg.tex then pal.tex_free(p.climg.tex) end
+      p.climg = nil
     end
   end
 end
@@ -378,8 +488,15 @@ cm.require("cm.ed.kit").viewlock(M, {
 function M.escape(win, ed)
   local p = ed.g.sw and ed.g.sw[win.path]
   if p and p.curve then p.curve = nil; ed.touch(); return true end
-  if win.edit and (win.tool == "pick" or win.tool == "stamp") then
+  if p and p.marq then p.marq = nil; ed.touch(); return true end
+  if win.edit and (win.tool == "pick" or win.tool == "stamp"
+                   or win.tool == "paste") then
     win.tool = "pen"
+    ed.touch()
+    return true
+  end
+  if win.edit and win.msel then -- next rung: clear the marquee
+    win.msel = nil
     ed.touch()
     return true
   end
@@ -634,7 +751,45 @@ function M.draw(win, ctx)
   local inb = cell and paint.in_bounds(cell, mx, my)
   local lt = math.max(1, math.min(2, zoom * 0.5))
 
-  if win.tool == "curve" then
+  if win.tool == "sel" then
+    -- the marquee: drag a rect (clamped to the canvas), click deselects,
+    -- right-click cancels. Selection reads only — locked layers allowed.
+    local function cpx(v, lim)
+      return math.max(0, math.min(lim - 1, v))
+    end
+    if over_canvas and inb and not p.marq then
+      pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom, 0xE8E4FF66, 1)
+    end
+    if over_canvas and cell and not p.pan and i.clicked[1] then
+      p.marq = { x0 = cpx(mx, doc.w), y0 = cpx(my, doc.h) }
+      p.marq.x1, p.marq.y1 = p.marq.x0, p.marq.y0
+      ctx.touch()
+    end
+    if p.marq then
+      if i.clicked[3] then
+        p.marq = nil
+        ctx.touch()
+      elseif i.buttons[1] then
+        local nx, ny = cpx(mx, doc.w), cpx(my, doc.h)
+        if nx ~= p.marq.x1 or ny ~= p.marq.y1 then
+          p.marq.x1, p.marq.y1 = nx, ny
+          ctx.touch()
+        end
+      else -- release: normalize; a no-drag click clears the selection
+        local q = p.marq
+        p.marq = nil
+        local x0, x1 = math.min(q.x0, q.x1), math.max(q.x0, q.x1)
+        local y0, y1 = math.min(q.y0, q.y1), math.max(q.y0, q.y1)
+        if x0 == x1 and y0 == y1 then
+          win.msel = nil
+        else
+          win.msel = { x = x0, y = y0, w = x1 - x0 + 1, h = y1 - y0 + 1 }
+        end
+        ctx.touch()
+      end
+    end
+
+  elseif win.tool == "curve" then
     -- click A, click B (endpoints), then move to bow it, click to lay it.
     if paintable and inb then
       pal.x_ig_rect(ox + mx * zoom, oy + my * zoom, zoom, zoom, 0xE8E4FF66, 1)
@@ -675,13 +830,15 @@ function M.draw(win, ctx)
       pal.x_ig_rect(ox + (mx - bo) * zoom, oy + (my - bo) * zoom,
                     bs * zoom, bs * zoom, 0xE8E4FF66, 1)
     end
-    -- the stamp ghost: the dropped image, translucent, where it lands
+    -- the stamp/paste ghost: the source image, translucent, where it lands
     local simg = win.tool == "stamp" and stamp_img(ed, p, win.stamp)
-    if simg then
-      local dx, dy = mx - simg.img.w // 2, my - simg.img.h // 2
+    local cimg = win.tool == "paste" and clip_img(ed, p)
+    local ghost = simg or cimg
+    if ghost then
+      local dx, dy = mx - ghost.img.w // 2, my - ghost.img.h // 2
       pal.x_ig_clip_push(cvx, cvy, cvw, cvh)
-      pal.x_ig_image(simg.tex, ox + dx * zoom, oy + dy * zoom,
-                     simg.img.w * zoom, simg.img.h * zoom, 0, 0, 1, 1,
+      pal.x_ig_image(ghost.tex, ox + dx * zoom, oy + dy * zoom,
+                     ghost.img.w * zoom, ghost.img.h * zoom, 0, 0, 1, 1,
                      0xffffff88)
       pal.x_ig_clip_pop()
     end
@@ -706,12 +863,12 @@ function M.draw(win, ctx)
           p.last, p.comp_dirty = { x = mx, y = my }, true
           commit(ed, win.path)
         end
-      elseif win.tool == "stamp" then
-        if simg and inb and not rmb then
-          paint.blit(cell, mx - simg.img.w // 2, my - simg.img.h // 2,
-                     simg.img, nil, nil, nil, nil, "stamp")
+      elseif win.tool == "stamp" or win.tool == "paste" then
+        if ghost and inb and not rmb then
+          paint.blit(cell, mx - ghost.img.w // 2, my - ghost.img.h // 2,
+                     ghost.img, nil, nil, nil, nil, "stamp")
           p.last, p.comp_dirty = { x = mx, y = my }, true
-          commit(ed, win.path) -- one stamp = one journal entry
+          commit(ed, win.path) -- one stamp/paste = one journal entry
         end
       elseif lineable and not rmb then
         paint.line(cell, p.last.x, p.last.y, mx, my, paintcol(false),
@@ -747,6 +904,29 @@ function M.draw(win, ctx)
       p.last = { x = p.stroke.lx, y = p.stroke.ly }
       p.stroke = nil
       commit(ed, win.path) -- the gesture = one journal entry
+    end
+  end
+
+  -- the marquee: the committed selection (any tool) + the live drag,
+  -- double-ruled so it reads on light and dark art alike
+  do
+    local rx, ry, rw, rh
+    if p.marq then
+      local q = p.marq
+      rx, ry = math.min(q.x0, q.x1), math.min(q.y0, q.y1)
+      rw = math.abs(q.x1 - q.x0) + 1
+      rh = math.abs(q.y1 - q.y0) + 1
+    else
+      local x, y, w, h = sel_rect(win, doc)
+      if x then rx, ry, rw, rh = x, y, w, h end
+    end
+    if rx then
+      pal.x_ig_clip_push(cvx, cvy, cvw, cvh)
+      pal.x_ig_rect(ox + rx * zoom - 1, oy + ry * zoom - 1,
+                    rw * zoom + 2, rh * zoom + 2, 0x000000aa, 1)
+      pal.x_ig_rect(ox + rx * zoom, oy + ry * zoom, rw * zoom, rh * zoom,
+                    COL.accent, lt)
+      pal.x_ig_clip_pop()
     end
   end
 

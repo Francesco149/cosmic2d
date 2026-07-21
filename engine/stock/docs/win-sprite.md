@@ -23,6 +23,7 @@ Paint a pixel sprite; define animation clips in the paired **animation** window.
 
 - **p** pen · **e** eraser · **f** fill · **k** pick (eyedropper) · **~ c** curve
 - **t** stamp (once an image is in the stamp well, below)
+- **m** marquee (rectangle selection — copy/cut/paste, below)
 
 The pick tool is a **global eyedropper** — click anywhere (other windows, the
 live game) to sample that color.
@@ -45,6 +46,23 @@ The square slot at the bottom of the tool rail is the **stamp well**:
 canvas to print its opaque pixels (a ghost preview shows where it lands;
 one click = one undo step). Click the well or press **t** to re-arm the
 stamp tool; right-click the well (or the strip's `x` chip) to clear it.
+
+## Marquee, copy, cut and paste
+
+The **m** marquee tool drags a rectangle selection on the canvas (a plain
+click deselects; esc clears; a right-click cancels a drag in progress).
+The selection reads from the **active layer**:
+
+- **ctrl+c** copies the selected pixels (with no selection: the whole
+  layer cell), transparency included.
+- **ctrl+x** also clears the region — one undo step.
+- **ctrl+v** arms **paste**: the clip rides the cursor as a ghost and each
+  click prints its opaque pixels (one undo step per click, the stamp
+  rule). Esc returns to the pen.
+
+The clip is shared across every sprite window in the session — copy in
+one sprite, **ctrl+v in a window on a different sprite**, and it pastes
+there too.
 
 ## Two colors + lines
 

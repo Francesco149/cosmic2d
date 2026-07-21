@@ -3,9 +3,38 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — the waterwall demo: animated textures in anger (a second D155 showcase)
+## Current handoff — waterwall, the README hero pass, D156 (sprite marquee + clipboard), and the RC kick
 
-**This session (2026-07-21) landed the human's ask verbatim**: a
+**This session (2026-07-21), later asks — all landed.** (1) **The
+README hero pass**: the showcase grid swaps bigworld for waterwall
+(openworld already shows the N64 aesthetic; prose notes bigworld is
+unpictured), the terrain tool cell now shows the explore3d starter's
+OWN vale in the 3d map window (drive-tape captured on a fresh
+scaffold: home view → orbit → zoom), and two new tool cells landed —
+the mesh window's uv tab on the garage truck (island handles on the
+body tile) and the 2D map window in COL mode over the demo's
+overworld (chains, one-ways, hazard, markers). All four captures are
+real-editor tapes cropped to the window (docs/media/tool-*.png;
+hero-bigworld.png left with its last reference). (2) **D156 — the
+sprite ed marquee + clipboard** (the human's mid-session ask): the
+`m` marquee rail tool (drag selects, click deselects, Esc clears),
+Ctrl+C copies the active layer's selection (whole cell without one)
+into `ed.g.sprclip` (the g.mapclip/music-clip convention — crosses
+windows and assets, drops with ed.g), Ctrl+X also clears the region
+(one journal entry), Ctrl+V arms the PASTE tool — the clip ghosts on
+the cursor exactly like the stamp well and each click lays opaque
+pixels as one journal entry; cross-window paste onto a DIFFERENT
+.spr is the same code path. Ctrl+C rides the shell's existing
+kind_call("copy") tier (`M.copy` on the kind); the ghost texture is
+plumbing keyed by clip generation, freed in drop_ephemeral (the D139
+raw-id rule). Proof: a 10/10 probe tape (marquee exact rect → copy
+bytes → cut zeroes region/outside intact → one Ctrl+Z restores →
+second window on rock.spr → paste lands the center pixel byte-exact,
+journal-dirty); montage on llm-feed; win-sprite.md documents it; ADR
+**D156**. (3) A new **RC tag** was cut after the suite + native
+handoff (see below).
+
+**Same session, earlier — the waterwall demo (the first ask)**: a
 standalone demo scene — a wet rock wall with water flowing down it,
 the flow being an ANIMATED TEXTURE on an overlay mesh a hair above
 the wall surface. `projects/waterwall` (one commit, `6d20ebb`): a 5x3
@@ -39,13 +68,13 @@ frame 88 matches the Linux capture on the real driver. A 4-panel
 montage is on llm-feed (three flow phases + the water-off wall) with
 the taste question: streak density/speed.
 
-**Exact next step:** the human's native taste pass — flow speed
-default (3/4), streak density, whether the foam pool wants more
-presence. Deferred honestly: no splash particles at the base, the
-foam pool shares the sheet's strip rather than its own foam frames,
-no per-face animation phase (a D155 deferral — both sheets ride the
-same frame). The D155 uv-tab taste pass and the A8
-release-candidate state below are unchanged.
+**Exact next step:** the human's native taste pass — waterwall's flow
+speed/streak density, the uv-tab feel (D155), the new marquee/paste
+feel (D156), and the README pics as rendered on GitHub. Deferred
+honestly: waterwall splash particles / per-face animation phase
+(D155), floating-paste/move-selection + copy-merged + marquee-as-mask
+(D156). Watch the RC workflow run for the tag cut this session. The
+A8 release-candidate state below is unchanged.
 
 ## Previous handoff — D155: mesh texturing lands (the picoCAD uv tab, stock checkers, sprite-slot texture frames, the sprite size chooser, the garage demo)
 
