@@ -3,7 +3,83 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D151–D154 are the first release-candidate cut: authored stereo, recoverable CI, a public showcase, and bounded headless rendering
+## Current handoff — D155: mesh texturing lands (the picoCAD uv tab, stock checkers, sprite-slot texture frames, the sprite size chooser, the garage demo)
+
+**This session (2026-07-21) implemented the human's ask verbatim**: a
+picocad-style uv mapping mode (one face at a time), the colored stock
+checkerboards (7 colors), drag-in `.spr` with per-vertex island editing,
+grid adjustment settings, `.spr` hot reload, the sprite animation slots
+reused for swapping/animating textures (same uv map every frame), the
+vehicle-select demo, and (the mid-session addition) a sprite canvas size
+chooser. Five feature/docs commits; ADR **D155** carries the design.
+
+**The refusal reconciled, not fell**: D137's "no UV unwrap" was always
+about AUTOMATIC unwrapping — EDITOR3D.md §5 had designed "planar
+per-face UVs, the picoCAD model" and the CMSH FACE chunk reserved the
+textured bits. D155 implements that half and extends it: HEAD v2 adds
+tw/th (the UV frame size; written only off-default so pre-D155 docs
+stay byte-canonical, KAT'd), FACE gains the checker flag + index (1..7,
+exclusive with image UVs, codec-refused both ways). `bake_groups` keys
+groups by (texture source, color) — checker faces project through the
+new pure `plan_uv` and tile per world unit; image faces bake
+`(frame*tw + texel)/strip_w` so ONE uv map aims at any frame of the
+.spr's baked strip — the animation slots double as texture frames.
+`emit()` keeps flat colors (texture-blind consumers and missing images
+degrade to the pre-texture look, never white); `emit_segments()` is the
+texture-aware door (checker groups bind 7 stock 16x16 tiles via the
+rc.mesh.chk generational buffer, NEAREST; image groups bind the strip,
+ALPHATEST|NEAREST, white lit base). `terr3.emit_props` merges mesh
+segments into its (tex,flags) batches; the 3d map window and explore3d
+template resolvers also resolve the mesh's strip texture epoch-keyed.
+
+**The mesh window's uv tab** (`uv` chip / `u`): single persp pane left,
+panel right — 7 checker tiles (click re-colors the selection; empty
+click selects that color's faces; a selected checker face's planar
+ghost rides its tile), the bound image below, `all` (texture
+everything: colors cycle 1..7), `off`, texel snap 1/2/4/8 + grid
+overlay off/4/8/16 (the grid adjustment settings), `fr n/N` strip
+preview. Drop a `.spr`/`.png` anywhere on the window to bind THE image;
+press-drag a face from its tile onto the image to place its island;
+islands drag whole, per-vertex handles drag one point; every drag is
+one journal entry, Esc reverts mid-gesture. The tape caught the D139
+class LIVE: doc-recorded tw went stale when the sprite resized
+(fr 1/24) — now `spr_dims` (epoch memo) feeds the live math the
+source's canvas size + frame count always, and the recorded value
+re-adopts silently, riding the next commit.
+
+**The sprite size chooser** (the mid-session ask): `sprite.set_size`
+existed unexposed — every sprite was born 32x32 forever. The sprite
+header (edit mode) gains `size`: WxH field, canvas (anchored) / scale
+(resample) modes, Enter/apply, one undo step, cap 1024.
+
+**The demo — projects/garage**: a mock vehicle-select screen. One
+UV-mapped truck (56 verts / 42 faces) over a 2-frame livery strip
+(sunset red / coast blue) rotating on a pedestal; left/right swaps the
+livery (frame swap through the slots), enter strobes it through the
+.spr's own `flash` .anim clip via `cm.anim.frame_at` and pulses the
+light. Sim state is exactly {sel, flash0, swap0}; epoch-keyed memos
+hot-reload live sprite edits into the running screen. Both liveries +
+the uv-tab tape frame are on llm-feed.
+
+**Proof:** Linux selftest **25,142** (+36 mesh KATs: v1/v2
+canonicality, checker refusals, plan_uv, strip frame-0/1/clamp
+exactness, world-unit tiling, fallback color, segment routing incl.
+the never-white miss, stable checker ids, extrude inheritance); a
+**22/22 shell tape** on a fresh smoke copy drove the real uv tab end
+to end (u → all → face pick → tile re-color → .spr drop → tile-to-
+image island drag → +4-texel vertex drag → one-ctrl+z gesture undo →
+ctrl+s disk round trip → sprite-resave rebake probe → the size bar
+resizing tiles.spr to 64x48 with the strip following). Suite verdict:
+SUITE-VERDICT-PENDING. Windows stage: WINDOWS-STAGE-PENDING.
+
+**Exact next step:** the human's taste pass on the uv tab feel (drag
+thresholds, island default scale = half the frame's short side) and
+the garage demo's look, native. Deferred honestly in D155: island
+rotate/flip, zoomable uv canvas, per-face animation phase, placed-prop
+livery preview (frame 0 pinned). The A8 release-candidate state below
+is unchanged by this session.
+
+## Previous handoff — D151–D154 are the first release-candidate cut: authored stereo, recoverable CI, a public showcase, and bounded headless rendering
 
 **D151** (`ff74c42`, with the honest trace recut in `2fccafb`) exposes the
 `.song` format's existing track pan as a real music-window mix control. The

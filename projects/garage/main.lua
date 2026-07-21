@@ -58,6 +58,12 @@ local function groups_for(doc, t, fr)
   return tgroups[key]
 end
 
+-- console door: regenerate the committed assets (gen.lua — the rovale
+-- bake_atlas precedent; the files remain the source of record)
+function game.gen()
+  cm.require("gen").run()
+end
+
 local dyn
 function game.init()
   local d = state.doc
