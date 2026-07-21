@@ -13,6 +13,11 @@ Paint a pixel sprite; define animation clips in the paired **animation** window.
 2. Pick a tool, pick a color (or eyedrop one from anywhere on screen), paint.
 3. **ctrl+s** saves and bakes the `.png` the game draws.
 4. Open **anim** (header button) to cut the strip into clips (frame:duration).
+5. **size** (header, edit mode) resizes the canvas: type `WxH` and Enter.
+   The default **canvas** mode keeps pixels where they are (grow adds
+   transparent room, shrink crops); the **scale** mode resamples the art to
+   fill the new size. One undo step; mesh texture sheets usually want 64x64
+   or more.
 
 ## Tools (edit mode)
 

@@ -1,9 +1,11 @@
 # The mesh editor
 
 A `.msh` is one low-poly mesh: points, triangle/quad faces, flat
-per-face colors. It is deliberately small — no bones, no modifiers, no
-subdivision, no UV unwrapping. Push points, paint faces, extrude. That
-is the whole tool, and it is enough for era props and characters.
+per-face colors, and hand-placed texture regions from one image. It is
+deliberately small — no bones, no modifiers, no subdivision, no
+automatic UV unwrapping. Push points, paint faces, extrude, place each
+face's texture by hand. That is the whole tool, and it is enough for
+era props and characters.
 
 Open one from the spawn menu ("mesh") or double-click a `.msh`. An
 empty window offers a path field — enter creates a fresh unit box.
@@ -69,6 +71,42 @@ full set of corners turns back into the face.
   move: start from a box and pull every shape out of it.
 - **r** flips a face's winding; **ds** makes it doublesided; **unlit**
   exempts it from lighting; **del** removes it.
+
+## The uv tab (`uv` chip or `u`) — texture one face at a time
+
+The right side becomes the texturing panel: seven stock colored
+checkerboard tiles on top, your image below.
+
+- **all** starts texturing: every plain face gets a colored checker so
+  you can see each face as its own thing. Click a **tile** to re-color
+  the selected faces; click a tile with nothing selected to select
+  every face wearing that color.
+- **drag a `.spr`** (or `.png`) from the assets window anywhere onto
+  the mesh window: it becomes THE texture image and appears in the
+  panel below the checkerboards. One image per mesh, the picoCAD way.
+- **press-drag a face from its checker tile onto the image** to place
+  it there: the face's flat outline lands under the cursor as a
+  texture island. Then **drag the island** to move the whole face, or
+  **drag any corner handle** to move one point of the mapping. Undo
+  walks whole drags.
+- **snap** and **grid** are the grid adjustment settings: texel snap
+  1/2/4/8 for every drag, and the grid overlay density (off/4/8/16).
+- **off** removes texturing from the selected faces (back to the flat
+  paint color).
+- A face you never move onto the image keeps its checkerboard — in the
+  running game too. A missing image falls back to flat colors.
+
+**Animated / swappable textures**: the image is a sprite, and sprite
+frames are texture frames. Every frame shares the same uv map, so a
+2-frame sprite is two liveries (swap by frame) and a sprite with an
+animation clip is an animated texture — `fr` in the panel previews
+each frame. Re-saving the sprite hot-reloads every mesh window, placed
+copy, and running game view the same frame. The `garage` project is
+the worked example: one truck, two liveries, a flash clip.
+
+Sprites start at 32x32 — the **size** chip in the sprite editor grows
+the canvas (see [the sprite editor](engine/stock/docs/win-sprite.md))
+when a mesh wants a bigger sheet.
 
 ## Adding shapes
 

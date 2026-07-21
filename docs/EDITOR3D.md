@@ -316,22 +316,37 @@ pre-change atlases fall back to vertex mode until the next save.
 ## 5. `.msh` + the mesh window (kind `mesh`, module `cm.mesh`)
 
 The picoCAD-class refusal set, stated up front: **no skinning, no
-modifiers, no subdivision, no sculpt, no n-gons beyond quads, no UV
-unwrap** — verts, tris/quads, flat colors, optional per-face texture
-region from ONE image. That is sufficient for the style (SM64 parts are
-boxes and prisms; KayKit props are exactly this) and it is the wall
-against Blender creep.
+modifiers, no subdivision, no sculpt, no n-gons beyond quads, no
+AUTOMATIC UV unwrap** — verts, tris/quads, flat colors, optional
+per-face texture region from ONE image placed by HAND (the picoCAD
+model: manual planar islands, one face at a time — D155), or a stock
+colored checkerboard per face as the pre-texture default. That is
+sufficient for the style (SM64 parts are boxes and prisms; KayKit props
+are exactly this) and it is the wall against Blender creep.
 
 ### 5.1 CMSH
 
-`HEAD` (name, tex path?, flags) · `VERT` (n × f32 xyz) · `FACE` (n ×
-{nv 3|4, idx[nv] u16, col rgb, flags: doublesided | unlit, uv[nv] u16
-texels iff textured}) · `TAIL`. `cm.mesh.emit(out, xf, nxf, doc, opts)`
-pre-lights flat per-face normals through the gb sun/ambient (quads
-triangulate on the stored diagonal); `cm.mesh.bake(doc) -> bk` produces
-the 64-B/vert blob so meshes ride `pal.x_figverts` exactly like gb
-shapes — placed props and mesh figure parts get the C fast path for
-free. Bounds (`cm.mesh.bounds`) feed auto-colliders and pick.
+`HEAD` v1 (name, tex path?, flags) / v2 (+ tw/th — the UV reference
+frame size in texels, written only when it differs from the 64×64
+default so pre-D155 docs stay byte-canonical) · `VERT` (n × f32 xyz) ·
+`FACE` (n × {nv 3|4, idx[nv] u16, col rgb, flags: doublesided | unlit
+| textured | checker, chk u8 1..7 iff checker, uv[nv] u16 texels iff
+textured}) · `TAIL`. `cm.mesh.emit(out, xf, nxf, doc, opts)` pre-lights
+flat per-face normals through the gb sun/ambient (quads triangulate on
+the stored diagonal) and keeps the flat-color fallback for
+texture-blind consumers; `cm.mesh.emit_segments(doc, xf, nxf, opts)`
+is the texture-aware door — one draw segment per (source, color)
+group: checker faces bind the 7 stock tiles (`cm.mesh.checker_tex`,
+NEAREST, UVs tile per world unit via `plan_uv`), image faces bind the
+bound `.spr`'s baked strip (ALPHATEST|NEAREST, white lit base; an
+unresolved image degrades to the flat colors, never white). The
+**strip frames are the sprite animation slots**: `bake_groups{frame=n}`
+maps the SAME texel UVs into frame n — swap or animate a mesh's
+texture by rebaking per frame (the .spr's `.anim` clips drive it
+through `cm.anim.frame_at`; projects/garage is the worked demo).
+Groups bake the 64-B/vert blob so meshes ride `pal.x_figverts` exactly
+like gb shapes — placed props and mesh figure parts get the C fast
+path for free. Bounds (`cm.mesh.bounds`) feed auto-colliders and pick.
 
 ### 5.2 The window
 
@@ -350,8 +365,17 @@ gnomon); left = the tool strip; bottom = inspector.
   the sprite editor), right eyedrops; `E` extrudes the selected face
   along its normal (THE power op — box → anything); `F` fills a new
   face from 3–4 selected verts; flip / doublesided / unlit toggles in
-  the inspector; texture region assign = drag a rect on the tex
-  thumbnail (planar per-face UVs, the picoCAD model).
+  the inspector.
+- **the uv tab** (`uv` chip / `u`, D155): the shipped texturing
+  surface — the 7 stock checker tiles on top, the bound image below.
+  `all` starts texturing (every plain face gets a colored checker),
+  a tile click re-colors the selected faces, dragging a `.spr`/`.png`
+  onto the window binds it as THE image, press-dragging a face from
+  its tile onto the image places its planar island there, and the
+  island / its per-vertex handles drag with texel snap. snap/grid
+  chips are the grid adjustment settings; `fr` previews strip frames.
+  A resized source sprite refreshes the uv math immediately (the
+  derived-state rule); saves re-bake every placed instance.
 - **add menu** (spawn-strip): box / prism n / wedge / plane / lathe
   profile (rotates a drawn 2D profile — the mascot teardrop path),
   dropped at origin, selected, ready to push.
@@ -448,7 +472,8 @@ asset_epoch; a `.terr` placement of the figure hot-updates on save.
   that needs blinking).
 - Streaming-world editing (bigworld's pure-`hfn` path stays code; a
   chunked .terr is its own program).
-- Mesh: UV unwrap, smoothing groups, bones — never (the §5 refusal).
+- Mesh: AUTOMATIC UV unwrap, smoothing groups, bones — never (the §5
+  refusal; manual per-face islands are the D155 uv tab, not an unwrap).
 - OBJ import for CC0 packs (trigger: a real project asks; the formats
   leave room — a converter writes `.msh`).
 

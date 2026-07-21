@@ -8128,3 +8128,128 @@ directory for copying, checksum verification, Actions artifact retention, and
 GitHub release upload. The staging namespace cannot collide with shipped
 source directories, and every publication glob therefore contains exactly
 the Linux archive, Windows archive, and their two sibling SHA-256 files.
+
+## D155 — mesh texturing the picoCAD way: manual per-face UVs, stock checkers, and the sprite animation slots as texture frames (2026-07-21)
+
+The human's ask, verbatim scope: "a picocad style uv mapping mode (one
+face at a time)" — checkered stock defaults, drag a `.spr` in, drag the
+face from the stock texture onto the sprite, move each vertex; grid
+adjustment settings; `.spr` hot reload; the sprite animation slots
+reused for swapping/animating textures; a vehicle-select demo; and a
+way to choose sprite canvas size ("we need bigger sprites").
+
+**The refusal reconciles, not falls.** D137's "no UV unwrap — ever" was
+always about AUTOMATIC unwrapping; EDITOR3D.md §5 explicitly designed
+"planar per-face UVs, the picoCAD model" and the CMSH FACE chunk
+reserved the textured flag + texel UVs from day one. D155 implements
+that designed half and extends it with the stock-checker default and
+strip-frame animation. Every wall stands: one image per mesh, 3/4-gon
+faces only, manual islands only.
+
+**Format (CMSH, additive).** HEAD v2 appends `tw,th` — the UV
+reference FRAME size in texels (the bound `.spr`'s canvas; a baked
+strip holds `png_w // tw` frames) — and is written only when the size
+differs from the 64x64 default, so every pre-D155 doc still encodes
+byte-canonically as v1 (KAT-pinned). FACE gains flag bit3 `checker` +
+one index byte (1..7, `cm.mesh.CHK_COLS`, append-only); bit2
+(image UVs) and bit3 are mutually exclusive, both codec-refused. A
+pre-D155 reader of a new file skips nothing it needs: unknown flag
+bits sit in already-read bytes, chunk length delimits the extra index
+byte, and the face keeps its flat color.
+
+**Rendering.** `bake_groups` now keys groups by (texture source,
+color): flat faces group by color exactly as before; checker faces
+group per tile index with UVs from the new pure `plan_uv` (dominant-
+axis planar projection, world units — the sampler tiles per unit);
+image faces bake `(frame*tw + texel)/strip_w` — the SAME texel map
+shifted into any strip frame. Each group keeps the first member face's
+color as the flat FALLBACK, so the legacy single-buffer `emit()` (and
+any texture-blind consumer — figure part meshes, an unresolved image)
+degrades to the pre-texture look, never white. The texture-aware door
+is `emit_segments(doc, xf, nxf, opts)` → one `{tex, flags, bytes,
+ntris}` per group: checker groups bind the 7 stock 16x16 two-tone
+tiles (`checker_tex`, generational free through the `rc.mesh.chk`
+buffer — the rc.spr.tex pattern) with NEAREST; image groups bind
+`opts.tex_id` with ALPHATEST|NEAREST (the sprite rule), lit on a WHITE
+base. `terr3.emit_props` merges mesh segments into its (tex, flags)
+batches — placed textured props render in the 3d map window and the
+explore3d template through their existing epoch-keyed resolvers (which
+now also resolve the mesh's strip texture; ids live only in the
+epoch-keyed caches, the D139 discipline).
+
+**Texture animation = the sprite animation slots.** No new mechanism:
+the `.spr` already bakes a horizontal frame strip and already carries
+`.anim` clips. A mesh's UV map is authored once against ONE frame;
+`bake_groups{frame=n}` re-aims it at frame n (O(faces), memoized per
+frame by consumers). Swapping a texture is picking a frame; animating
+one is driving n from `cm.anim.frame_at`. Placed props stay frame 0.
+
+**The window.** The `uv` chip / `u` opens the uv tab: the viewport
+drops to one perspective pane, the right side is the panel — 7 checker
+tiles (click = re-color the face selection; click with no selection =
+select that color's faces; the selected checker face's planar ghost
+rides its tile), the bound image below at a quantized fit zoom, `all`
+(enable texturing: every plain face gets a checker, colors cycling
+1..7), `off`, and the GRID ADJUSTMENT SETTINGS — texel snap 1/2/4/8
+and grid overlay off/4/8/16 — plus `fr n/N` frame preview. Dropping a
+`.spr`/`.png` on the window binds it as THE image (kind.drop, the terr
+materials precedent) and records tw/th from the source. Press-drag
+from a tile onto the image places the faces' planar islands at the
+cursor (snapped, clamped in-frame); islands drag whole; per-vertex
+handles drag one UV point; every drag is one journal entry and Esc
+reverts mid-gesture (the mutating-gesture contract). The 3D panes
+always render textures live through epoch-keyed `gfx.texture` +
+`emit_segments` — a sprite re-save re-bakes the same frame (the tape
+probes it).
+
+**Derived-follows-source (the tape's catch).** The first tape run
+exposed the D139 class live: doc.tw recorded at drop time went stale
+when the tape resized the sprite, exploding the frame count
+(`fr 1/24`). Now the window resolves the bound `.spr`'s live canvas
+size + frame count each epoch (`spr_dims` memo), the live math ALWAYS
+uses the source size (`bake_groups` opts.tw/th now override the doc's
+recorded value), doc.tw/th silently re-adopts the source size outside
+gestures (riding the next commit), and frame count comes from the
+sprite doc itself. The recorded tw/th remains the runtime fallback for
+games, which read only the baked strip.
+
+**Sprite canvas size (the mid-session ask).** `sprite.set_size`
+existed unexposed since D-era studio work; every sprite was born
+32x32 forever. The sprite window header (edit mode) gains `size`: a
+bar with a `WxH` field, canvas (anchored, default) / scale (resample)
+mode chip, apply/Enter — one undo step, commit through the ordinary
+journal, cap 1024.
+
+**The demo — projects/garage.** A mock vehicle-select screen:
+`art/truck.msh` (56 verts / 42 faces, every visible face UV-mapped
+into the 64x64 frame) over `art/truck.spr` (2 livery frames — sunset
+red / coast blue — plus the `flash` clip). The truck rotates on a
+pedestal; left/right swaps the livery (frame swap through the slots);
+enter strobes the livery through the `.anim` clip via
+`cm.anim.frame_at` AND pulses the scene light (render-class decay off
+recorded anchor frames in state.doc). Sim state is exactly
+`{sel, flash0, swap0}`; assets resolve through epoch-keyed memos so
+editing truck.spr live hot-reloads the running screen. Both liveries
+headless-shot and inspected; assets were generated by a committed-free
+scratchpad generator through the public codec doors.
+
+**Proof.** Linux selftest gains 36 KATs (+HEAD v1/v2 canonicality,
+checker refusals, plan_uv floor/wall, strip frame-0/frame-1/clamp
+exactness, checker world-unit tiling, fallback color, segment
+tex/flags routing incl. the never-white miss, stable checker ids,
+extrude checker inheritance). A 22/22 shell tape on a fresh smoke copy
+drove the REAL window: u → all (6 faces, ≥6 colors) → 3D face pick →
+tile re-color → .spr drop (tex+frame size recorded) → tile-to-image
+drag (island placed, integer in-frame texels) → vertex drag exactly +4
+texels → ONE ctrl+z undid the gesture → ctrl+s (disk .msh: 5 checkers
++ 1 island, image kept) → sprite re-save re-baked the preview
+(meshkey) → the size bar resized tiles.spr to 64x48 (disk .spr + strip
+png follow). Suite + goldens: see STATUS.
+
+**Deferred honestly:** UV islands for triangle fans (hexagon caps
+want per-vert placement today), island rotate/flip chips, a zoomable
+UV canvas, per-face frame offsets (a face animating out of phase),
+checker faces keeping custom UVs, editor-side livery preview in the
+3d map window (placed props pin frame 0). Revisit triggers: a real
+project texturing a character head (rotate/flip), or wanting per-face
+animation phase.

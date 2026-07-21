@@ -1416,10 +1416,11 @@ replays byte-identically whatever `budget` you pass — the sim reads only
 ## Editor meshes (`cm.mesh`)
 
 `cm.mesh` is the `.msh` codec behind the mesh window — one low-poly mesh:
-verts, tri/quad faces with flat per-face colors, optional per-face texture
-regions from one image, doublesided/unlit flags. The picoCAD class, with
-the refusals stated up front: no skinning, no modifiers, no subdivision,
-no UV unwrap. Games usually just PLACE meshes in a 3d map (the terrain
+verts, tri/quad faces with flat per-face colors, hand-placed per-face
+texture regions from one image (the uv tab), stock checkerboard faces,
+doublesided/unlit flags. The picoCAD class, with the refusals stated up
+front: no skinning, no modifiers, no subdivision, no automatic UV
+unwrap. Games usually just PLACE meshes in a 3d map (the terrain
 window's drop door renders them for you), but the codec and the pure
 editing ops are public for procedural modeling:
 
@@ -1427,17 +1428,33 @@ editing ops are public for procedural modeling:
     local doc = mesh.fresh("crate")          -- starts as a unit box
     mesh.add_prim(doc, "prism", { size = 2 })
     mesh.save(doc, root .. "/art/crate.msh") -- or encode/decode the bytes
-    local groups = mesh.bake_groups(doc)     -- gb-shaped color bakes
+    local groups = mesh.bake_groups(doc)     -- gb-shaped source bakes
 
-Rendering rides `cm.gb`'s baked path (color-grouped `pal.x_figverts`), so
-a placed mesh costs the same as any graybox figure. The usual route is
-placing `.msh` files in a 3d map and letting `terr3.emit_props` resolve
-them (pass a `mesh` resolver returning `{ doc, groups }` — the explore3d
-template is the worked example); `mesh.emit` is the low-level triangle
-emitter, and the editing ops (`add_prim`, `extrude`, `flip`,
-`merge_verts`, `mirror_pair`) are all pure doc functions. A mesh you
+Rendering rides `cm.gb`'s baked path (source/color-grouped
+`pal.x_figverts`), so a placed mesh costs the same as any graybox
+figure. The usual route is placing `.msh` files in a 3d map and letting
+`terr3.emit_props` resolve them (pass a `mesh` resolver returning
+`{ doc, groups, tex_id }` — the explore3d template is the worked
+example); `mesh.emit` is the low-level flat-color triangle emitter, and
+the editing ops (`add_prim`, `extrude`, `flip`, `merge_verts`,
+`mirror_pair`, `plan_uv`) are all pure doc functions. A mesh you
 generate with the codec opens in the mesh window for hand-polish — the
 same procedural-meets-hand contract every editor asset keeps.
+
+**Textured meshes** draw through `mesh.emit_segments` — it returns one
+`{ tex, flags, bytes, ntris }` per group, each fed to `pal.x_tris`.
+Checker faces bind the 7 stock tiles by themselves; image faces bind
+`opts.tex_id` (the bound `.spr`'s baked strip via `gfx.texture`),
+falling back to flat colors when absent.
+**Texture animation rides the sprite animation slots**: the `.spr`
+bakes a horizontal frame strip, and passing `frame = n` (with
+`tex = { w, h }`, the strip's size) to `mesh.bake_groups` maps the
+SAME uv texels into frame `n` — swap liveries by picking a frame, or
+drive `n` from an `.anim` clip via `cm.anim.frame_at` for a
+strobing/animated texture.
+Rebaking groups per frame is O(faces); memoize per frame. The `garage`
+project is the worked example (rotating truck, two liveries, a flash
+clip).
 
 ## Figures — rigid-part characters (`cm.fig`)
 
