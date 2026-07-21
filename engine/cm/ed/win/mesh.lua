@@ -29,6 +29,22 @@
 -- CTRL+click on any edge selects its EDGE LOOP in every mode (loop
 -- verts in vtx, the walked quad strip in face mode).
 --
+-- The UV TAB (`uv` chip / `u`, D155 — the picoCAD texturing model):
+-- the viewport drops to a single perspective pane and the right side
+-- becomes the UV panel — the 7 stock checkerboard tiles on top, the
+-- bound image below. `all` starts texturing (every plain face gets a
+-- colored checker); clicking a tile re-colors the selected faces; drag
+-- a `.spr` (or `.png`) anywhere onto the window to bind it as THE
+-- texture image; press-drag a face from a checker tile onto the image
+-- to place its planar island there; then drag the island or its
+-- per-vertex handles until the texturing is right. snap/grid chips are
+-- the grid adjustment settings (texel snap 1/2/4/8; grid overlay
+-- 0/4/8/16); `fr` cycles the preview frame of a multi-frame .spr strip
+-- (the sprite animation slots — same UVs every frame, so saved clips
+-- swap or animate the texture at runtime). The 3D panes always render
+-- textures live through the epoch-keyed door: a sprite re-save shows
+-- the same frame.
+--
 -- The viewport is a 2x2 QUAD VIEW by default (chip toggles single):
 -- orbit perspective + top / front / side axis projections sharing the
 -- focus point and zoom — every pane picks, marquees, and drags through
@@ -153,6 +169,11 @@ function M.escape(win, ed)
     ed.touch()
     return true
   end
+  if win.uvtab then
+    win.uvtab = nil
+    ed.touch()
+    return true
+  end
   return false
 end
 
@@ -196,6 +217,81 @@ local function bound_focused(win, ed)
   return win.path ~= "" and ed.doc.focus == win.id
 end
 
+-- the mesh's texture image record ({id,w,h}: the bound .spr's baked
+-- strip, or a plain png), resolved through the epoch-keyed door every
+-- ask — a sprite re-save refreshes every holder the same frame; raw
+-- ids are never cached here (the D139 discipline)
+local function tex_rec(ed, doc)
+  if not (doc and doc.tex and doc.tex ~= "") then return nil end
+  local l = doc.tex:lower()
+  local target = l:find("%.png$") and doc.tex
+                 or (l:find("%.spr$") and doc.tex:gsub("%.spr$", ".png"))
+  if not target then return nil end
+  local rp = cm.require("cm.ed.win.map").res_path(ed, target)
+  if not rp then return nil end
+  local ok, t = pcall(cm.require("cm.gfx").texture, rp)
+  if ok then return t end
+end
+
+-- the bound .spr's LIVE canvas size + frame count (epoch-keyed memo):
+-- resizing the sprite must follow into the uv math immediately — the
+-- doc's recorded tw/th is only the runtime fallback and refreshes from
+-- this on the next commit ("derived state must follow its sources")
+local SPRD, SPRD_EP = {}, -1
+local function spr_dims(ed, doc)
+  if not (doc and doc.tex and doc.tex ~= ""
+          and doc.tex:lower():find("%.spr$")) then
+    return nil
+  end
+  local ep = cm.asset_epoch or 0
+  if SPRD_EP ~= ep then SPRD, SPRD_EP = {}, ep end
+  local got = SPRD[doc.tex]
+  if got == nil then
+    got = false
+    local rp = cm.require("cm.ed.win.map").res_path(ed, doc.tex)
+    local bytes = rp and pal.read_file(rp)
+    if bytes then
+      local ok, sd = pcall(cm.require("cm.sprite").decode, bytes)
+      if ok then got = { w = sd.w, h = sd.h, frames = sd.frames } end
+    end
+    SPRD[doc.tex] = got
+  end
+  return got or nil
+end
+
+-- dropping a .spr (or .png) anywhere on a bound window binds it as THE
+-- texture image (the one-image picoCAD rule) and records the frame
+-- size: a .spr's canvas is one frame of its baked strip, a png is a
+-- single frame. Opens the uv tab — the drop is the "start texturing
+-- with my art" gesture.
+function M.drop(win, ed, path, wx, wy)
+  if (win.path or "") == "" then return false end
+  local l = path:lower()
+  if not (l:find("%.spr$") or l:find("%.png$")) then return false end
+  local p = plumb(ed, win.path)
+  if not p.doc then return false end
+  local doc = p.doc
+  local rp = cm.require("cm.ed.win.map").res_path(ed, path)
+  local bytes = rp and pal.read_file(rp)
+  if not bytes then return false end
+  if l:find("%.spr$") then
+    local ok, sd = pcall(cm.require("cm.sprite").decode, bytes)
+    if not ok then return false end
+    doc.tw, doc.th = sd.w, sd.h
+  else
+    local pix, w, h = pal.png_read(bytes)
+    if not pix then return false end
+    doc.tw, doc.th = w, h
+  end
+  doc.tex = path
+  win.uvtab = true
+  set_mode(win, ed, "face")
+  p.gen = p.gen + 1
+  commit(ed, win.path)
+  ed.touch()
+  return true
+end
+
 function M.header(win, ctx)
   if win.path == "" then return 0 end
   local z = ctx.z
@@ -221,6 +317,11 @@ function M.header(win, ctx)
   end
   if chip("quad", win.quad) then
     win.quad = not win.quad
+    ctx.ed.touch()
+  end
+  if chip("uv", win.uvtab) then
+    win.uvtab = not win.uvtab
+    if win.uvtab then set_mode(win, ctx.ed, "face") end
     ctx.ed.touch()
   end
   local mode = win.mode or "sel"
@@ -299,6 +400,12 @@ M.hotkeys = {
     fn = function(win, ed) set_mode(win, ed, "vtx") end },
   { key = "f", when = bound_focused,
     fn = function(win, ed) set_mode(win, ed, "face") end },
+  { key = "u", hint = "uv", when = bound_focused,
+    fn = function(win, ed)
+      win.uvtab = not win.uvtab
+      if win.uvtab then set_mode(win, ed, "face") end
+      ed.touch()
+    end },
   { key = "x", hint = "lock x", when = bound_focused,
     fn = function(win, ed)
       win.axis = win.axis ~= "x" and "x" or nil
@@ -629,8 +736,12 @@ function M.draw(win, ctx)
 
   local over_view = i.wx >= vx and i.wx < vx + vw
                 and i.wy >= vy and i.wy < vy + vh
-  -- unbound windows show the single orientation pane
-  local panes = pane_rects(bound and win or { quad = false }, vw, vh)
+  -- the uv tab claims the right side; the 3D view keeps the left as a
+  -- single perspective pane (unbound windows likewise show one pane)
+  local uvon = bound and win.uvtab and vw >= 320
+  local vw3 = uvon and math.floor(vw * 0.55) or vw
+  local panes = pane_rects(bound and (uvon and { quad = false } or win)
+                           or { quad = false }, vw3, vh)
 
   local function pane_at(wxl, wyl)
     for k, pr in ipairs(panes) do
@@ -678,13 +789,26 @@ function M.draw(win, ctx)
   local fl = floor_scene()
   local mode = win.mode or "sel"
   local nv = 0
+  local trec, sdim
   if bound then
     nv = #doc.verts // 3
-    if p.meshgen ~= p.gen then
-      local out = {}
-      p.meshtris = mesh.emit(out, m4.ident(), m4.ident(), doc)
-      p.meshbytes = table.concat(out)
-      p.meshgen = p.gen
+    -- textured segments, epoch-keyed: a sprite re-save (asset epoch)
+    -- or a doc edit (gen) or a preview-frame change rebakes (D155)
+    trec = tex_rec(ed, doc)
+    sdim = spr_dims(ed, doc)
+    -- a resized source refreshes the recorded frame size (the write
+    -- rides the next commit; the live math never trusts the stale one)
+    if sdim and not p.g then
+      if (doc.tw or 64) ~= sdim.w then doc.tw = sdim.w end
+      if (doc.th or 64) ~= sdim.h then doc.th = sdim.h end
+    end
+    local mkey = p.gen .. ":" .. (win.uframe or 0) .. ":"
+               .. (cm.asset_epoch or 0)
+    if p.meshkey ~= mkey then
+      p.segs = mesh.emit_segments(doc, m4.ident(), m4.ident(),
+        { tex = trec, tw = sdim and sdim.w, th = sdim and sdim.h,
+          frame = win.uframe or 0, tex_id = trec and trec.id })
+      p.meshkey = mkey
       p.edges = mesh.edges(doc)
     end
     p.edges = p.edges or mesh.edges(doc)
@@ -696,9 +820,14 @@ function M.draw(win, ctx)
     pal.x_view3d{ mvp = cams[k].vpm, target = rts[k].tex,
                   clear = { 0.09, 0.10, 0.13, 1 } }
     pal.x_tris(0, scratch("ed.mshfloor", fl.bytes), fl.ntris, 0, 4)
-    if bound and p.meshtris and p.meshtris > 0 then
-      pal.x_tris(0, scratch("ed.mshvb:" .. win.path, p.meshbytes),
-                 p.meshtris, 0)
+    if bound and p.segs then
+      for si, s in ipairs(p.segs) do
+        if s.ntris > 0 then
+          pal.x_tris(s.tex,
+                     scratch("ed.mshvb:" .. win.path .. ":" .. si, s.bytes),
+                     s.ntris, 0, s.flags)
+        end
+      end
     end
   end
 
@@ -777,7 +906,7 @@ function M.draw(win, ctx)
     end
   end
 
-  if bound and p.g then
+  if bound and p.g and not p.g.uv then
     local held = i.buttons[1]
     local gg = p.g
     if held and gg.mode == "pend" then
@@ -971,6 +1100,407 @@ function M.draw(win, ctx)
     pal.x_ig_rect(math.min(p.g.x0, i.wx), math.min(p.g.y0, i.wy),
                   math.abs(i.wx - p.g.x0), math.abs(i.wy - p.g.y0),
                   COL.hot, 1, 0)
+  end
+
+  -- ---- the uv panel (D155: picoCAD texturing, one face at a time) ----
+  if uvon then
+    local ux = vx + vw3 + 2
+    local uw = vw - vw3 - 2
+    pal.x_ig_rect_fill(ux, vy, uw, vh, 0x14121eff, 0)
+    local pad = 6 * z
+    local px2 = math.max(4, 9.5 * z)
+    local tw = doc.tw or 64
+    local th = doc.th or 64
+
+    -- helpers shared by tiles + canvas
+    local function poly(pts, col, wdt)
+      local n2 = #pts // 2
+      for k2 = 1, n2 do
+        local a1 = k2 * 2 - 1
+        local b1 = (k2 % n2) * 2 + 1
+        pal.x_ig_line(pts[a1], pts[a1 + 1], pts[b1], pts[b1 + 1], col, wdt)
+      end
+    end
+    -- planar island geometry: texel offsets around the face's centroid
+    -- at the default placement scale (half the frame's short side)
+    local function island(fi)
+      local plan = mesh.plan_uv(doc, fi)
+      local mnu, mxu, mnv, mxv = 1e30, -1e30, 1e30, -1e30
+      for k2 = 1, #plan // 2 do
+        local pu, pv = plan[k2 * 2 - 1], plan[k2 * 2]
+        if pu < mnu then mnu = pu end
+        if pu > mxu then mxu = pu end
+        if pv < mnv then mnv = pv end
+        if pv > mxv then mxv = pv end
+      end
+      local ext = math.max(mxu - mnu, mxv - mnv, 1e-6)
+      local s2 = math.min(tw, th) * 0.5 / ext
+      local cxm = (mnu + mxu) * 0.5
+      local cym = (mnv + mxv) * 0.5
+      local out = {}
+      for k2 = 1, #plan // 2 do
+        out[k2 * 2 - 1] = (plan[k2 * 2 - 1] - cxm) * s2
+        out[k2 * 2] = (plan[k2 * 2] - cym) * s2
+      end
+      return out
+    end
+
+    -- the 7 stock checker tiles (click = color the selected faces;
+    -- press-drag onto the image = place their islands there)
+    local tsz = math.max(12, math.min(26 * z, (uw - pad * 2) / 7 - 3 * z))
+    local tiles = {}
+    do
+      local x = ux + pad
+      for k2 = 1, 7 do
+        tiles[k2] = { x = x, y = vy + pad, w = tsz, h = tsz }
+        x = x + tsz + 3 * z
+      end
+    end
+    local selchk = {}
+    for _, fi in ipairs(p.fsel) do
+      local f = doc.faces[fi]
+      if f and f.chk then selchk[f.chk] = true end
+    end
+    for k2 = 1, 7 do
+      local t2 = tiles[k2]
+      pal.x_ig_image(mesh.checker_tex(k2), t2.x, t2.y, t2.w, t2.h)
+      local hov = i.wx >= t2.x and i.wx < t2.x + t2.w
+                  and i.wy >= t2.y and i.wy < t2.y + t2.h
+      if selchk[k2] then
+        pal.x_ig_rect(t2.x - 1, t2.y - 1, t2.w + 2, t2.h + 2, COL.esel,
+                      2, 0)
+      elseif hov then
+        pal.x_ig_rect(t2.x, t2.y, t2.w, t2.h, COL.hot, 1, 0)
+      end
+    end
+    -- selected checker faces show their island ghost on their tile —
+    -- the thing the drag carries onto the image
+    for _, fi in ipairs(p.fsel) do
+      local f = doc.faces[fi]
+      if f and f.chk and tiles[f.chk] then
+        local t2 = tiles[f.chk]
+        local isl = island(fi)
+        local s2 = t2.w * 0.8 / math.min(tw, th)
+        local pts = {}
+        for k2 = 1, #isl // 2 do
+          pts[k2 * 2 - 1] = t2.x + t2.w * 0.5 + isl[k2 * 2 - 1] * s2
+          pts[k2 * 2] = t2.y + t2.h * 0.5 + isl[k2 * 2] * s2
+        end
+        poly(pts, COL.vsel, 1)
+      end
+    end
+
+    -- the settings chips: texture-all / off / snap / grid / frame
+    local cy2 = vy + pad + tsz + 4 * z
+    local chiph = math.max(10, 16 * z)
+    local sx2 = ux + pad
+    local function uchip(label, on)
+      local w2 = pal.x_ig_text_size(label, px2, 0) + 8 * z
+      local hov = i.wx >= sx2 and i.wx < sx2 + w2
+                  and i.wy >= cy2 and i.wy < cy2 + chiph
+      pal.x_ig_rect_fill(sx2, cy2, w2, chiph,
+                         on and COL.btn_on or COL.btn, 3 * z)
+      pal.x_ig_text(sx2 + 4 * z, cy2 + (chiph - px2) * 0.45, px2,
+                    (hov or on) and COL.hot or COL.dim, label, 0)
+      sx2 = sx2 + w2 + 3 * z
+      return hov and i.clicked[1]
+    end
+    local untex = 0
+    for _, f in ipairs(doc.faces) do
+      if not f.chk and not f.uv then untex = untex + 1 end
+    end
+    if untex > 0 and uchip("all", false) then
+      -- enable texturing: every plain face gets a colored checker
+      local k2 = 0
+      for _, f in ipairs(doc.faces) do
+        if not f.chk and not f.uv then
+          f.chk = k2 % 7 + 1
+          k2 = k2 + 1
+        end
+      end
+      p.gen = p.gen + 1
+      commit(ed, win.path)
+      ed.touch()
+    end
+    if #p.fsel > 0 and uchip("off", false) then
+      for _, fi in ipairs(p.fsel) do
+        local f = doc.faces[fi]
+        if f then f.chk, f.uv = nil, nil end
+      end
+      p.gen = p.gen + 1
+      commit(ed, win.path)
+      ed.touch()
+    end
+    local snapn = win.usnap or 1
+    if uchip("snap " .. snapn, false) then
+      win.usnap = snapn >= 8 and 1 or snapn * 2
+      ed.touch()
+    end
+    local gridn = win.ugrid or 8
+    if uchip(gridn > 0 and ("grid " .. gridn) or "grid off", false) then
+      win.ugrid = gridn == 0 and 4 or gridn >= 16 and 0 or gridn * 2
+      ed.touch()
+    end
+    local frames = (sdim and sdim.frames)
+                 or (trec and math.max(1, trec.w // tw)) or 1
+    if frames > 1 then
+      local fr2 = math.min(win.uframe or 0, frames - 1)
+      if uchip("fr " .. (fr2 + 1) .. "/" .. frames, false) then
+        win.uframe = (fr2 + 1) % frames
+        ed.touch()
+      end
+    end
+
+    -- the image canvas (one strip frame at a quantized fit zoom)
+    local cy0 = cy2 + chiph + 4 * z
+    local availw = uw - pad * 2
+    local availh = vy + vh - cy0 - pad
+    if availh > 24 and availw > 24 then
+      local sc = math.min(availw / tw, availh / th)
+      sc = sc >= 1 and math.floor(sc)
+           or math.max(0.25, math.floor(sc * 4) / 4)
+      local dw2, dh2 = tw * sc, th * sc
+      local cx0 = ux + pad + (availw - dw2) * 0.5
+      local cyy0 = cy0 + (availh - dh2) * 0.5
+      pal.x_ig_rect_fill(cx0 - 2, cyy0 - 2, dw2 + 4, dh2 + 4,
+                         0x0c0a14ff, 0)
+      if trec then
+        local fr2 = math.min(win.uframe or 0, frames - 1)
+        if not p.uvq then p.uvq = pal.buf(nil, 32) end
+        p.uvq:f32(0, cx0)
+        p.uvq:f32(4, cyy0)
+        p.uvq:f32(8, dw2)
+        p.uvq:f32(12, dh2)
+        p.uvq:f32(16, fr2 * tw / trec.w)
+        p.uvq:f32(20, 0)
+        p.uvq:f32(24, math.min((fr2 + 1) * tw / trec.w, 1))
+        p.uvq:f32(28, math.min(th / trec.h, 1))
+        pal.x_ig_image_quads(trec.id, p.uvq, 1)
+      else
+        pal.x_ig_text(cx0 + 4 * z, cyy0 + dh2 * 0.5 - px2, px2, COL.dim,
+                      "drag a .spr here to texture", 0)
+      end
+      -- the grid overlay (the adjustment settings' visible half)
+      local gstep2 = win.ugrid or 8
+      if gstep2 > 0 and gstep2 * sc >= 4 then
+        for gx = 0, tw, gstep2 do
+          pal.x_ig_line(cx0 + gx * sc, cyy0, cx0 + gx * sc, cyy0 + dh2,
+                        0x8a84b02a, 1)
+        end
+        for gy = 0, th, gstep2 do
+          pal.x_ig_line(cx0, cyy0 + gy * sc, cx0 + dw2, cyy0 + gy * sc,
+                        0x8a84b02a, 1)
+        end
+      end
+      -- islands: every image-mapped face; selected ones get handles
+      local fselset2 = {}
+      for _, fi in ipairs(p.fsel) do fselset2[fi] = true end
+      for fi, f in ipairs(doc.faces) do
+        if f.uv then
+          local n2 = #f.v
+          local pts = {}
+          for k2 = 1, n2 do
+            pts[k2 * 2 - 1] = cx0 + f.uv[k2 * 2 - 1] * sc
+            pts[k2 * 2] = cyy0 + f.uv[k2 * 2] * sc
+          end
+          poly(pts, fselset2[fi] and COL.esel or 0x8a84b066,
+               fselset2[fi] and 2 or 1)
+          if fselset2[fi] then
+            for k2 = 1, n2 do
+              pal.x_ig_circle_fill(pts[k2 * 2 - 1], pts[k2 * 2],
+                                   3.5 * z, COL.vsel)
+            end
+          end
+        end
+      end
+
+      -- cursor in texel space + hit tests
+      local mu = (i.wx - cx0) / sc
+      local mv = (i.wy - cyy0) / sc
+      local over_canvas = i.wx >= cx0 - 6 * z and i.wx < cx0 + dw2 + 6 * z
+                      and i.wy >= cyy0 - 6 * z and i.wy < cyy0 + dh2 + 6 * z
+      local function in_poly(pxx, pyy, f)
+        local n2, insd = #f.v, false
+        local j2 = n2
+        for k2 = 1, n2 do
+          local x1, y1 = f.uv[k2 * 2 - 1], f.uv[k2 * 2]
+          local x2b, y2b = f.uv[j2 * 2 - 1], f.uv[j2 * 2]
+          if (y1 > pyy) ~= (y2b > pyy) and
+             pxx < (x2b - x1) * (pyy - y1) / (y2b - y1) + x1 then
+            insd = not insd
+          end
+          j2 = k2
+        end
+        return insd
+      end
+      local st = math.max(win.usnap or 1, 1)
+      local function snapv(v2) return math.floor(v2 / st + 0.5) * st end
+      local function clampu(v2) return math.min(math.max(v2, 0), tw) end
+      local function clampvv(v2) return math.min(math.max(v2, 0), th) end
+      -- move a face's planar island onto the image at texel (cu,cv)
+      local function place_face(fi, cu, cv)
+        local f = doc.faces[fi]
+        if not f then return end
+        local isl = island(fi)
+        f.uv = {}
+        for k2 = 1, #isl // 2 do
+          f.uv[k2 * 2 - 1] = clampu(snapv(cu + isl[k2 * 2 - 1]))
+          f.uv[k2 * 2] = clampvv(snapv(cv + isl[k2 * 2]))
+        end
+        f.chk = nil
+      end
+
+      -- press: tiles start a place-drag; canvas grabs handles/islands
+      if ctx.focused and not p.g and i.clicked[1] then
+        local ti
+        for k2 = 1, 7 do
+          local t2 = tiles[k2]
+          if i.wx >= t2.x and i.wx < t2.x + t2.w
+             and i.wy >= t2.y and i.wy < t2.y + t2.h then ti = k2 end
+        end
+        if ti then
+          p.g = { uv = true, mode = "uvplace", btn = 1, mutates = false,
+                  chk = ti, x0 = i.wx, y0 = i.wy }
+        elseif over_canvas then
+          local bfi, bk2, bd
+          for _, fi in ipairs(p.fsel) do
+            local f = doc.faces[fi]
+            if f and f.uv then
+              for k2 = 1, #f.v do
+                local hx2 = cx0 + f.uv[k2 * 2 - 1] * sc
+                local hy2 = cyy0 + f.uv[k2 * 2] * sc
+                local d2 = math.abs(hx2 - i.wx) + math.abs(hy2 - i.wy)
+                if d2 < 8 * z and (not bd or d2 < bd) then
+                  bfi, bk2, bd = fi, k2, d2
+                end
+              end
+            end
+          end
+          if bfi then
+            p.g = { uv = true, mode = "uvvert", btn = 1, mutates = true,
+                    fi = bfi, k = bk2 }
+          else
+            local hitf
+            for _, fi in ipairs(p.fsel) do
+              local f = doc.faces[fi]
+              if f and f.uv and in_poly(mu, mv, f) then
+                hitf = fi
+                break
+              end
+            end
+            if not hitf then
+              for fi, f in ipairs(doc.faces) do
+                if f.uv and in_poly(mu, mv, f) then
+                  hitf = fi
+                  break
+                end
+              end
+            end
+            if hitf then
+              if not sel_has(p.fsel, hitf) then
+                p.vsel, p.esel, p.fsel = {}, {}, { hitf }
+              end
+              local movers, orig = {}, {}
+              for _, fi in ipairs(p.fsel) do
+                local f = doc.faces[fi]
+                if f and f.uv then
+                  movers[#movers + 1] = fi
+                  local cp = {}
+                  for q = 1, #f.uv do cp[q] = f.uv[q] end
+                  orig[fi] = cp
+                end
+              end
+              p.g = { uv = true, mode = "uvisl", btn = 1, mutates = true,
+                      faces = movers, orig = orig, x0 = i.wx, y0 = i.wy }
+            else
+              p.vsel, p.esel, p.fsel = {}, {}, {}
+            end
+            ed.touch()
+          end
+        end
+      end
+
+      -- gesture continuation + release
+      if p.g and p.g.uv then
+        local gg = p.g
+        if i.buttons[1] then
+          if gg.mode == "uvvert" then
+            local f = doc.faces[gg.fi]
+            if f and f.uv then
+              f.uv[gg.k * 2 - 1] = clampu(snapv(mu))
+              f.uv[gg.k * 2] = clampvv(snapv(mv))
+              p.gen = p.gen + 1
+              ctx.touch()
+            end
+          elseif gg.mode == "uvisl" then
+            local du = snapv((i.wx - gg.x0) / sc)
+            local dv = snapv((i.wy - gg.y0) / sc)
+            for _, fi in ipairs(gg.faces) do
+              local f = doc.faces[fi]
+              local o2 = gg.orig[fi]
+              if f and f.uv and o2 then
+                for k2 = 1, #f.uv // 2 do
+                  f.uv[k2 * 2 - 1] = clampu(o2[k2 * 2 - 1] + du)
+                  f.uv[k2 * 2] = clampvv(o2[k2 * 2] + dv)
+                end
+              end
+            end
+            p.gen = p.gen + 1
+            ctx.touch()
+          elseif gg.mode == "uvplace" and over_canvas and #p.fsel > 0 then
+            -- ghost of the selected faces' islands at the cursor
+            for _, fi in ipairs(p.fsel) do
+              local isl = island(fi)
+              local pts = {}
+              for k2 = 1, #isl // 2 do
+                pts[k2 * 2 - 1] = cx0 + (mu + isl[k2 * 2 - 1]) * sc
+                pts[k2 * 2] = cyy0 + (mv + isl[k2 * 2]) * sc
+              end
+              poly(pts, COL.hot, 1)
+            end
+            ctx.touch()
+          end
+        else -- release
+          if gg.mode == "uvvert" or gg.mode == "uvisl" then
+            commit(ed, win.path)
+          elseif gg.mode == "uvplace" then
+            local moved = math.abs(i.wx - gg.x0)
+                        + math.abs(i.wy - gg.y0) > 4 * z
+            local ti2
+            for k2 = 1, 7 do
+              local t2 = tiles[k2]
+              if i.wx >= t2.x and i.wx < t2.x + t2.w
+                 and i.wy >= t2.y and i.wy < t2.y + t2.h then ti2 = k2 end
+            end
+            if ti2 and (not moved or ti2 ~= gg.chk) then
+              -- a click (or a tile-to-tile drag): color the selection
+              if #p.fsel > 0 then
+                for _, fi in ipairs(p.fsel) do
+                  local f = doc.faces[fi]
+                  if f then f.chk, f.uv = ti2, nil end
+                end
+                p.gen = p.gen + 1
+                commit(ed, win.path)
+              else
+                -- no selection: select every face on this checker
+                p.vsel, p.esel, p.fsel = {}, {}, {}
+                for fi, f in ipairs(doc.faces) do
+                  if f.chk == ti2 then p.fsel[#p.fsel + 1] = fi end
+                end
+              end
+            elseif over_canvas and trec and #p.fsel > 0 then
+              for _, fi in ipairs(p.fsel) do
+                place_face(fi, snapv(mu), snapv(mv))
+              end
+              p.gen = p.gen + 1
+              commit(ed, win.path)
+            end
+          end
+          p.g = nil
+          ctx.touch()
+        end
+      end
+    end
   end
 
   if not bound then
