@@ -9281,7 +9281,12 @@ local function t_ed_assets()
         and X.companions("maps/vale.terr")[1] == "maps/vale-atlas.png"
         and #X.companions("maps/room.map") == 0,
         "asset copy: generated companion roster")
-  local base = tmproot() .. "/cosmic_selftest_asset_copy_" .. pal.time_ns()
+  -- pre-normalize the fixture root: asset_transfer normalizes roots to
+  -- forward slashes internally, and the injected-fs KAT below compares
+  -- paths by equality — a backslashed native TEMP would silently bypass
+  -- the injection (caught by the first native run of this test)
+  local base = tmproot():gsub("\\", "/")
+             .. "/cosmic_selftest_asset_copy_" .. pal.time_ns()
   local srcroot, dstroot = base .. "/source", base .. "/destination"
   pal.mkdir(base)
   local project = cm.require("cm.project")
