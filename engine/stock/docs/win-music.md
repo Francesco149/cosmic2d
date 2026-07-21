@@ -5,7 +5,8 @@ instruments you designed in the synth.
 
 ## Workflow
 
-1. Drag an instrument (`.ins`) onto a track row to bind it.
+1. Drag an instrument (`.ins`) onto a track row to bind it — the row
+   the drop will bind outlines while you drag, so aim by the highlight.
 2. In the piano roll, place notes; arrange patterns as **clips** on the timeline
    (a clip loops its pattern when you stretch it).
 3. Select a track to open its mix panel. Set per-track volume — **128**
@@ -27,13 +28,18 @@ linked copy.
 
 ## The roll grammar
 
-- **press empty** adds a note (at the last-used length, grid-snapped)
+- **press empty** adds a note (at the last-used length, grid-snapped) —
+  **keep holding and drag right to sustain it**: the note's end follows
+  the cursor, and that length becomes the new last-used default
 - **click** a note selects it — selected notes grab first and draw on
   top, slightly see-through, so an overlap stays visible and fixable
 - **drag** moves the selection in grid steps (an off-grid note keeps
   its offset) · **drag its right edge** resizes
 - **right-click** deletes a note · **shift** toggles / marquee-selects
 - **ctrl+drag** a note duplicates it
+- the **piano keys** on the roll's left edge audition pitches on the
+  active track's instrument — click a key, or drag along the keyboard;
+  the key under your cursor highlights while you place notes
 
 ## Keys
 

@@ -8377,3 +8377,63 @@ round-9 grammar.
 **Deferred honestly:** repeated-stamp paste (the revisit trigger
 above), paste into the arrangement strip (clips), a visible clipboard
 indicator in the transport row.
+
+## D158 — the music roll, round 10: rail-band drops, the piano keys column, add-drag sustain (2026-07-21)
+
+**Context — three asks from the human's native pass.** (1) "Dragging
+instrument presets onto the song tracks — the hitbox is offset;
+sometimes it changes the track above." Real, and worse than an offset:
+`M.drop` re-derived the row with HARDCODED z=1 math (`py // 28`) off a
+guessed content origin, and never learned about D151's mix panel — the
+selected track's row is `px*3.45 + 3z` TALLER than the rest, so every
+drop below the selection resolved one-plus rows high (and often out of
+range, silently falling back to the selected track — the probe tape's
+drop point resolved to "row 4" of a 3-track song under the old math).
+The class: a drop handler re-deriving layout the draw owns. (2) A
+piano at the roll's side. (3) Holding the drag while placing a note
+should sustain it.
+
+**The decision.** (1) **The DRAW records the rail's row bands**
+(contiguous world-coord `{y0,y1}` strips per track, the selected row's
+band carrying its panel) into ephemeral plumbing (`p.rdrop[win.id]`),
+and `M.drop` resolves the row through the pure `M.rail_hit` (KAT'd) —
+the drop can no longer disagree with the pixels because the pixels are
+the source. Outside the rail (or past the last row) the drop still
+binds the selected track. While an `.ins` drag is in flight
+(`ed.g.adrag`), the row it would bind draws an accent OUTLINE — the
+target is visible before release. (2) **The piano keys column** sits
+on the roll's left edge (`KEYS_W = min(18z, 14% of the roll)`): one
+shared x-shift moves ruler + roll + velocity lane right, so all three
+tick axes stay aligned while the arrangement keeps the full width.
+White/black keys per row, seam lines at B|C and E|F, the octave labels
+moved onto the keys (the roll keeps its C gridlines). Click a key to
+audition the pitch on the active track's instrument (the existing
+`blip` door); dragging glissandos; the key under the cursor highlights
+while hovering the roll — a pitch readout for free. (3) **Add-drag
+SUSTAINS**: the fresh note arms the `selsize` gesture (not `selmove`),
+so holding the press and dragging right stretches the note's end
+exactly like an edge resize, and the result becomes the new last-used
+length. The sustain only ENGAGES once the cursor moves >3z px — else
+the press frame itself would yank the last-used length down to one
+grid cell under a plain click. Round 9's drag-to-move on the fresh
+note is superseded deliberately: the note is selected on release, so
+move is one more drag away, and sustain is what a placement drag means
+in every tracker the human plays.
+
+**Proof.** A **24/24 probe tape** on a fresh smoke copy drove the real
+window: the roll shifted by exactly KEYS_W with the velocity lane
+following; a plain click added tick 48/dur 48 (threshold untripped);
+press+drag added tick 384/dur 336 with `lastdur` adopting 336 and the
+first note untouched; the next plain click placed at 336; a keys press
+armed the audition (blip live) and released clean; with track 2
+selected (panel expanded) a drop over track 3's band bound track 3
+while the OLD math provably resolved row 4; a drop outside the rail
+bound the selected track. Selftest **25,150** (+4 `rail_hit` KATs);
+`nix run .#test` ALL GREEN, every golden byte-identical (window chrome
+only). win-music.md carries the keys column, the sustain, and the
+drop highlight.
+
+**Deferred honestly:** dropping an `.ins` onto an ARRANGEMENT lane
+(only the rail resolves per-row today); pressing roll notes doesn't
+light the matching piano key during playback; a keys-column width
+preference.

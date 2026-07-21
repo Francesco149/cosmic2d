@@ -8675,6 +8675,20 @@ local function t_song()
         "music.clamp_dp: the lowest pitch caps a downward delta")
   check(mus.clamp_dp({ 0, 127 }, 12) == 0,
         "music.clamp_dp: a full-range set pins to zero")
+
+  -- the rail drop bands (round 10): drop() resolves the row from the
+  -- bands DRAW records — the selected row's band is taller (it
+  -- carries the mix panel), so re-derived fixed-height math can't do
+  -- it (the drifted-drop bug: .ins drops bound the track above)
+  local rows = { { y0 = 2, y1 = 30 }, { y0 = 30, y1 = 95 },
+                 { y0 = 95, y1 = 123 } }
+  check(mus.rail_hit(rows, 10) == 1, "music.rail_hit: the first band")
+  check(mus.rail_hit(rows, 60) == 2,
+        "music.rail_hit: inside the tall selected band")
+  check(mus.rail_hit(rows, 95) == 3,
+        "music.rail_hit: a boundary y belongs to the row below it")
+  check(mus.rail_hit(rows, 200) == nil,
+        "music.rail_hit: outside every band = nil (caller falls back)")
 end
 
 local function t_stock_songs()

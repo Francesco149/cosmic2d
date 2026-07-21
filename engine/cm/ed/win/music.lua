@@ -12,17 +12,20 @@
 -- mutes, deletes ("del"), and adds tracks.
 --
 -- Roll grammar (round 9 — the human): press empty = ADD (last-used
--- length, grid-snapped); press a note = SELECT it (never moves or
--- deletes — moves go by grid STEPS so an off-grid note keeps its
--- offset); drag moves the selection, right-edge resizes it; selected
--- notes hit-test first and draw on top translucent so an overlap
--- stays visible and fixable; RIGHT-CLICK deletes a note; ctrl+up/down
--- steps the selection an octave. shift = marquee/toggle select;
--- CTRL+drag = duplicate; Ctrl+C/X copy/cut; Ctrl+V arms a GHOST paste
--- riding the mouse — click places it (pan/zoom stay live), Esc or
--- right-click cancels. A velocity lane + a scrub ruler under it. A
--- pattern's length GROWS to fit content but never auto-shrinks
--- (clips loop it).
+-- length, grid-snapped) and HOLD-DRAG SUSTAINS the fresh note — its
+-- end follows the cursor (round 10); press a note = SELECT it (never
+-- moves or deletes — moves go by grid STEPS so an off-grid note keeps
+-- its offset); drag moves the selection, right-edge resizes it;
+-- selected notes hit-test first and draw on top translucent so an
+-- overlap stays visible and fixable; RIGHT-CLICK deletes a note;
+-- ctrl+up/down steps the selection an octave. shift = marquee/toggle
+-- select; CTRL+drag = duplicate; Ctrl+C/X copy/cut; Ctrl+V arms a
+-- GHOST paste riding the mouse — click places it (pan/zoom stay
+-- live), Esc or right-click cancels. A velocity lane + a scrub ruler
+-- under it. A PIANO KEYS column sits on the roll's left edge (round
+-- 10): click/drag auditions pitches, and the row under the cursor
+-- highlights. A pattern's length GROWS to fit content but never
+-- auto-shrinks (clips loop it).
 --
 -- Preview playback rides the EDITOR BANK (render-only — composing
 -- never touches the sim): a wall-clock mini-sequencer over the
@@ -138,6 +141,19 @@ function M.clamp_dp(pitches, dp)
     if q + dp < 0 then dp = -q end
   end
   return dp
+end
+
+-- resolve a rail y to its track row. `rows` is the contiguous band
+-- list draw records each frame ({y0, y1} per track) — the selected
+-- row's band is TALLER (it carries the mix panel), which is exactly
+-- why a fixed row height can't resolve a drop (round 10: .ins drops
+-- landed a row off below the selection). nil = outside every band
+-- (the caller falls back to the selected track). Pure — KAT'd
+-- (t_song).
+function M.rail_hit(rows, y)
+  for ti, r in ipairs(rows) do
+    if y >= r.y0 and y < r.y1 then return ti end
+  end
 end
 
 -- ---- the editor-bank preview (render-only, wall clock) ----
@@ -537,13 +553,35 @@ function M.draw(win, ctx)
   -- ---- the track rail ----
   pal.x_ig_rect_fill(x0, y0, RAIL - 4 * z, ctx.ch - 4 * z, COL.rail, 3 * z)
   local ty = y0 + 4 * z
+  -- the row bands, recorded for M.drop (and the in-flight .ins drag
+  -- highlight): contiguous world-coord strips whose heights the DRAW
+  -- owns — the selected row's band carries its mix panel. Re-deriving
+  -- this in drop() is how the drop target drifted a row off (round
+  -- 10: hardcoded z=1 math + no panel).
+  local bands = {}
+  p.rdrop = p.rdrop or {}
+  p.rdrop[win.id] = { x0 = x0, x1 = x0 + RAIL - 4 * z, rows = bands }
+  local adrag = ed.g.adrag
+  local ins_drag = adrag and adrag.moved and adrag.path
+                   and adrag.path:lower():find("%.ins$")
   for ti, tr in ipairs(doc.tracks) do
     local sel = (win.trk or 1) == ti
+    local band_h = px * 2.8 + (sel and (px * 3.45 + 3 * z) or 0)
+    bands[ti] = { y0 = ty - 2 * z, y1 = ty - 2 * z + band_h }
     local hov = ctx.hot and i.wx >= x0 and i.wx < x0 + RAIL - 8 * z
                 and i.wy >= ty and i.wy < ty + px * 2.4
     if sel then
       pal.x_ig_rect_fill(x0 + 2 * z, ty - 2 * z, RAIL - 10 * z,
                          px * 2.5, COL.btn_on, 3 * z)
+    end
+    -- an .ins drag in flight outlines the row it would bind, so the
+    -- drop target is visible BEFORE release (the human's report was a
+    -- drop landing on the track above — now you see it coming)
+    if ins_drag and i.wx >= x0 and i.wx < x0 + RAIL - 4 * z
+       and i.wy >= bands[ti].y0 and i.wy < bands[ti].y1 then
+      pal.x_ig_rect(x0 + 2 * z, ty - 2 * z, RAIL - 10 * z, px * 2.5,
+                    COL.accent, math.max(1, 1 * z), 3 * z)
+      ctx.touch() -- the highlight follows the drag
     end
     pal.x_ig_text(x0 + 6 * z, ty, px * 0.95,
                   (hov or sel) and COL.hot or COL.text, tr.name, 0)
@@ -930,6 +968,15 @@ function M.draw(win, ctx)
     end
   end
 
+  -- ---- the piano keys column (round 10 — the human): a playable
+  -- keyboard on the roll's left edge. Ruler, roll, and velocity lane
+  -- all start to its right through this ONE shift, so their tick axes
+  -- stay aligned; the arrangement above keeps the full width. The
+  -- keys themselves draw after the roll (they read the panned view).
+  local KEYS_W = math.min(18 * z, rw * 0.14)
+  local keys_x = rx
+  rx, rw = rx + KEYS_W, rw - KEYS_W
+
   -- ---- the scrub ruler (human, round 4): a roll-aligned bar ruler
   -- (pattern ticks, win.tpp/tick0). Click/drag sets win.cursor — the
   -- SCRUB start (space plays from here) AND the paste anchor (Ctrl+V).
@@ -1037,9 +1084,8 @@ function M.draw(win, ctx)
       pal.x_ig_rect_fill(rx, ry2, rw, row_h, COL.black_row)
     end
     if pitch % 12 == 0 then
+      -- (the octave label moved onto the keys column, round 10)
       pal.x_ig_line(rx, ry2, rx + rw, ry2, COL.beatln, 1)
-      pal.x_ig_text(rx + 2 * z, ry2 - px * 0.55, px * 0.7,
-                    COL.dim, "C" .. (pitch // 12 - 1), 0)
     end
   end
   for t = (math.tointeger(tick0 // grid) or 0) * grid, pat.len, grid do
@@ -1195,16 +1241,19 @@ function M.draw(win, ctx)
                 dt = tick - n.tick, dp = pitch - n.pitch, base = base,
                 moved = false }
       end
-    else -- ADD at the last-used length, snapped; it becomes the selection
+    else -- ADD at the last-used length, snapped; it becomes the
+      -- selection, and HOLDING the drag SUSTAINS it (round 10 — the
+      -- human): the fresh note arms the resize gesture, so its end
+      -- follows the cursor exactly like an edge drag. A plain click
+      -- keeps the last-used length (the threshold below).
       local n = { tick = snap(tick), dur = p.lastdur or grid,
                   pitch = math.max(0, math.min(127, pitch)), vel = 100 }
       pat.notes[#pat.notes + 1] = n
       p.nsels = { [n] = true }
       p.nsel = nil
-      p.g = { t = "selmove", grab = n, gt = n.tick, gp = n.pitch,
-              dt = tick - n.tick, dp = 0,
-              base = { { n = n, tick = n.tick, pitch = n.pitch } },
-              moved = false, added = true }
+      p.g = { t = "selsize", grab = n, gd = n.dur, lnd = n.dur,
+              base = { { n = n, dur = n.dur } },
+              moved = false, added = true, ax = i.wx }
       blip(ed, win, p, n.pitch, n.vel)
     end
     ctx.touch()
@@ -1274,18 +1323,29 @@ function M.draw(win, ctx)
   if p.g and p.g.t == "selsize" then
     local n = p.g.grab
     if i.buttons[1] and n then
-      local nd = math.max(grid, math.tointeger(
-        ((x2t(i.wx) - n.tick + grid / 2) // grid) * grid))
-      if nd ~= p.g.lnd then
-        for _, b in ipairs(p.g.base) do
-          b.n.dur = M.group_val(b.dur, p.g.gd, nd, ed.g.ctrl, 1, 1 << 30)
+      -- a fresh ADD engages the sustain only once the cursor actually
+      -- moves — else the press frame would yank the last-used length
+      -- down to one grid cell under a plain click
+      if p.g.added and not p.g.live
+         and math.abs(i.wx - p.g.ax) > 3 * z then
+        p.g.live = true
+      end
+      if not p.g.added or p.g.live then
+        local nd = math.max(grid, math.tointeger(
+          ((x2t(i.wx) - n.tick + grid / 2) // grid) * grid))
+        if nd ~= p.g.lnd then
+          for _, b in ipairs(p.g.base) do
+            b.n.dur = M.group_val(b.dur, p.g.gd, nd, ed.g.ctrl, 1, 1 << 30)
+          end
+          p.g.lnd, p.g.moved = nd, true
+          ctx.touch()
         end
-        p.g.lnd, p.g.moved = nd, true
-        ctx.touch()
       end
     elseif not i.buttons[1] then
-      if p.g.moved then
-        if n then p.lastdur = n.dur end
+      -- an added note commits even unmoved (it exists); a sustain that
+      -- moved becomes the new last-used length
+      if p.g.moved or p.g.added then
+        if n and p.g.moved then p.lastdur = n.dur end
         note_commit()
       end
       p.g = nil
@@ -1343,6 +1403,62 @@ function M.draw(win, ctx)
     end
   end
   pal.x_ig_clip_pop()
+
+  -- ---- the piano keys (the strip the shift above reserved) ----
+  pal.x_ig_clip_push(keys_x, roll_y, KEYS_W, roll_h)
+  pal.x_ig_rect_fill(keys_x, roll_y, KEYS_W, roll_h, COL.rail)
+  local over_keys = i.wx >= keys_x and i.wx < keys_x + KEYS_W
+                    and i.wy >= roll_y and i.wy < roll_y + roll_h
+  local hovp -- the highlighted pitch: the audition in flight, else hover
+  if p.g and p.g.t == "keys" then
+    hovp = p.g.kp
+  elseif ctx.hot and (over_keys or roll_hot) and not p.paste then
+    hovp = y2pitch(i.wy)
+  end
+  for r = -1, nrows do
+    local ky = roll_y + r * row_h - suby
+    local pitch = low + nrows - r
+    if pitch >= 0 and pitch <= 127 then
+      pal.x_ig_rect_fill(keys_x, ky, KEYS_W - 1 * z, row_h, 0xcfc9e8ff)
+      if is_black(pitch) then
+        pal.x_ig_rect_fill(keys_x, ky, KEYS_W * 0.62, row_h, 0x211d33ff)
+      elseif pitch % 12 == 0 or pitch % 12 == 5 then
+        -- the B|C and E|F seams (the pairs with no black key between)
+        pal.x_ig_line(keys_x, ky + row_h, keys_x + KEYS_W - 1 * z,
+                      ky + row_h, 0x211d33aa, 1)
+      end
+      if pitch == hovp then
+        pal.x_ig_rect_fill(keys_x, ky, KEYS_W - 1 * z, row_h, 0x7fd8a860)
+      end
+      if pitch % 12 == 0 and row_h >= 6 then
+        pal.x_ig_text(keys_x + KEYS_W * 0.3,
+                      ky + (row_h - px * 0.62) * 0.5, px * 0.62,
+                      0x141220ff, "C" .. (pitch // 12 - 1), 0)
+      end
+    end
+  end
+  pal.x_ig_clip_pop()
+  -- press a key = audition that pitch on the active track's
+  -- instrument; dragging glissandos row to row
+  if ctx.hot and i.clicked[1] and over_keys and not p.g and not p.paste then
+    local kp = math.max(0, math.min(127, y2pitch(i.wy)))
+    p.g = { t = "keys", kp = kp }
+    blip(ed, win, p, kp, 100)
+    ctx.touch()
+  end
+  if p.g and p.g.t == "keys" then
+    if i.buttons[1] then
+      local kp = math.max(0, math.min(127, y2pitch(i.wy)))
+      if kp ~= p.g.kp then
+        p.g.kp = kp
+        blip(ed, win, p, kp, 100)
+        ctx.touch()
+      end
+    else
+      p.g = nil
+      ctx.touch()
+    end
+  end
 
   -- ---- the velocity lane ----
   p.vlane = { x = rx, y = vel_y, w = rw, h = VEL_H, tpp = tpp,
@@ -1526,11 +1642,15 @@ function M.drop(win, ed, path, wx, wy)
   if not doc then return false end
   local rel = M.resolve_ins(ed, path)
   if not rel then return false end
-  -- row math mirrors the rail draw (world coords -> track index)
-  local py = wy - (win.y + 24 + 4) - 4
-  local px10 = 10 -- px at z1
-  local ti = math.tointeger(py // (px10 * 2.8)) + 1
-  if ti < 1 or ti > #doc.tracks then ti = win.trk or 1 end
+  -- the target row comes from the bands the DRAW recorded this frame
+  -- (the layout is the draw's: zoom-scaled rows + the selected row's
+  -- taller mix-panel band). Outside the rail, or past the last row,
+  -- the drop binds the selected track.
+  local rd = p.rdrop and p.rdrop[win.id]
+  local ti = rd and wx >= rd.x0 and wx < rd.x1 and M.rail_hit(rd.rows, wy)
+  if not ti or ti < 1 or ti > #doc.tracks then
+    ti = math.min(win.trk or 1, #doc.tracks)
+  end
   doc.tracks[ti].ins = rel
   p.pins_sent = nil
   p.flat = nil
