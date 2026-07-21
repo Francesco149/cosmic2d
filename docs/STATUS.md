@@ -69,8 +69,17 @@ the never-white miss, stable checker ids, extrude inheritance); a
 to end (u → all → face pick → tile re-color → .spr drop → tile-to-
 image island drag → +4-texel vertex drag → one-ctrl+z gesture undo →
 ctrl+s disk round trip → sprite-resave rebake probe → the size bar
-resizing tiles.spr to 64x48 with the strip following). Suite verdict:
-SUITE-VERDICT-PENDING. Windows stage: WINDOWS-STAGE-PENDING.
+resizing tiles.spr to 64x48 with the strip following). `nix run
+.#test` **ALL GREEN** from the committed tree (all traces byte-exact,
+every pixel golden byte-identical — no golden touches textured
+meshes). The Windows stage is refreshed (23 durable entries + the
+Start Menu shortcut); **native selftest 25,144** (= Linux + 2), the
+830-frame native kitcheck trace verifies PASS, and the native garage
+shot renders the textured truck correctly on the real driver. The
+first native run of 77c91cb's asset-copy KATs caught a FIXTURE bug
+(backslashed native TEMP bypassed the injected-fs concurrent-save
+probe; the product path handling was correct) — fixture root now
+pre-normalizes, committed as its own test fix.
 
 **Exact next step:** the human's taste pass on the uv tab feel (drag
 thresholds, island default scale = half the frame's short side) and
