@@ -5,8 +5,8 @@
 -- creates a fresh one from the init patch.
 --
 -- Mouse-first, one screen: algorithm chips, feedback chips, gain/pan
--- sliders, 4 operator panels (wave chips, coarse/fine/level/detune
--- sliders, a draggable ADSR graph), the audition piano (two octaves;
+-- sliders, 4 operator panels (wave chips, level/coarse/fine/detune/
+-- fixed-hz sliders, a draggable ADSR graph), the audition piano (two octaves;
 -- per-window hotkeys give the tracker keyboard). Every edit re-sends
 -- the patch to the EDITOR bank live — tweak while a note rings; one
 -- finished gesture = one journal entry (the R8 gesture rule).
@@ -23,7 +23,7 @@ M.kind = "synth"
 M.help = "win-synth"
 M.menu = "synth"
 M.exts = { "ins" }
-M.DEF_W, M.DEF_H = 560, 512
+M.DEF_W, M.DEF_H = 560, 560
 M.JCAP = 512
 
 local COL = {
@@ -218,7 +218,8 @@ local function slider(p, ctx, id, x, y, w, h, val, lo, hi, label, fmt)
   pal.x_ig_rect_fill(bx + bw * f - 1.5 * z, by - 1 * z, 3 * z, bh + 2 * z,
                      COL.knob, 1 * z)
   pal.x_ig_text(bx + bw + 4 * z, y, px, COL.text,
-                (fmt or "%d"):format(val), 0)
+                type(fmt) == "function" and fmt(val)
+                or (fmt or "%d"):format(val), 0)
   local over = i.wx >= bx - 4 * z and i.wx < bx + bw + 4 * z
                and i.wy >= y - 2 * z and i.wy < y + bh + 4 * z
   if ctx.hot and i.clicked[1] and over and not p.drag then
@@ -258,6 +259,24 @@ local function env_ms_to_fx(ms, tmax)
 end
 M.env_fx_to_ms, M.env_ms_to_fx = env_fx_to_ms, env_ms_to_fx -- KAT hooks
 local A_MAX, D_MAX, R_MAX = 2000, 2000, 4000
+
+-- the fixed-frequency slider (R9f exposure): index 0 = track the note;
+-- 1..255 sweep 20 Hz → 12 kHz on the same log rule as the envelopes
+-- (equal pixels = equal ratios — drum bodies live at 90–200 Hz, hiss at
+-- 5–11 kHz; a linear slider wastes the whole left half on bass). The
+-- stock drums all ride op.fixed; before this slider the knob existed
+-- only in the format (patch tables), not the UI.
+local FIX_LO, FIX_HI = 20, 12000
+local function fix_idx_to_hz(v)
+  if v <= 0 then return nil end
+  return math.floor(FIX_LO * (FIX_HI / FIX_LO) ^ ((v - 1) / 254) + 0.5)
+end
+local function fix_hz_to_idx(hz)
+  if not hz or hz <= 0 then return 0 end
+  local fx = math.log(hz / FIX_LO) / math.log(FIX_HI / FIX_LO)
+  return math.max(1, math.min(255, math.floor(fx * 254 + 1.5)))
+end
+M.fix_idx_to_hz, M.fix_hz_to_idx = fix_idx_to_hz, fix_hz_to_idx -- KAT hooks
 
 -- the ADSR graph: three fixed thirds — attack | decay·sustain | release.
 -- A/D/R drag horizontally within their third (log-mapped), sustain drags
@@ -596,8 +615,20 @@ function M.draw(win, ctx)
                         pw - 8 * z, sh, op.fine or 0, -63, 63, "fin")
       if nv then op.fine = nv; edited = true end
       closed = closed or done
-      local ch2 = adsr(p, ctx, "env" .. o, ox + 4 * z, sy + sh * 3 + 2 * z,
-                       pw - 8 * z, math.max(10, ph - (sh * 3 + px * 2.4)),
+      nv, done = slider(p, ctx, "dt" .. o, ox + 4 * z, sy + sh * 3,
+                        pw - 8 * z, sh, op.detune or 0, -63, 63, "dtn")
+      if nv then op.detune = nv; edited = true end
+      closed = closed or done
+      nv, done = slider(p, ctx, "fx" .. o, ox + 4 * z, sy + sh * 4,
+                        pw - 8 * z, sh, fix_hz_to_idx(op.fixed), 0, 255,
+                        "fix", function(v)
+                          local hz = fix_idx_to_hz(v)
+                          return hz and (hz .. "Hz") or "note"
+                        end)
+      if nv then op.fixed = fix_idx_to_hz(nv); edited = true end
+      closed = closed or done
+      local ch2 = adsr(p, ctx, "env" .. o, ox + 4 * z, sy + sh * 5 + 2 * z,
+                       pw - 8 * z, math.max(10, ph - (sh * 5 + px * 2.4)),
                        op)
       if ch2 then
         edited = true
