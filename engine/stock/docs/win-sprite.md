@@ -1,179 +1,109 @@
 # The sprite editor
 
-Paint a pixel sprite; define animation clips in the paired **animation** window.
+Paint a pixel sprite (`.spr`): layers with blend modes, live procedural
+fills, a frame strip the animation window cuts into clips.
 
-## Workflow
+Every knob and button: [the sprite reference](engine/stock/docs/ref-sprite.md) —
+every tool, dial and fill type, plus a recipe card for the ten fills.
 
-0. A fresh (unbound) sprite window is the **new sprite** door: type a path —
-   a unique name is prefilled — and Enter creates a 32x32 sprite there (an
-   existing path offers open / overwrite / cancel). Or drag any `.spr` in
-   from an assets window.
-1. Toggle **edit** (header) to paint; the view lock lights up so wheel/pan act
-   on the sprite, not the canvas.
-2. Pick a tool, pick a color (or eyedrop one from anywhere on screen), paint.
-3. **ctrl+s** saves and bakes the `.png` the game draws.
-4. Open **anim** (header button) to cut the strip into clips (frame:duration).
-5. **size** (header, edit mode) resizes the canvas: type `WxH` and Enter.
-   The default **canvas** mode keeps pixels where they are (grow adds
-   transparent room, shrink crops); the **scale** mode resamples the art to
-   fill the new size. One undo step; mesh texture sheets usually want 64x64
-   or more.
+## Walkthrough: paint the hero
 
-## Tools (edit mode)
+One sitting, one game-ready hero: a 32x32 hooded adventurer —
+silhouette, a cel-shading fill pass, a face, then a shadow layer and a
+light layer, ending as a three-frame strip ready for
+[the animation window](engine/stock/docs/win-anim.md) to bring to life.
+Every technique here transfers to any sprite you will ever draw.
 
-- **p** pen · **e** eraser · **f** fill · **k** pick (eyedropper) · **~ c** curve
-- **t** stamp (once an image is in the stamp well, below)
-- **m** marquee (rectangle selection — copy/cut/paste, below)
+Positions below are pixel coordinates — read them off the little `x,y`
+readout at the canvas's top-right as you move the mouse.
 
-The pick tool is a **global eyedropper** — click anywhere (other windows, the
-live game) to sample that color.
+1. **Right-click empty canvas** and pick **sprite**. The unbound window
+   is the new-sprite door: type `art/hero.spr` and press **enter**. A
+   32x32 canvas opens already editable, the stock 17-color palette in
+   the row underneath, and the green **EDITING** chip lights the corner:
+   while this window is focused the **wheel zooms the pixels** and
+   middle-drag pans (**shift+1** refits, **esc** hands the view back).
+2. The silhouette: left-click the **leaf-green swatch** (the 16th color)
+   to make it the primary. With the **P** pen at size 1, drag ONE closed
+   outline — ours is a hooded cloak: start at the hood's peak at
+   (16,4), sweep down the left side through (10,9) and (9,13), pinch in
+   at the shoulder (10,16), flare to a wide hem at (7,26), run straight
+   across the bottom to (24,26), and climb back up the right side
+   through (21,16) and (19,6) to close at the peak. One drag = one undo
+   step, so a bad outline is a single **ctrl+z**.
+3. Press **f** (the fill bucket) and click once inside the outline: the
+   interior floods and the hero is a solid green blob. Shape done —
+   colors next.
+4. Pick the shading ramp: type `#2e5c40` into the bottom-right
+   **`#hex adds color`** field and press enter — the dark forest green
+   joins the palette and becomes your primary. Then **right-click** the
+   leaf-green swatch to make it the secondary. Fills ramp secondary →
+   primary from the top of the sprite to the bottom: light at the hood,
+   dark at the hem — sunlight for free.
+5. On the layers rail, click the **fill** chip once: it now reads
+   **fill linear** and the blob becomes a four-band vertical ramp. This
+   fill is live — it recolors the layer's painted pixels (the shape
+   stays yours) and stays adjustable until baked.
+6. Tune it: drag the **di** dial down to about **30%** — calmer dither,
+   cleaner bands (leave **lv** at 4: four bands is classic cel shade).
 
-The **curve** tool is the classic 2-point curve: click the start, click the
-end, then move the mouse to bow the line and click to lay it (esc cancels).
+![The live fill: the blob cel-banded, the fill dials on the layers rail](media/sprite-shading.png)
 
-## Brush size, shape and opacity
+7. Click **bake**. The ramp stamps into real pixels — every one an
+   exact ramp color, so the sprite stays palette-clean by construction.
+8. The face: press **p** — back to the pen (the bucket has no brush, so
+   the brush strip returns with it) — set the **size** dial to **4**, click the shape chip
+   to **square**, left-click the light **skin swatch** (the 7th color),
+   and dab once just under the hood's brow — center the readout on
+   (16,11). Back to size **1**: two eyes with the dark **ink swatch**
+   (the 2nd color) at (15,11) and (17,11), and one **gold** pixel (the
+   14th color) at (16,15) — the cloak clasp. A face this small is three
+   dots done well.
+9. The shadow layer: click **+** under the layers list — **layer 2**
+   appears on top and becomes active. Click its **mix** chip once so it
+   reads **mix mul**: this layer now darkens whatever sits beneath it.
+   Pick the blue-gray **suit-shadow swatch** (the 11th color), set the
+   pen to size **5**, shape back to **circle**, opacity **50%**, and
+   pull one stroke down the cloak's left flank from about (12,14) to
+   (11,24), then one along the hem at row 24. Instant form shadow —
+   and because it is its own layer, erasing on it never harms the body.
+   (Keep the stroke inside the body: over transparent canvas a mul
+   layer just paints, so strays stay visible until erased.)
 
-The strip under the canvas dials the pen/eraser brush: **size** (1-32 px,
-default 1 — also `[` and `]`), **opacity** (drag; applied once per stroke,
-so a slow drag never darkens twice), and the **shape** chip toggles
-**circle / square**. The eraser honors all three — a low-opacity eraser
-fades pixels instead of deleting them.
+![Mid-stroke on the mul layer: the size-5 brush cursor, the brush strip reading size 5, op 50%, circle](media/sprite-stroke.png)
 
-## The stamp well
+10. The light layer: **+** again (**layer 3**), click **mix** twice to
+    **mix add** — this one glows. Pick the **gold swatch**, pen size
+    **2**, opacity about **60%**, and kiss the hood's right rim from
+    (20,7) to (21,12), then the right shoulder from (21,15) to (22,18).
+    A warm rim light against the cool shadow — the oldest trick in
+    pixel art.
 
-The square slot at the bottom of the tool rail is the **stamp well**:
-**drag any sprite or image onto it** and it becomes a stamp — click the
-canvas to print its opaque pixels (a ghost preview shows where it lands;
-one click = one undo step). Click the well or press **t** to re-arm the
-stamp tool; right-click the well (or the strip's `x` chip) to clear it.
+![The layers rail: layer 3 selected, mix add, the stack of three](media/sprite-layers.png)
 
-## Marquee, copy, cut and paste
+11. Frames for the animator: in the frames row click **⧉** twice.
+    Frames 2 and 3 are byte-copies of your hero — the strip the
+    animation window will cut into idle/walk/blink clips next session.
+12. **ctrl+s** — the `.spr` saves and its sibling `.png` strip bakes
+    (that is the texture games draw; maps and running games hot-reload
+    it on the next frame). Click **done** in the header and meet your
+    hero, composited and aspect-fit in view mode.
 
-The **m** marquee tool drags a rectangle selection on the canvas (a plain
-click deselects; esc clears; a right-click cancels a drag in progress).
-The selection reads from the **active layer**:
+![The finished hero in view mode: 32x32, 3 frames, 3 layers](media/sprite-hero.png)
 
-- **ctrl+c** copies the selected pixels (with no selection: the whole
-  layer cell), transparency included.
-- **ctrl+x** also clears the region — one undo step.
-- **ctrl+v** arms **paste**: the clip rides the cursor as a ghost and each
-  click prints its opaque pixels (one undo step per click, the stamp
-  rule). Esc returns to the pen.
+Where next: the reference's **fill recipes** turn the same fill dials
+into water, sand, moss, cobblestone, crystal and gems; the animation
+window tutorial cuts your strip into clips the game plays.
 
-The clip is shared across every sprite window in the session — copy in
-one sprite, **ctrl+v in a window on a different sprite**, and it pastes
-there too.
+## Keys
 
-## Two colors + lines
+- **p / e / f / k / c / t / m** — pen, eraser, fill, pick, curve,
+  stamp, marquee · **[ ]** brush size · **x** swaps the two colors
+- **ctrl+c / ctrl+x / ctrl+v** — copy / cut / paste (the marquee
+  selection; the clip crosses sprite windows)
+- **shift+1** fits the view · **esc** cancels / disarms / clears
+- **ctrl+s** save · **ctrl+z / ctrl+y** undo / redo
 
-- **left-click paints the primary color, right-click the secondary** — the two
-  swatches sit at the bottom of the tool rail; **x** swaps them, and a
-  right-click on either the rail swatch or a palette swatch sets the secondary.
-- **hold shift** and click with the pen/eraser to draw a
-  **straight line from the last pixel you painted** (a preview line
-  shows first).
-
-## Layers: opacity, blend modes, lock and order
-
-The right rail lists the layers top-down. Click a row to select it, click
-the **eye dot** to hide/show, **right-click a row to lock it** (a locked
-layer refuses paint; a small red dot marks it). Under the list, **+ -**
-add/delete and **^ v** move the selected layer up/down the stack.
-
-Below that sit the selected layer's **mix controls**:
-
-- **op** — layer opacity (drag the dial; 5% steps).
-- **mix** — the blend mode: **normal, mul, add, screen, overlay**
-  (click cycles forward, right-click back). *mul* darkens (shadows,
-  texture), *add* glows, *screen* lightens softly, *overlay* adds
-  contrast. Over empty pixels every mode just paints, so a blend layer
-  never blackens transparent canvas.
-
-## Fills: gradients and procedural fields
-
-The **fill** chip gives the selected layer a live, non-destructive fill —
-saved in the `.spr`, re-rendered every time the sprite composites, and
-adjustable forever until you **bake** it. Click to cycle (right-click goes
-back): four gradients (**linear, radial, angular, mirror**) and six
-**procedural fields** — **noise** (soft value noise), **fbm** (cloudy
-fractal), **ridged** (creased strata — rock veins), **cells** (organic
-cells/scales), **shards** (cracks between cells — cobblestone), and
-**facets** (flat random tone per cell — crystal planes).
-
-By default a fill **recolors the layer's painted pixels** (the shape is
-yours, the colors are the ramp's — draw a rock silhouette, pick *ridged*,
-and it shades itself). Toggle **solid** to cover the whole canvas instead:
-an empty layer + a solid *fbm* + *mix mul* + a low **op** is "a layer of
-noise, blended to taste".
-
-The dials underneath tune it live:
-
-- **sd** — the random seed (drag to reroll the field).
-- **px** — feature size in pixels (procedural types).
-- **oct** — detail octaves (fbm/ridged).
-- **lv** — color bands; **di** — dither strength between bands. Every
-  output pixel is an exact ramp color — dithered bands, never a blur.
-- **cols** re-ramps the fill from your secondary → primary color;
-  **bake** stamps the fill into the layer's pixels and removes it.
-
-The ramp is created from your two active colors when the fill is born, so
-pick the colors first (a transparent secondary makes speckle overlays).
-
-## Walkthrough: fill recipes
-
-![Procedural water, crystal, sand, moss, stone, and gem fills](media/sprite-fills.png)
-
-Every recipe is: pick secondary (dark) + primary (light), set the fill,
-tune dials. All results stay live — reroll **sd** until it looks right.
-
-- **Water tile** — deep blue secondary, pale cyan primary; *noise*,
-  **solid**, px ~8, lv 4, a little **di**. The dither bands read as
-  ripples; a second layer of *noise* at **mix mul** + low **op**
-  roughens the surface.
-- **Sand / dunes** — dark red-brown secondary, cream primary; *fbm*,
-  **solid**, px 10–14, oct 3. The cloudy octaves make dune shadows.
-- **Moss / foliage** — near-black green secondary, yellow-green primary;
-  *cells*, **solid**, px 6–10. Reads as leaf clumps; larger px = bushes,
-  smaller = lichen.
-- **Cobblestone** — near-black blue secondary, light blue-gray primary;
-  *shards*, **solid**, px 10–16. The F2−F1 cracks are the mortar lines;
-  raise **lv** for flatter stones.
-- **Crystal wall** — deep violet secondary, pale lavender primary;
-  *facets*, **solid**, px 10–16, di 0. Flat tone per cell = mineral
-  planes.
-- **A shaded boulder** — draw the silhouette with the pen first (any
-  color), keep the fill **masked** (solid off), pick dark slate → warm
-  gray, *ridged*, px 8, oct 2–3, lv 4. The strata shade your shape;
-  the silhouette stays yours.
-- **A cut gem** — draw a diamond silhouette; *facets* masked, deep blue →
-  ice blue, px large (few big cells). **bake**, then hand-touch: a
-  1px darker outline and a 2px white sparkle at the top facet.
-- **Speckle / stars overlay** — transparent secondary, white primary;
-  *noise* on an empty **solid** layer, high lv, then **mix screen** over
-  the scene below.
-
-## Layer mixes to taste
-
-Blend-mode staples on top of any base: a *mul* + *fbm* layer at ~40%
-**op** is instant grime/shadow; an *add* + *noise* layer at low op is
-sparkle/heat; *overlay* + *ridged* deepens rock contrast without
-touching the palette. Because generated pixels are exact ramp colors,
-baking any of these keeps the sprite palette-clean.
-
-## Colors & palettes
-
-New assets auto-name with three random words, so nothing blocks on a filename —
-press **enter** to create. The bottom-right **`#hex adds color`** field appends
-a typed `#RRGGBB[AA]` to the palette (the swatch left of it previews the parse).
-
-The palette row starts with the **transparent swatch** (the little
-checker): select it to paint or **fill with transparency** — the bucket
-with transparency erases a whole region in one click.
-
-**Drag a `.pal` in** to stack it as an extra swatch source at the bottom — add
-as many as you like; each row has a **×** to remove it. Left/right-click its
-swatches to set the primary/secondary color.
-
-Full reference: [Using the editor](engine/stock/docs/editor.md),
+Full reference: [every tool, dial and button](engine/stock/docs/ref-sprite.md),
 [the animation window](engine/stock/docs/win-anim.md), and
 [sprites in game code](engine/stock/docs/scripting.md#animation-clips-and-sprites-cmanim-cmsprite).
