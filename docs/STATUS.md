@@ -3,7 +3,35 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D159: the music roll, round 11
+## Current handoff — round 12: hold auditions like the synth piano (the D159 addendum)
+
+**This session (2026-07-21, continued): the human voted on round 11's
+sustain model and round 12 implements it verbatim** (`2069851`, the
+D159 addendum). "Holding holds the note indefinitely like on the
+synth piano roll, but the note placed is just the default with no
+extension from holding. same for clicking the pattern piano roll."
+So: round 11's musical-time growth is GONE (one session old, never
+tagged) — a motionless hold on a fresh add keeps the note at the
+last-used length while `blip_hold` rings the audition until release
+(hold = HEAR, drag = LENGTH; the ceil cursor-following and the
+new-default-on-drag stay). The KEYS COLUMN adopts the same contract:
+a key press holds its voice until release (was a 10-frame blip), a
+drag glissandos — the old voice is abandoned to its 2-frame fuse, the
+new pitch holds. The synth piano (`p.held` + explicit off) is the
+model, not the mechanism: the fuse pattern keeps every existing
+cleanup path as the release path. **Proof:** the tape re-cut to
+round-12 semantics passes **20/20** (45-frame hold → dur stays 48 +
+lastdur untouched + voice fuse live mid-hold and expired after; keys
+ringing 22 frames into a hold, glissando swaps voices, release
+silences; drag end covers the cursor and sets the default); selftest
+**25,153** (unchanged); `nix run .#test` ALL GREEN, goldens
+byte-identical; the win-music.md rewrap en route re-proved the D127
+balanced-span guard. **The Windows stage is REFRESHED** (11 durable
+entries + the shortcut), NATIVE selftest **25,155** = Linux + 2.
+**Exact next step:** the human's native feel pass on the held
+audition (roll add + keys) — everything below unchanged.
+
+## Previous handoff — D159: the music roll, round 11
 
 **This session (2026-07-21, continued): the human's two follow-up
 reports on the round-10 build — both landed as D159** (`d918af7`).
