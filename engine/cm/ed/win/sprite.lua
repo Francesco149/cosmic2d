@@ -930,6 +930,19 @@ function M.draw(win, ctx)
     end
   end
 
+  -- the cursor's pixel address (top-right of the canvas): pixel work
+  -- talks in coordinates ("the eye at 15,11") — without the readout a
+  -- named position can't be followed exactly (the HELPDOCS sprite
+  -- tutorial is written in these)
+  if over_canvas and inb then
+    local ct = mx .. "," .. my
+    local ctw = pal.x_ig_text_size(ct, px * 0.9, 1)
+    pal.x_ig_rect_fill(cvx + cvw - ctw - 12 * z, cvy + 4 * z,
+                       ctw + 8 * z, px * 1.4, 0x1a1728cc, 3 * z)
+    pal.x_ig_text(cvx + cvw - ctw - 8 * z, cvy + 4 * z + px * 0.2,
+                  px * 0.9, COL.text, ct, 1)
+  end
+
   -- ---- the size bar (D155): type "WxH", pick canvas/scale, Enter ----
   if win.szbar then
     local bh2 = px * 2.1
