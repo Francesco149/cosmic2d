@@ -11,11 +11,16 @@
 -- (left) binds instruments (drag an .ins on), mixes volume + stereo pan,
 -- mutes, deletes ("del"), and adds tracks.
 --
--- Roll grammar (wstudio four rules + round-3/4 growth): press empty =
--- ADD (last-used length, grid-snapped); motionless release = DELETE;
--- press-drag = MOVE; right-edge = RESIZE. shift = marquee/toggle
--- select; drag a selected note moves the set; CTRL+drag = duplicate;
--- Ctrl+C/X/V clipboard. A velocity lane + a scrub ruler under it. A
+-- Roll grammar (round 9 — the human): press empty = ADD (last-used
+-- length, grid-snapped); press a note = SELECT it (never moves or
+-- deletes — moves go by grid STEPS so an off-grid note keeps its
+-- offset); drag moves the selection, right-edge resizes it; selected
+-- notes hit-test first and draw on top translucent so an overlap
+-- stays visible and fixable; RIGHT-CLICK deletes a note; ctrl+up/down
+-- steps the selection an octave. shift = marquee/toggle select;
+-- CTRL+drag = duplicate; Ctrl+C/X copy/cut; Ctrl+V arms a GHOST paste
+-- riding the mouse — click places it (pan/zoom stay live), Esc or
+-- right-click cancels. A velocity lane + a scrub ruler under it. A
 -- pattern's length GROWS to fit content but never auto-shrinks
 -- (clips loop it).
 --
@@ -119,6 +124,20 @@ M.dirty, M.save, M.undo, M.redo, M.revert =
 function M.group_val(base, gbase, target, ctrl, lo, hi)
   if ctrl then return target end
   return math.max(lo, math.min(hi, base + (target - gbase)))
+end
+
+-- clamp a pitch DELTA so every pitch in the set stays 0..127 — the
+-- whole set moves by ONE delta so intervals never squash (the paste
+-- ghost placement; the octave steps refuse outright when the clamp
+-- bites — all or nothing). Pure — KAT'd (t_song).
+function M.clamp_dp(pitches, dp)
+  for _, q in ipairs(pitches) do
+    if q + dp > 127 then dp = 127 - q end
+  end
+  for _, q in ipairs(pitches) do
+    if q + dp < 0 then dp = -q end
+  end
+  return dp
 end
 
 -- ---- the editor-bank preview (render-only, wall clock) ----
@@ -348,12 +367,15 @@ local function copy_sel(ed, win, p)
   return true
 end
 
-M.hotkeys[#M.hotkeys + 1] = {
-  key = "ctrl+c", when = bound,
-  fn = function(win, ed)
-    local _, p = open_asset(ed, win.path)
-    copy_sel(ed, win, p)
-  end }
+-- Ctrl+C arrives through the SHELL's clipboard tier (kind_call("copy")
+-- — the D156 convention), which consumes the chord BEFORE kit hotkeys:
+-- a kit-level ctrl+c entry here was dead-shadowed (found by the D157
+-- tape). M.copy on the kind is the working door.
+function M.copy(win, ed)
+  if win.path == "" then return end
+  local _, p = open_asset(ed, win.path)
+  copy_sel(ed, win, p)
+end
 M.hotkeys[#M.hotkeys + 1] = {
   key = "ctrl+x", when = bound,
   fn = function(win, ed)
@@ -371,26 +393,48 @@ M.hotkeys[#M.hotkeys + 1] = {
     p.flat = nil
     commit(ed, win.path)
   end }
+-- Ctrl+V ARMS a ghost paste instead of pasting at the scrub cursor
+-- (round 9): the cursor lives in SONG space, so inside a pattern whose
+-- clip doesn't start the song it pointed at nothing. The ghost rides
+-- the mouse over the roll (anchored at the clip's earliest note),
+-- placement snaps like ADD, a click places it as one journal entry,
+-- and Esc / right-click cancels — pan and zoom stay live while armed.
 M.hotkeys[#M.hotkeys + 1] = {
   key = "ctrl+v",
   when = function(win) return win.path ~= "" end,
   fn = function(win, ed)
     local _, p = open_asset(ed, win.path)
     local clip = ed.g.musicclip
-    local pt = p.doc and p.doc.patterns[win.pat or 1]
-    if not (clip and #clip > 0 and pt) then return end
-    p.nsels = {} -- the pasted notes become the new selection
+    if not (p.doc and clip and #clip > 0) then return end
+    local bp -- the anchor pitch: the earliest note's (ties keep the first)
     for _, c in ipairs(clip) do
-      local n = { tick = math.tointeger((win.cursor or 0) + c.dtick),
-                  pitch = c.pitch, dur = c.dur, vel = c.vel }
-      pt.notes[#pt.notes + 1] = n
-      p.nsels[n] = true
+      if c.dtick == 0 then bp = c.pitch; break end
     end
-    p.nsel = nil
-    fit_pattern(p.doc, pt)
+    p.paste = { clip = clip, bp = bp or clip[1].pitch }
+    ed.touch()
+  end }
+
+-- ctrl+up/down: step the selection by one octave. All or nothing — a
+-- set that would clip at either end refuses, so intervals survive.
+local function octave(dp)
+  return function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    if not p.doc then return end
+    local sel = selected_notes(p, win)
+    if #sel == 0 then return end
+    local pitches = {}
+    for si, n in ipairs(sel) do pitches[si] = n.pitch end
+    if M.clamp_dp(pitches, dp) ~= dp then return end
+    for _, n in ipairs(sel) do n.pitch = n.pitch + dp end
+    blip(ed, win, p, sel[1].pitch, sel[1].vel)
     p.flat = nil
     commit(ed, win.path)
-  end }
+  end
+end
+M.hotkeys[#M.hotkeys + 1] = { key = "ctrl+up", hint = "octave",
+                              when = bound, fn = octave(12) }
+M.hotkeys[#M.hotkeys + 1] = { key = "ctrl+down",
+                              when = bound, fn = octave(-12) }
 
 for i2 = 1, 6 do
   M.hotkeys[#M.hotkeys + 1] = {
@@ -405,6 +449,11 @@ end
 
 function M.escape(win, ed)
   local p = ed.g.muw and ed.g.muw[win.path]
+  if p and p.paste then -- an armed paste cancels first
+    p.paste = nil
+    ed.touch()
+    return true
+  end
   if p and p.nsels and next(p.nsels) then -- selection clears first
     p.nsels = {}
     ed.touch()
@@ -415,6 +464,13 @@ function M.escape(win, ed)
     return true
   end
   return false
+end
+
+-- the right button is OURS while bound (cm.ed takes_right): a claimed
+-- press must reach draw's note-delete / paste-cancel instead of arming
+-- the spawn menu (the D127 rule; sprite/tmap precedent).
+function M.takes_right(win)
+  return win.path ~= ""
 end
 
 -- ---- draw helpers ----
@@ -1012,18 +1068,49 @@ function M.draw(win, ctx)
     local ny = roll_y + (low + nrows - n.pitch) * row_h - suby
     return nx, ny, math.max(2, n.dur * tpp), row_h
   end
+  -- hit-test: the topmost note under (tick, pitch), SELECTED notes
+  -- first — a drag grabs what you selected even under an overlap
+  local function note_hit(tick, pitch)
+    local hit, hit_sel
+    for ni, n in ipairs(pat.notes) do
+      if pitch == n.pitch and tick >= n.tick and tick < n.tick + n.dur then
+        hit = ni
+        if p.nsels[n] then hit_sel = ni end
+      end
+    end
+    return hit_sel or hit
+  end
   local roll_hot = ctx.hot and i.wx >= rx and i.wx < rx + rw
                    and i.wy >= roll_y and i.wy < roll_y + roll_h
+  for ni, n in ipairs(pat.notes) do -- unselected notes first
+    if not (p.nsel == ni or p.nsels[n]) then
+      local nx, ny, nw, nh = note_rect(n)
+      pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2, COL.note, 2)
+    end
+  end
+  -- selected notes draw LAST and slightly translucent: an overlapped
+  -- note stays visible THROUGH the selection, so the overlap can be
+  -- seen and fixed (round 9)
   for ni, n in ipairs(pat.notes) do
-    local nx, ny, nw, nh = note_rect(n)
-    pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2,
-                       (p.nsel == ni or p.nsels[n]) and COL.hot or COL.note,
-                       2)
-    -- resize handle: a bright bar when hovering the note's right edge, so
-    -- the resize zone is discoverable (the human — hoverable handles)
-    if roll_hot and i.wx >= nx and i.wx < nx + nw and i.wy >= ny
-       and i.wy < ny + nh and (nx + nw - i.wx) < 4 * z then
-      pal.x_ig_rect_fill(nx + nw - 2 * z, ny + 1, 2.5 * z, nh - 2, COL.head, 1 * z)
+    if p.nsel == ni or p.nsels[n] then
+      local nx, ny, nw, nh = note_rect(n)
+      pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2, 0xE8E4FFc8, 2)
+      pal.x_ig_rect(nx, ny + 1, nw - 1, nh - 2, COL.hot,
+                    math.max(1, 1 * z), 2)
+    end
+  end
+  -- resize handle: a bright bar when hovering the right edge of the
+  -- note a press would grab, so the resize zone is discoverable (the
+  -- human — hoverable handles)
+  if roll_hot and not p.g and not p.paste then
+    local hi = note_hit(x2t(i.wx), y2pitch(i.wy))
+    local n = hi and pat.notes[hi]
+    if n then
+      local nx, ny, nw, nh = note_rect(n)
+      if (nx + nw - i.wx) < 4 * z then
+        pal.x_ig_rect_fill(nx + nw - 2 * z, ny + 1, 2.5 * z, nh - 2,
+                           COL.head, 1 * z)
+      end
     end
   end
   -- the roll grammar (+ selection, round 3: shift+drag = marquee,
@@ -1036,20 +1123,22 @@ function M.draw(win, ctx)
   local function snap(t)
     return math.tointeger(math.max(0, (t // grid) * grid))
   end
+  local function snapd(d) -- a MOVE delta -> the nearest grid step (signed)
+    return math.tointeger(((d + grid / 2) // grid) * grid)
+  end
   local function note_commit()
     fit_pattern(doc, pat) -- the end line follows the content
     p.flat = nil
     commit(ed, win.path)
   end
-  if ctx.hot and i.clicked[1] and over_roll and not p.g then
+  if ctx.hot and i.clicked[1] and over_roll and not p.g and not p.paste then
     local tick = x2t(i.wx)
     local pitch = y2pitch(i.wy)
-    local hit, edge
-    for ni, n in ipairs(pat.notes) do
-      if pitch == n.pitch and tick >= n.tick and tick < n.tick + n.dur then
-        hit = ni
-        edge = (n.tick + n.dur - tick) * tpp < 4 * z
-      end
+    local hit = note_hit(tick, pitch)
+    local edge = false
+    if hit then
+      local n = pat.notes[hit]
+      edge = (n.tick + n.dur - tick) * tpp < 4 * z
     end
     if ed.g.ctrl and hit then -- DUPLICATE (round 4): ctrl+drag copies
       -- the selection (or just this note), you drag the copies where
@@ -1084,17 +1173,21 @@ function M.draw(win, ctx)
       else
         p.g = { t = "marquee", x0 = i.wx, y0 = i.wy }
       end
-    elseif hit and p.nsels[pat.notes[hit]] then -- the selection
+    elseif hit then -- SELECT (round 9): a press never moves or deletes
+      -- — an unselected note REPLACES the selection, then the group
+      -- gesture arms over the selection; a motionless release just
+      -- keeps it (delete moved to right-click)
       local n = pat.notes[hit]
+      if not p.nsels[n] then p.nsels = { [n] = true } end
+      p.nsel = nil
+      local base = {}
       if edge then -- GROUP RESIZE: drag the edge, the whole set follows
-        local base = {}
         for sel in pairs(p.nsels) do
           base[#base + 1] = { n = sel, dur = sel.dur }
         end
         p.g = { t = "selsize", grab = n, gd = n.dur, lnd = n.dur,
                 base = base, moved = false }
       else -- GROUP MOVE
-        local base = {}
         for sel in pairs(p.nsels) do
           base[#base + 1] = { n = sel, tick = sel.tick, pitch = sel.pitch }
         end
@@ -1102,20 +1195,16 @@ function M.draw(win, ctx)
                 dt = tick - n.tick, dp = pitch - n.pitch, base = base,
                 moved = false }
       end
-    elseif hit then
-      p.nsels = {} -- plain press elsewhere drops the selection
-      p.nsel = hit
-      local n = pat.notes[hit]
-      p.g = { t = edge and "nsize" or "nmove", ni = hit, moved = false,
-              dt = tick - n.tick, dp = pitch - n.pitch }
-    else -- ADD at the last-used length, snapped
-      p.nsels = {}
+    else -- ADD at the last-used length, snapped; it becomes the selection
       local n = { tick = snap(tick), dur = p.lastdur or grid,
                   pitch = math.max(0, math.min(127, pitch)), vel = 100 }
       pat.notes[#pat.notes + 1] = n
-      p.nsel = #pat.notes
-      p.g = { t = "nmove", ni = #pat.notes, added = true, moved = false,
-              dt = tick - n.tick, dp = 0 }
+      p.nsels = { [n] = true }
+      p.nsel = nil
+      p.g = { t = "selmove", grab = n, gt = n.tick, gp = n.pitch,
+              dt = tick - n.tick, dp = 0,
+              base = { { n = n, tick = n.tick, pitch = n.pitch } },
+              moved = false, added = true }
       blip(ed, win, p, n.pitch, n.vel)
     end
     ctx.touch()
@@ -1146,7 +1235,10 @@ function M.draw(win, ctx)
     if i.buttons[1] then
       local tick = x2t(i.wx)
       local pitch = y2pitch(i.wy)
-      local ndt = snap(tick - p.g.dt) - p.g.gt
+      -- the DELTA snaps (round 9): the set moves in grid STEPS, so an
+      -- off-grid note keeps its offset instead of being yanked onto
+      -- the line by the first pixel of drag
+      local ndt = snapd(tick - p.g.dt - p.g.gt)
       local ndp = math.max(-127, math.min(127, (pitch - p.g.dp) - p.g.gp))
       if ndt ~= (p.g.ldt or 0) or ndp ~= (p.g.ldp or 0) then
         -- clamp the delta so the whole set stays in range
@@ -1168,10 +1260,10 @@ function M.draw(win, ctx)
         ctx.touch()
       end
     else
-      -- a duplicate always commits (the copies exist even if not
+      -- a duplicate/add always commits (the notes exist even if not
       -- dragged); a plain selection-move commits only if it moved,
       -- else it just keeps the selection
-      if p.g.moved or p.g.dup then note_commit() end
+      if p.g.moved or p.g.dup or p.g.added then note_commit() end
       p.g = nil
       ctx.touch()
     end
@@ -1200,39 +1292,53 @@ function M.draw(win, ctx)
       ctx.touch()
     end
   end
-  if p.g and (p.g.t == "nmove" or p.g.t == "nsize") then
-    local n = pat.notes[p.g.ni]
-    if i.buttons[1] and n then
-      local tick = x2t(i.wx)
-      local pitch = y2pitch(i.wy)
-      if p.g.t == "nmove" then
-        local nt = snap(tick - p.g.dt)
-        local np = math.max(0, math.min(127, pitch - p.g.dp))
-        if nt ~= n.tick or np ~= n.pitch then
-          if np ~= n.pitch then blip(ed, win, p, np, n.vel) end
-          n.tick, n.pitch = nt, np
-          p.g.moved = true
-          ctx.touch()
-        end
-      else
-        local nd = math.max(grid, math.tointeger(
-          ((tick - n.tick + grid / 2) // grid) * grid))
-        if nd ~= n.dur then
-          n.dur = nd
-          p.g.moved = true
-          ctx.touch()
-        end
+  -- right click DELETES the note under the cursor (round 9 — the old
+  -- motionless-release delete is gone: a click SELECTS now)
+  if ctx.hot and i.clicked[3] and over_roll and not p.g and not p.paste then
+    local hit = note_hit(x2t(i.wx), y2pitch(i.wy))
+    if hit then
+      local n = table.remove(pat.notes, hit)
+      p.nsels[n] = nil
+      p.nsel = nil
+      note_commit()
+      ctx.touch()
+    end
+  end
+  -- the ARMED PASTE ghost (round 9): rides the mouse over the roll
+  -- (anchor = the clip's earliest note; the pitch delta clamps as a
+  -- SET so intervals survive), a click places it as one journal entry
+  -- and the pasted notes become the selection; right-click / Esc
+  -- cancels. MMB pan + wheel zoom stay live while armed.
+  if p.paste and p.paste.clip and #p.paste.clip > 0 then
+    local clip = p.paste.clip
+    local at = snap(x2t(i.wx))
+    local pitches = {}
+    for ci2, c in ipairs(clip) do pitches[ci2] = c.pitch end
+    local dp = M.clamp_dp(pitches, y2pitch(i.wy) - p.paste.bp)
+    if roll_hot then
+      for _, c in ipairs(clip) do
+        local gx, gy, gw, gh = note_rect { tick = at + c.dtick,
+                                           pitch = c.pitch + dp,
+                                           dur = c.dur }
+        pal.x_ig_rect_fill(gx, gy + 1, gw - 1, gh - 2, 0x7fd8a866, 2)
       end
-    elseif not i.buttons[1] then
-      if not p.g.moved and not p.g.added then -- motionless release = DELETE
-        table.remove(pat.notes, p.g.ni)
-        p.nsel = nil
-        note_commit()
-      elseif p.g.moved or p.g.added then
-        if n then p.lastdur = n.dur end
-        note_commit()
+    end
+    pal.x_ig_text(rx + 8 * z, roll_y + 4 * z, px * 0.85, COL.accent,
+                  "paste: click places · esc cancels", 0)
+    if ctx.hot then ctx.touch() end -- the ghost follows the mouse
+    if ctx.hot and i.clicked[1] and over_roll and not p.g then
+      p.nsels = {}
+      for _, c in ipairs(clip) do
+        local n = { tick = math.tointeger(at + c.dtick),
+                    pitch = c.pitch + dp, dur = c.dur, vel = c.vel }
+        pat.notes[#pat.notes + 1] = n
+        p.nsels[n] = true
       end
-      p.g = nil
+      p.nsel = nil
+      p.paste = nil
+      note_commit()
+    elseif ctx.hot and i.clicked[3] then
+      p.paste = nil
       ctx.touch()
     end
   end

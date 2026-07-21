@@ -28,15 +28,23 @@ linked copy.
 ## The roll grammar
 
 - **press empty** adds a note (at the last-used length, grid-snapped)
-- **drag** a note moves it · **drag its right edge** resizes ·
-  a **motionless click** on a note deletes it
-- **ctrl** = fine ticks (off the grid) · **ctrl+drag** a note duplicates it
+- **click** a note selects it — selected notes grab first and draw on
+  top, slightly see-through, so an overlap stays visible and fixable
+- **drag** moves the selection in grid steps (an off-grid note keeps
+  its offset) · **drag its right edge** resizes
+- **right-click** deletes a note · **shift** toggles / marquee-selects
+- **ctrl+drag** a note duplicates it
 
 ## Keys
 
 - **space** play / stop (from the scrub cursor) · **del** delete the selection
-- **1–6** set the placement grid · **esc** stops / clears the selection
-- **ctrl+c/x/v** clipboard · **ctrl+z / ctrl+y** undo / redo · **ctrl+s** save
+- **1–6** set the placement grid · **esc** cancels a paste / clears the
+  selection / stops
+- **ctrl+up / ctrl+down** move the selection an octave
+- **ctrl+c/x** copy / cut · **ctrl+v** arms a paste **ghost** riding the
+  mouse — click places it, esc or right-click cancels; the clipboard
+  crosses song windows, so copy here and paste into another `.song`
+- **ctrl+z / ctrl+y** undo / redo · **ctrl+s** save
 - **wheel** zoom · **middle-drag** pan (while focused)
 
 ## Walkthrough: a 4-track loop, arranged
@@ -51,8 +59,7 @@ arrangement you can rework without retyping notes.
    track 2, your `ins/bass.ins` to track 3, a pulse lead
    (`gb-pulse-12`) to track 4.
 2. **Drums, one bar**: grid **4** — kicks on the beats, then hats on
-   the off-beats one track down. A motionless click deletes a
-   misplaced note; **ctrl** places off-grid ghosts.
+   the off-beats one track down. Right-click deletes a misplaced note.
 3. **Bass, two bars**: root notes on the beat, then drag a few right
    edges longer so they slur. Keep it to 4–5 notes; space is groove.
 4. **Loop them**: in the arrangement strip, stretch the drum clip to 8

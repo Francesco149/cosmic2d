@@ -8663,6 +8663,18 @@ local function t_song()
         "music.group_val: CTRL snaps to the same target")
   check(mus.group_val(10, 5, 3, false, 1, 1 << 30) == 8,
         "music.group_val: length offset (-2) clamps to >=1")
+
+  -- the pitch-delta clamp (round 9): ONE delta for the whole set so
+  -- intervals never squash — the paste ghost clamps to it, the octave
+  -- steps refuse when it bites (all or nothing)
+  check(mus.clamp_dp({ 60, 64, 67 }, 12) == 12,
+        "music.clamp_dp: an in-range octave passes whole")
+  check(mus.clamp_dp({ 120, 60 }, 12) == 7,
+        "music.clamp_dp: the highest pitch caps the delta")
+  check(mus.clamp_dp({ 5, 60 }, -12) == -5,
+        "music.clamp_dp: the lowest pitch caps a downward delta")
+  check(mus.clamp_dp({ 0, 127 }, 12) == 0,
+        "music.clamp_dp: a full-range set pins to zero")
 end
 
 local function t_stock_songs()

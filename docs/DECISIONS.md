@@ -8302,3 +8302,78 @@ paste captures on llm-feed. Suite ALL GREEN; selftest count unchanged
 **Deferred honestly:** floating paste / move-selection, marquee as a
 paint mask (`paint.set_clip` exists for it), copy-merged (composite)
 instead of active-layer, system-clipboard PNG interop.
+
+## D157 — the music roll grammar, round 9: click selects, right-click deletes, octave steps, the armed ghost paste (2026-07-21)
+
+**The ask (the human):** "if a note isn't aligned to one of the
+thicker grid lines, clicking it snaps it to the grid. desired ux:
+clicking a note does not move or delete it, it selects it, and then
+resizing and moving prioritizes the already selected note (and if
+there's any overlap it shows through the overlap so the overlap can
+be fixed). right click to delete a note. ctrl+up/down to move by 1
+octave. also add copy paste that works between separate song windows
+… we need a way to paste at a certain position within a pattern,
+maybe by showing a ghost … confirming by clicking (while still being
+able to pan and zoom around)."
+
+**The two shipped bugs behind the report.** (1) A plain press on a
+note armed `nmove`, which snapped the note's ABSOLUTE tick to the
+grid — for an off-grid note the very first gesture frame yanked it
+onto the line (the reported "clicking snaps it"), and because that
+counted as `moved`, the wstudio motionless-release-DELETE rule made a
+careful click a coin flip between teleport and delete. (2) The kit
+`ctrl+c` hotkey was DEAD: the shell's session-clipboard tier
+(`kind_call("copy")`, the tier D156 rode) consumes Ctrl+C before kit
+hotkeys ever see it, so the music clipboard could never fill and
+Ctrl+V always no-opped — found by this ADR's probe tape, fixed by
+moving copy to `M.copy` on the kind (the D156 convention).
+
+**The decision — round 9 of the roll grammar.** A press on a note
+SELECTS it (an unselected note replaces the selection; `p.nsels` refs)
+and arms the group gesture over the selection — the single-note
+`nmove`/`nsize` gestures are deleted, a lone note is a selection of
+one. Motionless release keeps the selection and changes nothing;
+DELETE moves to **right-click** (a `kind.takes_right` claim, the
+sprite/tmap precedent) and the Del key. Moves snap the DELTA to the
+nearest grid step (`snapd`), so an off-grid note moves in grid steps
+but KEEPS its offset; resize still snaps length to grid multiples
+(that stays the deliberate way to change the add length). Selected
+notes hit-test FIRST (a drag grabs what you selected even under an
+overlap) and draw LAST, slightly translucent with an outline, so an
+overlapped note reads through the selection and the overlap can be
+fixed. **Ctrl+Up/Down** steps the selection ±12 semitones through the
+new pure `M.clamp_dp` (one delta for the whole set — all or nothing,
+so intervals never squash; KAT'd). **Ctrl+V arms a ghost paste**: the
+old paste anchored at the scrub cursor, which lives in SONG space and
+points at nothing inside a pattern whose clip doesn't start the song.
+The clipboard ghost now rides the mouse over the roll (anchored at
+the clip's earliest note, pitch delta clamped as a set), placement
+snaps like ADD, one click places it as one journal entry and the
+pasted notes become the selection; Esc / right-click cancels; MMB pan
+and wheel zoom stay live while armed. The clipboard remains
+`ed.g.musicclip`, so copy-here-paste-there across two song windows is
+the same code path (proven cross-window in the tape).
+
+**Why not paste-stays-armed for repeated stamping** (the sprite paste
+tool's model): the human asked for "confirming by clicking" — one
+confirm, one paste, no surprise second stamp on the next click.
+Revisit trigger: wanting to stamp a riff several times in a row.
+
+**Proof.** A **20/20 probe tape** on a fresh smoke copy with two
+`song.fresh()` files drove the REAL window: launcher-open → grid 1/32
+add at tick 36 → grid 1/8 → Esc → a plain click keeps tick 36 (no
+snap, no delete) and selects → a 48-tick drag lands tick 84 (one grid
+step, offset kept) → ctrl+up 60→72 → ctrl+down back → right-click
+deletes exactly the note under the cursor → Ctrl+C fills the session
+clipboard → Ctrl+V arms, the click lands snapped tick 240 / mouse
+pitch 65 / dur 12 (a REAL paste, not an add) and disarms with the
+paste selected → Esc cancels a re-arm → a second window on the OTHER
+song arms and lands the same clip at tick 96 / pitch 58. The armed
+cross-window ghost shot is on llm-feed. Selftest **25,146** (+4
+`clamp_dp` KATs); `nix run .#test` ALL GREEN, every golden
+byte-identical (window chrome only). win-music.md rewritten to the
+round-9 grammar.
+
+**Deferred honestly:** repeated-stamp paste (the revisit trigger
+above), paste into the arrangement strip (clips), a visible clipboard
+indicator in the transport row.
