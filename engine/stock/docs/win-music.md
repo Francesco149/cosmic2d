@@ -32,9 +32,9 @@ linked copy.
 ## The roll grammar
 
 - **press empty** adds a note (at the last-used length, grid-snapped) —
-  **keep holding to sustain it**: a motionless hold grows the note in
-  musical time while its voice rings, dragging stretches its end to the
-  cursor, and either way the length becomes the new last-used default
+  it **sounds for as long as you hold**, like the synth's piano;
+  **drag right to set its length** (the end follows the cursor, and
+  that length becomes the new last-used default)
 - **click** a note selects it — selected notes grab first and draw on
   top, slightly see-through, so an overlap stays visible and fixable
 - **drag** moves the selection in grid steps (an off-grid note keeps
@@ -42,8 +42,9 @@ linked copy.
 - **right-click** deletes a note · **shift** toggles / marquee-selects
 - **ctrl+drag** a note duplicates it
 - the **piano keys** on the roll's left edge audition pitches on the
-  active track's instrument — click a key, or drag along the keyboard;
-  the key under your cursor highlights while you place notes
+  active track's instrument — a key **rings while held** (the synth
+  piano model), dragging glissandos along the keyboard, and the key
+  under your cursor highlights while you place notes
 
 ## Keys
 

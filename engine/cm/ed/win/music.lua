@@ -14,10 +14,10 @@
 -- — the roll must edit what the selected track actually plays).
 --
 -- Roll grammar (round 9 — the human): press empty = ADD (last-used
--- length, grid-snapped) and HOLDING SUSTAINS the fresh note — a
--- motionless hold grows it in musical time at the doc's bpm while
--- the voice audibly rings, a drag makes its end COVER the cursor
--- (rounds 10/11); press a note = SELECT it (never
+-- length, grid-snapped) — holding sustains the AUDITION until
+-- release (the synth piano model) while the note keeps its length,
+-- and a drag sets the length with its end COVERING the cursor
+-- (rounds 10-12); press a note = SELECT it (never
 -- moves or deletes — moves go by grid STEPS so an off-grid note keeps
 -- its offset); drag moves the selection, right-edge resizes it;
 -- selected notes hit-test first and draw on top translucent so an
@@ -1293,11 +1293,10 @@ function M.draw(win, ctx)
                 moved = false }
       end
     else -- ADD at the last-used length, snapped; it becomes the
-      -- selection, and HOLDING SUSTAINS it (rounds 10+11 — the human):
-      -- a motionless hold grows the note in musical time at the doc's
-      -- bpm (you hear the voice ring for exactly as long as you hold),
-      -- and dragging makes the end COVER the cursor (ceil). A plain
-      -- click keeps the last-used length.
+      -- selection. Holding sustains the AUDITION indefinitely (the
+      -- synth piano model, round 12); dragging sets the length (ceil
+      -- — the end covers the cursor); a plain click keeps the
+      -- last-used length.
       local n = { tick = snap(tick), dur = p.lastdur or grid,
                   pitch = math.max(0, math.min(127, pitch)), vel = 100 }
       pat.notes[#pat.notes + 1] = n
@@ -1305,7 +1304,7 @@ function M.draw(win, ctx)
       p.nsel = nil
       p.g = { t = "selsize", grab = n, gd = n.dur, lnd = n.dur,
               base = { { n = n, dur = n.dur } },
-              moved = false, added = true, ax = i.wx, held = 0 }
+              moved = false, added = true, ax = i.wx }
       blip_hold(ed, win, p, p.g, n.pitch, n.vel)
     end
     ctx.touch()
@@ -1377,28 +1376,19 @@ function M.draw(win, ctx)
     if i.buttons[1] and n then
       local nd
       if p.g.added then
-        -- the fresh-add SUSTAIN (round 11). Dragging engages
-        -- cursor-following (CEIL — the note always covers the cursor,
-        -- round 10's nearest-line snap read as "too short"); a
-        -- motionless hold grows the note in musical time at the doc's
-        -- bpm, from the last-used length upward (frames are the
-        -- clock: deterministic under tapes, 60fps live), so holding
-        -- the click IS sustaining the note. The voice rings the whole
-        -- gesture either way.
+        -- the fresh-add hold (round 12 — the human's vote): holding
+        -- sustains the AUDITION indefinitely (the synth piano model)
+        -- while the note itself keeps the last-used length; only a
+        -- real drag sets the length, with CEIL snapping so the end
+        -- covers the cursor (round 10's nearest-line snap read as
+        -- "too short"). Round 11's musical-time growth is gone.
         if not p.g.live and math.abs(i.wx - p.g.ax) > 3 * z then
           p.g.live = true
         end
-        p.g.held = (p.g.held or 0) + 1
-        if p.g.live then
-          nd = math.max(grid, math.tointeger(
-            ((x2t(i.wx) - n.tick + grid - 1) // grid) * grid))
-        else
-          local tpf = (doc.bpm or 120) * PPQ / 3600 -- ticks per frame
-          nd = math.max(p.g.gd, math.tointeger(
-            ((p.g.held * tpf + grid - 1) // grid) * grid))
-        end
+        nd = p.g.live and math.max(grid, math.tointeger(
+          ((x2t(i.wx) - n.tick + grid - 1) // grid) * grid)) or p.g.lnd
         blip_hold(ed, win, p, p.g, n.pitch, n.vel)
-        ctx.touch() -- the hold keeps growing without input events
+        ctx.touch() -- the fuse refresh needs the frame loop alive
       else
         nd = math.max(grid, math.tointeger(
           ((x2t(i.wx) - n.tick + grid / 2) // grid) * grid))
@@ -1508,21 +1498,23 @@ function M.draw(win, ctx)
   end
   pal.x_ig_clip_pop()
   -- press a key = audition that pitch on the active track's
-  -- instrument; dragging glissandos row to row
+  -- instrument, HELD until release (the synth piano model, round 12);
+  -- dragging glissandos row to row (the old voice's fuse tails off,
+  -- the new pitch holds)
   if ctx.hot and i.clicked[1] and over_keys and not p.g and not p.paste then
     local kp = math.max(0, math.min(127, y2pitch(i.wy)))
     p.g = { t = "keys", kp = kp }
-    blip(ed, win, p, kp, 100)
+    blip_hold(ed, win, p, p.g, kp, 100)
     ctx.touch()
   end
   if p.g and p.g.t == "keys" then
     if i.buttons[1] then
       local kp = math.max(0, math.min(127, y2pitch(i.wy)))
       if kp ~= p.g.kp then
-        p.g.kp = kp
-        blip(ed, win, p, kp, 100)
-        ctx.touch()
+        p.g.kp, p.g.voice = kp, nil -- abandon the old voice to its fuse
       end
+      blip_hold(ed, win, p, p.g, kp, 100)
+      ctx.touch() -- the fuse refresh needs the frame loop alive
     else
       p.g = nil
       ctx.touch()

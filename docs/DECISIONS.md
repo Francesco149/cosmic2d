@@ -8496,3 +8496,29 @@ win-music.md carries the round-11 grammar.
 (the note rect itself is the only cue); auto-created patterns
 linger unreferenced if their track is deleted before use (the
 existing unreferenced-pattern class, harmless bytes).
+
+### D159 addendum — the human's vote: hold auditions, never grows (2026-07-21)
+
+The round-11 build went to the human and came back with the model
+CORRECTED: "holding holds the note indefinitely like on the synth
+piano roll, but the note placed is just the default with no extension
+from holding. same for clicking the pattern piano roll." Round 12
+implements the vote verbatim and D159's musical-time growth is GONE
+(one session old, never shipped to a tag): a motionless hold on a
+fresh add keeps the note at the last-used length while `blip_hold`
+rings the audition until release — hold = HEAR, drag = LENGTH (the
+CEIL cursor-following stays), a plain click stays a plain click. The
+keys column adopts the same synth-piano contract: a key press holds
+its voice until release (was a 10-frame blip), and a drag glissandos
+— the old voice is abandoned to its 2-frame fuse, the new pitch
+holds. The synth window's piano (`p.held` + explicit note_off) is
+the model but NOT the mechanism: the music window keeps the fuse
+pattern so every existing cleanup path stays the release path.
+Proof: the tape re-cut to the round-12 semantics passes **20/20**
+(hold 45 frames → dur stays 48, lastdur untouched, voice fuse live
+mid-hold and expired after release; keys ringing 22 frames into a
+hold, glissando swaps voices, release silences; drag end covers the
+cursor and sets the default); selftest **25,153** (unchanged — the
+growth had no KAT, deliberately); the win-music.md rewrap en route
+re-proved the D127 balanced-span guard (it refused a `**` span my
+edit left crossing lines). Suite ALL GREEN.
