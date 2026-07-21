@@ -295,6 +295,13 @@ function M.header(win, ctx)
     win.edit = not win.edit
     ctx.ed.touch()
   end
+  -- the canvas size bar (D155: sprites are born 32x32; mesh texturing
+  -- and bigger art want a chooser — canvas anchor or scale resample)
+  if win.path ~= "" and win.edit and s:chip("size", win.szbar) then
+    win.szbar = not win.szbar
+    win.sztext = nil
+    ctx.ed.touch()
+  end
   -- the animation window door (the board's "split animation stuff"):
   -- open (or focus) an anim window bound to this sprite
   if win.path ~= "" and s:chip("anim", false) then
@@ -740,6 +747,59 @@ function M.draw(win, ctx)
       p.last = { x = p.stroke.lx, y = p.stroke.ly }
       p.stroke = nil
       commit(ed, win.path) -- the gesture = one journal entry
+    end
+  end
+
+  -- ---- the size bar (D155): type "WxH", pick canvas/scale, Enter ----
+  if win.szbar then
+    local bh2 = px * 2.1
+    local bx0, by0 = cvx + 6 * z, cvy + 6 * z
+    local bw2 = math.min(230 * z, cvw - 12 * z)
+    pal.x_ig_rect_fill(bx0, by0, bw2, bh2, 0x1a1728ee, 4 * z)
+    pal.x_ig_text(bx0 + 5 * z, by0 + (bh2 - px) * 0.45, px, COL.dim,
+                  "size", 0)
+    local fx0 = bx0 + 5 * z + pal.x_ig_text_size("size", px, 0) + 6 * z
+    local text, _, _, st = pal.x_ig_edit {
+      id = "szbar" .. win.id, x = fx0, y = by0 + 2 * z,
+      w = 58 * z, h = bh2 - 4 * z,
+      text = win.sztext or (doc.w .. "x" .. doc.h), px = px, font = 1,
+      enter = true, multiline = false,
+    }
+    win.sztext = text
+    local mode2 = win.szmode or "canvas"
+    local mx0 = fx0 + 62 * z
+    local function szchip(label, on)
+      local w2 = pal.x_ig_text_size(label, px * 0.9, 0) + 8 * z
+      local hov = i.wx >= mx0 and i.wx < mx0 + w2
+                  and i.wy >= by0 and i.wy < by0 + bh2
+      pal.x_ig_rect_fill(mx0, by0 + 2 * z, w2, bh2 - 4 * z,
+                         on and COL.btn_on or COL.btn, 3 * z)
+      pal.x_ig_text(mx0 + 4 * z, by0 + (bh2 - px * 0.9) * 0.45, px * 0.9,
+                    (hov or on) and COL.hot or COL.dim, label, 0)
+      mx0 = mx0 + w2 + 3 * z
+      return hov and i.clicked[1]
+    end
+    if szchip(mode2, mode2 == "scale") then
+      win.szmode = mode2 == "canvas" and "scale" or "canvas"
+      ctx.touch()
+    end
+    local apply = szchip("apply", false)
+    if szchip("x", false) then
+      win.szbar, win.sztext = nil, nil
+      ctx.touch()
+    end
+    if apply or (st and st.submit) then
+      local w2, h2 = text:match("^%s*(%d+)%s*[xX*,]%s*(%d+)%s*$")
+      w2, h2 = tonumber(w2), tonumber(h2)
+      if w2 and h2 and w2 >= 1 and h2 >= 1 and w2 <= 1024 and h2 <= 1024
+      then
+        if sprite.set_size(doc, w2, h2, { mode = mode2 }) then
+          p.comp_dirty = true
+          commit(ed, win.path)
+        end
+        win.szbar, win.sztext = nil, nil
+        ctx.touch()
+      end
     end
   end
 
