@@ -3,7 +3,49 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — the help-docs polish program is scoped and queued (HELPDOCS.md)
+## Current handoff — HELPDOCS session 1: the synth (H7 pulled forward; D160)
+
+**This session (2026-07-22, continued): the human pulled the synth
+forward** ("that one could use more detailed explanations of each knob
+and all the combinations used to make the different stock sounds") —
+**landed as D160** in three commits (`7684f38`, `79ec064`, `d2981d1`).
+(1) **The UX fix the ask exposed**: the op panels showed only
+level/coarse/fine while `detune` (strings ∓14, reese ∓34) and
+`fixed` Hz (kick body 120 Hz, hat hiss 9 kHz) lived in the format, the
+kernel, and half the stock presets — reachable only by hand-editing
+patch tables. Both are sliders now: `dtn` −63…+63, `fix` as a log
+20 Hz–12 kHz index (0 = "note"), idx↔hz KAT'd (±1 notch, no regrab
+creep, drum anchors within 3%); synth DEF_H 512→560. (2) **The docs**:
+`ref-synth.md` — every knob by UI region, an FM primer, the eight
+algorithm wirings decoded from the kernel's ALG tables, and ALL 53
+stock presets reverse-engineered into family recipes with real numbers
+(dumped by decoding every `.ins` headless); `ref-sound.md`;
+`win-synth.md` rewritten as the four-sound chip-kit tutorial (lead
+from the init patch / bass from gb-pulse-50 / kick from scratch via
+sweep + fixed-Hz / jump from sfx-jump); both tutorials link their ref
+up top. (3) **The scaffolding** (moved here from H1): the `REF_DOCS`
+sweep KATs in t_docs — ref ships, links both ways, every kit
+hotkey/hint findable verbatim. **Proof: the tape IS the test** — a
+drive tape executes the tutorial as written on a fresh smoke copy
+(spawn menu → pathfield → sliders/chips/ADSR drags → preset rail →
+ctrl+s), every stage VERDICT green, and the five shipped screenshots
+are the tape's own frames (montage on llm-feed with the taste
+question). Linux selftest **25,176** (+23); `nix run .#test` ALL
+GREEN, goldens byte-identical; **Windows stage REFRESHED** (11 durable
+entries + shortcut), NATIVE selftest **25,178** = Linux + 2.
+**Deferred honestly (in D160):** the smoke session's reader code-span
+("cm.rand") drawing OVER unrelated topmost windows — a help-window
+draw-order/clip oddity, repro: open the committed smoke session
+headless, shot frame 40; queued for the editor-shell session (H13).
+Also: fixed-Hz typed entry (the slider is coarse up top), per-op
+mute/solo, the tape leaving `dtn` unexercised (doc marks it optional).
+**Exact next step:** the human's native pass — the montage's five
+captures at doc size, the new dtn/fix sliders' feel, and a read of the
+ref-synth preset-recipe section; then the next HELPDOCS row (H1
+sprite) after `/clear`. The round-13 human items (held-audition feel
+pass, rc.9 release check) remain open below.
+
+## Previous handoff — the help-docs polish program is scoped and queued (HELPDOCS.md)
 
 **This session (2026-07-22): the human's docs ask scoped into a queued
 program** — "each tool's help starts with a sizable engaging tutorial
