@@ -3,7 +3,46 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D158: the music roll, round 10
+## Current handoff — D159: the music roll, round 11
+
+**This session (2026-07-21, continued): the human's two follow-up
+reports on the round-10 build — both landed as D159** (`d918af7`).
+(1) **The clipless-track mismatch was real**: rail-selecting a track
+with no clips left `win.pat` on the OLD pattern while auditions used
+the NEW track's instrument. The rail now AUTO-CREATES on selecting a
+clipless track — a fresh one-bar pattern + a clip at the song start,
+through the new shared `M.stamp_fresh` (also the arrangement stamp's
+core now, KAT'd) — and drills in; a track WITH clips drills in as
+before, creating nothing. The roll always edits what the selected
+track plays. (2) **"The sustain is still very short"** had three
+causes, all fixed: the sustain was drag-only (a motionless hold did
+nothing) — now the fresh-add gesture grows the note in MUSICAL time
+at the doc bpm while held (frames as the clock: `held*bpm*PPQ/3600`
+ceil-snapped, growing from the last-used length so a quick click is
+unchanged; deterministic under tapes, 60fps live); the drag used
+NEAREST-line snapping (the end lagged half a cell) — added drags now
+CEIL so the note end covers the cursor (plain edge-resize keeps its
+old feel); and the audition blip died at 10 frames — `blip_hold` now
+rings the voice for the WHOLE gesture via a 2-frame fuse in
+`p.blips` refreshed each held frame, so every existing cleanup path
+(release/Esc/close) releases it with no new lifecycle surface.
+**Proof:** a 17/17 probe tape on a fresh smoke copy (auto-create +
+drill-in + no-spurious-create on a clip-owning track; a 45-frame
+hold grew 48→96→144 with the voice fuse probed live mid-hold,
+lastdur adopting 144; a quick click reused 144; a dragged note's end
+covered the cursor on a grid multiple; the voice expired 3 frames
+after release); the capture is on llm-feed; selftest **25,153**
+(+3); `nix run .#test` ALL GREEN, goldens byte-identical;
+win-music.md updated; ADR **D159**. **The Windows stage is
+REFRESHED** (11 durable entries + the shortcut) and the NATIVE
+selftest passes at **25,155** = Linux + 2. Deferred honestly: a
+numeric length readout while sustaining, unreferenced auto-patterns
+after a track delete. **Exact next step:** the human's native taste
+pass on the hold-growth rate (bpm-real-time — hold one second at
+120bpm ≈ two beats) and the held-voice feel, plus the still-queued
+D158 keys/highlight items below.
+
+## Previous handoff — D158: the music roll, round 10
 
 **This session (2026-07-21, later still): the human's three music
 asks — all landed as D158** (`a6eedda`). (1) **The .ins-drop hitbox
