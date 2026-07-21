@@ -8437,3 +8437,62 @@ drop highlight.
 (only the rail resolves per-row today); pressing roll notes doesn't
 light the matching piano key during playback; a keys-column width
 preference.
+
+## D159 — the music roll, round 11: clipless tracks auto-create, hold-to-sustain in musical time (2026-07-21)
+
+**Context — two reports on the round-10 build.** (1) Selecting a
+track with NO clips left the roll on the previously selected pattern
+while auditions and placement previews used the NEW track's
+instrument — you'd edit pattern A's notes hearing track B's sound.
+The rail's drill-in only followed a clip when one existed; with none,
+`win.pat` simply went stale. (2) "The sustain when holding a click is
+still very short": round 10's sustain was drag-distance-only with
+NEAREST-line snapping (the note end lagged up to half a cell behind
+the cursor), and the audition blip died after 10 frames regardless —
+a held click neither grew the note nor kept sounding, so nothing
+about holding read as sustaining.
+
+**The decision.** (1) **Selecting a clipless track auto-creates**: a
+fresh one-bar pattern + a clip at the song start (the human's ask),
+through the new shared `M.stamp_fresh` (KAT'd) — the same core the
+arrangement's press-empty stamp now calls, so the two creation paths
+can't drift. One journal entry; re-selecting a track WITH clips
+still just drills in and creates nothing. The invariant restored:
+the roll always edits a pattern the selected track actually plays.
+(2) **Holding IS sustaining.** The fresh-add gesture gains a second
+growth clock: a motionless hold grows the note in MUSICAL time at
+the doc's bpm (frames are the clock — 60fps live, deterministic
+under tapes; `ticks = held * bpm * PPQ / 3600`, ceil-snapped to the
+grid, growing from the last-used length upward so a quick click
+still places the default). Dragging past the 3z threshold switches
+to cursor-following with CEIL snapping — the note end always COVERS
+the cursor (the round-10 nearest-snap read as "too short"); the
+plain edge-resize keeps its nearest-snap feel untouched. And the
+audition now RINGS for the whole gesture: `blip_hold` turns the
+voice on once and refreshes a 2-frame fuse in `p.blips` every held
+frame — the moment anything stops refreshing it (release, Esc,
+window close) the existing blip expiry/cleanup paths release the
+voice, so no new lifecycle surface exists. You hear the note for
+exactly as long as you hold it.
+
+**Why frames, not wall clock, for the growth**: pal.time_ns growth
+would be unprobeable in a headless tape (frames run as fast as they
+can) and would jitter with frame rate live; the editor already
+redraws every frame during a live gesture (the gesture touches), so
+frames ARE the steady clock, and the tape pins exact durations.
+
+**Proof.** A **17/17 probe tape** on a fresh smoke copy: rail-click
+on clipless track 2 created pattern 2 + a tick-0 clip and drilled in;
+re-selecting track 1 drilled into its own clip with NO new pattern; a
+45-frame motionless hold grew the note 48→96 (probed mid-hold, voice
+fuse live at 2) →144 on release with `lastdur` adopting 144; a quick
+click placed 144; a 100px drag's note end covered the cursor tick on
+a grid multiple; the held voice expired 3 frames after release.
+Selftest **25,153** (+3 `stamp_fresh` KATs); `nix run .#test` ALL
+GREEN, goldens byte-identical. The capture is on llm-feed;
+win-music.md carries the round-11 grammar.
+
+**Deferred honestly:** a numeric length readout while sustaining
+(the note rect itself is the only cue); auto-created patterns
+linger unreferenced if their track is deleted before use (the
+existing unreferenced-pattern class, harmless bytes).

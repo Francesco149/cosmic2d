@@ -9,7 +9,10 @@ instruments you designed in the synth.
    the drop will bind outlines while you drag, so aim by the highlight.
 2. In the piano roll, place notes; arrange patterns as **clips** on the timeline
    (a clip loops its pattern when you stretch it).
-3. Select a track to open its mix panel. Set per-track volume — **128**
+3. Selecting a track drills the roll into its first clip's pattern — a
+   track with **no clips yet gets a fresh one-bar pattern** placed at
+   the song start, so what you place is always on the selected track's
+   instrument. Select a track to open its mix panel. Set per-track volume — **128**
    preserves the preset's authored level, **0** is silence, and **255** can
    bring even a quiet preset all the way forward. Set **pan** from **-64**
    (hard left) through **0** (center) to **+64** (hard right); the slider snaps
@@ -29,8 +32,9 @@ linked copy.
 ## The roll grammar
 
 - **press empty** adds a note (at the last-used length, grid-snapped) —
-  **keep holding and drag right to sustain it**: the note's end follows
-  the cursor, and that length becomes the new last-used default
+  **keep holding to sustain it**: a motionless hold grows the note in
+  musical time while its voice rings, dragging stretches its end to the
+  cursor, and either way the length becomes the new last-used default
 - **click** a note selects it — selected notes grab first and draw on
   top, slightly see-through, so an overlap stays visible and fixable
 - **drag** moves the selection in grid steps (an off-grid note keeps

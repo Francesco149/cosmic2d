@@ -9,11 +9,15 @@
 -- a clip, right-edge resizes it, and a clip **LOOPS its pattern to
 -- fill** when resized longer (the "auto loop"). The **track rail**
 -- (left) binds instruments (drag an .ins on), mixes volume + stereo pan,
--- mutes, deletes ("del"), and adds tracks.
+-- mutes, deletes ("del"), and adds tracks; selecting a CLIPLESS track
+-- auto-creates a one-bar pattern + a clip at the song start (round 11
+-- — the roll must edit what the selected track actually plays).
 --
 -- Roll grammar (round 9 — the human): press empty = ADD (last-used
--- length, grid-snapped) and HOLD-DRAG SUSTAINS the fresh note — its
--- end follows the cursor (round 10); press a note = SELECT it (never
+-- length, grid-snapped) and HOLDING SUSTAINS the fresh note — a
+-- motionless hold grows it in musical time at the doc's bpm while
+-- the voice audibly rings, a drag makes its end COVER the cursor
+-- (rounds 10/11); press a note = SELECT it (never
 -- moves or deletes — moves go by grid STEPS so an off-grid note keeps
 -- its offset); drag moves the selection, right-edge resizes it;
 -- selected notes hit-test first and draw on top translucent so an
@@ -316,6 +320,39 @@ local function blip(ed, win, p, pitch, vel)
   pal.x_snd_ed_on(v, slot, pitch, vel or 100)
   p.blips = p.blips or {}
   p.blips[v] = 10
+end
+
+-- a HELD audition (round 11): the voice turns on once and stays ringing
+-- while the gesture refreshes it each frame — you HEAR the note you're
+-- sustaining. It rides p.blips with a 2-frame fuse, so the moment the
+-- gesture stops refreshing (release, Esc, window close) every existing
+-- cleanup path releases it.
+local function blip_hold(ed, win, p, g, pitch, vel)
+  if not g.voice then
+    preview_slots(ed, win, p)
+    local slot = p.pslots[win.trk or 1]
+    if not slot then return end
+    g.voice, p.pvoice = M.preview_voice(p.pheld, p.blips, p.pvoice)
+    pal.x_snd_ed_on(g.voice, slot, pitch, vel or 100)
+    p.blips = p.blips or {}
+  end
+  p.blips[g.voice] = 2
+end
+
+-- allocate a fresh one-bar pattern + a clip playing it — the shared
+-- core of the arrangement's press-empty stamp and the rail's
+-- auto-create on selecting a clipless track (round 11). Mutates doc;
+-- returns the new pattern id. KAT'd (t_song).
+function M.stamp_fresh(doc, lane, tick, bar)
+  local nid = 0
+  for id in pairs(doc.patterns) do if id > nid then nid = id end end
+  local pid = nid + 1
+  doc.patterns[pid] = { id = pid, len = bar, notes = {} }
+  doc.clips[#doc.clips + 1] = {
+    track = math.tointeger(lane), pattern = pid,
+    tick = math.tointeger((tick // bar) * bar), len = bar,
+  }
+  return pid
 end
 
 -- ---- hotkeys ----
@@ -626,15 +663,30 @@ function M.draw(win, ctx)
         return -- the doc changed under the loop; next frame redraws
       elseif hov then
         win.trk = ti
-        -- drill into this track's first clip (the roll follows)
+        -- drill into this track's first clip (the roll follows) — or
+        -- AUTO-CREATE one (round 11 — the human: selecting a clipless
+        -- track left the roll on the OLD pattern while auditions used
+        -- the NEW track's instrument; a fresh one-bar pattern + a clip
+        -- at the song start makes the roll edit what this track plays)
+        local found
         for ci, c in ipairs(doc.clips) do
           if c.track == ti - 1 then
             p.csel = ci
             win.pat = c.pattern
             win.cursor = 0
             p.nsels = {}
+            found = true
             break
           end
+        end
+        if not found then
+          local bar = PPQ * (doc.beats_per_bar or 4)
+          win.pat = M.stamp_fresh(doc, ti - 1, 0, bar)
+          p.csel = #doc.clips
+          win.cursor = 0
+          p.nsels = {}
+          p.flat = nil
+          commit(ed, win.path)
         end
         ctx.touch()
       end
@@ -912,22 +964,21 @@ function M.draw(win, ctx)
     else
       -- stamp: CTRL reuses the ACTIVE pattern (win.pat) LINKED — the
       -- fill length rounds up to the pattern's whole bars so it plays in
-      -- full; a plain press makes a FRESH one-bar pattern (round 7).
-      local pid, plen
+      -- full; a plain press makes a FRESH one-bar pattern (round 7,
+      -- through the shared stamp_fresh core since round 11).
+      local pid
       if ed.g.ctrl and win.pat and doc.patterns[win.pat] then
         pid = win.pat
-        plen = math.max(bar, ((doc.patterns[pid].len + bar - 1) // bar) * bar)
+        local plen = math.max(bar,
+          ((doc.patterns[pid].len + bar - 1) // bar) * bar)
+        doc.clips[#doc.clips + 1] = {
+          track = math.tointeger(lane), pattern = pid,
+          tick = math.tointeger((tick // bar) * bar),
+          len = math.tointeger(plen),
+        }
       else
-        local nid = 0
-        for id in pairs(doc.patterns) do if id > nid then nid = id end end
-        pid, plen = nid + 1, bar
-        doc.patterns[pid] = { id = pid, len = bar, notes = {} }
+        pid = M.stamp_fresh(doc, lane, tick, bar)
       end
-      doc.clips[#doc.clips + 1] = {
-        track = math.tointeger(lane), pattern = pid,
-        tick = math.tointeger((tick // bar) * bar),
-        len = math.tointeger(plen),
-      }
       p.csel = #doc.clips
       win.pat = pid -- drill into the stamped pattern
       win.trk = math.tointeger(lane) + 1
@@ -1242,10 +1293,11 @@ function M.draw(win, ctx)
                 moved = false }
       end
     else -- ADD at the last-used length, snapped; it becomes the
-      -- selection, and HOLDING the drag SUSTAINS it (round 10 — the
-      -- human): the fresh note arms the resize gesture, so its end
-      -- follows the cursor exactly like an edge drag. A plain click
-      -- keeps the last-used length (the threshold below).
+      -- selection, and HOLDING SUSTAINS it (rounds 10+11 — the human):
+      -- a motionless hold grows the note in musical time at the doc's
+      -- bpm (you hear the voice ring for exactly as long as you hold),
+      -- and dragging makes the end COVER the cursor (ceil). A plain
+      -- click keeps the last-used length.
       local n = { tick = snap(tick), dur = p.lastdur or grid,
                   pitch = math.max(0, math.min(127, pitch)), vel = 100 }
       pat.notes[#pat.notes + 1] = n
@@ -1253,8 +1305,8 @@ function M.draw(win, ctx)
       p.nsel = nil
       p.g = { t = "selsize", grab = n, gd = n.dur, lnd = n.dur,
               base = { { n = n, dur = n.dur } },
-              moved = false, added = true, ax = i.wx }
-      blip(ed, win, p, n.pitch, n.vel)
+              moved = false, added = true, ax = i.wx, held = 0 }
+      blip_hold(ed, win, p, p.g, n.pitch, n.vel)
     end
     ctx.touch()
   end
@@ -1323,23 +1375,40 @@ function M.draw(win, ctx)
   if p.g and p.g.t == "selsize" then
     local n = p.g.grab
     if i.buttons[1] and n then
-      -- a fresh ADD engages the sustain only once the cursor actually
-      -- moves — else the press frame would yank the last-used length
-      -- down to one grid cell under a plain click
-      if p.g.added and not p.g.live
-         and math.abs(i.wx - p.g.ax) > 3 * z then
-        p.g.live = true
-      end
-      if not p.g.added or p.g.live then
-        local nd = math.max(grid, math.tointeger(
-          ((x2t(i.wx) - n.tick + grid / 2) // grid) * grid))
-        if nd ~= p.g.lnd then
-          for _, b in ipairs(p.g.base) do
-            b.n.dur = M.group_val(b.dur, p.g.gd, nd, ed.g.ctrl, 1, 1 << 30)
-          end
-          p.g.lnd, p.g.moved = nd, true
-          ctx.touch()
+      local nd
+      if p.g.added then
+        -- the fresh-add SUSTAIN (round 11). Dragging engages
+        -- cursor-following (CEIL — the note always covers the cursor,
+        -- round 10's nearest-line snap read as "too short"); a
+        -- motionless hold grows the note in musical time at the doc's
+        -- bpm, from the last-used length upward (frames are the
+        -- clock: deterministic under tapes, 60fps live), so holding
+        -- the click IS sustaining the note. The voice rings the whole
+        -- gesture either way.
+        if not p.g.live and math.abs(i.wx - p.g.ax) > 3 * z then
+          p.g.live = true
         end
+        p.g.held = (p.g.held or 0) + 1
+        if p.g.live then
+          nd = math.max(grid, math.tointeger(
+            ((x2t(i.wx) - n.tick + grid - 1) // grid) * grid))
+        else
+          local tpf = (doc.bpm or 120) * PPQ / 3600 -- ticks per frame
+          nd = math.max(p.g.gd, math.tointeger(
+            ((p.g.held * tpf + grid - 1) // grid) * grid))
+        end
+        blip_hold(ed, win, p, p.g, n.pitch, n.vel)
+        ctx.touch() -- the hold keeps growing without input events
+      else
+        nd = math.max(grid, math.tointeger(
+          ((x2t(i.wx) - n.tick + grid / 2) // grid) * grid))
+      end
+      if nd ~= p.g.lnd then
+        for _, b in ipairs(p.g.base) do
+          b.n.dur = M.group_val(b.dur, p.g.gd, nd, ed.g.ctrl, 1, 1 << 30)
+        end
+        p.g.lnd, p.g.moved = nd, true
+        ctx.touch()
       end
     elseif not i.buttons[1] then
       -- an added note commits even unmoved (it exists); a sustain that

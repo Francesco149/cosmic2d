@@ -8689,6 +8689,22 @@ local function t_song()
         "music.rail_hit: a boundary y belongs to the row below it")
   check(mus.rail_hit(rows, 200) == nil,
         "music.rail_hit: outside every band = nil (caller falls back)")
+
+  -- stamp_fresh (round 11): the shared fresh-pattern stamp behind the
+  -- arrangement's press-empty AND the rail's auto-create on selecting
+  -- a clipless track — max+1 id (gap-immune), one-bar pattern, the
+  -- clip bar-snapped on its lane
+  local sd = { patterns = { [1] = { id = 1, len = 96, notes = {} },
+                            [7] = { id = 7, len = 96, notes = {} } },
+               clips = {} }
+  local npid = mus.stamp_fresh(sd, 2, 500, 384)
+  check(npid == 8, "music.stamp_fresh: allocates max+1 (gaps kept)")
+  check(sd.patterns[8].len == 384 and #sd.patterns[8].notes == 0,
+        "music.stamp_fresh: a fresh one-bar pattern")
+  local sc = sd.clips[1]
+  check(sc.track == 2 and sc.pattern == 8 and sc.tick == 384
+        and sc.len == 384,
+        "music.stamp_fresh: the clip lands bar-snapped on the lane")
 end
 
 local function t_stock_songs()
