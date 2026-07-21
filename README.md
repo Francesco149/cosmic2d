@@ -25,9 +25,9 @@ past frame, and export a game without assembling a toolchain.
       painted RO-style 2.5D world</sub>
     </td>
     <td width="50%" align="center">
-      <img src="docs/media/hero-bigworld.png" alt="bigworld — a mascot crossing a broad N64-style landscape" width="480"><br>
-      <sub><strong>bigworld</strong> — the most fleshed-out N64-style
-      traversal demo, with a generated world and distant actors</sub>
+      <img src="docs/media/hero-waterwall.png" alt="waterwall — translucent water flowing down a wet rock wall as an animated texture" width="480"><br>
+      <sub><strong>waterwall</strong> — animated textures: a translucent
+      water overlay flowing over a UV-mapped rock wall</sub>
     </td>
   </tr>
   <tr>
@@ -46,8 +46,9 @@ past frame, and export a game without assembling a toolchain.
 </table>
 
 cosmic2d started as a 2D engine; 2D, N64-era 3D, and RO-style 2.5D are now
-first-class engine and editor paths. **rovale** and **bigworld** are currently
-the most developed showcase demos. The compact 2D project remains the clearest
+first-class engine and editor paths. **rovale** and **bigworld** (unpictured —
+**openworld** above shares its N64-style aesthetic) are currently the most
+developed showcase demos. The compact 2D project remains the clearest
 place to learn the engine's moving parts. All of them share the same
 deterministic simulation, rewind timeline, hot-reload model, and canvas tools.
 
@@ -77,9 +78,24 @@ works from read-only installs and Windows GUI launchers.
       per-track level and stereo pan, plus reusable stock songs</sub>
     </td>
     <td width="50%" align="center">
-      <img src="engine/stock/docs/media/terrain-vale.png" alt="the terrain editor sculpting a green vale with water, props, and a route" width="100%"><br>
-      <sub><strong>Terrain editor</strong> — sculpt, paint, shade, place water
-      and props, and author routes directly in the world</sub>
+      <img src="docs/media/tool-terrain3d.png" alt="the 3D map window on the explore3d starter's vale: pond, route markers, and sculpt tools" width="100%"><br>
+      <sub><strong>Terrain editor</strong> — the 3D starter's vale in the 3D
+      map window: sculpt, paint, shade, water, walkability, and route
+      markers directly in the world</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/media/tool-mesh-uv.png" alt="the mesh editor's uv tab: the garage truck's faces placed on its livery texture sheet" width="100%"><br>
+      <sub><strong>Mesh editor</strong> — picoCAD-style UV mapping, one face
+      at a time: the vehicle demo's truck over its livery sheet, with stock
+      checkers and per-vertex islands</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/media/tool-map-colliders.png" alt="the 2D map window drawing collider chains over the platformer's tile art" width="100%"><br>
+      <sub><strong>Map editor</strong> — platforms as collider chains drawn
+      over the tile art: lines, one-ways, hazards, and markers the game
+      reads</sub>
     </td>
   </tr>
   <tr>
@@ -100,7 +116,8 @@ Audio is generated inside the same workflow: a deterministic four-operator FM
 and Game-Boy-flavored synth, filters and pitch sweeps, sound playback, a stereo
 tracker, stock instruments/effects, and fourteen arranged stock songs. The
 3D path adds a Vulkan raster pipeline, projected terrain and water,
-billboard figures, world streaming, figure baking, and map/terrain authoring;
+billboard figures, world streaming, figure baking, UV-textured low-poly
+meshes with animated texture frames, and map/terrain authoring;
 the software renderer remains the deterministic reference.
 
 ## Try it
