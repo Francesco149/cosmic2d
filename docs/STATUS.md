@@ -3,7 +3,54 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — waterwall, the README hero pass, D156 (sprite marquee + clipboard), and the RC kick
+## Current handoff — D157: the music roll grammar, round 9
+
+**This session (2026-07-21, later): the human's song-editor UX list —
+all landed as D157** (`c6203d4`). (1) **A click on a note SELECTS
+it** — the old grammar armed `nmove`, whose absolute-tick snap yanked
+an off-grid note onto the grid on the first gesture frame (the
+report), and whose motionless-release-DELETE made a careful click a
+coin flip; both are gone. The single-note gestures are deleted — a
+lone note is a selection of one, group move/resize is the only path;
+moves snap the DELTA (grid steps, offset kept), resize still snaps
+length (that stays how the add length is changed). Selected notes
+hit-test FIRST and draw LAST translucent+outlined, so an overlapped
+note reads through the selection and the overlap can be fixed.
+(2) **Right-click deletes** (a `kind.takes_right` claim, the
+sprite/tmap precedent; Del still deletes the selection).
+(3) **Ctrl+Up/Down steps the selection ±1 octave** through the new
+pure `M.clamp_dp` (one delta for the set, all or nothing — intervals
+never squash; KAT'd). (4) **Ctrl+V arms a GHOST paste** riding the
+mouse over the roll (anchor = the clip's earliest note, pitch delta
+clamped as a set): click places it as one journal entry and selects
+the pasted notes, Esc/right-click cancels, MMB pan + wheel zoom stay
+live while armed — replacing the scrub-cursor paste anchor, which
+lives in SONG space and pointed at nothing inside a pattern whose
+clip doesn't start the song. The clipboard stays `ed.g.musicclip`, so
+cross-window copy/paste between two .song windows is the same code
+path. **En route the tape found a shipped bug**: the kit `ctrl+c`
+hotkey was DEAD — the shell's session-clipboard tier
+(`kind_call("copy")`) consumes Ctrl+C before kit hotkeys, so the
+music clipboard could never fill; copy moved to `M.copy` on the kind
+(the D156 convention). **Proof:** a 20/20 probe tape on a fresh smoke
+copy with two `song.fresh()` files (no snap + no delete on click,
+delta-stepped move tick 36→84, octave up/down, rmb delete, a REAL
+paste — dur-checked — landing at the mouse, Esc cancel, and the
+cross-window landing); the armed cross-window ghost shot is on
+llm-feed; selftest **25,146** (+4); `nix run .#test` ALL GREEN, every
+golden byte-identical (window chrome only); win-music.md rewritten to
+the round-9 grammar; ADR **D157**. Deferred honestly: repeated-stamp
+paste, arrangement-strip clip paste, a clipboard indicator chip.
+**The Windows stage is REFRESHED this session** — the previously held
+swap cleared: `tools/build-windows.sh` staged clean (25 durable
+entries + the Start Menu shortcut) and the NATIVE selftest passes at
+**25,148** = Linux 25,146 + 2, so D156 AND D157 are now in the native
+tree up to the human's own play/editor pass. **Exact next step:** the
+human's native taste pass on the round-9 roll feel (select/move/ghost
+paste) alongside the still-queued waterwall/uv-tab/marquee items from
+the previous handoff.
+
+## Previous handoff — waterwall, the README hero pass, D156 (sprite marquee + clipboard), and the RC kick
 
 **This session (2026-07-21), later asks — all landed.** (1) **The
 README hero pass**: the showcase grid swaps bigworld for waterwall
