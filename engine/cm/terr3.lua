@@ -872,8 +872,10 @@ end
 -- each batch: returns { {tex=, flags=, bytes=, ntris=}, ... }.
 --   opts.tex(path)  -> texid | nil     (image resolver; nil = stand-in)
 --   opts.dims(path) -> px w, px h      (image aspect)
---   opts.mesh(path) -> { doc=, groups= } | nil  (.msh resolver: the
---                     decoded mesh + cm.mesh.bake_groups; nil = stand-in)
+--   opts.mesh(path) -> { doc=, groups=, tex_id= } | nil  (.msh
+--                     resolver: the decoded mesh + cm.mesh.bake_groups
+--                     + optionally the resolved strip texture id for
+--                     image-textured faces; nil = stand-in)
 --   opts.cam_yaw    = camera yaw (billboards Y-face it)
 -- Billboards: upright, feet-anchored, nearest+alphatest (the sprite
 -- rule); meshes: pre-lit under the MAP's sun/ambient through the gb
@@ -910,11 +912,14 @@ function M.emit_props(doc, opts)
       local xf = m4m.mul(m4m.translate(p.x, py, p.z),
                          m4m.mul(m4m.roty(p.yaw or 0), m4m.scale(s, s, s)))
       local nxf = m4m.roty(p.yaw or 0)
-      local sg = seg(0, 0)
-      local tmp = {}
-      local nt = meshm.emit(tmp, xf, nxf, mrec.doc, { groups = mrec.groups })
-      sg.parts[#sg.parts + 1] = table.concat(tmp)
-      sg.ntris = sg.ntris + nt
+      -- one segment per mesh group: checker/image faces bind their
+      -- textures, flat faces batch into the untextured segment (D155)
+      for _, ms in ipairs(meshm.emit_segments(mrec.doc, xf, nxf,
+          { groups = mrec.groups, tex_id = mrec.tex_id })) do
+        local sg = seg(ms.tex, ms.flags)
+        sg.parts[#sg.parts + 1] = ms.bytes
+        sg.ntris = sg.ntris + ms.ntris
+      end
     elseif texid then
       local w, hgt = M.prop_size(p, opts.dims)
       local hw = w * 0.5

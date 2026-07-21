@@ -13187,6 +13187,126 @@ local function t_mesh()
   end
   check(unlit_ok, "mesh: unlit face takes the zero-normal slot")
 
+  -- ---- D155: stock checkers + strip-frame UVs + emit segments ----
+  local chunk = cm.require("cm.chunk")
+  local function head_ver(bytes)
+    for _, c in ipairs(chunk.read(bytes, "CMSH")) do
+      if c.tag == "HEAD" then return c.version end
+    end
+  end
+  do
+    -- fresh/untextured docs stay byte-canonical v1 (pre-D155 bytes)
+    local fd = ME.fresh("v1")
+    check(head_ver(ME.encode(fd)) == 1, "mesh: default doc writes HEAD v1")
+    -- tw/th write HEAD v2 and survive the round trip
+    fd.tex = "art/skin.spr"
+    fd.tw, fd.th = 48, 40
+    fd.faces[1].chk = 3
+    fd.faces[2].uv = { 0, 0, 16, 0, 16, 16, 0, 16 }
+    local bv2 = ME.encode(fd)
+    check(head_ver(bv2) == 2, "mesh: frame size writes HEAD v2")
+    local dv2 = ME.decode(bv2)
+    check(ME.encode(dv2) == bv2, "mesh: canonical round trip (v2)")
+    check(dv2.tw == 48 and dv2.th == 40 and dv2.faces[1].chk == 3
+          and not dv2.faces[1].uv and dv2.faces[2].uv[3] == 16,
+          "mesh: checker + frame size survive")
+    -- refusals: checker range, checker+uv exclusivity
+    local bad = ME.fresh("bad")
+    bad.faces[1].chk = 9
+    check(not pcall(ME.encode, bad), "mesh: checker out of range refuses")
+    bad.faces[1].chk = 2
+    bad.faces[1].uv = { 0, 0, 1, 0, 1, 1, 0, 1 }
+    check(not pcall(ME.encode, bad), "mesh: checker+uv refuses")
+  end
+  do
+    -- plan_uv: dominant-axis planar projection in world units
+    local pd = ME.fresh("plan")
+    local top = ME.plan_uv(pd, 5) -- +y face: u=x, v=z
+    check(math.abs(top[1]) == 0.5 and math.abs(top[2]) == 0.5,
+          "mesh: plan_uv floor projects x,z")
+    local right = ME.plan_uv(pd, 3) -- +x face: u=z, v=-y
+    local upright = false
+    for k = 1, 4 do
+      if right[k * 2] == -0.5 then upright = true end -- top verts at v=-0.5
+    end
+    check(upright, "mesh: plan_uv wall stays upright")
+  end
+  do
+    -- strip-frame baking: 2-frame 64x64 strip (128x64), tw/th 64
+    local sd = ME.fresh("strip")
+    sd.tex = "art/skin.spr"
+    sd.faces[1].chk = 5
+    sd.faces[2].uv = { 8, 4, 40, 4, 40, 36, 8, 36 }
+    local g0 = ME.bake_groups(sd, { tex = { w = 128, h = 64 }, frame = 0 })
+    local g1 = ME.bake_groups(sd, { tex = { w = 128, h = 64 }, frame = 1 })
+    check(#g0 == 3, "mesh: chk/img/flat split into three groups")
+    local function grp(gs, kind)
+      for _, gr in ipairs(gs) do
+        if (gr.src and gr.src.kind) == kind then return gr end
+        if kind == nil and not gr.src then return gr end
+      end
+    end
+    local i0, i1 = grp(g0, "img"), grp(g1, "img")
+    check(i0 and math.abs(i0.bk.uv[1] - 8 / 128) < 1e-12
+          and math.abs(i0.bk.uv[2] - 4 / 64) < 1e-12,
+          "mesh: frame 0 UVs normalize into the strip")
+    check(i1 and math.abs(i1.bk.uv[1] - (64 + 8) / 128) < 1e-12,
+          "mesh: frame 1 shifts one frame right, same texels")
+    -- frame clamps to the strip's last frame
+    local g9 = ME.bake_groups(sd, { tex = { w = 128, h = 64 }, frame = 9 })
+    local i9 = grp(g9, "img")
+    check(math.abs(i9.bk.uv[1] - (64 + 8) / 128) < 1e-12,
+          "mesh: frame clamps to the strip")
+    -- checker UVs tile per world unit via plan_uv (the unit box: 1 tile)
+    local ck = grp(g0, "chk")
+    check(ck and ck.src.idx == 5, "mesh: checker group carries its index")
+    local span = 0
+    for i = 1, ck.bk.nv do
+      span = math.max(span, math.abs(ck.bk.uv[i * 2 - 1]))
+    end
+    check(math.abs(span - 0.5) < 1e-12, "mesh: checker tiles per world unit")
+    -- the flat fallback color rides the group (texture-blind consumers)
+    check(grp(g0, "img").col[1] == sd.faces[2].col[1],
+          "mesh: textured group keeps its flat fallback color")
+    -- emit_segments: texture/flags routing + the flat fallback
+    local m4x = cm.require("cm.m4")
+    local segs = ME.emit_segments(sd, m4x.ident(), m4x.ident(),
+                                  { groups = g0, tex_id = 42 })
+    local schk, simg, sflat
+    for si, sg in ipairs(segs) do
+      local gr = g0[si]
+      if gr.src and gr.src.kind == "chk" then schk = sg
+      elseif gr.src and gr.src.kind == "img" then simg = sg
+      else sflat = sg end
+    end
+    check(schk and schk.tex ~= 0 and schk.flags == 2,
+          "mesh: checker segment binds a stock tile, nearest")
+    check(simg and simg.tex == 42 and simg.flags == 3,
+          "mesh: image segment binds the strip, alphatest+nearest")
+    check(sflat and sflat.tex == 0 and sflat.flags == 0,
+          "mesh: flat segment stays untextured")
+    local nofall = ME.emit_segments(sd, m4x.ident(), m4x.ident(),
+                                    { groups = g0 })
+    local miss
+    for si, sg in ipairs(nofall) do
+      if g0[si].src and g0[si].src.kind == "img" then miss = sg end
+    end
+    check(miss.tex == 0 and miss.flags == 0,
+          "mesh: unresolved image falls back flat, never white")
+    -- checker textures: 7 stable ids
+    local same = true
+    for k = 1, 7 do
+      local id = ME.checker_tex(k)
+      same = same and id ~= nil and id == ME.checker_tex(k)
+    end
+    check(same, "mesh: 7 stock checker textures, stable ids")
+    -- extrude inherits the checker material onto the rim
+    local xd = ME.fresh("xchk")
+    xd.faces[5].chk = 2
+    ME.extrude(xd, 5, 0.5)
+    check(xd.faces[#xd.faces].chk == 2, "mesh: extrude rim inherits checker")
+  end
+
   -- ---- topology + selection (the window's universal mode substrate) ----
   local bx = ME.fresh("topo")
 

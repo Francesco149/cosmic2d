@@ -1,29 +1,46 @@
--- cm.mesh — the .msh asset (EDITOR3D.md §5, D137): one low-poly mesh —
--- verts + tri/quad faces with flat per-face colors, optional per-face
--- texture regions from ONE image, doublesided/unlit flags. The picoCAD
--- class, with the refusal set stated up front: NO skinning, NO
--- modifiers, NO subdivision, NO n-gons beyond quads, NO UV unwrap —
--- ever. Sufficient for era props and figure part meshes; the wall
--- against Blender creep.
+-- cm.mesh — the .msh asset (EDITOR3D.md §5, D137, textured per D155):
+-- one low-poly mesh — verts + tri/quad faces with flat per-face colors,
+-- optional per-face texture regions from ONE image (the picoCAD model:
+-- MANUAL planar per-face UVs), or a stock colored checkerboard per face
+-- (the pre-texture default). The refusal set stated up front: NO
+-- skinning, NO modifiers, NO subdivision, NO n-gons beyond quads, NO
+-- automatic UV unwrap — ever. Sufficient for era props and figure part
+-- meshes; the wall against Blender creep.
 --
 --   HEAD v1: <s4 name> <s4 tex path ("" = untextured)> <I4 flags (0)>
+--   HEAD v2: v1 + <I2 tw> <I2 th> — the UV reference FRAME size in
+--            texels (the bound .spr's canvas; a baked strip holds
+--            png_w // tw frames). v2 is written only when tw/th differ
+--            from the 64x64 default, so pre-D155 docs stay
+--            byte-canonical.
 --   VERT v1: <I4 n> n * <fff x y z>
 --   FACE v1: one per face, file order = draw order:
 --            <I1 nv 3|4> nv * <I2 vert idx 0-based>
 --            <BBB col> <I1 flags bit0 doublesided, bit1 unlit,
---            bit2 textured> [textured: nv * <HH u v texels>]
+--            bit2 textured, bit3 checker (D155)>
+--            [checker: <I1 idx 1..7>] [textured: nv * <HH u v texels>]
+--            bit2 and bit3 are mutually exclusive (encode refuses).
 --   TAIL v1: empty
 --
 -- Codec is pure and canonical (encode(decode(b)) == b), cm.chunk gives
 -- skip-tolerance. Rendering rides cm.gb's baked path: faces group by
--- color into gb-shaped bakes (flat normal slots; unlit faces get the
--- zero-normal slot — the water rule), so placed props and figure part
--- meshes take the pal.x_figverts C fast path for free and the Lua
--- reference loop stays byte-identical (the three-path gb guarantee).
+-- (texture source, color) into gb-shaped bakes (flat normal slots;
+-- unlit faces get the zero-normal slot — the water rule), so placed
+-- props and figure part meshes take the pal.x_figverts C fast path for
+-- free and the Lua reference loop stays byte-identical (the three-path
+-- gb guarantee). Textured faces light a WHITE base (texel x lighting);
+-- the legacy single-buffer emit() keeps flat face colors so untextured
+-- consumers (figure part meshes) are untouched — texture-aware callers
+-- draw emit_segments() with per-group texture ids.
 --
--- Editing ops (extrude / primitives / flips / welds) live here as pure
--- doc functions so the mesh window stays gesture plumbing and the KATs
--- drive the geometry headless.
+-- Texture ANIMATION reuses the sprite animation slots (D155): the .spr
+-- bakes a horizontal frame strip; bake_groups{frame=n} maps the SAME
+-- texel UVs into frame n's strip window — swap or animate textures by
+-- rebaking groups per frame (cheap: O(faces)), never by touching UVs.
+--
+-- Editing ops (extrude / primitives / flips / welds / plan_uv) live
+-- here as pure doc functions so the mesh window stays gesture plumbing
+-- and the KATs drive the geometry headless.
 
 local m = cm.require("cm.math")
 local chunk = cm.require("cm.chunk")
@@ -44,11 +61,62 @@ function M.fresh(name)
   return doc
 end
 
+-- ---- stock checkerboards (render-class; the pre-texture default) ---------
+
+-- the 7 stock checker base colors (the dark check is 0.55x); indices are
+-- the on-disk f.chk values — append-only, never reorder (saved meshes
+-- point into this table)
+M.CHK_COLS = {
+  { 0.78, 0.78, 0.82 }, -- gray
+  { 0.85, 0.35, 0.30 }, -- red
+  { 0.88, 0.62, 0.25 }, -- orange
+  { 0.84, 0.80, 0.32 }, -- yellow
+  { 0.38, 0.68, 0.34 }, -- green
+  { 0.34, 0.55, 0.80 }, -- blue
+  { 0.66, 0.42, 0.76 }, -- purple
+}
+
+M.CHKW = 16 -- checker tile texels (4px checks; UVs tile per world unit)
+
+-- lazily (re)create the 7 checker textures; ids persist in the rc.mesh.chk
+-- named buffer so hot reloads / VM reboots free the previous generation
+-- first (the rc.spr.tex pattern). Render-class only.
+local chkids
+function M.checker_tex(idx)
+  if not chkids then
+    local idbuf = pal.buf("rc.mesh.chk", 4 * (#M.CHK_COLS + 1))
+    local nold = idbuf:u32(0)
+    for i = 1, nold do pal.tex_free(idbuf:u32(4 * i)) end
+    chkids = {}
+    for k, c in ipairs(M.CHK_COLS) do
+      local px = {}
+      for y = 0, M.CHKW - 1 do
+        for x = 0, M.CHKW - 1 do
+          local mul = (((x // 4) ~ (y // 4)) & 1) == 0 and 1 or 0.55
+          px[#px + 1] = string.char((c[1] * mul * 255) // 1,
+                                    (c[2] * mul * 255) // 1,
+                                    (c[3] * mul * 255) // 1, 255)
+        end
+      end
+      chkids[k] = pal.tex_create(M.CHKW, M.CHKW, table.concat(px))
+      idbuf:u32(4 * k, chkids[k])
+    end
+    idbuf:u32(0, #M.CHK_COLS)
+  end
+  return chkids[idx]
+end
+
 -- ---- codec ---------------------------------------------------------------
 
 function M.encode(doc)
   local w = chunk.writer(MAGIC)
-  w.chunk("HEAD", 1, pack("<s4s4I4", doc.name or "", doc.tex or "", 0))
+  local tw, th = doc.tw or 64, doc.th or 64
+  if tw ~= 64 or th ~= 64 then
+    w.chunk("HEAD", 2, pack("<s4s4I4I2I2", doc.name or "", doc.tex or "",
+                            0, tw, th))
+  else
+    w.chunk("HEAD", 1, pack("<s4s4I4", doc.name or "", doc.tex or "", 0))
+  end
   local nv = #doc.verts // 3
   local vp = { pack("<I4", nv) }
   for i = 1, nv * 3 do vp[#vp + 1] = pack("<f", doc.verts[i]) end
@@ -56,6 +124,12 @@ function M.encode(doc)
   for _, f in ipairs(doc.faces) do
     local n = #f.v
     if n < 3 or n > 4 then error("mesh: face needs 3 or 4 verts", 0) end
+    if f.uv and f.chk then
+      error("mesh: face cannot be both image-textured and checker", 0)
+    end
+    if f.chk and (f.chk < 1 or f.chk > #M.CHK_COLS) then
+      error("mesh: checker index out of range", 0)
+    end
     local parts = { pack("<I1", n) }
     for _, vi in ipairs(f.v) do
       if vi < 1 or vi > nv then error("mesh: face vert out of range", 0) end
@@ -63,9 +137,10 @@ function M.encode(doc)
     end
     local col = f.col or DEFCOL
     local flags = (f.ds and 1 or 0) | (f.unlit and 2 or 0)
-                | (f.uv and 4 or 0)
+                | (f.uv and 4 or 0) | (f.chk and 8 or 0)
     parts[#parts + 1] = pack("<BBBI1", (col[1] * 255) // 1,
                              (col[2] * 255) // 1, (col[3] * 255) // 1, flags)
+    if f.chk then parts[#parts + 1] = pack("<I1", f.chk) end
     if f.uv then
       for k = 1, n * 2 do parts[#parts + 1] = pack("<I2", f.uv[k]) end
     end
@@ -81,6 +156,14 @@ function M.decode(bytes)
   for _, c in ipairs(chunk.read(bytes, MAGIC)) do
     if c.tag == "HEAD" and c.version == 1 then
       doc.name, doc.tex = unpack("<s4s4", c.payload)
+      seen_head = true
+    elseif c.tag == "HEAD" and c.version == 2 then
+      local name, tex, _, tw, th = unpack("<s4s4I4I2I2", c.payload)
+      doc.name, doc.tex = name, tex
+      -- 64 is the default; storing only differences keeps encode
+      -- canonical over everything encode itself produces
+      if tw ~= 64 then doc.tw = tw end
+      if th ~= 64 then doc.th = th end
       seen_head = true
     elseif c.tag == "VERT" and c.version == 1 then
       local n, pos = unpack("<I4", c.payload, 1)
@@ -101,7 +184,16 @@ function M.decode(bytes)
       f.col = { r / 255, g / 255, b / 255 }
       f.ds = flags & 1 ~= 0 or nil
       f.unlit = flags & 2 ~= 0 or nil
+      if flags & 8 ~= 0 then
+        f.chk, pos = unpack("<I1", c.payload, pos)
+        if f.chk < 1 or f.chk > #M.CHK_COLS then
+          error("mesh: checker index out of range", 0)
+        end
+      end
       if flags & 4 ~= 0 then
+        if f.chk then
+          error("mesh: face cannot be both image-textured and checker", 0)
+        end
         f.uv = {}
         for k = 1, n * 2 do f.uv[k], pos = unpack("<I2", c.payload, pos) end
       end
@@ -165,6 +257,27 @@ function M.face_normal(doc, fi)
   return nx / l, ny / l, nz / l
 end
 
+-- planar per-face projection (the picoCAD model — MANUAL, never an
+-- unwrap): project the face's corners onto the axis plane most aligned
+-- with its normal. Returns flat {u1,v1,u2,v2,...} in WORLD units — the
+-- checker bake tiles it per unit; the window scales it to texels for
+-- the default island placement when a face is dragged onto the image.
+function M.plan_uv(doc, fi)
+  local f = doc.faces[fi]
+  local nx, ny, nz = M.face_normal(doc, fi)
+  local ax, ay, az = m.abs(nx), m.abs(ny), m.abs(nz)
+  local out = {}
+  for k, vi in ipairs(f.v) do
+    local x, y, z = vert3(doc, vi)
+    local u, v
+    if ay >= ax and ay >= az then u, v = x, z -- floor / ceiling
+    elseif ax >= az then u, v = z, -y         -- x wall (upright)
+    else u, v = x, -y end                     -- z wall (upright)
+    out[k * 2 - 1], out[k * 2] = u, v
+  end
+  return out
+end
+
 -- ray (model space) vs the mesh: nearest face -> fi, t | nil. Möller-
 -- Trumbore over the triangulated faces; doublesided faces hit from
 -- either side, single-sided from the front only.
@@ -210,20 +323,51 @@ end
 
 -- ---- rendering (render-class; the gb baked path) -------------------------
 
--- group faces into gb-shaped bakes, one per distinct color (few in
--- practice): [{ col={r,g,b}, bk }] — unlit faces take the zero-normal
--- slot (the water rule: vert() skips lighting), doublesided faces bake
--- both windings, textured faces carry uv/tw,th (opts.tw/th default 64).
+-- group faces into gb-shaped bakes, one per distinct (texture source,
+-- color) — few in practice: [{ col={r,g,b}, src, bk }] — unlit faces
+-- take the zero-normal slot (the water rule: vert() skips lighting),
+-- doublesided faces bake both windings. src tags the group's texture
+-- source: nil (flat color), {kind="chk", idx} (a stock checker; UVs
+-- tile per world unit via plan_uv), {kind="img"} (the doc's image; UV
+-- texels map into frame opts.frame of the baked strip). gr.col is the
+-- first member face's color — the flat FALLBACK the legacy emit()
+-- draws, so texture-blind consumers degrade to the pre-texture look.
+--   opts.tex   = {w,h} of the resolved strip texture (default: one
+--                frame — tw x th — so plain consumers normalize per
+--                frame exactly as pre-D155)
+--   opts.frame = 0-based strip frame (default 0; clamped)
+--   opts.tw/th = frame-size override — the editor passes the bound
+--                .spr's LIVE canvas size here so a resized sprite never
+--                leaves the doc's recorded size driving the math (the
+--                "derived state must follow its sources" rule)
 function M.bake_groups(doc, opts)
-  local tw = opts and opts.tw or 64
-  local th = opts and opts.th or 64
+  local tw = (opts and opts.tw) or doc.tw or 64
+  local th = (opts and opts.th) or doc.th or 64
+  local sw = opts and opts.tex and opts.tex.w or tw
+  local sh = opts and opts.tex and opts.tex.h or th
+  if sw < 1 then sw = tw end
+  if sh < 1 then sh = th end
+  local frames = m.max(1, sw // tw)
+  local frame = m.min(m.max(opts and opts.frame or 0, 0), frames - 1)
+  local u0 = frame * tw
   local groups, index = {}, {}
-  local function group_for(col)
-    local key = ("%d:%d:%d"):format((col[1] * 255) // 1,
-                                    (col[2] * 255) // 1, (col[3] * 255) // 1)
+  local function group_for(f)
+    local key, src
+    if f.chk then
+      key = "k" .. f.chk
+      src = { kind = "chk", idx = f.chk }
+    elseif f.uv then
+      key = "t"
+      src = { kind = "img" }
+    else
+      local col = f.col or DEFCOL
+      key = ("%d:%d:%d"):format((col[1] * 255) // 1, (col[2] * 255) // 1,
+                                (col[3] * 255) // 1)
+    end
     local gr = index[key]
     if not gr then
-      gr = { col = { col[1], col[2], col[3] },
+      local col = f.col or DEFCOL
+      gr = { col = { col[1], col[2], col[3] }, src = src,
              bk = { nv = 0, ns = 0, pos = {}, uv = {}, ni = {}, nrm = {},
                     lit = {} } }
       index[key] = gr
@@ -245,9 +389,10 @@ function M.bake_groups(doc, opts)
     bk.nv = i + 1
   end
   for fi, f in ipairs(doc.faces) do
-    local gr = group_for(f.col or DEFCOL)
+    local gr = group_for(f)
     local bk = gr.bk
     local nx, ny, nz = M.face_normal(doc, fi)
+    local plan = f.chk and M.plan_uv(doc, fi)
     local function emit_side(flipn)
       local sl
       if f.unlit then sl = slot(bk, 0, 0, 0)
@@ -255,7 +400,10 @@ function M.bake_groups(doc, opts)
       else sl = slot(bk, nx, ny, nz) end
       local n = #f.v
       local function uvat(k)
-        if f.uv then return f.uv[k * 2 - 1] / tw, f.uv[k * 2] / th end
+        if plan then return plan[k * 2 - 1], plan[k * 2] end
+        if f.uv then
+          return (u0 + f.uv[k * 2 - 1]) / sw, f.uv[k * 2] / sh
+        end
         return 0, 0
       end
       local order = flipn and { 1, 3, 2 } or { 1, 2, 3 }
@@ -287,6 +435,34 @@ function M.emit(out, xf, nxf, doc, opts)
                                   opts and opts.alpha)
   end
   return ntris
+end
+
+-- texture-aware emit (D155): one draw segment per group —
+-- [{ tex, flags, bytes, ntris }] in group order. Checker groups bind
+-- the stock tiles (NEAREST); image groups bind opts.tex_id with
+-- ALPHATEST|NEAREST (the sprite rule) when resolved, else fall back to
+-- their flat face colors (a missing .spr degrades to the pre-texture
+-- look, never white). Textured groups light a WHITE base so the texel
+-- carries the color. opts.groups/frame/tex/alpha as in bake_groups/emit.
+local WHITE = { 1, 1, 1 }
+function M.emit_segments(doc, xf, nxf, opts)
+  local groups = opts and opts.groups or M.bake_groups(doc, opts)
+  local segs = {}
+  for _, gr in ipairs(groups) do
+    local tex, flags, col = 0, 0, gr.col
+    if gr.src and gr.src.kind == "chk" then
+      tex, flags, col = M.checker_tex(gr.src.idx), 2, WHITE
+    elseif gr.src and gr.src.kind == "img" then
+      local id = opts and opts.tex_id
+      if id and id ~= 0 then tex, flags, col = id, 3, WHITE end
+    end
+    local out = {}
+    local nt = gb.emit_baked(out, xf, nxf, gr.bk, col,
+                             opts and opts.alpha)
+    segs[#segs + 1] = { tex = tex, flags = flags,
+                        bytes = table.concat(out), ntris = nt }
+  end
+  return segs
 end
 
 -- ---- editing ops (pure; the window is gesture plumbing) ------------------
@@ -378,7 +554,7 @@ function M.extrude(doc, fi, dist)
     doc.faces[#doc.faces + 1] = {
       v = { f.v[k], f.v[k2], base + k2, base + k },
       col = { f.col[1], f.col[2], f.col[3] },
-      ds = f.ds, unlit = f.unlit,
+      ds = f.ds, unlit = f.unlit, chk = f.chk,
     }
   end
   local nv2 = {}

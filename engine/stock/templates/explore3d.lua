@@ -289,7 +289,15 @@ function game.draw()
     mesh = function(path)
       local ok, rec = pcall(function()
         local mdoc = mesh.decode(pal.read_file(root .. "/" .. path))
-        return { doc = mdoc, groups = mesh.bake_groups(mdoc) }
+        -- image-textured faces sample the mesh's .spr baked strip
+        local t
+        if mdoc.tex ~= "" then
+          local target = mdoc.tex:gsub("%.spr$", ".png")
+          local tok, tt = pcall(gfx.texture, root .. "/" .. target)
+          t = tok and tt or nil
+        end
+        return { doc = mdoc, groups = mesh.bake_groups(mdoc, { tex = t }),
+                 tex_id = t and t.id }
       end)
       return ok and rec or nil
     end,

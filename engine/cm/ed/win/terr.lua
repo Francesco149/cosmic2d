@@ -1209,7 +1209,16 @@ function M.draw(win, ctx)
         local bytes = rp and pal.read_file(rp)
         if bytes then
           local ok, md = pcall(cmmesh.decode, bytes)
-          if ok then rec = { doc = md, groups = cmmesh.bake_groups(md) } end
+          if ok then
+            -- image-textured faces resolve the .spr's baked strip via
+            -- the epoch-keyed door: the id lives only in this
+            -- epoch-keyed cache (the D139 discipline), so a sprite
+            -- re-save refreshes placed meshes the same frame
+            local t = md.tex ~= "" and image_tex(ed, md.tex) or nil
+            rec = { doc = md,
+                    groups = cmmesh.bake_groups(md, { tex = t }),
+                    tex_id = t and t.id }
+          end
         end
         p.msh[path] = rec
       end
