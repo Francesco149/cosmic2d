@@ -3,7 +3,31 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — round 12: hold auditions like the synth piano (the D159 addendum)
+## Current handoff — round 13: moves ring too; the rc.9 cut (D159 addendum 2)
+
+**This session (2026-07-21, last ask): "the same sustain when I move
+notes, then push another RC build" — landed as round 13** (`a5e809a`,
+D159 addendum 2). Pressing a placed note now RINGS it at its own
+velocity for as long as the press holds — a motionless press-release
+is a pure audition (select semantics untouched: no move, no commit;
+the human's mid-session clarification verbatim) — and the held voice
+FOLLOWS the pitch as the move drags (glissando: old voice to its
+2-frame fuse, new pitch holds — the keys-column mechanism verbatim).
+The ctrl+drag duplicate rings the same way; the old pitch-change
+10-frame blip is gone. The whole window now speaks ONE audition
+contract: press = hear, hold = sustain, release = silence — add
+(selsize), keys, move (selmove), duplicate. **Proof:** the tape
+extends to **27/27** (press an existing note → fuse live at +14
+frames with the note UNMOVED → +2-row drag swaps the voice and moves
+the pitch → release silences and commits); selftest **25,153**; `nix
+run .#test` ALL GREEN, goldens byte-identical; NATIVE selftest
+**25,155** on the refreshed stage (11 durable entries + shortcut).
+**rc.9 is cut from this state** — see the tag + the hosted candidate
+workflow for the build proof. **Exact next step:** the human's
+native feel pass on the held-audition contract across all four
+gestures, and the rc.9 workflow/release check on GitHub.
+
+## Previous handoff — round 12: hold auditions like the synth piano (the D159 addendum)
 
 **This session (2026-07-21, continued): the human voted on round 11's
 sustain model and round 12 implements it verbatim** (`2069851`, the
