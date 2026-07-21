@@ -31,8 +31,14 @@ raw-id rule). Proof: a 10/10 probe tape (marquee exact rect → copy
 bytes → cut zeroes region/outside intact → one Ctrl+Z restores →
 second window on rock.spr → paste lands the center pixel byte-exact,
 journal-dirty); montage on llm-feed; win-sprite.md documents it; ADR
-**D156**. (3) A new **RC tag** was cut after the suite + native
-handoff (see below).
+**D156**. (3) **v0.1-alpha-rc.8** was tagged and pushed off `e46b070`
+after `nix run .#test` ALL GREEN from the committed tree; the hosted
+release-candidate workflow is the build proof. **The Windows stage is
+STALE at this session's waterwall build** — the swap was refused twice
+because the human's native editor was running (the documented
+condition); D156 is not yet in the native tree. Re-run
+`tools/build-windows.sh` once the editor closes (native selftest
+expects 25,144 — D156 adds window chrome, no KATs).
 
 **Same session, earlier — the waterwall demo (the first ask)**: a
 standalone demo scene — a wet rock wall with water flowing down it,
