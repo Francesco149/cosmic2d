@@ -70,7 +70,7 @@ A tool's docs session is complete when ALL of these hold:
 - Links use reader-resolvable paths (`engine/stock/docs/…`), the existing
   convention.
 
-## 3. Shared scaffolding (built once, in H1)
+## 3. Shared scaffolding (built in the first completed session — H7, which the human pulled forward)
 
 - **The hotkey sweep KAT**: a declared kind→ref-doc mapping table; for
   every mapped kind, each `kind.hotkeys` entry's key and hint must be
@@ -91,15 +91,15 @@ Order: 2D art chain first (sprite is the exemplar that builds the
 scaffolding), then files, world tools, audio, 3D, project/shell, then the
 presets last (they cross-link finished tool docs and reuse their media).
 
-- [ ] **H1 — the sprite editor** (+ program scaffolding). Tutorial: paint
+- [ ] **H1 — the sprite editor**. Tutorial: paint
   a game-ready hero sprite — silhouette, layers (shadow *mul* / light
   *add*), a procedural fill shading pass, palette discipline — ending
   ready for H2's animation. Shots: tool rail + brush strip mid-stroke,
   the layers rail with mix controls, fill dials live, the finished hero
   at 1x and zoomed. Reference: `ref-sprite.md` — tools, brush strip,
   stamp well, marquee/clipboard, layers rail + mix, fill dials, palette
-  row + `.pal` stacking, size bar, header chips, every hotkey. Builds
-  the three sweep KATs + the mapping table (§3). Sources:
+  row + `.pal` stacking, size bar, header chips, every hotkey (the §3
+  sweeps landed with H7 — just grow `REF_DOCS`). Sources:
   `win/sprite.lua`; win-sprite.md's existing recipes move mostly intact.
 - [ ] **H2 — the animation window**. Tutorial: bring the H1 hero to life —
   cut the strip into idle/walk/blink clips, tune frame durations, loop
@@ -130,15 +130,13 @@ presets last (they cross-link finished tool docs and reuse their media).
   painting, erase (right-button), then placing the `.tm` as objects in
   an H5-style map twice. Shots: mid-paint, the chunk placed twice.
   Reference: `ref-tmap.md`. Sources: `win/tmap.lua`.
-- [ ] **H7 — the synth (+ the sound player feeder)**. Tutorial: design a
-  chip kit — a jump blip and a bass from presets (grow the D144
-  walkthrough), an FM pad from scratch (operators, envelopes), and a
-  sampler instrument from a dropped WAV via the sound player's →ins.
-  Shots: the preset strip, the operator/envelope panels at named
-  settings, the sound player waveform. References: `ref-synth.md`
-  (every operator knob, envelope, LFO, preset strip, tracker keys,
-  header) + `ref-sound.md` (small). Sources: `win/synth.lua`,
-  `win/sound.lua`, AUDIO.md.
+- [x] **H7 — the synth (+ the sound player feeder)**. DONE 2026-07-22
+  (ran first at the human's call; D160). The "four-sound chip kit"
+  tutorial (lead / bass / kick / jump), `ref-synth.md` with every knob
+  + all 53 stock presets reverse-engineered into family recipes,
+  `ref-sound.md`, five taped screenshots, the §3 sweep KATs, and the
+  UX fix the session surfaced: the op panels' missing `dtn` and `fix`
+  sliders (patch/kernel/preset knobs the UI never exposed).
 - [ ] **H8 — the music window**. Tutorial: arrange a two-pattern,
   four-track loop with a stereo mix — tracks + instruments, the roll's
   round-13 grammar (keys column, hold-to-audition, select/move/ghost

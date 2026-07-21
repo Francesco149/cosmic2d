@@ -8546,3 +8546,80 @@ byte-identical. **rc.9** is cut from this state (the human's call:
 "push another RC build once that's implemented") via
 `tools/tag-release-candidate.sh --push` — the hosted candidate
 workflow is the build proof.
+
+## D160 — the HELPDOCS program contract + the synth session: ref-doc split, sweep guards, the missing op knobs exposed (2026-07-22)
+
+**Context.** The human's docs direction (2026-07-21/22): every tool's
+help opens with a sizable tutorial that makes something meaningful,
+and the COMPLETE reference of every knob and button splits into its
+own doc linked at the top, with screenshots of both UI-at-step and
+results; tutorials are executed live (drive tapes) while being
+screenshotted, and UX rough edges found en route get fixed, not
+documented around. `docs/HELPDOCS.md` carries the queue (one session
+per tool, presets included); the human pulled the synth forward as
+the first session — "it could use more detailed explanations of each
+knob and all the combinations used to make the different stock
+sounds".
+
+**Decision — the ref-doc contract (binding for every HELPDOCS row).**
+A finished tool session ships `ref-<tool>.md` beside `win-<tool>.md`:
+the tutorial doc links the ref in its first lines ("Every knob and
+button: …"), the ref links back, and the ref covers the complete
+control surface — organized by UI region, sourced from the window's
+code, never memory. Three sweep guards pin it in the selftest's
+`t_docs` (the D120 what-is-written-must-be-findable loop, extended to
+what-the-UI-binds-must-be-documented): (1) a `REF_DOCS` kind→ref
+mapping — for every mapped kind the ref ships, the top link and the
+back link resolve; (2) every `kind.hotkeys` entry is findable in the
+ref (multi-char keys verbatim, hint labels verbatim — so the hint
+strip's own words are searchable); (3) the existing image sweep
+already refuses a dead or oversized capture. The mapping grows one
+row per completed session; an unmapped kind is simply not yet done.
+
+**The synth session itself.** `ref-synth.md` documents every knob
+(window map, a 30-second FM primer, the eight algorithm wirings as a
+preformatted diagram decoded from the kernel's ALG tables, feedback,
+gain/pan, filter, sweep, the full operator panel, piano/tracker keys,
+sample instruments) and — the human's explicit ask — reverse-engineers
+ALL 53 stock presets into family recipes (Game Boy channels, bells
+7:2, keys/plucks, winds/choir, detuned ensembles, the fixed-Hz drum
+kit, the swept sfx family) with the real numbers, extracted by
+decoding every `.ins` through `cm.ins` headless. `ref-sound.md`
+covers the sound player. `win-synth.md` is rewritten as the
+"four-sound chip kit" tutorial (lead from the init patch, bass from
+gb-pulse-50, kick from scratch through sweep + fixed-Hz, jump from
+sfx-jump); a drive tape executes it as written on a fresh smoke copy
+— every gesture through the real UI — and probes the resulting `.ins`
+docs (all VERDICTs pass); the five bundled screenshots are the tape's
+own frames, cropped to the window.
+
+**The UX fix the ask exposed.** The op panel exposed only
+level/coarse/fine — but `detune` (the ensemble-width knob: strings
+∓14, reese ∓34) and `fixed` (the drum kit's non-tracking Hz: kick
+body 120 Hz, hat hiss 9 kHz) existed in the patch format, the kernel,
+and half the stock presets, reachable only by hand-editing patch
+tables; the synth.lua header comment even promised a detune slider.
+Both are now sliders on every op panel: `dtn` −63…+63 raw, `fix` as a
+0–255 log index over 20 Hz–12 kHz (the envelope-axis rule: equal
+pixels = equal ratios; index 0 = track the note, shown as "note").
+The idx↔hz mapping is KAT'd: exact ends, ±1-notch round trip with no
+regrab creep (integer-Hz quantization packs the low end tighter than
+the notch spacing — pinned, not hidden), and the stock drum anchors
+land within 3%. `DEF_H` 512→560 keeps the ADSR graph comfortable
+under the two new rows; existing windows keep their sizes.
+
+**Observed en route, deferred honestly:** the committed smoke editor
+session (19 windows of old proof-tape leftovers) shows one reader
+code-span ("cm.rand") drawing OVER unrelated topmost windows at a
+fixed world position — a draw-order/clip oddity in the help window
+class, reproducible by just opening the smoke session headless and
+shooting frame 40. Logged for the editor-shell HELPDOCS session
+(H13), not chased here. Also deferred: island-style fixed-Hz typing
+(the slider is coarse at the top octave), a per-op mute/solo for
+recipe A/B-ing, and the tutorial's bass step still leaves `dtn`
+unexercised by the tape (documented as optional).
+
+**Revisit triggers.** A new synth voice parameter (a knob without a
+ref section fails no sweep — extend the hotkey sweep's spirit by
+hand); a real table renderer in the reader (the algorithm diagram
+wants to be a table); HELPDOCS rows landing (grow `REF_DOCS`).
