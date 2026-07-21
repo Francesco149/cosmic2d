@@ -3,7 +3,51 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D155: mesh texturing lands (the picoCAD uv tab, stock checkers, sprite-slot texture frames, the sprite size chooser, the garage demo)
+## Current handoff — the waterwall demo: animated textures in anger (a second D155 showcase)
+
+**This session (2026-07-21) landed the human's ask verbatim**: a
+standalone demo scene — a wet rock wall with water flowing down it,
+the flow being an ANIMATED TEXTURE on an overlay mesh a hair above
+the wall surface. `projects/waterwall` (one commit, `6d20ebb`): a 5x3
+stone-block wall whose front faces UV-map onto a 2x2 rock sheet (two
+dry tile variants + their WET twins — same stones off the same noise
+seed, darker/blue with sparse sheen specks; the recessed center
+channel maps the wet tiles, so "wet rock" reads even with the water
+toggled off), and `art/water.msh` — fall sheet, side trickle, foam
+pool, all unlit, each a hair proud of the surface it wets — textured
+from an 8-frame `art/water.spr` strip where frame i is one y-periodic
+streak pattern scrolled down i*8px: swapping strip frames through the
+sprite animation slots IS the flow (the D155 "animation slots double
+as texture frames" mechanism, here as scroll). The demo submits the
+overlay segments with NEAREST|BLEND (translucent decal: depth test
+on, depth write off — the PAL_TRI_BLEND door) under a full-white
+ambient bracket so the unlit faces carry texel color/alpha exactly;
+the wall stays on the stock ALPHATEST|NEAREST sprite rule. Space
+toggles the overlay, left/right steps the flow rate (ticks per strip
+frame {12,8,5,3}). Sim state is exactly {water, spd}; frame choice +
+camera sway derive render-class from state.frame(); assets resolve
+through epoch-keyed memos (live .spr edits hot-reload the running
+scene). `gen.lua` is the committed generator console door
+(`game.gen()`, the garage precedent) — the art files remain the
+assets of record.
+
+**Proof:** `nix run .#test` ALL GREEN from the committed tree (no
+engine byte moved; no golden touches the new project). The Windows
+stage is refreshed (24 durable entries + the Start Menu shortcut),
+native selftest **25,144** passes, and the native waterwall shot at
+frame 88 matches the Linux capture on the real driver. A 4-panel
+montage is on llm-feed (three flow phases + the water-off wall) with
+the taste question: streak density/speed.
+
+**Exact next step:** the human's native taste pass — flow speed
+default (3/4), streak density, whether the foam pool wants more
+presence. Deferred honestly: no splash particles at the base, the
+foam pool shares the sheet's strip rather than its own foam frames,
+no per-face animation phase (a D155 deferral — both sheets ride the
+same frame). The D155 uv-tab taste pass and the A8
+release-candidate state below are unchanged.
+
+## Previous handoff — D155: mesh texturing lands (the picoCAD uv tab, stock checkers, sprite-slot texture frames, the sprite size chooser, the garage demo)
 
 **This session (2026-07-21) implemented the human's ask verbatim**: a
 picocad-style uv mapping mode (one face at a time), the colored stock
