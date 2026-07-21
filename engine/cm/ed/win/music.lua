@@ -19,7 +19,9 @@
 -- and a drag sets the length with its end COVERING the cursor
 -- (rounds 10-12); press a note = SELECT it (never
 -- moves or deletes — moves go by grid STEPS so an off-grid note keeps
--- its offset); drag moves the selection, right-edge resizes it;
+-- its offset) and it RINGS while held, the voice following the pitch
+-- as the move drags (round 13); drag moves the selection, right-edge
+-- resizes it;
 -- selected notes hit-test first and draw on top translucent so an
 -- overlap stays visible and fixable; RIGHT-CLICK deletes a note;
 -- ctrl+up/down steps the selection an octave. shift = marquee/toggle
@@ -1263,6 +1265,7 @@ function M.draw(win, ctx)
       p.g = { t = "selmove", grab = grab, gt = grab.tick, gp = grab.pitch,
               dt = tick - grab.tick, dp = pitch - grab.pitch, base = base,
               moved = false, dup = true }
+      blip_hold(ed, win, p, p.g, grab.pitch, grab.vel)
     elseif ed.g.shift then -- selection: toggle a note / start a marquee
       if hit then
         local n = pat.notes[hit]
@@ -1284,13 +1287,16 @@ function M.draw(win, ctx)
         end
         p.g = { t = "selsize", grab = n, gd = n.dur, lnd = n.dur,
                 base = base, moved = false }
-      else -- GROUP MOVE
+      else -- GROUP MOVE — the grabbed note rings while held (the
+        -- synth piano model, round 13: press = hear the note, drag
+        -- glissandos with the move)
         for sel in pairs(p.nsels) do
           base[#base + 1] = { n = sel, tick = sel.tick, pitch = sel.pitch }
         end
         p.g = { t = "selmove", grab = n, gt = n.tick, gp = n.pitch,
                 dt = tick - n.tick, dp = pitch - n.pitch, base = base,
                 moved = false }
+        blip_hold(ed, win, p, p.g, n.pitch, n.vel)
       end
     else -- ADD at the last-used length, snapped; it becomes the
       -- selection. Holding sustains the AUDITION indefinitely (the
@@ -1353,12 +1359,16 @@ function M.draw(win, ctx)
           b.n.tick, b.n.pitch = b.tick + ndt, b.pitch + ndp
         end
         if ndp ~= (p.g.ldp or 0) then
-          blip(ed, win, p, p.g.gp + ndp, 100)
+          p.g.voice = nil -- glissando: the held voice follows the pitch
         end
         p.g.ldt, p.g.ldp = ndt, ndp
         p.g.moved = true
         ctx.touch()
       end
+      -- the grabbed note rings while held (round 13), moving or not
+      blip_hold(ed, win, p, p.g,
+                p.g.gp + (p.g.ldp or 0), p.g.grab and p.g.grab.vel)
+      ctx.touch() -- the fuse refresh needs the frame loop alive
     else
       -- a duplicate/add always commits (the notes exist even if not
       -- dragged); a plain selection-move commits only if it moved,

@@ -8522,3 +8522,27 @@ cursor and sets the default); selftest **25,153** (unchanged — the
 growth had no KAT, deliberately); the win-music.md rewrap en route
 re-proved the D127 balanced-span guard (it refused a `**` span my
 edit left crossing lines). Suite ALL GREEN.
+
+### D159 addendum 2 — moves ring too, and the rc.9 cut (2026-07-21)
+
+The human's last piece of the synth-piano contract: "clicking and
+holding an already placed note (even if I don't end up moving it)
+should hold the note like the piano roll and follow where I move it."
+Round 13 wires the SAME `blip_hold` into the move gesture: pressing a
+note arms the group move AND rings the grabbed note at its own
+velocity immediately — a motionless press-release is a pure audition
+(the selection semantics are untouched: no move, no commit) — and as
+the drag steps the pitch delta the old voice is abandoned to its fuse
+and the new pitch holds (the keys-column glissando verbatim). The
+ctrl+drag duplicate arms the same gesture and rings the same way. The
+old pitch-change 10-frame blip in the move handler is gone. Every
+press-audition in the window now speaks one contract: press = hear,
+hold = sustain, release = silence — add (selsize), keys, move
+(selmove), duplicate. Proof: the tape extends to **27/27** (press an
+existing note → ringing fuse live at frame 14 with the note UNMOVED →
++2-row drag swaps the voice and moves the pitch → release silences
+and commits); selftest **25,153**; suite ALL GREEN, goldens
+byte-identical. **rc.9** is cut from this state (the human's call:
+"push another RC build once that's implemented") via
+`tools/tag-release-candidate.sh --push` — the hosted candidate
+workflow is the build proof.

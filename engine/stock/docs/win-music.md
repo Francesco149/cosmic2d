@@ -35,10 +35,13 @@ linked copy.
   it **sounds for as long as you hold**, like the synth's piano;
   **drag right to set its length** (the end follows the cursor, and
   that length becomes the new last-used default)
-- **click** a note selects it — selected notes grab first and draw on
-  top, slightly see-through, so an overlap stays visible and fixable
+- **click** a note selects it — and it **rings while held**, so a
+  press auditions the note even if you never move it; selected notes
+  grab first and draw on top, slightly see-through, so an overlap
+  stays visible and fixable
 - **drag** moves the selection in grid steps (an off-grid note keeps
-  its offset) · **drag its right edge** resizes
+  its offset), the held voice **following the pitch** as you move ·
+  **drag its right edge** resizes
 - **right-click** deletes a note · **shift** toggles / marquee-selects
 - **ctrl+drag** a note duplicates it
 - the **piano keys** on the roll's left edge audition pitches on the
