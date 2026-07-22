@@ -1,128 +1,170 @@
-# The map editor
+# The map window
 
-A map is collision + placed things. You build a level by **drawing colliders**
-(the terrain the game collides against) and **placing sprites/assets** on named
-**layers**, plus **markers** (spawns, portals, triggers) the game reads by name.
+Build a playable world from slope-ready collision, free-positioned art,
+queryable hazards, and named markers your game can understand.
 
-Direct manipulation is **teidraw-style**: click anything to select and move it;
-click again to drill to whatever is beneath.
+Every control and gesture: [the map reference](engine/stock/docs/ref-map.md) —
+all four modes, CTRL snapping, layers, inspectors, grouping, files, and code.
 
-## Modes (header chips + keys)
+## Walkthrough: build Moonlit Crossing
 
-- **move** — the default: unified direct manipulation (below). Nothing to
-  enter; **esc** always returns here.
-- **sel** (`v`) — **box-select**: drag a marquee; it selects and immediately
-  returns to *move* so you can manipulate what you caught.
-- **col** (`c`) — draw colliders. Places ONLY; it never grabs existing things
-  (that's *move*'s job).
-- **mkr** (`m`) — drag out a labelled rectangle (spawn / portal / trigger).
+In one sitting you will author `maps/moonlit-crossing.map`: a closed ground
+polygon with two 45-degree banks, a one-way plank bridge, a circular hazard,
+`spawn` and `goal` markers, a generated graybox skin, and two aligned art
+placements. Then you will load it into the running game and walk the slopes.
 
-## Move mode — select & move anything
+The exact playtest commands below use the bundled **smoke** project because it
+already supplies a collision-driven hero and `art/plank.png`. Start that
+project in the editor, or follow the authoring steps in your own platformer and
+substitute an image of similar size. Coordinates are map pixels. While the
+pointer is over the view, its top-right readout shows `x,y` before zoom and
+grid, so every point below can be placed deliberately.
 
-- **click** a collider vertex → drag moves that point.
-- **click** a collider line → drag moves the whole collider (both ends together).
-- **click** a sprite or marker → drag moves it.
-- **click again** on the same spot → selects the next thing *underneath* (e.g.
-  the collider line, then the sprite it overlaps). This is drill-down.
-- **shift+click** adds/removes a sprite or marker from the selection.
-- **click empty** deselects. (For a rubber-band selection, use **v** box-select.)
-- a single selected marker shows corner knobs — drag one to resize it.
+1. Right-click empty canvas, choose **map**, replace the suggested path with
+   `maps/moonlit-crossing.map`, and press Enter. A fresh map adopts the
+   project's 480x270 design size and an 8px grid. In the bottom strip set
+   **bg** to `0.25 0.32 0.48` and **name** to `moonlit crossing`, pressing
+   Enter after each. The window is already a real working document, but no
+   file exists until the first save.
+2. Give the visual stack jobs before it fills up. In **LAYERS**, edit the
+   first row's footer name to `terrain`. Click **+**, name the new front row
+   `props`, and leave it active. Turn **lock** on: later art drops now stay on
+   `props`, even when their pixels overlap the generated terrain. The `e` and
+   `g` squares mean editor-visible and game-on; leave both lit.
+3. Click inside the map to focus it. The green **EDITING** chip means wheel and
+   middle-drag belong to this view; **shift+1** refits it and Esc releases it.
+   Press **c** for **col**, leave **line** solid, and hold Ctrl while dragging
+   from `(0,224)` to `(96,224)`. That makes the first two points in one
+   gesture. Ctrl is the precise form: the endpoints land on the 8px grid and
+   the segment locks horizontal.
+4. Keep both Shift and Ctrl held and click, in order, at `(136,184)`,
+   `(296,184)`, `(336,224)`, `(480,224)`, `(480,264)`, and `(0,264)`.
+   Shift extends the last line; Ctrl makes the two banks true 45-degree
+   slopes. The selected chain now outlines the walkable surface and the mass
+   below it. Click **closed** in the bottom strip. Closed plus solid makes the
+   interior terrain; an open solid chain would collide only along its edges.
+5. Press Esc to return to **move**, then **c** for a clean collider placement.
+   Click **one-way**, keep **line**, and Ctrl-drag from `(208,128)` to
+   `(304,128)`. Its dashed green gizmo is support from above only: the player
+   can jump through it and drop through it, while the solid ground remains
+   blue and blocks from either side.
 
-## Drawing colliders (collider tool, line type)
+![Closed slope terrain and the selected dashed one-way bridge in COL mode](media/map-colliders@2x.png)
 
-- **drag** from the first click → lays a **2-point line** in one motion.
-- **click, then click** → also lays a 2-point line (a rubber-band shows between).
-- **shift+click** after → **appends** another point to that last line — extend
-  terrain point by point.
-- **esc** cancels a placement in progress (and stays in col mode); **esc**
-  again returns to move mode.
-- **quad / circle** types drag out. **ctrl** while drawing snaps to vertices,
-  edges, 45°, and the grid (a guide shows the lock).
-- select a chain (in **move** mode) and toggle its **one-way / closed** chips in
-  the inspector (closed + solid = fillable ground).
+6. Press Esc, then **c** again, and choose **circle**. Ctrl-drag from
+   `(376,208)` toward `(388,208)`. With the circle selected, make its exact
+   bottom fields read **x 376**, **y 208**, **r 12**. Circles do not block the
+   platformer mover; they are query zones. This one is Moonlit Crossing's
+   water-orb hazard, tested with `world:circles(...)` in the playtest.
+7. Press **m** for **mkr**. Ctrl-drag `(24,200)` to `(40,224)`, then set
+   **kind** to `spawn`, **label** to `west bank`, and **note** to
+   `moonrunner arrives here`. Set **k=v** to `facing=right`. Press **m** again and
+   Ctrl-drag `(432,200)` to `(456,224)`; set kind `goal`, label `east gate`,
+   note `crossing complete`, and `k=v` to `next=moon-cave`. Markers are named
+   rectangles for code, not collision. Their labels and notes are authoring
+   context; extras are compact gameplay fields.
 
-## Layers (right panel)
+![The spawn and goal rectangles, with the goal's complete marker inspector](media/map-markers@2x.png)
 
-Rows are front-at-top. Each has two toggles:
+8. Press Esc twice: once returns to **move**, once clears the selected goal.
+   The map fields return along the bottom. Click **graybox**. The editor
+   rasterizes the free ground and one-way into
+   `maps/moonlit-crossing_gb.tm`, places it at `(0,0)` on the bottom
+   `terrain` layer as `graybox`, and turns **fill** off. This is a replaceable
+   blockout skin; the collider gizmos remain the authority and stay visible.
+9. Open **assets**, choose **image**, and filter `plank`. Drag
+   `art/plank.png` onto the map with the pointer at `(232,134)`; its 48x12
+   ghost lands freehand at `(208,128)`, directly under the one-way line. Drag
+   it in a second time while holding Ctrl. As its left edge approaches the
+   first plank's right edge, the vertex guide catches and the ghost lands at
+   `(256,128)`. Release there. Art and collision now agree without making art
+   obey a grid all the time.
 
-- **e** — editor-visible. Off = hidden while you work (declutter); the game is
-  unaffected.
-- **g** — game-on. Off = the layer's placements act as if they don't exist
-  in-game (no draw, no colliders, no name); shown dimmed in the editor.
+![CTRL held during the second plank carry: the ghost butts against the first and the snap guide confirms it](media/map-snap@2x.png)
 
-Name a layer and your code can reach its placements by name via
-`cm.map.ref("name")`. Clicking a placement makes its layer active; **lock**
-confines picking and new drops to the active layer.
+10. Press Esc for **move** and click low inside either plank, away from the
+   collider line. Its inspector reads the exact **x/y**, layer `2`, and
+   source path. Now click directly on the line: the precise collider edge is
+   first in the drill stack; click that same spot again to reach the plank
+   beneath. Drag the edge to move the whole line, or a square handle to move
+   one point. Undo that experiment with **ctrl+z** so the bridge returns to
+   `(208,128)-(304,128)`. This click-again drill is how crowded maps stay
+   directly editable.
+11. Press **ctrl+s**. The amber dot and title `*` disappear, the `.map` is
+   atomically published, and the running game is offered a recorded hot
+   reload. The graybox `.tm` was already published by its button; it remains
+   an ordinary project asset you can open in the tilemap window later.
+12. For the bundled smoke playtest, press the grave/backtick key to summon a
+   **console** window. Enter these two lines separately. The first switches
+   the cartridge's stable room slot and warps its hero to your marker. The
+   second temporarily makes every circle a reset hazard:
 
-The **par** row edits the active layer's parallax factors (x, then y):
-1 = world speed, 0.5 = a half-speed backdrop, 0 = screen-fixed. The game
-applies them in `draw_places`; the editor canvas always shows authored
-positions. Parallax is visual only — colliders and markers stay
-world-space.
+        game.level.reset("maps/moonlit-crossing"); cm.require("player").warp(game.level.spawn.x, game.level.spawn.y)
+        old_step=game.step; game.step=function() old_step(); local p=cm.require("player"); local x,y=p.pos(); if #game.level.world:circles(x,y,p.W,p.H)>0 then p.warp(game.level.spawn.x,game.level.spawn.y) end end
 
-## Grouping
+13. Spawn or focus the **game window**, click inside until **PLAYING** shows,
+   and hold Right. The hero walks from the flat west bank, stays grounded up
+   the first 45-degree slope, crosses the plateau, and sticks to the descent.
+   Jump through the plank bridge and land on it; Down+Jump drops through.
+   Walk into the circle and the temporary hazard adapter returns you to the
+   spawn. Jump over it to reach the gold `goal` rectangle's authored area.
 
-- **ctrl+g** groups the selection — they move together; a faint hull shows the
-  bounds. Click a member selects the whole group.
-- **click again** on a grouped member drills *into* the group to move just that
-  item.
-- **ctrl+shift+g** ungroups.
+![Moonlit Crossing running from the saved map: generated terrain, aligned plank bridge, and the hero on the raised route](media/map-running@2x.png)
 
-## Keys
+The important loop is now live: return to Map, move a bank or marker, save,
+and feel the revised route in the same game window. Unsaved edits stay safely
+in the authoring window; Ctrl+S is the explicit game-truth boundary.
 
-- **c** col · **v** box-select · **m** markers · **esc** back to move
-- **arrows** nudge 1px (**shift** ×8) · **del** removes the selection
-- **[ / ]** send a placement back / forward in its layer
-- **ctrl+a** all · **ctrl+c/x/v** copy/cut/paste · **ctrl+d** duplicate
-- **ctrl+g** group · **ctrl+shift+g** ungroup
-- **shift+1** fit the map · **shift+2** fit the selection
-- **ctrl+wheel** dials the grid step · **wheel / middle-drag** zoom / pan
-- **ctrl+s** save (the running game hot-reloads the map)
+## Put the same map in your game
 
-## Placing assets
+Load once into a stable slot, derive the named marker handles whenever the map
+revision changes, sweep the player against `room.world`, and draw both the
+optional collider fill and placed art:
 
-Drag a `.spr` / `.png` / `.tm` from the assets window (or drop a file) onto the
-map to place it. Any other asset (a `.song`, `.ins`, …) places as a
-**named ref** — a code handle at a position. A missing asset draws a magenta
-checkerboard so a broken reference is loud, not silent.
+    local map = cm.require("cm.map")
+    local box = cm.require("cm.box")
+    local room, spawn, goal, seen_rev
 
-## Walkthrough: a layered lakeside with water
+    local function sync_markers()
+      map.sync(room)
+      if room.rev == seen_rev then return end
+      seen_rev, spawn, goal = room.rev, nil, nil
+      for _, m in ipairs(room.doc.markers) do
+        if m.kind == "spawn" then spawn = m end
+        if m.kind == "goal" then goal = m end
+      end
+    end
 
-A small side-view scene that exercises the map editor's strongest
-pieces — named layers, parallax, fillable ground, markers — plus a
-couple of sprite-editor layers feeding it.
+    function game.init()
+      room = map.use {
+        path = cm.main.args.project .. "/maps/moonlit-crossing.map",
+        name = "mygame.moonlit-crossing",
+      }
+      sync_markers()
+      player.x, player.y = spawn.x, spawn.y
+    end
 
-1. **Tiles first** (sprite editor, see its *Fill recipes*): a 32x32
-   grass block (a *fbm* solid fill in two greens, then hand-draw a
-   lighter 2px lip on top on a second layer), a water tile (*noise*,
-   deep blue → cyan, a little dither), and a wide soft hill silhouette
-   (64x32, one flat mid-green — it will live in the far background).
-2. **Layers**: in the right panel make four named layers, front-at-top:
-   `fg`, `main`, `water`, `bg`. Activate `bg` and set its **par** row to
-   `0.5 0.9` — the hills now scroll at half speed and the scene gets
-   depth for free.
-3. **Backdrop**: drag the hill sprite in from the assets window a few
-   times along the horizon; overlap them at slightly different heights.
-   **lock** keeps stray clicks on the active layer while you arrange.
-4. **Ground**: activate `main` and lay a row of grass blocks
-   (**ctrl+d** duplicates the selection; **ctrl** while dragging snaps).
-   Leave a gap for the lake. Then **c** and trace the walkable surface:
-   drag the first line along the ground top, **shift+click** to extend
-   it point by point up the banks. For a solid platform, select the
-   chain and toggle **closed** in the inspector (closed + solid =
-   fillable ground).
-5. **Water**: activate `water` and tile the water sprite across the
-   gap, one or two rows deep. Because it sits on its own named layer,
-   code can find it (`cm.map.ref("water")`) — a two-line `game.step`
-   bobbing the layer's placements a pixel, or a drowning check against
-   the marker below, turns the picture into water that behaves.
-6. **Markers**: **m**, drag a `spawn` rect on the near bank and a
-   `goal` on the far one; a `water` trigger rect over the lake gives
-   code its bounds without caring how many tiles you placed.
-7. **Foreground**: a couple of grass tufts on `fg`, nudged over the
-   ground line, so the player walks *behind* something.
-8. **ctrl+s** — the running game hot-reloads the map in place. Walk it,
-   feel the gap width, come back, nudge, save again.
+    -- in game.step, after choosing dx/dy:
+    sync_markers()
+    player.x, player.y, hit = room.world:move(
+      player.x, player.y, PW, PH, dx, dy,
+      { ground = player.grounded, drop = drop_pressed })
+    player.grounded = hit.down
+    if #room.world:circles(player.x, player.y, PW, PH) > 0 then
+      player.x, player.y = spawn.x, spawn.y
+    elseif goal and box.overlap_rect(player.x, player.y, PW, PH, goal) then
+      player.won = true
+    end
 
-Full reference: [Using the editor](engine/stock/docs/editor.md) and
-[maps in game code](engine/stock/docs/scripting.md#loading-and-drawing-a-map-cmmap).
+    -- in game.draw, with the world layer active:
+    map.draw_fill(room, camera.x, camera.y)
+    map.draw_places(room, camera.x, camera.y)
+
+`map.draw_fill` quietly does nothing after **graybox** turns fill off;
+`draw_places` then draws the generated tilemap and both planks. Keeping both
+calls makes the same code work before and after the blockout gets art.
+
+Full reference: [every Map control and gesture](engine/stock/docs/ref-map.md),
+[maps and collision in code](engine/stock/docs/scripting.md#loading-and-drawing-a-map-cmmap),
+and [the tilemap tutorial](engine/stock/docs/win-tmap.md) for replacing the
+generated blockout with a reusable authored chunk.

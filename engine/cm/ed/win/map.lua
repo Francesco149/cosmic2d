@@ -72,6 +72,17 @@ local KEY = { right = 79, left = 80, down = 81, up = 82, del = 76,
 local GRID_STEPS = { 1, 2, 4, 8, 16, 32, 64 }
 local SNAP_PX = 6 -- snap threshold, screen px (§7: ~6 px-at-zoom)
 
+-- The compact top-right view readout. Map tutorials name exact points just
+-- like sprite tutorials name pixels, so the authored map coordinate under the
+-- cursor must be visible rather than inferred from the snap grid. Kept pure so
+-- the integer rounding and the off-view form stay KAT-pinned.
+function M.view_status(mx, my, over, zoom, grid)
+  local tail = ("%d%% · grid %d"):format(math.floor(zoom * 100 + 0.5), grid)
+  if not over then return tail end
+  return ("%d,%d · %s"):format(math.floor(mx + 0.5),
+                                math.floor(my + 0.5), tail)
+end
+
 function M.defaults()
   return { path = "", tool = "move", giz = true, mk = true,
            ctype = "line", lpanel = true }
@@ -2581,10 +2592,11 @@ function M.draw(win, ctx)
     end
   end
 
-  -- zoom + grid chip, canvas corner
-  local chip = ("%d%% · grid %d (ctrl+wheel)")
-               :format(math.floor(zoom * 100 + 0.5),
-                       win.grid or doc.grid or 8)
+  -- authored coordinate + zoom + grid, canvas corner. The coordinate is the
+  -- map pixel under the cursor (not a screen/canvas coordinate); ctrl+wheel's
+  -- grid-dial grammar lives in the reference + hint strip so the bay stays
+  -- compact enough for narrow map windows.
+  local chip = M.view_status(mx, my, over, zoom, win.grid or doc.grid or 8)
   local cw2 = pal.x_ig_text_size(chip, px * 0.85, 0)
   pal.x_ig_text(cvx + cvw - cw2 - 6 * z, cvy + 4 * z, px * 0.85, COL.dim,
                 chip, 0)
@@ -2684,7 +2696,7 @@ function M.draw(win, ctx)
       end
       pal.x_ig_text(x + 2 * z, iy + (INSP - px) * 0.45, px * 0.9, COL.dim,
                     p.csel.v and "drag moves the vertex · del removes it"
-                    or "drag moves the whole collider · c closes · del removes",
+                    or "drag moves whole collider · closed chip toggles · del removes",
                     0)
     else
       if schip("one-way", win.coneway or false) then
@@ -2902,6 +2914,13 @@ function M.graybox_apply(win, ed)
   local tmap = cm.require("cm.tmap")
   local td = tmap.graybox(doc)
   local tmpath = win.path:gsub("%.[mM][aA][pP]$", "") .. "_gb.tm"
+  -- A fresh map may live in a not-yet-existing folder and graybox is allowed
+  -- before its first Ctrl+S (the tutorial's natural blockout order). Match the
+  -- asset save door: create the project-relative parent before the atomic
+  -- publish, otherwise maps/foo.map could create working bytes but its first
+  -- graybox failed at the temporary-file open.
+  local dir = tmpath:match("^(.*)/[^/]+$")
+  if dir then pal.mkdir(ed.root .. "/" .. dir) end
   local ok, err = pal.write_file_atomic(ed.root .. "/" .. tmpath,
                                         tmap.encode(td), p._create_fail)
   if not ok then

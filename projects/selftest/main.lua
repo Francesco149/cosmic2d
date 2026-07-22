@@ -9436,6 +9436,10 @@ local function t_ed_map()
   local tmap = cm.require("cm.tmap")
   local palette = cm.require("cm.palette")
   local dims = function() return 20, 10 end
+  check(W.view_status(31.6, 47.4, true, 1.249, 8)
+          == "32,47 · 125% · grid 8"
+        and W.view_status(0, 0, false, 0.5, 16) == "50% · grid 16",
+        "ed.map: view status names authored x,y only over the map")
   local doc = {
     name = "t", w = 320, h = 200, grid = 8,
     colliders = {
@@ -9491,6 +9495,19 @@ local function t_ed_map()
   check(not sp.doc.nofill and #sp.doc.places == 0 and summoned,
         "ed.map graybox: failure leaves map unchanged and summons console")
   sp._create_fail = nil
+
+  -- A new map path may introduce its directory; graybox is valid before the
+  -- map's first save and must create that parent just like the save door.
+  local nwin = { path = "maps/tutorial.map" }
+  local _, np = W.open_win(nwin, sed)
+  np.doc.colliders = { { kind = "chain", closed = true,
+                         verts = { 0, 32, 32, 32, 32, 64, 0, 64 } } }
+  check(W.graybox_apply(nwin, sed)
+        and pal.read_file(root .. "/maps/tutorial_gb.tm") ~= nil,
+        "ed.map graybox: fresh nested path creates its parent")
+  check(np.doc.nofill and np.doc.places[1]
+        and np.doc.places[1].path == "maps/tutorial_gb.tm",
+        "ed.map graybox: nested publish commits the placement afterward")
 
   -- The real tilemap-window path has the same durability/error contract.
   local TW = cm.require("cm.ed.win.tmap")
@@ -12540,7 +12557,8 @@ local function t_docs()
   local REF_DOCS = { { "synth", "ref-synth.md" }, { "sound", "ref-sound.md" },
                      { "sprite", "ref-sprite.md" }, { "anim", "ref-anim.md" },
                      { "palette", "ref-palette.md" },
-                     { "assets", "ref-assets.md" }, { "stock", "ref-stock.md" } }
+                     { "assets", "ref-assets.md" }, { "stock", "ref-stock.md" },
+                     { "map", "ref-map.md" } }
   for _, row in ipairs(REF_DOCS) do
     local kindname, refname = row[1], row[2]
     local rd = live_by_name[refname]
