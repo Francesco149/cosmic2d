@@ -1,62 +1,79 @@
 # The assets browser
 
-Browse the project's files. Double-click one to open it in the right editor;
-drag one onto the canvas (or a map) to place or bind it.
+Turn a loose project into a kit you can understand at a glance: find by role,
+move whole editable families, and carry files to the windows that use them.
 
-## Keys
+Every control and edge case: [the assets reference](engine/stock/docs/ref-assets.md) —
+filtering, previews, drag routing, rename/delete, OS imports, and safe copies
+between projects.
 
-- **arrows** move the selection · **enter** open the selected asset
-- **r** rename/move (a bar opens with the full path — edit the name, or the
-  folder part to move; **enter** commits, **esc** cancels). A `.spr` takes its
-  baked files along; open windows, unsaved edits, and undo history follow.
-  Code that referenced the old name falls to the engine's invalid-asset
-  fallbacks until you update it — renaming never corrupts a running game.
-- **del** delete (arms a red confirm; **del** again to execute, **esc** cancels)
-- **c** copy the selected saved asset to another known project. Choose the
-  target with **up/down**, then press **enter** (or click **copy**); **esc**
-  cancels. Open an out-of-tree target once from the project picker so it joins
-  the known-project list.
-- **ctrl+wheel** dials the preview tile size · type in the filter to fuzzy-find
+## Walkthrough: organize the moonlit courier
 
-Each type chip remembers its own scroll position. Switching to a shorter list,
-changing the filter or tile size, or resizing the window always snaps the view
-back inside the content, so an empty-looking tab really has no matches.
+This walkthrough continues with `art/hero.spr` from
+[the sprite tutorial](engine/stock/docs/win-sprite.md). Its open sprite window
+is useful proof: we will move the file while that window, its unsaved state,
+undo history, and baked strip all follow. If you are using your own project,
+substitute one saved `.spr` and keep its sprite window open.
 
-Dropping an OS file anywhere imports it (images convert to `.png`) and opens the
-right window at the drop point.
+The destination is a small, intentional kit: character art under
+`art/characters/`, references routed through wells instead of copied by hand,
+then a locally owned song and instrument from the Stock browser.
 
-## Copy to another project
+1. Right-click empty canvas and choose **assets**. This is one recursive,
+   flat view of the project, not a folder tree: tiles label the basename, while
+   filtering also searches the retained folder path. Click **image**, click the
+   **fuzzy search** field, and type `hero`. Leave the tile dial at its default
+   size; one `hero.spr` tile should remain, previewed from its baked strip.
+2. Left-click `hero.spr` once. The bright outline is selection; the press also
+   arms a possible carry, but releasing without moving changes nothing. Press
+   **r**. A green **rename:** bar opens along the bottom with the complete
+   project-relative path, `art/hero.spr`.
+3. Click that path, press **ctrl+a**, and type
+   `art/characters/moonrunner.spr`. Editing the folder portion is how this
+   flat browser creates and moves into folders; no separate folder command is
+   needed. Pause before Enter and check the whole destination, including the
+   `.spr` extension.
 
-The copy keeps the same project-relative path and never overwrites a target
-file. Save a dirty source first. Sprites carry their baked `.png`, `.anim`, and
-`.meta` companions; textured 3D maps carry their `-atlas.png`. The complete
-family is staged before it appears in the target, and a reported failure rolls
-the family back instead of leaving a partial import.
+![The Assets grid filtered to the hero while the full move path is in the rename bar](media/assets-rename@2x.png)
 
-References inside an asset are not guessed. For example, after copying a song,
-copy its project-local instruments explicitly; after copying a map, copy the
-art it places. This keeps cross-project reuse deliberate instead of silently
-pulling an unbounded dependency tree.
+4. Press **enter**. The tile disappears from the old `hero` filter because its
+   name changed. The already-open sprite window now says `moonrunner.spr`, and
+   these four files moved together:
 
-## Walkthrough: import, inspect, and reuse one image
+       art/characters/moonrunner.spr
+       art/characters/moonrunner.png
+       art/characters/moonrunner.anim
+       art/characters/moonrunner.meta
 
-1. Drop a reference PNG from the OS onto empty canvas. It is copied into the
-   project, normalized as PNG, and opened in the read-only **image** window.
-2. Open **assets**, type part of its name, select it, and use
-   **Ctrl+wheel** until the thumbnail scale is useful. Enter reopens the full
-   checker-backed image inspector.
-3. Drag it from assets onto a sprite's **stamp well**, stamp a few pixels, then
-   drag it onto a map (or 3D map) to place it. One source now exercised three
-   real asset doors.
-4. Press **r** in assets and move it into `art/refs/`. Every open window and
-   unsaved edit follows. For a `.spr`, the baked PNG and animation sidecars
-   move as one family.
-5. Filter for the new path, open it once more, and save the receiving sprite or
-   map. If code named the old path, update it explicitly — the browser never
-   silently rewrites game logic.
-6. Press **c**, choose another project, and copy it. Open that project from
-   **← projects**: `art/refs/` contains the saved image at the same path.
+   The `.spr` is editable truth; the other three are its baked runtime family.
+   The editor also moved the working bytes and undo journal. Game code is not
+   guessed or rewritten, so change any literal `art/hero.png` reference in
+   your scripts yourself.
+5. Return to Assets and replace the filter with `plank`. Press-drag
+   `art/plank.png` out of its tile and release over bare canvas. A checker-backed
+   image inspector opens at the release point. This is the general routing
+   rule: a compatible file released on empty canvas opens its natural window.
+6. Put `moonrunner.spr` in **edit** mode. Drag `plank.png` from Assets again,
+   this time releasing on the square **img** well under the sprite tools. The
+   well fills with the plank preview, the stamp tool arms, and the bottom strip
+   reads `stamp: plank.png`. The source image did not move or duplicate; the
+   destination window accepted it for a specific job.
 
-Full reference: [Using the editor](engine/stock/docs/editor.md),
-[the sprite editor](engine/stock/docs/win-sprite.md), and
-[the map editor](engine/stock/docs/win-map.md).
+![A project image carried over the editable sprite with the real drag ghost visible](media/assets-drag@2x.png)
+
+7. Press **p** to return to the pen without clearing the well. A later **t**
+   re-arms that stamp, and right-clicking the well clears it. This distinction
+   matters: carrying chooses a relationship; only clicking the sprite canvas
+   would change pixels and create an undo step.
+8. Keep Assets open for the next half. You now know all three everyday carry
+   outcomes: a well or track **uses** the asset, a compatible window
+   **rebinds** to it, and bare canvas **opens** it. An incompatible occupied
+   window refuses the drop instead of inventing a conversion.
+
+Continue with [the Stock tutorial](engine/stock/docs/win-stock.md) to borrow a
+song and instrument, give both project names, and bind the local instrument
+back into the arrangement.
+
+Full reference: [every Assets control](engine/stock/docs/ref-assets.md),
+[the Stock browser](engine/stock/docs/ref-stock.md), and
+[the editor canvas grammar](engine/stock/docs/editor.md).

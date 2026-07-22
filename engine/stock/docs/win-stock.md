@@ -1,65 +1,72 @@
 # The stock assets window
 
-Everything the engine ships in the box — instruments, demo songs, sprites,
-figures, palettes — in one read-only browser. Nothing here can be edited or
-deleted in place; every door pulls a copy INTO your project.
+Treat the engine's library as a parts shop: audition immutable originals,
+open disposable working copies, then keep only the pieces your project owns.
 
-## The doors
+Every control and copy rule: [the Stock reference](engine/stock/docs/ref-stock.md) —
+all five families, filtering, previews, the open/copy/drag doors, naming, and
+what does or does not travel with an asset.
 
-- **double-click** opens an *unsaved copy*: the stock bytes open in the right
-  editor window under a fresh auto-generated project name, already marked
-  unsaved. Play with it freely — **ctrl+s** keeps it in your project; closing
-  the window without saving leaves your project untouched.
-- **c** (or **enter**) copies the selected asset into your project directly
-  (instruments land in `ins/`, songs in `sound/`, art in `art/`, palettes in
-  `pal/`). The assets browser flashes the new file.
-- **drag** an asset onto a window that accepts it — a music track binds a
-  dragged instrument (copying it in on the way), the sprite editor's stamp
-  well takes a dragged image.
+## Walkthrough: borrow a noir cue and make it yours
 
-## What ships
+This is the second half of
+[the Assets tutorial](engine/stock/docs/win-assets.md). It builds a tiny audio
+kit beside `art/characters/moonrunner.spr`: a saved song named
+`sound/moonlit-route.song` and a local glass voice named
+`ins/moon-glass.ins`. The source library remains byte-for-byte untouched.
 
-- **ins** — the FM/gameboy/sfx instrument presets (the synth window's preset
-  rail lists these too). Families cover the common vibes: orchestral
-  (strings, choir, harp, flute, reed, timpani, orchestra hit, harpsichord,
-  music box), jazz/latin/funk (nylon, upright, vibes, muted trumpet, clav,
-  slap, cowbell), electronic (sub, reese, ride, shaker, rim, conga), and
-  ambient/spooky (drone, glass).
-- **songs** — demo tracks smoke-testing those presets: desert, water,
-  a minuet, a soft prelude, battle, final boss, drum-n-bass, breakbeat,
-  two bossa novas, funk, a detective swing, horror, and slow ambient.
-  Open one unsaved and drill into its patterns to see how it's built —
-  they make good starting points.
-- **art / fig / pal** — the stock tileset, the mascot figure, and the
-  shipped palettes.
+1. Right-click empty canvas and choose **stock assets**. The caption says
+   **read-only** because this window has no rename, delete, or save surface.
+   Its family chips are **all, ins, songs, art, fig, pal**; the small tag in
+   each tile repeats the family so color is never the only cue.
+2. Click **songs**, type `noir` in **fuzzy search**, and left-click the one
+   result, `noir-sleuth.song`. The grid searches stock names, not your project,
+   and the selected outline means the next `c`, Enter, double-click, or drag
+   has an exact source.
 
-![The shipped song starters filtered in the stock browser](media/stock-songs.png)
+![The immutable Stock library narrowed to its noir song starter](media/stock-filter@2x.png)
 
-## Walkthrough: borrow a groove without risking the original
+3. Double-click `noir-sleuth.song`. A music window opens beside Stock as
+   `sound/noir-sleuth.song *`: the bytes are in editor working state under an
+   available project name, but there is no project file yet. The amber dot and
+   trailing `*` are the non-color-only promise that this is an **unsaved copy**.
 
-1. Choose **songs**, filter for a mood, and double-click one. It opens as an
-   unsaved project copy — press Space, click its clips, and inspect how short
-   patterns become a longer arrangement.
-2. Delete a lead clip, lower one track, and drag a different stock instrument
-   onto that lane. The stock source remains unchanged, so experimentation is
-   free.
-3. **Ctrl+S** only when the direction works. The generated project path becomes
-   your own song and every borrowed instrument is copied into the project.
-4. Return here, choose **ins**, and press **c** on one contrasting voice. Open
-   it in the synth, bend its envelope/filter, save under a clear name, then
-   replace one more track. You now have a derived arrangement rather than an
-   opaque demo file.
+![The stock song opened as a full editable arrangement that is still unsaved](media/stock-unsaved@2x.png)
 
-## Keys
+4. Press **space** to audition the arrangement; press it again to stop. Browse
+   its clips if you like, then press **ctrl+s**. Only now does
+   `sound/noir-sleuth.song` appear on disk. Return to Assets, choose **sound**,
+   filter `noir`, press **r**, and move it to `sound/moonlit-route.song`.
+   The open music window follows the new name.
+5. Return to Stock, choose **ins**, and filter `fm-glass`. Left-click the tile
+   and press **c**. This is the other adoption door: it writes an immediate,
+   byte-identical `ins/fm-glass.ins`, refreshes Assets, and marks that tile for
+   its green arrival flash. Use this door when you already know you want the
+   original unchanged.
+6. In Assets choose **sound** and filter `fm-glass`. Double-click the project
+   tile: its synth window opens clean because the direct copy is already saved.
+   Hold **z** to audition the bell-like voice. Click its Assets tile once,
+   press **r**, and rename it `ins/moon-glass.ins`; the synth window follows.
+7. Filter Assets for `moon-glass`, then press-drag that `.ins` tile onto the
+   first track row in `moonlit-route.song`. The row outlines before release.
+   Its instrument label changes from the stock `fm-ride` reference to the
+   project-local `moon-glass`, and the song becomes dirty.
+8. Press **ctrl+s** in the music window. The adopted kit is now explicit:
 
-- **c** copy the selection into the project · **enter** same
-- **ctrl+wheel** dials the preview tile size · type in the filter to
-  fuzzy-find · the chips filter by family
+       art/characters/moonrunner.spr    character source + baked family
+       sound/moonlit-route.song         project-owned arrangement
+         -> ins/moon-glass.ins          project-local track voice
 
-Each family remembers its own scroll position. A shorter family, a narrower
-filter, a new tile size, or a resized window is clamped to real content instead
-of leaving the grid apparently blank below its last row.
+9. The safe experiment pattern is now yours: **double-click** when you want an
+   unsaved sandbox, **c / enter** when you want an exact file immediately, and
+   **drag** when a receiving well or track should decide how to adopt it. Name
+   the result for its role before game code starts depending on the path.
 
-Full reference: [The assets browser](engine/stock/docs/win-assets.md),
-[the synth](engine/stock/docs/win-synth.md), and
-[the music tracker](engine/stock/docs/win-music.md).
+The copied song's untouched tracks may still name `engine/stock/ins/...`.
+Those references are valid because the stock library ships with the engine;
+replace only the voices you intend to own and edit locally.
+
+Full reference: [every Stock control](engine/stock/docs/ref-stock.md),
+[the Assets browser](engine/stock/docs/ref-assets.md),
+[the music window](engine/stock/docs/win-music.md), and
+[the synth](engine/stock/docs/ref-synth.md).
