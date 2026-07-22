@@ -83,8 +83,9 @@ readout at the canvas's top-right as you move the mouse.
 
 11. Frames for the animator: in the frames row click **dup** — the
    chip between **+** and **−** at the row's right edge — twice.
-   Frames 2 and 3 are byte-copies of your hero — the strip the
-   animation window will cut into idle/walk/blink clips next session.
+   Frames 2 and 3 are byte-copies of your hero — the strip
+   [the animation tutorial](engine/stock/docs/win-anim.md) cuts into
+   idle/walk/blink clips.
 12. **ctrl+s** — the `.spr` saves and its sibling `.png` strip bakes
    (that is the texture games draw; maps and running games hot-reload
    it on the next frame). Click **done** in the header and meet your

@@ -8705,3 +8705,66 @@ classes, both fixed and both KAT'd corpus-wide (selftest +48):
 
 The four tutorial screenshots were re-taped off the relabeled chips
 (15/15 VERDICTs green; goldens untouched).
+
+## D162 — the HELPDOCS anim session: the hero animated, clip rename lands, tapes chain (2026-07-22)
+
+**Context.** HELPDOCS row H2 under the D160 contract: `win-anim.md`
+becomes the sizable tutorial (bring the H1 hero to life), `ref-anim.md`
+the complete reference, screenshots are the proof tape's own frames,
+UX rough edges found en route fixed at class level.
+
+**The session.** `ref-anim.md` covers the full control surface by UI
+region (binding + the sprite-header door, the shared-document/journal
+contract, preview pane + its no-clips strip cycle, clip rail, transport
++ loop semantics incl. the pingpong bounce order, entry chips + fields,
+hotkeys, the timing model — 1-based UI over 0-based data — and the
+`.anim` sidecar/`cm.anim` runtime pattern). `win-anim.md` is the
+"bring the hero to life" tutorial: frame 2 becomes the exhale (pick
+the body green, drop the clasp pixel one row), frame 3 the blink
+(eyes dabbed shut), then three clips — idle `1:40 2:8` (uneven
+durations breathe), walk `1:6 2:6` (the same two drawings at even
+tempo read as a march: the timing lesson stated as such), blink
+`1:1 3:3 1:1` **once** (fired from code over the idle) — ending in
+**ctrl+s** and the game.step snippet. The old walkthrough's timing
+wisdom survives inside the new steps; the old workflow bullets grew
+into the reference. `REF_DOCS` grows the anim row (selftest 25,257,
++10).
+
+**The UX fixes the session surfaced.** (1) The tutorial names clips
+and the window could not rename one — clips were stuck as `clipN`,
+reachable only by hand-editing the `.spr`; the old doc even described
+a name field that did not exist. The entry row now carries **name**
+(empty or already-taken names refused: the name is `anim.find`'s
+lookup key and the rail's selection key). (2) No kit hotkeys — the
+old doc promised **space** and nothing dispatched it; **space**
+(play/pause) and **l** (loop cycle) land as the sound player's
+convention, hint strip for free. (3) The preview cache keyed only
+(doc, frame), so a paint committed from a sprite window on the same
+path never reached a PAUSED preview until the playhead moved — the
+key now includes the shared journal's position (undo/redo/save were
+already covered by doc identity re-adopts).
+
+**Binding: tutorial tapes may chain.** H2's tutorial legitimately
+starts on H1's artifact (the saved hero + the restored view-mode
+session), so its tape runs on a smoke copy that has already run the
+H1 tape — the capture recipe in the tape header spells out both runs,
+and per-shot reruns take a FRESH copy each time (the H1 save makes
+reruns on a shared copy non-idempotent: the spawn door would hit the
+open/overwrite choice). The chain is the user's own story — finish
+the sprite tutorial, open the animation window. 20/20 VERDICTs green;
+the final probe replays the doc's game.step math verbatim against the
+saved `art/hero.anim` (frame_at boundaries, duration, the once-hold).
+
+**Deferred honestly:** mid-gesture (uncommitted) stroke pixels still
+wait for the commit to reach a paused preview — commit-grain
+freshness is the contract; the entry-chip row truncates on narrow
+windows (documented "widen the window", the palette-row precedent);
+entries append only (+f copies the last — reordering is remove +
+re-add); the clip rail neither scrolls nor pages past ~9 clips; the
+duplicate-name refusal is silent (no toast).
+
+**Revisit triggers.** New anim-window controls (extend `ref-anim.md`;
+the hotkey sweep catches kit keys automatically); a real project
+overflowing the clip rail (add scroll); HELPDOCS rows landing (grow
+`REF_DOCS`, ship the row's tape); if a later session gives the hero
+true contact frames, re-shoot the walk phases.

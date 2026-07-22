@@ -3,7 +3,48 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 2: the sprite editor (H1; D161)
+## Current handoff — HELPDOCS session 3: the animation window (H2; D162)
+
+**This session (2026-07-22, continued): HELPDOCS H2 as queued — landed
+as D162** in two feature/docs commits (`c31a1d0`, `122c9bf`) plus the
+docs commit carrying this note. (1) **The docs**: `ref-anim.md` — the
+complete control surface by UI region (binding + the sprite-header
+door, the shared-document/journal contract, preview pane, clip rail,
+transport + loop semantics, entry chips + fields, hotkeys, the
+1-based-UI-over-0-based-data timing model, the `.anim`/`cm.anim`
+runtime pattern); `win-anim.md` rewritten as the **bring-the-hero-to-
+life tutorial** — frame 2 becomes the exhale (pick the body green,
+drop the clasp pixel), frame 3 the blink, then idle `1:40 2:8` / walk
+`1:6 2:6` (the timing lesson: same drawings, new read) / blink once,
+ending in ctrl+s and the game.step snippet; four screenshots ARE the
+tape's frames (clips rail, both walk phases, the timing row; montage
+on llm-feed with the taste question). (2) **The UX fixes the ask
+exposed**: the clip **name** field (the tutorial names clips; the
+window couldn't rename one and the old doc described a field that
+didn't exist), **space**/**l** kit hotkeys (the old doc promised
+space; nothing dispatched it), and paused-preview freshness (the
+cache now keys on the shared journal's position, so a cross-window
+paint commit reaches a paused preview). (3) **The tape SHIPS**:
+`tools/drive/tape-anim-tutorial.lua` CHAINS on H1's ending — fresh
+smoke copy, H1 tape run (saves the hero, leaves the session), then
+this tape on the restored session; 20/20 VERDICTs green including a
+final probe replaying the doc's game.step math verbatim against the
+saved `art/hero.anim`. Fresh copy per shot rerun (the H1 save makes
+shared-copy reruns non-idempotent) — the recipe is the tape header.
+`REF_DOCS` grew the anim row. **Proof:** Linux selftest **25,257**
+(+10); `nix run .#test` ALL GREEN, every golden byte-identical (the
+anim window grew a field + hotkeys, no golden opens it); **Windows
+stage REFRESHED**, NATIVE selftest **25,259** = Linux + 2. **Deferred
+honestly (in D162):** mid-gesture stroke pixels reach a paused
+preview at commit grain only; entry chips truncate on narrow windows
+(documented); entries append-only; the clip rail doesn't scroll; the
+duplicate-name refusal is silent. **Exact next step:** the human's
+native pass — the four captures at doc size, the rename/space feel, a
+reader pass of the tutorial — then the next HELPDOCS row (**H3 — the
+palette window**) after `/clear`. The round-13 human items
+(held-audition feel pass, rc.9 release check) remain open below.
+
+## Previous handoff — HELPDOCS session 2: the sprite editor (H1; D161)
 
 **This session (2026-07-22, continued): HELPDOCS H1 as queued — landed
 as D161** in three commits (`814524c`, `288248c`, + the docs commit

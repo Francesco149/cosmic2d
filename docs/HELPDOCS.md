@@ -102,11 +102,17 @@ presets last (they cross-link finished tool docs and reuse their media).
   the tape caught: the bucket has no brush strip, step 8 returns to
   the pen first. The tape SHIPS at `tools/drive/tape-sprite-tutorial.lua`
   carrying the §3 capture recipe — the convention for every next row.
-- [ ] **H2 — the animation window**. Tutorial: bring the H1 hero to life —
-  cut the strip into idle/walk/blink clips, tune frame durations, loop
-  and preview, use the clip from `game.step`. Shots: the strip cut into
-  clips, the preview running (two phases), the timing row. Reference:
-  `ref-anim.md`. Sources: `win/anim.lua`, scripting.md's anim section.
+- [x] **H2 — the animation window**. DONE 2026-07-22 (D162). The
+  "bring the hero to life" tutorial (exhale + blink frames painted,
+  then idle/walk/blink cut with the timing lessons — uneven idle,
+  even-tempo march, once-blink from code), `ref-anim.md` with the
+  complete surface, four taped screenshots, the `REF_DOCS` anim row.
+  The UX fixes the session surfaced: the clip **name** field (clips
+  were stuck as clipN), the space/l kit hotkeys (the old doc promised
+  space), paused-preview freshness on cross-window commits. The tape
+  chains on H1's saved hero (`tools/drive/tape-anim-tutorial.lua`,
+  20/20 VERDICTs; fresh copy per shot rerun — the recipe is in the
+  header).
 - [ ] **H3 — the palette window**. Tutorial: build a cohesive 16-color
   game palette from three fundamentals (the win-palette guide grows into
   the tutorial: mix scratch → ramps → adopt/append → save → stack it in
