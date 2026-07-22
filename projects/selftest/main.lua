@@ -10196,6 +10196,10 @@ local function t_ed_viewlock()
   check(SP.takes_middle(sw, ed) == true,
         "ed.viewlock: focused sprite MMB stays")
   local TM = cm.require("cm.ed.win.tmap")
+  check(TM.view_status(3, 4, true, 2, 1.249)
+          == "cell 3,4 · tile 2 · 125%"
+        and TM.view_status(0, 0, false, 0, 0.5) == "50%",
+        "ed.tmap: view status names cell + stored tile only over the grid")
   local tw = wm.spawn(ed.doc, "tmap", 0, 700, 300, 200,
                       { path = "deco.tm", edit = true })
   check(TM.own_view(tw) == true, "ed.viewlock: edit tmap locks")
@@ -12558,7 +12562,7 @@ local function t_docs()
                      { "sprite", "ref-sprite.md" }, { "anim", "ref-anim.md" },
                      { "palette", "ref-palette.md" },
                      { "assets", "ref-assets.md" }, { "stock", "ref-stock.md" },
-                     { "map", "ref-map.md" } }
+                     { "map", "ref-map.md" }, { "tmap", "ref-tmap.md" } }
   for _, row in ipairs(REF_DOCS) do
     local kindname, refname = row[1], row[2]
     local rd = live_by_name[refname]

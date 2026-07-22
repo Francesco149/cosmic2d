@@ -43,6 +43,16 @@ local COL = {
 local TOOLS = { { "pen", "P" }, { "eraser", "E" }, { "fill", "F" },
                 { "pick", "K" } }
 
+-- The compact top-right canvas readout. Tilemap work is addressed in cells,
+-- and exact recipes need both the zero-based cell under the pointer and the
+-- tile id stored there. Kept pure so the in-grid and off-grid forms stay
+-- KAT-pinned as the tutorial surface evolves.
+function M.view_status(cx, cy, inside, id, zoom)
+  local tail = ("%d%%"):format(math.floor(zoom * 100 + 0.5))
+  if not inside then return tail end
+  return ("cell %d,%d · tile %d · %s"):format(cx, cy, id or 0, tail)
+end
+
 function M.defaults()
   return { path = "", edit = false, tool = "pen", tid = 1 }
 end
@@ -446,11 +456,15 @@ function M.draw(win, ctx)
     end
   end
 
-  -- zoom chip
-  local chip = ("%d%%"):format(math.floor(zoom * 100 + 0.5))
+  -- cell address + stored tile id + zoom. Coordinates are zero-based grid
+  -- cells (not screen pixels); outside the authored grid the bay stays compact.
+  local chip = M.view_status(cellx, celly, over and inmap,
+                             inmap and tmap.get(doc, cellx, celly) or 0, zoom)
   local cw2 = pal.x_ig_text_size(chip, px * 0.85, 0)
-  pal.x_ig_text(cvx + cvw - cw2 - 6 * z, cvy + 4 * z, px * 0.85, COL.dim,
-                chip, 0)
+  pal.x_ig_rect_fill(cvx + cvw - cw2 - 12 * z, cvy + 4 * z,
+                     cw2 + 8 * z, px * 1.4, 0x1a1728cc, 3 * z)
+  pal.x_ig_text(cvx + cvw - cw2 - 8 * z, cvy + 4 * z + px * 0.2,
+                px * 0.85, COL.text, chip, 0)
 
   -- the focus lock, unmissable (the map window's EDITING-chip idiom)
   if ctx.focused and win.edit then
