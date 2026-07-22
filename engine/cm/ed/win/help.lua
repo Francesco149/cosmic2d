@@ -643,7 +643,12 @@ local function layout_doc(src, maxw, px, z, image_load)
         L.liney[ln] = y
         local tex = image_load and image_load(target)
         if tex then
-          local dw, dh = M.image_fit(tex.w, tex.h, maxw, z)
+          -- "@2x" in the name marks a supersampled capture (D163): it
+          -- lays out at half its intrinsic pixels, so it reads the same
+          -- size as a 1x shot and turns crisp instead of chunky as the
+          -- reader scales up.
+          local div = target:find("@2x", 1, true) and 2 or 1
+          local dw, dh = M.image_fit(tex.w / div, tex.h / div, maxw, z)
           local ix = (maxw - dw) * 0.5
           L.decor[#L.decor + 1] = { t = "rect", x = ix - 2 * z,
                                     y = y - 2 * z, w = dw + 4 * z,
@@ -706,7 +711,10 @@ local function paint_doc(win, L, x0, yoff, maxw, px, z, i, ctx, hlmap, sh)
       if d.t == "rect" then
         pal.x_ig_rect_fill(x0 + d.x, yoff + d.y, d.w, d.h, d.col, d.rad)
       elseif d.t == "image" then
-        pal.x_ig_image(d.tex.id, x0 + d.x, yoff + d.y, d.w, d.h)
+        -- screenshots are pictures, not game pixels: the linear sampler
+        -- (D163) — fractional NEAREST resampling shears their glyphs
+        pal.x_ig_image(d.tex.id, x0 + d.x, yoff + d.y, d.w, d.h,
+                       0, 0, 1, 1, 0xffffffff, true)
       elseif d.t == "circle" then
         pal.x_ig_circle_fill(x0 + d.x, yoff + d.y, d.rad, d.col)
       else

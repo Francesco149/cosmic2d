@@ -85,6 +85,14 @@ A tool's docs session is complete when ALL of these hold:
   (`tools/drive/tape-sprite-tutorial.lua` — HELPDOCS tapes ship in-repo
   as of H1): fresh smoke copy → drive the tutorial → `--shot` at named
   steps → crop to the window → stage under `engine/stock/docs/media/`.
+- **Shots capture at 2x** (D163, the human's report: 1x captures
+  rasterize glyphs at sizes no scaled display ever shows). Tapes declare
+  `D.shot_zoom(name, frame, kind)`; per-shot reruns set `SHOT=<name>` so
+  the camera zooms ×2 two frames before the shot (input always runs at
+  z = 1 — shots sit at gesture-quiet frames). Files ship as
+  `media/<name>@2x.png`: the reader lays an `@2x` image out at half its
+  intrinsic pixels and samples screenshots linearly, so the budget is
+  layout size ≤700x550 (intrinsic ≤1400x1100).
 
 ## 4. The queue — one focused session per row
 

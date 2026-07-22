@@ -556,8 +556,12 @@ static int l_ig_text_size(lua_State *L) {
   return 2;
 }
 
-/* pal.x_ig_image(tex, x, y, w, h [,u0,v0,u1,v1, rgba]) — a PAL texture on the
- * drawlist; tex == -1 = the game internal target (the live-game preview). */
+/* pal.x_ig_image(tex, x, y, w, h [,u0,v0,u1,v1, rgba, linear]) — a PAL
+ * texture on the drawlist; tex == -1 = the game internal target (the
+ * live-game preview). `linear` (default false) keeps the backend's linear
+ * sampler instead of the NEAREST pixel-art contract — for content that is
+ * a picture rather than game pixels (the help reader's screenshots), where
+ * fractional NEAREST resampling shears glyphs and 1px UI lines. */
 static int l_ig_image(lua_State *L) {
   if (!in_frame()) return 0;
   int tex = (int)luaL_checkinteger(L, 1);
@@ -568,6 +572,7 @@ static int l_ig_image(lua_State *L) {
   float u1 = (float)luaL_optnumber(L, 8, 1.0);
   float v1 = (float)luaL_optnumber(L, 9, 1.0);
   uint32_t c = (uint32_t)luaL_optinteger(L, 10, 0xffffffffu);
+  bool linear = lua_toboolean(L, 11);
   SDL_GPUTexture *t;
   if (tex == -1) {
     t = G.target;
@@ -575,7 +580,7 @@ static int l_ig_image(lua_State *L) {
     if (tex < 0 || tex >= PAL_MAX_TEX || !G.texs[tex].used) return 0;
     t = G.texs[tex].tex;
   }
-  want_px(true);
+  want_px(!linear);
   dl()->AddImage((ImTextureID)(intptr_t)t, ImVec2(x, y), ImVec2(x + w, y + h),
                  ImVec2(u0, v0), ImVec2(u1, v1), ig_col(c));
   return 0;

@@ -12568,7 +12568,10 @@ local function t_docs()
           pal.log("docs image failed: " .. d.name .. " -> " .. tostring(target))
         else
           image_paths[target] = true
-          if iw > 700 or ih > 550 then image_small = false end
+          -- the budget caps LAYOUT size: a "@2x" capture (D163) lays
+          -- out at half its intrinsic pixels in the reader
+          local div = target:find("@2x", 1, true) and 2 or 1
+          if iw / div > 700 or ih / div > 550 then image_small = false end
         end
       end
     end
@@ -12579,7 +12582,8 @@ local function t_docs()
         "docs.images: tutorials bundle a useful screenshot set ("
         .. image_refs .. " refs / " .. unique_images .. " files)")
   check(image_ok, "docs.images: every image has alt text and decodes")
-  check(image_small, "docs.images: every bundled capture is at most 700x550")
+  check(image_small,
+        "docs.images: every bundled capture lays out at most 700x550")
   -- the A8 searchable-reference bar: every supported cm.* lands a scripting.md
   -- hit whose SECTION heading names the module (tolerant of retitles that keep
   -- the module name in the heading — the D110 loop: what is written must be

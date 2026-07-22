@@ -109,6 +109,35 @@ function D.hold(f, sc, n)
   D.at(f + n, function() return { D.keyev(sc, false) } end)
 end
 
+-- the HELPDOCS @2x shot mechanism (D163): proof runs capture at z = 1;
+-- a per-shot rerun sets SHOT="<name>" (via --eval, before dofile'ing the
+-- tape) and the tape declares D.shot_zoom(name, frame, kind[, mag]) for
+-- each shot — when SHOT matches, the camera zooms ×mag (default 2)
+-- anchored 20 design-px above-left of the newest <kind> window, two
+-- frames before the shot, so glyphs RASTERIZE at mag× (crisp capture)
+-- while every input step ran at z = 1. CROP rects read off D.win at the
+-- shot frame scale along automatically; multiply any design-px crop
+-- offsets by r.z. Crops ship as media/<name>@2x.png.
+function D.shot_zoom(name, frame, kind, mag)
+  if rawget(_G, "SHOT") ~= name then return end
+  D.at(frame - 2, function()
+    local doc = cm.ed.doc
+    local r
+    for _, w in ipairs(doc.wins) do
+      if w.kind == kind then r = w end
+    end
+    if not r then return end
+    doc.cam.zoom = doc.cam.zoom * (mag or 2)
+    -- anchor: the window's top-left lands at screen (40, 48) — right of
+    -- the shell's top-left HUD pills and below the top HUD row (rows
+    -- 8..32). The rerun's --win must leave ~30 rows under the window's
+    -- 2x height for the bottom hint bar (each tape's header says which
+    -- shots need a taller surface).
+    doc.cam.x, doc.cam.y = r.x - 20, r.y - 24
+    cm.ed.touch()
+  end)
+end
+
 -- editor helpers: newest window of a kind → screen-space rects
 function D.win(kind)
   local doc = cm.ed.doc
