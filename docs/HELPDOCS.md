@@ -151,12 +151,21 @@ presets last (they cross-link finished tool docs and reuse their media).
   **sound** family and routes OS-dropped instruments to `ins/`. The shipped
   `tools/drive/tape-assets-stock-tutorial.lua` chains H1 and passes 20/20
   VERDICTs through the final local instrument binding.
-- [ ] **H5 — the map window**. Tutorial: build a playable level — collider
-  chains with slopes, one-ways, a hazard, spawn/goal markers, freehand
-  placements, the CTRL-snap grammar, then walk it in the game window
-  (grow the layered-lakeside walkthrough). Shots: COL mode chains,
-  marker placement, the snap grid engaged, the level running. Reference:
-  `ref-map.md`. Sources: `win/map.lua`, MAPS.md for grammar names.
+- [x] **H5 — the map window**. DONE 2026-07-22 (D166). The 13-step
+  "build Moonlit Crossing" tutorial authors one complete playable route:
+  a closed solid chain with two true 45-degree banks, a one-way bridge,
+  a circle query hazard, fully described spawn/goal markers, a generated
+  graybox skin, and freehand plus CTRL-aligned plank art; it then saves,
+  loads through the smoke console, walks the slopes, and proves the hazard
+  reset. `ref-map.md` covers the complete window and CMAP/runtime contract;
+  four inspected @2x shots show COL chains, marker fields, a live snap carry,
+  and the running route; `REF_DOCS` grows the map row. The exact lesson
+  surfaced three UX truths: the view now reports authored `x,y`, Graybox
+  creates a fresh nested map's parent directory before its first save, and
+  the selected-collider hint names the **closed** chip instead of promising
+  a nonexistent "c closes" shortcut. The shipped
+  `tools/drive/tape-map-tutorial.lua` passes 21/21 VERDICTs through authored
+  bytes, saved assets, runtime collision, slope traversal, and hazard reset.
 - [ ] **H6 — the tilemap window**. Tutorial: a reusable ruin chunk — tile
   painting, erase (right-button), then placing the `.tm` as objects in
   an H5-style map twice. Shots: mid-paint, the chunk placed twice.

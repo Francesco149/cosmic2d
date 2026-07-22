@@ -3,7 +3,69 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 5: Assets + Stock (H4; D165)
+## Current handoff — HELPDOCS session 6: the Map window (H5; D166)
+
+**This session (2026-07-22, continued): HELPDOCS H5 as queued — landed as
+D166** in the implementation/tutorial commit `e1cdd0c` and the docs commit
+carrying this handoff. (1) **The tutorial:** `win-map.md` is now the 13-step
+**build Moonlit Crossing** lesson. It authors one exact 480x270 route: named
+terrain/props layers, a closed eight-point solid with two true 45-degree banks,
+a dashed one-way bridge, a circle query hazard, complete spawn/goal marker
+records, a generated graybox skin, and two planks that distinguish freehand
+placement from Ctrl alignment. It saves, loads the CMAP through the bundled
+smoke console, walks the real mover over both slopes, and turns the circle into
+a temporary reset hazard; the follow-on code section gives the reusable
+`map.use`/sync/markers/move/query/draw shape. (2) **The complete reference:**
+new `ref-map.md` covers every header chip, mode, pointer/key gesture, view
+lock/readout, drill/group, collider kind and draw form, Ctrl snap target and
+edge-run, marker field/extras, asset/open/drop path, attached-collider and
+placement inspector, layer/parallax control, map/Graybox field, clipboard/order
+door, journal/save/hot-reload/rewind failure boundary, CMAP chunk, and runtime
+API. `REF_DOCS` grows the map row. (3) **The pictures:** four real @2x crops
+show the selected slope/one-way chains, the goal's complete marker inspector,
+a live Ctrl plank carry over the generated terrain, and Moonlit Crossing in
+the game window. Each was inspected at source resolution, the tutorial renders
+cleanly in the real help reader, and the labelled montage is on llm-feed.
+
+**The UX fixes the exact lesson exposed:** a coordinate recipe was guesswork
+because the map view showed only zoom/grid. Its top-right status now includes
+rounded authored `x,y` while the pointer is over the view; the off-view form
+stays compact, and the pure formatter is KAT-pinned. Graybox could not publish
+`maps/name_gb.tm` before a fresh `maps/name.map` had ever been saved because
+the parent did not exist; it now creates that project-relative parent before
+the atomic write while preserving the no-map-mutation failure contract. Visual
+inspection then caught the selected-collider hint promising **c closes** even
+though plain `c` selects Col mode; it now names the visible **closed** chip,
+and MAPS.md records the current boundary: Move manipulates, Col/Mkr place, Sel
+marquees once and returns to Move.
+
+**The tape SHIPS:** `tools/drive/tape-map-tutorial.lua` starts from a fresh
+smoke copy and drives the page as written; **21/21 VERDICTs** cover the quiet
+canvas/new-map door, fields/layers, exact chain and one-way vertices, circle,
+both full marker records, generated tilemap placement, freehand/snapped plank
+coordinates, dirty/save bytes, runtime load/query, grounded slope traversal,
+and hazard reset. Named-shot reruns use D163's @2x camera move and re-arm only
+the capture-only carry afterward, so the ghost and snap guide are real
+current-scale UI.
+
+**Proof:** Linux selftest **25,310** (+10); `nix run .#test` **ALL GREEN**,
+every committed trace and all 19 pixel goldens byte-identical; **Windows stage
+REFRESHED** (11 durable entries + shortcut), NATIVE selftest **25,312** =
+Linux + 2 on PAL API 24. **Deferred honestly (D166):** the tutorial names and
+locks layers but does not tape parallax or e/g gating; grouping, clipboard/
+z-order, attached colliders, OS drops, double-open, and reset stay reference +
+focused-KAT territory. The console circle adapter is a playtest example, not
+automatic hazard semantics. Graybox remains a replaceable blockout; H6 owns
+painting reusable `.tm` art. Arbitrary typed chain-vertex coordinates remain a
+revisit trigger; today the exact doors are live `x,y` feedback plus Ctrl snap.
+
+**Exact next step:** the human's native reader/taste pass on the four frames —
+are the solid/one-way distinction, complete marker metadata, active snap ghost,
+and authored-vs-running continuity legible without zooming — then H6, the
+Tilemap window's reusable-ruin-chunk tutorial, after `/clear`. The round-13
+human items (held-audition feel pass, rc.9 release check) remain open below.
+
+## Previous handoff — HELPDOCS session 5: Assets + Stock (H4; D165)
 
 **This session (2026-07-22, continued): HELPDOCS H4 as queued — landed as
 D165** in the UX commit `3dd31a7`, the tutorial/reference commit `810210d`,

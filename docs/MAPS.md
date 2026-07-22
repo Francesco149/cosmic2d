@@ -563,6 +563,9 @@ ref) and an `anim:<clip>` cycler for .spr. Panel/active-layer/lock live on
 
 ## 14. Teidraw direct manipulation + grouping (as-built, D061, 2026-07-15)
 
+This section records the D061 intermediate surface. The H5 audit in §15 is
+the current mode/close contract and supersedes those two details below.
+
 The R8 tool-modal gestures (§6) collapsed into one teidraw model. §6/§7's
 select/collider/marker split still names the tools, but SELECTION + MOVE are
 now unified across all of them.
@@ -601,3 +604,29 @@ the project root then the engine root / cwd, so `engine/stock/*` sprites and
 tilesets render in the map window the way the game resolves them (win_tex,
 tm_doc, tmap.tileset_tex). The game side mirrors it (`cm.map.res_asset` for
 place_tex/place_tm). Stock art is placeable in any project.
+
+## 15. H5 tutorial audit: place in modes, manipulate in move (as-built, D166, 2026-07-22)
+
+The executable HELPDOCS H5 pass audited every map gesture against the current
+window. This section supersedes §14's intermediate claim that direct picking
+runs in every tool. **Move** is the single manipulation surface: its hit stack
+drills collider vertices/edges, markers, groups, and placements front-to-back.
+**Col** and **mkr** only place new colliders and markers; they never grab an
+existing object from the drawing press. **Sel** is a one-shot marquee and
+returns to Move with its result. This separation is what lets a developer
+start a chain on a visually busy ledge without first selecting the ledge.
+
+Plain `c` always selects Col mode. It is not also a close-chain command. The
+selected chain's **closed** chip is the sole closure toggle; the old bottom
+hint saying "c closes" was stale and now names that chip. Line creation is
+still drag A-to-B or click A/click B, followed by Shift+click append. Ctrl is
+still the precise variant (vertices/edges/tile edges/45-degree ray/grid), and
+plain placement remains free pixel movement.
+
+Exact-coordinate lessons are now followable without estimating against the
+grid: the view's top-right status reads rounded authored `x,y`, zoom, and grid
+while the pointer is over it. Graybox publication also creates the generated
+tilemap's project-relative parent before its atomic write, so the natural
+new-map sequence can graybox `maps/name.map` before that map's first Ctrl+S.
+The H5 tape pins the complete authored CMAP and then walks its real runtime
+world (21/21 checks); `ref-map.md` is the current exhaustive surface contract.

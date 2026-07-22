@@ -9013,3 +9013,79 @@ basenames make a real project ambiguous (show path context); Stock gains a
 preview transport (keep it non-editing and editor-bank-only); new file families
 or receiver drops land (extend both references and the tape). HELPDOCS H5 now
 owns the map-building side of project assets.
+
+## D166 — the map tutorial proves a route, and exact coordinates are authoring UI (2026-07-22)
+
+**Context.** HELPDOCS H5 required more than a collider catalogue: one detailed
+lesson had to create a playable level, show the decisive editor states, and
+walk the result through the real runtime. The old map guide mixed historical
+grammars with the current surface. In particular, it gave no way to follow an
+exact coordinate recipe by eye, MAPS.md still described `C` as a close-chain
+command even though plain `c` now selects Col mode, and Graybox failed in the
+natural new-map order when `maps/` did not exist yet.
+
+**The artifact and lesson.** `win-map.md` now builds **Moonlit Crossing** in
+13 exact steps. The authored CMAP has a closed eight-point terrain chain with
+two true 45-degree banks, a dashed one-way bridge, a circle query hazard,
+complete `spawn` and `goal` marker records, two named layers, a generated
+graybox tilemap, and two plank placements demonstrating free pixels versus
+Ctrl alignment. The lesson then saves, uses the bundled smoke console to load
+the map into its stable room slot, wraps circles as a temporary reset hazard,
+and walks the real mover up and down the slopes. A reusable code section shows
+the production shape: `map.use`, revision-aware marker derivation,
+`world:move`, `world:circles`, goal overlap, `draw_fill`, and `draw_places`.
+
+**The current interaction boundary.** Move is the one direct-manipulation
+mode: repeated clicks drill collider handles/edges, markers, groups, and
+placements. Col and Mkr only place; Sel is a one-shot marquee that returns to
+Move. A selected chain closes only through its visible **closed** chip. Plain
+`c` always enters Col. The stale selected-collider hint now says "closed chip
+toggles" instead of promising "c closes", and MAPS.md gains an as-built H5
+section that explicitly supersedes the older intermediate description.
+
+**The two product fixes.** The map view's compact top-right status now reports
+rounded authored `x,y` while the pointer is over the view, followed by zoom and
+grid; off-view it keeps the compact zoom/grid form. `M.view_status` is pure and
+KAT-pinned. Graybox now creates the generated tilemap's project-relative parent
+before its atomic write, so `maps/moonlit-crossing.map` may publish
+`maps/moonlit-crossing_gb.tm` before the map's first Ctrl+S. The existing
+failure door remains unchanged: a failed atomic write does not mutate the map.
+
+**Reference, tape, and pictures.** New `ref-map.md` is the exhaustive surface
+contract: create/rebind, all header chips and state, view lock/readout, Move
+drill, selection/groups, collider kinds and draw grammar, Ctrl target priority
+and edge-runs, markers/extras, asset drops/opening, placement and attached
+collider inspectors, layers/parallax, map fields/Graybox, clipboard/order,
+hotkeys, journal/save/reload/rewind failures, CMAP chunks, and runtime use.
+`REF_DOCS` grows the map row. The shipped
+`tools/drive/tape-map-tutorial.lua` drives the written lesson on a fresh smoke
+copy and passes **21/21 VERDICTs**, including every authored coordinate and
+field, generated/saved bytes, runtime circle query, grounded slope traversal,
+and hazard reset. Four real @2x crops show the selected solid/one-way chains,
+complete marker inspector, live Ctrl carry over the generated skin, and the
+same route running. All were inspected individually and in the real reader;
+the labelled montage is on llm-feed.
+
+**Proof.** Linux selftest **25,310** (+10); `nix run .#test` is ALL GREEN with
+every committed trace and all 19 pixel goldens byte-identical. The Windows
+development tree is refreshed (11 durable entries plus the Start Menu
+shortcut), and the staged native executable passes **25,312** checks on PAL
+API 24.
+
+**Deferred honestly.** The tutorial demonstrates layer naming/lock but not
+parallax or the independent editor/game visibility switches; it does not tape
+grouping, clipboard/z-order, attached colliders, OS drops, asset double-click,
+or destructive reset. Those surfaces are described in the reference and keep
+their existing focused KAT/durability coverage. The circle-to-reset wrapper is
+deliberately a smoke-console adapter, not a claim that circles damage actors by
+themselves. Graybox is a replaceable blockout skin; HELPDOCS H6 owns authored
+tile painting and reuse. Chain vertices have a live coordinate readout and
+precise snapping, not typed per-vertex fields.
+
+**Revisit triggers.** A project needs arbitrary non-grid vertex entry (add an
+exact selected-vertex inspector); a second authoring mode begins picking
+existing objects (preserve the clear place/manipulate boundary); Graybox gains
+more generated asset families (keep parent creation and atomic failure
+semantics shared); a new map control or CMAP chunk lands (extend
+`ref-map.md` and the executable tape). HELPDOCS H6 now owns the reusable
+tilemap chunk that replaces this lesson's generated skin.
