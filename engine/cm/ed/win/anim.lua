@@ -94,9 +94,15 @@ local function checker(x, y, w, h, z)
   pal.x_ig_clip_pop()
 end
 
--- composite the preview frame (1-based) into the window's own texture
-local function refresh(pw, doc, fi)
-  if pw.tex and pw.docref == doc and pw.frame == fi then return end
+-- composite the preview frame (1-based) into the window's own texture.
+-- Cache key: doc identity (undo/redo/save re-adopt a fresh doc), the
+-- frame, and the shared journal's position — a paint gesture committed
+-- from a sprite window on the same path must reach a PAUSED preview
+-- too, not only when the playhead moves (mid-gesture pixels still wait
+-- for the commit; the moving playhead covers that while playing).
+local function refresh(pw, doc, fi, jp, jn)
+  if pw.tex and pw.docref == doc and pw.frame == fi
+     and pw.jp == jp and pw.jn == jn then return end
   if not pw.comp or pw.comp.w ~= doc.w or pw.comp.h ~= doc.h then
     pw.comp = paint.image(doc.w, doc.h)
     if pw.tex then
@@ -111,7 +117,7 @@ local function refresh(pw, doc, fi)
     pw.tex = pal.tex_create(doc.w, doc.h,
                             pw.comp.buf:str(0, doc.w * doc.h * 4))
   end
-  pw.docref, pw.frame = doc, fi
+  pw.docref, pw.frame, pw.jp, pw.jn = doc, fi, jp, jn
 end
 
 local function button(i, ctx, x, y, w, h, label, on, px)
@@ -176,7 +182,7 @@ function M.draw(win, ctx)
     fi = (pw.t // 8) % math.max(1, doc.frames) + 1
   end
   if fi < 1 then fi = 1 elseif fi > doc.frames then fi = doc.frames end
-  refresh(pw, doc, fi)
+  refresh(pw, doc, fi, p.j and p.j.pos or 0, p.j and #p.j.entries or 0)
 
   -- preview (aspect fit over a checker)
   checker(cvx, cvy, cvw, cvh, z)
@@ -317,11 +323,47 @@ function M.draw(win, ctx)
         sel.dur = math.max(1, math.floor(tonumber(got)))
         commit()
       end
+      -- rename the selected clip. The name is the runtime lookup key
+      -- (anim.find) and the rail's selection key, so an empty or
+      -- already-taken name is refused rather than committed.
+      got = field("ann", "name", cur.name or "", 52 * z)
+      if got and got ~= "" and got ~= cur.name
+         and not anim.find(clips, got) then
+        cur.name = got
+        win.clip = got
+        commit()
+      end
     end
   else
     pal.x_ig_text(x + 4 * z, ty + (th - px) * 0.45, px * 0.9, COL.dim,
                   "no clips — + adds one (plays all frames meanwhile)", 0)
   end
 end
+
+-- per-window hotkeys (EDITOR.md §13): the preview transport without
+-- reaching for the mouse — space matches the sound player's transport,
+-- l cycles the selected clip's end behavior like the loop chip.
+M.hotkeys = {
+  { key = "space", hint = "play/pause",
+    when = function(win) return win.path ~= "" end,
+    fn = function(win, ed)
+      local p = plumb(ed, win.path)
+      p.playing = not p.playing
+      p.t = 0
+      ed.touch()
+    end },
+  { key = "l", hint = "loop",
+    when = function(win) return win.path ~= "" end,
+    fn = function(win, ed)
+      local _, p = S().open_path(ed, win.path)
+      local doc = p and p.doc
+      local cur = doc and (anim.find(doc.clips or {}, win.clip)
+                          or (doc.clips or {})[1])
+      if not cur then return end
+      cur.loop = LOOPS[cur.loop or "loop"]
+      S().commit_path(ed, win.path)
+      ed.touch()
+    end },
+}
 
 return M
