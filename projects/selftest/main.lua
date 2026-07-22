@@ -12634,6 +12634,42 @@ local function t_docs()
     check(bad == nil, "docs: " .. d.name .. " line " .. tostring(bad)
           .. " has an unbalanced **/` span (the reader parses inline "
           .. "markup per line; rewrap so spans do not cross lines)")
+    -- a >=4-space line GLUED to a prose line is a wrapped list
+    -- continuation, not a deliberate code block (human report, D161
+    -- addendum: two-digit steps' continuations rendered as code).
+    -- Deliberate indented blocks sit after a blank line; fenced bodies
+    -- are bracketed by "fence" lines — neither trips this.
+    local glued
+    for j = 2, n2 do
+      if k2[j] == "code" and k2[j - 1] == "text"
+         and l2[j - 1]:match("%S") and not l2[j]:match("^%s*```") then
+        glued = j
+        break
+      end
+    end
+    check(glued == nil, "docs: " .. d.name .. " line " .. tostring(glued)
+          .. " indents >=4 right after prose (the reader shows it as a "
+          .. "code block; keep list continuations at <=3 spaces)")
+    -- the reader font covers ASCII plus a small workhorse typographic
+    -- set; any other glyph draws as '?' (human report, D161 addendum:
+    -- the frames chip's duplicate pictograph — now the 'dup' chip).
+    local OKCP = {
+      [0xB0] = true, [0xB1] = true, [0xB5] = true, [0xB7] = true,
+      [0xD7] = true, [0x2013] = true, [0x2014] = true, [0x2026] = true,
+      [0x2190] = true, [0x2191] = true, [0x2192] = true, [0x2193] = true,
+      [0x2194] = true, [0x2212] = true, [0x2213] = true, [0x2248] = true,
+      [0x25B6] = true, [0x25C0] = true,
+    }
+    local badcp
+    for _, cp in utf8.codes(d.src) do
+      if cp > 126 and not OKCP[cp] then
+        badcp = cp
+        break
+      end
+    end
+    check(badcp == nil, "docs: " .. d.name .. " uses a glyph outside the "
+          .. "reader set (U+" .. string.format("%04X", badcp or 0)
+          .. "); the reader draws it as '?' — use a covered char or a word")
   end
 end
 

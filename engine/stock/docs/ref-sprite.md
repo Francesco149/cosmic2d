@@ -241,7 +241,7 @@ them into named clips.
 
 - **the numbered chips** — select the frame you are painting.
 - **+** — insert a blank frame after the current one.
-- **⧉** — duplicate the current frame (pixels copied, all layers).
+- **dup** — duplicate the current frame (pixels copied, all layers).
 - **−** — delete the current frame (a document keeps at least one;
   clips referencing it lose those entries).
 

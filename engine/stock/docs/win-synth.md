@@ -83,19 +83,19 @@ while you drag things — every edit is live.
 ### The jump — bend an sfx preset
 
 10. Fourth window: `ins/jump.ins`. Open **presets**, click
-    **sfx-jump** (a pulse25 chirping *up* +14 semitones in 90 ms —
-    the mirror image of your kick). Bend it yours: push **swp** to
-    +19 for more cartoon, or stretch **sw ms** toward 150 for a
-    floatier arc. **ctrl+s**.
+   **sfx-jump** (a pulse25 chirping *up* +14 semitones in 90 ms —
+   the mirror image of your kick). Bend it yours: push **swp** to
+   +19 for more cartoon, or stretch **sw ms** toward 150 for a
+   floatier arc. **ctrl+s**.
 
 ### Use the kit
 
 11. Drag any of the four from the presets rail (or an assets window)
-    onto a music window's track rail — the note roll now plays your
-    instrument ([the music window](engine/stock/docs/win-music.md)).
-    From game code, upload and trigger them with `cm.ins` + `cm.snd`
-    — the copyable four-liner is in the scripting guide's sound
-    section.
+   onto a music window's track rail — the note roll now plays your
+   instrument ([the music window](engine/stock/docs/win-music.md)).
+   From game code, upload and trigger them with `cm.ins` + `cm.snd`
+   — the copyable four-liner is in the scripting guide's sound
+   section.
 
 Where next: the reference's **preset recipes** section reverse-
 engineers every stock family — bells, strings, the whole drum kit —

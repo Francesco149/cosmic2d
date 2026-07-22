@@ -73,21 +73,22 @@ readout at the canvas's top-right as you move the mouse.
 ![Mid-stroke on the mul layer: the size-5 brush cursor, the brush strip reading size 5, op 50%, circle](media/sprite-stroke.png)
 
 10. The light layer: **+** again (**layer 3**), click **mix** twice to
-    **mix add** — this one glows. Pick the **gold swatch**, pen size
-    **2**, opacity about **60%**, and kiss the hood's right rim from
-    (20,7) to (21,12), then the right shoulder from (21,15) to (22,18).
-    A warm rim light against the cool shadow — the oldest trick in
-    pixel art.
+   **mix add** — this one glows. Pick the **gold swatch**, pen size
+   **2**, opacity about **60%**, and kiss the hood's right rim from
+   (20,7) to (21,12), then the right shoulder from (21,15) to (22,18).
+   A warm rim light against the cool shadow — the oldest trick in
+   pixel art.
 
 ![The layers rail: layer 3 selected, mix add, the stack of three](media/sprite-layers.png)
 
-11. Frames for the animator: in the frames row click **⧉** twice.
-    Frames 2 and 3 are byte-copies of your hero — the strip the
-    animation window will cut into idle/walk/blink clips next session.
+11. Frames for the animator: in the frames row click **dup** — the
+   chip between **+** and **−** at the row's right edge — twice.
+   Frames 2 and 3 are byte-copies of your hero — the strip the
+   animation window will cut into idle/walk/blink clips next session.
 12. **ctrl+s** — the `.spr` saves and its sibling `.png` strip bakes
-    (that is the texture games draw; maps and running games hot-reload
-    it on the next frame). Click **done** in the header and meet your
-    hero, composited and aspect-fit in view mode.
+   (that is the texture games draw; maps and running games hot-reload
+   it on the next frame). Click **done** in the header and meet your
+   hero, composited and aspect-fit in view mode.
 
 ![The finished hero in view mode: 32x32, 3 frames, 3 layers](media/sprite-hero.png)
 
