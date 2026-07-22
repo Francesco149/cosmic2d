@@ -121,13 +121,20 @@ presets last (they cross-link finished tool docs and reuse their media).
   chains on H1's saved hero (`tools/drive/tape-anim-tutorial.lua`,
   20/20 VERDICTs; fresh copy per shot rerun — the recipe is in the
   header).
-- [ ] **H3 — the palette window**. Tutorial: build a cohesive 16-color
-  game palette from three fundamentals (the win-palette guide grows into
-  the tutorial: mix scratch → ramps → adopt/append → save → stack it in
-  the sprite window). Shots: the picker modes, a generated ramp before/
-  after adopting, the finished palette in use. Reference:
-  `ref-palette.md` — pickers (sv/hsv/rgb/hex), shades field+slider,
-  swatch grids, +add/set, every hotkey. Sources: `win/palette.lua`.
+- [x] **H3 — the palette window**. DONE 2026-07-22 (D164). The
+  "color-script a moonlit vale" tutorial makes one cohesive 16-color
+  artifact: five-shade night-violet, moss-teal, and lantern-gold ramps,
+  one shared shadow, and one rose accent; then saves it, stacks it in the
+  sprite window, and repaints H1's hero without losing the lighting
+  layers. `ref-palette.md` covers the complete surface and `.pal`/runtime
+  contracts; five taped @2x shots replace the old 1x ramps card; and
+  `REF_DOCS` grows the palette row. The UX fix this session surfaced:
+  every drag slider now has a stable exact-value bay (degrees, percent,
+  byte channel, or count), and paste/add/dup/ramp operations stop at the
+  format's honest 256-color ceiling instead of letting the save encoder
+  hide excess working swatches. The shipped tape chains on H1
+  (`tools/drive/tape-palette-tutorial.lua`, 23/23 VERDICTs) and proves the
+  saved palette through the real asset-drag and sprite-paint payoff.
 - [ ] **H4 — the assets + stock windows** (one session, paired tools).
   Tutorial: organize a real project — folders, rename/move (`r`) with
   windows following, drag assets onto windows/wells; then shop the stock

@@ -3,7 +3,52 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — D163: the screenshot-crispness report (same session as H2)
+## Current handoff — HELPDOCS session 4: the palette window (H3; D164)
+
+**This session (2026-07-22, continued): HELPDOCS H3 as queued — landed
+as D164** in the UX/docs commits `37e1dbf` and `7fc3201`, plus the docs
+commit carrying this note. (1) **The docs:** `win-palette.md` is now the
+12-step **color-script a moonlit vale** tutorial — mix an exact violet
+fundamental in SV, replace with a five-shade hue-shifted ramp, adopt its
+middle, append exact HSV moss and RGB lantern ramps, add one rose accent,
+share the same near-black across all three families, save, drag the `.pal`
+from assets onto H1's hero, and flood its body teal under the existing
+*mul*/*add* lighting. `ref-palette.md` is the complete reference by UI
+region: file/header doors, shared document versus working scratch, every
+swatch gesture and hotkey, SV/HSV/RGB/hex pickers, add/set/dup/del/order,
+ramp math, sprite attachment, `.pal`, and `cm.palette`. Five real @2x
+captures show picker, first ramp, adopted HSV, finished palette, and the
+teal hero payoff; the obsolete 1x `palette-ramps.png` card is retired.
+`REF_DOCS` grows the palette row. (2) **The UX fix the exact tutorial
+exposed:** every drag slider now prints the value it commits in a fixed-
+width bay — H/hue in degrees, S/V as percent, RGB as bytes, ramp n as an
+integer — so following a recipe no longer means guessing position and
+the track never jumps as digit width changes. Paste, add, duplicate, and
+append-ramp also stop at the `.pal` format's 256-color maximum; the editor
+can no longer display working swatches the encoder would silently omit.
+(3) **The tape SHIPS:** `tools/drive/tape-palette-tutorial.lua` chains on
+H1's saved hero and drives the written story through the real UI, including
+asset filtering/drag attachment and final sprite fill; **23/23 VERDICTs**
+green. Both docs rendered cleanly in the reader, all five crops were
+visually inspected, and the montage is on llm-feed.
+
+**Proof:** Linux selftest **25,274** (+17); `nix run .#test` **ALL GREEN**,
+every trace and pixel golden byte-identical; **Windows stage REFRESHED**
+(11 durable entries + shortcut), NATIVE selftest **25,276** = Linux + 2
+on PAL API 24. **Deferred honestly (D164):** picker channels remain
+drag-to-value rather than typed numeric fields (hex and the shades field
+are the typed exact doors); the 256-color ceiling is a quiet no-op, not a
+toast/disabled state; swatches use the selected counter instead of drawing
+an index on every tile; attached palettes are editor paint sources, not
+indexed/LUT-linked sprite pixels; this story does not exercise clipboard,
+reorder, delete, or duplicate even though the complete reference covers
+them. **Exact next step:** the human's native reader/taste pass on the five
+shots — exact-value legibility, whether the three families read as one
+color script, and whether the teal-hero payoff is clear — then H4, the
+paired assets + stock windows, after `/clear`. The round-13 human items
+(held-audition feel pass, rc.9 release check) remain open below.
+
+## Previous handoff — D163: the screenshot-crispness report (same session as H2)
 
 **Same session, the human's report on the shipped tutorial shots:
 "fonts very pixelated and blurry, not the resolution — the editor

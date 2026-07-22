@@ -8835,3 +8835,69 @@ for 1x images displayed above zoom 1 is subsumed by re-taping.
 reader image feature that scales differently (keep the layout-size
 budget authoritative); any future in-editor capture tool (it should
 bake the @2x convention in).
+
+## D164 — the palette tutorial is a color script, and exact slider values are UI (2026-07-22)
+
+**Context.** HELPDOCS H3 asked for a detailed palette-window tutorial,
+a complete control reference, taped screenshots, and the usual rule that
+an unfollowable step is a product finding. The old guide demonstrated
+several independent ramps, but it neither made one game-ready artifact nor
+carried the palette into art. Worse, a recipe could say "H 260" while the
+window exposed only an unlabeled drag position. The `.pal` codec also caps
+at 256 colors while several UI growth doors could display more, leaving the
+encoder to omit the tail silently.
+
+**The artifact and lesson.** `win-palette.md` now makes
+`pal/moonlit-vale.pal`: night violet, moss teal, and lantern gold as three
+five-shade hue-shifted ramps; one repeated near-black joins their shadows;
+one rose accent stays scarce. The sequence deliberately crosses all three
+ways of thinking about color: SV for a by-eye fundamental, exact HSV for a
+related material, exact RGB for a supplied paint-over value, and hex for a
+known accent. It then saves, drags the palette from assets onto H1's hero,
+and floods the body from the attached row while the sprite's *mul* shadow
+and *add* rim layers preserve volume. The final code example names palette
+indices by role instead of scattering color literals.
+
+**The UI binding.** Every palette drag slider has a fixed 40-scale-pixel
+value bay before its track. H and ramp hue read in degrees (signed where
+appropriate), S/V in percent, RGB as 0..255 bytes, and ramp n as an integer.
+The fixed bay matters: the thumb and track do not shift when a value gains
+or loses a digit. Values remain continuous drag controls, with the existing
+hex entry and shades field as typed doors. Paste, +add, duplicate, and
+append-ramp now all stop at `palette.MAX`; replace already produces a bounded
+ramp. Thus every palette the UI grows is representable by the encoder, with
+no hidden working-only tail.
+
+**Reference, tape, and pictures.** New `ref-palette.md` is organized by the
+surface under the pointer: new/open/rebind and header, saved swatches versus
+per-window working scratch, picker modes and alpha-aware hex, edit/order
+buttons, ramp controls and math, pointer/keyboard grammar, sprite stacking,
+file format, and runtime APIs. `REF_DOCS` grows the palette mapping. The
+shipped `tools/drive/tape-palette-tutorial.lua` chains H1 on a fresh smoke
+copy and passes 23/23 VERDICTs, including exact saved hex order, the real
+asset-filter/drag attachment, and the hero paint. Its five real @2x crops
+are picker, ramp, adopted HSV, finished 16 colors, and palette-in-use; all
+were inspected in the reader and as an llm-feed montage. The obsolete 1x
+`palette-ramps.png` is replaced, paying one of D163's six deferred captures.
+
+**Proof.** Linux selftest **25,274** (+17 from the palette `REF_DOCS`
+sweep); `nix run .#test` is ALL GREEN with every trace and pixel golden
+byte-identical. `tools/build-windows.sh` refreshed the development tree,
+preserved 11 durable Windows-side entries and the Start Menu shortcut, and
+the staged native executable passes **25,276** checks on PAL API 24.
+
+**Deferred honestly.** HSV/RGB channels have exact feedback but no typed
+numeric entry, so fine values are still reached by drag; the max-color door
+stops quietly rather than showing a toast or disabled chip. Swatches do not
+print an index in every cell — the selected `i/n` counter is authoritative.
+Palette stacking is an editor-layout paint source: choosing a swatch bakes
+RGBA into sprite pixels, with no retained palette index or live LUT link.
+The tutorial tape drives mix/adopt/replace/append/add/set/save/attach/paint,
+not copy/paste, move, delete, or duplicate; those remain fully described in
+the reference and covered by the existing editor guards.
+
+**Revisit triggers.** Typed channel input or a visible max-state; a
+palette-indexed sprite/rendering feature (which must define save/runtime
+link semantics rather than pretending the present row is one); any new
+palette control (extend `ref-palette.md` and its tape); HELPDOCS H4 now owns
+the assets/stock side of the drag-and-copy story.
