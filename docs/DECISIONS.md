@@ -8901,3 +8901,31 @@ palette-indexed sprite/rendering feature (which must define save/runtime
 link semantics rather than pretending the present row is one); any new
 palette control (extend `ref-palette.md` and its tape); HELPDOCS H4 now owns
 the assets/stock side of the drag-and-copy story.
+
+### D164 addendum — one shared shadow is one swatch; captures fit their content (2026-07-22)
+
+The human's first reader pass caught two mistakes in the H3 delivery. First,
+"shared shadow" had been implemented by overwriting slots 1, 6, and 11 with
+the same `171525`. Identical saved bytes do not become three roles; they waste
+two slots and visually teach the opposite of a disciplined 16-color budget.
+The corrected color script stores `171525` once at slot 1 and uses that swatch
+wherever materials meet. The original dark teal `223528` and dark red-brown
+`4f2e2e` remain at 6 and 11 as useful chromatic outlines. The tutorial and
+reference now state this distinction, and the tape pins all sixteen ordered
+hex values plus exactly one occurrence of the universal shadow.
+
+Second, the first four crops preserved the palette window's full 500px
+general-purpose height even though these small grids ended around its middle.
+This was real dead space, not a reader-scale artifact. A named SHOT rerun now
+resizes the real window one frame before capture only, then still crops its
+whole rounded frame: picker/ramp are 760×584, adopted HSV 760×480, and the
+finished palette 760×540 instead of 760×1000 each. The proof run and written
+tutorial never receive the hidden resize; every shot starts from its own fresh
+H1-derived copy. The occupied hero result remains 920×760 and was re-taped so
+its attached row shows the corrected colors.
+
+Proof remains 23/23 tape VERDICTs (`one-shared-shadow true copies=1`), Linux
+selftest **25,274**, and `nix run .#test` ALL GREEN with every golden
+byte-identical. All five replacements were visually inspected and the
+llm-feed montage was refreshed; the native Windows reader stage was refreshed
+again and remains at **25,276** checks on PAL API 24.

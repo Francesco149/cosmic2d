@@ -22,8 +22,9 @@
 --          "rawset(_G,'SHOT','palette-ramp'); dofile('tools/drive/tape-palette-tutorial.lua')" \
 --          --shot raw.png
 --        magick raw.png -crop WxH+X+Y media/palette-ramp@2x.png
---      Palette-window shots need --win 1280x1120: its 500px layout becomes
---      1000px at capture zoom. The hero shot fits --win 1280x860.
+--      Palette-window shots fit the REAL window around its content one frame
+--      before capture (SHOT reruns only), so --win 1280x800 is ample. The
+--      proof run and the tutorial steps never resize behind the user's back.
 --   5. stage crops as media/<name>@2x.png (layout <=700x550), inspect each,
 --      and push a montage to llm-feed with a title + taste-check note.
 --
@@ -47,6 +48,20 @@ local function probe(f, fn) D.at(f, fn) end
 local function crop(name, x, y, w, h)
   log(("CROP %s %d %d %d %d"):format(name, math.floor(x), math.floor(y),
                                       math.floor(w), math.floor(h)))
+end
+
+-- The palette's ordinary 500px canvas is intentionally generous for large
+-- grids, but these 5/16-color tutorial states use only its upper half. During
+-- a named screenshot rerun only, move the real bottom border up around the
+-- live controls; cropping the whole resized window keeps its rounded frame
+-- instead of publishing hundreds of blank pixels. Each shot starts from its
+-- own fresh H1 copy, so this capture-only layout never leaks to another step.
+local function shot_fit(name, frame, h)
+  if rawget(_G, "SHOT") ~= name then return end
+  D.at(frame - 1, function()
+    local r = D.win("palette")
+    if r then r.win.h = h; cm.ed.touch() end
+  end)
 end
 
 local PAL = "pal/moonlit-vale.pal"
@@ -217,6 +232,10 @@ D.shot_zoom("palette-ramp", 126, "palette")
 D.shot_zoom("palette-adopted", 166, "palette")
 D.shot_zoom("palette-finished", 450, "palette")
 D.shot_zoom("palette-hero", 650, "sprite")
+shot_fit("palette-pickers", 96, 292)
+shot_fit("palette-ramp", 126, 292)
+shot_fit("palette-adopted", 166, 240)
+shot_fit("palette-finished", 450, 270)
 
 -- ============ step 1: restored H1 hero, then a fresh palette ============
 probe(5, function()
@@ -350,21 +369,27 @@ probe(348, function()
           and palette.to_hex { g.cols[16] } == "f25f7a")
 end)
 
--- ============ step 8: one shared shadow glues the three ramps ============
+-- ============ step 8: ONE shared shadow, without duplicate swatches ============
 set_hex(354, "171525")
 click_swatch(370, 1)
 D.at(378, function() local g = pgeo(); local x,y = op_xy(g,2); D.click(D.f+1,x,y) end)
-click_swatch(388, 6)
-D.at(396, function() local g = pgeo(); local x,y = op_xy(g,2); D.click(D.f+1,x,y) end)
-click_swatch(406, 11)
-D.at(414, function() local g = pgeo(); local x,y = op_xy(g,2); D.click(D.f+1,x,y) end)
+click_swatch(388, 16)
+D.tap(396, SC.enter) -- adopt the accent: selection + working swatch agree
 probe(426, function()
   local g = pgeo()
-  local hex = palette.to_hex { g.cols[1], g.cols[6], g.cols[11] }
-  verdict("shared-shadow", hex == "171525\n171525\n171525", hex)
+  local hex = palette.to_hex(g.cols)
+  local want = table.concat({
+    "171525", "302b5f", "54398e", "8f55bd", "d990ec",
+    "223528", "31634b", "41917e", "5fc0be", "99dbee",
+    "4f2e2e", "7a4331", "a46c38", "ceab53", "f8f38e", "f25f7a",
+  }, "\n")
+  local shadows = 0
+  for _, c in ipairs(g.cols) do
+    if palette.to_hex { c } == "171525" then shadows = shadows + 1 end
+  end
+  verdict("one-shared-shadow", hex == want and shadows == 1,
+          ("copies=%d"):format(shadows))
 end)
-click_swatch(432, 16)
-D.tap(440, SC.enter) -- adopt the accent: selection + working swatch agree
 probe(450, function()
   local g = pgeo()
   verdict("finished-16", #g.cols == 16 and g.win.sel == 16

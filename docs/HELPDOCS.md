@@ -124,11 +124,12 @@ presets last (they cross-link finished tool docs and reuse their media).
 - [x] **H3 — the palette window**. DONE 2026-07-22 (D164). The
   "color-script a moonlit vale" tutorial makes one cohesive 16-color
   artifact: five-shade night-violet, moss-teal, and lantern-gold ramps,
-  one shared shadow, and one rose accent; then saves it, stacks it in the
-  sprite window, and repaints H1's hero without losing the lighting
-  layers. `ref-palette.md` covers the complete surface and `.pal`/runtime
-  contracts; five taped @2x shots replace the old 1x ramps card; and
-  `REF_DOCS` grows the palette row. The UX fix this session surfaced:
+  one shared shadow stored once, and one rose accent; then saves it,
+  stacks it in the sprite window, and repaints H1's hero without losing
+  the lighting layers. `ref-palette.md` covers the complete surface and
+  `.pal`/runtime contracts; five tightly fitted taped @2x shots replace
+  the old 1x ramps card; and `REF_DOCS` grows the palette row. The UX fix
+  this session surfaced:
   every drag slider now has a stable exact-value bay (degrees, percent,
   byte channel, or count), and paste/add/dup/ramp operations stop at the
   format's honest 256-color ceiling instead of letting the save encoder

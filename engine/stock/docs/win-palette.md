@@ -8,9 +8,10 @@ the pickers, swatch operations, ramp math, clipboard, hotkeys, and `.pal` format
 
 ## Walkthrough: color-script a moonlit vale
 
-In one sitting you will make `pal/moonlit-vale.pal`: three five-shade
-families — night violet, moss teal, lantern gold — tied together by one
-shared shadow, then punctured by one rose accent. Those are
+In one sitting you will make `pal/moonlit-vale.pal`: three five-slot
+families — night violet, moss teal, lantern gold — with the violet family's
+darkest slot doing double duty as one shared shadow, then one rose accent.
+Those are
 **16 colors with jobs**, not 16 unrelated favorites. At the end you will stack
 the palette in the sprite editor and recolor the tutorial hero from it.
 
@@ -61,11 +62,13 @@ frame 1 and the bottom body layer give us a clean place to test the palette.
    **+add**. The rose working color is inserted after the selection and becomes
    swatch 16. Reserve it for pickups, damage, flowers, or one decisive UI mark;
    it pops because none of the ramps reaches its saturation.
-8. Glue the three materials together. Type `171525` in the hex field. Click
-   swatch **1**, then **set**; repeat for swatches **6** and **11**. Those are
-   the darkest slots of violet, teal and gold. Giving every material the same
-   near-black lets their shadows touch without looking cut from three games.
-   Click swatch **16** and press **enter** to leave the rose accent adopted.
+8. Glue the three materials together without wasting slots. Type `171525` in
+   the hex field, click swatch **1**, then **set**. That one near-black is the
+   universal cast/contact shadow; use it beside any family. Do **not** copy it
+   over swatches 6 and 11: their dark green `223528` and red-brown `4f2e2e`
+   remain useful colored outlines. Repeating identical black would add no new
+   job to a scarce 16-color budget. Click swatch **16** and press **enter** to
+   leave the rose accent adopted.
 
 ![The finished 16-color moonlit-vale palette: three ramps, one shared shadow and one accent](media/palette-finished@2x.png)
 
@@ -73,10 +76,8 @@ The finished order is useful enough to treat as a tiny color script:
 
     1       shared shadow   171525
     2-5     night violet    302b5f .. d990ec
-    6       shared shadow   171525
-    7-10    moss teal       31634b .. 99dbee
-    11      shared shadow   171525
-    12-15   lantern gold    7a4331 .. f8f38e
+    6-10    moss teal       223528 .. 99dbee
+    11-15   lantern gold    4f2e2e .. f8f38e
     16      rose accent     f25f7a
 
 9. Press **ctrl+s**. The amber dirty dot and title `*` disappear, and

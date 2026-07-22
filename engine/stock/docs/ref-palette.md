@@ -153,10 +153,12 @@ you want to continue from the exact emitted color.
 append one ramp each. Equal-length ramps make outline/shadow/body/light roles
 interchangeable across stone, cloth, skin, foliage, and UI.
 
-**Shared shadow.** Set the darkest slot of every ramp to the same deep violet,
-blue-black, or warm near-black. Separate materials then meet in one shadow
-language. [The tutorial](engine/stock/docs/win-palette.md) does this at
-swatches 1, 6, and 11.
+**Shared shadow.** Keep one deep violet, blue-black, or warm near-black swatch
+and use that one color wherever separate materials meet. Do not overwrite the
+darkest slot of every ramp with identical bytes: repeated swatches spend the
+budget without adding a role, while the original chromatic darks remain useful
+for material-specific outlines. [The tutorial](engine/stock/docs/win-palette.md)
+keeps its universal shadow once, at swatch 1.
 
 **Shared accent.** Keep one or two saturated colors outside every ramp for
 pickups, damage, focus, or blood. Their rarity creates emphasis; using them as

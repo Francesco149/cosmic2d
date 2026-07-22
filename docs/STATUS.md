@@ -11,9 +11,10 @@ commit carrying this note. (1) **The docs:** `win-palette.md` is now the
 12-step **color-script a moonlit vale** tutorial — mix an exact violet
 fundamental in SV, replace with a five-shade hue-shifted ramp, adopt its
 middle, append exact HSV moss and RGB lantern ramps, add one rose accent,
-share the same near-black across all three families, save, drag the `.pal`
-from assets onto H1's hero, and flood its body teal under the existing
-*mul*/*add* lighting. `ref-palette.md` is the complete reference by UI
+turn the first violet dark into one universal near-black while retaining the
+teal/gold chromatic darks, save, and drag the `.pal` from assets onto H1's
+hero, then flood its body teal under the existing *mul*/*add* lighting.
+`ref-palette.md` is the complete reference by UI
 region: file/header doors, shared document versus working scratch, every
 swatch gesture and hotkey, SV/HSV/RGB/hex pickers, add/set/dup/del/order,
 ramp math, sprite attachment, `.pal`, and `cm.palette`. Five real @2x
@@ -31,6 +32,21 @@ H1's saved hero and drives the written story through the real UI, including
 asset filtering/drag attachment and final sprite fill; **23/23 VERDICTs**
 green. Both docs rendered cleanly in the reader, all five crops were
 visually inspected, and the montage is on llm-feed.
+
+**Human readback correction (D164 addendum):** the first cut interpreted
+"shared shadow" as three identical saved swatches at 1/6/11. That spends two
+of sixteen slots without adding a role. The corrected artifact stores
+`171525` **once** at swatch 1 and preserves the generated dark green `223528`
+and red-brown `4f2e2e`; the tape now pins the entire ordered hex list and
+reports `one-shared-shadow true copies=1`. The first four screenshots also
+captured the palette's generous 500px window despite controls ending near its
+middle. Named-shot reruns now move the REAL lower border around the content
+one frame before capture (capture only; proof/tutorial behavior unchanged):
+760×584 picker, 760×584 ramp, 760×480 adopted HSV, and 760×540 finished,
+down from four 760×1000 files. The occupied 920×760 hero shot stays full.
+All five were re-taped, re-inspected, and replaced in the llm-feed montage;
+23/23 VERDICTs and the full suite remain green. The Windows reader tree was
+refreshed again with the replacements.
 
 **Proof:** Linux selftest **25,274** (+17); `nix run .#test` **ALL GREEN**,
 every trace and pixel golden byte-identical; **Windows stage REFRESHED**
