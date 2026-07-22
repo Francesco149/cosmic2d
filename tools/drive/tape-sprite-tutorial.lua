@@ -9,17 +9,28 @@
 --        --win 1280x800 --frames 900 --eval \
 --        "dofile('tools/drive/tape-sprite-tutorial.lua')" --shot <scratch>/full.png
 --      → every VERDICT line in the log must read true.
---   3. screenshots are the tape's own frames: re-run with --frames set to
---      each shot's frame (the run ends there; --shot captures that state),
---      then crop to the logged CROP rect (nix run nixpkgs#imagemagick), e.g.
---        bin/cosmic <scratch>/smoke-h1 ... --frames 415 --shot raw.png
---        magick raw.png -crop WxH+X+Y media/sprite-shading.png
---   4. stage crops under engine/stock/docs/media/ (≤700x550, window crops,
---      alt text on every image), look at each one yourself, montage to
---      llm-feed with title+note.
+--   3. screenshots are the tape's own frames AT 2x (the D163 @2x capture
+--      contract — D.shot_zoom in drive.lua): re-run ON A FRESH COPY with
+--      --frames at the shot's frame and SHOT set (the run ends there;
+--      --shot captures that state), then crop to the logged CROP rect
+--      (nix run nixpkgs#imagemagick), e.g.
+--        bin/cosmic <scratch>/smoke-h1 ... --frames 430 --eval \
+--          "rawset(_G,'SHOT','sprite-shading'); dofile('tools/drive/tape-sprite-tutorial.lua')" \
+--          --shot raw.png
+--        magick raw.png -crop WxH+X+Y media/sprite-shading@2x.png
+--      The full-window shots (920x760 at 2x) rerun at --win 1280x860 so
+--      the window clears the shell's top HUD and bottom hint bar — the
+--      tape's math is surface-size independent (the spawn clamps never
+--      engage at these menu positions).
+--   4. stage crops under engine/stock/docs/media/ as <name>@2x.png (layout
+--      size ≤700x550 = intrinsic ≤1400x1100, window crops, alt text on
+--      every image), look at each one yourself, montage to llm-feed with
+--      title+note.
 --
--- Shot frames (stable while the tape above them is unchanged):
---   f415 sprite-shading  · f618 sprite-stroke · f735 sprite-layers
+-- Shot frames (stable while the tape above them is unchanged; shots sit
+-- at gesture-QUIET frames — the @2x camera bump two frames earlier would
+-- remap a held drag's remaining motion events):
+--   f430 sprite-shading  · f634 sprite-stroke · f735 sprite-layers
 --   f855 sprite-hero
 local D = dofile("tools/drive/drive.lua")
 local SC = D.SC
@@ -102,6 +113,12 @@ local function crop(name, x, y, w, h)
   log(("CROP %s %d %d %d %d"):format(name, math.floor(x), math.floor(y),
                                      math.floor(w), math.floor(h)))
 end
+
+-- the @2x shot declarations (fire only when SHOT matches; see header)
+D.shot_zoom("sprite-shading", 430, "sprite")
+D.shot_zoom("sprite-stroke", 634, "sprite")
+D.shot_zoom("sprite-layers", 735, "sprite")
+D.shot_zoom("sprite-hero", 855, "sprite")
 
 -- ================= stage 0: clear the session windows =================
 -- the smoke project ships a saved editor session; cycle focus + close
@@ -220,7 +237,8 @@ probe(360, function()
   log("VERDICT fill-linear " .. tostring(fl ~= nil and fl.type == "linear"))
 end)
 
--- ============ step 6: di down to 30% (shot mid-drag: f415) ============
+-- ==== step 6: di down to 30% (shot after the release: f430 — a held
+-- drag can't cross the @2x bump) ====
 D.at(370, function()
   local g = geo()
   local t = rail(g, 1)
@@ -235,7 +253,7 @@ D.at(370, function()
   end
   D.at(D.f + 55, function() return { D.btn(x0 - 42, t.lv + 8, false) } end)
 end)
-probe(415, function()
+probe(430, function()
   local g = geo()
   crop("sprite-shading", g.r.x, g.r.y, g.r.w, g.r.h)
 end)
@@ -303,7 +321,8 @@ probe(536, function()
   log("VERDICT face " .. tostring(ok))
 end)
 
--- ============ step 9: the shadow layer (shot mid-stroke: f605) ============
+-- ==== step 9: the shadow layer (shot between the strokes: f634 — a
+-- held stroke can't cross the @2x bump; the brush cursor still shows) ====
 D.at(542, function()
   local g = geo()
   local t = rail(g, 1)
@@ -340,7 +359,7 @@ end)
 -- clear of the dial/chip clicks above — an overlapping gesture drags
 -- the stroke through the chip, painting a line off the body)
 stroke(608, { { 12, 14 }, { 12, 18 }, { 11, 21 }, { 11, 24 } }, 6)
-probe(618, function()
+probe(634, function()
   local g = geo()
   crop("sprite-stroke", g.r.x, g.r.y, g.r.w, g.r.h)
 end)
@@ -391,7 +410,8 @@ end)
 stroke(720, { { 20, 7 }, { 21, 10 }, { 21, 12 } }, 3)
 probe(735, function()
   local g = geo()
-  crop("sprite-layers", g.r.x + g.r.w - 252, g.r.y, 252, 300)
+  crop("sprite-layers", g.r.x + g.r.w - 252 * g.z, g.r.y,
+       252 * g.z, 300 * g.z)
 end)
 stroke(738, { { 21, 15 }, { 22, 18 } }, 3)
 probe(752, function()

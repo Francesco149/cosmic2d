@@ -10,7 +10,7 @@ Every knob and button: [the sound player reference](engine/stock/docs/ref-sound.
 - **space** play / pause · **home** jump to the start · **l** loop toggle
 - **click the waveform** to seek
 
-![A recording in the player: peaks, playhead, transport chips](media/sound-player.png)
+![A recording in the player: peaks, playhead, transport chips](media/sound-player@2x.png)
 
 ## Walkthrough: turn a recording into an instrument
 

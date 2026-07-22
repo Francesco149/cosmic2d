@@ -15,14 +15,19 @@
 --        --win 1280x800 --frames 640 --eval \
 --        "dofile('tools/drive/tape-anim-tutorial.lua')" --shot <scratch>/full.png
 --      → every VERDICT line in the log must read true.
---   4. screenshots are the tape's own frames: repeat steps 1–2 on a FRESH
+--   4. screenshots are the tape's own frames AT 2x (the D163 @2x capture
+--      contract — D.shot_zoom in drive.lua): repeat steps 1–2 on a FRESH
 --      copy per shot (the H1 save makes step-3 reruns non-idempotent on a
 --      shared copy), then run step 3 with --frames at the shot's frame and
---      crop to the logged CROP rect (nix run nixpkgs#imagemagick):
---        magick raw.png -crop WxH+X+Y media/anim-timing.png
---   5. stage crops under engine/stock/docs/media/ (at most 700x550, window
---      crops, alt text on every image), look at each one yourself, montage
---      to llm-feed with title+note.
+--      SHOT set, and crop to the logged CROP rect:
+--        bin/cosmic <copy> ... --frames 292 --eval \
+--          "rawset(_G,'SHOT','anim-timing'); dofile('tools/drive/tape-anim-tutorial.lua')" \
+--          --shot raw.png
+--        magick raw.png -crop WxH+X+Y media/anim-timing@2x.png
+--   5. stage crops under engine/stock/docs/media/ as <name>@2x.png (layout
+--      size at most 700x550 = intrinsic at most 1400x1100, window crops,
+--      alt text on every image), look at each one yourself, montage to
+--      llm-feed with title+note.
 --
 -- Shot frames (stable while the tape above them is unchanged):
 --   f292 anim-timing · f410 anim-preview-a · f416 anim-preview-b
@@ -147,6 +152,12 @@ local function crop(name, x, y, w, h)
   log(("CROP %s %d %d %d %d"):format(name, math.floor(x), math.floor(y),
                                      math.floor(w), math.floor(h)))
 end
+
+-- the @2x shot declarations (fire only when SHOT matches; see header)
+D.shot_zoom("anim-timing", 292, "anim")
+D.shot_zoom("anim-preview-a", 410, "anim")
+D.shot_zoom("anim-preview-b", 416, "anim")
+D.shot_zoom("anim-clips", 556, "anim")
 
 -- ============ stage 0: the restored session (H1's ending) ============
 probe(5, function()
@@ -340,8 +351,8 @@ probe(288, function()
                and c.frames[2].dur == 8 and c.loop == "loop"))
 end)
 probe(292, function()
-  local g = ageo()
-  crop("anim-timing", g.r.x, g.r.y + 210, g.r.w, g.r.h - 210)
+  local r = D.win("anim")
+  crop("anim-timing", r.x, r.y + 210 * r.z, r.w, r.h - 210 * r.z)
 end)
 D.at(296, function() -- defocus the field, then space = play
   local r = D.win("anim")
@@ -384,18 +395,18 @@ D.at(402, function()
 end)
 D.tap(406, SC.space) -- play the march; t=0 at the keydown
 probe(410, function() -- t ~ 3: the base frame
-  local g = ageo()
+  local r = D.win("anim")
   local p = cm.ed.g.aw[HERO]
   log("VERDICT phase-a " .. tostring(p.playing and p.frame == 1)
       .. " fi=" .. tostring(p.frame))
-  crop("anim-preview-a", g.r.x, g.r.y, g.cvw + 8, g.r.h - 30)
+  crop("anim-preview-a", r.x, r.y, 310 * r.z, r.h - 30 * r.z)
 end)
 probe(416, function() -- t ~ 9: the exhale frame
-  local g = ageo()
+  local r = D.win("anim")
   local p = cm.ed.g.aw[HERO]
   log("VERDICT phase-b " .. tostring(p.playing and p.frame == 2)
       .. " fi=" .. tostring(p.frame))
-  crop("anim-preview-b", g.r.x, g.r.y, g.cvw + 8, g.r.h - 30)
+  crop("anim-preview-b", r.x, r.y, 310 * r.z, r.h - 30 * r.z)
 end)
 
 -- ============ step 10: the blink clip ============

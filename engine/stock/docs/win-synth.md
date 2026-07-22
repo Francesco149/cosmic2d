@@ -13,7 +13,7 @@ sound: the smallest set that makes a game *sound like a game*. Along
 the way you'll touch every part of the window once. Keep a note held
 while you drag things — every edit is live.
 
-![A fresh instrument: voice strip, four operator panels, the piano](media/synth-fresh.png)
+![A fresh instrument: voice strip, four operator panels, the piano](media/synth-fresh@2x.png)
 
 ### The lead — meet FM with your ears
 
@@ -37,7 +37,7 @@ while you drag things — every edit is live.
    real plucked-then-held string. A readout shows values while you
    drag.
 
-![Dragging an ADSR handle — the live readout names the value](media/synth-adsr.png)
+![Dragging an ADSR handle — the live readout names the value](media/synth-adsr@2x.png)
 
 5. **ctrl+s**. First instrument done. (Every finished gesture is one
    undo step — **ctrl+z** walks back a bad drag; **esc** silences
@@ -53,7 +53,7 @@ while you drag things — every edit is live.
    loads into *your* file (the name stays `bass`; the loaded row stays
    marked so you don't lose your place).
 
-![The presets rail: stock and project instruments, loaded row marked](media/synth-presets.png)
+![The presets rail: stock and project instruments, loaded row marked](media/synth-presets@2x.png)
 
 7. Press **,** twice to drop the audition two octaves and hold **z** —
    that's the chip-bass register. Round it off: set **flt** to `lp`
@@ -78,7 +78,7 @@ while you drag things — every edit is live.
    frequency is for; the body of the stock `fm-kick` adds one more
    sine fixed at 120 Hz the same way.
 
-![The kick's voice strip: sweep −20 over 70 ms, a fixed-Hz noise op](media/synth-kick.png)
+![The kick's voice strip: sweep −20 over 70 ms, a fixed-Hz noise op](media/synth-kick@2x.png)
 
 ### The jump — bend an sfx preset
 

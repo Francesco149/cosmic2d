@@ -55,7 +55,7 @@ off the canvas's `x,y` readout.)
    commits each). Click **+f** — a second entry appears — and set it
    to frame `2`, dur `8`. The chips read `1:40 2:8`.
 
-![The timing row: the idle clip's 1:40 and 2:8 entry chips with the frame, dur and name fields](media/anim-timing.png)
+![The timing row: the idle clip's 1:40 and 2:8 entry chips with the frame, dur and name fields](media/anim-timing@2x.png)
 
 8. Press **space**. The hero breathes: a long held base, a short
    exhale, forever. The uneven split is the trick — 40:8 reads as
@@ -66,9 +66,9 @@ off the canvas's `x,y` readout.)
    the same two drawings now read as a determined little march.
    Timing alone changed the meaning.
 
-![The walk clip playing, on the base frame — frame 1/3 in the preview readout](media/anim-preview-a.png)
+![The walk clip playing, on the base frame — frame 1/3 in the preview readout](media/anim-preview-a@2x.png)
 
-![The walk clip playing, on the exhale frame — frame 2/3, the clasp one pixel lower](media/anim-preview-b.png)
+![The walk clip playing, on the exhale frame — frame 2/3, the clasp one pixel lower](media/anim-preview-b@2x.png)
 
 10. One more: **+**, name it `blink`, entries `1:1`, then **+f** frame
    `3` dur `3`, then **+f** frame `1` dur `1`. Click the **loop chip**
@@ -77,7 +77,7 @@ off the canvas's `x,y` readout.)
    on a random timer over the idle, which is why the open-eyed
    bookend entries matter.
 
-![The clip rail cut into idle, walk and blink, the blink clip selected](media/anim-clips.png)
+![The clip rail cut into idle, walk and blink, the blink clip selected](media/anim-clips@2x.png)
 
 11. Tour your work: click each rail row and **space** through it;
    click any entry chip to pause and scrub. Then **ctrl+s** — the

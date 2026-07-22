@@ -47,7 +47,7 @@ readout at the canvas's top-right as you move the mouse.
 6. Tune it: drag the **di** dial down to about **30%** — calmer dither,
    cleaner bands (leave **lv** at 4: four bands is classic cel shade).
 
-![The live fill: the blob cel-banded, the fill dials on the layers rail](media/sprite-shading.png)
+![The live fill: the blob cel-banded, the fill dials on the layers rail](media/sprite-shading@2x.png)
 
 7. Click **bake**. The ramp stamps into real pixels — every one an
    exact ramp color, so the sprite stays palette-clean by construction.
@@ -70,7 +70,7 @@ readout at the canvas's top-right as you move the mouse.
    (Keep the stroke inside the body: over transparent canvas a mul
    layer just paints, so strays stay visible until erased.)
 
-![Mid-stroke on the mul layer: the size-5 brush cursor, the brush strip reading size 5, op 50%, circle](media/sprite-stroke.png)
+![Mid-stroke on the mul layer: the size-5 brush cursor, the brush strip reading size 5, op 50%, circle](media/sprite-stroke@2x.png)
 
 10. The light layer: **+** again (**layer 3**), click **mix** twice to
    **mix add** — this one glows. Pick the **gold swatch**, pen size
@@ -79,7 +79,7 @@ readout at the canvas's top-right as you move the mouse.
    A warm rim light against the cool shadow — the oldest trick in
    pixel art.
 
-![The layers rail: layer 3 selected, mix add, the stack of three](media/sprite-layers.png)
+![The layers rail: layer 3 selected, mix add, the stack of three](media/sprite-layers@2x.png)
 
 11. Frames for the animator: in the frames row click **dup** — the
    chip between **+** and **−** at the row's right edge — twice.
@@ -91,7 +91,7 @@ readout at the canvas's top-right as you move the mouse.
    it on the next frame). Click **done** in the header and meet your
    hero, composited and aspect-fit in view mode.
 
-![The finished hero in view mode: 32x32, 3 frames, 3 layers](media/sprite-hero.png)
+![The finished hero in view mode: 32x32, 3 frames, 3 layers](media/sprite-hero@2x.png)
 
 Where next: the reference's **fill recipes** turn the same fill dials
 into water, sand, moss, cobblestone, crystal and gems; the animation
