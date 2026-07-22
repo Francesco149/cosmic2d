@@ -9246,7 +9246,10 @@ local function t_ed_assets()
   check(short and long and short > long, "ed.assets: shorter path wins")
 
   check(A.class_of("a/b.PNG") == "image" and A.class_of("x.lua") == "code"
-        and A.class_of("s.ogg") == "sound" and A.class_of("d.dat") == "other",
+        and A.class_of("s.ogg") == "sound"
+        and A.class_of("kit.ins") == "sound"
+        and A.class_of("theme.song") == "sound"
+        and A.class_of("d.dat") == "other",
         "ed.assets: class_of")
   check(A.class_of("r.bmp") == "image" and A.class_of("r.tga") == "image"
         and A.class_of("r.psd") == "image" and A.class_of("r.ppm") == "image",
@@ -9291,6 +9294,15 @@ local function t_ed_assets()
         "ed.assets: interrupted converted drop publishes no partial asset")
   check(drop_summoned, "ed.assets: failed drop summons the console")
   ed.g._drop_fail = nil
+  local ins_src = root .. "_src.ins"
+  local song_src = root .. "_src.song"
+  pal.write_file(ins_src, "instrument fixture")
+  pal.write_file(song_src, "song fixture")
+  local ins_rel = A.add_dropped(ed, ins_src)
+  local song_rel = A.add_dropped(ed, song_src)
+  check(ins_rel == "ins/cosmic_selftest_drop_src.ins"
+        and song_rel == "sound/cosmic_selftest_drop_src.song",
+        "ed.assets: dropped authoring audio uses ins/ and sound/")
   pal.write_file(root .. "/LICENSE", "fixture terms\n")
   pal.write_file(root .. "/CONTROLS.md", "fixture controls\n")
   A.invalidate(ed)
@@ -9304,6 +9316,10 @@ local function t_ed_assets()
   pal.x_remove(root .. "/" .. rel2)
   pal.x_remove(root .. "/LICENSE")
   pal.x_remove(root .. "/CONTROLS.md")
+  pal.x_remove(root .. "/" .. ins_rel)
+  pal.x_remove(root .. "/" .. song_rel)
+  pal.x_remove(ins_src)
+  pal.x_remove(song_src)
   pal.x_remove(src)
 
   -- a .spr's baked build products hide under their source (R8d round 2)

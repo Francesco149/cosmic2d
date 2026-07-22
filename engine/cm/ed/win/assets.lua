@@ -32,7 +32,12 @@ local CODE = { lua = true, md = true, txt = true, json = true, glsl = true }
 local IMAGE = { png = true, jpg = true, jpeg = true, gif = true, spr = true,
                 bmp = true, tga = true, hdr = true, psd = true, pic = true,
                 ppm = true, pgm = true, pnm = true }
-local SOUND = { wav = true, ogg = true, mp3 = true }
+-- The sound tab is an author-facing family, not merely decoded PCM: songs
+-- and instruments are the editable sources that make those audio files useful.
+-- Keeping them in "other" made a stock song disappear from Assets as soon as
+-- its new owner clicked the sound chip (the H4 tutorial caught it).
+local SOUND = { wav = true, ogg = true, mp3 = true,
+                ins = true, song = true }
 
 local COL = {
   tile = 0x262238ff, tile_hot = 0x3a3560ff, tile_sel = 0x7fd8a8ff,
@@ -374,8 +379,13 @@ function M.add_dropped(ed, ospath)
     pal.log("[ed] drop unreadable: " .. ospath)
     return
   end
-  local class = M.class_of(base)
-  local dir = class == "image" and "art/" or class == "sound" and "sound/" or ""
+  local class, class_ext = M.class_of(base)
+  -- Instruments have their own canonical folder; songs and decoded audio
+  -- share sound/. This is also the honest OS-drop routing now that .ins/.song
+  -- participate in the browser's sound family.
+  local dir = class == "image" and "art/"
+              or class_ext == "ins" and "ins/"
+              or class == "sound" and "sound/" or ""
   if dir ~= "" then pal.mkdir(ed.root .. "/" .. dir:sub(1, -2)) end
   local stem, ext = base:match("^(.*)%.([%w_]+)$")
   if not stem then stem, ext = base, "" end
@@ -686,7 +696,7 @@ M.hotkeys = {
       ed.g.arn = { id = win.id, path = win.sel, buf = win.sel }
       ed.touch()
     end },
-  { key = "c", hint = "copy to project",
+  { key = "c", hint = "copy to another project",
     when = function(win, ed)
       return (win.sel or "") ~= "" and not copy_for(win, ed)
     end,
