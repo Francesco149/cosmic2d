@@ -81,9 +81,10 @@ A tool's docs session is complete when ALL of these hold:
 - **The image sweep KAT**: every `![](media/…)` target in
   `engine/stock/docs/` exists on disk — a renamed capture can't ship a
   dead image.
-- **The capture recipe** documented as a comment in the H1 tape: fresh
-  smoke copy → drive the tutorial → `--shot` at named steps → crop to
-  the window → stage under `engine/stock/docs/media/`.
+- **The capture recipe** documented as a comment in the H1 tape
+  (`tools/drive/tape-sprite-tutorial.lua` — HELPDOCS tapes ship in-repo
+  as of H1): fresh smoke copy → drive the tutorial → `--shot` at named
+  steps → crop to the window → stage under `engine/stock/docs/media/`.
 
 ## 4. The queue — one focused session per row
 
@@ -91,16 +92,16 @@ Order: 2D art chain first (sprite is the exemplar that builds the
 scaffolding), then files, world tools, audio, 3D, project/shell, then the
 presets last (they cross-link finished tool docs and reuse their media).
 
-- [ ] **H1 — the sprite editor**. Tutorial: paint
-  a game-ready hero sprite — silhouette, layers (shadow *mul* / light
-  *add*), a procedural fill shading pass, palette discipline — ending
-  ready for H2's animation. Shots: tool rail + brush strip mid-stroke,
-  the layers rail with mix controls, fill dials live, the finished hero
-  at 1x and zoomed. Reference: `ref-sprite.md` — tools, brush strip,
-  stamp well, marquee/clipboard, layers rail + mix, fill dials, palette
-  row + `.pal` stacking, size bar, header chips, every hotkey (the §3
-  sweeps landed with H7 — just grow `REF_DOCS`). Sources:
-  `win/sprite.lua`; win-sprite.md's existing recipes move mostly intact.
+- [x] **H1 — the sprite editor**. DONE 2026-07-22 (D161). The
+  "paint the hero" tutorial (silhouette → flood → masked linear
+  cel-shade → bake → face → *mul* shadow layer → *add* light layer →
+  duplicated frames for H2), `ref-sprite.md` with the complete surface
+  (fill recipes moved there), four taped screenshots, the `REF_DOCS`
+  sprite row. The UX fix the session surfaced: the cursor `x,y`
+  readout (named positions were unfollowable without it); the doc bug
+  the tape caught: the bucket has no brush strip, step 8 returns to
+  the pen first. The tape SHIPS at `tools/drive/tape-sprite-tutorial.lua`
+  carrying the §3 capture recipe — the convention for every next row.
 - [ ] **H2 — the animation window**. Tutorial: bring the H1 hero to life —
   cut the strip into idle/walk/blink clips, tune frame durations, loop
   and preview, use the clip from `game.step`. Shots: the strip cut into

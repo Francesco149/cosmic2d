@@ -8623,3 +8623,61 @@ unexercised by the tape (documented as optional).
 ref section fails no sweep — extend the hotkey sweep's spirit by
 hand); a real table renderer in the reader (the algorithm diagram
 wants to be a table); HELPDOCS rows landing (grow `REF_DOCS`).
+
+## D161 — the HELPDOCS sprite session: the hero tutorial, the coordinate readout, tapes ship in-repo (2026-07-22)
+
+**Context.** HELPDOCS row H1 under the D160 contract: `win-sprite.md`
+becomes the sizable tutorial, `ref-sprite.md` the complete reference,
+screenshots are the proof tape's own frames, and UX rough edges found
+en route are fixed at class level.
+
+**The session.** `ref-sprite.md` covers the full control surface by UI
+region (header, view mode, the view lock, tool rail + stamp well,
+canvas gestures, marquee/clipboard, the size bar, the layers rail with
+mix + fill controls, palette row + `.pal` stacking, frames row, brush
+strip, every kit hotkey, file/bake notes); the old walkthrough's fill
+recipes move there intact. `win-sprite.md` is the "paint the hero"
+tutorial: a 32x32 hooded adventurer through silhouette stroke → flood
+→ masked linear cel-shade (ramp born secondary→primary, light at the
+top) → di 30% → bake → the three-dot face → a *mul* shadow layer → an
+*add* light layer → two duplicated frames (H2's strip) → save + view
+mode. The drive tape executes every step through the real UI on a
+fresh smoke copy (15 VERDICTs green: pixel-exact face colors, blend
+modes, dither value, baked ramp direction, the 96x32 baked strip);
+the four bundled screenshots are the tape's frames. `REF_DOCS` grows
+the sprite row (selftest 25,199, +23).
+
+**The UX fix the session surfaced.** The tutorial names positions
+("the eye at 15,11") and the canvas had no way to read them — a named
+position could not be followed exactly, failing the done-contract's
+execute-as-written clause. Edit mode now shows the hovered pixel as
+`x,y` top-right of the canvas (over-canvas + in-bounds only, the
+EDITING-chip idiom). No golden moved.
+
+**The doc bug the tape caught.** After the flood step the bucket is
+still armed and the brush strip does not exist for it — "set the size
+dial" was unfollowable, and the tape's dabs flood-filled whole layers.
+Step 8 now begins by pressing `p`. (A second tape-authoring class got
+documented in the tape itself: an input gesture scheduled to overlap a
+paint stroke drags the stroke through UI chips — keep gestures
+disjoint in time.)
+
+**Binding: HELPDOCS tapes ship in-repo.** H7's tape was scratchpad-
+ephemeral, which left the §3 "capture recipe documented in the H1
+tape" clause pointing at nothing durable. As of H1 each session's tape
+commits as `tools/drive/tape-<tool>-tutorial.lua`; the H1 tape's
+header carries the shared capture recipe (fresh smoke copy → full
+proof run → per-shot `--frames` reruns → crop to the logged CROP rects
+→ stage under `media/`). Tapes are dev tooling, not shipped assets —
+release archives are untouched.
+
+**Deferred honestly:** the marquee/clipboard and stamp surfaces are
+referenced, not taped here (the D156 proof tape already drives them
+end-to-end); the palette row truncating on narrow windows is
+documented ("widen the window"), not reflowed; the hero leaves the
+optional ink re-outline flourish to prose.
+
+**Revisit triggers.** New sprite-ed controls (extend `ref-sprite.md`
++ the hotkey sweep catches kit keys automatically); a fill-point
+gesture editor (the ref documents the fixed vertical axis); HELPDOCS
+rows landing (grow `REF_DOCS`, ship the row's tape).

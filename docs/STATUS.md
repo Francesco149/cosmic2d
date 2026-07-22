@@ -3,7 +3,43 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 1: the synth (H7 pulled forward; D160)
+## Current handoff — HELPDOCS session 2: the sprite editor (H1; D161)
+
+**This session (2026-07-22, continued): HELPDOCS H1 as queued — landed
+as D161** in three commits (`814524c`, `288248c`, + the docs commit
+carrying this note). (1) **The docs**: `ref-sprite.md` — the complete
+control surface by UI region (tool rail + stamp well, canvas gestures,
+marquee/clipboard, size bar, the layers rail's mix + fill controls,
+palette row + `.pal` stacking, frames row, brush strip, every kit
+hotkey; the old fill-recipes walkthrough moved there intact);
+`win-sprite.md` rewritten as the **paint-the-hero tutorial** — a 32x32
+hooded adventurer through silhouette → flood → masked linear cel-shade
+→ bake → face → *mul* shadow layer → *add* light layer → two
+duplicated frames (H2's strip) → save + view mode; four screenshots
+ARE the tape's frames (fill dials live, mid-stroke with the brush
+strip, the 3-layer rail, the finished hero; montage on llm-feed with
+the taste question). (2) **The UX fix the ask exposed** (the D160
+loop): the tutorial names positions ("the eye at 15,11") and the
+canvas couldn't say which pixel the cursor was on — edit mode now
+shows a `x,y` readout top-right of the canvas. (3) **The tape SHIPS**:
+`tools/drive/tape-sprite-tutorial.lua` (a binding convention from
+D161 — every HELPDOCS row commits its tape) carries the §3 capture
+recipe as its header; 15 VERDICTs green on a fresh smoke copy, and en
+route it caught a real doc bug — the bucket has no brush strip, so
+step 8 now returns to the pen first. `REF_DOCS` grew the sprite row.
+**Proof:** Linux selftest **25,199** (+23); `nix run .#test` ALL
+GREEN, every golden byte-identical (the readout disturbed nothing);
+**Windows stage REFRESHED** (11 durable entries + shortcut), NATIVE
+selftest **25,201** = Linux + 2. **Deferred honestly (in D161):**
+marquee/stamp untaped here (D156's tape drives them), the palette-row
+truncation documented not reflowed. **Exact next step:** the human's
+native pass — the four captures at doc size, the readout feel, a read
+of the tutorial — then the next HELPDOCS row (**H2 — the animation
+window**, bringing `art/hero.spr`'s strip to life) after `/clear`.
+The round-13 human items (held-audition feel pass, rc.9 release
+check) remain open below.
+
+## Previous handoff — HELPDOCS session 1: the synth (H7 pulled forward; D160)
 
 **This session (2026-07-22, continued): the human pulled the synth
 forward** ("that one could use more detailed explanations of each knob
