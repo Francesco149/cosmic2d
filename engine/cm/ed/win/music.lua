@@ -535,6 +535,36 @@ local function is_black(pitch)
   return d == 1 or d == 3 or d == 6 or d == 8 or d == 10
 end
 
+-- Exact roll feedback for authored recipes (HELPDOCS H8). The keys column
+-- labels the Cs, but named notes away from C and off-beat ticks otherwise
+-- require counting tiny rows/lines by eye. Keep the formatter pure so the
+-- selftest can pin the same zero-ambiguity address the draw shows. The tick
+-- is the snapped placement tick for empty space or the stored tick for n.
+local NOTE_NAMES = { "C", "C#", "D", "D#", "E", "F",
+                     "F#", "G", "G#", "A", "A#", "B" }
+
+function M.note_name(pitch)
+  pitch = math.max(0, math.min(127, math.tointeger(pitch) or 0))
+  return NOTE_NAMES[pitch % 12 + 1] .. tostring(pitch // 12 - 1)
+end
+
+function M.roll_status(tick, pitch, beats_per_bar, n)
+  tick = math.max(0, math.tointeger(tick) or 0)
+  local bar_ticks = PPQ * math.max(1, math.tointeger(beats_per_bar) or 4)
+  local bar = tick // bar_ticks + 1
+  local inbar = tick % bar_ticks
+  local beat = inbar // PPQ + 1
+  local sub = inbar % PPQ
+  local pos = ("bar %d beat %d"):format(bar, beat)
+  if sub ~= 0 then pos = pos .. "+" .. sub end
+  local out = pos .. " · " .. M.note_name(pitch) .. " · tick " .. tick
+  if n then
+    out = out .. " · dur " .. tostring(n.dur or 0)
+          .. " · vel " .. tostring(n.vel or 100)
+  end
+  return out
+end
+
 -- ---- draw ----
 
 function M.draw(win, ctx)
@@ -1528,6 +1558,37 @@ function M.draw(win, ctx)
     else
       p.g = nil
       ctx.touch()
+    end
+  end
+
+  -- Pointer address / stored-note detail in the free right side of the
+  -- transport row. Empty roll space reports the tick ADD would snap to;
+  -- hovering a note reports its actual tick/duration/velocity. The keys use
+  -- the same pitch naming while auditioning. This is observer-only state.
+  do
+    local status
+    if p.g and p.g.t == "keys" then
+      status = "audition " .. M.note_name(p.g.kp)
+    elseif ctx.hot and over_keys and not p.paste then
+      status = "audition " .. M.note_name(y2pitch(i.wy))
+    elseif roll_hot and not p.paste then
+      local pitch = y2pitch(i.wy)
+      local hit = note_hit(x2t(i.wx), pitch)
+      local n = hit and pat.notes[hit]
+      status = M.roll_status(n and n.tick or snap(x2t(i.wx)),
+                             n and n.pitch or pitch,
+                             doc.beats_per_bar, n)
+    end
+    if status then
+      local spx = px * 0.72
+      local sw = pal.x_ig_text_size(status, spx, 0)
+      local sx = ctx.cx + ctx.cw - sw - 6 * z
+      -- Very narrow windows keep the transport chips authoritative instead
+      -- of drawing text through them.
+      if sx > s.x + 4 * z then
+        pal.x_ig_text(sx, y0 + (TR_H - spx) * 0.42, spx, COL.accent,
+                      status, 0)
+      end
     end
   end
 

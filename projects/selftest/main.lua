@@ -8676,6 +8676,20 @@ local function t_song()
   check(mus.clamp_dp({ 0, 127 }, 12) == 0,
         "music.clamp_dp: a full-range set pins to zero")
 
+  -- HELPDOCS H8's exact piano-roll address: pitch spelling follows the
+  -- visible MIDI octave convention and the status distinguishes an empty
+  -- snapped destination from a stored note's duration/velocity.
+  check(mus.note_name(0) == "C-1" and mus.note_name(60) == "C4"
+        and mus.note_name(70) == "A#4" and mus.note_name(127) == "G9",
+        "music.roll_status: MIDI pitches have exact visible names")
+  check(mus.roll_status(432, 67, 4) ==
+          "bar 2 beat 1+48 · G4 · tick 432",
+        "music.roll_status: empty address names bar, beat, pitch, tick")
+  check(mus.roll_status(384, 60, 4,
+          { tick = 384, dur = 144, pitch = 60, vel = 82 }) ==
+          "bar 2 beat 1 · C4 · tick 384 · dur 144 · vel 82",
+        "music.roll_status: a stored note adds duration and velocity")
+
   -- the rail drop bands (round 10): drop() resolves the row from the
   -- bands DRAW records — the selected row's band is taller (it
   -- carries the mix panel), so re-derived fixed-height math can't do
@@ -12562,7 +12576,8 @@ local function t_docs()
                      { "sprite", "ref-sprite.md" }, { "anim", "ref-anim.md" },
                      { "palette", "ref-palette.md" },
                      { "assets", "ref-assets.md" }, { "stock", "ref-stock.md" },
-                     { "map", "ref-map.md" }, { "tmap", "ref-tmap.md" } }
+                     { "map", "ref-map.md" }, { "tmap", "ref-tmap.md" },
+                     { "music", "ref-music.md" } }
   for _, row in ipairs(REF_DOCS) do
     local kindname, refname = row[1], row[2]
     local rd = live_by_name[refname]

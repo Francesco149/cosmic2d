@@ -210,8 +210,10 @@ single time truth].
 Model (round 7 — the human): an **arrangement of clips**. A clip
 places a pattern on a track at a bar with a length; **resizing a clip
 longer than its pattern LOOPS the pattern to fill** (the "auto loop").
-**Each clip owns its own pattern** (no accidental sharing —
-`normalize` splits collisions, copy-on-write).
+Plain stamping gives each new clip a **fresh pattern** (no accidental
+sharing). Round 8 adds deliberate reuse: Ctrl-stamped / Ctrl-dragged
+clips may name the same pattern, so one note edit updates every linked
+placement.
 
 - `HEAD` v1 — bpm, beats_per_bar (default 4), loop region, grid.
 - `TRKS` v1 — tracks: name, instrument path (.ins), gain, pan, mute.
@@ -222,10 +224,11 @@ longer than its pattern LOOPS the pattern to fill** (the "auto loop").
   clips loop a short one to fill).
 - `ARRG` v1 — clips {track, tick, len, pattern}.
 
-`cm.song` is the pure codec + `normalize` (each clip gets a unique
-pattern; round-6 per-track docs migrate to clips) + the **flatten**:
-clips loop their patterns → one absolute-tick note list per track.
-Playback never walks the doc [W]; the sequencer walks the flat list.
+`cm.song` is the pure codec + `normalize` (round-6 per-track docs
+migrate to clips; missing pattern refs heal; deliberate sharing stays
+linked) + the **flatten**: clips loop their patterns → one
+absolute-tick note list per track. Playback never walks the doc [W];
+the sequencer walks the flat list.
 
 ### 4.3 Sound files
 
@@ -432,54 +435,43 @@ The human's live rounds shaped the rest:
   bars). Clips sharing the selected clip's pattern glow together;
   sharing survives save/load (`normalize` no longer splits — it only
   heals a clip pointing at a missing pattern).
-- **The piano roll** (center) — the [W] mouse grammar, four rules:
-  press empty = **add a note** (length = last-used, snapped to the
-  grid); motionless release on a note = **delete**; press-drag =
-  **move** (pitch + time); **right-edge drag = resize**. One undo
-  entry per gesture; adds/moves audition on the track's instrument.
-  **The grid is placement snap only** (round 2 — the human): the
-  1/1..1/32 subdivision chips + `1`–`6` set where notes *land*, never
-  the length — resize a note to change its length, and the next note
-  repeats it.
-  **Selection** (round 3, the map-editor grammar): **shift+drag =
-  marquee** (every note the rect touches), **shift+click toggles** a
-  note; dragging any *selected* note moves the whole set (spacing
-  kept, delta-clamped in range); **del** removes the selection, **Esc**
-  clears it; a plain press/add drops it. Held as note table refs,
-  cleared on undo/adopt so it never dangles.
-  **Clipboard + duplicate** (round 4): **Ctrl+C/X** copy/cut the
-  selection (relative to its earliest tick), **Ctrl+V** pastes anchored
-  at the scrub cursor (below; the pasted notes become the selection);
-  the clipboard crosses tracks + windows. **Ctrl+drag a note =
-  duplicate** — the selection if the note is in it, else just that note
-  — you drag the copies, the originals stay (the universal DAW
-  convention). *This supersedes the D058 "CTRL = fine ticks" inversion
-  in the roll* (round 4): placement is grid-only; a finer grid + zoom
-  give precision.
-  **The view is a lock** (round 2, the §12.7 contract): a bound,
-  FOCUSED window owns **MMB-pan** (both axes) + **wheel-zoom** (tpp,
-  tick under the cursor pinned); unfocused = inert, the canvas takes
-  everything. `win.tick0/lownote/tpp` are captured (survive restart +
-  rewind).
-  A **velocity lane** under the roll: drag a bar to set velocity,
-  **double-click = reset to 100** (the natural add strength; the
-  double-click clock arms on a motionless release so drags don't
-  chain). **Group edit** (round 8 — the human): with a selection,
-  dragging a SELECTED bar adjusts the WHOLE set — the grabbed bar tracks
-  the cursor, the rest OFFSET by the same delta (relative dynamics
-  kept); **CTRL** snaps them all to the SAME value. The same for
-  **length**: dragging a selected note's right edge OFFSETs every
-  selected note's length (CTRL = all the same). The offset/snap math is
-  one KAT'd core (`M.group_val`). Note right-edges show a **hover-lit
-  resize handle** too.
+- **The piano roll** (center) — the current round-13 grammar. Press
+  empty to add at the last-used length; holding auditions indefinitely
+  without growing bytes, while a horizontal drag sets length with a
+  ceil-snapped end. Pressing an existing note SELECTS and auditions it;
+  dragging moves the selection by grid-sized time deltas and semitone
+  pitch deltas, with the held voice following pitch. Right-edge drag
+  resizes; right-click deletes. Selected overlaps draw translucent and
+  hit-test first.
+  **The grid is placement snap only**: the 1/1..1/32 chips and
+  `1`–`6` set where notes land; resize defines length and a changed
+  add length becomes the next default.
+  **Selection** uses Shift+marquee / Shift+click; Del deletes the set,
+  Ctrl+Up/Down moves it an octave, and Ctrl+drag duplicates. Group
+  velocity and group length keep relative differences; Ctrl snaps all
+  selected values to the same target through the KAT'd `M.group_val`.
+  **Clipboard** uses Ctrl+C/X and a session-wide note clip. Ctrl+V now
+  arms a one-shot translucent GHOST at the pointer — click places,
+  Esc/right-click cancels, pan/zoom stay live, and the same clipboard
+  crosses patterns and song windows.
+  A playable **piano-key column** holds auditions until release and
+  glissandos on drag. HELPDOCS H8 adds the exact right-side address bay:
+  snapped bar/beat, pitch, tick, then stored duration/velocity over a
+  note.
+  **The view is a lock**: a bound, focused window owns MMB pan +
+  wheel time zoom; the arrangement has its own independent pan/zoom/
+  vertical scroll and a draggable bottom edge. Unfocused means the
+  infinite canvas receives the gestures.
+  The **velocity lane** drags 1..127, double-clicks to 100, and applies
+  the group offset/same-value rules above.
 - **The scrub ruler** (round 4, above the roll, roll-aligned): click/
   drag sets **`win.cursor`** (grid-snapped) — a persistent start marker
   (an accent tab + a line through the roll). Space plays FROM the
   cursor (then wraps to 0 at the song end — the cursor is the entry
-  point, the whole song loops); it is also the Ctrl+V paste anchor.
+  point, the whole song loops). Paste follows the pointer instead.
 - **Transport** (header): play/stop, BPM (click cycles), grid chip.
-  Hotkeys: space = play/stop, del, Ctrl+C/X/V, `1`–`6` grid; Esc stops
-  the preview (after clearing a selection).
+  Hotkeys: space = play/stop, del, Ctrl+C/X/V, Ctrl+Up/Down,
+  `1`–`6` grid; Esc cancels paste, clears selection, then stops preview.
 
 **Pattern length grows to fit but never auto-shrinks** (round 6 — the
 human): a note-changing commit rounds the max note-end up to whole bars
@@ -491,6 +483,27 @@ it updates every placement and the link survives save/load.
 Playback state (playhead) is ephemeral;
 the bytes are the asset. Ctrl+S writes the .song (and refreshes the
 asset browser via the kit save door).
+
+### H8 tutorial audit (2026-07-22)
+
+The shipped Music lesson now builds **Moonlit Relay** as one exact eight-bar
+CSNG: four instrument-bound tracks, three backing patterns stretched across
+the arrangement, a two-bar lead pattern reused through two linked clips, and
+an independent answer pattern. It exercises held-key audition, drag-to-length,
+group selection, clipboard ghost placement, octave movement, velocity editing,
+clip stretching, linked reuse, scrub playback, stereo gain/pan, atomic save,
+canonical decode, and runtime flattening. The matching executable tape passes
+22/22 live verdicts and owns three @2x captures: roll, arrangement, and mix.
+
+The round-13 interaction boundary is now explicit in both the tutorial and
+`ref-music.md`: plain arrangement stamps make fresh patterns; Ctrl placement
+and Ctrl-drag intentionally reuse one pattern; roll paste is a pointer-placed
+one-shot ghost; arrangement and roll keep independent views; grid is editor
+session state rather than a CSNG field. The new observer-only roll address bay
+reports bar/beat/tick and pitch, adding stored duration/velocity when a note is
+under the pointer. Saving refreshes Assets, but a running game's path-keyed
+song cache does not hot-reload that same path; restart the game before judging
+a resaved arrangement.
 
 ## 11. Stock presets + demo songs (ship with the engine)
 
