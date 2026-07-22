@@ -12522,7 +12522,7 @@ local function t_docs()
   -- verbatim, hint labels verbatim (the D120 loop: what the UI binds
   -- must be documented). Grows one row per completed HELPDOCS session.
   local REF_DOCS = { { "synth", "ref-synth.md" }, { "sound", "ref-sound.md" },
-                     { "sprite", "ref-sprite.md" } }
+                     { "sprite", "ref-sprite.md" }, { "anim", "ref-anim.md" } }
   for _, row in ipairs(REF_DOCS) do
     local kindname, refname = row[1], row[2]
     local rd = live_by_name[refname]
