@@ -8768,3 +8768,70 @@ the hotkey sweep catches kit keys automatically); a real project
 overflowing the clip rail (add scroll); HELPDOCS rows landing (grow
 `REF_DOCS`, ship the row's tape); if a later session gives the hero
 true contact frames, re-shoot the walk phases.
+
+## D163 — crisp tutorial screenshots: the @2x capture contract + linear-sampled reader images (2026-07-22)
+
+**Context.** The human's report on the shipped HELPDOCS shots: "all
+the fonts in the screenshots are very pixelated and blurry, and it's
+not the resolution — in the actual editor a same-size window renders
+the fonts way better." Verified real, with two class-level causes.
+
+**The diagnosis.** (1) Capture side: headless tapes run a 1280x800
+surface at dpi 1, so `accessibility_default` resolves display scale 1
+and every glyph rasterizes at ~11px — a size no human on a modern
+monitor ever sees (the native editor auto-resolves scale ≥1.25 off
+the real display, so its glyphs rasterize proportionally larger — the
+§4 "below the cap text is pixel-perfect" contract is per RASTER size).
+(2) Display side: the reader scales images by the canvas zoom through
+`x_ig_image`, whose unconditional NEAREST sampler (the R8d pixel-art
+contract) shears glyphs and 1px UI lines at fractional ratios —
+"pixelated AND blurry" was fractional NEAREST upscaling of an 11px
+rasterization.
+
+**The contract.** Tutorial screenshots capture at 2x and ship as
+`media/<name>@2x.png`:
+
+- `pal.x_ig_image` grows an optional trailing `linear` arg (default
+  false — the NEAREST contract is untouched for sprites/tiles/the
+  game target). The help reader draws screenshots with it: they are
+  pictures, not game pixels. No golden renders reader images; every
+  golden stayed byte-identical.
+- The reader lays an `@2x` image out at HALF its intrinsic pixels
+  (`help.image_line` targets carry the marker), so a 2x capture reads
+  the same size as a 1x one: 1:1 crisp at zoom 2 (the common scaled
+  display), linearly supersampled below, never blown up.
+- `D.shot_zoom(name, frame, kind[, mag])` in drive.lua: per-shot
+  reruns set `SHOT` (via `rawset(_G, …)` — `--eval` runs sandboxed)
+  and the camera zooms ×2 anchored at screen (40, 48) two frames
+  before the shot — glyphs RASTERIZE at 2x while every input step ran
+  at z = 1. Proof runs never zoom. Shots must sit at gesture-QUIET
+  frames (a bump mid-drag remaps the gesture's remaining motions —
+  H1's two mid-gesture shots moved, f415→f430 and f618→f634); crop
+  rects read off `D.win` at the shot frame so they scale along; tall
+  windows rerun on a taller surface (the tape headers say which).
+- The docs image-budget KAT caps LAYOUT size (≤700x550): `@2x`
+  intrinsics may reach 1400x1100. Media grew 672K → 992K — accepted;
+  the crisp read is the product surface.
+- The drive plan fires with a ONE-FRAME lag (`--frames N` fires
+  closures through N−1: the wrapper installs during frame 1's eval),
+  so shot reruns use `--frames <shot>+1` — documented in the recipe;
+  the state drift is one draw tick, chosen so no shot's phase flips.
+
+**Also landed.** The H7 synth tape adopted in-repo as
+`tape-synth-tutorial.lua` (the D161 tapes-ship rule predated by one
+session; the scratchpad copy was recovered) — it now synthesizes its
+own deterministic `hit.wav` fixture. All thirteen HELPDOCS shots
+(sprite 4, anim 4, synth 4, sound 1) re-taped at @2x, every VERDICT
+green (15/15, 20/20, 8/8).
+
+**Deferred honestly.** The six pre-program 1x captures (sprite-fills,
+terrain-vale, template-topdown, music-bossa, palette-ramps,
+stock-songs) stay 1x until their queue rows re-tape them (H3/H4/H8/
+H9/H15 + the ref-sprite fills card); the montage/comparison images on
+llm-feed are dev-side and out of scope; a reader-side smooth-downscale
+for 1x images displayed above zoom 1 is subsumed by re-taping.
+
+**Revisit triggers.** A queue row landing (its shots are born @2x); a
+reader image feature that scales differently (keep the layout-size
+budget authoritative); any future in-editor capture tool (it should
+bake the @2x convention in).

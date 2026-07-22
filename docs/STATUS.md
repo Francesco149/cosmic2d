@@ -3,7 +3,40 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 3: the animation window (H2; D162)
+## Current handoff — D163: the screenshot-crispness report (same session as H2)
+
+**Same session, the human's report on the shipped tutorial shots:
+"fonts very pixelated and blurry, not the resolution — the editor
+renders the same window way better." Landed as D163** (`8841c82`,
+`b37574d`, + the docs commit carrying this note). Two causes, both
+fixed at class level: headless captures rasterized glyphs at 11px
+(accessibility scale resolves 1 on a small dpi-1 surface — the native
+editor auto-resolves ≥1.25, so its glyphs rasterize bigger), and the
+reader NEAREST-upscaled images by canvas zoom (fractional NEAREST =
+sheared glyphs). The contract now: **shots capture at 2x and ship as
+`@2x` files** — `D.shot_zoom` in drive.lua zooms the camera ×2 two
+frames before the shot on per-shot reruns (input always runs at z=1;
+shots sit at gesture-quiet frames; reruns use `--frames shot+1` — the
+drive plan fires one frame behind the counter), the reader lays `@2x`
+images out at half intrinsic (1:1 crisp at zoom 2, supersampled
+below) and samples screenshots **linearly** via `x_ig_image`'s new
+optional `linear` arg (the pixel-art NEAREST contract untouched; the
+budget KAT now caps layout size 700x550). All THIRTEEN taped shots
+re-shot @2x (sprite 4 / anim 4 / synth 4 / sound 1 — every VERDICT
+green), and the H7 synth tape is adopted in-repo as
+`tape-synth-tutorial.lua` with its own deterministic hit.wav fixture.
+Before/after montage on llm-feed. **Proof:** PAL rebuilt; selftest
+**25,257** (unchanged count — the sweeps re-validate @2x); `nix run
+.#test` ALL GREEN, every golden byte-identical (no golden renders
+reader images); reader render of win-anim.md verified headless;
+**Windows stage REFRESHED**, NATIVE selftest **25,259** = Linux + 2.
+**Deferred honestly (in D163):** the six pre-program 1x captures
+(fills/vale/topdown/bossa/ramps/stock-songs) stay until their queue
+rows re-tape them. **Exact next step:** the human's reader pass —
+win-sprite/win-anim/win-synth in the native reader, do the shots now
+match the editor around them — then H3 after `/clear`.
+
+## Previous handoff — HELPDOCS session 3: the animation window (H2; D162)
 
 **This session (2026-07-22, continued): HELPDOCS H2 as queued — landed
 as D162** in two feature/docs commits (`c31a1d0`, `122c9bf`) plus the
