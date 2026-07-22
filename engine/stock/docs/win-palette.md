@@ -1,97 +1,125 @@
-# The palette editor
+# The palette window
 
-Design a palette (`.pal`): a list of colors your game and sprites draw from.
-Mix in the **working color**, save swatches, and generate hue-shifted value
-**ramps** (warm highlights, cool shadows). Copy/paste whole palettes as
-Lospec hex.
+Color-script a whole game from a few intentional fundamentals: mix colors,
+grow hue-shifted ramps, keep one shared shadow, and paint from the result.
 
-## The working color
+Every knob and button: [the palette reference](engine/stock/docs/ref-palette.md) —
+the pickers, swatch operations, ramp math, clipboard, hotkeys, and `.pal` format.
 
-The framed swatch under the grid is the **working color** — a scratch mix,
-deliberately separate from the saved swatches: tuning it never edits the
-palette, and appending ramps back to back never disturbs the previous
-ramp's colors. Colors move between the mix and the grid only on purpose:
+## Walkthrough: color-script a moonlit vale
 
-- **double-click** a saved swatch (or select it and press **enter**) to
-  load it into the working color;
-- **+add** inserts the working color after the selection; **set**
-  overwrites the selected swatch with it.
+In one sitting you will make `pal/moonlit-vale.pal`: three five-shade
+families — night violet, moss teal, lantern gold — tied together by one
+shared shadow, then punctured by one rose accent. Those are
+**16 colors with jobs**, not 16 unrelated favorites. At the end you will stack
+the palette in the sprite editor and recolor the tutorial hero from it.
 
-Pick with whichever method fits your head: the **sv** square (drag inside;
-the H slider above sets the hue — the fastest "hit the color I'm
-imagining" surface), **hsv** sliders (precise saturation/value moves),
-**rgb** sliders (matching a known channel value), or type a hex code.
-The chips above the hex field switch modes.
+You can use any sprite for the last two steps. The exact payoff below uses
+`art/hero.spr` from [the sprite tutorial](engine/stock/docs/win-sprite.md);
+frame 1 and the bottom body layer give us a clean place to test the palette.
 
-## Ramps
+1. Right-click empty canvas, choose **palette**, replace the suggested path
+   with `pal/moonlit-vale.pal`, and press enter. Six starter swatches appear,
+   but they are only scaffolding: the large framed square below them is the
+   separate **working color**, initially white. Mixing changes that scratch
+   square, never a saved swatch.
+2. Leave the **sv** mode chip on. Drag **H** until its readout says **260°**,
+   then click the SV square **60% across and halfway down**. Saturation runs
+   left to right; value runs white to black from top to bottom. The crosshair
+   lands on a restrained night violet and the hex field reads `4c3380`.
 
-A ramp is N shades of one color, dark to light, with the pixel-art
-principles baked in: a value spread, a per-step hue shift (toward warm as
-it lightens, toward cool in shadow), and a saturation bell (slightly
-grayer at both ends). Set **shades** (2–32, typed or dragged) and **hue**
-(degrees per step; negative flips the direction), then:
+![The SV picker mixing the first night-violet fundamental at H 260 degrees](media/palette-pickers@2x.png)
 
-- **append ramp** — adds N shades of the *working color* to the palette;
-- **replace all** — restarts the whole palette as that one ramp.
+3. In **ramp from working**, leave **shades 5**, **n 5**, and **hue +14°**.
+   Five is enough to name outline, shadow, body, light and glint without
+   making color choice mushy. Click **replace all**: the starter disappears
+   and one dark-to-light violet ramp takes its place. The working square is
+   still the original base — generating did not silently select or alter a
+   saved shade.
 
-## Walkthrough: making a cohesive palette
+![The first five-shade violet ramp immediately after replace all](media/palette-ramp@2x.png)
 
-![Hue-shifted ramps built around one working color](media/palette-ramps.png)
+4. Double-click the **third swatch**. Its outline selects it and its exact
+   bytes move into the working square; the other five saved colors do not
+   move. Click **hsv**. The three numeric rows now explain that adopted color
+   as hue, saturation and value. This select-then-adopt split is deliberate:
+   a single click is safe navigation, while double-click or **enter** says
+   "make this my next mix."
 
-The workhorse recipe — **N shades of each fundamental, flavored to the vibe**:
+![The generated middle violet adopted into the working color and decoded by the HSV picker](media/palette-adopted@2x.png)
 
-1. Fix the shade count first and keep it for every ramp (5 reads chunky
-   and confident; 7–9 reads soft). Same count = interchangeable shading
-   across materials.
-2. Mix the first base color by eye in the **sv** square — aim for the
-   *mid-tone* of the material (grass, skin, stone), not its brightest.
-3. **append ramp**. Double-check the two ends: the darkest shade should
-   still read as the color, the lightest shouldn't blow out to white.
-4. Load the base back (double-click a mid swatch), nudge the hue toward
-   the next fundamental, and repeat until the fundamentals you need are
-   covered (a common working set: warm gray/brown, skin, red, orange,
-   yellow-green, green, teal, blue, purple).
-5. Flavor to the vibe with the **hue** shift and the bases themselves:
-   for a hot desert push every base slightly toward orange and use a
-   strong positive hue shift (+18 or more) so highlights go golden; for a
-   cold night push the bases toward blue and keep shadows violet; for a
-   pastel look raise every base's value and lower its saturation before
-   ramping.
+5. Make the moss family with the exact HSV rows: **H 165°**, **S 55%**,
+   **V 55%**. The hex field settles on `3f8c79`. Keep five shades and +14°,
+   then click **append ramp**. The counter still names your selected violet,
+   while five teal shades appear at the end — ten saved colors total.
+6. Click **rgb** for the lantern family. Set **R 209**, **G 138**, **B 72**;
+   the shared hex view reads `d18a48`. Click **append ramp** again. RGB is the
+   useful door when a paint-over, brand guide, or reference gives you channel
+   values rather than a color-wheel idea. You now have fifteen colors.
+7. Add the exception that makes the system sparkle. Type `f25f7a` in the hex
+   field, click saved swatch **15** (the counter confirms `15/15`), then click
+   **+add**. The rose working color is inserted after the selection and becomes
+   swatch 16. Reserve it for pickups, damage, flowers, or one decisive UI mark;
+   it pops because none of the ramps reaches its saturation.
+8. Glue the three materials together. Type `171525` in the hex field. Click
+   swatch **1**, then **set**; repeat for swatches **6** and **11**. Those are
+   the darkest slots of violet, teal and gold. Giving every material the same
+   near-black lets their shadows touch without looking cut from three games.
+   Click swatch **16** and press **enter** to leave the rose accent adopted.
 
-Two glue tricks make separate ramps read as ONE palette:
+![The finished 16-color moonlit-vale palette: three ramps, one shared shadow and one accent](media/palette-finished@2x.png)
 
-- **Shared shadow**: make the darkest one or two shades of every ramp
-  converge on the same color family (a deep violet or warm near-black) —
-  set them by hand with **set** after generating. One shadow color unifies
-  everything drawn with the palette.
-- **Shared accent**: keep one or two saturated outlier swatches (UI,
-  pickups, blood) that appear in no ramp; they pop precisely because
-  nothing else reaches that saturation.
+The finished order is useful enough to treat as a tiny color script:
 
-**Wide vs. narrow (film / near-monochrome) palettes.** The recipe above
-is the wide case — most hues represented, games that show many materials.
-For a stronger, more "graded" look, invert the ratios: pick ONE dominant
-hue and give it a long ramp (9–16 shades via the typed count), add at
-most one or two short support ramps (3–4 shades) in a contrasting hue,
-and stop. A horror scene might be a 12-shade desaturated teal ramp plus a
-3-shade blood red; a sepia film look is one long warm-brown ramp with a
-cold gray counter-ramp. With the working color separate, this is quick to
-try: mix the dominant, type a big shade count, **replace all**, then mix
-the accent and **append ramp** with a small count.
+    1       shared shadow   171525
+    2-5     night violet    302b5f .. d990ec
+    6       shared shadow   171525
+    7-10    moss teal       31634b .. 99dbee
+    11      shared shadow   171525
+    12-15   lantern gold    7a4331 .. f8f38e
+    16      rose accent     f25f7a
 
-Import references freely: **paste** (header chip) reads any Lospec-style
-hex list from the clipboard; **copy** exports yours the same way.
+9. Press **ctrl+s**. The amber dirty dot and title `*` disappear, and
+   `pal/moonlit-vale.pal` becomes a project asset. Each add, set and whole-ramp
+   operation was one undo step; mixing the working color was not, because the
+   scratch is not palette data.
+10. Open **assets**, filter for `moonlit`, then press-drag the
+   `moonlit-vale.pal` tile onto the hero's sprite window. Release over the
+   window content. This does not replace the sprite — a `.pal` stacks as a
+   named swatch row beneath its brush strip. Save the palette before dragging;
+   the receiving row reads the file on disk and refreshes after later saves.
+11. Put the hero in **edit** mode, select frame **1**, and click the bottom
+   layer row (layer 1, the body). In the new **moonlit-vale** row, left-click
+   its **eighth swatch** (`41917e`) to make that teal your primary. Press **f**
+   and flood the cloak at pixel **(18,15)**. The hood turns moonlit teal while
+   the existing *mul* shadow and *add* rim light keep its volume — the palette
+   changed the material without repainting the lighting.
+12. Press **ctrl+s** in the sprite window. The palette remains a reusable
+   `.pal`; the chosen color is now in the hero's baked pixels. Try another
+   swatch with **ctrl+z** ready, or keep this as the first color-scripted frame.
 
-## Keys
+![The moonlit palette stacked in the sprite editor and its teal used on the hero](media/palette-hero@2x.png)
 
-- **left / right** select the previous / next swatch
-- **enter** load the selected swatch into the working color
-- **a** add the working color · **d** duplicate the selected · **del** delete it
-- **ctrl+z / ctrl+y** undo / redo · **ctrl+s** save
+## In the game
 
-Swatches are eyedropper-pickable from the canvas: arm the sprite editor's pick
-tool and click a swatch to sample it. Game code reads the file with
-`cm.palette.load(...)`.
+Load a palette once, then use its ordered roles instead of scattering color
+literals through the draw code:
 
-Full reference: [The sprite editor](engine/stock/docs/win-sprite.md) and
+    local palette = cm.require("cm.palette")
+    local paint = cm.require("cm.paint")
+    local path = cm.main.args.project .. "/pal/moonlit-vale.pal"
+    local vale = assert(palette.load(path))
+
+    function game.draw()
+      local r, g, b = paint.unpack(vale.colors[1]) -- shared shadow
+      pal.quad(0, 0, 480, 270, r / 255, g / 255, b / 255, 1)
+      -- draw the world; use vale.colors[16] for the rare accent
+    end
+
+`palette.color(path, index, fallback)` is the short safe lookup when you do
+not need the whole document. Editor saves bump the asset epoch, so the next
+load sees your revised colors live.
+
+Full reference: [every control in this window](engine/stock/docs/ref-palette.md),
+[the sprite editor](engine/stock/docs/ref-sprite.md), and
 [palettes in game code](engine/stock/docs/scripting.md#palettes-and-color-grading-cmpalette-cmgrade).
