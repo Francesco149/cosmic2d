@@ -3,7 +3,71 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 7: the Tilemap window (H6; D167)
+## Current handoff — HELPDOCS session 8: the Music window (H8; D168)
+
+**This session (2026-07-22, continued): HELPDOCS H8 as queued — landed as
+D168** in the implementation/tutorial commit `8e23f11` and the docs commit
+carrying this handoff. (1) **The tutorial:** `win-music.md` is now the
+15-step **arrange Moonlit Relay** lesson. Starting after H7's chip-kit lesson,
+it makes one exact eight-bar CSNG from local kick/bass/lead plus a Stock hat:
+four bound tracks, one-bar kick/hat patterns stretched across the song, a
+two-bar bass turn, a two-bar lead statement copied to bar 5 through deliberate
+linked reuse, and an independent bar-7 answer. The path exercises held note
+and piano-key auditions, drag-to-length, right-delete, marquee/copy, pointer
+ghost paste, group move and velocity, clip resize/move/link, exact gain/pan,
+scrub playback, atomic save, canonical decode, and runtime flattening. (2)
+**The complete reference:** new `ref-music.md` covers creation/rebind,
+transport/timing/address feedback, every track/bind/mix control, the complete
+arrangement and roll pointer grammar, independent views, piano keys, selection,
+group edits, clipboard ghost, velocity, hotkeys, journal/recovery/rewind,
+canonical CSNG chunks, runtime playback, and deliberate v1 limits. `REF_DOCS`
+grows the Music row. (3) **The pictures:** three tape-owned @2x crops show the
+off-beat hat while C5 is held, the finished eight-bar arrangement, and the
+selected lead's exact `112 / +28` mix. Each was inspected at source resolution
+and inside the real Help reader; the labelled montage is on llm-feed.
+
+**The UX fix the exact lesson exposed:** recipes away from labelled C rows and
+beat lines still required counting tiny cells. Music's free transport bay now
+reports the snapped bar/beat remainder, named pitch, and tick under the roll;
+over a stored note it adds real duration/velocity, and a held piano key names
+the audition. The status is observer-only, yields before overlapping transport
+controls in a narrow window, and rides pure KAT-pinned `note_name` /
+`roll_status` formatters. The audit also corrects AUDIO.md's old intermediate
+grammar: plain stamps are fresh, Ctrl reuse stays linked through save/load,
+Ctrl+V is a pointer-placed one-shot ghost, and grid is session state rather
+than the CSNG HEAD byte.
+
+**The tape SHIPS:** `tools/drive/tape-music-tutorial.lua` chains a fresh H7
+setup and drives the page as written; **22/22 VERDICTs** pin instrument import
+and binding, exact pattern note strings, held audition without duration growth,
+selection/copy/paste/group edits, grow-only pattern length, long backing clips,
+two linked `p5` placements versus independent `p6`, exact four-track mix,
+scrub/play/save state, canonical source bytes, and flattened runtime counts
+(`24 / 32 / 16 / 24`). Named-shot reruns are the tutorial's own live frames.
+
+**Proof:** Linux selftest **25,343** (+19); `nix run .#test` **ALL GREEN**,
+release manifests, every committed trace, and all 19 pixel goldens
+byte-identical; **Windows stage REFRESHED** (11 durable entries + shortcut),
+NATIVE selftest **25,345** = Linux + 2 on PAL API 24. The native proof must run
+from the staged root so its relative `bin/cosmic-player.exe` identity fixture
+uses the staged companion executable.
+
+**Deferred honestly (D168):** the lesson does not tape mute, track deletion,
+BPM cycling, Ctrl+X, octave hotkeys, Ctrl+drag note duplication, undo/redo,
+reset/rebind, or injected save/import failures; the complete reference and
+focused KAT/durability suites own those surfaces. The current generic song
+save refreshes Assets but does not invalidate a running game's path-keyed song
+cache, so the docs explicitly require restarting the game before judging a
+same-path resave. Music v1 still has no editable track names, scrolling track
+rail, typed BPM, internal automation, or overlapping-clip arbitration.
+
+**Exact next step:** the human's native reader/taste pass on the three frames —
+is the held-key state obvious, does `p5 · p5 · p6` read as repeat then answer,
+and is the narrow mix crop useful at normal Help scale — then H9, the Terrain
+window's lakeside-vale tutorial, after `/clear`. The round-13 human items
+(held-audition feel pass, rc.9 release check) remain open below.
+
+## Previous handoff — HELPDOCS session 7: the Tilemap window (H6; D167)
 
 **This session (2026-07-22, continued): HELPDOCS H6 as queued — landed as
 D167** in the implementation/tutorial commit `75d112a` and the docs commit

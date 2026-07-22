@@ -188,17 +188,21 @@ presets last (they cross-link finished tool docs and reuse their media).
   `ref-sound.md`, five taped screenshots, the §3 sweep KATs, and the
   UX fix the session surfaced: the op panels' missing `dtn` and `fix`
   sliders (patch/kernel/preset knobs the UI never exposed).
-- [ ] **H8 — the music window**. Tutorial: arrange a two-pattern,
-  four-track loop with a stereo mix — tracks + instruments, the roll's
-  round-13 grammar (keys column, hold-to-audition, select/move/ghost
-  paste), clips on the rail, volume/pan per track (grow the D144
-  4-track walkthrough). Shots: the roll with the keys column mid-
-  audition, the arrangement rail, the mix rows. Reference:
-  `ref-music.md` — the rail, the roll gestures (add/select/move/resize/
-  duplicate/delete/octave/paste), the velocity lane, mix, transport,
-  every hotkey. Note: win-music.md is the freshest doc (D157–D159
-  rewrites) — this session is mostly restructuring + shots. Sources:
-  `win/music.lua`.
+- [x] **H8 — the music window**. DONE 2026-07-22 (D168). The 15-step
+  **arrange Moonlit Relay** lesson authors one exact eight-bar CSNG from
+  H7's three local instruments plus a Stock hat: four bound/mixed tracks,
+  looping one- and two-bar backing patterns, a two-bar lead statement placed
+  twice through deliberate linked reuse, and an independent answer pattern.
+  It exercises held-key audition, drag-to-length, right-delete, marquee,
+  clipboard ghost placement, group move/velocity, clip stretch/move/link,
+  exact stereo mix, scrub playback, atomic save, canonical decode, and
+  runtime flattening. `ref-music.md` covers the complete rail, arrangement,
+  roll, piano keys, velocity, transport, journal, CSNG, runtime, and every
+  pointer/key door; `REF_DOCS` grows the Music row. Three inspected @2x
+  captures show the C5 audition, final rail, and exact lead mix. The UX fix
+  adds an observer-only roll address bay with bar/beat/tick, pitch, and stored
+  duration/velocity. The shipped `tools/drive/tape-music-tutorial.lua`
+  chains H7 and passes 22/22 VERDICTs through the final saved/flattened song.
 - [ ] **H9 — the terrain window**. Tutorial: sculpt the lakeside vale —
   heights, the noise brush, texture paint, water, props, a route
   (grow the D144 walkthrough; `media/terrain-vale.png` exists as the

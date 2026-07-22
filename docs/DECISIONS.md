@@ -9152,3 +9152,71 @@ brushes); authors routinely double-open through overlapping layers (consider
 a named open-selected command while preserving the drill); CTLM gains a new
 chunk or Map gains a placement control (extend `ref-tmap.md` and the executable
 tape). HELPDOCS H8 now owns the Music window's complete arranged-loop lesson.
+
+## D168 — explicit pattern reuse and exact musical addresses make arrangements teachable (2026-07-22)
+
+**Context.** HELPDOCS H8 had to turn Music's recently evolved round-13 grammar
+into one followable composition rather than another control catalogue. The old
+guide stopped at a loose four-track sketch, retained obsolete hot-reload and
+copy language, and had one old result card. A precise pitch/timing recipe still
+required counting narrow rows and grid lines because only C keys were labelled
+and the pointer had no musical address.
+
+**The artifact and lesson.** `win-music.md` now builds **Moonlit Relay** in 15
+steps. Its eight-bar CSNG binds H7's local kick, bass, and lead plus a copied
+Stock noise hat; authors one-bar kick/hat loops and a two-bar bass turn; writes
+a two-bar lead through held audition, drag length, marquee, clipboard ghost,
+group move, and group velocity; then places that statement at bars 3 and 5 as
+two linked `p5` clips and creates an independent `p6` answer at bar 7. Exact
+gain/pan, scrub playback, atomic save, canonical decode, and flattened runtime
+note counts close the path.
+
+**The product fix and current interaction boundary.** Music's transport free
+space now becomes an observer-only address bay while the roll is hot. Empty
+space reports the snapped bar, beat plus within-beat remainder, sharp-spelled
+pitch, and pattern tick; a stored note reports its real start, duration, and
+velocity; a held piano key names its audition. Narrow windows hide the bay
+before it can collide with transport controls. Pure `M.note_name` and
+`M.roll_status` formatters are KAT-pinned. The surrounding docs now state the
+actual ownership rules: a pattern owns notes, a clip places/loops a pattern,
+plain creation starts fresh, and only Ctrl doors deliberately share a pattern.
+Arrangement and roll views stay independent; placement grid is captured
+session state rather than a current CSNG field.
+
+**Reference, tape, and pictures.** New `ref-music.md` is the exhaustive surface
+contract: create/open/rebind, title and transport, timing/grid/address bay,
+track creation/deletion/mute and instrument import, exact gain/pan, arrangement
+selection/stamp/move/resize/link and view, ruler/cursor, roll add/audition/
+select/move/resize/delete/duplicate, group selection and octave, clipboard
+ghost, piano keys, velocity, hotkeys, journal/recovery/rewind, CSNG chunks,
+runtime playback, and honest limits. `REF_DOCS` grows the Music row. The shipped
+`tools/drive/tape-music-tutorial.lua` chains a fresh H7 setup and passes
+**22/22 VERDICTs** through exact note/pattern/clip/mix bytes, saved canonical
+source, and runtime flatten counts. Three tape-owned @2x crops show a held C5
+hat audition, the completed rail, and the exact selected-lead mix. All three
+were inspected individually and in the real Help reader; its simple Markdown
+parser also caught and drove a fix for four-space two-digit list continuations
+before publication. The labelled montage is on llm-feed.
+
+**Proof.** Linux selftest **25,343** (+19); `nix run .#test` is ALL GREEN with
+release manifests, every committed trace, and all 19 pixel goldens
+byte-identical. The Windows development tree is refreshed (11 durable entries
+plus the Start Menu shortcut), and the staged native executable passes
+**25,345** checks on PAL API 24 when run from the staged root.
+
+**Deferred honestly.** The tutorial does not tape mute, deletion, BPM cycle,
+Ctrl+X, octave movement, note Ctrl-duplicate, undo/redo, reset/rebind, or the
+injected failure doors; the complete reference and focused suites retain them.
+Saving a song refreshes Assets but the running game's path-keyed song cache
+does not hot-reload a same-path resave; restart the game before judging it.
+Music v1 has no editable track names, track-rail scrolling, typed BPM,
+automation, per-clip offsets/gain, or overlap arbitration. The demo's mix is a
+documented authored value set, not a claim of mastering or loudness metering.
+
+**Revisit triggers.** Same-path live composition becomes a core workflow
+(design an explicit runtime cache invalidation door); large songs routinely
+exceed the rail (add scroll without changing lane targeting); exact tempo entry
+matters (add a typed BPM field with one journal entry); authors need named
+tracks or clip-local transforms (extend CSNG and the full reference together);
+a new Music control, hotkey, or chunk lands (extend `ref-music.md` and the
+executable tape). HELPDOCS H9 now owns Terrain's lakeside-vale lesson.
