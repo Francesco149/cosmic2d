@@ -32,12 +32,27 @@ GREEN, every golden byte-identical (the readout disturbed nothing);
 **Windows stage REFRESHED** (11 durable entries + shortcut), NATIVE
 selftest **25,201** = Linux + 2. **Deferred honestly (in D161):**
 marquee/stamp untaped here (D156's tape drives them), the palette-row
-truncation documented not reflowed. **Exact next step:** the human's
-native pass — the four captures at doc size, the readout feel, a read
-of the tutorial — then the next HELPDOCS row (**H2 — the animation
-window**, bringing `art/hero.spr`'s strip to life) after `/clear`.
-The round-13 human items (held-audition feel pass, rc.9 release
-check) remain open below.
+truncation documented not reflowed.
+
+**Same session, the human's first read came back with two reader
+reports — both fixed at class level (the D161 addendum,** `b51a220` +
+`4894798`**):** (1) the ⧉ chip reference drew as `?` — the reader
+font covers ASCII + the corpus's workhorse typographic set only; the
+chip is now **dup**, the empty stamp well **img**, and a corpus-wide
+glyph sweep KAT refuses anything outside the covered set. (2) Steps
+10–12 rendered as code blocks — two-digit steps' 4-space wrapped
+continuations lex as indented code; continuations reflow to ≤3 spaces
+(win-synth.md 10–11 had the same latent bug) and a second sweep
+refuses a ≥4-space line glued to a prose line. Shots re-taped off the
+relabeled chips (15/15 VERDICTs), montage refreshed on llm-feed.
+Linux selftest **25,247** (+48), suite ALL GREEN goldens
+byte-identical, stage refreshed, NATIVE **25,249** = Linux + 2.
+**Exact next step:** the human's native pass — the four captures at
+doc size, the readout feel, a re-read of the tutorial in the reader —
+then the next HELPDOCS row (**H2 — the animation window**, bringing
+`art/hero.spr`'s strip to life) after `/clear`. The round-13 human
+items (held-audition feel pass, rc.9 release check) remain open
+below.
 
 ## Previous handoff — HELPDOCS session 1: the synth (H7 pulled forward; D160)
 

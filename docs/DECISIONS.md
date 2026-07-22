@@ -8681,3 +8681,27 @@ optional ink re-outline flourish to prose.
 + the hotkey sweep catches kit keys automatically); a fill-point
 gesture editor (the ref documents the fixed vertical axis); HELPDOCS
 rows landing (grow `REF_DOCS`, ship the row's tape).
+
+### D161 addendum — the reader-rendering reports (2026-07-22)
+
+The human's first read of the shipped tutorial surfaced two reader
+classes, both fixed and both KAT'd corpus-wide (selftest +48):
+
+1. **The glyph class.** "⧉" rendered as `?` — the reader font covers
+   ASCII plus the workhorse typographic set the corpus already uses
+   (em/en dashes, minus, middot, ×, ±, ∓, ≈, ellipsis, arrows, °, µ,
+   ▶ ◀) and nothing else. The frames chip is now **dup**, the empty
+   stamp well **img** (chips are words the docs can say), and a docs
+   sweep refuses any shipped glyph outside the covered set — the
+   allowed table IS the coverage contract; extend it only after
+   checking the font actually draws the newcomer.
+2. **The glued-indent class.** Two-digit list steps wrapped at 4-space
+   continuations lex as indented code (`line_kinds`' `^    ` rule) and
+   rendered as code blocks. Continuations are ≤3 spaces now (GitHub's
+   lazy continuation keeps rendering them as the same paragraph);
+   win-synth.md steps 10–11 carried the same latent bug. The sweep
+   refuses a ≥4-space line glued directly to a prose line — deliberate
+   indented blocks always sit after a blank line.
+
+The four tutorial screenshots were re-taped off the relabeled chips
+(15/15 VERDICTs green; goldens untouched).
