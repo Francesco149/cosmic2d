@@ -651,9 +651,12 @@ function M.draw(win, ctx)
       pal.x_ig_image(simg.tex, wx0 + (wsz - dw) * 0.5,
                      wy0 + (wsz - dh) * 0.5, dw, dh)
     else
-      local gw = pal.x_ig_text_size("⧉", px, 1)
-      pal.x_ig_text(wx0 + (wsz - gw) * 0.5, wy0 + (wsz - px) * 0.4, px,
-                    (hov or on) and COL.hot or COL.dim, "⧉", 1)
+      -- a plain word, not a pictograph: the doc/reader font covers only
+      -- the workhorse typographic set (D161 addendum — the ⧉ class)
+      local wpx = px * 0.75
+      local gw = pal.x_ig_text_size("img", wpx, 1)
+      pal.x_ig_text(wx0 + (wsz - gw) * 0.5, wy0 + (wsz - wpx) * 0.45, wpx,
+                    (hov or on) and COL.hot or COL.dim, "img", 1)
     end
     pal.x_ig_rect(wx0, wy0, wsz, wsz, COL.btn_on, 1, 3 * z)
     if hov and i.clicked[1] and win.stamp then
@@ -1321,7 +1324,7 @@ function M.draw(win, ctx)
     if fx > ctx.cx + ctx.cw - 80 * z then break end
   end
   local ops = { { "+", function() sprite.add_frame(doc) end },
-                { "⧉", function() sprite.dup_frame(doc, doc.cur_frame) end },
+                { "dup", function() sprite.dup_frame(doc, doc.cur_frame) end },
                 { "-", function()
                     if doc.frames > 1 then
                       sprite.delete_frame(doc, doc.cur_frame)
