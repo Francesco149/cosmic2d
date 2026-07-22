@@ -8689,6 +8689,27 @@ local function t_song()
           { tick = 384, dur = 144, pitch = 60, vel = 82 }) ==
           "bar 2 beat 1 · C4 · tick 384 · dur 144 · vel 82",
         "music.roll_status: a stored note adds duration and velocity")
+  check(mus.loop_span(384, 4) == "1 bar"
+        and mus.loop_span(768, 4) == "2 bars"
+        and mus.loop_span(96, 4) == "1 beat"
+        and mus.loop_span(50, 4) == "50 ticks",
+        "music.loop_span: exact bar, beat, and arbitrary tick periods")
+
+  -- Human readback on H8: pattern growth was real in PATN but the one-bar
+  -- selected clip kept truncating bar 2, so the arrangement looked unchanged.
+  -- An untouched exact-fit clip follows growth; explicit long/truncated clips
+  -- retain their independently authored length.
+  local growdoc = { beats_per_bar = 4,
+    patterns = { [4] = { id = 4, len = 384,
+      notes = { { tick = 384, dur = 96, pitch = 46, vel = 100 } } } },
+    clips = { { track = 2, tick = 0, len = 384, pattern = 4 },
+              { track = 2, tick = 768, len = 1536, pattern = 4 } } }
+  check(mus.fit_pattern_clip(growdoc, growdoc.patterns[4], growdoc.clips[1])
+        and growdoc.patterns[4].len == 768 and growdoc.clips[1].len == 768,
+        "music.fit_pattern_clip: exact-fit selected clip follows pattern growth")
+  check(not mus.fit_pattern_clip(growdoc, growdoc.patterns[4], growdoc.clips[2])
+        and growdoc.clips[2].len == 1536,
+        "music.fit_pattern_clip: an authored long clip keeps its length")
 
   -- the rail drop bands (round 10): drop() resolves the row from the
   -- bands DRAW records — the selected row's band is taller (it

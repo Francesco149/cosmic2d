@@ -26,6 +26,12 @@ Music time is exact. One beat is 96 ticks; one four-beat bar is 384. With the
 the transport's right bay names the snapped destination, for example
 `bar 1 beat 4+48 · C3 · tick 336`. Over a stored note it also reports
 duration and velocity. The keyboard uses sharp names, so A-sharp is `A#`.
+Beside the grid, `pN · loop N bars` names the active pattern's period.
+
+Patterns authored in this window have a **one-bar minimum** and grow in whole
+bars. A one-beat phrase inside a one-bar pattern therefore repeats at the next
+bar, not four times inside that bar. To make a beat repeat today, place its
+notes across the bar; Music v1 has no sub-bar pattern-length control.
 
 1. Right-click empty canvas and choose **music**. Replace the suggested path
    with `sound/moonlit-relay.song` and press Enter. The fresh song opens at
@@ -51,19 +57,23 @@ duration and velocity. The keyboard uses sharp names, so A-sharp is `A#`.
    tick `96`, then right-click that mistaken note to remove it. Add C3 at
    ticks `192` and `336`. The result is beats 1 and 3 plus the final eighth
    before the loop. A plain click stores a 48-tick note; holding the press
-   keeps auditioning without making it longer.
-6. Select track 2. On C5, press and hold tick `48` for a moment, then release:
-   the hat rings for as long as your hand is down but remains one grid cell.
-   Add C5 at ticks `144`, `240`, and `336`. Press and hold the C5 key in the
-   piano column to audition the bound hat without recording another note.
+   keeps its audition gate open without making it longer.
+6. Select track 2 and click C5 at ticks `48`, `144`, `240`, and `336`. These
+   are the four off-beats. `gb-noise-hat` has a deliberately short decay, so
+   holding its key keeps the audition gate open but does not turn it into a
+   sustained sound. The bass in the next step makes that gesture audible.
+7. Select track 3. Before recording, press and hold the C3 piano key: the bass
+   sustains until release and no note appears. Now press C3 at tick `0` and
+   drag its end through tick `96`; after release the bay reads `dur 96`, and
+   quarter-note length becomes the new placement default. Click E-flat 3 at
+   `192`, then A-sharp 2 at `384`. That first bar-2 note changes the transport
+   readout from `p4 · loop 1 bar` to `p4 · loop 2 bars`, moves the roll's end
+   line, and grows the still-untrimmed `p4` arrangement clip to match. Add G3
+   at `576` inside the new second bar. Pattern and matching clip never
+   auto-shrink after later note moves or deletes.
 
-![Four bound tracks and the off-beat hat pattern while the C5 piano key is held](media/music-roll@2x.png)
+![The two-bar bass pattern while its C3 piano key is held for an audible sustained audition](media/music-roll@2x.png)
 
-7. Select track 3. Press C3 at tick `0` and drag its end through tick `96`;
-   after release the bay reads `dur 96`, and quarter-note length becomes the
-   new placement default. Click E-flat 3 at `192`, A-sharp 2 at `384`, and G3
-   at `576`. The final two notes are in bar 2, so the pattern end grows from
-   one bar to two and never snaps back shorter.
 8. Select track 4 and place the first lead motif with the inherited 96-tick
    length: G4 at `0`, A-sharp 4 at `144`, C5 at `192`, and E-flat 5 at
    `336`. Drag the right edges of the A-sharp and E-flat notes back to
@@ -80,16 +90,17 @@ duration and velocity. The keyboard uses sharp names, so A-sharp is `A#`.
    the one-bar drums repeat eight times, while the two-bar bass turn repeats
    four times. If the edge is cramped, wheel over the arrangement to zoom its
    own time view; the roll zoom below does not change.
-11. Resize the lead's `p5` clip to two bars, then drag it to bar 3
-   (tick `768`). Hold Ctrl and drag that clip to bar 5 (tick `1536`).
+11. The bar-2 ghost already grew the untouched `p5` clip to two bars. Drag it
+   to bar 3 (tick `768`). Hold Ctrl and drag that clip to bar 5 (tick `1536`).
    The copy is linked: both clips say `p5` and glow together because editing
    either placement edits their one shared pattern.
 12. Click empty track-4 arrangement space at bar 7 (tick `2304`). A fresh
    `p6` clip and independent pattern appear. Press Ctrl+V and place the saved
    motif at pattern tick `0` with its first note on C5. Arm Ctrl+V again and
-   place it at tick `384` with its first note on A-sharp 4. Resize `p6` to two
-   bars. The final lead lane reads `p5 · p5 · p6`: statement, linked repeat,
-   then a separately editable answer.
+   place it at tick `384` with its first note on A-sharp 4. That second paste
+   automatically grows `p6` and its untouched clip to two bars. The final lead
+   lane reads `p5 · p5 · p6`: statement, linked repeat, then a separately
+   editable answer.
 
 ![The finished eight-bar rail: three backing loops, linked p5 lead clips, and the independent p6 answer](media/music-arrangement@2x.png)
 

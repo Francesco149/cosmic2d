@@ -99,12 +99,37 @@ local function decode_into(p, bytes)
   p.nsels = nil -- the note selection holds TABLE REFS into the old doc
 end
 
--- a pattern's length GROWS to fit its notes but never auto-shrinks
--- (round 6 — the human: clips loop a short pattern to fill, so a
--- pattern that's longer than its content is fine; auto-shrinking it
--- fought resizing). song.fit_pattern is the shared grow-only core.
-local function fit_pattern(doc, pt)
+-- A note edit grows its pattern through the codec's shared whole-bar rule.
+-- If the clip being edited still EXACTLY fitted the old pattern, grow that
+-- clip too: otherwise the newly-authored bar exists in bytes but is silently
+-- truncated in the arrangement until a later manual resize. A deliberately
+-- shorter or longer clip is authored intent and never moves here. Returns
+-- true when the clip followed. Pure document mutation, KAT'd in t_song.
+function M.fit_pattern_clip(doc, pt, clip)
+  if not pt then return false end
+  local old = pt.len or (PPQ * (doc.beats_per_bar or 4))
   song.fit_pattern(doc, pt)
+  if clip and clip.pattern == pt.id and clip.len == old and pt.len > old then
+    clip.len = pt.len
+    return true
+  end
+  return false
+end
+
+-- Compact, exact loop-span text for the permanent transport readout. Current
+-- authoring grows in whole bars with a one-bar floor, but the codec can still
+-- open an older/arbitrary tick length, so describe those bytes honestly too.
+function M.loop_span(len, beats_per_bar)
+  len = math.max(1, math.tointeger(len) or 1)
+  local bar = PPQ * math.max(1, math.tointeger(beats_per_bar) or 4)
+  if len % bar == 0 then
+    local n = len // bar
+    return tostring(n) .. (n == 1 and " bar" or " bars")
+  elseif len % PPQ == 0 then
+    local n = len // PPQ
+    return tostring(n) .. (n == 1 and " beat" or " beats")
+  end
+  return tostring(len) .. " ticks"
 end
 
 local A = cm.require("cm.ed.kit").asset {
@@ -841,6 +866,19 @@ function M.draw(win, ctx)
     win.grid = (win.grid or 4) % 6 + 1 -- placement grid only (round 2)
     ctx.touch()
   end
+  -- Permanent pattern-period feedback. This makes a grow from one to two bars
+  -- visible without hunting for the thin end line, and makes the one-bar
+  -- authoring floor explicit before somebody expects a one-beat phrase to
+  -- repeat four times per bar. The pointer address bay uses the remaining
+  -- right-side space and yields first in a narrow window.
+  if pat then
+    local label = "p" .. tostring(pat.id) .. " · loop "
+                  .. M.loop_span(pat.len, doc.beats_per_bar)
+    local lw = pal.x_ig_text_size(label, px * 0.72, 0)
+    pal.x_ig_text(s.x, y0 + (TR_H - px * 0.72) * 0.42, px * 0.72,
+                  COL.dim, label, 0)
+    s.x = s.x + lw + 8 * z
+  end
   -- (no pattern chips — round 7: each clip owns its pattern; you pick
   -- what the roll edits by clicking a clip in the arrangement)
 
@@ -1256,7 +1294,8 @@ function M.draw(win, ctx)
     return math.tointeger(((d + grid / 2) // grid) * grid)
   end
   local function note_commit()
-    fit_pattern(doc, pat) -- the end line follows the content
+    local clip = p.csel and doc.clips[p.csel]
+    M.fit_pattern_clip(doc, pat, clip) -- end line + untouched clip follow
     p.flat = nil
     commit(ed, win.path)
   end

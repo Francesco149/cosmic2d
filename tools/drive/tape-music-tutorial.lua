@@ -23,14 +23,14 @@
 --      FRESH copy per shot, set SHOT, use --win 1440x1000, stop at the named
 --      frame PLUS ONE, and crop to the logged CROP rectangle:
 --        bin/cosmic <copy> --edit --headless --win 1440x1000 \
---          --frames 861 --eval \
+--          --frames 971 --eval \
 --          "rawset(_G,'SHOT','music-roll'); dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot raw.png
 --      Stage under engine/stock/docs/media as <name>@2x.png, inspect each at
 --      source resolution and in the real reader, then montage them.
 --
 -- Shot frames:
---   f860 music-roll · f1460 music-arrangement · f1670 music-mix
+--   f970 music-roll · f1460 music-arrangement · f1670 music-mix
 
 local D = dofile("tools/drive/drive.lua")
 local SC = D.SC
@@ -228,15 +228,6 @@ local function click_note(f, tick, pitch, button)
   end)
 end
 
-local function hold_note(f, tick, pitch, frames)
-  D.at(f, function()
-    local x, y = roll_xy(tick, pitch)
-    D.at(D.f + 1, function() return { D.mouse(x, y) } end)
-    D.at(D.f + 2, function() return { D.btn(x, y, true) } end)
-    D.at(D.f + 2 + frames, function() return { D.btn(x, y, false) } end)
-  end)
-end
-
 local function add_drag(f, tick, pitch, dur)
   D.at(f, function()
     local x0, y0 = roll_xy(tick, pitch)
@@ -401,7 +392,7 @@ end
 -- Capture-only fit: the default Music width is 720, 20px over the reader's
 -- 700px layout budget. The real border moves to 680 before each @2x capture.
 for _, spec in ipairs({
-  { "music-roll", 860 }, { "music-arrangement", 1460 }, { "music-mix", 1670 },
+  { "music-roll", 970 }, { "music-arrangement", 1460 }, { "music-mix", 1670 },
 }) do
   if rawget(_G, "SHOT") == spec[1] then
     D.at(spec[2] - 4, function()
@@ -411,18 +402,18 @@ for _, spec in ipairs({
   end
 end
 
-D.shot_zoom("music-roll", 860, "music")
+D.shot_zoom("music-roll", 970, "music")
 D.shot_zoom("music-arrangement", 1460, "music")
 D.shot_zoom("music-mix", 1670, "music")
 
--- The roll shot catches a REAL held C5 key after the @2x camera move. Refresh
+-- The roll shot catches a REAL held C3 key after the @2x camera move. Refresh
 -- the pointer against the shifted key geometry; the button remains held.
 if rawget(_G, "SHOT") == "music-roll" then
-  D.at(859, function()
+  D.at(969, function()
     local r, p = D.win("music"), plumb()
     local v = p and p.view
     if not (r and v) then return end
-    local _, y = roll_xy(0, 72)
+    local _, y = roll_xy(0, 48)
     return { D.mouse(v.rx - 9 * r.z, y) }
   end)
 end
@@ -545,46 +536,51 @@ probe(778, function()
           "0:48:48:100/192:48:48:100/336:48:48:100")
 end)
 
--- Step 6: off-beat hats. The first press is deliberately held — audition
--- duration follows the hand while the stored note remains one grid cell.
+-- Step 6: four short off-beat hats. Their patch envelope decays immediately,
+-- so the sustained-gate lesson deliberately moves to the audible bass.
 click_track(784, 2)
-hold_note(794, 48, 72, 12)
+click_note(794, 48, 72)
 click_note(814, 144, 72)
 click_note(824, 240, 72)
 click_note(834, 336, 72)
--- Hold the visible piano key long enough for the named mid-audition shot.
-D.at(848, function()
-  local r, p = D.win("music"), plumb()
-  local v = p and p.view
-  local _, y = roll_xy(0, 72)
-  local x = v.rx - 9 * r.z
-  D.at(D.f + 1, function() return { D.mouse(x, y) } end)
-  D.at(D.f + 2, function() return { D.btn(x, y, true) } end)
-  D.at(D.f + 27, function() return { D.btn(x, y, false) } end)
-end)
-probe(860, function()
-  local r = D.win("music")
-  crop("music-roll", r.x, r.y, r.w, r.h)
-end)
 probe(884, function()
-  local p = plumb()
-  verdict("hat-pattern-and-release", notes_sig(doc().patterns[3]) ==
+  verdict("hat-pattern", notes_sig(doc().patterns[3]) ==
           "144:48:72:100/240:48:72:100/336:48:72:100/48:48:72:100"
-          and not (p.g and p.g.t == "keys"))
+          and not plumb().g)
 end)
 
 -- Step 7: a two-bar bass answer. Dragging the first note makes quarter-note
--- length the new default; content in bar 2 grows the pattern to two bars.
+-- length the new default; the first bar-2 note grows BOTH the pattern and its
+-- still-exact-fit selected clip. Hold C3 on the playable keys for the audible
+-- sustained-gate lesson and the named mid-audition shot.
 click_track(896, 3)
 add_drag(908, 0, 48, 96)
 click_note(928, 192, 51)
 click_note(940, 384, 46)
 click_note(952, 576, 55)
+D.at(958, function()
+  local r, p = D.win("music"), plumb()
+  local v = p and p.view
+  local _, y = roll_xy(0, 48)
+  local x = v.rx - 9 * r.z
+  D.at(D.f + 1, function() return { D.mouse(x, y) } end)
+  D.at(D.f + 2, function() return { D.btn(x, y, true) } end)
+  D.at(D.f + 20, function() return { D.btn(x, y, false) } end)
+end)
+probe(970, function()
+  local r = D.win("music")
+  crop("music-roll", r.x, r.y, r.w, r.h)
+end)
 probe(972, function()
   local pt = doc().patterns[4]
-  verdict("bass-grows-two-bars", pt.len == 2 * BAR and notes_sig(pt) ==
+  local _, c = find_clip(2, 4, 0)
+  local p = plumb()
+  verdict("bass-pattern-and-clip-grow", pt.len == 2 * BAR
+          and c and c.len == 2 * BAR and p.g and p.g.t == "keys"
+          and p.g.kp == 48 and notes_sig(pt) ==
           "0:96:48:100/192:96:51:100/384:96:46:100/576:96:55:100",
-          "len=" .. tostring(pt.len) .. " " .. notes_sig(pt))
+          "pat=" .. tostring(pt.len) .. " clip=" .. tostring(c and c.len)
+          .. " " .. notes_sig(pt))
 end)
 
 -- Steps 8-9: write lead motif A, shorten its two pickups, marquee-copy it,
@@ -604,6 +600,7 @@ move_note(1120, 384, 67, 384, 65)
 drag_velocity(1142, 384, 100, 82)
 probe(1178, function()
   local pt, p = doc().patterns[5], plumb()
+  local _, c = find_clip(3, 5, 0)
   verdict("lead-a-selection-copy", cm.ed.g.musicclip
           and #cm.ed.g.musicclip == 4 and p.nsels
           and (function() local n=0 for _ in pairs(p.nsels) do n=n+1 end return n end)()
@@ -612,18 +609,19 @@ probe(1178, function()
           .. " sel=" .. tostring((function()
             local n=0 for _ in pairs(p.nsels or {}) do n=n+1 end return n
           end)()))
-  verdict("lead-a-two-bars", pt.len == 2 * BAR and notes_sig(pt) ==
+  verdict("lead-a-two-bars", pt.len == 2 * BAR and c and c.len == 2 * BAR
+          and notes_sig(pt) ==
           "0:96:67:100/144:48:70:100/192:96:72:100/336:48:75:100/"
           .. "384:96:65:82/528:48:68:82/576:96:70:82/720:48:73:82",
           "len=" .. tostring(pt.len) .. " " .. notes_sig(pt))
 end)
 
--- Steps 10-11: stretch the three backing clips to eight bars; make the A
--- lead a two-bar clip entering at bar 3; linked-duplicate it at bar 5.
+-- Steps 10-11: stretch the three backing clips to eight bars. Pattern A's
+-- exact-fit clip already followed its two-bar growth; move it to bar 3 and
+-- linked-duplicate it at bar 5.
 resize_clip(1188, 0, 2, 0, 8 * BAR)
 resize_clip(1208, 1, 3, 0, 8 * BAR)
 resize_clip(1228, 2, 4, 0, 8 * BAR)
-resize_clip(1248, 3, 5, 0, 2 * BAR)
 move_clip(1268, 3, 5, 0, 2 * BAR, false)
 move_clip(1292, 3, 5, 2 * BAR, 4 * BAR, true)
 probe(1322, function()
@@ -644,14 +642,15 @@ paste_at(1344, 0, 72)
 paste_at(1372, 384, 70)
 probe(1412, function()
   local d = doc()
+  local _, c = find_clip(3, 6, 6 * BAR)
   verdict("lead-b-independent", d.patterns[6] and d.patterns[6].len == 2 * BAR
-          and D.win("music").win.pat == 6 and notes_sig(d.patterns[6]) ==
+          and c and c.len == 2 * BAR and D.win("music").win.pat == 6
+          and notes_sig(d.patterns[6]) ==
           "0:96:72:100/144:48:75:100/192:96:77:100/336:48:80:100/"
           .. "384:96:70:100/528:48:73:100/576:96:75:100/720:48:78:100",
           d.patterns[6] and ("len=" .. tostring(d.patterns[6].len)
             .. " " .. notes_sig(d.patterns[6])) or "missing p6")
 end)
-resize_clip(1422, 3, 6, 6 * BAR, 2 * BAR)
 probe(1460, function()
   local r = D.win("music")
   crop("music-arrangement", r.x, r.y, r.w,

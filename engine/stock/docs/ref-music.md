@@ -162,6 +162,9 @@ same gain/pan composition functions.
 - **1/1 … 1/32** — each click advances through the six placement grids. Keys
   1–6 select them directly. Grid choice is view state, so it does not dirty
   the song.
+- **pN · loop N bars** — permanently names the active pattern and its exact
+  repeat period. Editor-authored patterns have a one-bar floor and whole-bar
+  growth. This label is information, not a button.
 - The free right side carries the roll address or held-key audition described
   above.
 
@@ -251,9 +254,19 @@ Horizontal octave lines align with C. The accent line at the pattern end is
 the length that clips loop.
 
 A pattern starts at one or four bars depending on how it was created. A note
-commit calls `fit_pattern`: if content crosses the end, length grows to the
+commit fits its content: if content crosses the end, length grows to the
 smallest fitting whole bar. It never auto-shrinks after notes move or delete,
 because a stable short pattern is the unit clips loop.
+
+When the selected clip still has exactly the old pattern length, that clip
+grows with the pattern so the new bar is immediately visible and audible. A
+clip that was deliberately shortened or extended keeps its independent
+authored length. Other linked placements also keep their own clip lengths.
+
+The authoring floor is one complete bar. A one-beat phrase in an otherwise
+empty four-beat pattern loops once per bar, leaving three beats of space; it
+does not repeat on every beat. There is no sub-bar pattern-period control in
+v1. Put repeated notes across the bar when that is the wanted rhythm.
 
 ### Focused view lock
 
@@ -279,13 +292,16 @@ The narrow left column is a playable keyboard aligned exactly to roll rows.
 Black keys use the accidental shape; C rows carry octave labels.
 
 - **left press** — auditions that pitch on the selected track's instrument;
-- **hold** — sustains until release, like the Synth piano;
+- **hold** — keeps the note gate open until release, like the Synth piano;
 - **drag while held** — glissandos row by row, releasing the old pitch through
   its short safety fuse and holding the new one;
 - hovering either keys or roll highlights the matching key.
 
-Key audition never creates a note. Missing instruments stay silent, though
-the visual gesture still works. Playback itself does not light keys in v1.
+The audible hold follows the instrument envelope: a bass or lead can sustain,
+while a deliberately short hat may decay almost immediately even though its
+gate remains held. Key audition never creates a note. Missing instruments stay
+silent, though the visual gesture still works. Playback itself does not light
+keys in v1.
 
 ## Add, select and audition notes
 
@@ -295,11 +311,12 @@ Left-press empty roll space to add at the grid-snapped tick and pointer pitch.
 The note gets velocity 100 and the last-used duration; before any resize, that
 duration is one active-grid cell.
 
-Holding the press sustains the audible audition indefinitely but does not grow
-the stored note. Drag horizontally past the three-pixel threshold to set its
-duration instead. The right end uses ceiling snap, so it covers the cursor and
-has at least one grid cell. A changed add length becomes the next placement
-default. The completed add is one undo entry and becomes the only selection.
+Holding the press keeps the audition gate open until release but does not grow
+the stored note; audible sustain still follows the bound instrument's envelope.
+Drag horizontally past the three-pixel threshold to set duration instead. The
+right end uses ceiling snap, so it covers the cursor and has at least one grid
+cell. A changed add length becomes the next placement default. The completed
+add is one undo entry and becomes the only selection.
 
 ### Select and move
 
@@ -486,8 +503,9 @@ Tracks cannot be renamed or scrolled in the rail. Clips have no labels,
 colors, unlink/private-copy button, fades, crossfades, slip editing, clipboard,
 or right-click menu. Pattern garbage is not collected after every last clip is
 deleted. The roll has no vertical zoom, playback-key lighting, or fit command.
-The arrangement has no loop-region handles even though CSNG retains loop
-fields. These are honest boundaries, not hidden shortcuts.
+Pattern periods cannot be shorter than one bar through the current editor. The
+arrangement has no loop-region handles even though CSNG retains loop fields.
+These are honest boundaries, not hidden shortcuts.
 
 Full reference: [the hands-on Music tutorial](engine/stock/docs/win-music.md),
 [every Synth control](engine/stock/docs/ref-synth.md), and

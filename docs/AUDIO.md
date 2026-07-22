@@ -436,8 +436,9 @@ The human's live rounds shaped the rest:
   sharing survives save/load (`normalize` no longer splits — it only
   heals a clip pointing at a missing pattern).
 - **The piano roll** (center) — the current round-13 grammar. Press
-  empty to add at the last-used length; holding auditions indefinitely
-  without growing bytes, while a horizontal drag sets length with a
+  empty to add at the last-used length; holding keeps the audition gate
+  open without growing bytes (audible sustain still follows the patch),
+  while a horizontal drag sets length with a
   ceil-snapped end. Pressing an existing note SELECTS and auditions it;
   dragging moves the selection by grid-sized time deltas and semitone
   pitch deltas, with the held voice following pitch. Right-edge drag
@@ -454,7 +455,7 @@ The human's live rounds shaped the rest:
   arms a one-shot translucent GHOST at the pointer — click places,
   Esc/right-click cancels, pan/zoom stay live, and the same clipboard
   crosses patterns and song windows.
-  A playable **piano-key column** holds auditions until release and
+  A playable **piano-key column** holds audition gates until release and
   glissandos on drag. HELPDOCS H8 adds the exact right-side address bay:
   snapped bar/beat, pitch, tick, then stored duration/velocity over a
   note.
@@ -480,6 +481,11 @@ short pattern to fill, so shrinking fought resizing). **Stamping makes
 a fresh pattern** (round 7 — nothing shares by accident), but clips MAY
 **deliberately share** one (round 8 — ctrl+drag / ctrl+press); editing
 it updates every placement and the link survives save/load.
+When the selected clip still exactly fits the old pattern, editor growth now
+extends that clip too; manually truncated/extended and other linked placements
+keep their own lengths. The permanent `pN · loop N bars` readout exposes the
+period. Current authoring has no sub-bar loop: a one-beat phrase in a four-beat
+pattern repeats next bar, not next beat.
 Playback state (playhead) is ephemeral;
 the bytes are the asset. Ctrl+S writes the .song (and refreshes the
 asset browser via the kit save door).
