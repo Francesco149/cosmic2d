@@ -9089,3 +9089,66 @@ more generated asset families (keep parent creation and atomic failure
 semantics shared); a new map control or CMAP chunk lands (extend
 `ref-map.md` and the executable tape). HELPDOCS H6 now owns the reusable
 tilemap chunk that replaces this lesson's generated skin.
+
+## D167 — a tilemap is one shared visual source, and exact cell state belongs in the view (2026-07-22)
+
+**Context.** HELPDOCS H6 had to turn the lean Tilemap surface into an exact,
+meaningful workflow: paint reusable art, place it in the complete H5 map, and
+prove that reuse is a source relationship rather than duplicated loose cells.
+The old guide was a short control summary. It did not expose exact cell
+coordinates or the stored id under the pointer, so any authored recipe still
+depended on counting squares by eye.
+
+**The artifact and lesson.** `win-tmap.md` now builds **Moonlit Gate** in 13
+steps. The exact 7x6 CTLM starts as a rectangular wall, carves a three-cell
+door with right-button Fill, dresses the silhouette with all six stock tile
+roles, exercises Pick, both erase doors, undo/redo, save, and view mode, then
+drops once into H5's Moonlit Crossing and duplicates to an exact second
+position. The final source edit adds one cap tile and one Ctrl+S refreshes both
+Map placements while their saved CMAP remains clean.
+
+**The product fix and current interaction boundary.** Tilemap's compact
+top-right status now reports zero-based `cell x,y · tile N · zoom` inside the
+authored grid and zoom alone outside. `M.view_status` is pure and KAT-pinned.
+A grid press is deliberately both focus and tool gesture; a title, palette, or
+field click is the non-painting refocus door. Map double-click remains the
+front-to-back Move drill rather than a special top-visual bypass. When a large
+graybox placement overlaps the desired tilemap, layer **lock** narrows the
+stack before double-open; the tutorial and MAPS.md now state that exact route.
+
+**Reference, tape, and pictures.** New `ref-tmap.md` is the exhaustive surface
+contract: create/open/rebind and overwrite, header/view state, focused view
+ownership, address feedback, all tools and button shapes, palette and source
+resolution, grid fields and resize semantics, journal/save/recovery/rewind,
+Map placement and collision boundaries, keys, canonical CTLM chunks, runtime
+APIs, and v1 limitations. `REF_DOCS` grows the tilemap row. The shipped
+`tools/drive/tape-tmap-tutorial.lua` chains a fresh 21/21 H5 setup and passes
+**23/23 VERDICTs** through exact intermediate/final cell strings, durable
+source bytes, Assets/drop/duplicate/inspector/save, placement double-open,
+shared-source edit, and both-copy refresh. Three tape-owned @2x crops show the
+carve, finished ruin, and final reused composition. All were inspected at
+source resolution and in the real reader; the montage is on llm-feed.
+
+**Proof.** Linux selftest **25,324** (+14); `nix run .#test` is ALL GREEN with
+release manifests, every committed trace, and all 19 pixel goldens
+byte-identical. The Windows development tree is refreshed (11 durable entries
+plus the Start Menu shortcut), and the staged native executable passes
+**25,326** checks on PAL API 24.
+
+**Deferred honestly.** The lesson describes but does not tape Map's Ctrl
+edge-run collider helper. Raw PNG tilesets, destructive crop recovery,
+tileset retarget, overwrite/rebind, reset, live-Esc cancellation, palette
+overflow, OS drop, and rewind retain their reference and focused-KAT coverage.
+CTLM v1 deliberately has no autotiling, multi-cell stamps, animated ids,
+per-cell rotation/flip/tint, internal layers, palette scrolling, or collision
+flags. Busy overlapping placements still require the author to narrow Map's
+click drill with layer lock.
+
+**Revisit triggers.** Exact recipes need keyboard-only cell navigation (add a
+visible cursor rather than hiding pointer state); a real tileset exceeds the
+window strip (add scrolling without changing ids); repeated manual patterns
+dominate painting (design a stamp/autotile contract before adding ad hoc
+brushes); authors routinely double-open through overlapping layers (consider
+a named open-selected command while preserving the drill); CTLM gains a new
+chunk or Map gains a placement control (extend `ref-tmap.md` and the executable
+tape). HELPDOCS H8 now owns the Music window's complete arranged-loop lesson.

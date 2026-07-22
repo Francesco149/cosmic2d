@@ -630,3 +630,38 @@ tilemap's project-relative parent before its atomic write, so the natural
 new-map sequence can graybox `maps/name.map` before that map's first Ctrl+S.
 The H5 tape pins the complete authored CMAP and then walks its real runtime
 world (21/21 checks); `ref-map.md` is the current exhaustive surface contract.
+
+## 16. H6 tutorial audit: one visual grid, many map records (as-built, D167, 2026-07-22)
+
+The HELPDOCS H6 pass pins the Tilemap window's current grammar. CTLM is a
+top-left-anchored rectangular grid of unsigned tile ids: `0` is transparent,
+id `N` draws frame `N` from one horizontal strip, and coordinates are
+zero-based from the top-left. Pen and Eraser are continuous strokes; Fill is
+an inclusive rectangle, not a flood bucket; Pick samples a nonempty stored id.
+The right button always erases with the active tool's shape, including a
+rectangular cut while Fill remains armed. Every completed press is one journal
+entry.
+
+An editable grid press is not a neutral focus door: it focuses the window and
+immediately applies the armed tool. New Tilemap windows already start focused;
+the title, palette, and fields are safe later refocus targets. The focused
+window owns wheel zoom, middle-drag pan, and Shift+1 fit. Its top-right bay now
+reports exact `cell x,y · tile N · zoom` under the authored grid and keeps the
+old zoom-only form outside it, so cell recipes no longer depend on counting
+checkerboard squares by eye.
+
+A saved `.tm` is a visual Map placement, not a nested map and not baked loose
+tiles. Width times tile size and height times tile size define its placement
+rectangle. Duplicating a placement copies the CMAP record but preserves the
+same source path; saving that Tilemap invalidates both rendered copies without
+dirtying the map. Double-click in Map's Move mode opens the shared source. On a
+busy composition, lock an underlying layer before double-clicking when its
+large placement would otherwise join the front-to-back click drill.
+
+Tile ids never imply collision. Map's collider tools remain the explicit
+gameplay boundary; Ctrl edge-run is the convenience for tracing a contiguous
+solid-to-empty tile face. The Moonlit Gate tape exercises the whole reuse loop
+on H5's saved Moonlit Crossing and passes 23/23 checks, including canonical
+cell bytes, exact duplicate coordinates, placement double-open, shared-source
+save, and both-copy refresh. `ref-tmap.md` is the exhaustive Tilemap/CTLM
+surface contract.

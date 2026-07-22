@@ -166,10 +166,21 @@ presets last (they cross-link finished tool docs and reuse their media).
   a nonexistent "c closes" shortcut. The shipped
   `tools/drive/tape-map-tutorial.lua` passes 21/21 VERDICTs through authored
   bytes, saved assets, runtime collision, slope traversal, and hazard reset.
-- [ ] **H6 — the tilemap window**. Tutorial: a reusable ruin chunk — tile
-  painting, erase (right-button), then placing the `.tm` as objects in
-  an H5-style map twice. Shots: mid-paint, the chunk placed twice.
-  Reference: `ref-tmap.md`. Sources: `win/tmap.lua`.
+- [x] **H6 — the tilemap window**. DONE 2026-07-22 (D167). The 13-step
+  "build the Moonlit Gate" lesson sizes a 7x6 CTLM, fills its wall mass,
+  carves a doorway with right-button Fill, dresses six stock-tile roles,
+  picks from authored cells, chips the ruin with both eraser doors, and
+  proves undo/save/view. It then drops the one `.tm` into H5's Moonlit
+  Crossing twice, assigns the duplicate an exact position, opens the shared
+  source from Map, and proves one saved cap edit refreshes both placements.
+  `ref-tmap.md` covers the complete editing/view/map/CTLM surface; three
+  inspected @2x shots show the live carve, finished ruin, and both refreshed
+  copies; `REF_DOCS` grows the tilemap row. The lesson's UX fix adds exact
+  zero-based `cell x,y · tile N · zoom` hover feedback while preserving the
+  compact off-grid zoom readout. The shipped
+  `tools/drive/tape-tmap-tutorial.lua` chains the H5 setup and passes 23/23
+  VERDICTs through saved source bytes, placement duplication, double-open,
+  shared editing, and both-copy refresh.
 - [x] **H7 — the synth (+ the sound player feeder)**. DONE 2026-07-22
   (ran first at the human's call; D160). The "four-sound chip kit"
   tutorial (lead / bass / kick / jump), `ref-synth.md` with every knob

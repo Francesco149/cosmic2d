@@ -3,7 +3,62 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 6: the Map window (H5; D166)
+## Current handoff — HELPDOCS session 7: the Tilemap window (H6; D167)
+
+**This session (2026-07-22, continued): HELPDOCS H6 as queued — landed as
+D167** in the implementation/tutorial commit `75d112a` and the docs commit
+carrying this handoff. (1) **The tutorial:** `win-tmap.md` is now the 13-step
+**build the Moonlit Gate** lesson. It authors one exact 7x6 CTLM: rectangular
+wall fill, right-button doorway carve, six stock-tile roles, cell picking,
+two erase doors, undo/redo, atomic save, and view/edit proof. It then opens
+H5's saved Moonlit Crossing, drops the one `.tm` at the west spawn, duplicates
+it to exact `(352,128)`, saves the map, double-opens the shared source, and
+proves one cap edit refreshes both placements without dirtying their CMAP.
+(2) **The complete reference:** new `ref-tmap.md` covers create/open/rebind,
+header and view modes, focused view ownership, exact hover feedback, every
+tool and mouse button, palette/source resolution, all four fields, resize,
+journal/save/recovery/rewind, Map placement/collision boundaries, hotkeys,
+canonical CTLM chunks, APIs, and deliberate v1 limits. `REF_DOCS` grows the
+tilemap row. (3) **The pictures:** three lean real @2x crops show the live
+right-button carve, finished ruin, and both refreshed Map copies. Every crop
+was inspected at source resolution and at logical half-size in the real help
+reader; the labelled three-frame montage is on llm-feed.
+
+**The UX fix the exact lesson exposed:** coordinate recipes were still visual
+counting exercises because Tilemap showed zoom alone. Its top-right bay now
+reads zero-based `cell x,y · tile N · zoom` while the pointer is inside the
+authored grid and keeps the compact zoom-only form outside it; the pure
+formatter is KAT-pinned. The live tape also made two interaction truths
+explicit rather than teaching around them: a grid press focuses **and paints**,
+so title/palette/field are the neutral refocus doors; and Map's intentional
+front-to-back click drill can include the full-map graybox under a gate, so
+locking that underlying layer is the precise double-open recipe.
+
+**The tape SHIPS:** `tools/drive/tape-tmap-tutorial.lua` starts after a fresh
+21/21 H5 setup and drives the new page as written; **23/23 VERDICTs** pin the
+quiet create door, metadata, every intermediate/final cell byte, right erase,
+pick, undo/redo, saved CTLM, Assets discovery, exact placement duplication,
+saved CMAP, placement double-open, shared-source save, and both-copy refresh.
+
+**Proof:** Linux selftest **25,324** (+14); `nix run .#test` **ALL GREEN**,
+release manifests, every committed trace, and all 19 pixel goldens
+byte-identical; **Windows stage REFRESHED** (11 durable entries + shortcut),
+NATIVE selftest **25,326** = Linux + 2 on PAL API 24. **Deferred honestly
+(D167):** the tutorial names but does not tape Ctrl edge-run collision; raw
+PNG tilesets, destructive resize/crop, retarget, overwrite/rebind, reset,
+live-Esc cancellation, palette overflow, OS drop, and rewind stay reference +
+focused-KAT territory. CTLM v1 still has no autotiling, stamp brush, animated
+ids, cell rotation/flip/tint, internal layers, scrolling palette, or collision
+flags. A busy Map double-open still uses layer lock to narrow the click drill.
+
+**Exact next step:** the human's native reader/taste pass on the three frames —
+are the exact cell state, broken silhouette, and shared-source payoff legible
+without zooming — then H8, the Music window's arranged stereo loop tutorial,
+after `/clear`. H7 Synth/Sound already landed out of order at the human's call;
+the round-13 human items (held-audition feel pass, rc.9 release check) remain
+open below.
+
+## Previous handoff — HELPDOCS session 6: the Map window (H5; D166)
 
 **This session (2026-07-22, continued): HELPDOCS H5 as queued — landed as
 D166** in the implementation/tutorial commit `e1cdd0c` and the docs commit
