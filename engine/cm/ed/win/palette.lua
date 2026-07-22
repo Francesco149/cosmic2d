@@ -152,11 +152,15 @@ M.hotkeys = {
       seed_working(u, win)
       adopt_working(u, win, doc.colors[win.sel or 1] or 0xffffffff) end) },
   { key = "a", hint = "add", when = bound, fn = palop(
-    function(win, doc, u) seed_working(u, win)
+    function(win, doc, u)
+      if #doc.colors >= palette.MAX then return end
+      seed_working(u, win)
       table.insert(doc.colors, (win.sel or 1) + 1, win.wcol or 0xffffffff)
       win.sel = (win.sel or 1) + 1; return true end) },
   { key = "d", hint = "dup", when = bound, fn = palop(
-    function(win, doc, u) local s = win.sel or 1
+    function(win, doc, u)
+      if #doc.colors >= palette.MAX then return end
+      local s = win.sel or 1
       table.insert(doc.colors, s + 1, doc.colors[s])
       win.sel = s + 1; return true end) },
   { key = "del", hint = "del", when = bound, fn = palop(
@@ -168,12 +172,20 @@ M.hotkeys = {
 
 -- horizontal drag slider; `st` holds the per-window drag state (st.drag).
 -- Returns new value while dragging, done on release.
-local function slider(st, ctx, id, x, y, w, h, val, lo, hi, label)
+local function slider(st, ctx, id, x, y, w, h, val, lo, hi, label, format)
   local i = cm.require("cm.ui").inp
   local z, px = ctx.z, math.max(4, 8.5 * ctx.z)
+  local shown = format and format(val) or tostring(val)
   pal.x_ig_text(x, y + (h - px) * 0.5, px, COL.dim, label, 0)
-  local bx = x + 26 * z
-  local bw = w - 26 * z
+  local vw = pal.x_ig_text_size(shown, px, 1)
+  pal.x_ig_text(x + w - vw, y + (h - px) * 0.5, px, COL.text, shown, 1)
+  -- Every slider says the value it will commit. The old position-only
+  -- display made exact tutorial steps (notably a signed ramp hue) impossible
+  -- to follow without reverse-engineering pixels. Keep a fixed-width value
+  -- bay so the track never moves underneath a drag as "9" becomes "10".
+  local lw = pal.x_ig_text_size(label, px, 0)
+  local bx = x + lw + 6 * z
+  local bw = math.max(12 * z, x + w - 40 * z - bx)
   local by, bh = y + h * 0.5 - 3 * z, 6 * z
   pal.x_ig_rect_fill(bx, by, bw, bh, COL.well, 2 * z)
   -- clamp the drawn fraction: a value legally past the slider's span (the
@@ -262,8 +274,10 @@ function M.header(win, ctx)
     local txt = pal.x_clipboard()
     local cols = txt and palette.parse_hex(txt)
     if cols and #cols > 0 then
-      p.doc.colors = cols
-      win.sel = math.min(win.sel or 1, #cols)
+      local kept = {}
+      for n = 1, math.min(#cols, palette.MAX) do kept[n] = cols[n] end
+      p.doc.colors = kept
+      win.sel = math.min(win.sel or 1, #kept)
       commit(ctx.ed, win.path)
     end
   end
@@ -389,20 +403,24 @@ function M.draw(win, ctx)
   local pick = win.pick or "sv"
   if pick == "sv" then
     nv = slider(u, ctx, "wh", x0, sy, cw, sh,
-                math.floor(u.wh * 360) % 360, 0, 359, "H")
+                math.floor(u.wh * 360) % 360, 0, 359, "H",
+                function(v) return ("%d°"):format(v) end)
     if nv then u.wh = nv / 360; apply_hsv() end
     local s, v = sv_square(u, ctx, x0, sy + sh + 2 * z, cw, 84 * z)
     if s then u.ws, u.wv = s, v; apply_hsv() end
     sy = sy + sh + 2 * z + 84 * z
   elseif pick == "hsv" then
     nv = slider(u, ctx, "wh", x0, sy, cw, sh,
-                math.floor(u.wh * 360) % 360, 0, 359, "H")
+                math.floor(u.wh * 360) % 360, 0, 359, "H",
+                function(v) return ("%d°"):format(v) end)
     if nv then u.wh = nv / 360; apply_hsv() end
     nv = slider(u, ctx, "ws", x0, sy + sh, cw, sh,
-                math.floor(u.ws * 100 + 0.5), 0, 100, "S")
+                math.floor(u.ws * 100 + 0.5), 0, 100, "S",
+                function(v) return ("%d%%"):format(v) end)
     if nv then u.ws = nv / 100; apply_hsv() end
     nv = slider(u, ctx, "wv", x0, sy + sh * 2, cw, sh,
-                math.floor(u.wv * 100 + 0.5), 0, 100, "V")
+                math.floor(u.wv * 100 + 0.5), 0, 100, "V",
+                function(v) return ("%d%%"):format(v) end)
     if nv then u.wv = nv / 100; apply_hsv() end
     sy = sy + sh * 3
   else -- rgb
@@ -425,7 +443,8 @@ function M.draw(win, ctx)
   -- ---- swatch ops (working -> saved, plus order/del) ----
   local oy = sy + 5 * z
   local bw = (cw - 5 * 3 * z) / 6
-  if button(ctx, x0, oy, bw, px * 1.6, "+add") then
+  if button(ctx, x0, oy, bw, px * 1.6, "+add")
+     and #cols < palette.MAX then
     table.insert(cols, win.sel + 1, win.wcol)
     win.sel = win.sel + 1; closed = true
   end
@@ -434,7 +453,8 @@ function M.draw(win, ctx)
       cols[win.sel] = win.wcol; closed = true
     end
   end
-  if button(ctx, x0 + 2 * (bw + 3 * z), oy, bw, px * 1.6, "dup") then
+  if button(ctx, x0 + 2 * (bw + 3 * z), oy, bw, px * 1.6, "dup")
+     and #cols < palette.MAX then
     table.insert(cols, win.sel + 1, cols[win.sel])
     win.sel = win.sel + 1; closed = true
   end
@@ -475,12 +495,14 @@ function M.draw(win, ctx)
                     win.rampn, 2, 32, "n")
   if nv then win.rampn = nv; u.rampbuf = nil; ctx.touch() end
   nv, done = slider(u, ctx, "rh", x0 + cw * 0.5, ry, cw * 0.5, px * 1.4,
-                    win.ramph or 14, -30, 30, "hue")
+                    win.ramph or 14, -30, 30, "hue",
+                    function(v) return ("%+d°"):format(v) end)
   if nv then win.ramph = nv; ctx.touch() end
   ry = ry + px * 1.7
   if button(ctx, x0, ry, cw * 0.5 - 3 * z, px * 1.7, "append ramp") then
     for _, c in ipairs(palette.ramp(win.wcol, win.rampn,
                                     { hue_shift = win.ramph or 14 })) do
+      if #cols >= palette.MAX then break end
       cols[#cols + 1] = c
     end
     closed = true
