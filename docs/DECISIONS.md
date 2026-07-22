@@ -8929,3 +8929,87 @@ selftest **25,274**, and `nix run .#test` ALL GREEN with every golden
 byte-identical. All five replacements were visually inspected and the
 llm-feed montage was refreshed; the native Windows reader stage was refreshed
 again and remains at **25,276** checks on PAL API 24.
+
+## D165 — Assets organizes the project; Stock lends parts without owning the result (2026-07-22)
+
+**Context.** HELPDOCS H4 pairs two browsers whose old short walkthroughs
+blurred several materially different actions. Assets needed to teach that its
+flat grid still manages real paths, that rename/move carries editor authority,
+and that a drag is interpreted by its destination. Stock needed to teach the
+difference between opening an unsaved experiment, copying exact bytes now,
+and asking a receiving well/track to adopt a library item. The H4 row also
+required complete references and four proof-tape screenshots: mid-rename,
+in-flight drag, filtered Stock, and the editable unsaved copy.
+
+**The paired story.** The tutorial is one project-curation arc split at the
+window boundary. `win-assets.md` has eight exact steps: filter H1's hero,
+rename/move the editable family to `art/characters/moonrunner.spr`, watch its
+already-open Sprite window and `.png`/`.anim`/`.meta` family follow, carry
+`plank.png` to bare canvas, then carry it into the Sprite `img` well without
+confusing a relationship with a pixel edit. `win-stock.md` continues for nine
+steps: filter `noir-sleuth.song`, double-click it into an unsaved Music working
+copy, audition and save, rename it `sound/moonlit-route.song`, direct-copy
+`fm-glass.ins`, audition and rename that project file `ins/moon-glass.ins`,
+then drag the local instrument onto the first song track and save the explicit
+kit. The remaining untouched track references legally stay
+`engine/stock/ins/...`; local ownership is deliberate per voice, never an
+implicit dependency crawl.
+
+**The reference boundary.** New `ref-assets.md` covers header/state, all four
+type chips, full-path fuzzy rank, tile sizing and per-tab scroll, every preview,
+the select/open/carry routing ladder, `r` move semantics, two-press deletion,
+the collision-safe cross-project chooser, OS imports, companion-family rules,
+the parked write wall, and all pointer/key hints. New `ref-stock.md` covers the
+five families/destinations and exactly three adoption doors: double-click seeds
+unsaved editor state; **c / enter** atomically copies one source file; drag
+delegates to a receiver (notably Music copying/binding `.ins`). It names what
+does **not** recurse or bake. `REF_DOCS` grows both rows, so reference presence,
+top links, backlinks, and declared hotkey hints remain KAT-pinned.
+
+**The product finding.** The written flow chose Assets' **sound** chip to find
+the saved `.song`; the tile vanished. `class_of` treated only decoded
+`.wav`/`.ogg`/`.mp3` as sound and left the engine's own `.song`/`.ins` authoring
+sources in `all`. Sound is now the author-facing family: both editable formats
+join the chip and use the sound glyph. The same classification reaches OS
+imports, so `.song` correctly lands in `sound/` and `.ins` in its canonical
+`ins/` rather than following generic sound routing. Selftests pin both class
+membership and destinations. Assets' ambiguous **c — copy to project** hint is
+also corrected to **copy to another project**; Stock retains **copy to project**.
+
+**Tape and pictures.** `tools/drive/tape-assets-stock-tutorial.lua` chains the
+H1 tape on a fresh smoke copy and executes both pages as written. Its 20/20
+VERDICTs cover the sprite fixture, filter/selection, family move and open-window
+follow, bare-canvas opener, stamp-well receiver, Stock filter, unsaved seed,
+Music audition, save/rename, direct instrument copy, Synth open/audition and
+follow-on rename, local track bind, and final decoded disk song. Four real @2x
+frames are tightly fitted: Assets rename 1040x500, drag over the live Sprite
+well 920x760, Stock filter 1120x460, and unsaved Music 1360x880 intrinsic. The
+in-flight named rerun re-arms a real shell carry only after the @2x camera move,
+avoiding the D163 mid-gesture remap. All four were inspected individually, in
+both readers, and as an llm-feed montage. The obsolete unreferenced 1x
+`stock-songs.png` is retired.
+
+**Proof.** Linux selftest **25,300** (+26); `nix run .#test` is ALL GREEN with
+every trace and pixel golden byte-identical. The H4 tape is 20/20 and both
+tutorial pages render cleanly in the real reader. `tools/build-windows.sh`
+refreshed the development tree (11 durable entries plus the Start Menu
+shortcut), and the staged native executable passes **25,302** checks on PAL
+API 24.
+
+**Deferred honestly.** Both grids still select tiles by pointer: Assets has no
+plain-arrow cursor/Enter-open, and Stock has no arrow cursor (Enter is direct
+copy). The old Assets guide's unimplemented arrow claim is removed rather than
+preserved as fiction. Assets tiles label basenames while fuzzy search retains
+full paths; duplicate basenames want a later disambiguation affordance. H4 does
+not tape destructive delete, OS drag-in, or cross-project **c** (their focused
+durability/KAT coverage predates this session). Stock has no direct audition
+button: the receiving Music/Synth window owns transport. A directly copied
+stock `.spr` is source-only until the user opens and saves it to bake the
+runtime family; the reference says so.
+
+**Revisit triggers.** Keyboard accessibility work reaches either grid (add one
+shared, visible navigation contract rather than two ad hoc cursors); duplicate
+basenames make a real project ambiguous (show path context); Stock gains a
+preview transport (keep it non-editing and editor-bank-only); new file families
+or receiver drops land (extend both references and the tape). HELPDOCS H5 now
+owns the map-building side of project assets.

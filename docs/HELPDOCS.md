@@ -136,13 +136,21 @@ presets last (they cross-link finished tool docs and reuse their media).
   hide excess working swatches. The shipped tape chains on H1
   (`tools/drive/tape-palette-tutorial.lua`, 23/23 VERDICTs) and proves the
   saved palette through the real asset-drag and sprite-paint payoff.
-- [ ] **H4 — the assets + stock windows** (one session, paired tools).
-  Tutorial: organize a real project — folders, rename/move (`r`) with
-  windows following, drag assets onto windows/wells; then shop the stock
-  browser: filter, audition, copy a song + ins into the project and make
-  them yours. Shots: the grid mid-rename, a drag in flight, the stock
-  filter, the copied asset open unsaved. References: `ref-assets.md`,
-  `ref-stock.md`. Sources: `win/assets.lua`, `win/stock.lua`.
+- [x] **H4 — the assets + stock windows**. DONE 2026-07-22 (D165). The
+  paired "curate the moonlit courier kit" story is split at the natural
+  window boundary: Assets moves H1's complete sprite family into
+  `art/characters/` while the open window, dirty state, journal and bakes
+  follow, then routes `plank.png` first to bare canvas and then the sprite
+  stamp well; Stock filters/auditions a noir song as an unsaved copy,
+  adopts and renames it, direct-copies/auditions/renames `fm-glass`, and
+  binds that local voice into the saved arrangement. `ref-assets.md` and
+  `ref-stock.md` cover every visible control, pointer/key door, preview,
+  file-family rule, copy/import path, rewind wall and honest limitation;
+  four fitted @2x captures show rename, carry, filter, and unsaved states.
+  The session's UX fix makes `.song` and `.ins` real members of Assets'
+  **sound** family and routes OS-dropped instruments to `ins/`. The shipped
+  `tools/drive/tape-assets-stock-tutorial.lua` chains H1 and passes 20/20
+  VERDICTs through the final local instrument binding.
 - [ ] **H5 — the map window**. Tutorial: build a playable level — collider
   chains with slopes, one-ways, a hazard, spawn/goal markers, freehand
   placements, the CTRL-snap grammar, then walk it in the game window

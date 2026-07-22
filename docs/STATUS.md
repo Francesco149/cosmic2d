@@ -3,7 +3,67 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 4: the palette window (H3; D164)
+## Current handoff — HELPDOCS session 5: Assets + Stock (H4; D165)
+
+**This session (2026-07-22, continued): HELPDOCS H4 as queued — landed as
+D165** in the UX commit `3dd31a7`, the tutorial/reference commit `810210d`,
+and the docs commit carrying this handoff. (1) **The paired tutorials:**
+`win-assets.md` is the eight-step organization half of **curate the moonlit
+courier kit** — filter H1's hero, use `r` to move its editable family to
+`art/characters/moonrunner.spr` while the open window and baked siblings
+follow, carry `plank.png` to bare canvas, then route it into the Sprite `img`
+well without confusing attachment with a pixel edit. `win-stock.md` is the
+nine-step adoption half — filter/open/audition `noir-sleuth.song` as an
+unsaved copy, save and rename it `sound/moonlit-route.song`, direct-copy and
+audition `fm-glass.ins`, rename it `ins/moon-glass.ins`, drag that local voice
+onto the first track, and save the explicit kit. (2) **The complete
+references:** `ref-assets.md` and `ref-stock.md` cover every header/chip,
+filter/rank, preview, size/scroll behavior, pointer/key door, drag routing,
+rename/delete/copy/import rule, family/destination, unsaved/direct/receiver
+adoption distinction, durability boundary, rewind wall, and honest limitation;
+`REF_DOCS` grows both rows. (3) **The pictures:** four real, tightly fitted @2x
+crops show the full-path rename, a live `plank.png` carry ghost over the hero's
+well, the immutable noir Stock filter, and the fully editable song with its
+amber dot/title `*`. Both tutorials rendered cleanly in the reader, every crop
+was visually inspected, and the two-page montage is on llm-feed. The obsolete
+unreferenced 1x `stock-songs.png` is retired.
+
+**The UX fix the exact tutorial exposed:** Assets' **sound** chip classified
+only decoded `.wav`/`.ogg`/`.mp3`; a just-adopted `.song` disappeared as soon
+as the written step chose Sound, and `.ins` was hidden there too. Sound is now
+the author-facing family: `.song` and `.ins` join the chip/glyph. Because that
+classification also owns OS-drop routing, dropped songs land in `sound/` and
+instruments in canonical `ins/`; selftests pin both. Assets' ambiguous
+**c — copy to project** hint now reads **copy to another project**, distinct
+from Stock's direct project copy.
+
+**The tape SHIPS:** `tools/drive/tape-assets-stock-tutorial.lua` chains the H1
+tape on a fresh smoke copy and drives both pages as written; **20/20 VERDICTs**
+green through family move/window follow, bare-canvas opener, stamp well,
+unsaved seed/audition, saves/renames, direct instrument copy, local track bind,
+and final decoded disk song. Named-shot reruns fit one-result browser windows
+around content; the in-flight frame re-arms a real carry only after the @2x
+camera move so D163's gesture-remap class stays closed.
+
+**Proof:** Linux selftest **25,300** (+26); `nix run .#test` **ALL GREEN**,
+every trace and pixel golden byte-identical; **Windows stage REFRESHED**
+(11 durable entries + shortcut), NATIVE selftest **25,302** = Linux + 2 on PAL
+API 24. **Deferred honestly (D165):** both grids remain pointer-selected —
+Assets has no arrow cursor/plain-Enter open and Stock has no arrow cursor
+(Enter copies); the old Assets help's fictional arrow claim is removed. Tile
+labels are basenames while search retains full paths, so duplicate basenames
+want visible context later. H4 does not re-tape destructive delete, OS drag-in,
+or cross-project `c`; focused durability/KAT coverage already owns them. Stock
+auditions through Music/Synth rather than a grid play button, and direct-copying
+a stock `.spr` is source-only until its first Sprite save bakes companions.
+
+**Exact next step:** the human's native reader/taste pass on the four frames —
+does the rename path read without zooming, is the in-flight ghost unmistakable,
+and does the unsaved song's dot + `*` clearly explain the safe Stock door — then
+H5, the Map window's playable-level tutorial, after `/clear`. The round-13
+human items (held-audition feel pass, rc.9 release check) remain open below.
+
+## Previous handoff — HELPDOCS session 4: the palette window (H3; D164)
 
 **This session (2026-07-22, continued): HELPDOCS H3 as queued — landed
 as D164** in the UX/docs commits `37e1dbf` and `7fc3201`, plus the docs
