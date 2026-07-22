@@ -9183,6 +9183,17 @@ plain creation starts fresh, and only Ctrl doors deliberately share a pattern.
 Arrangement and roll views stay independent; placement grid is captured
 session state rather than a current CSNG field.
 
+**Human readback correction.** The first published tape proved the stored
+pattern grew, but exposed a second ownership edge: its still-one-bar selected
+clip continued to truncate bar 2, making the growth look and sound absent. A
+selected clip that exactly fits the old pattern now follows growth; an authored
+shorter/longer clip and every other linked placement keep their independent
+lengths. A permanent `pN · loop N bars` transport label makes the repeat period
+visible without locating the thin roll end line. The lesson now states the
+one-bar authoring floor and lack of a sub-bar period control. It also separates
+gate lifetime from patch-envelope lifetime: the held lesson moved from the
+near-zero-decay noise hat to the audibly sustaining bass.
+
 **Reference, tape, and pictures.** New `ref-music.md` is the exhaustive surface
 contract: create/open/rebind, title and transport, timing/grid/address bay,
 track creation/deletion/mute and instrument import, exact gain/pan, arrangement
@@ -9192,17 +9203,18 @@ ghost, piano keys, velocity, hotkeys, journal/recovery/rewind, CSNG chunks,
 runtime playback, and honest limits. `REF_DOCS` grows the Music row. The shipped
 `tools/drive/tape-music-tutorial.lua` chains a fresh H7 setup and passes
 **22/22 VERDICTs** through exact note/pattern/clip/mix bytes, saved canonical
-source, and runtime flatten counts. Three tape-owned @2x crops show a held C5
-hat audition, the completed rail, and the exact selected-lead mix. All three
-were inspected individually and in the real Help reader; its simple Markdown
+source, and runtime flatten counts. Three tape-owned @2x crops show a held C3
+bass audition with the two-bar loop and clip visible, the completed rail, and
+the exact selected-lead mix. All three were inspected individually and in the
+real Help reader; its simple Markdown
 parser also caught and drove a fix for four-space two-digit list continuations
-before publication. The labelled montage is on llm-feed.
+before publication.
 
-**Proof.** Linux selftest **25,343** (+19); `nix run .#test` is ALL GREEN with
+**Proof.** Linux selftest **25,346** (+22); `nix run .#test` is ALL GREEN with
 release manifests, every committed trace, and all 19 pixel goldens
 byte-identical. The Windows development tree is refreshed (11 durable entries
 plus the Start Menu shortcut), and the staged native executable passes
-**25,345** checks on PAL API 24 when run from the staged root.
+**25,348** checks on PAL API 24 when run from the staged root.
 
 **Deferred honestly.** The tutorial does not tape mute, deletion, BPM cycle,
 Ctrl+X, octave movement, note Ctrl-duplicate, undo/redo, reset/rebind, or the
@@ -9210,8 +9222,9 @@ injected failure doors; the complete reference and focused suites retain them.
 Saving a song refreshes Assets but the running game's path-keyed song cache
 does not hot-reload a same-path resave; restart the game before judging it.
 Music v1 has no editable track names, track-rail scrolling, typed BPM,
-automation, per-clip offsets/gain, or overlap arbitration. The demo's mix is a
-documented authored value set, not a claim of mastering or loudness metering.
+automation, sub-bar pattern periods, per-clip offsets/gain, or overlap
+arbitration. The demo's mix is a documented authored value set, not a claim of
+mastering or loudness metering.
 
 **Revisit triggers.** Same-path live composition becomes a core workflow
 (design an explicit runtime cache invalidation door); large songs routinely

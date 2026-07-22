@@ -7,7 +7,8 @@
 
 **This session (2026-07-22, continued): HELPDOCS H8 as queued — landed as
 D168** in the implementation/tutorial commit `8e23f11` and the docs commit
-carrying this handoff. (1) **The tutorial:** `win-music.md` is now the
+carrying this handoff; the human-readback correction is `effc4a8`. (1)
+**The tutorial:** `win-music.md` is now the
 15-step **arrange Moonlit Relay** lesson. Starting after H7's chip-kit lesson,
 it makes one exact eight-bar CSNG from local kick/bass/lead plus a Stock hat:
 four bound tracks, one-bar kick/hat patterns stretched across the song, a
@@ -15,16 +16,18 @@ two-bar bass turn, a two-bar lead statement copied to bar 5 through deliberate
 linked reuse, and an independent bar-7 answer. The path exercises held note
 and piano-key auditions, drag-to-length, right-delete, marquee/copy, pointer
 ghost paste, group move and velocity, clip resize/move/link, exact gain/pan,
-scrub playback, atomic save, canonical decode, and runtime flattening. (2)
-**The complete reference:** new `ref-music.md` covers creation/rebind,
+scrub playback, atomic save, canonical decode, and runtime flattening. Its held
+lesson now uses the audibly sustaining bass rather than the short noise hat.
+(2) **The complete reference:** new `ref-music.md` covers creation/rebind,
 transport/timing/address feedback, every track/bind/mix control, the complete
 arrangement and roll pointer grammar, independent views, piano keys, selection,
 group edits, clipboard ghost, velocity, hotkeys, journal/recovery/rewind,
 canonical CSNG chunks, runtime playback, and deliberate v1 limits. `REF_DOCS`
 grows the Music row. (3) **The pictures:** three tape-owned @2x crops show the
-off-beat hat while C5 is held, the finished eight-bar arrangement, and the
-selected lead's exact `112 / +28` mix. Each was inspected at source resolution
-and inside the real Help reader; the labelled montage is on llm-feed.
+two-bar bass while C3 is held, the finished eight-bar arrangement, and the
+selected lead's exact `112 / +28` mix. The roll frame visibly carries
+`p4 · loop 2 bars` and the matching two-bar clip. Each was inspected at source
+resolution and inside the real Help reader.
 
 **The UX fix the exact lesson exposed:** recipes away from labelled C rows and
 beat lines still required counting tiny cells. Music's free transport bay now
@@ -37,18 +40,32 @@ grammar: plain stamps are fresh, Ctrl reuse stays linked through save/load,
 Ctrl+V is a pointer-placed one-shot ghost, and grid is session state rather
 than the CSNG HEAD byte.
 
+**Human readback correction (`effc4a8`):** the original tape proved that the
+stored `PATN` grew to two bars, but its selected arrangement clip remained one
+bar, so the new notes stayed visually and audibly truncated. A selected clip
+that still exactly fits the old pattern now follows pattern growth;
+deliberately shorter/longer clips and other linked placements retain their
+authored lengths. The transport permanently names the active repeat period
+(`pN · loop N bars`), making the one-to-two-bar transition unmissable. The
+tutorial and full reference also state the current one-bar authoring floor: a
+one-beat phrase repeats next bar, not next beat, because Music v1 has no
+sub-bar pattern-period control. Audition prose now distinguishes a held gate
+from the audible envelope, and the live sustain demonstration moved from the
+near-zero-decay hat to the bass.
+
 **The tape SHIPS:** `tools/drive/tape-music-tutorial.lua` chains a fresh H7
 setup and drives the page as written; **22/22 VERDICTs** pin instrument import
-and binding, exact pattern note strings, held audition without duration growth,
-selection/copy/paste/group edits, grow-only pattern length, long backing clips,
-two linked `p5` placements versus independent `p6`, exact four-track mix,
+and binding, exact pattern note strings, an actually audible held bass gate,
+selection/copy/paste/group edits, grow-only pattern plus exact-fit clip growth,
+long backing clips, two linked `p5` placements versus independent `p6`, exact
+four-track mix,
 scrub/play/save state, canonical source bytes, and flattened runtime counts
 (`24 / 32 / 16 / 24`). Named-shot reruns are the tutorial's own live frames.
 
-**Proof:** Linux selftest **25,343** (+19); `nix run .#test` **ALL GREEN**,
+**Proof:** Linux selftest **25,346** (+22); `nix run .#test` **ALL GREEN**,
 release manifests, every committed trace, and all 19 pixel goldens
 byte-identical; **Windows stage REFRESHED** (11 durable entries + shortcut),
-NATIVE selftest **25,345** = Linux + 2 on PAL API 24. The native proof must run
+NATIVE selftest **25,348** = Linux + 2 on PAL API 24. The native proof must run
 from the staged root so its relative `bin/cosmic-player.exe` identity fixture
 uses the staged companion executable.
 
@@ -59,13 +76,12 @@ focused KAT/durability suites own those surfaces. The current generic song
 save refreshes Assets but does not invalidate a running game's path-keyed song
 cache, so the docs explicitly require restarting the game before judging a
 same-path resave. Music v1 still has no editable track names, scrolling track
-rail, typed BPM, internal automation, or overlapping-clip arbitration.
+rail, typed BPM, internal automation, sub-bar pattern periods, or
+overlapping-clip arbitration.
 
-**Exact next step:** the human's native reader/taste pass on the three frames —
-is the held-key state obvious, does `p5 · p5 · p6` read as repeat then answer,
-and is the narrow mix crop useful at normal Help scale — then H9, the Terrain
-window's lakeside-vale tutorial, after `/clear`. The round-13 human items
-(held-audition feel pass, rc.9 release check) remain open below.
+**Exact next step:** H9, the Terrain window's lakeside-vale tutorial, after
+`/clear`. The H8 human readback is incorporated; the round-13 human items
+(broader held-audition feel pass, rc.9 release check) remain open below.
 
 ## Previous handoff — HELPDOCS session 7: the Tilemap window (H6; D167)
 

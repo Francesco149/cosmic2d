@@ -199,10 +199,15 @@ presets last (they cross-link finished tool docs and reuse their media).
   runtime flattening. `ref-music.md` covers the complete rail, arrangement,
   roll, piano keys, velocity, transport, journal, CSNG, runtime, and every
   pointer/key door; `REF_DOCS` grows the Music row. Three inspected @2x
-  captures show the C5 audition, final rail, and exact lead mix. The UX fix
-  adds an observer-only roll address bay with bar/beat/tick, pitch, and stored
-  duration/velocity. The shipped `tools/drive/tape-music-tutorial.lua`
-  chains H7 and passes 22/22 VERDICTs through the final saved/flattened song.
+  captures show the held C3 bass with its two-bar pattern/clip, final rail,
+  and exact lead mix. The UX pass adds an observer-only roll address bay with
+  bar/beat/tick, pitch, and stored duration/velocity; a permanent pattern-loop
+  span; and exact-fit selected-clip growth so a new bar is immediately audible.
+  The human readback also moved the sustain lesson from the short hat to bass,
+  distinguished held gates from patch envelopes, and made the one-bar minimum
+  plus lack of sub-bar periods explicit. The shipped tape at
+  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 22/22 VERDICTs
+  through the final saved/flattened song.
 - [ ] **H9 — the terrain window**. Tutorial: sculpt the lakeside vale —
   heights, the noise brush, texture paint, water, props, a route
   (grow the D144 walkthrough; `media/terrain-vale.png` exists as the
