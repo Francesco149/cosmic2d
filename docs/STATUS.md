@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — Music crash + DAW interaction sweep (D169–D171)
+## Current handoff — Music crash + DAW interaction sweep (D169–D172)
 
 **This session (2026-07-25): GitHub issues #1–#4 were taken in severity
 order.** The selected-note Delete/Ctrl+X crash is fixed in `f0640e7`: both
@@ -38,10 +38,7 @@ arrangement and piano views chase accumulated wheel/pan targets on both axes,
 including vertical arrangement scroll, pitch scroll, and piano-row scaling.
 One machine-wide **smooth pan / zoom** switch sits in the Aa panel beside the
 global font/UI scales, defaults on, persists in per-user `editor.dat`, and
-cancels/lands pending motion exactly when switched off. Arrangement Ctrl
-marquees expand to complete beat × track cells; piano marquees expand to
-complete active-grid × pitch-row cells, with the visible box and selection
-sharing one boundary calculation.
+cancels/lands pending motion exactly when switched off.
 
 **The 2026-07-26 held-pan correction closes the remaining feel bug.** The
 outer canvas had reused a quartic one-shot ease for MMB/space drag and rebuilt
@@ -51,6 +48,18 @@ now retargets one persistent 32%-per-frame chase, visibly follows the pointer
 while down, and uses release only to settle the residual distance exactly.
 Wheel and fit actions retain their deliberate timed curves; smoothing off
 still lands every drag update immediately.
+
+**The final 2026-07-26 Music feel pass fixes the remaining roll/selection
+readback.** Piano MMB state was already fractional, but its draw offset used
+the fraction with the wrong sign: content moved against the hand within a row,
+then jumped nearly two rows when `floor(low)` advanced. The corrected identity
+is continuous across every pitch boundary. Arrangement and piano marquee time
+edges now follow the pointer exactly; only track/pitch-row edges snap. Their
+overlap set is computed before drawing, so notes and clips highlight while the
+button remains held and mouse-up commits that exact preview. Note/clip deletion
+now removes source bytes immediately and leaves a 260 ms, inward-collapsing
+accent glow in the old rectangle; it is ephemeral, reference-free, and obeys
+the global reduce-flashes policy.
 
 **The reported intermittent wrong-preset sound had a concrete ownership bug
 even without a deterministic UI repro.** Preview slots were cached only by
@@ -64,18 +73,19 @@ delete, undo/decode, rebind, and mix edits. Pure decision KATs pin initial
 upload, stable reuse, reindex, mix change, stolen ownership, and empty-track
 behavior.
 
-**Proof:** Linux selftest **25,401**; `nix run .#test` **ALL GREEN** across
+**Proof:** Linux selftest **25,409**; `nix run .#test` **ALL GREEN** across
 release manifests, every committed trace, and all 19 pixel goldens. The fresh
-Music tape passes **37/37 VERDICTs** through both transport scopes, arrangement
+Music tape passes **43/43 VERDICTs** through both transport scopes, arrangement
 move/duplicate/select, piano edits, pattern naming, channel-rack add/erase/
 drill, typed 137 BPM + 7/8 and undo, canonical save, runtime counts
 (`24 / 32 / 16 / 24`), eased and immediate wheel motion, the real Aa toggle,
-and a held beat/track-snapped marquee selecting exactly three clips. Existing
-piano/arrangement/channel-rack frames plus the snapped marquee and Aa control
-were inspected; the two polish frames are published together on llm-feed. The
-held-MMB event tape observes **74.2%** progress before release and the exact
-target afterward. **Windows stage REFRESHED** (11 durable entries + shortcut);
-staged NATIVE selftest **25,403** = Linux + 2 on PAL API 24.
+held canvas/piano pans, pointer-time/row-snapped marquees with live selection,
+and both deletion glows. Existing piano/arrangement/channel-rack frames plus
+the live marquee, Aa control, and deletion feedback were inspected; the
+polish frames are on llm-feed. The canvas event tape observes **74.2%**
+progress before release; its six-pixel piano drag settles at fractional row
+`59.428571…`. **Windows stage REFRESHED** (11 durable entries + shortcut);
+staged NATIVE selftest **25,411** = Linux + 2 on PAL API 24.
 
 **Exact next step:** human feel/ears pass in the freshly staged Music window,
 with special attention to song-vs-clip playback, the smoothing curve, and the

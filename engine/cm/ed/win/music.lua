@@ -42,6 +42,7 @@
 local M = select(2, ...) or {}
 local song = cm.require("cm.song")
 local snd = cm.require("cm.snd")
+local ease = cm.require("cm.ease")
 
 M.kind = "music"
 M.help = "win-music"
@@ -72,6 +73,8 @@ end
 
 local LANE_H = 15 -- arrangement track lane height (logical px): fixed + a
                   -- reasonable size, vertical-scrolls when tracks overflow
+M.DELETE_GLOW_MS = 260
+M.DELETE_FX_CAP = 256
 
 function M.title(win)
   return win.path:match("([^/]+)$") or "music"
@@ -100,6 +103,7 @@ local function decode_into(p, bytes)
   p.flat = nil -- preview cache
   p.nsels = nil -- the note selection holds TABLE REFS into the old doc
   p.csels, p.csel = nil, nil -- clip selections hold refs/indices too
+  p.delete_fx = nil -- afterimages belong only to the document generation
   p.solo_restore = nil
   -- Slots can be reused, but their per-track identity cannot: undo/reload may
   -- replace or reorder every track while leaving this path-level plumbing
@@ -507,10 +511,9 @@ function M.snap_delta(delta, step)
   return math.tointeger(((delta + step / 2) // step) * step)
 end
 
--- A marquee owns complete grid cells, not arbitrary screen pixels. The low
--- edge floors and the high edge ceils regardless of drag direction, so a box
--- visibly agrees with the clips/notes it will select. `hi_limit` is exclusive
--- (track/pitch-row count); nil leaves the time axis unbounded.
+-- A snapped marquee axis owns complete grid cells, not arbitrary screen
+-- pixels. Music uses this only for the vertical pitch/track axis: the time
+-- axis follows the pointer exactly, like a DAW selection tool.
 function M.grid_span(a, b, step, lo_limit, hi_limit)
   step = math.max(1, tonumber(step) or 1)
   a, b = tonumber(a) or 0, tonumber(b) or 0
@@ -531,6 +534,19 @@ function M.grid_span(a, b, step, lo_limit, hi_limit)
   return math.tointeger(lo) or lo, math.tointeger(hi) or hi
 end
 
+-- An unsnapped marquee axis follows its pointer endpoints exactly while still
+-- respecting the authored domain. Kept separate from grid_span so a later
+-- change cannot accidentally quantize Music's horizontal selection edge.
+function M.pointer_span(a, b, lo_limit, hi_limit)
+  a, b = tonumber(a) or 0, tonumber(b) or 0
+  local lo, hi = math.min(a, b), math.max(a, b)
+  lo_limit, hi_limit = tonumber(lo_limit), tonumber(hi_limit)
+  if lo_limit then lo, hi = math.max(lo_limit, lo), math.max(lo_limit, hi) end
+  if hi_limit then lo, hi = math.min(hi_limit, lo), math.min(hi_limit, hi) end
+  if hi < lo then hi = lo end
+  return lo, hi
+end
+
 -- Convert a top-down visible row span [r0,r1) back into its inclusive pitch
 -- span. `low` is intentionally the pitch just below the visible roll, matching
 -- note_rect/y2pitch: row zero is low+nrows and row nrows-1 is low+1.
@@ -538,6 +554,52 @@ function M.pitch_span(low, nrows, r0, r1)
   local hi = math.min(127, low + nrows - r0)
   local lo = math.max(0, low + nrows - r1 + 1)
   return math.tointeger(lo) or lo, math.tointeger(hi) or hi
+end
+
+-- The roll stores its bottom pitch as a fractional row. Drawing subtracts
+-- `suby`, so the fractional term must be floor(low)-low: this makes a note's
+-- screen y proportional to lowf and continuous through integer boundaries.
+-- The old opposite sign moved against the hand inside a row, then jumped
+-- almost two rows when floor(lowf) advanced.
+function M.pitch_view(lowf, row_h)
+  lowf, row_h = tonumber(lowf) or 0, tonumber(row_h) or 1
+  local low = math.floor(lowf)
+  return low, (low - lowf) * row_h
+end
+
+-- Selection previews and mouse-up commits share these pure overlap doors.
+-- `base` is copied first for Ctrl+Shift additive marquees.
+function M.clip_marquee_selection(clips, t0, t1, l0, l1, base)
+  local sel, active = {}
+  for item in pairs(base or {}) do sel[item] = true end
+  for ci, c in ipairs(clips or {}) do
+    if c.tick < t1 and c.tick + c.len > t0
+       and c.track >= l0 and c.track < l1 then
+      sel[c], active = true, ci
+    end
+  end
+  return sel, active
+end
+
+function M.note_marquee_selection(notes, t0, t1, plo, phi, base)
+  local sel = {}
+  for item in pairs(base or {}) do sel[item] = true end
+  for _, n in ipairs(notes or {}) do
+    if n.tick < t1 and n.tick + n.dur > t0
+       and n.pitch >= plo and n.pitch <= phi then
+      sel[n] = true
+    end
+  end
+  return sel
+end
+
+-- Deletion feedback is editor-only wall-clock presentation. The sine-in-out
+-- envelope starts and ends without a velocity corner; reduced-flash policy is
+-- applied by the draw helper so this pure profile remains easy to pin.
+function M.delete_glow(age_ms)
+  local t = math.max(0, (tonumber(age_ms) or 0) / M.DELETE_GLOW_MS)
+  if t >= 1 then return 0, true end
+  return 1 - ease.sine_inout(t), false
 end
 
 -- One deliberately short critically-feeling chase for every Music view axis.
@@ -618,16 +680,17 @@ function M.clip_move_delta(base, raw_tick, raw_track, beat, precise, ntracks)
 end
 
 function M.delete_selected_clips(doc, selection)
-  local keep, removed = {}, 0
+  local keep, removed, gone = {}, 0, {}
   for _, c in ipairs(doc.clips or {}) do
     if selection and selection[c] then
       removed = removed + 1
+      gone[#gone + 1] = c
     else
       keep[#keep + 1] = c
     end
   end
   if removed > 0 then doc.clips = keep end
-  return removed
+  return removed, gone
 end
 
 function M.toggle_solo(doc, p, ti)
@@ -652,10 +715,11 @@ end
 -- Returns the number removed; pure document mutation, KAT'd in t_song.
 function M.delete_selected_notes(doc, pt, selection)
   if not (doc and pt and selection) then return 0 end
-  local keep, removed = {}, 0
+  local keep, removed, gone = {}, 0, {}
   for _, n in ipairs(pt.notes or {}) do
     if selection[n] then
       removed = removed + 1
+      gone[#gone + 1] = n
     else
       keep[#keep + 1] = n
     end
@@ -664,7 +728,70 @@ function M.delete_selected_notes(doc, pt, selection)
     pt.notes = keep
     song.fit_pattern(doc, pt)
   end
-  return removed
+  return removed, gone
+end
+
+-- Keep only scalar geometry from a deleted item: effects cannot retain live
+-- document refs, and changing selection/undo immediately after deletion must
+-- not move the afterimage. `at` is injectable for focused KATs.
+function M.arm_delete_fx(p, kind, items, pattern, at)
+  if not (p and (kind == "note" or kind == "clip")) then return 0 end
+  items = items or {}
+  local fx = p.delete_fx or {}
+  p.delete_fx = fx
+  -- A large group deletion keeps only the newest cap without first allocating
+  -- effects for every source or repeatedly shifting the array from its front.
+  local first = math.max(1, #items - M.DELETE_FX_CAP + 1)
+  local nadd = math.max(0, #items - first + 1)
+  local old_keep = M.DELETE_FX_CAP - nadd
+  if #fx > old_keep then
+    local from = #fx - old_keep + 1
+    for j = 1, old_keep do fx[j] = fx[from + j - 1] end
+    for j = #fx, old_keep + 1, -1 do fx[j] = nil end
+  end
+  local armed_at = at or pal.time_ns()
+  local added = 0
+  for j = first, #items do
+    local item = items[j]
+    local e = { kind = kind, at = armed_at, k = 1 }
+    if kind == "note" then
+      e.pattern, e.tick, e.dur, e.pitch =
+        pattern, item.tick, item.dur, item.pitch
+    else
+      e.tick, e.len, e.track = item.tick, item.len, item.track
+    end
+    fx[#fx + 1] = e
+    added = added + 1
+  end
+  if #fx == 0 then p.delete_fx = nil end
+  return added
+end
+
+local function draw_inner_glow(x, y, w, h, z, k)
+  if k <= 0 or w <= 0 or h <= 0 then return end
+  local policy = cm.require("cm.view").flash_scale()
+  local function col(alpha)
+    alpha = math.max(0, math.min(255,
+      math.floor(alpha * k * policy + 0.5)))
+    return (COL.hot & ~0xff) | alpha
+  end
+  -- A faint body makes the disappearing item's footprint readable; three
+  -- increasingly soft rims stay strictly inside it. As the envelope falls,
+  -- the rims sink toward the center as well as fading.
+  pal.x_ig_rect_fill(x, y, w, h, col(28), math.min(2 * z, h * 0.25))
+  local sink = (1 - k) * math.min(w, h) * 0.22
+  local layers = {
+    { 0.0, 214, 1.35 }, { 1.35, 120, 1.0 }, { 2.7, 54, 0.75 },
+  }
+  for _, layer in ipairs(layers) do
+    local inset = sink + layer[1] * z
+    local rw, rh = w - inset * 2, h - inset * 2
+    if rw > 0.5 and rh > 0.5 then
+      pal.x_ig_rect(x + inset, y + inset, rw, rh, col(layer[2]),
+                    math.max(0.75, layer[3] * z),
+                    math.min(2 * z, rh * 0.25))
+    end
+  end
 end
 
 function M.nudge_selected_notes(pt, selection, dt, dp)
@@ -758,19 +885,28 @@ M.hotkeys = {
       if not p.doc then return end
       if p.nsels and next(p.nsels) then -- the note selection first
         local pt = p.doc.patterns[win.pat or 1]
-        if pt and M.delete_selected_notes(p.doc, pt, p.nsels) > 0 then
+        local removed, gone = 0
+        if pt then
+          removed, gone = M.delete_selected_notes(p.doc, pt, p.nsels)
+        end
+        if removed > 0 then
+          M.arm_delete_fx(p, "note", gone, pt.id)
           p.nsels = {}
           p.nsel = nil
           p.flat = nil
           commit(ed, win.path)
         end
-      elseif p.csels and next(p.csels)
-             and M.delete_selected_clips(p.doc, p.csels) > 0 then
-        p.csels, p.csel = {}, nil
-        p.flat = nil
-        commit(ed, win.path)
+      elseif p.csels and next(p.csels) then
+        local removed, gone = M.delete_selected_clips(p.doc, p.csels)
+        if removed > 0 then
+          M.arm_delete_fx(p, "clip", gone)
+          p.csels, p.csel = {}, nil
+          p.flat = nil
+          commit(ed, win.path)
+        end
       elseif p.csel and p.doc.clips[p.csel] then
-        table.remove(p.doc.clips, p.csel)
+        local dead = table.remove(p.doc.clips, p.csel)
+        M.arm_delete_fx(p, "clip", { dead })
         p.csel, p.csels = nil, {}
         p.flat = nil
         commit(ed, win.path)
@@ -920,7 +1056,8 @@ M.hotkeys[#M.hotkeys + 1] = {
     local sel, pt = selected_notes(p, win)
     if #sel == 0 or not pt then return end
     copy_sel(ed, win, p)
-    M.delete_selected_notes(p.doc, pt, p.nsels)
+    local _, gone = M.delete_selected_notes(p.doc, pt, p.nsels)
+    M.arm_delete_fx(p, "note", gone, pt.id)
     p.nsels, p.nsel = {}, nil
     p.flat = nil
     commit(ed, win.path)
@@ -1067,6 +1204,19 @@ function M.draw(win, ctx)
   if not doc then return end
   local i = cm.require("cm.ui").inp
   local vmotion = motion_step(p, win, ctx)
+  local delete_now = pal.time_ns()
+  if p.delete_fx then
+    local alive = {}
+    for _, fx in ipairs(p.delete_fx) do
+      local k, done = M.delete_glow((delete_now - fx.at) / 1e6)
+      if not done then
+        fx.k = k
+        alive[#alive + 1] = fx
+      end
+    end
+    p.delete_fx = #alive > 0 and alive or nil
+    if p.delete_fx then ctx.touch() end
+  end
 
   preview_step(ed, win, p)
   if p.playing then ctx.touch() end
@@ -1176,12 +1326,16 @@ function M.draw(win, ctx)
           if cache and cache[ti] ~= nil then table.remove(cache, ti) end
         end
         local keep = {}
+        local gone = {}
         for _, c in ipairs(doc.clips) do
-          if c.track ~= ti - 1 then
+          if c.track == ti - 1 then
+            gone[#gone + 1] = c
+          else
             if c.track > ti - 1 then c.track = c.track - 1 end
             keep[#keep + 1] = c
           end
         end
+        M.arm_delete_fx(p, "clip", gone)
         doc.clips = keep
         p.solo_track, p.solo_restore = nil, nil
         win.trk = math.max(1, math.min(win.trk or 1, #doc.tracks))
@@ -1516,7 +1670,38 @@ function M.draw(win, ctx)
                     COL.dim, doc.tracks[ti].name or ("t" .. ti), 0)
     end
   end
+  local function arr_pos()
+    local tick = ar_t0 + (i.wx - rx) / atpp
+    local row = math.min(#doc.tracks, math.max(0,
+      (i.wy - ay + ar_sy) / lane_h))
+    local lane = math.min(#doc.tracks - 1, math.max(0,
+      math.tointeger(row // 1)))
+    return tick, lane, row
+  end
+  local function clip_marquee_bounds(g)
+    local tick, _, row = arr_pos()
+    local t0, t1 = M.pointer_span(g.tick0, tick, 0)
+    local l0, l1 = M.grid_span(g.row0, row, 1, 0, #doc.tracks)
+    return t0, t1, l0, l1
+  end
   p.csels = p.csels or {}
+  local clip_preview
+  do
+    local g = p.g and p.g.t == "clipmarquee" and p.g
+    if g then
+      if i.buttons[1] and (math.abs(i.wx - g.x0) > 3 * z
+                          or math.abs(i.wy - g.y0) > 3 * z) then
+        g.moved = true
+      end
+      if g.moved then
+        local t0, t1, l0, l1 = clip_marquee_bounds(g)
+        g.bounds = { t0, t1, l0, l1 }
+        g.preview, g.preview_active = M.clip_marquee_selection(
+          doc.clips, t0, t1, l0, l1, g.add and p.csels or nil)
+        clip_preview = g.preview
+      end
+    end
+  end
   -- Clips in the selected set are unmistakable; other placements sharing the
   -- active pattern retain the linked-family glow.
   local sel_pat = p.csel and doc.clips[p.csel] and doc.clips[p.csel].pattern
@@ -1530,7 +1715,9 @@ function M.draw(win, ctx)
       local hov = ctx.hot and i.wx >= cx0 and i.wx < cx0 + cw0
                   and i.wy >= cy0 and i.wy < cy0 + lane_h
       local kin = sel_pat and c.pattern == sel_pat and p.csel ~= ci
-      local selected = p.csels[c] or p.csel == ci
+      local selected
+      if clip_preview then selected = clip_preview[c] == true
+      else selected = p.csels[c] or p.csel == ci end
       pal.x_ig_rect_fill(vis_l, cy0 + 1, vis_r - vis_l, lane_h - 3,
                          (selected or hov) and COL.clip_hot
                          or kin and COL.note_dim or COL.clip, 2 * z)
@@ -1547,6 +1734,13 @@ function M.draw(win, ctx)
       local label = cpat and cpat.name or song.default_pattern_name(c.pattern)
       pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.68,
                     selected and COL.hot or COL.dim, label, 0)
+    end
+  end
+  for _, fx in ipairs(p.delete_fx or {}) do
+    if fx.kind == "clip" then
+      local gx = rx + (fx.tick - ar_t0) * atpp
+      local gy = ay + fx.track * lane_h - ar_sy + 1
+      draw_inner_glow(gx, gy, fx.len * atpp, lane_h - 3, z, fx.k or 0)
     end
   end
   -- the preview playhead
@@ -1606,14 +1800,6 @@ function M.draw(win, ctx)
   -- temporarily bypasses beat snapping; right-click erases.
   p.arr = { x = rx, y = ay, w = rw, h = AR_H, atpp = atpp, t0 = ar_t0,
             sy = ar_sy, lane_h = lane_h, bar = bar, beat = beat }
-  local function arr_pos()
-    local tick = ar_t0 + (i.wx - rx) / atpp
-    local row = math.min(#doc.tracks, math.max(0,
-      (i.wy - ay + ar_sy) / lane_h))
-    local lane = math.min(#doc.tracks - 1, math.max(0,
-      math.tointeger(row // 1)))
-    return tick, lane, row
-  end
   local function arr_hit(tick, lane)
     local hit, edge
     for ci, c in ipairs(doc.clips) do
@@ -1640,12 +1826,6 @@ function M.draw(win, ctx)
       end
     end
     return out
-  end
-  local function clip_marquee_bounds(g)
-    local tick, _, row = arr_pos()
-    local t0, t1 = M.grid_span(g.tick0, tick, beat, 0)
-    local l0, l1 = M.grid_span(g.row0, row, 1, 0, #doc.tracks)
-    return t0, t1, l0, l1
   end
   if ctx.hot and i.clicked[1] and over_arr and not p.g and not rh_hot then
     local tick, lane, row = arr_pos()
@@ -1741,32 +1921,23 @@ function M.draw(win, ctx)
   end
   if p.g and p.g.t == "clipmarquee" then
     if i.buttons[1] then
-      if math.abs(i.wx - p.g.x0) > 3 * z
-         or math.abs(i.wy - p.g.y0) > 3 * z then
-        p.g.moved = true
-      end
       if p.g.moved then
-        local t0, t1, l0, l1 = clip_marquee_bounds(p.g)
+        local b = p.g.bounds
+        local t0, t1, l0, l1 = b[1], b[2], b[3], b[4]
         local x1, x2 = rx + (t0 - ar_t0) * atpp,
                        rx + (t1 - ar_t0) * atpp
         local y1, y2 = ay + l0 * lane_h - ar_sy,
                        ay + l1 * lane_h - ar_sy
+        pal.x_ig_clip_push(rx, ay, rw, AR_H)
         pal.x_ig_rect(x1, y1, x2 - x1, y2 - y1, COL.accent,
                       math.max(1, 1 * z), 2 * z)
+        pal.x_ig_clip_pop()
       end
       ctx.touch()
     else
       if p.g.moved then
-        local t0, t1, l0, l1 = clip_marquee_bounds(p.g)
-        local sel = p.g.add and p.csels or {}
-        local active
-        for ci, c in ipairs(doc.clips) do
-          if c.tick < t1 and c.tick + c.len > t0
-             and c.track >= l0 and c.track < l1 then
-            sel[c], active = true, ci
-          end
-        end
-        p.csels = sel
+        local active = p.g.preview_active
+        p.csels = p.g.preview or {}
         if active then drill(active) elseif not p.g.add then p.csel = nil end
       elseif p.g.hit then
         if p.g.add then
@@ -1787,6 +1958,7 @@ function M.draw(win, ctx)
     local hit = arr_hit(tick, lane)
     if hit then
       local dead = table.remove(doc.clips, hit)
+      M.arm_delete_fx(p, "clip", { dead })
       p.csels[dead] = nil
       p.csel = nil
       p.flat = nil
@@ -2018,8 +2190,7 @@ function M.draw(win, ctx)
     win.lownote = lowf
     if done then win.lownote_target = nil else ctx.touch() end
   end
-  local low = math.floor(lowf)
-  local suby = (lowf - low) * row_h
+  local low, suby = M.pitch_view(lowf, row_h)
   local tick0 = win.tick0 or 0
   local function t2x(t) return rx + (t - tick0) * tpp end
   local function x2t(x) return tick0 + (x - rx) / tpp end
@@ -2077,8 +2248,7 @@ function M.draw(win, ctx)
       end
       ctx.touch()
       lowf = win.lownote
-      low = math.floor(lowf)
-      suby = (lowf - low) * row_h
+      low, suby = M.pitch_view(lowf, row_h)
       tick0 = win.tick0
     else
       p.pan = nil
@@ -2132,6 +2302,37 @@ function M.draw(win, ctx)
   -- notes (selection = a set of note TABLE REFS — stable across
   -- commits, cleared by decode_into on undo/adopt)
   p.nsels = p.nsels or {}
+  local over_roll = i.wx >= rx and i.wx < rx + rw and i.wy >= roll_y
+                    and i.wy < roll_y + roll_h
+  local function roll_row(y)
+    -- Fractional upward pan can expose part of row -1 at the top. Keep that
+    -- real visible pitch selectable; pitch_span clamps it to MIDI's domain.
+    return math.max(-1, math.min(nrows,
+      (y - roll_y + suby) / row_h))
+  end
+  local function note_marquee_bounds(g)
+    local t0, t1 = M.pointer_span(g.tick0, x2t(i.wx), 0)
+    local r0, r1 = M.grid_span(g.row0, roll_row(i.wy), 1, -1, nrows)
+    return t0, t1, r0, r1
+  end
+  local note_preview
+  do
+    local g = p.g and p.g.t == "marquee" and p.g
+    if g then
+      if i.buttons[1] and (math.abs(i.wx - g.x0) > 3 * z
+                          or math.abs(i.wy - g.y0) > 3 * z) then
+        g.moved = true
+      end
+      if g.moved then
+        local t0, t1, r0, r1 = note_marquee_bounds(g)
+        local plo, phi = M.pitch_span(low, nrows, r0, r1)
+        g.bounds = { t0, t1, r0, r1 }
+        g.preview = M.note_marquee_selection(
+          pat.notes, t0, t1, plo, phi, g.add and p.nsels or nil)
+        note_preview = g.preview
+      end
+    end
+  end
   local function note_rect(n)
     local nx = t2x(n.tick)
     local ny = roll_y + (low + nrows - n.pitch) * row_h - suby
@@ -2184,7 +2385,10 @@ function M.draw(win, ctx)
     end
   end
   for ni, n in ipairs(pat.notes) do -- unselected notes first
-    if not (p.nsel == ni or p.nsels[n]) then
+    local selected
+    if note_preview then selected = note_preview[n] == true
+    else selected = p.nsel == ni or p.nsels[n] end
+    if not selected then
       draw_note(n, false)
     end
   end
@@ -2192,8 +2396,19 @@ function M.draw(win, ctx)
   -- note stays visible THROUGH the selection, so the overlap can be
   -- seen and fixed (round 9)
   for ni, n in ipairs(pat.notes) do
-    if p.nsel == ni or p.nsels[n] then
+    local selected
+    if note_preview then selected = note_preview[n] == true
+    else selected = p.nsel == ni or p.nsels[n] end
+    if selected then
       draw_note(n, true)
+    end
+  end
+  for _, fx in ipairs(p.delete_fx or {}) do
+    if fx.kind == "note" and fx.pattern == pat.id then
+      local gx, gy, gw, gh = note_rect {
+        tick = fx.tick, dur = fx.dur, pitch = fx.pitch,
+      }
+      draw_inner_glow(gx, gy + 1, gw - 1, gh - 2, z, fx.k or 0)
     end
   end
   -- resize handle: a bright bar when hovering the right edge of the
@@ -2213,47 +2428,38 @@ function M.draw(win, ctx)
   -- still offsets only lengths across the selected set.
   local stretch_hot, stretch_info = false, nil
   do
-    local count, tmin, tend = 0, math.huge, 0
-    local pmin, pmax = 127, 0
-    for _, n in ipairs(pat.notes) do
-      if p.nsels[n] then
-        count = count + 1
-        tmin, tend = math.min(tmin, n.tick), math.max(tend, n.tick + n.dur)
-        pmin, pmax = math.min(pmin, n.pitch), math.max(pmax, n.pitch)
+    if not note_preview then
+      local count, tmin, tend = 0, math.huge, 0
+      local pmin, pmax = 127, 0
+      for _, n in ipairs(pat.notes) do
+        if p.nsels[n] then
+          count = count + 1
+          tmin, tend = math.min(tmin, n.tick), math.max(tend, n.tick + n.dur)
+          pmin, pmax = math.min(pmin, n.pitch), math.max(pmax, n.pitch)
+        end
       end
-    end
-    if count >= 2 and tend > tmin then
-      local hx = t2x(tend) + 6 * z
-      local hy1 = roll_y + (low + nrows - pmax) * row_h - suby
-      local hy2 = roll_y + (low + nrows - pmin + 1) * row_h - suby
-      local cy = (hy1 + hy2) * 0.5
-      stretch_hot = ctx.hot and i.wx >= hx - 5 * z and i.wx <= hx + 5 * z
-                    and i.wy >= hy1 and i.wy <= hy2
-      pal.x_ig_line(t2x(tend), cy, hx, cy, COL.hot, 1)
-      pal.x_ig_rect_fill(hx - 2 * z, cy - 7 * z, 4 * z, 14 * z,
-                         stretch_hot and COL.head or COL.hot, 1 * z)
-      stretch_info = { anchor = tmin, span = tend - tmin }
+      if count >= 2 and tend > tmin then
+        local hx = t2x(tend) + 6 * z
+        local hy1 = roll_y + (low + nrows - pmax) * row_h - suby
+        local hy2 = roll_y + (low + nrows - pmin + 1) * row_h - suby
+        local cy = (hy1 + hy2) * 0.5
+        stretch_hot = ctx.hot and i.wx >= hx - 5 * z and i.wx <= hx + 5 * z
+                      and i.wy >= hy1 and i.wy <= hy2
+        pal.x_ig_line(t2x(tend), cy, hx, cy, COL.hot, 1)
+        pal.x_ig_rect_fill(hx - 2 * z, cy - 7 * z, 4 * z, 14 * z,
+                           stretch_hot and COL.head or COL.hot, 1 * z)
+        stretch_info = { anchor = tmin, span = tend - tmin }
+      end
     end
   end
   -- the roll grammar: Ctrl marquee/replace, Ctrl+Shift add/toggle,
   -- Shift-drag pitch-locked duplicate, plain selected drag moves the set
-  local over_roll = i.wx >= rx and i.wx < rx + rw and i.wy >= roll_y
-                    and i.wy < roll_y + roll_h
   -- placement snaps to the grid; the 1/32 grid + zoom provide precision.
   local function snap(t)
     return math.tointeger(math.max(0, (t // grid) * grid))
   end
   local function snapd(d) -- a MOVE delta -> the nearest grid step (signed)
     return M.snap_delta(d, grid)
-  end
-  local function roll_row(y)
-    return math.max(0, math.min(nrows,
-      (y - roll_y + suby) / row_h))
-  end
-  local function note_marquee_bounds(g)
-    local t0, t1 = M.grid_span(g.tick0, x2t(i.wx), grid, 0)
-    local r0, r1 = M.grid_span(g.row0, roll_row(i.wy), 1, 0, nrows)
-    return t0, t1, r0, r1
   end
   local function note_commit()
     local clip = p.csel and doc.clips[p.csel]
@@ -2353,12 +2559,9 @@ function M.draw(win, ctx)
   end
   if p.g and p.g.t == "marquee" then
     if i.buttons[1] then
-      if math.abs(i.wx - p.g.x0) > 3 * z
-         or math.abs(i.wy - p.g.y0) > 3 * z then
-        p.g.moved = true
-      end
       if p.g.moved then
-        local t0, t1, r0, r1 = note_marquee_bounds(p.g)
+        local b = p.g.bounds
+        local t0, t1, r0, r1 = b[1], b[2], b[3], b[4]
         local x0, x1 = t2x(t0), t2x(t1)
         local y0, y1 = roll_y + r0 * row_h - suby,
                        roll_y + r1 * row_h - suby
@@ -2368,16 +2571,7 @@ function M.draw(win, ctx)
       ctx.touch()
     else
       if p.g.moved then
-        local t0, t1, r0, r1 = note_marquee_bounds(p.g)
-        local plo, phi = M.pitch_span(low, nrows, r0, r1)
-        local sel = p.g.add and p.nsels or {}
-        for _, n in ipairs(pat.notes) do
-          if n.tick < t1 and n.tick + n.dur > t0
-             and n.pitch >= plo and n.pitch <= phi then
-            sel[n] = true
-          end
-        end
-        p.nsels = sel
+        p.nsels = p.g.preview or {}
       elseif p.g.hit then
         if p.g.add then
           p.nsels[p.g.hit] = not p.nsels[p.g.hit] or nil
@@ -2505,6 +2699,7 @@ function M.draw(win, ctx)
     local hit = note_hit(x2t(i.wx), y2pitch(i.wy))
     if hit then
       local n = table.remove(pat.notes, hit)
+      M.arm_delete_fx(p, "note", { n }, pat.id)
       p.nsels[n] = nil
       p.nsel = nil
       note_commit()

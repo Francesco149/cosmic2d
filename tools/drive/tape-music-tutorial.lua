@@ -15,7 +15,7 @@
 --      -> H7 must finish with every VERDICT true and save lead/bass/kick.
 --   3. full H8 proof run:
 --        bin/cosmic <scratch>/smoke-h8 --edit --headless \
---          --win 1280x1000 --frames 2120 --eval \
+--          --win 1280x1000 --frames 2200 --eval \
 --          "dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot <scratch>/full.png
 --      -> every H8 VERDICT line must read true.
@@ -233,7 +233,7 @@ local function roll_xy(tick, pitch)
   local tpp = (r.win.tpp or 0.5) * z
   local lowf = r.win.lownote or 45
   local low = math.floor(lowf)
-  local suby = (lowf - low) * v.row_h
+  local suby = (low - lowf) * v.row_h
   local nrows = math.tointeger(v.rh // v.row_h) or 0
   return v.rx + (tick - (r.win.tick0 or 0)) * tpp + 1.5 * z,
          v.ry + (low + nrows - pitch + 0.5) * v.row_h - suby
@@ -913,7 +913,8 @@ end)
 
 -- Post-lesson polish proof: wheel zoom first writes a destination and visibly
 -- chases it, then settles exactly. A Ctrl marquee starts/ends off the grid but
--- owns whole beat × track cells and selects precisely the three backing lanes.
+-- keeps those time edges raw, snaps to whole track rows, previews live, and
+-- selects precisely the three backing lanes.
 local smooth_tpp0
 D.at(1940, function()
   local r, p = D.win("music"), plumb()
@@ -955,8 +956,19 @@ end)
 probe(1988, function()
   local r, p = D.win("music"), plumb()
   crop("music-snap", r.x, r.y, r.w, math.min(r.h, 190 * r.z))
+  local g = p.g
+  local selected = 0
+  for _ in pairs(g and g.preview or {}) do selected = selected + 1 end
   verdict("arrangement-marquee-live", p.g and p.g.t == "clipmarquee"
-          and p.g.moved == true)
+          and p.g.moved == true and selected == 3 and g.bounds
+          and math.abs(g.bounds[1] - 37) < 1e-6
+          and math.abs(g.bounds[2] - (2 * BAR + 30)) < 1e-6
+          and g.bounds[3] == 0 and g.bounds[4] == 3,
+          ("preview=%d bounds=%s/%s/%s/%s"):format(
+            selected, tostring(g and g.bounds and g.bounds[1]),
+            tostring(g and g.bounds and g.bounds[2]),
+            tostring(g and g.bounds and g.bounds[3]),
+            tostring(g and g.bounds and g.bounds[4])))
 end)
 D.at(1992, function()
   local x, y = arr_xy(2 * BAR + 30, 2)
@@ -966,7 +978,7 @@ D.at(1994, function() return { D.keyev(SC.ctrl, false) } end)
 probe(2000, function()
   local n = 0
   for _ in pairs(plumb().csels or {}) do n = n + 1 end
-  verdict("arrangement-grid-marquee", n == 3, "selected=" .. n)
+  verdict("arrangement-vertical-snap-marquee", n == 3, "selected=" .. n)
 end)
 
 -- Open the actual Aa panel, toggle smoothing off, and prove the same wheel
@@ -1047,7 +1059,154 @@ probe(2102, function()
           ("now=%s target=%s"):format(
             tostring(cm.ed.doc.cam.x), tostring(canvas_pan_target)))
 end)
-probe(2110, function()
+
+-- The roll's vertical origin is fractional. A sub-row real MMB drag must move
+-- continuously while held and settle to that fractional destination rather
+-- than reversing within the row and jumping at its next integer boundary.
+local roll_pan0, roll_pan_target, roll_pan_x, roll_pan_y, roll_pan_row_h
+D.at(2112, function()
+  local r, p = D.win("music"), plumb()
+  local v = p and p.view
+  if not (r and v) then return end
+  cm.ed.doc.focus = r.win.id
+  roll_pan0, roll_pan_row_h = r.win.lownote, v.row_h
+  roll_pan_x, roll_pan_y = v.rx + v.rw * 0.72, v.ry + v.rh * 0.56
+  return { D.mouse(roll_pan_x, roll_pan_y) }
+end)
+D.at(2113, function()
+  return { D.btn(roll_pan_x, roll_pan_y, true, 2) }
+end)
+for f = 2114, 2119 do
+  D.at(f, function()
+    local dy = D.f - 2113
+    return { D.mouse(roll_pan_x, roll_pan_y + dy) }
+  end)
+end
+probe(2120, function()
+  local r, p = D.win("music"), plumb()
+  roll_pan_target = r.win.lownote_target
+  verdict("piano-mmb-pan-continuous", p.pan ~= nil and roll_pan_target
+          and r.win.lownote > roll_pan0
+          and r.win.lownote < roll_pan_target
+          and math.abs(roll_pan_target - math.floor(roll_pan_target)) > 0.01,
+          ("from=%.6f now=%.6f target=%s"):format(
+            roll_pan0, r.win.lownote, tostring(roll_pan_target)))
+end)
+D.at(2121, function()
+  return { D.btn(roll_pan_x, roll_pan_y + 6, false, 2) }
+end)
+probe(2150, function()
+  local r, p = D.win("music"), plumb()
+  verdict("piano-mmb-pan-settles-fractional", roll_pan_target
+          and math.abs(r.win.lownote - roll_pan_target) < 1e-9
+          and math.abs(roll_pan_target
+                       - (roll_pan0 + 6 / roll_pan_row_h)) < 1e-9
+          and r.win.lownote_target == nil and p.pan == nil,
+          ("now=%s target=%s"):format(
+            tostring(r.win.lownote), tostring(roll_pan_target)))
+end)
+
+-- A real piano marquee keeps time edges exactly under the pointer, snaps only
+-- its pitch-row edges, and exposes the hit set to rendering before mouse-up.
+local live_note, live_t0, live_t1, note_count0
+D.at(2154, function()
+  local r, p = D.win("music"), plumb()
+  local pt = p and p.doc and p.doc.patterns[r.win.pat]
+  live_note = pt and pt.notes[1]
+  if not live_note then return end
+  note_count0 = #pt.notes
+  p.nsels, p.nsel = {}, nil
+  p.g = nil
+  r.win.lownote = math.max(0, live_note.pitch - 5.25)
+  r.win.lownote_target = nil
+  r.win.tick0 = 0
+  local motion = cm.require("cm.ed.kit").winui(p, r.win).motion
+  if motion then motion.tick0 = nil end
+  cm.ed.g.display = false
+  cm.ed.doc.cam.x, cm.ed.doc.cam.y, cm.ed.g.anim = 0, 0, nil
+  cm.ed.doc.focus = r.win.id
+end)
+D.at(2156, function() return { D.keyev(SC.ctrl, true) } end)
+D.at(2157, function()
+  local r = D.win("music")
+  live_t0 = live_note.tick + math.min(12.25, live_note.dur * 0.25)
+  local x, y = roll_xy(live_t0, live_note.pitch)
+  x = x - 1.5 * r.z
+  return { D.mouse(x, y) }
+end)
+D.at(2158, function()
+  local r = D.win("music")
+  local x, y = roll_xy(live_t0, live_note.pitch)
+  x = x - 1.5 * r.z
+  return { D.btn(x, y, true) }
+end)
+D.at(2160, function()
+  local r = D.win("music")
+  live_t1 = live_note.tick + live_note.dur - 2.75
+  local x, y = roll_xy(live_t1, live_note.pitch)
+  x = x - 1.5 * r.z
+  return { D.mouse(x, y) }
+end)
+probe(2162, function()
+  local p, g = plumb(), plumb().g
+  local b = g and g.bounds
+  verdict("piano-marquee-highlights-live", g and g.t == "marquee"
+          and g.moved and g.preview and g.preview[live_note]
+          and not p.nsels[live_note] and b
+          and math.abs(b[1] - live_t0) < 1e-6
+          and math.abs(b[2] - live_t1) < 1e-6
+          and math.type(b[3]) == "integer" and math.type(b[4]) == "integer",
+          ("bounds=%s/%s rows=%s/%s"):format(
+            tostring(b and b[1]), tostring(b and b[2]),
+            tostring(b and b[3]), tostring(b and b[4])))
+end)
+D.at(2164, function()
+  local r = D.win("music")
+  local x, y = roll_xy(live_t1, live_note.pitch)
+  x = x - 1.5 * r.z
+  return { D.btn(x, y, false) }
+end)
+D.at(2165, function() return { D.keyev(SC.ctrl, false) } end)
+probe(2168, function()
+  verdict("piano-marquee-commits-preview",
+          plumb().nsels[live_note] == true)
+end)
+
+-- Both deletion doors leave only presentation geometry: a bright inner rim
+-- and faint body collapse/fade in place while the source item is already gone.
+D.tap(2172, SC.del)
+probe(2176, function()
+  local r, p = D.win("music"), plumb()
+  local pt = p.doc.patterns[r.win.pat]
+  local fx = p.delete_fx and p.delete_fx[#p.delete_fx]
+  verdict("piano-delete-inner-glow", #pt.notes == note_count0 - 1
+          and fx and fx.kind == "note" and fx.pattern == pt.id
+          and fx.k and fx.k > 0 and fx.k <= 1)
+end)
+local deleted_clip
+D.at(2180, function()
+  local d = doc()
+  deleted_clip = d and d.clips[1]
+  if not deleted_clip then return end
+  local x, y = arr_xy(deleted_clip.tick
+                      + math.min(2, deleted_clip.len - 0.25),
+                      deleted_clip.track)
+  D.rclick(D.f + 1, x, y)
+end)
+probe(2186, function()
+  local p, found, still = plumb(), false, false
+  for _, c in ipairs(p.doc.clips) do
+    if c == deleted_clip then still = true end
+  end
+  for _, fx in ipairs(p.delete_fx or {}) do
+    if fx.kind == "clip" and fx.tick == deleted_clip.tick
+       and fx.track == deleted_clip.track and fx.k and fx.k > 0 then
+      found = true
+    end
+  end
+  verdict("arrangement-delete-inner-glow", found and not still)
+end)
+probe(2192, function()
   verdict("summary", FAIL == 0, ("%d/%d"):format(PASS, PASS + FAIL))
   log("TAPE DONE")
 end)

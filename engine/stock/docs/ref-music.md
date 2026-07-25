@@ -229,10 +229,10 @@ not delete pattern bytes because another linked clip may still use them.
 - **Shift+drag a clip** — creates and moves linked duplicates of the
   selection. Originals stay put and copies retain their pattern references.
 - **Ctrl+drag** — box-selects clips; **Ctrl+Shift+drag** adds intersecting
-  clips to the current selection. The live box expands to complete beat ×
-  track cells, so its visible boundary and selected lanes agree even when the
-  pointer stops between grid lines. Ctrl-click follows the same replace/add
-  rule.
+  clips to the current selection. Its time edges stay exactly under the
+  pointer; only its vertical edges expand to complete track rows. Intersecting
+  clips highlight while the button is still held, and mouse-up commits that
+  same preview set. Ctrl-click follows the same replace/add rule.
 - **Alt during move or resize** — temporarily bypasses horizontal snap;
   vertical movement remains whole tracks.
 
@@ -322,7 +322,8 @@ A bound, focused Music window owns view input:
   in the window zooms roll time from 0.05 to 8 pixels per tick, pinning the
   pointer tick when possible and using the roll center otherwise;
 - **middle-drag over the arrangement** pans that view; middle-drag elsewhere
-  pans roll time and pitch on both axes;
+  pans roll time and pitch on both axes. Pitch pan is genuinely fractional:
+  notes follow the hand pixel by pixel instead of stepping between rows;
 - **middle-drag vertically on the piano keys** changes pitch-row height from
   5–32 logical pixels. New Music windows start at 14, twice the old compact
   height;
@@ -409,9 +410,10 @@ the earliest selected tick. Hold Alt to bypass the grid during the stretch.
 
 - **Ctrl+click note** — replaces the selection with that note.
 - **Ctrl+drag** — box-selects every intersecting note rectangle and clears the
-  old selection. Its live edges expand to complete active-time-grid × pitch
-  cells. **Ctrl+Shift+drag** adds to the selection; Ctrl+Shift+click toggles
-  one note.
+  old selection. Its horizontal time edges follow the pointer without
+  quantizing; only its vertical edges expand to complete pitch rows. Notes
+  highlight as they enter or leave the live box, before release.
+  **Ctrl+Shift+drag** adds to the selection; Ctrl+Shift+click toggles one note.
 - **plain click or drag note** — an unselected note first becomes the only
   selection; dragging a selected note moves the whole set.
 - **Shift+drag note** — duplicates that note, or the whole selection when the
@@ -437,6 +439,10 @@ the earliest selected tick. Hold Alt to bypass the grid during the stretch.
 
 Right-click is claimed by every bound Music window so it cannot open the
 canvas menu. Away from a note, and outside an armed paste, it has no action.
+Deleting notes or arrangement clips removes the item immediately, then leaves
+a short, collapsing inner accent glow in its exact former rectangle. The glow
+is editor-only feedback, never song data, and the global **reduce flashes**
+preference attenuates it.
 
 ## Clipboard and the paste ghost
 

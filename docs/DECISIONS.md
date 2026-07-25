@@ -9388,3 +9388,51 @@ eventual settlement. The real H8 event tape now passes **37/37** verdicts. Its
 continuous twelve-frame MMB drag reaches `142.489 / 192` (**74.2%**) while the
 button is still held, retains a live chase target, then lands at exactly `192`
 with both gesture and animation cleared after release.
+
+## D172 — Music pan is sub-row continuous; marquees preview live and snap one axis (2026-07-26)
+
+**Context.** The final native feel pass found three mismatches after D170/171.
+Piano MMB pan still looked row-stepped, both marquee axes felt over-quantized,
+and selection/deletion feedback arrived only after the gesture. The intended
+reference remains the established DAW model: Image-Line's
+[Piano roll manual](https://www.image-line.com/fl-studio-learning-content/fl-studio-online-manual/html/pianoroll.htm)
+documents MMB drag as simultaneous horizontal/vertical scrolling, while
+authored note pitch and track lanes remain discrete.
+
+**Pan root and decision.** `win.lownote` already carried fractional rows and
+the chase target never rounded it. The visible bug was the transform:
+`suby=(lowf-floor(lowf))*row_h` was subtracted from note/key/grid y. Content
+therefore moved opposite the hand within an integer row, then jumped almost
+two rows when `floor(lowf)` advanced. The exact inverse is
+`suby=(floor(lowf)-lowf)*row_h`; note y is now proportional to `lowf` and
+continuous through every boundary. A pure KAT pins both sides of one crossing,
+and the real six-screen-pixel MMB drag settles at fractional row
+`59.428571…`.
+
+**Marquee decision (revises D170's two-axis snap).** Time selection is a
+continuous pointer operation, not an edit placement. Arrangement and piano
+marquees therefore keep raw horizontal tick endpoints and snap only their
+vertical track/pitch-row edges outward. One pure overlap function per surface
+copies the additive base, derives the live hit set, feeds selected rendering
+while the button is down, and becomes the committed set on release. The drawn
+box, highlighted items, and mouse-up result cannot drift into three separate
+calculations.
+
+**Deletion-feedback decision.** Every deliberate note/clip deletion door
+(right-click, Del, note cut, selected-clip delete, and track removal) clones
+only the removed item's scalar musical geometry into ephemeral plumbing. The
+source disappears immediately; for 260 ms its old rectangle draws a faint body
+plus three inset accent rims under a sine-in-out fade and inward contraction.
+There are no retained document references, decode clears the list, the list is
+capped, and the draw alpha passes through the machine-wide reduce-flashes
+policy. Song bytes, journals, playback, trace state, and undo semantics remain
+unchanged.
+
+**Proof.** Linux selftest is **25,409** and native Windows is **25,411**;
+release manifests, 20 traces, and 19 pixel goldens remain green. The real H8
+tape passes **43/43** verdicts: raw arrangement bounds `37..798` ticks with
+three tracks preview-highlighted, raw piano bounds `12.25..93.25` with the
+note highlighted before mouse-up, exact preview/commit identity, fractional
+held pan plus settlement, and live note/clip deletion afterimages. The
+headless deletion frame was inspected at source resolution and published to
+llm-feed.

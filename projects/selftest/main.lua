@@ -8728,10 +8728,13 @@ local function t_song()
         and mus.snap_delta(-47, 96) == 0
         and mus.snap_delta(-49, 96) == -96,
         "music.snap_delta: nearest steps are symmetric around zero")
-  local gs0, gs1 = mus.grid_span(101, 289, 96, 0)
-  check(gs0 == 96 and gs1 == 384,
-        "music.grid_span: time marquee owns complete grid cells")
-  gs0, gs1 = mus.grid_span(2.8, 0.2, 1, 0, 3)
+  local psx0, psx1 = mus.pointer_span(101.25, 289.75, 0)
+  check(psx0 == 101.25 and psx1 == 289.75,
+        "music.pointer_span: marquee time follows both pointer edges exactly")
+  psx0, psx1 = mus.pointer_span(40, -20, 0)
+  check(psx0 == 0 and psx1 == 40,
+        "music.pointer_span: reverse time drag stays inside tick zero")
+  local gs0, gs1 = mus.grid_span(2.8, 0.2, 1, 0, 3)
   check(gs0 == 0 and gs1 == 3,
         "music.grid_span: reverse lane drag snaps + clamps to whole rows")
   gs0, gs1 = mus.grid_span(3, 3, 1, 0, 3)
@@ -8740,6 +8743,28 @@ local function t_song()
   local ps0, ps1 = mus.pitch_span(45, 12, 2, 5)
   check(ps0 == 53 and ps1 == 55,
         "music.pitch_span: drawn rows select their exact three pitches")
+  ps0, ps1 = mus.pitch_span(59, 20, -1, 0)
+  check(ps0 == 80 and ps1 == 80,
+        "music.pitch_span: fractional view's partial top row stays selectable")
+  local pvl, pvo = mus.pitch_view(45.25, 14)
+  local y_before = pvl * 14 - pvo
+  pvl, pvo = mus.pitch_view(46, 14)
+  local y_after = pvl * 14 - pvo
+  check(y_before == 45.25 * 14 and y_after == 46 * 14
+        and y_after - y_before == 10.5,
+        "music.pitch_view: fractional MMB pan is continuous across a row")
+  local msn1 = { tick = 80, dur = 40, pitch = 60 }
+  local msn2 = { tick = 180, dur = 20, pitch = 62 }
+  local mspreview = mus.note_marquee_selection(
+    { msn1, msn2 }, 101.25, 181.5, 59, 61)
+  check(mspreview[msn1] and not mspreview[msn2],
+        "music note marquee: live overlap uses raw time + snapped pitch span")
+  local msc1 = { tick = 0, len = 192, track = 0 }
+  local msc2 = { tick = 192, len = 192, track = 1 }
+  local mcpreview, mcactive = mus.clip_marquee_selection(
+    { msc1, msc2 }, 37.5, 191.5, 0, 2)
+  check(mcpreview[msc1] and not mcpreview[msc2] and mcactive == 1,
+        "music clip marquee: live overlap keeps horizontal edge unsnapped")
   local eased, settled = mus.smooth_value(0, 100, true)
   check(eased == 32 and not settled,
         "music view smoothing: enabled motion chases without teleporting")
@@ -8868,14 +8893,41 @@ local function t_song()
   local dn3 = { tick = 192, dur = 96, pitch = 64, vel = 102 }
   local dpt = { id = 9, len = 384, notes = { dn1, dn2, dn3 } }
   local ddoc = { beats_per_bar = 4 }
-  check(mus.delete_selected_notes(ddoc, dpt, { [dn1] = true,
-                                               [dn3] = true }) == 2
+  local dnremoved, dngone = mus.delete_selected_notes(
+    ddoc, dpt, { [dn1] = true, [dn3] = true })
+  check(dnremoved == 2 and #dngone == 2
+        and dngone[1] == dn1 and dngone[2] == dn3
         and #dpt.notes == 1 and dpt.notes[1] == dn2
         and dpt.len == 384,
-        "music.delete_selected_notes: removes selected refs without crashing")
+        "music.delete_selected_notes: removes + reports refs without crashing")
   check(mus.delete_selected_notes(ddoc, dpt, {}) == 0
         and #dpt.notes == 1 and dpt.notes[1] == dn2,
         "music.delete_selected_notes: empty selection is a no-op")
+  local glow0, glow0done = mus.delete_glow(0)
+  local glowmid, glowmiddone = mus.delete_glow(mus.DELETE_GLOW_MS / 2)
+  local glowend, glowenddone = mus.delete_glow(mus.DELETE_GLOW_MS)
+  check(glow0 == 1 and not glow0done and glowmid > 0 and glowmid < 1
+        and not glowmiddone and glowend == 0 and glowenddone,
+        "music delete glow: smooth finite envelope has exact endpoints")
+  local fxp = {}
+  check(mus.arm_delete_fx(fxp, "note", { dn1 }, 9, 123) == 1
+        and fxp.delete_fx[1].at == 123 and fxp.delete_fx[1].pattern == 9
+        and fxp.delete_fx[1].tick == 0 and fxp.delete_fx[1].k == 1
+        and fxp.delete_fx[1] ~= dn1,
+        "music delete glow: afterimage owns scalar note geometry")
+  local manygone = {}
+  for j = 1, mus.DELETE_FX_CAP + 2 do
+    manygone[j] = { tick = j, dur = 1, pitch = 60 }
+  end
+  check(mus.arm_delete_fx(fxp, "note", manygone, 9, 456)
+          == mus.DELETE_FX_CAP
+        and #fxp.delete_fx == mus.DELETE_FX_CAP
+        and fxp.delete_fx[1].tick == 3
+        and fxp.delete_fx[mus.DELETE_FX_CAP].tick
+            == mus.DELETE_FX_CAP + 2
+        and fxp.delete_fx[1].at == 456
+        and fxp.delete_fx[mus.DELETE_FX_CAP].at == 456,
+        "music delete glow: large batches cap linearly with one timestamp")
 
   -- the rail drop bands (round 10): drop() resolves the row from the
   -- bands DRAW records — the selected row's band is taller (it
