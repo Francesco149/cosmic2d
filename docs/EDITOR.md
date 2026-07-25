@@ -115,8 +115,9 @@ teidraw's source; they are taste-approved by construction):
 - **Pan**: **middle-drag only** (live round 3, D054 — a left-drag on
   empty canvas is a marquee now); space+left-drag still pans from
   anywhere (teidraw's hand tool). A right-drag is nothing (the spawn
-  menu stays on the right still-click). The camera follows the hand through
-  the same short ease rather than stepping between event positions.
+  menu stays on the right still-click). The camera visibly chases the hand
+  **while the button remains held**; release only settles the short remaining
+  tail. Continuous motion retargets one chase rather than restarting it.
 - **Zoom-to-fit**: Shift+1 = fit all windows, Shift+2 = fit selection,
   Shift+0 = 100%, animated over **280 ms ease-in-out-quart** (ephemeral
   ease; the camera lands in the doc every frame).

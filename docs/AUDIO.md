@@ -461,9 +461,10 @@ an independent answer pattern. It exercises held-key audition, drag-to-length,
 group selection, clipboard ghost placement, octave movement, velocity editing,
 clip stretching, linked reuse, scoped playback, stereo gain/pan, atomic save,
 canonical decode, and runtime flattening. The matching executable tape passes
-35/35 live verdicts, including saved pattern naming, step add/erase/drill,
-typed 137 BPM / 7/8 timing with undo, eased and immediate view motion, and a
-live beat/track-snapped arrangement marquee. It owns five @2x capture points:
+37/37 live verdicts, including saved pattern naming, step add/erase/drill,
+typed 137 BPM / 7/8 timing with undo, eased and immediate view motion, a live
+beat/track-snapped arrangement marquee, and canvas MMB pan making substantial
+progress before release then settling exactly. It owns five @2x capture points:
 roll, arrangement, mix, steps, and snapped selection.
 
 The updated interaction boundary is explicit in both the tutorial and

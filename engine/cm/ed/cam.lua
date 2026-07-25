@@ -10,6 +10,8 @@ local M = select(2, ...) or {}
 
 M.ZMIN, M.ZMAX = 0.02, 64.0
 M.EASE_MS = 280
+M.CHASE_K = 0.32
+M.CHASE_POS_EPS, M.CHASE_ZOOM_EPS = 0.01, 0.0001
 M.GRID_BASE = 32 -- world units
 M.GRID_LO, M.GRID_HI = 18, 44 -- comfy screen-px pitch band
 M.display_scale = 1 -- machine-local accessibility scale; never captured
@@ -106,6 +108,22 @@ function M.lerp(a, b, k)
   return { x = a.x + (b.x - a.x) * k,
            y = a.y + (b.y - a.y) * k,
            zoom = a.zoom + (b.zoom - a.zoom) * k }
+end
+
+-- A continuously retargetable camera chase for held pointer gestures. Unlike
+-- a timed ease-in, changing b every mouse-motion frame cannot restart it at
+-- zero velocity: every rendered frame closes the same fraction of the current
+-- gap. Once input stops, the remaining tail lands exactly and reports done.
+function M.chase(a, b, k, pos_epsilon, zoom_epsilon)
+  k = math.max(0, math.min(1, tonumber(k) or M.CHASE_K))
+  local c = M.lerp(a, b, k)
+  local pe = pos_epsilon or M.CHASE_POS_EPS
+  local ze = zoom_epsilon or M.CHASE_ZOOM_EPS
+  if math.abs(b.x - c.x) <= pe and math.abs(b.y - c.y) <= pe
+     and math.abs(b.zoom - c.zoom) <= ze then
+    return { x = b.x, y = b.y, zoom = b.zoom }, true
+  end
+  return c, false
 end
 
 -- adaptive grid: world step doubled/halved so the screen pitch lands in

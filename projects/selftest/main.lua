@@ -7260,6 +7260,18 @@ local function t_ed_cam()
   check(l0.x == 1 and l0.zoom == 1 and l1.x == 5 and l1.zoom == 3,
         "ed.cam: lerp endpoints")
 
+  local chased, chase_done = cam.chase(
+    { x = 0, y = 0, zoom = 1 }, { x = 100, y = -50, zoom = 1 })
+  check(chased.x == 32 and chased.y == -16 and chased.zoom == 1
+        and not chase_done,
+        "ed.cam chase: a held-pan frame makes immediate visible progress")
+  for _ = 1, 40 do
+    chased, chase_done = cam.chase(
+      chased, { x = 100, y = -50, zoom = 1 })
+  end
+  check(chase_done and chased.x == 100 and chased.y == -50,
+        "ed.cam chase: a released pan settles exactly on its target")
+
   -- contains: the focus-cycle reveal gate (D134) — fully-inside only
   local vc = { x = 100, y = 100, zoom = 2 } -- viewport 100..740 x 100..500
   check(cam.contains(vc, 1280, 800, 200, 200, 100, 100),

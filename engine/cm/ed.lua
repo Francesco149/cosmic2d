@@ -604,12 +604,36 @@ local function anim_to(target, ms)
                to = target, t0 = pal.time_ns(), ms = ms or cam.EASE_MS }
 end
 
+local function chase_to(target, k)
+  if cm.require("cm.view").cfg.smooth_views == false then
+    set_cam(target)
+    M.g.anim = nil
+    return
+  end
+  local a = M.g.anim
+  if a and a.mode == "chase" then
+    -- Retarget in place. Resetting a timed quartic ease here was the held-pan
+    -- bug: a stream of mouse-motion events kept velocity near zero until the
+    -- button release stopped restarting the curve.
+    a.to, a.k = target, k or a.k
+  else
+    M.g.anim = { mode = "chase", to = target, k = k or cam.CHASE_K }
+  end
+end
+
 local function step_anim()
   local a = M.g.anim
   if not a then return end
   if cm.require("cm.view").cfg.smooth_views == false then
     set_cam(a.to)
     M.g.anim = nil
+    M.touch()
+    return
+  end
+  if a.mode == "chase" then
+    local c, done = cam.chase(M.doc.cam, a.to, a.k)
+    set_cam(c)
+    if done then M.g.anim = nil end
     M.touch()
     return
   end
@@ -1044,13 +1068,12 @@ local function interact(ig)
   -- pan gestures continue regardless of what's under the cursor
   if g.pan then
     if i.buttons[g.pan.b] then
-      local z = cam.screen_zoom(doc.cam)
       local target = {
-        x = g.pan.cx - (i.wx - g.pan.sx) / z,
-        y = g.pan.cy - (i.wy - g.pan.sy) / z,
+        x = g.pan.cx - (i.wx - g.pan.sx) / g.pan.z,
+        y = g.pan.cy - (i.wy - g.pan.sy) / g.pan.z,
         zoom = doc.cam.zoom,
       }
-      anim_to(target, 85)
+      chase_to(target)
       M.touch()
     else
       g.pan = nil
@@ -1087,7 +1110,8 @@ local function interact(ig)
       doc.focus = 0
       M.touch()
     end
-    g.pan = { b = 1, sx = i.wx, sy = i.wy, cx = doc.cam.x, cy = doc.cam.y }
+    g.pan = { b = 1, sx = i.wx, sy = i.wy, cx = doc.cam.x, cy = doc.cam.y,
+              z = cam.screen_zoom(doc.cam) }
     g.anim = nil
     return
   end
@@ -1199,7 +1223,8 @@ local function interact(ig)
     end
     if not mid_taken then
       g.pan = { b = 2, sx = i.wx, sy = i.wy,
-                cx = doc.cam.x, cy = doc.cam.y }
+                cx = doc.cam.x, cy = doc.cam.y,
+                z = cam.screen_zoom(doc.cam) }
       g.anim = nil
     end
     return

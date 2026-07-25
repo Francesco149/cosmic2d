@@ -207,11 +207,12 @@ presets last (they cross-link finished tool docs and reuse their media).
   The human readback also moved the sustain lesson from the short hat to bass,
   distinguished held gates from patch envelopes, and made the one-bar minimum
   plus lack of sub-bar periods explicit. The shipped tape at
-  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 35/35 VERDICTs
+  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 37/37 VERDICTs
   through the final saved/flattened song, FL-style eased view motion, the real
-  Aa toggle's immediate mode, and a live snapped arrangement marquee. The
-  additional steps and snapped-selection capture points were inspected; the
-  latter was published to llm-feed with the Aa control.
+  Aa toggle's immediate mode, a live snapped arrangement marquee, and a held
+  canvas pan that moves before release and settles afterward. The additional
+  steps and snapped-selection capture points were inspected; the latter was
+  published to llm-feed with the Aa control.
 - [ ] **H9 — the terrain window**. Tutorial: sculpt the lakeside vale —
   heights, the noise brush, texture paint, water, props, a route
   (grow the D144 walkthrough; `media/terrain-vale.png` exists as the

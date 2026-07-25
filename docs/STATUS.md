@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — Music crash + DAW interaction sweep (D169/D170)
+## Current handoff — Music crash + DAW interaction sweep (D169–D171)
 
 **This session (2026-07-25): GitHub issues #1–#4 were taken in severity
 order.** The selected-note Delete/Ctrl+X crash is fixed in `f0640e7`: both
@@ -43,6 +43,15 @@ marquees expand to complete beat × track cells; piano marquees expand to
 complete active-grid × pitch-row cells, with the visible box and selection
 sharing one boundary calculation.
 
+**The 2026-07-26 held-pan correction closes the remaining feel bug.** The
+outer canvas had reused a quartic one-shot ease for MMB/space drag and rebuilt
+it on every mouse-motion event. Continuous input therefore kept restarting at
+near-zero velocity, making the canvas appear frozen until release. Held pan
+now retargets one persistent 32%-per-frame chase, visibly follows the pointer
+while down, and uses release only to settle the residual distance exactly.
+Wheel and fit actions retain their deliberate timed curves; smoothing off
+still lands every drag update immediately.
+
 **The reported intermittent wrong-preset sound had a concrete ownership bug
 even without a deterministic UI repro.** Preview slots were cached only by
 track index behind one global `pins_sent` bit. Deleting/reindexing tracks,
@@ -55,17 +64,18 @@ delete, undo/decode, rebind, and mix edits. Pure decision KATs pin initial
 upload, stable reuse, reindex, mix change, stolen ownership, and empty-track
 behavior.
 
-**Proof:** Linux selftest **25,399**; `nix run .#test` **ALL GREEN** across
+**Proof:** Linux selftest **25,401**; `nix run .#test` **ALL GREEN** across
 release manifests, every committed trace, and all 19 pixel goldens. The fresh
-Music tape passes **35/35 VERDICTs** through both transport scopes, arrangement
+Music tape passes **37/37 VERDICTs** through both transport scopes, arrangement
 move/duplicate/select, piano edits, pattern naming, channel-rack add/erase/
 drill, typed 137 BPM + 7/8 and undo, canonical save, runtime counts
 (`24 / 32 / 16 / 24`), eased and immediate wheel motion, the real Aa toggle,
 and a held beat/track-snapped marquee selecting exactly three clips. Existing
 piano/arrangement/channel-rack frames plus the snapped marquee and Aa control
-were inspected; the two polish frames are published together on llm-feed.
-**Windows stage REFRESHED** (11 durable entries + shortcut); staged NATIVE
-selftest **25,401** = Linux + 2 on PAL API 24.
+were inspected; the two polish frames are published together on llm-feed. The
+held-MMB event tape observes **74.2%** progress before release and the exact
+target afterward. **Windows stage REFRESHED** (11 durable entries + shortcut);
+staged NATIVE selftest **25,403** = Linux + 2 on PAL API 24.
 
 **Exact next step:** human feel/ears pass in the freshly staged Music window,
 with special attention to song-vs-clip playback, the smoothing curve, and the

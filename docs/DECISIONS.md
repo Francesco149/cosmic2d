@@ -9358,3 +9358,33 @@ the held snapped marquee selecting three lanes, the real Aa toggle persisting
 off, immediate wheel motion with no pending target, and restoration to the
 default. Both the snapped marquee and Aa panel were inspected at source
 resolution and published together to llm-feed.
+
+## D171 — held canvas pan retargets one chase instead of restarting an ease (2026-07-26)
+
+**Context.** The first smoothing pass was correct for wheel and Music's
+per-frame view targets, but wrong for the outer canvas hand gesture. A human
+feel pass found that MMB pan appeared not to move until the button was
+released. The real event probe quantified it: after twelve consecutive motion
+frames the camera had advanced only `0.026` toward a `176`-unit target.
+
+**Root cause.** Held pan called the same `anim_to` door used by one-shot
+fit/zoom actions. Every mouse-motion event rebuilt a quartic-in-out animation
+from the barely changed live camera and reset its start time. Quartic ease-in
+begins near zero velocity, so a continuous event stream permanently held it
+near the start; release merely stopped the resets and allowed the curve to
+run.
+
+**Decision.** One-shot navigation keeps its bounded timed curve. Held
+MMB/space pan instead owns a continuously retargetable exponential chase:
+every rendered frame closes 32% of the current camera-to-pointer gap, a new
+motion event updates only the destination, and release leaves the short tail
+to settle exactly at a named epsilon. The screen zoom used to translate the
+drag is captured at press time, so chase lag cannot feed back into the target
+calculation. The global smoothing-off preference still bypasses the chase and
+lands each drag update in the same frame.
+
+**Proof.** Pure camera KATs pin meaningful first-frame progress and exact
+eventual settlement. The real H8 event tape now passes **37/37** verdicts. Its
+continuous twelve-frame MMB drag reaches `142.489 / 192` (**74.2%**) while the
+button is still held, retains a live chase target, then lands at exactly `192`
+with both gesture and animation cleared after release.

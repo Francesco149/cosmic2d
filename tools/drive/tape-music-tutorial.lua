@@ -15,7 +15,7 @@
 --      -> H7 must finish with every VERDICT true and save lead/bass/kick.
 --   3. full H8 proof run:
 --        bin/cosmic <scratch>/smoke-h8 --edit --headless \
---          --win 1280x1000 --frames 2060 --eval \
+--          --win 1280x1000 --frames 2120 --eval \
 --          "dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot <scratch>/full.png
 --      -> every H8 VERDICT line must read true.
@@ -1011,7 +1011,43 @@ probe(2034, function()
   verdict("smoothing-toggle-restored", view.cfg.smooth_views == true
           and ok and t.smooth_views == nil)
 end)
-probe(2042, function()
+
+-- Regression for the human's held-pan report: continuously retarget the real
+-- outer-canvas MMB gesture for twelve consecutive motion frames. It must make
+-- substantial visible progress BEFORE release, then settle exactly afterward.
+local canvas_pan0, canvas_pan_target
+D.at(2044, function()
+  canvas_pan0 = cm.ed.doc.cam.x
+  return { D.mouse(1240, 760) }
+end)
+D.at(2045, function() return { D.btn(1240, 760, true, 2) } end)
+for f = 2046, 2057 do
+  D.at(f, function()
+    local n = D.f - 2045
+    return { D.mouse(1240 - n * 16, 760) }
+  end)
+end
+probe(2058, function()
+  local a = cm.ed.g.anim
+  canvas_pan_target = a and a.to and a.to.x
+  local span = canvas_pan_target and canvas_pan_target - canvas_pan0 or 0
+  local progress = span ~= 0 and
+    (cm.ed.doc.cam.x - canvas_pan0) / span or 0
+  verdict("canvas-pan-live-while-held", cm.ed.g.pan ~= nil
+          and a and a.mode == "chase"
+          and progress > 0.25 and progress < 1,
+          ("progress=%.3f now=%s target=%s"):format(
+            progress, tostring(cm.ed.doc.cam.x), tostring(canvas_pan_target)))
+end)
+D.at(2060, function() return { D.btn(1240 - 12 * 16, 760, false, 2) } end)
+probe(2102, function()
+  verdict("canvas-pan-settles-after-release", canvas_pan_target
+          and math.abs(cm.ed.doc.cam.x - canvas_pan_target) < 1e-9
+          and cm.ed.g.pan == nil and cm.ed.g.anim == nil,
+          ("now=%s target=%s"):format(
+            tostring(cm.ed.doc.cam.x), tostring(canvas_pan_target)))
+end)
+probe(2110, function()
   verdict("summary", FAIL == 0, ("%d/%d"):format(PASS, PASS + FAIL))
   log("TAPE DONE")
 end)

@@ -109,9 +109,10 @@ what grow or shrink.
 
 The same panel has a global **smooth pan / zoom** switch, on by default.
 Canvas navigation and the Music arrangement/piano views ease toward accumulated
-wheel and drag input, including pitch scrolling and piano-row scaling. Switch
-it off for immediate one-frame motion. This is a per-user machine preference,
-not project or rewind state.
+wheel and drag input, including pitch scrolling and piano-row scaling. A held
+canvas pan visibly follows every frame; releasing only settles its remaining
+tail. Switch smoothing off for immediate one-frame motion. This is a per-user
+machine preference, not project or rewind state.
 
 ## Rewind playback
 
