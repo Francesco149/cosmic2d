@@ -9233,3 +9233,84 @@ matters (add a typed BPM field with one journal entry); authors need named
 tracks or clip-local transforms (extend CSNG and the full reference together);
 a new Music control, hotkey, or chunk lands (extend `ref-music.md` and the
 executable tape). HELPDOCS H9 now owns Terrain's lakeside-vale lesson.
+
+## D169 — music uses explicit scopes, named reusable patterns, and per-track preview ownership (2026-07-25)
+
+**Context.** GitHub issues #1–#4 exposed two different failure classes in the
+Music window. Delete called a removed helper and crashed after mutating a note
+selection. The remaining surface had grown organically: one ruler looked
+pattern-local but controlled the whole song; clip creation and reuse used
+nonstandard modifiers; selection/duplication disagreed with established piano
+rolls and Playlists; tempo was a click cycle; patterns had only ids; and the
+compact rows made exact pitch work harder than necessary. Separately, the
+human occasionally heard a track play a preset different from the path shown
+in its rail, without a stable reproduction.
+
+**Crash boundary.** Delete and Ctrl+X now share
+`music.delete_selected_notes`, which removes selected table refs in one pass,
+refits through `cm.song.fit_pattern`, and commits without calling stale local
+helpers. The regression is KAT-pinned and landed separately before this
+interaction change.
+
+**Arrangement and transport decision.** Song and pattern time are distinct in
+the UI. The thin ruler attached to the arrangement owns an independent song
+cursor and whole-song preview. The ruler attached to the roll plus its
+explicit **clip** button loop the exact last-clicked clip instance in song
+context, including backing tracks. Space follows the last explicit scope and
+falls back to song when nothing is drilled. Selected instances retain a clear
+outline.
+
+Patterns are named saved objects. `+ pat` creates an unplaced one-bar pattern;
+ordinary empty-space click places the active pattern. Plain drag moves a clip
+selection, Shift-drag duplicates linked references, Ctrl marquee selects,
+Ctrl+Shift extends, right-click erases, and Alt temporarily bypasses one-beat
+horizontal snap while vertical motion remains whole tracks. This follows the
+recognizable Playlist grammar and makes reuse the normal visible operation
+rather than hiding it behind an inverted creation rule.
+
+**Piano and channel decision.** Ctrl owns replace/box selection and
+Ctrl+Shift owns additive selection; Shift-drag duplicates notes with pitch
+locked. Paste also keeps source pitches. Notes have a practical right-edge
+target, group right-edge resize, a separate timing-stretch handle, doubled
+default row height, note-name labels, held-row lighting, smooth pitch scroll,
+and exact nudge/duplicate/double-spacing hotkeys. The default grid is 1/4 with
+1/32 available. The track mute dot gains Ctrl+click solo/restore, and a
+`steps / piano` switch provides a one-bar channel-rack door: left adds, right
+erases, and **roll** drills into the same pattern bytes.
+
+**Timing and source compatibility.** Typed BPM accepts 1..999. Typed
+signatures accept 1..32 beats and power-of-two units 1..128. `HEAD v2` stores
+`beat_unit`; `PATN v2` stores the pattern name. v1 HEAD reads as unit 4 and v1
+PATN receives `pattern N`, so old songs migrate deterministically. All stock
+songs were decoded and re-encoded canonically. `cm.song.beat_ticks` and
+`bar_ticks` are the one timing authority for rulers, snap, step cells, and
+pattern growth.
+
+**Preset mismatch root cause and ownership rule.** The old preview cached
+slots by track index but guarded every track with one global `pins_sent` bit.
+Deleting/reindexing a track could therefore shift the document while leaving
+the slot's old patch accepted; a blank/new track could also trigger a reused
+slot even though its displayed assignment was empty. Preview cache identity is
+now per track (`instrument path + gain + pan`) with a separate ready bit.
+Every live preview frame reclaims its editor-bank slots; only a lost claim or
+changed assignment rereads/uploads the instrument. Empty or unreadable tracks
+are explicitly not ready, track deletion shifts the caches with the document,
+undo/reload invalidates identities, and a new transport run refreshes sources
+saved in place. A lane cannot trigger a slot until its displayed assignment
+has successfully uploaded.
+
+**Proof and documentation.** Focused KATs cover crash deletion, v1→v2
+migration, signatures, snap symmetry, grouped clip motion, solo restoration,
+note nudges/spacing, scoped preview ranges, step idempotence, and every
+preset-cache transition. The real H8 tape was updated to the new grammar and
+passes **28/28** verdicts through fixed-pitch paste, named linked/independent
+patterns, exact song-scope start, saved/runtime bytes, step add/erase/drill,
+and typed 137 BPM / 7/8 timing with undo. The piano and channel-rack frames
+were inspected and pushed together to llm-feed.
+
+**Deferred honestly.** Track names and rail scrolling remain absent. Patterns
+still have a whole-bar minimum; clips have no colors, slip offsets, fades, or
+per-clip mix. There is no tempo/signature map, swing, recording, quantize, or
+overlapping-clip arbitration. The step view intentionally edits one bar and
+one working pitch per row rather than pretending to be a full drum machine.
+Runtime same-path song cache invalidation remains explicit restart territory.

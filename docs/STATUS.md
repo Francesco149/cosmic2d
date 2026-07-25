@@ -3,7 +3,64 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — HELPDOCS session 8: the Music window (H8; D168)
+## Current handoff — Music crash + DAW interaction sweep (D169)
+
+**This session (2026-07-25): GitHub issues #1–#4 were taken in severity
+order.** The selected-note Delete/Ctrl+X crash is fixed in `f0640e7`: both
+doors now use one mutation-safe delete primitive, and focused KATs cover mixed
+selection, empty selection, and stable survivor order. The larger Music pass
+then replaces the ambiguous shared scrub/play state with two named transports:
+the arrangement ruler owns **song play**, while a selected clip exposes its
+own local ruler and exact repeated span; Space resumes the last explicit scope.
+Arrangement editing now follows the familiar DAW grammar: named patterns and
+an unplaced `+ pat` door, left-place/right-erase, drag move, Shift-drag linked
+duplicate, Ctrl marquee with Ctrl+Shift additive selection, beat/track snap,
+Alt precision, selected/link-family feedback, and Ctrl-click track solo with
+mute-state restore.
+
+**Piano authoring is now a first-class surface instead of a tiny byte grid.**
+Rows start at twice the old height, carry note names and held-key feedback, and
+middle-drag on the key rail changes row height. Ctrl-select/add, pitch-locked
+Shift duplication, wide right-edge resize, selection-wide resize, selection
+stretch, pointer-time/fixed-pitch paste, smooth pitch scrolling, 1/32 and
+notated-beat nudges, semitone/octave moves, Ctrl+A/D, Ctrl+B, and double-spacing
+are all explicit. The alternate **steps** surface is a one-bar, all-track
+channel rack with left-on/right-off cells and `roll` drill-through. Timing is
+no longer a 4/4 preset cycle: BPM is typed from 1–999, signatures are typed
+numerator + power-of-two denominator, the default grid is 1/4, and 1/32 remains
+available. Song `HEAD` and `PATN` move to v2 to persist signature and pattern
+name; the decoder still accepts v1 with 4/4 and generated names, and all 14
+stock songs were canonically migrated.
+
+**The reported intermittent wrong-preset sound had a concrete ownership bug
+even without a deterministic UI repro.** Preview slots were cached only by
+track index behind one global `pins_sent` bit. Deleting/reindexing tracks,
+binding a blank track, or another preview claiming a slot could therefore
+leave the UI path and sounding patch out of sync. Music now keys each slot by
+instrument path + gain + pan, records readiness per track, refuses stale blank
+or unreadable slots, validates ownership during playback, refreshes at preview
+start (including same-path preset saves), and shifts/invalidates the cache on
+delete, undo/decode, rebind, and mix edits. Pure decision KATs pin initial
+upload, stable reuse, reindex, mix change, stolen ownership, and empty-track
+behavior.
+
+**Proof:** Linux selftest **25,389**; `nix run .#test` **ALL GREEN** across
+release manifests, every committed trace, and all 19 pixel goldens; the fresh
+Music tape passes **28/28 VERDICTs** through both transport scopes, arrangement
+move/duplicate/select, piano edits, pattern naming, channel-rack add/erase/
+drill, typed 137 BPM + 7/8 and undo, canonical save, and runtime counts
+(`24 / 32 / 16 / 24`). Both the piano/arrangement and channel-rack frames were
+inspected and published to llm-feed. **Windows stage REFRESHED** (11 durable
+entries + shortcut); staged NATIVE selftest **25,391** = Linux + 2 on PAL API
+24.
+
+**Exact next step:** human feel/ears pass in the staged Music window, with
+special attention to song-vs-clip playback and the preset mismatch. If that
+feels sound, resume the documentation sequence from the post-H8 queue; the
+issue work did update Music's tutorial/reference and AUDIO contract, but did
+not otherwise advance the remaining documentation sessions.
+
+## Previous handoff — HELPDOCS session 8: the Music window (H8; D168)
 
 **This session (2026-07-22, continued): HELPDOCS H8 as queued — landed as
 D168** in the implementation/tutorial commit `8e23f11` and the docs commit

@@ -26,7 +26,8 @@ Music time is exact. One beat is 96 ticks; one four-beat bar is 384. With the
 the transport's right bay names the snapped destination, for example
 `bar 1 beat 4+48 · C3 · tick 336`. Over a stored note it also reports
 duration and velocity. The keyboard uses sharp names, so A-sharp is `A#`.
-Beside the grid, `pN · loop N bars` names the active pattern's period.
+Beside the grid, the editable `pN` name and `loop N bars` readout identify the
+active pattern and its period.
 
 Patterns authored in this window have a **one-bar minimum** and grow in whole
 bars. A one-beat phrase inside a one-bar pattern therefore repeats at the next
@@ -35,9 +36,9 @@ notes across the bar; Music v1 has no sub-bar pattern-length control.
 
 1. Right-click empty canvas and choose **music**. Replace the suggested path
    with `sound/moonlit-relay.song` and press Enter. The fresh song opens at
-   **bpm 120** with one track, one four-bar starter clip, and the **1/8**
-   placement grid. It is working state now, but no `.song` exists on disk
-   until the first save.
+   **bpm 120** and **4/4** with one track, one four-bar starter clip, and the
+   **1/4** placement grid. Click the grid chip once to choose **1/8**. It is
+   working state now, but no `.song` exists on disk until the first save.
 2. Click the starter `p1` clip in the top arrangement and press **Del**. Click
    **track 1** in the left rail: because it has no clip, the row creates a
    fresh one-bar pattern and clip at bar 1, then drills the roll into it. Click
@@ -77,7 +78,7 @@ notes across the bar; Music v1 has no sub-bar pattern-length control.
 8. Select track 4 and place the first lead motif with the inherited 96-tick
    length: G4 at `0`, A-sharp 4 at `144`, C5 at `192`, and E-flat 5 at
    `336`. Drag the right edges of the A-sharp and E-flat notes back to
-   `dur 48`. Hold Shift and marquee across all four notes, then press
+   `dur 48`. Hold Ctrl and marquee across all four notes, then press
    **Ctrl+C**. The four-note motif is now on the session clipboard.
 9. Press **Ctrl+V**. A translucent ghost follows the roll; put its first G4 at
    bar 2 tick `384` and click once. The paste disarms and its four new notes
@@ -90,17 +91,19 @@ notes across the bar; Music v1 has no sub-bar pattern-length control.
    the one-bar drums repeat eight times, while the two-bar bass turn repeats
    four times. If the edge is cramped, wheel over the arrangement to zoom its
    own time view; the roll zoom below does not change.
-11. The bar-2 ghost already grew the untouched `p5` clip to two bars. Drag it
-   to bar 3 (tick `768`). Hold Ctrl and drag that clip to bar 5 (tick `1536`).
-   The copy is linked: both clips say `p5` and glow together because editing
-   either placement edits their one shared pattern.
-12. Click empty track-4 arrangement space at bar 7 (tick `2304`). A fresh
-   `p6` clip and independent pattern appear. Press Ctrl+V and place the saved
-   motif at pattern tick `0` with its first note on C5. Arm Ctrl+V again and
-   place it at tick `384` with its first note on A-sharp 4. That second paste
-   automatically grows `p6` and its untouched clip to two bars. The final lead
-   lane reads `p5 · p5 · p6`: statement, linked repeat, then a separately
-   editable answer.
+11. The bar-2 ghost already grew the untouched `pattern 5` clip to two bars.
+   Drag it to bar 3 (tick `768`). Hold Shift and drag that clip to bar 5
+   (tick `1536`). The copy is linked: both clips carry the same pattern name
+   and glow together because editing either placement edits their one shared
+   pattern.
+12. Click **+ pat**, rename the new active pattern `lead answer`, then click
+   empty track-4 arrangement space at bar 7 (tick `2304`). Press Ctrl+V and
+   place the saved motif at pattern tick `0`; paste deliberately keeps the
+   copied pitches. Drag the selected notes upward so the first note lands on
+   C5. Arm Ctrl+V again, place it at tick `384`, then move that selected copy
+   until its first note lands on A-sharp 4. The second paste grows the
+   untouched clip to two bars. The final lead lane reads as two linked
+   statement clips followed by the independently named answer.
 
 ![The finished eight-bar rail: three backing loops, linked p5 lead clips, and the independent p6 answer](media/music-arrangement@2x.png)
 
@@ -112,14 +115,16 @@ notes across the bar; Music v1 has no sub-bar pattern-length control.
 
 ![The selected lead row with its exact volume 112 and rightward pan 28 mix](media/music-mix@2x.png)
 
-14. Click the scrub ruler at bar 3, tick `768`, and press **Space**. Preview
-   begins where the lead enters, crosses both linked `p5` clips into `p6`,
-   then wraps around the eight-bar song. Watch the arrangement playhead and
-   listen for the softer second half of pattern A. Press Space again to stop.
+14. Click the thin **song ruler above the arrangement** at bar 3, tick `768`,
+   and press **Space**. Preview begins where the lead enters, crosses both
+   linked statement clips into `lead answer`, then wraps around the eight-bar
+   song. Watch the arrangement playhead and listen for the softer second half
+   of pattern A. Press Space again to stop.
 15. Press **Ctrl+S**. The amber dot and title `*` clear, the CSNG source
    publishes atomically, and Assets discovers it. Reopen the file later and
-   the six clips still contain two deliberate references to `p5`; a linked
-   pattern is a saved relationship, not an editor-only trick.
+   the six clips still contain two deliberate references to one pattern; that
+   linked relationship and every pattern name are saved data, not editor-only
+   state.
 
 The useful mental split is now concrete: **patterns contain notes**;
 **clips place and loop patterns**; **tracks choose instruments and mix**.

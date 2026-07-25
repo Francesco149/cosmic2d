@@ -8499,10 +8499,12 @@ local function t_song()
   -- tracks; each clip owns its own pattern. fresh gives one of each.
   local doc = song.fresh()
   check(#doc.tracks == 1 and #doc.clips == 1 and doc.clips[1].pattern == 1
-        and doc.patterns[1] ~= nil, "song: fresh = 1 track/clip/pattern")
+        and doc.patterns[1].name == "pattern 1" and doc.beat_unit == 4,
+        "song: fresh = named 1 track/clip/pattern")
   doc.bpm = 140
   doc.tracks[1].ins = "x.ins"
   doc.tracks[1].pan = -23
+  doc.patterns[1].name = "bass turn"
   doc.patterns[1].len = 96 * 4
   doc.patterns[1].notes = { { tick = 96, dur = 48, pitch = 64, vel = 90 },
                             { tick = 0, dur = 96, pitch = 60, vel = 100 } }
@@ -8516,7 +8518,32 @@ local function t_song()
         "song: track mix + clips round-trip")
   check(#d2.patterns[1].notes == 2 and d2.patterns[1].notes[1].tick == 0,
         "song: pattern round-trips, canonical note order")
+  check(d2.patterns[1].name == "bass turn" and d2.beat_unit == 4,
+        "song: pattern names + full time signature round-trip")
   check(song.encode(d2) == bytes, "song: canonical encode")
+  check(song.bar_ticks({ beats_per_bar = 3, beat_unit = 4 }) == 288
+        and song.bar_ticks({ beats_per_bar = 7, beat_unit = 8 }) == 336
+        and song.beat_ticks({ beats_per_bar = 7, beat_unit = 8 }) == 48
+        and song.length({ beats_per_bar = 3, beat_unit = 8,
+                          loop1 = 0, clips = {} }) == 144,
+        "song: numerator/denominator tick math")
+
+  -- The named-pattern/time-signature writer is v2, but every v1 song remains
+  -- readable and receives explicit 4/4 + deterministic default names.
+  local oldw = cm.require("cm.chunk").writer("CSNG")
+  oldw.chunk("HEAD", 1, string.pack("<I2I1I1I4I4",
+                                    111, 3, 8, 0, 288))
+  oldw.chunk("TRKS", 1, string.pack("<I1s1s1I1i1I1",
+                                    1, "old", "", 128, 0, 0))
+  oldw.chunk("PATN", 1, string.pack("<I2I4I2I4I4I1I1",
+                                    7, 288, 1, 0, 96, 60, 100))
+  oldw.chunk("ARRG", 1, string.pack("<I2I1I4I4I2",
+                                    1, 0, 0, 288, 7))
+  local olddoc = song.decode(oldw.result())
+  check(olddoc.bpm == 111 and olddoc.beats_per_bar == 3
+        and olddoc.beat_unit == 4 and olddoc.patterns[7].name == "pattern 7"
+        and #olddoc.patterns[7].notes == 1,
+        "song: HEAD/PATN v1 migrate to quarter-unit named patterns")
 
   -- Song source publication is atomic. An interrupted replacement leaves the
   -- previous arrangement intact; retry publishes the complete newer CSNG.
@@ -8663,6 +8690,71 @@ local function t_song()
         "music.group_val: CTRL snaps to the same target")
   check(mus.group_val(10, 5, 3, false, 1, 1 << 30) == 8,
         "music.group_val: length offset (-2) clamps to >=1")
+  check(mus.defaults().grid == 3 and mus.defaults().row_h == 14,
+        "music defaults: quarter-note snap + doubled note rows")
+  check(mus.snap_delta(47, 96) == 0 and mus.snap_delta(49, 96) == 96
+        and mus.snap_delta(-47, 96) == 0
+        and mus.snap_delta(-49, 96) == -96,
+        "music.snap_delta: nearest steps are symmetric around zero")
+
+  local cb1 = { tick = 96, track = 1 }
+  local cb2 = { tick = 192, track = 2 }
+  local cdt, ctr = mus.clip_move_delta({ cb1, cb2 }, 150, 7,
+                                        96, false, 4)
+  check(cdt == 192 and ctr == 1,
+        "music.clip_move_delta: beat snap + whole-group lane clamp")
+  cdt, ctr = mus.clip_move_delta({ cb1, cb2 }, -500, -7,
+                                  96, true, 4)
+  check(cdt == -96 and ctr == -1,
+        "music.clip_move_delta: Alt precision still clamps group bounds")
+
+  local solodoc = { tracks = {
+    { mute = true }, { mute = false }, { mute = false },
+  } }
+  local solop = {}
+  check(mus.toggle_solo(solodoc, solop, 2)
+        and solodoc.tracks[1].mute and not solodoc.tracks[2].mute
+        and solodoc.tracks[3].mute,
+        "music.toggle_solo: target alone remains audible")
+  check(not mus.toggle_solo(solodoc, solop, 2)
+        and solodoc.tracks[1].mute and not solodoc.tracks[2].mute
+        and not solodoc.tracks[3].mute,
+        "music.toggle_solo: unsolo restores the prior mute mix")
+
+  local mn1 = { tick = 0, dur = 24, pitch = 60 }
+  local mn2 = { tick = 96, dur = 24, pitch = 60 }
+  local collide = { tick = 192, dur = 24, pitch = 60 }
+  local mpt = { notes = { mn1, mn2, collide } }
+  check(mus.double_note_spacing(mpt, { [mn1] = true, [mn2] = true })
+        and mn2.tick == 192 and #mpt.notes == 2,
+        "music.double_note_spacing: doubles from anchor + overwrites collision")
+  local ndt, ndp = mus.nudge_selected_notes(
+    mpt, { [mn1] = true, [mn2] = true }, -96, 80)
+  check(ndt == 0 and ndp == 67 and mn1.pitch == 127 and mn2.pitch == 127,
+        "music.nudge_selected_notes: one clamped delta preserves the set")
+
+  local prdoc = song.fresh()
+  prdoc.clips[1].tick, prdoc.clips[1].len = 192, 384
+  local pr0, pr1, prat = mus.preview_range(
+    prdoc, { cursor = 96 }, { csel = 1 }, "clip")
+  check(pr0 == 192 and pr1 == 576 and prat == 288,
+        "music.preview_range: clip scrub maps local time into selected instance")
+  pr0, pr1, prat = mus.preview_range(
+    prdoc, { song_cursor = 288 }, { csel = 1 }, "song")
+  check(pr0 == 0 and pr1 == song.length(prdoc) and prat == 288,
+        "music.preview_range: song transport owns its independent cursor")
+
+  local steppt = { notes = {} }
+  local stepnote, stepchanged = mus.set_step(steppt, 24, 60, 24, true)
+  check(stepchanged and stepnote.tick == 24 and stepnote.dur == 24
+        and stepnote.pitch == 60 and #steppt.notes == 1,
+        "music.set_step: left-add creates one fixed-grid note")
+  local same, changed_again = mus.set_step(steppt, 24, 60, 24, true)
+  check(same == stepnote and not changed_again and #steppt.notes == 1,
+        "music.set_step: repeated left-add is idempotent")
+  local removed, removed_ok = mus.set_step(steppt, 24, 60, 24, false)
+  check(removed == stepnote and removed_ok and #steppt.notes == 0,
+        "music.set_step: right-erase removes the exact step")
 
   -- the pitch-delta clamp (round 9): ONE delta for the whole set so
   -- intervals never squash — the paste ghost clamps to it, the octave
@@ -8692,6 +8784,10 @@ local function t_song()
   check(mus.loop_span(384, 4) == "1 bar"
         and mus.loop_span(768, 4) == "2 bars"
         and mus.loop_span(96, 4) == "1 beat"
+        and mus.loop_span(48, { beats_per_bar = 7, beat_unit = 8 })
+            == "1 beat"
+        and mus.loop_span(336, { beats_per_bar = 7, beat_unit = 8 })
+            == "1 bar"
         and mus.loop_span(50, 4) == "50 ticks",
         "music.loop_span: exact bar, beat, and arbitrary tick periods")
 
@@ -8908,7 +9004,8 @@ local function t_preview_voice()
   -- round-robin OVERWROTE still-held voices (x_snd_ed_on with an
   -- explicit index) — a chord dragged across bars died after ~24
   -- percussion events ("the long chords stop after ~1 bar", dunes).
-  local pv = cm.require("cm.ed.win.music").preview_voice
+  local music = cm.require("cm.ed.win.music")
+  local pv = music.preview_voice
   local v, nxt = pv({}, {}, nil)
   check(v == 8 and nxt == 9, "preview_voice: fresh state starts at 8")
   v = pv({ a = 8, b = 9 }, {}, 8)
@@ -8922,10 +9019,37 @@ local function t_preview_voice()
   v = pv(all, {}, 14)
   check(v == 14, "preview_voice: every voice held steals in order")
 
+  -- The preset cache is per track, not one global "sent" latch. This pins the
+  -- intermittent editor mismatch: deleting/reindexing tracks or adding an
+  -- empty one could leave that lane playing the previous occupant's slot.
+  local decide = music.preview_patch_decision
+  local a = { ins = "ins/a.ins", gain = 128, pan = 0 }
+  local b = { ins = "ins/b.ins", gain = 128, pan = 0 }
+  local keya = music.preview_patch_key(a)
+  local upload, usable, key = decide(nil, false, a, true)
+  check(upload and not usable and key == keya,
+        "music preview preset: a fresh track uploads its displayed assignment")
+  upload, usable, key = decide(keya, true, a, true)
+  check(not upload and usable and key == keya,
+        "music preview preset: an owned matching slot remains usable")
+  upload, usable = decide(keya, true, b, true)
+  check(upload and not usable,
+        "music preview preset: a reindexed different preset reuploads")
+  upload, usable = decide(keya, true,
+    { ins = "ins/a.ins", gain = 99, pan = 0 }, true)
+  check(upload and not usable,
+        "music preview preset: a mix change invalidates the baked patch")
+  upload, usable = decide(keya, true, a, false)
+  check(upload and not usable,
+        "music preview preset: a stolen editor slot reuploads")
+  upload, usable, key = decide(keya, true,
+    { ins = "", gain = 128, pan = 0 }, true)
+  check(not upload and not usable and key == false,
+        "music preview preset: an empty track never plays a stale slot")
+
   -- A closed music window no longer draws, so its lifecycle hook must release
   -- both sequencer-held notes and frame-expiring audition blips itself. The
   -- horror-hollow opening drone exposed the missing owner transition.
-  local music = cm.require("cm.ed.win.music")
   local old_off = pal.x_snd_ed_off
   local stopped = {}
   pal.x_snd_ed_off = function(voice)

@@ -1118,11 +1118,21 @@ local function interact(ig)
 
   -- the grammar (ALT layer + edge resize + title move + canvas select);
   -- true = wm owns the mouse
+  local wm_alt = g.alt or false
+  if wm_alt then
+    local aid, apart = wm.hit(doc, wwx, wwy, 0)
+    local awin = aid and apart == "content" and wm.get(doc, aid)
+    local akind = awin and M.kinds[awin.kind]
+    if awin and akind and akind.takes_alt
+       and akind.takes_alt(awin, M) then
+      wm_alt = false
+    end
+  end
   local inp = {
     wx = wwx, wy = wwy, sx = i.wx, sy = i.wy,
     bo = wm.EDGE_OUT / cam.screen_zoom(doc.cam),
     bi = wm.EDGE_IN / cam.screen_zoom(doc.cam),
-    alt = g.alt or false, ctrl = g.ctrl or false, hdrid = hdrid,
+    alt = wm_alt, ctrl = g.ctrl or false, hdrid = hdrid,
     constrain = kind_constrain, close = close_window,
     down1 = i.buttons[1] or false, down3 = i.buttons[3] or false,
     clicked1 = i.clicked[1] or false, clicked3 = i.clicked[3] or false,

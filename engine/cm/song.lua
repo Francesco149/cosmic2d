@@ -6,22 +6,26 @@
 -- places a pattern on a track at a bar, with a length; **resizing a
 -- clip longer than its pattern LOOPS the pattern to fill** (the "auto
 -- loop"). Clicking a clip drills into the roll to edit ITS pattern.
--- Stamping a NEW clip makes a FRESH pattern (nothing shares by
--- accident), but clips MAY deliberately SHARE a pattern (round 8 — the
--- human: place the same pattern multiple times, edit it once, every
--- placement follows; ctrl+drag / ctrl+press in the arrangement).
+-- +pat makes a FRESH named pattern; placing the active pattern or
+-- Shift-dragging a clip deliberately SHARES it across placements, so an
+-- edit to that pattern appears in every linked clip.
 --
 --   HEAD v1: <u16 bpm> <u8 beats_per_bar> <u8 grid> <u32 loop0> <u32 loop1>
+--   HEAD v2: <u16 bpm> <u8 beats_per_bar> <u8 beat_unit> <u8 grid>
+--            <u32 loop0> <u32 loop1>
 --   TRKS v1: <u8 n> n x { <s1 name> <s1 ins> <u8 gain> <i8 pan> <u8 mute> }
 --            (v2 carried a per-track pat — round 6; migrated to clips)
 --   PATN v1 (xN): <u16 id> <u32 len> <u16 nnotes>
 --                 nnotes x { <u32 tick> <u32 dur> <u8 pitch> <u8 vel> }
+--   PATN v2 (xN): <u16 id> <s1 name> <u32 len> <u16 nnotes>
+--                 nnotes x { <u32 tick> <u32 dur> <u8 pitch> <u8 vel> }
 --   ARRG v1: <u16 nclips> nclips x { <u8 track> <u32 tick> <u32 len>
 --                                    <u16 pattern id> }
 --
--- doc = { bpm, beats_per_bar, grid, loop0, loop1,
+-- doc = { bpm, beats_per_bar, beat_unit, grid, loop0, loop1,
 --         tracks = { {name, ins, gain, pan, mute} },
---         patterns = { [id] = {id, len, notes={{tick,dur,pitch,vel}}} },
+--         patterns = { [id] = {id, name, len,
+--                              notes={{tick,dur,pitch,vel}}} },
 --         clips = { {track, tick, len, pattern} } }
 
 local M = select(2, ...) or {}
@@ -34,6 +38,35 @@ local DEF_LOOP = 4 * BAR -- 4 bars
 
 local pack, unpack = string.pack, string.unpack
 
+local VALID_BEAT_UNIT = {
+  [1] = true, [2] = true, [4] = true, [8] = true,
+  [16] = true, [32] = true, [64] = true, [128] = true,
+}
+
+function M.time_signature(beats_per_bar, beat_unit)
+  local beats = math.max(1, math.min(32,
+    math.tointeger(beats_per_bar) or 4))
+  local unit = math.tointeger(beat_unit) or 4
+  if not VALID_BEAT_UNIT[unit] then unit = 4 end
+  return beats, unit
+end
+
+function M.beat_ticks(doc)
+  local _, unit = M.time_signature(doc and doc.beats_per_bar,
+                                   doc and doc.beat_unit)
+  return M.PPQ * 4 // unit
+end
+
+function M.bar_ticks(doc)
+  local beats = M.time_signature(doc and doc.beats_per_bar,
+                                 doc and doc.beat_unit)
+  return beats * M.beat_ticks(doc)
+end
+
+function M.default_pattern_name(id)
+  return "pattern " .. tostring(math.tointeger(id) or 1)
+end
+
 -- produce a canonical clip-arrangement doc from any input: migrate a
 -- round-6 per-track doc (tracks have `pat`, no clips) into clips, give
 -- an empty doc a starter clip, and heal any clip pointing at a MISSING
@@ -41,11 +74,18 @@ local pack, unpack = string.pack, string.unpack
 -- splits shared patterns; stamping still makes a fresh pattern so nothing
 -- shares by accident. Idempotent; preserves notes.
 function M.normalize(doc)
+  doc.beats_per_bar, doc.beat_unit =
+    M.time_signature(doc.beats_per_bar, doc.beat_unit)
   doc.patterns = doc.patterns or {}
   doc.tracks = doc.tracks or {}
   doc.clips = doc.clips or {}
   local maxid = 0
-  for id in pairs(doc.patterns) do if id > maxid then maxid = id end end
+  for id, pt in pairs(doc.patterns) do
+    if id > maxid then maxid = id end
+    if not pt.name or pt.name == "" then
+      pt.name = M.default_pattern_name(id)
+    end
+  end
   local function newid() maxid = maxid + 1; return maxid end
 
   -- migrate round-6 (track.pat, no clips) -> one clip per track
@@ -63,7 +103,8 @@ function M.normalize(doc)
   -- a doc with tracks but nothing to edit gets a starter clip
   if #doc.clips == 0 and #doc.tracks > 0 then
     local pid = newid()
-    doc.patterns[pid] = { id = pid, len = DEF_LOOP, notes = {} }
+    doc.patterns[pid] = { id = pid, name = M.default_pattern_name(pid),
+                          len = DEF_LOOP, notes = {} }
     doc.clips[1] = { track = 0, tick = 0, len = DEF_LOOP, pattern = pid }
   end
 
@@ -73,7 +114,8 @@ function M.normalize(doc)
   for _, c in ipairs(doc.clips) do
     if not doc.patterns[c.pattern] then
       local pid = newid()
-      doc.patterns[pid] = { id = pid, len = c.len or DEF_LOOP, notes = {} }
+      doc.patterns[pid] = { id = pid, name = M.default_pattern_name(pid),
+                            len = c.len or DEF_LOOP, notes = {} }
       c.pattern = pid
     end
   end
@@ -83,10 +125,12 @@ end
 
 function M.fresh()
   return M.normalize({
-    bpm = 120, beats_per_bar = 4, grid = 8, loop0 = 0, loop1 = DEF_LOOP,
+    bpm = 120, beats_per_bar = 4, beat_unit = 4, grid = 8,
+    loop0 = 0, loop1 = DEF_LOOP,
     tracks = { { name = "track 1", ins = "", gain = 128, pan = 0,
                  mute = false } },
-    patterns = { [1] = { id = 1, len = DEF_LOOP, notes = {} } },
+    patterns = { [1] = { id = 1, name = M.default_pattern_name(1),
+                          len = DEF_LOOP, notes = {} } },
     clips = { { track = 0, tick = 0, len = DEF_LOOP, pattern = 1 } },
   })
 end
@@ -100,8 +144,9 @@ end
 
 function M.encode(doc)
   local w = chunk.writer(M.MAGIC)
-  w.chunk("HEAD", 1, pack("<I2I1I1I4I4", doc.bpm or 120,
-                          doc.beats_per_bar or 4, doc.grid or 8,
+  local beats, unit = M.time_signature(doc.beats_per_bar, doc.beat_unit)
+  w.chunk("HEAD", 2, pack("<I2I1I1I1I4I4", doc.bpm or 120,
+                          beats, unit, doc.grid or 8,
                           doc.loop0 or 0, doc.loop1 or DEF_LOOP))
   local t = { pack("<I1", #(doc.tracks or {})) }
   for _, tr in ipairs(doc.tracks or {}) do
@@ -117,11 +162,14 @@ function M.encode(doc)
       if x.tick ~= y.tick then return x.tick < y.tick end
       return x.pitch < y.pitch
     end)
-    local b = { pack("<I2I4I2", id, pt.len or 0, #notes) }
+    local name = pt.name
+    if not name or name == "" then name = M.default_pattern_name(id) end
+    name = name:sub(1, 255)
+    local b = { pack("<I2s1I4I2", id, name, pt.len or 0, #notes) }
     for _, n in ipairs(notes) do
       b[#b + 1] = pack("<I4I4I1I1", n.tick, n.dur, n.pitch, n.vel or 100)
     end
-    w.chunk("PATN", 1, table.concat(b))
+    w.chunk("PATN", 2, table.concat(b))
   end
   local clips = {} -- canonical: sorted by (track, tick)
   for _, c in ipairs(doc.clips or {}) do clips[#clips + 1] = c end
@@ -144,6 +192,10 @@ function M.decode(bytes)
     if c.tag == "HEAD" and c.version == 1 then
       doc.bpm, doc.beats_per_bar, doc.grid, doc.loop0, doc.loop1 =
         unpack("<I2I1I1I4I4", c.payload)
+      doc.beat_unit = 4
+    elseif c.tag == "HEAD" and c.version == 2 then
+      doc.bpm, doc.beats_per_bar, doc.beat_unit, doc.grid,
+        doc.loop0, doc.loop1 = unpack("<I2I1I1I1I4I4", c.payload)
     elseif c.tag == "TRKS" and (c.version == 1 or c.version == 2) then
       local n, pos = unpack("<I1", c.payload)
       for _ = 1, n do
@@ -154,9 +206,15 @@ function M.decode(bytes)
                                         gain = gain, pan = pan,
                                         mute = mute == 1, pat = pat }
       end
-    elseif c.tag == "PATN" and c.version == 1 then
-      local id, len, nn, pos = unpack("<I2I4I2", c.payload)
-      local pt = { id = id, len = len, notes = {} }
+    elseif c.tag == "PATN" and (c.version == 1 or c.version == 2) then
+      local id, name, len, nn, pos
+      if c.version == 1 then
+        id, len, nn, pos = unpack("<I2I4I2", c.payload)
+        name = M.default_pattern_name(id)
+      else
+        id, name, len, nn, pos = unpack("<I2s1I4I2", c.payload)
+      end
+      local pt = { id = id, name = name, len = len, notes = {} }
       for _ = 1, nn do
         local tick, dur, pitch, vel
         tick, dur, pitch, vel, pos = unpack("<I4I4I1I1", c.payload, pos)
@@ -226,7 +284,7 @@ function M.length(doc)
   for _, c in ipairs(doc.clips or {}) do
     if c.tick + c.len > n then n = c.tick + c.len end
   end
-  return math.max(BAR, n)
+  return math.max(M.bar_ticks(doc), n)
 end
 
 -- a pattern's length GROWS to fit its notes (whole bars, min one) but
@@ -234,7 +292,7 @@ end
 -- pattern is fine). Editors call this after a note edit.
 function M.fit_pattern(doc, pt)
   if not pt then return end
-  local bar = M.PPQ * (doc.beats_per_bar or 4)
+  local bar = M.bar_ticks(doc)
   local ext = pt.len or bar
   for _, n in ipairs(pt.notes) do
     if n.tick + n.dur > ext then ext = ((n.tick + n.dur + bar - 1) // bar) * bar end

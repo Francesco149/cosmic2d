@@ -8,10 +8,12 @@ pointer.
 ## The window at a glance
 
 The left **track rail** binds instruments and mixes tracks. The top-right
-**transport row** controls preview, tempo, and placement grid. Beneath it, the
-**arrangement** places patterns as clips on track lanes. The **scrub ruler**,
-**piano keys**, and central **roll** edit the selected clip's pattern. The
-bottom **velocity lane** edits note strength.
+**transport row** controls song preview, tempo, time signature, pattern
+creation, and placement grid. Beneath it, the song ruler and **arrangement**
+place named patterns as clips on track lanes. The selected clip has its own
+transport and pattern ruler above the **piano keys** and central **roll**. The
+bottom **velocity lane** edits note strength. The **steps / piano** chip
+switches between a channel-rack view and detailed note editing.
 
 The editor has three levels:
 
@@ -20,10 +22,11 @@ The editor has three levels:
 - a **clip** places one pattern on one track at a song tick and loops it to
   fill the clip length.
 
-A track chooses the instrument, mute, volume, and pan. Plain clip creation
-makes a fresh pattern, so nothing shares by accident. Ctrl-creation is the
-explicit linked-reuse door: several clips may deliberately point at one
-pattern and every edit then appears in all of them.
+A track chooses the instrument, mute, volume, and pan. **+ pat** creates an
+unplaced, named pattern. Clicking empty arrangement space places the active
+pattern, so repeated clips are intentionally linked and every edit appears in
+all of them. Select **+ pat** before placing when the next section should be
+independent.
 
 ## Create, open and rebind
 
@@ -60,10 +63,12 @@ pattern and every edit then appears in all of them.
 
 ## Timing, grids, pitch and the address bay
 
-Song time is integer ticks at **PPQ 96**: 96 ticks per beat. In the usual
-four-beat bar, a bar is 384 ticks. Tempo is one global integer BPM. Notes use
-MIDI pitch 0–127; the visible names follow `C4 = 60` and spell accidentals
-with sharps.
+Song time is integer ticks at **PPQ 96**: a quarter note is always 96 ticks.
+The typed time signature accepts 1–32 beats per bar and power-of-two beat
+units from 1 through 128. Thus 4/4 has 96-tick beats and 384-tick bars, while
+6/8 has 48-tick beats and 288-tick bars. Tempo is one global integer from
+1–999 BPM. Notes use MIDI pitch 0–127; visible names follow `C4 = 60` and
+spell accidentals with sharps.
 
 The grid is placement snap, not note length:
 
@@ -74,7 +79,8 @@ The grid is placement snap, not note length:
     key 5   1/16    24 ticks    quarter beat
     key 6   1/32    12 ticks    eighth beat
 
-Changing grid affects where the next add, move, paste, and scrub cursor land.
+The grid defaults to **1/4**. Changing it affects where the next add, move,
+paste, and pattern cursor land.
 It never rewrites existing notes and never changes the last-used placement
 length. The current UI grid is captured in the editor session, not written
 back to the CSNG HEAD grid byte.
@@ -103,6 +109,9 @@ remain whatever the CSNG contains.
   Otherwise it shows the final component of the project-relative source path.
 - **mute dot** — toggles the track's authored mute flag. Muted tracks stay in
   the arrangement but editor and game sequencers skip their notes.
+- **Ctrl+click the mute dot** — solos that track. Ctrl+click it again restores
+  the exact mute state that existed before solo; Ctrl+clicking another dot
+  transfers solo.
 - **del** — available when more than one track exists. It removes that track
   and all clips on it, then reindexes the higher lanes. It cannot delete the
   last track. Patterns made unreachable by the deletion remain harmless
@@ -153,63 +162,77 @@ same gain/pan composition functions.
 
 ## The transport row
 
-- **play / stop** — starts editor preview at the scrub cursor or releases the
-  preview. It loops at `cm.song.length`, which is the farthest clip end with
-  the saved loop end as a minimum.
-- **bpm N** — each click adds 10 BPM; 200 wraps to 60. There is no typed BPM
-  field in v1. A tempo edit is journaled and invalidates the flattened
-  preview.
+- **song play / song stop** — previews the whole arrangement from the
+  independent song ruler cursor and loops at `cm.song.length`, the farthest
+  clip end with the saved loop end as a minimum.
+- **bpm** — type an integer from 1 through 999 and press Enter. A running
+  preview restarts at the same scope under the new tempo.
+- **time** — type a signature such as `3/4`, `6/8`, or `7/16` and press Enter.
+  The numerator range is 1–32 and the denominator must be a power of two from
+  1–128. Pattern growth, rulers, beat snapping, and the step view immediately
+  use the new musical beat and bar lengths.
 - **1/1 … 1/32** — each click advances through the six placement grids. Keys
   1–6 select them directly. Grid choice is view state, so it does not dirty
   the song.
-- **pN · loop N bars** — permanently names the active pattern and its exact
-  repeat period. Editor-authored patterns have a one-bar floor and whole-bar
-  growth. This label is information, not a button.
+- **+ pat** — creates and selects a named, unplaced one-bar pattern. Click a
+  lane to place it.
+- **steps / piano** — switches the lower editor between the one-bar
+  step-sequencer overview and the detailed piano roll.
+- **pN name** — edits the active pattern's saved name. Clips and step rows use
+  that name. The adjacent **loop N bars** text reports its exact repeat period.
 - The free right side carries the roll address or held-key audition described
   above.
 
-Space and the play/stop chip are the same **play/stop** action. Editor preview
-uses the render-only editor sound bank; it never enters simulation history.
-Edits rebuild the note flatten as needed, and mute/mix changes apply while it
-plays. Closing the window or leaving the live editor releases every preview
-and audition voice it owns.
+Space toggles the most recently chosen **play/stop** scope. Clicking the song
+ruler or song transport chooses song scope; drilling a clip, clicking its
+transport, or editing its pattern chooses clip scope. Editor preview uses the
+render-only editor sound bank; it never enters simulation history. Edits
+rebuild the note flatten as needed, and mute/mix changes apply while it plays.
+Closing the window or leaving the live editor releases every preview and
+audition voice it owns.
 
 ## The arrangement strip
 
 The strip is song time horizontally and one fixed-height lane per track
-vertically. Clips are labelled `pN` with their pattern id. The active track
-lane is tinted; the selected clip is bright; other clips sharing its pattern
-glow together.
+vertically. Clips carry their saved pattern names. The active track lane is
+tinted; every selected clip has an outline; other clips sharing the active
+pattern glow together.
 
 ### Select and drill
 
-Left-click a clip to select it, select its track, clear the previous note
-selection, reset the scrub cursor to 0, and show that clip's pattern in the
-roll. The press also arms move or edge-resize, so a motionless click only
-drills while a drag edits.
+Left-click a clip to make it the selection, select its track, clear the
+previous note selection, set the song cursor to its start, reset its local
+pattern cursor to 0, and show that pattern in the roll. The press also arms
+move or edge-resize, so a motionless click only drills while a drag edits.
 
-If no roll notes are selected, **Del** removes the selected clip. It does not
-delete the pattern bytes, because another linked clip may still use them.
-Right-click has no arrangement action.
+If no roll notes are selected, **Del** removes every selected clip. It does
+not delete pattern bytes because another linked clip may still use them.
+**Right-click** erases the clip under the pointer.
 
 ### Create clips
 
-- **left-click empty lane space** — bar-snaps the destination, makes a fresh
-  one-bar pattern, places a one-bar clip, selects it, and drills into it.
-- **Ctrl+left-click empty space** — places the currently active pattern as a
-  linked clip. Its fill length is that pattern's length rounded up to complete
-  bars, with a one-bar minimum.
-
-Plain creation is independent; Ctrl-creation is deliberate reuse.
+- **left-click empty lane space** — beat-snaps the destination and places the
+  active named pattern at its own length.
+- **Alt+left-click empty space** — bypasses horizontal snap for precise
+  placement.
+- **+ pat**, then **left-click empty space** — creates an independent pattern
+  and places it. Repeated ordinary placement of one active pattern is linked
+  reuse by design.
 
 ### Move, resize and duplicate clips
 
-- **drag a clip body** — moves it in whole-bar steps, never before tick 0.
-- **drag the right edge** — resizes in whole-bar steps, minimum one bar. The
+- **drag a clip body** — moves the entire clip selection in one-beat
+  horizontal steps and whole-track vertical steps, never before tick 0 or
+  outside existing track lanes.
+- **drag the right edge** — resizes in one-beat steps, minimum one beat. The
   edge brightens when the pointer is in its six-pixel grab zone.
-- **Ctrl+drag a clip** — creates and moves a linked duplicate. Original and
-  copy point at the same pattern; the duplicate commits even if released
-  without motion.
+- **Shift+drag a clip** — creates and moves linked duplicates of the
+  selection. Originals stay put and copies retain their pattern references.
+- **Ctrl+drag** — box-selects clips; **Ctrl+Shift+drag** adds intersecting
+  clips to the current selection. Ctrl-click follows the same replace/add
+  rule.
+- **Alt during move or resize** — temporarily bypasses horizontal snap;
+  vertical movement remains whole tracks.
 
 A clip longer than its pattern loops the pattern. A clip shorter than the
 pattern truncates notes at its right edge, including note duration at the
@@ -231,20 +254,40 @@ Lane height remains fixed and a thin right scrollbar marks vertical position.
 Arrangement zoom, origin, vertical scroll, and height are captured window
 state, not song bytes.
 
-## The scrub ruler
+## The step sequencer
 
-The band immediately above the roll shares the roll's horizontal tick view.
-Whole-bar lines are numbered from 1. Click or drag to set the accent cursor,
-snapped down to the active grid. The marker persists as window state.
+Choose **steps** for a compact, FL-style channel-rack door into the same
+pattern data. Each visible track gets one row and one bar of quarter-beat
+steps—sixteenth notes in 4/4, eighth-note subdivisions in 6/8. Alternating
+beat groups make the pulse visible.
 
-Space starts preview at that absolute song tick, then wraps to 0 at the song
-end. The moving white line is the live playhead. The ruler is visually
-pattern-aligned but does not add the selected clip's arrangement offset; when
-editing a clip that begins later, choose the absolute song bar where playback
-should enter.
+- **left-click a step** — adds one velocity-100 note at the row's working
+  pitch; repeated clicks are idempotent;
+- **right-click a step** — erases that exact note;
+- **roll** — selects the row's clip and opens its bytes in the detailed piano
+  editor.
 
-Ctrl+V no longer uses the ruler as a paste anchor. The current paste ghost
-follows the pointer directly in pattern space.
+The row uses the selected clip when it belongs to that track, otherwise the
+clip under the song cursor, otherwise the track's first clip. Its working
+pitch is the pattern's first-note pitch or C4 when empty. Adding to a track
+with no clip creates a fresh one-bar pattern and clip at the current song bar.
+
+## Song and clip rulers
+
+The thin ruler attached to the top of the arrangement owns whole-song time.
+Click or drag it to set a one-beat-snapped song cursor and choose song preview
+scope. **song play** or Space then starts there and wraps at the arrangement
+end.
+
+The band immediately above the roll is deliberately pattern-local. Its
+numbered bar lines share the roll view; click or drag to set the pattern
+cursor on the active placement grid. The **clip** button to its left previews
+the exact last-clicked clip span in song context, so other tracks remain
+audible, and loops back to that clip's start. The moving white line appears in
+both song and local views.
+
+`ctrl+v` does not use either ruler as a paste anchor. The paste ghost follows
+the pointer directly in pattern time.
 
 ## The piano-roll view
 
@@ -277,25 +320,29 @@ A bound, focused Music window owns view input:
   pointer tick when possible and using the roll center otherwise;
 - **middle-drag over the arrangement** pans that view; middle-drag elsewhere
   pans roll time and pitch on both axes;
+- **middle-drag vertically on the piano keys** changes pitch-row height from
+  5–32 logical pixels. New Music windows start at 14, twice the old compact
+  height;
 - an unfocused window is inert, so the infinite editor canvas receives wheel
   and middle drag.
 
 Click the title or a transport chip for a non-note focus door. Clicking empty
 roll space focuses and immediately adds; clicking a note focuses and selects
-it. Roll time origin, low pitch, and zoom survive restart and rewind as
-captured window fields. Pitch rows keep fixed height; there is no vertical
-zoom or fit command.
+it. Roll time origin, low pitch, row height, and zoom survive restart and
+rewind as captured window fields.
 
 ## Piano keys and pitch audition
 
 The narrow left column is a playable keyboard aligned exactly to roll rows.
-Black keys use the accidental shape; C rows carry octave labels.
+Black keys use the accidental shape; C rows carry octave labels. Notes show
+their own pitch name when their rectangle has enough room.
 
 - **left press** — auditions that pitch on the selected track's instrument;
 - **hold** — keeps the note gate open until release, like the Synth piano;
 - **drag while held** — glissandos row by row, releasing the old pitch through
   its short safety fuse and holding the new one;
-- hovering either keys or roll highlights the matching key.
+- hovering either keys or roll highlights the matching key;
+- while a key or stored note is held, its whole piano-roll row lights.
 
 The audible hold follows the instrument envelope: a bass or lead can sustain,
 while a deliberately short hat may decay almost immediately even though its
@@ -334,9 +381,11 @@ Selected notes hit-test before overlapping unselected notes and draw last,
 translucent with an outline. This makes an overlap visible and lets a drag
 keep hold of the intended note.
 
-### Resize
+### Resize and stretch
 
-Hover a note's right four-pixel edge to reveal the bright handle, then drag.
+Hover near a note's right edge to reveal the bright handle, then drag. The
+hit target reaches four screen pixels beyond the end and half a 1/32 note
+inside it, making short notes practical to grab. Only the right edge resizes.
 For one selected note, duration snaps to the nearest grid multiple with a
 one-cell minimum.
 
@@ -345,19 +394,37 @@ duration by the grabbed note's delta, preserving their differences and
 clamping at one tick. Hold Ctrl during the drag to set every selected note to
 the same duration instead.
 
+With two or more notes selected, a separate handle appears just right of the
+selection. Drag it to stretch start-time offsets and durations together around
+the earliest selected tick. Hold Alt to bypass the grid during the stretch.
+
 ### Selection, duplicate and delete
 
-- **Shift+click note** — toggles that note in the selection.
-- **Shift+drag empty space** — marquee-adds every note rectangle the marquee
-  touches.
-- **Ctrl+drag note** — duplicates that note, or the whole selection when the
-  grabbed note belongs to it, then moves the copies. Originals stay put and
-  the grabbed duplicate auditions while held.
+- **Ctrl+click note** — replaces the selection with that note.
+- **Ctrl+drag** — box-selects every intersecting note rectangle and clears the
+  old selection. **Ctrl+Shift+drag** adds to the selection; Ctrl+Shift+click
+  toggles one note.
+- **plain click or drag note** — an unselected note first becomes the only
+  selection; dragging a selected note moves the whole set.
+- **Shift+drag note** — duplicates that note, or the whole selection when the
+  grabbed note belongs to it, then moves the copies in time while their
+  original pitches stay fixed.
 - **right-click note** — deletes only the note under the pointer.
 - **Del** — deletes the note selection first; with no selected notes, deletes
-  the selected arrangement clip.
-- **Ctrl+Up / Ctrl+Down** — **octave**-steps the whole selection ±12
+  every selected arrangement clip.
+- **ctrl+a / ctrl+d** — **select all** notes / **deselect**.
+- **shift+left / shift+right** — **nudge** the selection by the smallest
+  1/32 subdivision.
+- **shift+up / shift+down** — move the selection by one semitone.
+- **ctrl+left / ctrl+right** — **beat nudge** by one beat of the active time
+  signature.
+- **ctrl+alt+right** — **double spacing** from the earliest selected note;
+  unselected same-pitch notes overwritten by the moved selection are removed.
+- **ctrl+b** — **duplicate** the selection immediately after its current span
+  without changing pitch.
+- **ctrl+up / ctrl+down** — **octave**-steps the whole selection ±12
   semitones. If any note would cross 0 or 127, the entire step refuses.
+- **up / down** — smoothly **scroll** the visible pitch range.
 - **Esc** — clears a note selection after first cancelling a paste.
 
 Right-click is claimed by every bound Music window so it cannot open the
@@ -376,8 +443,8 @@ restart.
 **Ctrl+V** arms, rather than immediately placing:
 
 - the ghost's earliest note follows the pointer's grid-snapped tick;
-- its anchor pitch follows the pointer row and the whole chord transposes by
-  one clamped delta, so intervals never squash at MIDI limits;
+- every copied note keeps its original pitch; moving the pointer vertically
+  never transposes the paste;
 - wheel and middle-pan remain live while armed;
 - left-click in the roll places once, selects the pasted notes, commits one
   journal entry, and disarms;
@@ -406,6 +473,13 @@ click. One finished velocity drag is one undo entry.
 - `space` — **play/stop**
 - `del` — **delete** selected notes, otherwise the selected clip
 - `1`–`6` — choose 1/1 through 1/32 placement grid
+- `ctrl+a` — **select all** notes · `ctrl+d` — **deselect**
+- `shift+left / shift+right` — **nudge** notes by 1/32
+- `shift+up / shift+down` — move notes one semitone
+- `ctrl+left / ctrl+right` — **beat nudge**
+- `up / down` — smoothly **scroll** pitch
+- `ctrl+alt+right` — **double spacing**
+- `ctrl+b` — **duplicate** notes to the right at their original pitches
 - `ctrl+up / ctrl+down` — move the note selection one **octave**
 - `ctrl+c / ctrl+x` — copy / cut selected notes
 - `ctrl+v` — arm the one-shot paste ghost
@@ -421,10 +495,12 @@ door so it is not shadowed by the shell clipboard.
 
 ## Journal, save, recovery and rewind
 
-Every instrument bind, mute, track add/delete, BPM click, clip create/move/
-resize/duplicate, note add/move/resize/delete/paste, velocity drag, and mix
-edit is journaled. One completed gesture is one entry. Track/clip selection,
-grid, cursor, panel size, pan, and zoom are view state and do not dirty bytes.
+Every instrument bind, mute/solo, track add/delete, BPM or time-signature
+submit, pattern create/rename, clip place/move/resize/duplicate, step edit,
+note add/move/resize/stretch/delete/paste, velocity drag, and mix edit is
+journaled. One completed gesture is one entry. Track/clip selection, grid,
+cursor, panel size, edit mode, pan, and zoom are view state and do not dirty
+bytes.
 
 - **ctrl+z / ctrl+y** walk a per-song journal capped at 512 snapshots.
 - **ctrl+s** writes the `.song` as one atomic replacement. Failure preserves
@@ -438,15 +514,15 @@ grid, cursor, panel size, pan, and zoom are view state and do not dirty bytes.
 - While rewind is parked in the past, edits are ephemeral and saving is
   walled. **bring back** is the explicit route to present, saveable work.
 
-## CSNG v1 file contract
+## CSNG file contract
 
 `.song` is the canonical CSNG chunk container:
 
-    HEAD v1  u16 bpm, u8 beats_per_bar, u8 legacy grid,
+    HEAD v2  u16 bpm, u8 beats_per_bar, u8 beat_unit, u8 legacy grid,
              u32 loop0, u32 loop1
     TRKS v1  u8 count, then name, instrument path, u8 gain,
              i8 pan, u8 mute per track
-    PATN v1  one chunk per pattern: u16 id, u32 length,
+    PATN v2  one chunk per pattern: u16 id, name, u32 length,
              u16 note count, then u32 tick, u32 duration,
              u8 pitch, u8 velocity per note
     ARRG v1  u16 clip count, then u8 track, u32 tick,
@@ -458,6 +534,8 @@ The editor writes complete replacement bytes; playback never mutates them.
 
 Decode normalizes old or damaged structure:
 
+- HEAD v1 migrates as a quarter-note beat unit (`beat_unit = 4`);
+- PATN v1 gains the stable default name `pattern N`;
 - a round-6 TRKS v2 file with one pattern id per track migrates those ids into
   clips;
 - a document with tracks but no clips gains one starter clip;
@@ -488,22 +566,24 @@ and rewind carry it. Tracks upload to simulation slots 32–47; the practical
 runtime/UI ceiling is therefore 16.
 
 For generated or inspected songs, `cm.song` exposes `fresh`, `normalize`,
-`encode`, `decode`, `save`, `fit_pattern`, `flatten`, `length`, and `PPQ`.
+`encode`, `decode`, `save`, `time_signature`, `beat_ticks`, `bar_ticks`,
+`fit_pattern`, `flatten`, `length`, and `PPQ`.
 Read bytes with `pal.read_file`, decode, edit the plain tables, and save or
 atomically encode them. Hand-authored files reopen in this window.
 
 ## Deliberate v1 limits
 
-There is one global tempo: no tempo map, swing, time-signature editor, or
-automation. There are no effect racks, buses, sends, audio/MIDI recording,
+There is one global tempo and time signature: no tempo/signature map, swing,
+or automation. There are no effect racks, buses, sends, audio/MIDI recording,
 note quantize command, probability, ratchets, chord brush, keyboard-entry
 tracker mode, per-note pan, or per-note expression.
 
-Tracks cannot be renamed or scrolled in the rail. Clips have no labels,
-colors, unlink/private-copy button, fades, crossfades, slip editing, clipboard,
-or right-click menu. Pattern garbage is not collected after every last clip is
-deleted. The roll has no vertical zoom, playback-key lighting, or fit command.
-Pattern periods cannot be shorter than one bar through the current editor. The
+Tracks cannot be renamed or scrolled in the rail. Clips have pattern-name
+labels but no independent labels, colors, unlink/private-copy button, fades,
+crossfades, slip editing, clipboard, or right-click menu beyond erase.
+Pattern garbage is not collected after every last clip is deleted. The roll
+has row-height zoom but no fit command or playback-key lighting. Pattern
+periods cannot be shorter than one bar through the current editor. The
 arrangement has no loop-region handles even though CSNG retains loop fields.
 These are honest boundaries, not hidden shortcuts.
 

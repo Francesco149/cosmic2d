@@ -15,7 +15,7 @@
 --      -> H7 must finish with every VERDICT true and save lead/bass/kick.
 --   3. full H8 proof run:
 --        bin/cosmic <scratch>/smoke-h8 --edit --headless \
---          --win 1280x1000 --frames 1810 --eval \
+--          --win 1280x1000 --frames 1960 --eval \
 --          "dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot <scratch>/full.png
 --      -> every H8 VERDICT line must read true.
@@ -171,6 +171,15 @@ local function click_track(f, ti)
   end)
 end
 
+local function view_low(f, pitch)
+  D.at(f, function()
+    local r = D.win("music")
+    r.win.lownote = pitch
+    r.win.lownote_target = nil
+    cm.ed.touch()
+  end)
+end
+
 local function click_add_track(f)
   D.at(f, function()
     local r, p = D.win("music"), plumb()
@@ -258,13 +267,13 @@ local function resize_note(f, tick, pitch, newdur)
 end
 
 local function marquee(f, tick0, pitch_hi, tick1, pitch_lo)
-  D.at(f, function() return { D.keyev(SC.shift, true) } end)
+  D.at(f, function() return { D.keyev(SC.ctrl, true) } end)
   D.at(f + 2, function()
     local x0, y0 = roll_xy(tick0, pitch_hi)
     local x1, y1 = roll_xy(tick1, pitch_lo)
     D.drag(D.f + 1, x0, y0, x1, y1, 7)
   end)
-  D.at(f + 14, function() return { D.keyev(SC.shift, false) } end)
+  D.at(f + 14, function() return { D.keyev(SC.ctrl, false) } end)
 end
 
 local function paste_at(f, tick, pitch)
@@ -321,7 +330,7 @@ end
 
 local function move_clip(f, track, pattern, tick, newtick, linked)
   if linked then
-    D.at(f, function() return { D.keyev(SC.ctrl, true) } end)
+    D.at(f, function() return { D.keyev(SC.shift, true) } end)
   end
   D.at(f + (linked and 2 or 0), function()
     local _, c = find_clip(track, pattern, tick)
@@ -332,8 +341,113 @@ local function move_clip(f, track, pattern, tick, newtick, linked)
     D.drag(D.f + 1, x0, y0, x1, y0, 8)
   end)
   if linked then
-    D.at(f + 16, function() return { D.keyev(SC.ctrl, false) } end)
+    D.at(f + 16, function() return { D.keyev(SC.shift, false) } end)
   end
+end
+
+local function click_new_pattern(f)
+  D.at(f, function()
+    local r = D.win("music")
+    local z, px = r.z, math.max(4, 10 * r.z)
+    local x = r.cx + math.min(120 * z, r.cw * 0.22)
+    local function chip(label)
+      local w = pal.x_ig_text_size(label, px * 0.95, 0) + 12 * z
+      local cx = x + w * 0.5
+      x = x + w + 4 * z
+      return cx
+    end
+    chip("song play")
+    x = x + pal.x_ig_text_size("bpm", px * 0.72, 0) + 2 * z
+            + 34 * z + 4 * z
+    x = x + pal.x_ig_text_size("time", px * 0.72, 0) + 2 * z
+            + 34 * z + 4 * z
+    chip("1/8")
+    D.click(D.f + 1, chip("+ pat"), r.cy + px * 0.8)
+  end)
+end
+
+local function click_steps(f)
+  D.at(f, function()
+    local r = D.win("music")
+    local z, px = r.z, math.max(4, 10 * r.z)
+    local x = r.cx + math.min(120 * z, r.cw * 0.22)
+    local function chip(label)
+      local w = pal.x_ig_text_size(label, px * 0.95, 0) + 12 * z
+      local cx = x + w * 0.5
+      x = x + w + 4 * z
+      return cx
+    end
+    chip("song play")
+    x = x + pal.x_ig_text_size("bpm", px * 0.72, 0) + 2 * z
+            + 34 * z + 4 * z
+    x = x + pal.x_ig_text_size("time", px * 0.72, 0) + 2 * z
+            + 34 * z + 4 * z
+    chip("1/8")
+    chip("+ pat")
+    D.click(D.f + 1, chip("steps"), r.cy + px * 0.8)
+  end)
+end
+
+local function set_transport_field(f, which, value)
+  D.at(f, function()
+    local r = D.win("music")
+    local z, px = r.z, math.max(4, 10 * r.z)
+    local x = r.cx + math.min(120 * z, r.cw * 0.22)
+    local sw = pal.x_ig_text_size("song play", px * 0.95, 0) + 12 * z
+    x = x + sw + 4 * z
+    x = x + pal.x_ig_text_size("bpm", px * 0.72, 0) + 2 * z
+    local bpm_x = x + 17 * z
+    x = x + 34 * z + 4 * z
+    x = x + pal.x_ig_text_size("time", px * 0.72, 0) + 2 * z
+    local time_x = x + 17 * z
+    replace_text(D.f + 1, which == "bpm" and bpm_x or time_x,
+                 r.cy + px * 0.8, value)
+  end)
+end
+
+local function set_pattern_name(f, value)
+  D.at(f, function()
+    local r = D.win("music")
+    local z, px = r.z, math.max(4, 10 * r.z)
+    local x = r.cx + math.min(120 * z, r.cw * 0.22)
+    local function chip(label)
+      local w = pal.x_ig_text_size(label, px * 0.95, 0) + 12 * z
+      x = x + w + 4 * z
+    end
+    chip("song play")
+    x = x + pal.x_ig_text_size("bpm", px * 0.72, 0) + 2 * z
+            + 34 * z + 4 * z
+    x = x + pal.x_ig_text_size("time", px * 0.72, 0) + 2 * z
+            + 34 * z + 4 * z
+    chip("1/8")
+    chip("+ pat")
+    chip("steps")
+    local pid = r.win.pat or 1
+    x = x + pal.x_ig_text_size("p" .. tostring(pid), px * 0.72, 0)
+            + 2 * z
+    replace_text(D.f + 1, x + 38 * z, r.cy + px * 0.8, value)
+  end)
+end
+
+local function step_xy(ti, si, roll)
+  local r, p, d = D.win("music"), plumb(), doc()
+  local a, z = p.arr, r.z
+  local label_w = math.min(120 * z, a.w * 0.28)
+  local row_y = a.y + a.h + 2 * z + 16 * z + (ti - 1) * 18 * z
+  if roll then
+    return a.x + label_w - 3 * z - 13 * z, row_y + 9 * z
+  end
+  local step_tick = math.max(1, song.beat_ticks(d) // 4)
+  local nsteps = math.max(1, song.bar_ticks(d) // step_tick)
+  local step_w = math.max(3 * z, (a.w - label_w - 4 * z) / nsteps)
+  return a.x + label_w + (si - 0.5) * step_w, row_y + 9 * z
+end
+
+local function click_step(f, ti, si, button)
+  D.at(f, function()
+    local x, y = step_xy(ti, si)
+    D.click(D.f + 1, x, y, button)
+  end)
 end
 
 local function set_mix(f, ti, key, value)
@@ -369,13 +483,12 @@ local function set_pan_slider(f, ti, value)
   end)
 end
 
-local function click_ruler(f, tick)
+local function click_song_ruler(f, tick)
   D.at(f, function()
-    local r, p = D.win("music"), plumb()
-    local v = p.view
-    local tpp = (r.win.tpp or 0.5) * r.z
-    local x = v.rx + (tick - (r.win.tick0 or 0)) * tpp
-    local y = v.ry - 9 * r.z
+    local p = plumb()
+    local a = p and p.arr
+    local x = a.x + (tick - a.t0) * a.atpp
+    local y = a.y - 6 * D.win("music").z
     D.click(D.f + 1, x, y)
   end)
 end
@@ -392,7 +505,8 @@ end
 -- Capture-only fit: the default Music width is 720, 20px over the reader's
 -- 700px layout budget. The real border moves to 680 before each @2x capture.
 for _, spec in ipairs({
-  { "music-roll", 970 }, { "music-arrangement", 1460 }, { "music-mix", 1670 },
+  { "music-roll", 970 }, { "music-arrangement", 1460 },
+  { "music-mix", 1670 }, { "music-steps", 1800 },
 }) do
   if rawget(_G, "SHOT") == spec[1] then
     D.at(spec[2] - 4, function()
@@ -405,6 +519,7 @@ end
 D.shot_zoom("music-roll", 970, "music")
 D.shot_zoom("music-arrangement", 1460, "music")
 D.shot_zoom("music-mix", 1670, "music")
+D.shot_zoom("music-steps", 1800, "music")
 
 -- The roll shot catches a REAL held C3 key after the @2x camera move. Refresh
 -- the pointer against the shifted key geometry; the button remains held.
@@ -444,6 +559,7 @@ probe(234, function()
           and #d.tracks == 1 and #d.clips == 1 and d.patterns[1].len == 4 * BAR
           and pal.read_file(cm.ed.root .. "/" .. SONG) == nil)
 end)
+D.tap(236, 33) -- key 4: the tutorial's 1/8 placement grid
 click_arr(242, 96, 0)
 D.tap(252, SC.del)
 click_track(262, 1)
@@ -526,6 +642,7 @@ end)
 -- Step 5: kick pattern. Add one deliberate error and remove it with the
 -- right button, leaving beats 1/3 and the final eighth-note pickup.
 click_track(708, 1)
+view_low(716, 42)
 click_note(720, 0, 48)
 click_note(730, 96, 48)
 click_note(740, 96, 48, 3)
@@ -539,6 +656,7 @@ end)
 -- Step 6: four short off-beat hats. Their patch envelope decays immediately,
 -- so the sustained-gate lesson deliberately moves to the audible bass.
 click_track(784, 2)
+view_low(790, 58)
 click_note(794, 48, 72)
 click_note(814, 144, 72)
 click_note(824, 240, 72)
@@ -554,6 +672,7 @@ end)
 -- still-exact-fit selected clip. Hold C3 on the playable keys for the audible
 -- sustained-gate lesson and the named mid-audition shot.
 click_track(896, 3)
+view_low(904, 42)
 add_drag(908, 0, 48, 96)
 click_note(928, 192, 51)
 click_note(940, 384, 46)
@@ -587,6 +706,7 @@ end)
 -- place a visible ghost in bar 2, move that selected answer down two
 -- semitones, and soften the whole selected group to velocity 82.
 click_track(980, 4)
+view_low(986, 59)
 click_note(990, 0, 67)
 click_note(1000, 144, 70)
 click_note(1010, 192, 72)
@@ -635,15 +755,21 @@ probe(1322, function()
           and a1.len == 2 * BAR and a2.len == 2 * BAR)
 end)
 
--- Step 12: stamp a fresh answer clip at bar 7, then use the cross-pattern
--- clipboard twice at different pitches. It is independent pattern B.
-click_arr(1330, 6 * BAR, 3)
-paste_at(1344, 0, 72)
-paste_at(1372, 384, 70)
-probe(1412, function()
+-- Step 12: create a fresh named pattern, place it at bar 7, then use the
+-- fixed-pitch cross-pattern clipboard and explicitly move each answer.
+click_new_pattern(1328)
+set_pattern_name(1334, "lead answer")
+click_arr(1350, 6 * BAR, 3)
+paste_at(1362, 0, 72)
+move_note(1376, 0, 67, 0, 72)
+paste_at(1394, 384, 70)
+move_note(1408, 384, 67, 384, 70)
+probe(1442, function()
   local d = doc()
   local _, c = find_clip(3, 6, 6 * BAR)
-  verdict("lead-b-independent", d.patterns[6] and d.patterns[6].len == 2 * BAR
+  verdict("lead-b-independent", d.patterns[6]
+          and d.patterns[6].name == "lead answer"
+          and d.patterns[6].len == 2 * BAR
           and c and c.len == 2 * BAR and D.win("music").win.pat == 6
           and notes_sig(d.patterns[6]) ==
           "0:96:72:100/144:48:75:100/192:96:77:100/336:48:80:100/"
@@ -688,13 +814,18 @@ probe(1670, function()
        math.min(r.h, 230 * r.z))
 end)
 
--- Steps 14-15: scrub to bar 3, preview from there, stop, then publish and
+-- Steps 14-15: use the arrangement's song ruler at bar 3, preview from there,
+-- stop, then publish and
 -- prove the canonical source and its runtime flatten.
-click_ruler(1686, 2 * BAR)
+click_song_ruler(1686, 2 * BAR)
 D.tap(1700, SC.space)
 probe(1718, function()
-  verdict("preview-from-bar-three", D.win("music").win.cursor == 2 * BAR
-          and plumb().playing == true)
+  local w, p = D.win("music").win, plumb()
+  verdict("preview-from-bar-three", w.song_cursor == 2 * BAR
+          and p.playing == true and p.play_scope == "song",
+          ("cursor=%s playing=%s win_scope=%s p_scope=%s"):format(
+            tostring(w.song_cursor), tostring(p.playing),
+            tostring(w.play_scope), tostring(p.play_scope)))
 end)
 D.tap(1728, SC.space)
 D.chord(1740, SC.ctrl, SC.s)
@@ -714,6 +845,51 @@ probe(1778, function()
           and #flat[4] == 24,
           flat and ("%d/%d/%d/%d"):format(#flat[1], #flat[2],
             #flat[3], #flat[4]) or "decode failed")
+end)
+
+-- Post-lesson UX proof: the channel-rack view edits the same pattern bytes,
+-- left-add/right-erase are exact, and "roll" drills back into the piano view.
+click_steps(1784)
+probe(1796, function()
+  verdict("step-view-open", D.win("music").win.edit_mode == "steps")
+end)
+probe(1800, function()
+  local r = D.win("music")
+  crop("music-steps", r.x, r.y, r.w, r.h)
+end)
+click_step(1804, 1, 2)
+probe(1816, function()
+  verdict("step-left-add", note_at(doc().patterns[2], 24, 48) ~= nil)
+end)
+click_step(1822, 1, 2, 3)
+probe(1834, function()
+  verdict("step-right-erase", note_at(doc().patterns[2], 24, 48) == nil)
+end)
+D.at(1840, function()
+  local x, y = step_xy(1, 1, true)
+  D.click(D.f + 1, x, y)
+end)
+probe(1852, function()
+  local w = D.win("music").win
+  verdict("step-roll-drill", w.edit_mode == "piano" and w.pat == 2
+          and w.trk == 1)
+end)
+set_transport_field(1860, "bpm", "137")
+set_transport_field(1880, "time", "7/8")
+probe(1900, function()
+  local d = doc()
+  verdict("typed-song-timing", d.bpm == 137 and d.beats_per_bar == 7
+          and d.beat_unit == 8 and song.beat_ticks(d) == 48
+          and song.bar_ticks(d) == 336)
+end)
+D.chord(1910, SC.ctrl, SC.z)
+D.chord(1920, SC.ctrl, SC.z)
+probe(1932, function()
+  local d = doc()
+  verdict("timing-undo", d.bpm == 120 and d.beats_per_bar == 4
+          and d.beat_unit == 4)
+end)
+probe(1940, function()
   verdict("summary", FAIL == 0, ("%d/%d"):format(PASS, PASS + FAIL))
   log("TAPE DONE")
 end)

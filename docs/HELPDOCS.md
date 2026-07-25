@@ -193,10 +193,11 @@ presets last (they cross-link finished tool docs and reuse their media).
   H7's three local instruments plus a Stock hat: four bound/mixed tracks,
   looping one- and two-bar backing patterns, a two-bar lead statement placed
   twice through deliberate linked reuse, and an independent answer pattern.
-  It exercises held-key audition, drag-to-length, right-delete, marquee,
-  clipboard ghost placement, group move/velocity, clip stretch/move/link,
-  exact stereo mix, scrub playback, atomic save, canonical decode, and
-  runtime flattening. `ref-music.md` covers the complete rail, arrangement,
+  It exercises held-key audition, drag-to-length, right-delete, Ctrl marquee,
+  fixed-pitch clipboard placement, group move/velocity, clip
+  stretch/move/Shift-link, named patterns, exact stereo mix, scoped playback,
+  the step sequencer, typed timing with undo, atomic save, canonical decode,
+  and runtime flattening. `ref-music.md` covers the complete rail, arrangement,
   roll, piano keys, velocity, transport, journal, CSNG, runtime, and every
   pointer/key door; `REF_DOCS` grows the Music row. Three inspected @2x
   captures show the held C3 bass with its two-bar pattern/clip, final rail,
@@ -206,7 +207,7 @@ presets last (they cross-link finished tool docs and reuse their media).
   The human readback also moved the sustain lesson from the short hat to bass,
   distinguished held gates from patch envelopes, and made the one-bar minimum
   plus lack of sub-bar periods explicit. The shipped tape at
-  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 22/22 VERDICTs
+  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 28/28 VERDICTs
   through the final saved/flattened song.
 - [ ] **H9 — the terrain window**. Tutorial: sculpt the lakeside vale —
   heights, the noise brush, texture paint, water, props, a route

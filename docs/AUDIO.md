@@ -201,27 +201,28 @@ journal citizen via the windowkit (§7).
 
 ### 4.2 `.song` — the song (CSNG)
 
-Time is integer ticks, **96 ticks per beat** (PPQ 96); tempo = BPM u16;
-samples-per-tick derives in 32.32 fixed point (48000·60 / (bpm·96)) —
-integer math end to end. Beats/bars are derived views; steps are a
-*presentation* concern (the triplet toggle is free) [W: frames as the
-single time truth].
+Time is integer ticks at **PPQ 96**: a quarter note is 96 ticks. Tempo
+is BPM u16; samples-per-quarter derives in 32.32 fixed point
+(48000·60 / (bpm·96)) — integer math end to end. `beat_unit` turns that
+quarter-note clock into the notated beat, and `beats_per_bar` derives bars.
+Steps remain a presentation concern [W: frames as the single time truth].
 
 Model (round 7 — the human): an **arrangement of clips**. A clip
 places a pattern on a track at a bar with a length; **resizing a clip
 longer than its pattern LOOPS the pattern to fill** (the "auto loop").
-Plain stamping gives each new clip a **fresh pattern** (no accidental
-sharing). Round 8 adds deliberate reuse: Ctrl-stamped / Ctrl-dragged
-clips may name the same pattern, so one note edit updates every linked
-placement.
+Patterns are saved, named units. **+ pat** creates a fresh active pattern;
+pressing empty arrangement space places that active pattern, and Shift-drag
+duplicates clips with the same pattern reference. One note edit therefore
+updates every deliberately linked placement.
 
-- `HEAD` v1 — bpm, beats_per_bar (default 4), loop region, grid.
+- `HEAD` v2 — bpm, beats_per_bar, beat_unit (default 4/4), loop region,
+  legacy grid. v1 reads as a quarter-note beat unit.
 - `TRKS` v1 — tracks: name, instrument path (.ins), gain, pan, mute.
   (v2 carried a per-track `pat` — round 6; read + migrated to clips.)
-- `PATN` v1 (×N) — patterns: id, length (ticks), notes
+- `PATN` v2 (×N) — patterns: id, saved name, length (ticks), notes
   {tick_on, tick_len, pitch 0..127, vel 0..127}. A pattern's length
   **grows to fit content but never auto-shrinks** (`fit_pattern`;
-  clips loop a short one to fill).
+  clips loop a short one to fill). v1 receives the stable name `pattern N`.
 - `ARRG` v1 — clips {track, tick, len, pattern}.
 
 `cm.song` is the pure codec + `normalize` (round-6 per-track docs
@@ -398,97 +399,54 @@ tweak while a note rings.
 
 ## 10. The music window (kind `music`)
 
-Binds `.song`. A **two-level arrangement + drill-in editor** (round 7,
-the human): the arrangement strip is the whole song (clips on tracks);
-**click a clip to DRILL into its pattern** in the roll. Playback while
-editing runs on the **editor bank** (render-only — composing never
-touches the sim); the game plays the same file through `cm.snd.music`.
-The human's live rounds shaped the rest:
+Binds `.song` as a **whole-song arrangement plus pattern drill-in editor**.
+Preview runs on the render-only editor bank; games play the same bytes through
+`cm.snd.music`.
 
-- **The track rail** (left): tracks with name, the bound instrument
-  (drag an .ins onto a track to bind it — from the assets window OR
-  the synth's preset strip, §9; `kind.drop` → `resolve_ins`: a
-  project path binds as-is, an external/stock one is **copied into
-  `ins/`** so the .song stays self-contained, round 5), mute dots, a
-  **del** per row (drops the track + its clips; only when >1),
-  + adds a track. Clicking a track drills into its first clip.
-  **Selecting a track expands a MIX panel** under its row: matching drag
-  sliders AND type-in fields for track gain and stereo pan. Gain uses
-  (0..255; 128 preserves the preset gain, 0 is silence, 255 reaches the
-  loudest representable patch gain), one journal entry per drag / per
-  submit. The piecewise 0 → preset → 255 law keeps both halves useful:
-  loud presets do not saturate early and quiet ones can still come forward.
-  Pan is an offset from the instrument patch, runs -64 (hard left) through
-  0 (center) to +64 (hard right), has a center mark + detent, and re-bakes
-  into a playing preview live. Editor preview and sim playback share the
-  same clamped `cm.snd.track_pan` composition door.
-- **The arrangement strip** (top): clips on tracks × time.
-  **Click a clip → drill into its pattern** (the roll follows) +
-  select it; press empty → **stamp a NEW clip** with its own fresh
-  pattern (round 7 — nothing shares by accident); drag moves a clip,
-  right-edge resizes (a **hover-lit handle** marks the zone, round 8),
-  and a clip **loops its pattern to fill** when longer (the "auto
-  loop"). **CTRL = REUSE** (round 8 — the human: place the same pattern
-  multiple times): **ctrl+drag a clip** = a LINKED duplicate (the copy
-  shares the pattern — edit either, both follow); **ctrl+press empty** =
-  stamp the ACTIVE pattern LINKED (fill length rounds to its whole
-  bars). Clips sharing the selected clip's pattern glow together;
-  sharing survives save/load (`normalize` no longer splits — it only
-  heals a clip pointing at a missing pattern).
-- **The piano roll** (center) — the current round-13 grammar. Press
-  empty to add at the last-used length; holding keeps the audition gate
-  open without growing bytes (audible sustain still follows the patch),
-  while a horizontal drag sets length with a
-  ceil-snapped end. Pressing an existing note SELECTS and auditions it;
-  dragging moves the selection by grid-sized time deltas and semitone
-  pitch deltas, with the held voice following pitch. Right-edge drag
-  resizes; right-click deletes. Selected overlaps draw translucent and
-  hit-test first.
-  **The grid is placement snap only**: the 1/1..1/32 chips and
-  `1`–`6` set where notes land; resize defines length and a changed
-  add length becomes the next default.
-  **Selection** uses Shift+marquee / Shift+click; Del deletes the set,
-  Ctrl+Up/Down moves it an octave, and Ctrl+drag duplicates. Group
-  velocity and group length keep relative differences; Ctrl snaps all
-  selected values to the same target through the KAT'd `M.group_val`.
-  **Clipboard** uses Ctrl+C/X and a session-wide note clip. Ctrl+V now
-  arms a one-shot translucent GHOST at the pointer — click places,
-  Esc/right-click cancels, pan/zoom stay live, and the same clipboard
-  crosses patterns and song windows.
-  A playable **piano-key column** holds audition gates until release and
-  glissandos on drag. HELPDOCS H8 adds the exact right-side address bay:
-  snapped bar/beat, pitch, tick, then stored duration/velocity over a
-  note.
-  **The view is a lock**: a bound, focused window owns MMB pan +
-  wheel time zoom; the arrangement has its own independent pan/zoom/
-  vertical scroll and a draggable bottom edge. Unfocused means the
-  infinite canvas receives the gestures.
-  The **velocity lane** drags 1..127, double-clicks to 100, and applies
-  the group offset/same-value rules above.
-- **The scrub ruler** (round 4, above the roll, roll-aligned): click/
-  drag sets **`win.cursor`** (grid-snapped) — a persistent start marker
-  (an accent tab + a line through the roll). Space plays FROM the
-  cursor (then wraps to 0 at the song end — the cursor is the entry
-  point, the whole song loops). Paste follows the pointer instead.
-- **Transport** (header): play/stop, BPM (click cycles), grid chip.
-  Hotkeys: space = play/stop, del, Ctrl+C/X/V, Ctrl+Up/Down,
-  `1`–`6` grid; Esc cancels paste, clears selection, then stops preview.
+- **Track rail.** Drag `.ins` assets onto rows; external/Stock sources copy
+  into `ins/` first. Rows own mute, Ctrl+click solo with exact mute restore,
+  deletion, gain 0..255, and pan −64..64. Mix edits re-bake live. Preview
+  patch ownership is keyed per track assignment (path + gain + pan), checked
+  continuously against the shared editor-bank slot owner, and gated by a
+  per-track ready bit. Deleting/reindexing a track, undoing, rebinding, adding
+  a blank track, or losing a slot claim can therefore never make a lane play a
+  stale preset that differs from its displayed assignment.
+- **Named patterns and arrangement.** `+ pat` creates an unplaced one-bar
+  pattern with a saved editable name. Plain empty-space click places the active
+  pattern; right-click erases. Plain drag moves the selection, Shift-drag
+  makes linked copies, Ctrl marquee selects, Ctrl+Shift extends, and Alt
+  temporarily bypasses one-beat horizontal snap. Vertical movement remains
+  whole tracks. Right-edge resize is beat-snapped. Clips loop/truncate their
+  pattern to fill and linked references survive save/load.
+- **Two explicit transports.** A ruler attached to the arrangement owns the
+  independent song cursor and whole-song loop. The roll's ruler and **clip**
+  button own the last-clicked clip instance: they loop its exact song span
+  while other tracks remain audible. Space follows the last explicit scope
+  and falls back to song scope when no clip is selected.
+- **Piano roll.** The default placement grid is 1/4 with all divisions through
+  1/32. Ctrl marquee/replace and Ctrl+Shift add/toggle selection; Shift-drag
+  duplicates without pitch drift. Right-click deletes. The enlarged
+  right-edge hitbox resizes the whole selected set, while a separate selection
+  handle stretches timing and durations. Ctrl+A/D, semitone, 1/32, beat,
+  octave, duplicate, and double-spacing commands cover exact keyboard edits;
+  double-spacing overwrites same-pitch colliders. Paste follows pointer time
+  but preserves copied pitches. Up/Down smoothly scroll pitch.
+- **Readable pitch view.** Rows default to twice the old height and middle-drag
+  on the piano keys changes row height. Notes name their pitch when space
+  permits; holding a key or note lights the entire row. Wheel/MMB keep the
+  existing focused time zoom/pan contract. The velocity lane retains relative
+  group editing.
+- **Step sequencer.** The `steps / piano` chip opens a one-bar channel-rack
+  view across tracks. Left adds, right erases, alternating groups expose beats,
+  and each row's **roll** button drills into the same pattern bytes.
+- **Typed timing.** BPM accepts 1..999. Time signature accepts numerators
+  1..32 and power-of-two denominators 1..128; rulers, beat snap, step cells,
+  and grow-to-bar math use `cm.song.beat_ticks/bar_ticks`.
 
-**Pattern length grows to fit but never auto-shrinks** (round 6 — the
-human): a note-changing commit rounds the max note-end up to whole bars
-(min one) and grows the pattern; deleting leaves it (a clip loops a
-short pattern to fill, so shrinking fought resizing). **Stamping makes
-a fresh pattern** (round 7 — nothing shares by accident), but clips MAY
-**deliberately share** one (round 8 — ctrl+drag / ctrl+press); editing
-it updates every placement and the link survives save/load.
-When the selected clip still exactly fits the old pattern, editor growth now
-extends that clip too; manually truncated/extended and other linked placements
-keep their own lengths. The permanent `pN · loop N bars` readout exposes the
-period. Current authoring has no sub-bar loop: a one-beat phrase in a four-beat
-pattern repeats next bar, not next beat.
-Playback state (playhead) is ephemeral;
-the bytes are the asset. Ctrl+S writes the .song (and refreshes the
-asset browser via the kit save door).
+Pattern length still grows to the smallest fitting whole bar and never
+auto-shrinks. An exact-fit selected clip follows growth; intentionally shorter
+or longer clips do not. Playback state is ephemeral; Ctrl+S atomically writes
+the asset and refreshes Assets.
 
 ### H8 tutorial audit (2026-07-22)
 
@@ -497,19 +455,19 @@ CSNG: four instrument-bound tracks, three backing patterns stretched across
 the arrangement, a two-bar lead pattern reused through two linked clips, and
 an independent answer pattern. It exercises held-key audition, drag-to-length,
 group selection, clipboard ghost placement, octave movement, velocity editing,
-clip stretching, linked reuse, scrub playback, stereo gain/pan, atomic save,
+clip stretching, linked reuse, scoped playback, stereo gain/pan, atomic save,
 canonical decode, and runtime flattening. The matching executable tape passes
-22/22 live verdicts and owns three @2x captures: roll, arrangement, and mix.
+28/28 live verdicts, including saved pattern naming, step add/erase/drill, and
+typed 137 BPM / 7/8 timing with undo. It owns four @2x captures: roll,
+arrangement, mix, and steps.
 
-The round-13 interaction boundary is now explicit in both the tutorial and
-`ref-music.md`: plain arrangement stamps make fresh patterns; Ctrl placement
-and Ctrl-drag intentionally reuse one pattern; roll paste is a pointer-placed
-one-shot ghost; arrangement and roll keep independent views; grid is editor
-session state rather than a CSNG field. The new observer-only roll address bay
-reports bar/beat/tick and pitch, adding stored duration/velocity when a note is
-under the pointer. Saving refreshes Assets, but a running game's path-keyed
-song cache does not hot-reload that same path; restart the game before judging
-a resaved arrangement.
+The updated interaction boundary is explicit in both the tutorial and
+`ref-music.md`: `+ pat` creates, ordinary placement reuses the active pattern,
+Shift-drag duplicates clips, Ctrl owns selection, and Alt owns temporary snap
+bypass. The address bay reports bar/beat/tick and pitch, adding stored
+duration/velocity over a note. Saving refreshes Assets, but a running game's
+path-keyed song cache does not hot-reload that same path; restart the game
+before judging a resaved arrangement.
 
 ## 11. Stock presets + demo songs (ship with the engine)
 

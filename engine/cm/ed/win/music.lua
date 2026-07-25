@@ -4,10 +4,11 @@
 -- The model (round 7 — the human): a two-level ARRANGEMENT + drill-in
 -- editor. The **arrangement strip** shows the whole song — clips
 -- (patterns placed on tracks). **Click a clip to DRILL into its
--- pattern** in the piano roll below; press empty stamps a NEW clip
--- (each clip owns its OWN pattern — no accidental sharing); drag moves
--- a clip, right-edge resizes it, and a clip **LOOPS its pattern to
--- fill** when resized longer (the "auto loop"). The **track rail**
+-- pattern** in the piano roll below; +pat creates a named pattern and
+-- pressing empty places the active pattern (deliberate linked reuse);
+-- drag moves a clip/selection, Shift-drag duplicates, Ctrl marquee
+-- selects, Alt bypasses beat snap, right-click erases, and a clip
+-- **LOOPS its pattern to fill** when resized longer. The **track rail**
 -- (left) binds instruments (drag an .ins on), mixes volume + stereo pan,
 -- mutes, deletes ("del"), and adds tracks; selecting a CLIPLESS track
 -- auto-creates a one-bar pattern + a clip at the song start (round 11
@@ -24,11 +25,11 @@
 -- resizes it;
 -- selected notes hit-test first and draw on top translucent so an
 -- overlap stays visible and fixable; RIGHT-CLICK deletes a note;
--- ctrl+up/down steps the selection an octave. shift = marquee/toggle
--- select; CTRL+drag = duplicate; Ctrl+C/X copy/cut; Ctrl+V arms a
--- GHOST paste riding the mouse — click places it (pan/zoom stay
--- live), Esc or right-click cancels. A velocity lane + a scrub ruler
--- under it. A PIANO KEYS column sits on the roll's left edge (round
+-- Ctrl marquee selects (Ctrl+Shift adds); Shift-drag duplicates with
+-- pitch locked; Ctrl+A/D, nudges, spacing, octave, copy/cut, and the
+-- fixed-pitch Ctrl+V GHOST cover keyboard editing. A velocity lane +
+-- a pattern-local scrub/play ruler sit below a separate song ruler.
+-- A PIANO KEYS column sits on the roll's left edge (round
 -- 10): click/drag auditions pitches, and the row under the cursor
 -- highlights. A pattern's length GROWS to fit content but never
 -- auto-shrinks (clips loop it).
@@ -62,10 +63,11 @@ local GRIDS = { PPQ * 4, PPQ * 2, PPQ, PPQ // 2, PPQ // 4, PPQ // 8 }
 local GRID_LABEL = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" }
 
 function M.defaults()
-  return { path = "", pat = 1, trk = 1, grid = 4,
+  return { path = "", pat = 1, trk = 1, grid = 3,
            tpp = 0.5, lownote = 45, tick0 = 0, -- the roll's view
+           row_h = 14,
            arh = 60, ar_tpp = 0.14, ar_t0 = 0, ar_sy = 0, -- the arrangement's
-           cursor = 0 } -- the scrub-bar position (pattern ticks)
+           cursor = 0, song_cursor = 0, play_scope = "clip" }
 end
 
 local LANE_H = 15 -- arrangement track lane height (logical px): fixed + a
@@ -97,6 +99,12 @@ local function decode_into(p, bytes)
   end
   p.flat = nil -- preview cache
   p.nsels = nil -- the note selection holds TABLE REFS into the old doc
+  p.csels, p.csel = nil, nil -- clip selections hold refs/indices too
+  p.solo_restore = nil
+  -- Slots can be reused, but their per-track identity cannot: undo/reload may
+  -- replace or reorder every track while leaving this path-level plumbing
+  -- alive. The next preview validates and uploads each new assignment.
+  p.pkeys, p.pready = {}, {}
 end
 
 -- A note edit grows its pattern through the codec's shared whole-bar rule.
@@ -107,7 +115,7 @@ end
 -- true when the clip followed. Pure document mutation, KAT'd in t_song.
 function M.fit_pattern_clip(doc, pt, clip)
   if not pt then return false end
-  local old = pt.len or (PPQ * (doc.beats_per_bar or 4))
+  local old = pt.len or song.bar_ticks(doc)
   song.fit_pattern(doc, pt)
   if clip and clip.pattern == pt.id and clip.len == old and pt.len > old then
     clip.len = pt.len
@@ -119,14 +127,17 @@ end
 -- Compact, exact loop-span text for the permanent transport readout. Current
 -- authoring grows in whole bars with a one-bar floor, but the codec can still
 -- open an older/arbitrary tick length, so describe those bytes honestly too.
-function M.loop_span(len, beats_per_bar)
+function M.loop_span(len, time)
   len = math.max(1, math.tointeger(len) or 1)
-  local bar = PPQ * math.max(1, math.tointeger(beats_per_bar) or 4)
+  local doc = type(time) == "table" and time
+              or { beats_per_bar = time, beat_unit = 4 }
+  local bar = song.bar_ticks(doc)
+  local beat = song.beat_ticks(doc)
   if len % bar == 0 then
     local n = len // bar
     return tostring(n) .. (n == 1 and " bar" or " bars")
-  elseif len % PPQ == 0 then
-    local n = len // PPQ
+  elseif len % beat == 0 then
+    local n = len // beat
     return tostring(n) .. (n == 1 and " beat" or " beats")
   end
   return tostring(len) .. " ticks"
@@ -210,10 +221,36 @@ function M.on_close(win, ed)
   if p then preview_stop(p) end
 end
 
+-- The cache key is the sound the track UI says it owns. Keeping this per
+-- track—rather than one global "all presets sent" bit—is what makes deletion,
+-- reindexing, undo, mix edits, and rebinding safe.
+function M.preview_patch_key(tr)
+  if not tr or not tr.ins or tr.ins == "" then return false end
+  return tr.ins .. "\0" .. tostring(tr.gain or 128)
+         .. "\0" .. tostring(tr.pan or 0)
+end
+
+-- Pure decision seam for the intermittent wrong-preset regression. `claimed`
+-- says the editor-bank slot still contains our upload. `usable` is false
+-- while an empty/unreadable track deliberately owns no playable patch.
+function M.preview_patch_decision(cached_key, ready, tr, claimed)
+  local key = M.preview_patch_key(tr)
+  if not key then return false, false, false end
+  local upload = not claimed or cached_key ~= key
+  return upload, not upload and ready == true, key
+end
+
+function M.invalidate_preview_track(p, ti)
+  p.pkeys, p.pready = p.pkeys or {}, p.pready or {}
+  p.pkeys[ti], p.pready[ti] = false, false
+end
+
 local function preview_slots(ed, win, p)
   local doc = p.doc
   local kit = cm.require("cm.ed.kit")
-  p.pslots = p.pslots or {}
+  local ins = cm.require("cm.ins")
+  p.pslots, p.pkeys, p.pready =
+    p.pslots or {}, p.pkeys or {}, p.pready or {}
   for ti, tr in ipairs(doc.tracks) do
     if not p.pslots[ti] then
       local slot = kit.snd_alloc(ed, 0)
@@ -222,43 +259,102 @@ local function preview_slots(ed, win, p)
     -- slot ownership (D147 addendum): a long session's allocator wraps
     -- past 64 and another window's upload replaces ours — a lost claim
     -- forces the re-send ("two breaks-alley windows play differently")
-    if not kit.snd_claim(ed, p.pslots[ti], "song:" .. win.path .. ":" .. ti) then
-      p.pins_sent = nil
-    end
-    if tr.ins ~= "" and p.pins_sent ~= true then
+    local claimed = kit.snd_claim(
+      ed, p.pslots[ti], "song:" .. win.path .. ":" .. ti)
+    local upload, usable, key =
+      M.preview_patch_decision(p.pkeys[ti], p.pready[ti], tr, claimed)
+    if not key then
+      -- A blank track must be silent even when its slot previously belonged
+      -- to another track/window. This was one direct route to hearing a
+      -- preset different from the assignment displayed in the rail.
+      p.pkeys[ti], p.pready[ti] = false, false
+    elseif upload then
       local bytes = pal.read_file(ed.root .. "/" .. tr.ins)
                     or pal.read_file(tr.ins)
       if bytes then
-        local ok, idoc = pcall(cm.require("cm.ins").decode, bytes)
+        local ok, idoc = pcall(ins.decode, bytes)
         if ok then
           -- bake the TRACK gain/pan into the patch, same as the sim
           -- sequencer (cm.snd.seq) — else the preview ignores the volume
           -- panel (the human: "track volume seems to have no effect")
           idoc.patch.gain = snd.track_gain(idoc.patch.gain, tr.gain)
           idoc.patch.pan = snd.track_pan(idoc.patch.pan, tr.pan)
-          cm.require("cm.ins").upload(idoc, p.pslots[ti], "ed",
-                                      "m" .. win.id .. "t" .. ti)
+          local sent = pcall(ins.upload, idoc, p.pslots[ti], "ed",
+                             "m" .. win.id .. "t" .. ti)
+          if sent then
+            p.pkeys[ti], p.pready[ti] = key, true
+            usable = true
+          end
         end
+      end
+      if not usable then
+        -- Remember this exact failed assignment so a live preview does not
+        -- reread a broken source every frame. A rebind/mix/undo or a lost
+        -- slot claim changes the decision and retries.
+        p.pkeys[ti], p.pready[ti] = key, false
       end
     end
   end
-  p.pins_sent = true
+  -- A shorter document must not leave a later add inheriting a deleted
+  -- track's cached patch.
+  for ti = #p.pslots, #doc.tracks + 1, -1 do
+    p.pslots[ti], p.pkeys[ti], p.pready[ti] = nil, nil, nil
+  end
 end
 
-local function preview_start(ed, win, p)
+-- Explicit preview scopes resolve the ambiguity between the arrangement and
+-- the drilled-in pattern. "song" loops the whole arrangement from its own
+-- cursor. "clip" loops the last-clicked clip's exact song span, including the
+-- other tracks sounding under it, from the pattern-local cursor.
+function M.preview_range(doc, win, p, scope)
+  if scope == "clip" then
+    local c = p.csel and doc.clips[p.csel]
+    if c and c.len > 0 then
+      local r0, r1 = c.tick, c.tick + c.len
+      local local_at = math.max(0, math.tointeger(win.cursor or 0) or 0)
+      return r0, r1, r0 + (local_at % c.len)
+    end
+  end
+  local r0, r1 = 0, song.length(doc)
+  return r0, r1,
+    (math.max(0, math.tointeger(win.song_cursor or 0) or 0) % r1)
+end
+
+local function preview_start(ed, win, p, scope)
   preview_stop(p)
+  -- A new transport run is a cheap, explicit refresh point: it also picks up
+  -- a preset that was saved in place under the same displayed path.
+  p.pkeys, p.pready = {}, {}
   preview_slots(ed, win, p)
   p.flat = p.flat or song.flatten(p.doc)
+  -- Space follows the last explicit scope, but "clip" only exists when an
+  -- arrangement instance is selected. With nothing drilled, fall back to the
+  -- whole song and light the matching transport instead of pretending an
+  -- invisible clip loop is running.
+  if scope == "song" or not (p.csel and p.doc.clips[p.csel]) then
+    scope = "song"
+  else
+    scope = "clip"
+  end
+  local r0, r1, start = M.preview_range(p.doc, win, p, scope)
   p.playing = true
+  win.play_scope = scope
+  p.play_scope = scope
   p.pheld = {}
   p.pt0 = pal.time_ns()
-  -- start at the scrub cursor (the ruler; pattern ticks == song ticks
-  -- for a clip anchored at 0, the dominant case). After the song end
-  -- it wraps to 0 — the cursor is the entry point, then the whole song
-  -- loops.
-  p.pstart = snd.seq.samples_at(math.max(0, win.cursor or 0), p.doc.bpm)
+  p.pr0, p.pr1 = r0, r1
+  p.pstart = snd.seq.samples_at(start, p.doc.bpm)
   p.ppos = p.pstart -- samples consumed (song space)
   p.pvoice = p.pvoice or 8 -- round-robin base; editor voices 8..31
+end
+
+function M.preview_tick(p, doc)
+  local r0, r1 = p.pr0 or 0, p.pr1 or song.length(doc)
+  local s0 = snd.seq.samples_at(r0, doc.bpm)
+  local span = snd.seq.samples_at(r1, doc.bpm) - s0
+  if span <= 0 then return r0 end
+  local at = s0 + (((p.ppos or s0) - s0) % span)
+  return snd.seq.ticks_at(at, doc.bpm)
 end
 
 -- one editor frame of preview: emit ons/offs for the wall-clock window
@@ -266,10 +362,16 @@ local function preview_step(ed, win, p)
   if not p.playing then return end
   local doc = p.doc
   if not doc then preview_stop(p); return end
+  -- Ownership can be stolen by any of the editor's other audio windows after
+  -- transport starts. Claims are cheap; files are reread only on a lost or
+  -- changed assignment.
+  preview_slots(ed, win, p)
   p.flat = p.flat or song.flatten(doc) -- rebuilt if an edit invalidated
                                         -- it mid-preview (the crash fix)
-  local L = song.length(doc)
-  local SL = snd.seq.samples_at(L, doc.bpm)
+  local r0, r1 = p.pr0 or 0, p.pr1 or song.length(doc)
+  local RS0 = snd.seq.samples_at(r0, doc.bpm)
+  local RS1 = snd.seq.samples_at(r1, doc.bpm)
+  local SL = RS1 - RS0
   if SL <= 0 then
     preview_stop(p)
     return
@@ -279,29 +381,36 @@ local function preview_step(ed, win, p)
   if s1 <= s0 then return end
   if s1 - s0 > 48000 then s0 = s1 - 4800 end -- a stall skips, no burst
   p.ppos = s1
-  local w0, w1 = s0 % SL, nil
+  local w0 = RS0 + ((s0 - RS0) % SL)
   local spans
   if (s1 - s0) >= SL then
-    spans = { { 0, SL } } -- degenerate: the whole song at once
-  elseif w0 + (s1 - s0) <= SL then
+    spans = { { RS0, RS1 } } -- degenerate: the whole range at once
+  elseif w0 + (s1 - s0) <= RS1 then
     spans = { { w0, w0 + (s1 - s0) } }
   else
-    spans = { { w0, SL }, { 0, w0 + (s1 - s0) - SL } }
+    spans = { { w0, RS1 }, { RS0, RS0 + w0 + (s1 - s0) - RS1,
+                              reset = true } }
   end
   for _, sp in ipairs(spans) do
+    if sp.reset then
+      for key, h in pairs(p.pheld) do
+        pal.x_snd_ed_off(h)
+        p.pheld[key] = nil
+      end
+    end
     local t0 = snd.seq.ticks_at(sp[1], doc.bpm)
     local t1 = snd.seq.ticks_at(sp[2], doc.bpm)
-    if sp[2] >= SL then t1 = L end
+    if sp[2] >= RS1 then t1 = r1 end
     for key, h in pairs(p.pheld) do
       local off = tonumber(key:match(":(%d+)$"))
-      if off >= t0 and (off < t1 or (off == t1 and t1 == L)) then
+      if off >= t0 and off <= t1 then
         pal.x_snd_ed_off(h)
         p.pheld[key] = nil
       end
     end
     for ti, lane in ipairs(p.flat) do
       local tr = doc.tracks[ti]
-      if not (tr and tr.mute) and p.pslots[ti] then
+      if not (tr and tr.mute) and p.pready[ti] and p.pslots[ti] then
         for _, n in ipairs(lane) do
           if n.tick >= t1 then break end
           if n.tick >= t0 then
@@ -341,7 +450,7 @@ end
 local function blip(ed, win, p, pitch, vel)
   preview_slots(ed, win, p)
   local slot = p.pslots[win.trk or 1]
-  if not slot then return end
+  if not slot or not p.pready[win.trk or 1] then return end
   local v
   v, p.pvoice = M.preview_voice(p.pheld, p.blips, p.pvoice)
   pal.x_snd_ed_on(v, slot, pitch, vel or 100)
@@ -358,7 +467,7 @@ local function blip_hold(ed, win, p, g, pitch, vel)
   if not g.voice then
     preview_slots(ed, win, p)
     local slot = p.pslots[win.trk or 1]
-    if not slot then return end
+    if not slot or not p.pready[win.trk or 1] then return end
     g.voice, p.pvoice = M.preview_voice(p.pheld, p.blips, p.pvoice)
     pal.x_snd_ed_on(g.voice, slot, pitch, vel or 100)
     p.blips = p.blips or {}
@@ -371,15 +480,82 @@ end
 -- auto-create on selecting a clipless track (round 11). Mutates doc;
 -- returns the new pattern id. KAT'd (t_song).
 function M.stamp_fresh(doc, lane, tick, bar)
-  local nid = 0
-  for id in pairs(doc.patterns) do if id > nid then nid = id end end
-  local pid = nid + 1
-  doc.patterns[pid] = { id = pid, len = bar, notes = {} }
+  local pid = M.new_pattern(doc, bar)
   doc.clips[#doc.clips + 1] = {
     track = math.tointeger(lane), pattern = pid,
     tick = math.tointeger((tick // bar) * bar), len = bar,
   }
   return pid
+end
+
+function M.new_pattern(doc, bar)
+  local nid = 0
+  for id in pairs(doc.patterns) do if id > nid then nid = id end end
+  local pid = nid + 1
+  doc.patterns[pid] = { id = pid, name = song.default_pattern_name(pid),
+                        len = bar, notes = {} }
+  return pid
+end
+
+-- Signed nearest-step snap used by group moves. Keeping it explicit avoids
+-- Lua floor-division's asymmetric result for small negative deltas.
+function M.snap_delta(delta, step)
+  step = math.max(1, math.tointeger(step) or 1)
+  if delta < 0 then
+    return -math.tointeger(((-delta + step / 2) // step) * step)
+  end
+  return math.tointeger(((delta + step / 2) // step) * step)
+end
+
+-- One delta moves the entire clip selection. Horizontal movement snaps to a
+-- beat unless Alt is held; vertical movement always remains whole tracks.
+-- Clamp the group as a group so its relative lane layout cannot squash.
+function M.clip_move_delta(base, raw_tick, raw_track, beat, precise, ntracks)
+  local dt = precise and math.tointeger(math.floor(raw_tick + 0.5))
+             or M.snap_delta(raw_tick, beat)
+  local dtrack = math.tointeger(raw_track) or 0
+  local min_track, max_track = math.huge, -math.huge
+  for _, b in ipairs(base or {}) do
+    min_track = math.min(min_track, b.track)
+    max_track = math.max(max_track, b.track)
+  end
+  if min_track == math.huge then return dt, 0 end
+  dtrack = math.max(-min_track,
+                    math.min((ntracks or 1) - 1 - max_track, dtrack))
+  local min_tick = math.huge
+  for _, b in ipairs(base) do min_tick = math.min(min_tick, b.tick) end
+  dt = math.max(-min_tick, dt)
+  return dt, dtrack
+end
+
+function M.delete_selected_clips(doc, selection)
+  local keep, removed = {}, 0
+  for _, c in ipairs(doc.clips or {}) do
+    if selection and selection[c] then
+      removed = removed + 1
+    else
+      keep[#keep + 1] = c
+    end
+  end
+  if removed > 0 then doc.clips = keep end
+  return removed
+end
+
+function M.toggle_solo(doc, p, ti)
+  if p.solo_track == ti and p.solo_restore then
+    for i2, tr in ipairs(doc.tracks) do
+      tr.mute = p.solo_restore[i2] or false
+    end
+    p.solo_track, p.solo_restore = nil, nil
+    return false
+  end
+  if not p.solo_restore then
+    p.solo_restore = {}
+    for i2, tr in ipairs(doc.tracks) do p.solo_restore[i2] = tr.mute end
+  end
+  for i2, tr in ipairs(doc.tracks) do tr.mute = i2 ~= ti end
+  p.solo_track = ti
+  return true
 end
 
 -- Remove the selected note refs from a pattern in one pass. Both Delete and
@@ -402,6 +578,77 @@ function M.delete_selected_notes(doc, pt, selection)
   return removed
 end
 
+function M.nudge_selected_notes(pt, selection, dt, dp)
+  local min_tick, min_pitch, max_pitch = math.huge, 127, 0
+  local count = 0
+  for _, n in ipairs(pt.notes or {}) do
+    if selection and selection[n] then
+      min_tick = math.min(min_tick, n.tick)
+      min_pitch, max_pitch = math.min(min_pitch, n.pitch),
+                             math.max(max_pitch, n.pitch)
+      count = count + 1
+    end
+  end
+  if count == 0 then return 0, 0 end
+  dt = math.max(-min_tick, math.tointeger(dt) or 0)
+  dp = math.max(-min_pitch, math.min(127 - max_pitch,
+                                     math.tointeger(dp) or 0))
+  for _, n in ipairs(pt.notes) do
+    if selection[n] then
+      n.tick, n.pitch = n.tick + dt, n.pitch + dp
+    end
+  end
+  return dt, dp
+end
+
+function M.double_note_spacing(pt, selection)
+  local anchor, selected = math.huge, {}
+  for _, n in ipairs(pt.notes or {}) do
+    if selection and selection[n] then
+      anchor = math.min(anchor, n.tick)
+      selected[#selected + 1] = n
+    end
+  end
+  if #selected < 2 then return false, 0 end
+  for _, n in ipairs(selected) do n.tick = anchor + (n.tick - anchor) * 2 end
+  local keep, overwritten = {}, 0
+  for _, n in ipairs(pt.notes) do
+    if selection[n] then
+      keep[#keep + 1] = n
+    else
+      local collide = false
+      for _, s2 in ipairs(selected) do
+        if n.pitch == s2.pitch and n.tick < s2.tick + s2.dur
+           and n.tick + n.dur > s2.tick then
+          collide = true
+          break
+        end
+      end
+      if collide then overwritten = overwritten + 1
+      else keep[#keep + 1] = n end
+    end
+  end
+  pt.notes = keep
+  return true, overwritten
+end
+
+function M.set_step(pt, tick, pitch, dur, on)
+  local hit
+  for ni, n in ipairs(pt.notes or {}) do
+    if n.tick == tick and n.pitch == pitch then hit = ni; break end
+  end
+  if on then
+    if hit then return pt.notes[hit], false end
+    local n = { tick = math.tointeger(tick), pitch = math.tointeger(pitch),
+                dur = math.max(1, math.tointeger(dur)), vel = 100 }
+    pt.notes[#pt.notes + 1] = n
+    return n, true
+  elseif hit then
+    return table.remove(pt.notes, hit), true
+  end
+  return nil, false
+end
+
 -- ---- hotkeys ----
 
 local bound = function(win) return win.path ~= "" end
@@ -409,7 +656,11 @@ M.hotkeys = {
   { key = "space", hint = "play/stop", when = bound,
     fn = function(win, ed)
       local _, p = open_asset(ed, win.path)
-      if p.playing then preview_stop(p) else preview_start(ed, win, p) end
+      if p.playing then
+        preview_stop(p)
+      else
+        preview_start(ed, win, p, win.play_scope)
+      end
       ed.touch()
     end },
   { key = "del", hint = "delete", when = bound,
@@ -424,9 +675,14 @@ M.hotkeys = {
           p.flat = nil
           commit(ed, win.path)
         end
+      elseif p.csels and next(p.csels)
+             and M.delete_selected_clips(p.doc, p.csels) > 0 then
+        p.csels, p.csel = {}, nil
+        p.flat = nil
+        commit(ed, win.path)
       elseif p.csel and p.doc.clips[p.csel] then
         table.remove(p.doc.clips, p.csel)
-        p.csel = nil
+        p.csel, p.csels = nil, {}
         p.flat = nil
         commit(ed, win.path)
       end
@@ -446,6 +702,104 @@ local function selected_notes(p, win)
   end
   return out, pt
 end
+
+local function finish_note_edit(ed, win, p, pt)
+  local clip = p.csel and p.doc.clips[p.csel]
+  M.fit_pattern_clip(p.doc, pt, clip)
+  p.flat = nil
+  commit(ed, win.path)
+end
+
+local function nudge_notes(dt, dp)
+  return function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    local sel, pt = selected_notes(p, win)
+    if #sel == 0 or not pt then return end
+    local adt, adp = M.nudge_selected_notes(pt, p.nsels, dt(p.doc), dp)
+    if adt == 0 and adp == 0 then return end
+    if adp ~= 0 then blip(ed, win, p, sel[1].pitch, sel[1].vel) end
+    finish_note_edit(ed, win, p, pt)
+  end
+end
+
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+a", hint = "select all", when = bound,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    local pt = p.doc and p.doc.patterns[win.pat or 1]
+    if not pt then return end
+    p.nsels = {}
+    for _, n in ipairs(pt.notes) do p.nsels[n] = true end
+    p.nsel = nil
+    ed.touch()
+  end }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+d", hint = "deselect", when = bound,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    p.nsels, p.nsel = {}, nil
+    ed.touch()
+  end }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "shift+left", rep = true, when = bound,
+  fn = nudge_notes(function() return -GRIDS[#GRIDS] end, 0) }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "shift+right", rep = true, hint = "nudge", when = bound,
+  fn = nudge_notes(function() return GRIDS[#GRIDS] end, 0) }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "shift+up", rep = true, when = bound,
+  fn = nudge_notes(function() return 0 end, 1) }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "shift+down", rep = true, when = bound,
+  fn = nudge_notes(function() return 0 end, -1) }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+left", rep = true, when = bound,
+  fn = nudge_notes(function(doc) return -song.beat_ticks(doc) end, 0) }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+right", rep = true, hint = "beat nudge", when = bound,
+  fn = nudge_notes(function(doc) return song.beat_ticks(doc) end, 0) }
+for _, scroll in ipairs({ { "up", 4 }, { "down", -4 } }) do
+  local key, delta = scroll[1], scroll[2]
+  M.hotkeys[#M.hotkeys + 1] = {
+    key = key, rep = true, hint = key == "up" and "scroll" or nil,
+    when = bound,
+    fn = function(win, ed)
+      win.lownote_target = math.max(0, math.min(127,
+        (win.lownote_target or win.lownote or 45) + delta))
+      ed.touch()
+    end }
+end
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+alt+right", hint = "double spacing", when = bound,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    local _, pt = selected_notes(p, win)
+    if not pt then return end
+    if M.double_note_spacing(pt, p.nsels) then
+      finish_note_edit(ed, win, p, pt)
+    end
+  end }
+M.hotkeys[#M.hotkeys + 1] = {
+  key = "ctrl+b", hint = "duplicate", when = bound,
+  fn = function(win, ed)
+    local _, p = open_asset(ed, win.path)
+    local sel, pt = selected_notes(p, win)
+    if #sel == 0 or not pt then return end
+    local first, last = math.huge, 0
+    for _, n in ipairs(sel) do
+      first, last = math.min(first, n.tick), math.max(last, n.tick + n.dur)
+    end
+    local dt = math.max(GRIDS[win.grid or 3], last - first)
+    local copies = {}
+    for _, n in ipairs(sel) do
+      local copy = { tick = n.tick + dt, dur = n.dur,
+                     pitch = n.pitch, vel = n.vel }
+      pt.notes[#pt.notes + 1] = copy
+      copies[copy] = true
+    end
+    p.nsels, p.nsel = copies, nil
+    finish_note_edit(ed, win, p, pt)
+  end }
 
 local function copy_sel(ed, win, p)
   local sel = selected_notes(p, win)
@@ -582,13 +936,16 @@ function M.note_name(pitch)
   return NOTE_NAMES[pitch % 12 + 1] .. tostring(pitch // 12 - 1)
 end
 
-function M.roll_status(tick, pitch, beats_per_bar, n)
+function M.roll_status(tick, pitch, time, n)
   tick = math.max(0, math.tointeger(tick) or 0)
-  local bar_ticks = PPQ * math.max(1, math.tointeger(beats_per_bar) or 4)
+  local doc = type(time) == "table" and time
+              or { beats_per_bar = time, beat_unit = 4 }
+  local bar_ticks = song.bar_ticks(doc)
+  local beat_ticks = song.beat_ticks(doc)
   local bar = tick // bar_ticks + 1
   local inbar = tick % bar_ticks
-  local beat = inbar // PPQ + 1
-  local sub = inbar % PPQ
+  local beat = inbar // beat_ticks + 1
+  local sub = inbar % beat_ticks
   local pos = ("bar %d beat %d"):format(bar, beat)
   if sub ~= 0 then pos = pos .. "+" .. sub end
   local out = pos .. " · " .. M.note_name(pitch) .. " · tick " .. tick
@@ -639,18 +996,20 @@ function M.draw(win, ctx)
   -- ---- geometry ----
   local RAIL = math.min(120 * z, ctx.cw * 0.22)
   local TR_H = px * 1.9   -- transport row
+  local SONG_RULER_H = 12 * z -- whole-arrangement cursor, above the clips
   local AR_H = math.max(24 * z, (win.arh or 60) * z) -- arrangement (resizable)
   local RULER_H = 15 * z  -- the scrub ruler (pattern space, roll-aligned)
   local VEL_H = 30 * z    -- velocity lane
   local x0, y0 = ctx.cx, ctx.cy
   local rx, rw = x0 + RAIL, ctx.cw - RAIL
-  local ruler_y = y0 + TR_H + AR_H + 2 * z
+  local ruler_y = y0 + TR_H + SONG_RULER_H + AR_H + 2 * z
   local roll_y = ruler_y + RULER_H + 2 * z
-  local roll_h = ctx.ch - TR_H - AR_H - RULER_H - VEL_H - 12 * z
+  local roll_h = ctx.ch - TR_H - SONG_RULER_H - AR_H
+                 - RULER_H - VEL_H - 12 * z
   local vel_y = roll_y + roll_h + 2 * z
   local tpp = (win.tpp or 0.5) * z -- px per tick
-  local row_h = math.max(4, 7 * z)
-  local grid = GRIDS[win.grid or 4]
+  local row_h = math.max(4 * z, math.min(32 * z, (win.row_h or 14) * z))
+  local grid = GRIDS[win.grid or 3]
   local pat = doc.patterns[win.pat or 1]
 
   -- ---- the track rail ----
@@ -696,7 +1055,8 @@ function M.draw(win, ctx)
     -- when there's more than one track — can't delete the last)
     local mx = x0 + RAIL - 18 * z
     pal.x_ig_circle_fill(mx, ty + px * 0.5, 3.5 * z,
-                         tr.mute and COL.err or COL.btn)
+                         p.solo_track == ti and COL.accent
+                         or tr.mute and COL.err or COL.btn)
     local dx = x0 + RAIL - 20 * z
     local dhov = #doc.tracks > 1 and ctx.hot and i.wx >= dx - 3 * z
                  and i.wx < dx + 10 * z and i.wy >= ty + px * 0.9
@@ -708,12 +1068,23 @@ function M.draw(win, ctx)
     if ctx.hot and i.clicked[1] then
       if i.wx >= mx - 5 * z and i.wx < mx + 5 * z
          and i.wy >= ty and i.wy < ty + px then
-        tr.mute = not tr.mute
+        if ed.g.ctrl then
+          M.toggle_solo(doc, p, ti)
+        else
+          p.solo_track, p.solo_restore = nil, nil
+          tr.mute = not tr.mute
+        end
         p.flat = nil
         commit(ed, win.path)
       elseif dhov then
         -- delete this track: drop it + its clips, reindex higher tracks
+        preview_stop(p)
         table.remove(doc.tracks, ti)
+        local caches = { p.pslots, p.pkeys, p.pready }
+        for ci2 = 1, 3 do
+          local cache = caches[ci2]
+          if cache and cache[ti] ~= nil then table.remove(cache, ti) end
+        end
         local keep = {}
         for _, c in ipairs(doc.clips) do
           if c.track ~= ti - 1 then
@@ -722,8 +1093,9 @@ function M.draw(win, ctx)
           end
         end
         doc.clips = keep
+        p.solo_track, p.solo_restore = nil, nil
         win.trk = math.max(1, math.min(win.trk or 1, #doc.tracks))
-        p.csel, p.nsels, p.flat = nil, {}, nil
+        p.csel, p.csels, p.nsels, p.flat = nil, {}, {}, nil
         commit(ed, win.path)
         ctx.touch()
         return -- the doc changed under the loop; next frame redraws
@@ -738,6 +1110,7 @@ function M.draw(win, ctx)
         for ci, c in ipairs(doc.clips) do
           if c.track == ti - 1 then
             p.csel = ci
+            p.csels = { [c] = true }
             win.pat = c.pattern
             win.cursor = 0
             p.nsels = {}
@@ -746,9 +1119,10 @@ function M.draw(win, ctx)
           end
         end
         if not found then
-          local bar = PPQ * (doc.beats_per_bar or 4)
+          local bar = song.bar_ticks(doc)
           win.pat = M.stamp_fresh(doc, ti - 1, 0, bar)
           p.csel = #doc.clips
+          p.csels = { [doc.clips[p.csel]] = true }
           win.cursor = 0
           p.nsels = {}
           p.flat = nil
@@ -802,7 +1176,7 @@ function M.draw(win, ctx)
             if centered and math.abs(nv) <= 2 then nv = 0 end
             if nv ~= tr[key] then
               tr[key], p.g.changed = nv, true
-              p.pins_sent = nil -- re-bake the live track mix into the preview
+              M.invalidate_preview_track(p, ti)
               if p.playing or p.blips then preview_slots(ed, win, p) end
               ctx.touch()
             end
@@ -823,7 +1197,8 @@ function M.draw(win, ctx)
           if st and st.submit and tonumber(text) then
             local nv = math.max(lo, math.min(hi, math.floor(tonumber(text))))
             if nv ~= tr[key] then
-              tr[key], p.pins_sent = nv, nil
+              tr[key] = nv
+              M.invalidate_preview_track(p, ti)
               if p.playing or p.blips then preview_slots(ed, win, p) end
               commit(ed, win.path)
             end
@@ -844,7 +1219,8 @@ function M.draw(win, ctx)
     if hov and i.clicked[1] and #doc.tracks < 16 then
       doc.tracks[#doc.tracks + 1] = { name = "track " .. (#doc.tracks + 1),
                                       ins = "", gain = 128, pan = 0,
-                                      mute = false }
+                                      mute = p.solo_track ~= nil }
+      if p.solo_restore then p.solo_restore[#doc.tracks] = false end
       win.trk = #doc.tracks
       commit(ed, win.path)
     end
@@ -863,16 +1239,71 @@ function M.draw(win, ctx)
     s.x = s.x + w + 4 * z
     return hov and i.clicked[1]
   end
-  if tchip(p.playing and "stop" or "play", p.playing) then
-    if p.playing then preview_stop(p) else preview_start(ed, win, p) end
+  local song_playing = p.playing and p.play_scope == "song"
+  if tchip(song_playing and "song stop" or "song play", song_playing) then
+    if song_playing then
+      preview_stop(p)
+    else
+      win.play_scope = "song"
+      preview_start(ed, win, p, "song")
+    end
   end
-  if tchip("bpm " .. doc.bpm, false) then
-    doc.bpm = doc.bpm >= 200 and 60 or doc.bpm + 10
-    p.flat = nil
+  local function tfield(id, label, value, width)
+    local lw = pal.x_ig_text_size(label, px * 0.72, 0)
+    pal.x_ig_text(s.x, y0 + (TR_H - px * 0.72) * 0.42,
+                  px * 0.72, COL.dim, label, 0)
+    s.x = s.x + lw + 2 * z
+    local out, st
+    if ctx.occluded then
+      pal.x_ig_text(s.x, y0 + (TR_H - px * 0.78) * 0.42,
+                    px * 0.78, COL.text, tostring(value), 1)
+    else
+      out, _, _, st = pal.x_ig_edit {
+        id = id .. win.id, x = s.x, y = y0 + 1 * z,
+        w = width, h = TR_H - 4 * z, text = tostring(value),
+        px = px * 0.78, font = 1, enter = true, multiline = false,
+      }
+    end
+    s.x = s.x + width + 4 * z
+    return st and st.submit and out or nil
+  end
+  local bpm_text = tfield("music_bpm_", "bpm", doc.bpm, 34 * z)
+  if bpm_text and tonumber(bpm_text) then
+    local bpm = math.max(1, math.min(999, math.floor(tonumber(bpm_text))))
+    if bpm ~= doc.bpm then
+      local scope = p.playing and p.play_scope
+      doc.bpm = bpm
+      commit(ed, win.path)
+      if scope then preview_start(ed, win, p, scope) end
+    end
+  end
+  local sig = tostring(doc.beats_per_bar or 4) .. "/"
+              .. tostring(doc.beat_unit or 4)
+  local sig_text = tfield("music_sig_", "time", sig, 34 * z)
+  if sig_text then
+    local beats, unit = sig_text:match("^%s*(%d+)%s*/%s*(%d+)%s*$")
+    beats, unit = tonumber(beats), tonumber(unit)
+    local vb, vu = song.time_signature(beats, unit)
+    if beats == vb and unit == vu
+       and (vb ~= doc.beats_per_bar or vu ~= doc.beat_unit) then
+      doc.beats_per_bar, doc.beat_unit = vb, vu
+      commit(ed, win.path)
+    end
+  end
+  if tchip(GRID_LABEL[win.grid or 3], false) then
+    win.grid = (win.grid or 3) % 6 + 1 -- placement grid only
+    ctx.touch()
+  end
+  if tchip("+ pat", false) then
+    win.pat = M.new_pattern(doc, song.bar_ticks(doc))
+    win.cursor, win.play_scope = 0, "clip"
+    p.csel, p.csels, p.nsels, p.flat = nil, {}, {}, nil
     commit(ed, win.path)
+    ctx.touch()
   end
-  if tchip(GRID_LABEL[win.grid or 4], false) then
-    win.grid = (win.grid or 4) % 6 + 1 -- placement grid only (round 2)
+  if tchip(win.edit_mode == "steps" and "piano" or "steps",
+           win.edit_mode == "steps") then
+    win.edit_mode = win.edit_mode == "steps" and "piano" or "steps"
     ctx.touch()
   end
   -- Permanent pattern-period feedback. This makes a grow from one to two bars
@@ -881,12 +1312,20 @@ function M.draw(win, ctx)
   -- repeat four times per bar. The pointer address bay uses the remaining
   -- right-side space and yields first in a narrow window.
   if pat then
-    local label = "p" .. tostring(pat.id) .. " · loop "
-                  .. M.loop_span(pat.len, doc.beats_per_bar)
-    local lw = pal.x_ig_text_size(label, px * 0.72, 0)
-    pal.x_ig_text(s.x, y0 + (TR_H - px * 0.72) * 0.42, px * 0.72,
+    local pname = tfield("music_pat_name_", "p" .. tostring(pat.id),
+                         pat.name or song.default_pattern_name(pat.id), 76 * z)
+    if pname then
+      pname = pname:match("^%s*(.-)%s*$"):sub(1, 255)
+      if pname ~= "" and pname ~= pat.name then
+        pat.name = pname
+        commit(ed, win.path)
+      end
+    end
+    local label = "loop " .. M.loop_span(pat.len, doc)
+    local lw = pal.x_ig_text_size(label, px * 0.68, 0)
+    pal.x_ig_text(s.x, y0 + (TR_H - px * 0.68) * 0.42, px * 0.68,
                   COL.dim, label, 0)
-    s.x = s.x + lw + 8 * z
+    s.x = s.x + lw + 6 * z
   end
   -- (no pattern chips — round 7: each clip owns its pattern; you pick
   -- what the roll edits by clicking a clip in the arrangement)
@@ -895,8 +1334,9 @@ function M.draw(win, ctx)
   -- left tick, win.ar_sy vertical scroll) — MMB pans, wheel zooms, height
   -- win.arh resizes, and each lane keeps a FIXED reasonable height that
   -- scrolls vertically when there are many tracks (the human's ask) ----
-  local ay = y0 + TR_H
-  local bar = PPQ * (doc.beats_per_bar or 4)
+  local ay = y0 + TR_H + SONG_RULER_H
+  local bar = song.bar_ticks(doc)
+  local beat = song.beat_ticks(doc)
   local atpp = math.max(0.02, win.ar_tpp or 0.14) * z -- px per tick (own zoom)
   local ar_t0 = win.ar_t0 or 0
   local lane_h = LANE_H * z
@@ -904,16 +1344,71 @@ function M.draw(win, ctx)
   local ar_max_sy = math.max(0, content_h - AR_H)
   local ar_sy = math.max(0, math.min(win.ar_sy or 0, ar_max_sy))
   win.ar_sy = ar_sy
+  -- The whole-song scrub is visually attached to the arrangement, not the
+  -- drilled pattern. It has an independent cursor and makes song scope
+  -- explicit before playback.
+  local song_ruler_y = y0 + TR_H
+  pal.x_ig_rect_fill(rx, song_ruler_y, rw, SONG_RULER_H, COL.rail, 2 * z)
+  do
+    local t = math.tointeger((ar_t0 // beat) * beat)
+    while true do
+      local lx = rx + (t - ar_t0) * atpp
+      if lx > rx + rw then break end
+      if lx >= rx then
+        pal.x_ig_line(lx, song_ruler_y, lx, song_ruler_y + SONG_RULER_H,
+                      t % bar == 0 and COL.beatln or COL.gridln, 1)
+        if t % bar == 0 then
+          pal.x_ig_text(lx + 2 * z, song_ruler_y, px * 0.62, COL.dim,
+                        tostring(t // bar + 1), 0)
+        end
+      end
+      t = t + beat
+    end
+    local cursor_x = rx + ((win.song_cursor or 0) - ar_t0) * atpp
+    if cursor_x >= rx and cursor_x <= rx + rw then
+      pal.x_ig_rect_fill(cursor_x - 2 * z, song_ruler_y, 4 * z,
+                         SONG_RULER_H * 0.55, COL.accent, 1 * z)
+    end
+    if p.playing then
+      local phx = rx + (M.preview_tick(p, doc) - ar_t0) * atpp
+      if phx >= rx and phx <= rx + rw then
+        pal.x_ig_line(phx, song_ruler_y, phx, song_ruler_y + SONG_RULER_H,
+                      COL.head, math.max(1, 1.2 * z))
+      end
+    end
+    local over = i.wx >= rx and i.wx < rx + rw
+                 and i.wy >= song_ruler_y
+                 and i.wy < song_ruler_y + SONG_RULER_H
+    if ctx.hot and i.clicked[1] and over and not p.g then
+      p.g = { t = "song_scrub" }
+      win.play_scope = "song"
+    end
+    if p.g and p.g.t == "song_scrub" then
+      if i.buttons[1] then
+        local raw = ar_t0 + (i.wx - rx) / atpp
+        -- Arrangement time snaps to the nearest beat. Besides matching clip
+        -- movement, this avoids a grid-line click landing one beat early when
+        -- the screen-to-tick division produces 767.999999 instead of 768.
+        win.song_cursor = math.max(0, M.snap_delta(raw, beat))
+        ctx.touch()
+      else
+        p.g = nil
+      end
+    end
+  end
   pal.x_ig_rect_fill(rx, ay, rw, AR_H, COL.well, 3 * z)
   pal.x_ig_clip_push(rx, ay, rw, AR_H)
   local L = math.max(song.length(doc), bar * 16)
   do
-    local t = math.tointeger(ar_t0 // bar) * bar
+    local t = math.tointeger(ar_t0 // beat) * beat
     while t <= L do
       local lx = rx + (t - ar_t0) * atpp
       if lx > rx + rw then break end
-      if lx >= rx then pal.x_ig_line(lx, ay, lx, ay + AR_H, COL.gridln, 1) end
-      t = t + bar
+      if lx >= rx then
+        pal.x_ig_line(lx, ay, lx, ay + AR_H,
+                      t % bar == 0 and COL.beatln or COL.gridln, 1)
+      end
+      t = t + beat
     end
   end
   -- lane bands + track labels (scroll under ar_sy; the active track highlit)
@@ -928,7 +1423,9 @@ function M.draw(win, ctx)
                     COL.dim, doc.tracks[ti].name or ("t" .. ti), 0)
     end
   end
-  -- clips sharing the SELECTED clip's pattern glow together (round 8)
+  p.csels = p.csels or {}
+  -- Clips in the selected set are unmistakable; other placements sharing the
+  -- active pattern retain the linked-family glow.
   local sel_pat = p.csel and doc.clips[p.csel] and doc.clips[p.csel].pattern
   for ci, c in ipairs(doc.clips) do
     local cx0 = rx + (c.tick - ar_t0) * atpp
@@ -940,26 +1437,30 @@ function M.draw(win, ctx)
       local hov = ctx.hot and i.wx >= cx0 and i.wx < cx0 + cw0
                   and i.wy >= cy0 and i.wy < cy0 + lane_h
       local kin = sel_pat and c.pattern == sel_pat and p.csel ~= ci
+      local selected = p.csels[c] or p.csel == ci
       pal.x_ig_rect_fill(vis_l, cy0 + 1, vis_r - vis_l, lane_h - 3,
-                         (p.csel == ci or hov) and COL.clip_hot
+                         (selected or hov) and COL.clip_hot
                          or kin and COL.note_dim or COL.clip, 2 * z)
+      if selected then
+        pal.x_ig_rect(vis_l, cy0 + 1, vis_r - vis_l, lane_h - 3,
+                      COL.hot, math.max(1, 1 * z), 2 * z)
+      end
       local edge_hot = hov and (cx0 + cw0 - i.wx) < 6 * z
       pal.x_ig_rect_fill(vis_r - (edge_hot and 3 or 1.5) * z, cy0 + 1,
                          (edge_hot and 3 or 1.5) * z, lane_h - 3,
                          edge_hot and COL.hot or 0xffffff30,
                          edge_hot and 1 * z or 0)
-      pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.68, COL.dim,
-                    "p" .. c.pattern, 0)
+      local cpat = doc.patterns[c.pattern]
+      local label = cpat and cpat.name or song.default_pattern_name(c.pattern)
+      pal.x_ig_text(cx0 + 2 * z, cy0 + 1, px * 0.68,
+                    selected and COL.hot or COL.dim, label, 0)
     end
   end
   -- the preview playhead
   if p.playing then
-    local SL = snd.seq.samples_at(song.length(doc), doc.bpm)
-    if SL > 0 then
-      local phx = rx + (snd.seq.ticks_at(p.ppos % SL, doc.bpm) - ar_t0) * atpp
-      if phx >= rx and phx <= rx + rw then
-        pal.x_ig_line(phx, ay, phx, ay + AR_H, COL.head, math.max(1, 1.2 * z))
-      end
+    local phx = rx + (M.preview_tick(p, doc) - ar_t0) * atpp
+    if phx >= rx and phx <= rx + rw then
+      pal.x_ig_line(phx, ay, phx, ay + AR_H, COL.head, math.max(1, 1.2 * z))
     end
   end
   -- a vertical scrollbar hint when the tracks overflow the panel
@@ -1000,16 +1501,19 @@ function M.draw(win, ctx)
     else p.arpan = nil end
   end
 
-  -- arrangement gestures: press empty = stamp; press clip = move; right edge =
-  -- resize a clip. CTRL = REUSE (round 8) — ctrl+drag a clip duplicates it
-  -- LINKED, ctrl+press on empty stamps the ACTIVE pattern linked (edit one, all
-  -- follow). Layout anchors (event tapes / hit-tests + M.wheel read p.arr).
+  -- Arrangement grammar follows the Playlist conventions: plain click places
+  -- the active named pattern or moves a clip/selection; Shift-drag duplicates
+  -- linked placements; Ctrl drags a marquee, Ctrl+Shift extends it; Alt
+  -- temporarily bypasses beat snapping; right-click erases.
   p.arr = { x = rx, y = ay, w = rw, h = AR_H, atpp = atpp, t0 = ar_t0,
-            sy = ar_sy, lane_h = lane_h, bar = bar }
-  if ctx.hot and i.clicked[1] and over_arr and not p.g and not rh_hot then
+            sy = ar_sy, lane_h = lane_h, bar = bar, beat = beat }
+  local function arr_pos()
     local tick = ar_t0 + (i.wx - rx) / atpp
     local lane = math.min(#doc.tracks - 1, math.max(0,
       math.tointeger((i.wy - ay + ar_sy) // lane_h)))
+    return tick, lane
+  end
+  local function arr_hit(tick, lane)
     local hit, edge
     for ci, c in ipairs(doc.clips) do
       if c.track == lane and tick >= c.tick and tick < c.tick + c.len then
@@ -1017,72 +1521,102 @@ function M.draw(win, ctx)
         edge = (c.tick + c.len - tick) * atpp < 6 * z
       end
     end
-    if ed.g.ctrl and hit then
-      -- LINKED DUPLICATE: a copy that SHARES the clip's pattern; drag it
-      -- into place (the original stays). Editing either updates both.
-      local src = doc.clips[hit]
-      doc.clips[#doc.clips + 1] = { track = src.track, pattern = src.pattern,
-                                    tick = src.tick, len = src.len }
-      p.csel = #doc.clips
-      win.pat, win.trk, win.cursor = src.pattern, src.track + 1, 0
-      p.nsels = {}
-      p.g = { t = "clipmove", ci = #doc.clips, dt = tick - src.tick,
-              moved = false, dup = true }
-      p.flat = nil
-    elseif hit then
-      p.csel = hit
-      local c = doc.clips[hit]
-      -- DRILL DOWN (the human, round 7): clicking a clip shows ITS
-      -- pattern in the roll below, and playback starts at the clip
-      win.pat = c.pattern
-      win.trk = c.track + 1
-      win.cursor = 0
-      p.nsels = {} -- the roll's selection was for the old pattern
-      p.g = { t = edge and "clipsize" or "clipmove", ci = hit,
-              dt = tick - c.tick, moved = false }
-    else
-      -- stamp: CTRL reuses the ACTIVE pattern (win.pat) LINKED — the
-      -- fill length rounds up to the pattern's whole bars so it plays in
-      -- full; a plain press makes a FRESH one-bar pattern (round 7,
-      -- through the shared stamp_fresh core since round 11).
-      local pid
-      if ed.g.ctrl and win.pat and doc.patterns[win.pat] then
-        pid = win.pat
-        local plen = math.max(bar,
-          ((doc.patterns[pid].len + bar - 1) // bar) * bar)
-        doc.clips[#doc.clips + 1] = {
-          track = math.tointeger(lane), pattern = pid,
-          tick = math.tointeger((tick // bar) * bar),
-          len = math.tointeger(plen),
-        }
-      else
-        pid = M.stamp_fresh(doc, lane, tick, bar)
+    return hit, edge
+  end
+  local function drill(ci)
+    local c = doc.clips[ci]
+    if not c then return end
+    p.csel = ci
+    win.pat, win.trk = c.pattern, c.track + 1
+    win.cursor, win.song_cursor, win.play_scope = 0, c.tick, "clip"
+    p.nsels = {}
+  end
+  local function move_base(selection)
+    local out = {}
+    for _, c in ipairs(doc.clips) do
+      if selection[c] then
+        out[#out + 1] = { c = c, tick = c.tick, track = c.track }
       end
+    end
+    return out
+  end
+  if ctx.hot and i.clicked[1] and over_arr and not p.g and not rh_hot then
+    local tick, lane = arr_pos()
+    local hit, edge = arr_hit(tick, lane)
+    if ed.g.ctrl then
+      p.g = { t = "clipmarquee", x0 = i.wx, y0 = i.wy,
+              hit = hit and doc.clips[hit], hit_i = hit,
+              add = ed.g.shift, moved = false }
+    elseif hit then
+      local c = doc.clips[hit]
+      if not p.csels[c] then p.csels = { [c] = true } end
+      drill(hit)
+      if ed.g.shift and not edge then
+        local sources = move_base(p.csels)
+        local copies, active
+        copies = {}
+        p.csels = {}
+        for _, b in ipairs(sources) do
+          local copy = { track = b.c.track, pattern = b.c.pattern,
+                         tick = b.c.tick, len = b.c.len }
+          doc.clips[#doc.clips + 1] = copy
+          p.csels[copy] = true
+          copies[#copies + 1] = { c = copy, tick = copy.tick,
+                                  track = copy.track }
+          if b.c == c then active = #doc.clips end
+        end
+        drill(active or #doc.clips)
+        p.g = { t = "clipmove", base = copies, press_tick = tick,
+                press_lane = lane, moved = false, dup = true }
+        p.flat = nil
+      elseif edge then
+        p.g = { t = "clipsize", c = c, len = c.len, moved = false }
+      else
+        p.g = { t = "clipmove", base = move_base(p.csels),
+                press_tick = tick, press_lane = lane, moved = false }
+      end
+    else
+      local pid = win.pat
+      if not (pid and doc.patterns[pid]) then
+        pid = M.new_pattern(doc, bar)
+      end
+      local at = ed.g.alt and math.max(0, math.tointeger(math.floor(tick + 0.5)))
+                 or math.max(0, M.snap_delta(tick, beat))
+      local placed = { track = lane, pattern = pid, tick = at,
+                       len = math.max(1, doc.patterns[pid].len) }
+      doc.clips[#doc.clips + 1] = placed
       p.csel = #doc.clips
-      win.pat = pid -- drill into the stamped pattern
-      win.trk = math.tointeger(lane) + 1
-      win.cursor = 0
-      p.nsels = {}
+      p.csels = { [placed] = true }
+      drill(p.csel)
       p.flat = nil
       commit(ed, win.path)
     end
     ctx.touch()
   end
   if p.g and (p.g.t == "clipmove" or p.g.t == "clipsize") then
-    local c = doc.clips[p.g.ci]
-    if i.buttons[1] and c then
-      local tick = ar_t0 + (i.wx - rx) / atpp
+    if i.buttons[1] then
+      local tick, lane = arr_pos()
       if p.g.t == "clipmove" then
-        local nt = math.max(0, ((tick - p.g.dt + bar / 2) // bar) * bar)
-        nt = math.tointeger(nt)
-        if nt ~= c.tick then
-          c.tick = nt
+        local dt, dtrack = M.clip_move_delta(
+          p.g.base, tick - p.g.press_tick, lane - p.g.press_lane,
+          beat, ed.g.alt, #doc.tracks)
+        if dt ~= (p.g.dt or 0) or dtrack ~= (p.g.dtrack or 0) then
+          for _, b in ipairs(p.g.base) do
+            b.c.tick, b.c.track = b.tick + dt, b.track + dtrack
+          end
+          local active = p.csel and doc.clips[p.csel]
+          if active then
+            win.trk, win.song_cursor = active.track + 1, active.tick
+          end
+          p.g.dt, p.g.dtrack = dt, dtrack
           p.g.moved = true
           ctx.touch()
         end
       else
-        local nl = math.max(bar, ((tick - c.tick + bar / 2) // bar) * bar)
-        nl = math.tointeger(nl)
+        local c = p.g.c
+        local raw = tick - c.tick
+        local nl = ed.g.alt and math.max(1, math.tointeger(math.floor(raw + 0.5)))
+                   or math.max(beat, M.snap_delta(raw, beat))
         if nl ~= c.len then
           c.len = nl
           p.g.moved = true
@@ -1097,6 +1631,185 @@ function M.draw(win, ctx)
       p.g = nil
     end
   end
+  if p.g and p.g.t == "clipmarquee" then
+    if i.buttons[1] then
+      if math.abs(i.wx - p.g.x0) > 3 * z
+         or math.abs(i.wy - p.g.y0) > 3 * z then
+        p.g.moved = true
+      end
+      if p.g.moved then
+        local x1, x2 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
+        local y1, y2 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+        pal.x_ig_rect(x1, y1, x2 - x1, y2 - y1, COL.accent,
+                      math.max(1, 1 * z), 2 * z)
+      end
+      ctx.touch()
+    else
+      if p.g.moved then
+        local x1, x2 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
+        local y1, y2 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+        local sel = p.g.add and p.csels or {}
+        local active
+        for ci, c in ipairs(doc.clips) do
+          local cx1 = rx + (c.tick - ar_t0) * atpp
+          local cx2 = cx1 + c.len * atpp
+          local cy1 = ay + c.track * lane_h - ar_sy
+          local cy2 = cy1 + lane_h
+          if cx1 < x2 and cx2 > x1 and cy1 < y2 and cy2 > y1 then
+            sel[c], active = true, ci
+          end
+        end
+        p.csels = sel
+        if active then drill(active) elseif not p.g.add then p.csel = nil end
+      elseif p.g.hit then
+        if p.g.add then
+          p.csels[p.g.hit] = not p.csels[p.g.hit] or nil
+        else
+          p.csels = { [p.g.hit] = true }
+        end
+        if p.csels[p.g.hit] then drill(p.g.hit_i) end
+      elseif not p.g.add then
+        p.csels, p.csel = {}, nil
+      end
+      p.g = nil
+      ctx.touch()
+    end
+  end
+  if ctx.hot and i.clicked[3] and over_arr and not p.g then
+    local tick, lane = arr_pos()
+    local hit = arr_hit(tick, lane)
+    if hit then
+      local dead = table.remove(doc.clips, hit)
+      p.csels[dead] = nil
+      p.csel = nil
+      p.flat = nil
+      commit(ed, win.path)
+      ctx.touch()
+    end
+  end
+
+  -- ---- channel-rack step sequencer ---------------------------------------
+  -- A compact one-bar percussion door across tracks. Each row edits the
+  -- pattern playing on that track near the song cursor (falling back to its
+  -- first clip); left adds, right erases, and "roll" drills into the same
+  -- bytes in the detailed piano editor.
+  if win.edit_mode == "steps" then
+    p.view, p.vlane = nil, nil
+    local sy0 = ruler_y
+    local sh = math.max(24 * z, vel_y + VEL_H - sy0)
+    local head_h, step_row_h = 16 * z, 18 * z
+    local label_w = math.min(120 * z, rw * 0.28)
+    local subdivisions = 4
+    local step_tick = math.max(1, song.beat_ticks(doc) // subdivisions)
+    local nsteps = math.max(1, song.bar_ticks(doc) // step_tick)
+    local at = win.song_cursor or 0
+    local bar_at = math.tointeger((at // bar) * bar)
+    local function track_clip(ti)
+      if p.csel then
+        local c = doc.clips[p.csel]
+        if c and c.track == ti - 1 then return p.csel, c end
+      end
+      local fallback
+      for ci, c in ipairs(doc.clips) do
+        if c.track == ti - 1 then
+          fallback = fallback or ci
+          if at >= c.tick and at < c.tick + c.len then return ci, c end
+        end
+      end
+      return fallback, fallback and doc.clips[fallback]
+    end
+    pal.x_ig_rect_fill(rx, sy0, rw, sh, COL.well, 3 * z)
+    pal.x_ig_text(rx + 5 * z, sy0 + 2 * z, px * 0.72, COL.dim,
+                  "steps · left add · right erase · roll opens piano", 0)
+    local visible = math.max(1, math.tointeger((sh - head_h) // step_row_h))
+    local first = math.max(1, math.min(
+      math.max(1, #doc.tracks - visible + 1), (win.trk or 1) - 1))
+    local last = math.min(#doc.tracks, first + visible - 1)
+    p.step_pitch = p.step_pitch or {}
+    for ti = first, last do
+      local row_y = sy0 + head_h + (ti - first) * step_row_h
+      local ci, c = track_clip(ti)
+      local pt = c and doc.patterns[c.pattern]
+      local pid = pt and pt.id
+      local pitch = pid and p.step_pitch[pid]
+      if not pitch then
+        pitch = pt and pt.notes[1] and pt.notes[1].pitch or 60
+        if pid then p.step_pitch[pid] = pitch end
+      end
+      local selected = (win.trk or 1) == ti
+      if selected then
+        pal.x_ig_rect_fill(rx, row_y, rw, step_row_h - 1,
+                           0x7fd8a814, 2 * z)
+      end
+      local roll_w = 26 * z
+      local roll_x = rx + label_w - roll_w - 3 * z
+      local roll_hov = c and ctx.hot and i.wx >= roll_x
+                       and i.wx < roll_x + roll_w
+                       and i.wy >= row_y + 2 * z
+                       and i.wy < row_y + step_row_h - 2 * z
+      local name = pt and pt.name or (doc.tracks[ti].name or ("track " .. ti))
+      pal.x_ig_text(rx + 4 * z, row_y + 3 * z, px * 0.7,
+                    selected and COL.hot or COL.text, name, 0)
+      pal.x_ig_rect_fill(roll_x, row_y + 2 * z, roll_w,
+                         step_row_h - 4 * z, COL.btn, 2 * z)
+      pal.x_ig_text(roll_x + 3 * z, row_y + 3 * z, px * 0.62,
+                    roll_hov and COL.hot or COL.dim, "roll", 0)
+      if roll_hov and i.clicked[1] then
+        p.csels = { [c] = true }
+        drill(ci)
+        win.edit_mode = "piano"
+        ctx.touch()
+        return
+      end
+      local step_x = rx + label_w
+      local step_w = math.max(3 * z, (rw - label_w - 4 * z) / nsteps)
+      for si = 1, nsteps do
+        local sx = step_x + (si - 1) * step_w
+        local st = (si - 1) * step_tick
+        local note
+        if pt then
+          for _, n in ipairs(pt.notes) do
+            if n.tick == st and n.pitch == pitch then note = n; break end
+          end
+        end
+        local hov = ctx.hot and i.wx >= sx + 1
+                    and i.wx < sx + step_w - 1
+                    and i.wy >= row_y + 3 * z
+                    and i.wy < row_y + step_row_h - 3 * z
+        local base_col = ((si - 1) // subdivisions) % 2 == 0
+                         and COL.btn or 0x302b48ff
+        pal.x_ig_rect_fill(sx + 1, row_y + 3 * z,
+                           math.max(1, step_w - 2), step_row_h - 6 * z,
+                           note and (hov and COL.hot or COL.accent)
+                           or hov and COL.btn_on or base_col, 2 * z)
+        if hov and (i.clicked[1] or i.clicked[3]) then
+          if not pt and i.clicked[1] then
+            local newpid = M.stamp_fresh(doc, ti - 1, bar_at, bar)
+            ci, c = #doc.clips, doc.clips[#doc.clips]
+            pt, pid = doc.patterns[newpid], newpid
+            pitch, p.step_pitch[pid] = 60, 60
+          end
+          if pt then
+            local changed_note, changed =
+              M.set_step(pt, st, pitch, step_tick, i.clicked[1])
+            if changed then
+              p.csel, p.csels = ci, { [c] = true }
+              win.pat, win.trk, win.play_scope = pt.id, ti, "clip"
+              p.nsels = changed_note and i.clicked[1]
+                        and { [changed_note] = true } or {}
+              p.flat = nil
+              commit(ed, win.path)
+              ctx.touch()
+              return
+            end
+          end
+        end
+      end
+      pal.x_ig_line(rx, row_y + step_row_h - 1, rx + rw,
+                    row_y + step_row_h - 1, COL.gridln, 1)
+    end
+    return
+  end
 
   -- ---- the piano keys column (round 10 — the human): a playable
   -- keyboard on the roll's left edge. Ruler, roll, and velocity lane
@@ -1107,15 +1820,37 @@ function M.draw(win, ctx)
   local keys_x = rx
   rx, rw = rx + KEYS_W, rw - KEYS_W
 
-  -- ---- the scrub ruler (human, round 4): a roll-aligned bar ruler
-  -- (pattern ticks, win.tpp/tick0). Click/drag sets win.cursor — the
-  -- SCRUB start (space plays from here) AND the paste anchor (Ctrl+V).
-  -- Snaps to the grid; a live playhead rides it while previewing. ----
+  -- The drilled clip has its own explicit transport. It loops the exact
+  -- last-clicked clip span in song context, so backing tracks remain audible.
+  local clip_playing = p.playing and p.play_scope == "clip"
+  do
+    local enabled = p.csel and doc.clips[p.csel]
+    local hov = enabled and ctx.hot and i.wx >= keys_x
+                and i.wx < keys_x + KEYS_W and i.wy >= ruler_y
+                and i.wy < ruler_y + RULER_H
+    pal.x_ig_rect_fill(keys_x, ruler_y, KEYS_W - 2 * z, RULER_H,
+                       clip_playing and COL.btn_on or COL.btn, 2 * z)
+    pal.x_ig_text(keys_x + 2 * z, ruler_y + 1 * z, px * 0.62,
+                  (hov or clip_playing) and COL.hot or COL.dim,
+                  clip_playing and "stop" or "clip", 0)
+    if hov and i.clicked[1] then
+      if clip_playing then
+        preview_stop(p)
+      else
+        win.play_scope = "clip"
+        preview_start(ed, win, p, "clip")
+      end
+      ctx.touch()
+    end
+  end
+
+  -- ---- the pattern-local scrub ruler: click/drag sets the selected clip's
+  -- local entry point. Song scrubbing lives above the arrangement. ----
   do
     local rtick0 = win.tick0 or 0
     local function r2x(t) return rx + (t - rtick0) * tpp end
     pal.x_ig_rect_fill(rx, ruler_y, rw, RULER_H, COL.rail, 3 * z)
-    local bar = PPQ * (doc.beats_per_bar or 4)
+    local bar = song.bar_ticks(doc)
     for t = (math.tointeger(rtick0 // bar) or 0) * bar, math.huge, bar do
       local lx = r2x(t)
       if lx > rx + rw then break end
@@ -1134,19 +1869,17 @@ function M.draw(win, ctx)
                     math.max(1, 1 * z))
     end
     -- the live playhead
-    if p.playing then
-      local SL = snd.seq.samples_at(song.length(doc), doc.bpm)
-      if SL > 0 then
-        local phx = r2x(snd.seq.ticks_at((p.ppos or 0) % SL, doc.bpm))
-        pal.x_ig_line(phx, ruler_y, phx, ruler_y + RULER_H, COL.head,
-                      math.max(1, 1.4 * z))
-      end
+    if clip_playing and p.csel and doc.clips[p.csel] then
+      local phx = r2x(M.preview_tick(p, doc) - doc.clips[p.csel].tick)
+      pal.x_ig_line(phx, ruler_y, phx, ruler_y + RULER_H, COL.head,
+                    math.max(1, 1.4 * z))
     end
     -- gesture: set the cursor (grid-snapped; drag scrubs)
     local over = i.wx >= rx and i.wx < rx + rw and i.wy >= ruler_y
                  and i.wy < ruler_y + RULER_H
     if ctx.hot and i.clicked[1] and over and not p.g then
       p.g = { t = "scrub" }
+      win.play_scope = "clip"
     end
     if p.g and p.g.t == "scrub" then
       if i.buttons[1] then
@@ -1165,11 +1898,24 @@ function M.draw(win, ctx)
   -- the map window's view-lock model) ----
   pal.x_ig_rect_fill(rx, roll_y, rw, roll_h, COL.well, 3 * z)
   pal.x_ig_clip_push(rx, roll_y, rw, roll_h)
-  local lowf = win.lownote or 45
+  local nrows = math.tointeger(roll_h // row_h) or 0
+  local max_low = math.max(0, 127 - nrows)
+  local lowf = math.max(0, math.min(max_low, win.lownote or 45))
+  win.lownote = lowf
+  if win.lownote_target then
+    win.lownote_target = math.max(0, math.min(max_low, win.lownote_target))
+    local d = win.lownote_target - lowf
+    if math.abs(d) > 0.02 then
+      lowf = lowf + d * 0.34
+      win.lownote = lowf
+      ctx.touch()
+    else
+      lowf, win.lownote = win.lownote_target, win.lownote_target
+    end
+  end
   local low = math.floor(lowf)
   local suby = (lowf - low) * row_h
   local tick0 = win.tick0 or 0
-  local nrows = math.tointeger(roll_h // row_h) or 0
   local function t2x(t) return rx + (t - tick0) * tpp end
   local function x2t(x) return tick0 + (x - rx) / tpp end
   local function y2pitch(y)
@@ -1185,17 +1931,33 @@ function M.draw(win, ctx)
     return
   end
 
-  -- MMB pans the roll — focused only (focus is the one gate); the content
-  -- follows the mouse on both axes. Not when the press was over the
-  -- arrangement (it has its own MMB pan above).
+  -- MMB on the keyboard changes vertical note scale; MMB in the roll pans.
+  -- This mirrors a piano-roll zoom gesture without stealing ordinary audition.
+  local middle_keys = i.wx >= keys_x and i.wx < keys_x + KEYS_W
+                      and i.wy >= roll_y and i.wy < roll_y + roll_h
   if ctx.focused and i.clicked[2] and not over_arr then
-    p.pan = { mx = i.wx, my = i.wy, t0 = tick0, lf = lowf }
+    if middle_keys then
+      p.rowzoom = { my = i.wy, row_h = win.row_h or 14 }
+    else
+      p.pan = { mx = i.wx, my = i.wy, t0 = tick0, lf = lowf }
+    end
+  end
+  if p.rowzoom then
+    if i.buttons[2] then
+      win.row_h = math.max(5, math.min(32,
+        p.rowzoom.row_h + (p.rowzoom.my - i.wy) / (4 * z)))
+      win.lownote_target = nil
+      ctx.touch()
+    else
+      p.rowzoom = nil
+    end
   end
   if p.pan then
     if i.buttons[2] then
       win.tick0 = math.max(0, p.pan.t0 - (i.wx - p.pan.mx) / tpp)
       win.lownote = math.max(0, math.min(127 - nrows,
         p.pan.lf + (i.wy - p.pan.my) / row_h))
+      win.lownote_target = nil
       ctx.touch()
       lowf = win.lownote
       low = math.floor(lowf)
@@ -1204,6 +1966,20 @@ function M.draw(win, ctx)
     else
       p.pan = nil
     end
+  end
+
+  -- Holding either a piano key or a stored/added note lights the entire pitch
+  -- row, tying audition feedback to the editable lane.
+  local held_pitch
+  if i.buttons[1] and p.g then
+    if p.g.t == "keys" then held_pitch = p.g.kp
+    elseif (p.g.t == "selmove" or p.g.t == "selsize") and p.g.grab then
+      held_pitch = p.g.grab.pitch
+    end
+  end
+  if held_pitch then
+    local hy = roll_y + (low + nrows - held_pitch) * row_h - suby
+    pal.x_ig_rect_fill(rx, hy, rw, row_h, 0x7fd8a824)
   end
 
   -- rows (black-key tint) + grid lines
@@ -1223,7 +1999,7 @@ function M.draw(win, ctx)
     if lx > rx + rw then break end
     if lx >= rx then
       pal.x_ig_line(lx, roll_y, lx, roll_y + roll_h,
-                    t % PPQ == 0 and COL.beatln or COL.gridln, 1)
+                    t % beat == 0 and COL.beatln or COL.gridln, 1)
     end
   end
   pal.x_ig_line(t2x(pat.len), roll_y, t2x(pat.len),
@@ -1256,12 +2032,43 @@ function M.draw(win, ctx)
     end
     return hit_sel or hit
   end
+  local function resize_hit(tick, pitch)
+    local inset = GRIDS[#GRIDS] / 2
+    local outside = 4 * z / tpp
+    local hit, hit_sel, best, best_sel
+    for ni, n in ipairs(pat.notes) do
+      local edge = n.tick + n.dur
+      if pitch == n.pitch and tick >= math.max(n.tick, edge - inset)
+         and tick <= edge + outside then
+        local d = math.abs(tick - edge)
+        if p.nsels[n] then
+          if not best_sel or d < best_sel then hit_sel, best_sel = ni, d end
+        elseif not best or d < best then
+          hit, best = ni, d
+        end
+      end
+    end
+    return hit_sel or hit
+  end
   local roll_hot = ctx.hot and i.wx >= rx and i.wx < rx + rw
                    and i.wy >= roll_y and i.wy < roll_y + roll_h
+  local function draw_note(n, selected)
+    local nx, ny, nw, nh = note_rect(n)
+    pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2,
+                       selected and 0xE8E4FFc8 or COL.note, 2)
+    if selected then
+      pal.x_ig_rect(nx, ny + 1, nw - 1, nh - 2, COL.hot,
+                    math.max(1, 1 * z), 2)
+    end
+    local label, lpx = M.note_name(n.pitch), math.min(px * 0.66, nh * 0.58)
+    if nh >= 7 * z and nw >= pal.x_ig_text_size(label, lpx, 0) + 4 * z then
+      pal.x_ig_text(nx + 2 * z, ny + (nh - lpx) * 0.42, lpx,
+                    selected and COL.rail or COL.well, label, 0)
+    end
+  end
   for ni, n in ipairs(pat.notes) do -- unselected notes first
     if not (p.nsel == ni or p.nsels[n]) then
-      local nx, ny, nw, nh = note_rect(n)
-      pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2, COL.note, 2)
+      draw_note(n, false)
     end
   end
   -- selected notes draw LAST and slightly translucent: an overlapped
@@ -1269,38 +2076,58 @@ function M.draw(win, ctx)
   -- seen and fixed (round 9)
   for ni, n in ipairs(pat.notes) do
     if p.nsel == ni or p.nsels[n] then
-      local nx, ny, nw, nh = note_rect(n)
-      pal.x_ig_rect_fill(nx, ny + 1, nw - 1, nh - 2, 0xE8E4FFc8, 2)
-      pal.x_ig_rect(nx, ny + 1, nw - 1, nh - 2, COL.hot,
-                    math.max(1, 1 * z), 2)
+      draw_note(n, true)
     end
   end
   -- resize handle: a bright bar when hovering the right edge of the
   -- note a press would grab, so the resize zone is discoverable (the
   -- human — hoverable handles)
   if roll_hot and not p.g and not p.paste then
-    local hi = note_hit(x2t(i.wx), y2pitch(i.wy))
+    local hi = resize_hit(x2t(i.wx), y2pitch(i.wy))
     local n = hi and pat.notes[hi]
     if n then
       local nx, ny, nw, nh = note_rect(n)
-      if (nx + nw - i.wx) < 4 * z then
-        pal.x_ig_rect_fill(nx + nw - 2 * z, ny + 1, 2.5 * z, nh - 2,
-                           COL.head, 1 * z)
-      end
+      pal.x_ig_rect_fill(nx + nw - 2 * z, ny + 1, 2.5 * z, nh - 2,
+                         COL.head, 1 * z)
     end
   end
-  -- the roll grammar (+ selection, round 3: shift+drag = marquee,
-  -- shift+click toggles, dragging a selected note moves the whole set)
+  -- A separate selection handle stretches timing and durations together,
+  -- equivalent to FL's score stretch handle. Ordinary note-edge resize below
+  -- still offsets only lengths across the selected set.
+  local stretch_hot, stretch_info = false, nil
+  do
+    local count, tmin, tend = 0, math.huge, 0
+    local pmin, pmax = 127, 0
+    for _, n in ipairs(pat.notes) do
+      if p.nsels[n] then
+        count = count + 1
+        tmin, tend = math.min(tmin, n.tick), math.max(tend, n.tick + n.dur)
+        pmin, pmax = math.min(pmin, n.pitch), math.max(pmax, n.pitch)
+      end
+    end
+    if count >= 2 and tend > tmin then
+      local hx = t2x(tend) + 6 * z
+      local hy1 = roll_y + (low + nrows - pmax) * row_h - suby
+      local hy2 = roll_y + (low + nrows - pmin + 1) * row_h - suby
+      local cy = (hy1 + hy2) * 0.5
+      stretch_hot = ctx.hot and i.wx >= hx - 5 * z and i.wx <= hx + 5 * z
+                    and i.wy >= hy1 and i.wy <= hy2
+      pal.x_ig_line(t2x(tend), cy, hx, cy, COL.hot, 1)
+      pal.x_ig_rect_fill(hx - 2 * z, cy - 7 * z, 4 * z, 14 * z,
+                         stretch_hot and COL.head or COL.hot, 1 * z)
+      stretch_info = { anchor = tmin, span = tend - tmin }
+    end
+  end
+  -- the roll grammar: Ctrl marquee/replace, Ctrl+Shift add/toggle,
+  -- Shift-drag pitch-locked duplicate, plain selected drag moves the set
   local over_roll = i.wx >= rx and i.wx < rx + rw and i.wy >= roll_y
                     and i.wy < roll_y + roll_h
-  -- placement snaps to the grid. (CTRL is DUPLICATE in the roll now,
-  -- round 4 — superseding the D058 fine-tick inversion; the finer
-  -- grids + zoom give precision.)
+  -- placement snaps to the grid; the 1/32 grid + zoom provide precision.
   local function snap(t)
     return math.tointeger(math.max(0, (t // grid) * grid))
   end
   local function snapd(d) -- a MOVE delta -> the nearest grid step (signed)
-    return math.tointeger(((d + grid / 2) // grid) * grid)
+    return M.snap_delta(d, grid)
   end
   local function note_commit()
     local clip = p.csel and doc.clips[p.csel]
@@ -1311,13 +2138,20 @@ function M.draw(win, ctx)
   if ctx.hot and i.clicked[1] and over_roll and not p.g and not p.paste then
     local tick = x2t(i.wx)
     local pitch = y2pitch(i.wy)
-    local hit = note_hit(tick, pitch)
-    local edge = false
-    if hit then
-      local n = pat.notes[hit]
-      edge = (n.tick + n.dur - tick) * tpp < 4 * z
-    end
-    if ed.g.ctrl and hit then -- DUPLICATE (round 4): ctrl+drag copies
+    local edge_hit = resize_hit(tick, pitch)
+    local hit = edge_hit or note_hit(tick, pitch)
+    local edge = edge_hit ~= nil
+    if stretch_hot and stretch_info then
+      local base = {}
+      for n in pairs(p.nsels) do
+        base[#base + 1] = { n = n, tick = n.tick, dur = n.dur }
+      end
+      p.g = { t = "selstretch", anchor = stretch_info.anchor,
+              span = stretch_info.span, last = stretch_info.span,
+              base = base, moved = false }
+    elseif ed.g.shift and not ed.g.ctrl and hit then
+      -- in-place note duplicate; horizontal
+      -- drag can place the copies in time, while pitch deliberately stays put.
       -- the selection (or just this note), you drag the copies where
       -- you want; the originals stay put
       local hn = pat.notes[hit]
@@ -1342,15 +2176,12 @@ function M.draw(win, ctx)
       p.nsel = nil
       p.g = { t = "selmove", grab = grab, gt = grab.tick, gp = grab.pitch,
               dt = tick - grab.tick, dp = pitch - grab.pitch, base = base,
-              moved = false, dup = true }
+              moved = false, dup = true, pitch_lock = true }
       blip_hold(ed, win, p, p.g, grab.pitch, grab.vel)
-    elseif ed.g.shift then -- selection: toggle a note / start a marquee
-      if hit then
-        local n = pat.notes[hit]
-        p.nsels[n] = not p.nsels[n] or nil
-      else
-        p.g = { t = "marquee", x0 = i.wx, y0 = i.wy }
-      end
+    elseif ed.g.ctrl then -- standard selection: Ctrl replaces, Ctrl+Shift adds
+      p.g = { t = "marquee", x0 = i.wx, y0 = i.wy,
+              hit = hit and pat.notes[hit], add = ed.g.shift,
+              moved = false }
     elseif hit then -- SELECT (round 9): a press never moves or deletes
       -- — an unselected note REPLACES the selection, then the group
       -- gesture arms over the selection; a motionless release just
@@ -1395,22 +2226,62 @@ function M.draw(win, ctx)
   end
   if p.g and p.g.t == "marquee" then
     if i.buttons[1] then
-      local x0, x1 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
-      local y0, y1 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
-      pal.x_ig_rect(x0, y0, x1 - x0, y1 - y0, COL.accent,
-                    math.max(1, 1 * z), 2 * z)
+      if math.abs(i.wx - p.g.x0) > 3 * z
+         or math.abs(i.wy - p.g.y0) > 3 * z then
+        p.g.moved = true
+      end
+      if p.g.moved then
+        local x0, x1 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
+        local y0, y1 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+        pal.x_ig_rect(x0, y0, x1 - x0, y1 - y0, COL.accent,
+                      math.max(1, 1 * z), 2 * z)
+      end
       ctx.touch()
-    else -- select everything the rect touches
-      local t0, t1 = x2t(math.min(p.g.x0, i.wx)), x2t(math.max(p.g.x0, i.wx))
-      local phi = y2pitch(math.min(p.g.y0, i.wy))
-      local plo = y2pitch(math.max(p.g.y0, i.wy))
-      for _, n in ipairs(pat.notes) do
-        if n.tick < t1 and n.tick + n.dur > t0
-           and n.pitch >= plo and n.pitch <= phi then
-          p.nsels[n] = true
+    else
+      if p.g.moved then
+        local t0, t1 = x2t(math.min(p.g.x0, i.wx)),
+                       x2t(math.max(p.g.x0, i.wx))
+        local phi = y2pitch(math.min(p.g.y0, i.wy))
+        local plo = y2pitch(math.max(p.g.y0, i.wy))
+        local sel = p.g.add and p.nsels or {}
+        for _, n in ipairs(pat.notes) do
+          if n.tick < t1 and n.tick + n.dur > t0
+             and n.pitch >= plo and n.pitch <= phi then
+            sel[n] = true
+          end
         end
+        p.nsels = sel
+      elseif p.g.hit then
+        if p.g.add then
+          p.nsels[p.g.hit] = not p.nsels[p.g.hit] or nil
+        else
+          p.nsels = { [p.g.hit] = true }
+        end
+      elseif not p.g.add then
+        p.nsels = {}
       end
       p.nsel = nil
+      p.g = nil
+      ctx.touch()
+    end
+  end
+  if p.g and p.g.t == "selstretch" then
+    if i.buttons[1] then
+      local raw = x2t(i.wx) - p.g.anchor
+      local span = ed.g.alt and math.max(1, math.tointeger(math.floor(raw + 0.5)))
+                   or math.max(grid, M.snap_delta(raw, grid))
+      if span ~= p.g.last then
+        local scale = span / p.g.span
+        for _, b in ipairs(p.g.base) do
+          b.n.tick = p.g.anchor
+                     + math.floor((b.tick - p.g.anchor) * scale + 0.5)
+          b.n.dur = math.max(1, math.floor(b.dur * scale + 0.5))
+        end
+        p.g.last, p.g.moved = span, true
+        ctx.touch()
+      end
+    else
+      if p.g.moved then note_commit() end
       p.g = nil
       ctx.touch()
     end
@@ -1423,7 +2294,9 @@ function M.draw(win, ctx)
       -- off-grid note keeps its offset instead of being yanked onto
       -- the line by the first pixel of drag
       local ndt = snapd(tick - p.g.dt - p.g.gt)
-      local ndp = math.max(-127, math.min(127, (pitch - p.g.dp) - p.g.gp))
+      local ndp = p.g.pitch_lock and 0
+                  or math.max(-127, math.min(127,
+                    (pitch - p.g.dp) - p.g.gp))
       if ndt ~= (p.g.ldt or 0) or ndp ~= (p.g.ldp or 0) then
         -- clamp the delta so the whole set stays in range
         for _, b in ipairs(p.g.base) do
@@ -1512,16 +2385,14 @@ function M.draw(win, ctx)
     end
   end
   -- the ARMED PASTE ghost (round 9): rides the mouse over the roll
-  -- (anchor = the clip's earliest note; the pitch delta clamps as a
-  -- SET so intervals survive), a click places it as one journal entry
+  -- (time anchor = the clip's earliest note; original pitches stay fixed),
+  -- a click places it as one journal entry
   -- and the pasted notes become the selection; right-click / Esc
   -- cancels. MMB pan + wheel zoom stay live while armed.
   if p.paste and p.paste.clip and #p.paste.clip > 0 then
     local clip = p.paste.clip
     local at = snap(x2t(i.wx))
-    local pitches = {}
-    for ci2, c in ipairs(clip) do pitches[ci2] = c.pitch end
-    local dp = M.clamp_dp(pitches, y2pitch(i.wy) - p.paste.bp)
+    local dp = 0
     if roll_hot then
       for _, c in ipairs(clip) do
         local gx, gy, gw, gh = note_rect { tick = at + c.dtick,
@@ -1531,7 +2402,7 @@ function M.draw(win, ctx)
       end
     end
     pal.x_ig_text(rx + 8 * z, roll_y + 4 * z, px * 0.85, COL.accent,
-                  "paste: click places · esc cancels", 0)
+                  "paste: time follows · pitch stays · esc cancels", 0)
     if ctx.hot then ctx.touch() end -- the ghost follows the mouse
     if ctx.hot and i.clicked[1] and over_roll and not p.g then
       p.nsels = {}
@@ -1625,7 +2496,7 @@ function M.draw(win, ctx)
       local n = hit and pat.notes[hit]
       status = M.roll_status(n and n.tick or snap(x2t(i.wx)),
                              n and n.pitch or pitch,
-                             doc.beats_per_bar, n)
+                             doc, n)
     end
     if status then
       local spx = px * 0.72
@@ -1788,6 +2659,18 @@ function M.takes_middle(win, ed)
   return (win.path or "") ~= "" and ed ~= nil and ed.doc.focus == win.id
 end
 
+-- Alt is normally the canvas/window grammar. The focused arrangement claims
+-- an Alt-press over its own pixels so it can provide the DAW-standard
+-- temporary snap bypass without also moving the editor window.
+function M.takes_alt(win, ed)
+  if win.path == "" or not ed or ed.doc.focus ~= win.id then return false end
+  local p = ed.g.muw and ed.g.muw[win.path]
+  local ar = p and p.arr
+  local i = cm.require("cm.ui").inp
+  return ar and i.wx >= ar.x and i.wx < ar.x + ar.w
+         and i.wy >= ar.y and i.wy < ar.y + ar.h
+end
+
 -- drag an .ins from the assets window onto a track row = bind it
 -- resolve any .ins path to a PROJECT-RELATIVE binding. A path already
 -- under the project binds as-is; an external one (a stock preset the
@@ -1832,7 +2715,8 @@ function M.drop(win, ed, path, wx, wy)
     ti = math.min(win.trk or 1, #doc.tracks)
   end
   doc.tracks[ti].ins = rel
-  p.pins_sent = nil
+  M.invalidate_preview_track(p, ti)
+  if p.playing or p.blips then preview_slots(ed, win, p) end
   p.flat = nil
   commit(ed, win.path)
   pal.log("[ed] bound " .. rel .. " -> " .. doc.tracks[ti].name)
