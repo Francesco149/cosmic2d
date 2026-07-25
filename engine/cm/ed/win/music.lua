@@ -382,6 +382,26 @@ function M.stamp_fresh(doc, lane, tick, bar)
   return pid
 end
 
+-- Remove the selected note refs from a pattern in one pass. Both Delete and
+-- Ctrl+X use this path so their document maintenance cannot drift apart.
+-- Returns the number removed; pure document mutation, KAT'd in t_song.
+function M.delete_selected_notes(doc, pt, selection)
+  if not (doc and pt and selection) then return 0 end
+  local keep, removed = {}, 0
+  for _, n in ipairs(pt.notes or {}) do
+    if selection[n] then
+      removed = removed + 1
+    else
+      keep[#keep + 1] = n
+    end
+  end
+  if removed > 0 then
+    pt.notes = keep
+    song.fit_pattern(doc, pt)
+  end
+  return removed
+end
+
 -- ---- hotkeys ----
 
 local bound = function(win) return win.path ~= "" end
@@ -398,15 +418,9 @@ M.hotkeys = {
       if not p.doc then return end
       if p.nsels and next(p.nsels) then -- the note selection first
         local pt = p.doc.patterns[win.pat or 1]
-        if pt then
-          local keep = {}
-          for _, n in ipairs(pt.notes) do
-            if not p.nsels[n] then keep[#keep + 1] = n end
-          end
-          pt.notes = keep
+        if pt and M.delete_selected_notes(p.doc, pt, p.nsels) > 0 then
           p.nsels = {}
           p.nsel = nil
-          fit_pattern(p.doc, pt)
           p.flat = nil
           commit(ed, win.path)
         end
@@ -463,13 +477,8 @@ M.hotkeys[#M.hotkeys + 1] = {
     local sel, pt = selected_notes(p, win)
     if #sel == 0 or not pt then return end
     copy_sel(ed, win, p)
-    local keep = {}
-    for _, n in ipairs(pt.notes) do
-      if not p.nsels[n] then keep[#keep + 1] = n end
-    end
-    pt.notes = keep
+    M.delete_selected_notes(p.doc, pt, p.nsels)
     p.nsels, p.nsel = {}, nil
-    fit_pattern(p.doc, pt)
     p.flat = nil
     commit(ed, win.path)
   end }

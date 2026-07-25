@@ -8711,6 +8711,23 @@ local function t_song()
         and growdoc.clips[2].len == 1536,
         "music.fit_pattern_clip: an authored long clip keeps its length")
 
+  -- Delete and Ctrl+X share this exact ref-set removal path. This pins the
+  -- issue #1 regression: the old hotkeys called a nonexistent fit_pattern
+  -- helper after mutating the notes and crashed before they could commit.
+  local dn1 = { tick = 0, dur = 96, pitch = 60, vel = 100 }
+  local dn2 = { tick = 96, dur = 96, pitch = 62, vel = 101 }
+  local dn3 = { tick = 192, dur = 96, pitch = 64, vel = 102 }
+  local dpt = { id = 9, len = 384, notes = { dn1, dn2, dn3 } }
+  local ddoc = { beats_per_bar = 4 }
+  check(mus.delete_selected_notes(ddoc, dpt, { [dn1] = true,
+                                               [dn3] = true }) == 2
+        and #dpt.notes == 1 and dpt.notes[1] == dn2
+        and dpt.len == 384,
+        "music.delete_selected_notes: removes selected refs without crashing")
+  check(mus.delete_selected_notes(ddoc, dpt, {}) == 0
+        and #dpt.notes == 1 and dpt.notes[1] == dn2,
+        "music.delete_selected_notes: empty selection is a no-op")
+
   -- the rail drop bands (round 10): drop() resolves the row from the
   -- bands DRAW records — the selected row's band is taller (it
   -- carries the mix panel), so re-derived fixed-height math can't do
