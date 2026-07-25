@@ -787,6 +787,7 @@ local function t_reduce_fx()
   local saved_access = view._access_path
   local saved_cfg = { reduce_shake = view.cfg.reduce_shake,
                       reduce_flash = view.cfg.reduce_flash,
+                      smooth_views = view.cfg.smooth_views,
                       editor_scale = view.cfg.editor_scale,
                       chrome_scale = view.cfg.chrome_scale,
                       access_auto = view.cfg.access_auto,
@@ -797,6 +798,7 @@ local function t_reduce_fx()
   pal.mkdir(root)
   view._access_path = root .. "/editor.dat"
   view.cfg.reduce_shake, view.cfg.reduce_flash = false, false
+  view.cfg.smooth_views = true
 
   -- defaults: both scales are unity, on view and the options delegates
   check(view.shake_scale() == 1.0 and view.flash_scale() == 1.0,
@@ -869,22 +871,40 @@ local function t_reduce_fx()
   check(t.reduce_shake == nil and t.reduce_flash == nil,
         "reduce: clearing a flag leaves the store clean")
 
+  -- Smooth editor motion defaults on, but explicit off persists beside the Aa
+  -- scales. Re-enabling removes the override so future defaults remain live.
+  view.set_smooth_views(false)
+  t = state_m.parse(pal.read_file(root .. "/editor.dat"))
+  check(t.smooth_views == false,
+        "view smoothing: explicit off enters the user-wide store")
+  view.cfg.smooth_views = true
+  view.load_accessibility()
+  check(view.cfg.smooth_views == false,
+        "view smoothing: stored off adopts on load")
+  view.set_smooth_views(true)
+  t = state_m.parse(pal.read_file(root .. "/editor.dat"))
+  check(t.smooth_views == nil,
+        "view smoothing: default on leaves no sticky override")
+
   -- a crafted store: only literal true engages (malformed values stay off)
   pal.write_file(root .. "/editor.dat", state_m.canon({
-    reduce_shake = "yes", reduce_flash = 1,
+    reduce_shake = "yes", reduce_flash = 1, smooth_views = "no",
   }))
   view.load_accessibility()
-  check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false,
-        "reduce: malformed store flags stay off")
+  check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false
+        and view.cfg.smooth_views == true,
+        "reduce/view: malformed store flags keep safe defaults")
   pal.x_remove(root .. "/editor.dat")
   view.load_accessibility()
-  check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false,
-        "reduce: a store-less load resets both flags")
+  check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false
+        and view.cfg.smooth_views == true,
+        "reduce/view: a store-less load resets all flags")
 
   -- leave everything as found
   view._access_path = saved_access
   view.cfg.reduce_shake = saved_cfg.reduce_shake
   view.cfg.reduce_flash = saved_cfg.reduce_flash
+  view.cfg.smooth_views = saved_cfg.smooth_views
   view.cfg.editor_scale = saved_cfg.editor_scale
   view.cfg.chrome_scale = saved_cfg.chrome_scale
   view.cfg.access_auto = saved_cfg.access_auto
@@ -8696,6 +8716,27 @@ local function t_song()
         and mus.snap_delta(-47, 96) == 0
         and mus.snap_delta(-49, 96) == -96,
         "music.snap_delta: nearest steps are symmetric around zero")
+  local gs0, gs1 = mus.grid_span(101, 289, 96, 0)
+  check(gs0 == 96 and gs1 == 384,
+        "music.grid_span: time marquee owns complete grid cells")
+  gs0, gs1 = mus.grid_span(2.8, 0.2, 1, 0, 3)
+  check(gs0 == 0 and gs1 == 3,
+        "music.grid_span: reverse lane drag snaps + clamps to whole rows")
+  gs0, gs1 = mus.grid_span(3, 3, 1, 0, 3)
+  check(gs0 == 2 and gs1 == 3,
+        "music.grid_span: a boundary at the far edge still owns one row")
+  local ps0, ps1 = mus.pitch_span(45, 12, 2, 5)
+  check(ps0 == 53 and ps1 == 55,
+        "music.pitch_span: drawn rows select their exact three pitches")
+  local eased, settled = mus.smooth_value(0, 100, true)
+  check(eased == 32 and not settled,
+        "music view smoothing: enabled motion chases without teleporting")
+  eased, settled = mus.smooth_value(0, 100, false)
+  check(eased == 100 and settled,
+        "music view smoothing: global off lands exactly and immediately")
+  eased, settled = mus.smooth_value(99.995, 100, true, 0.01)
+  check(eased == 100 and settled,
+        "music view smoothing: epsilon settles exactly on target")
 
   local cb1 = { tick = 96, track = 1 }
   local cb2 = { tick = 192, track = 2 }

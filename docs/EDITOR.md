@@ -111,10 +111,12 @@ teidraw's source; they are taste-approved by construction):
   captured editor state; `editor_scale` is machine-local display policy.
 - **Zoom**: wheel, **1.16× per notch**, clamped **0.02–64**, always
   anchored at the cursor (the world point under the cursor stays put).
+  Consecutive notches accumulate into one short eased chase by default.
 - **Pan**: **middle-drag only** (live round 3, D054 — a left-drag on
   empty canvas is a marquee now); space+left-drag still pans from
   anywhere (teidraw's hand tool). A right-drag is nothing (the spawn
-  menu stays on the right still-click).
+  menu stays on the right still-click). The camera follows the hand through
+  the same short ease rather than stepping between event positions.
 - **Zoom-to-fit**: Shift+1 = fit all windows, Shift+2 = fit selection,
   Shift+0 = 100%, animated over **280 ms ease-in-out-quart** (ephemeral
   ease; the camera lands in the doc every frame).
@@ -147,6 +149,12 @@ teidraw's source; they are taste-approved by construction):
   resizes in place from its corner rather than being the one window that
   shifts relative to its neighbors. Reconciliation is skipped while parked:
   the past renders as recorded, and the present heals on unpark.
+  The same **Aa** panel carries one machine-wide **smooth pan / zoom** switch.
+  It defaults on and covers canvas navigation plus Music's arrangement and
+  piano-roll views. Turning it off cancels pending motion and makes every
+  affected wheel, pan, pitch-scroll, and row-scale input land exactly on its
+  new value in that frame. Like the two size settings, the switch lives only
+  in per-user `editor.dat`.
 
 ## 4. Windows
 

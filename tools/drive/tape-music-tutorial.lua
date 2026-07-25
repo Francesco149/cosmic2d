@@ -15,7 +15,7 @@
 --      -> H7 must finish with every VERDICT true and save lead/bass/kick.
 --   3. full H8 proof run:
 --        bin/cosmic <scratch>/smoke-h8 --edit --headless \
---          --win 1280x1000 --frames 1960 --eval \
+--          --win 1280x1000 --frames 2060 --eval \
 --          "dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot <scratch>/full.png
 --      -> every H8 VERDICT line must read true.
@@ -30,11 +30,20 @@
 --      source resolution and in the real reader, then montage them.
 --
 -- Shot frames:
---   f970 music-roll · f1460 music-arrangement · f1670 music-mix
+--   f970 music-roll · f1460 music-arrangement · f1670 music-mix ·
+--   f1800 music-steps · f1988 music-snap
 
 local D = dofile("tools/drive/drive.lua")
 local SC = D.SC
 local song = cm.require("cm.song")
+local view = cm.require("cm.view")
+
+-- The final polish proof drives the real machine-wide toggle. Keep its atomic
+-- persistence hermetic to this scratch project rather than touching the
+-- developer's actual user preference while the tape runs.
+view._access_path = cm.ed.root .. "/.ed/tape-editor.dat"
+pal.x_remove(view._access_path)
+view.cfg.smooth_views = true
 
 local SONG = "sound/moonlit-relay.song"
 local INS = {
@@ -507,6 +516,7 @@ end
 for _, spec in ipairs({
   { "music-roll", 970 }, { "music-arrangement", 1460 },
   { "music-mix", 1670 }, { "music-steps", 1800 },
+  { "music-snap", 1988 },
 }) do
   if rawget(_G, "SHOT") == spec[1] then
     D.at(spec[2] - 4, function()
@@ -520,6 +530,7 @@ D.shot_zoom("music-roll", 970, "music")
 D.shot_zoom("music-arrangement", 1460, "music")
 D.shot_zoom("music-mix", 1670, "music")
 D.shot_zoom("music-steps", 1800, "music")
+D.shot_zoom("music-snap", 1988, "music")
 
 -- The roll shot catches a REAL held C3 key after the @2x camera move. Refresh
 -- the pointer against the shifted key geometry; the button remains held.
@@ -530,6 +541,16 @@ if rawget(_G, "SHOT") == "music-roll" then
     if not (r and v) then return end
     local _, y = roll_xy(0, 48)
     return { D.mouse(v.rx - 9 * r.z, y) }
+  end)
+end
+
+-- The snapped-marquee shot zooms after the drag began at proof scale. Refresh
+-- its held endpoint against the moved @2x window, exactly like the held piano
+-- key above, so the screenshot remains a real in-flight gesture.
+if rawget(_G, "SHOT") == "music-snap" then
+  D.at(1987, function()
+    local x, y = arr_xy(2 * BAR + 30, 2)
+    return x and { D.mouse(x, y) } or nil
   end)
 end
 
@@ -889,7 +910,108 @@ probe(1932, function()
   verdict("timing-undo", d.bpm == 120 and d.beats_per_bar == 4
           and d.beat_unit == 4)
 end)
-probe(1940, function()
+
+-- Post-lesson polish proof: wheel zoom first writes a destination and visibly
+-- chases it, then settles exactly. A Ctrl marquee starts/ends off the grid but
+-- owns whole beat × track cells and selects precisely the three backing lanes.
+local smooth_tpp0
+D.at(1940, function()
+  local r, p = D.win("music"), plumb()
+  local v = p and p.view
+  if not (r and v) then return end
+  smooth_tpp0 = r.win.tpp
+  local x, y = v.rx + v.rw * 0.55, v.ry + v.rh * 0.5
+  return { D.mouse(x, y), D.wheelev(1) }
+end)
+probe(1943, function()
+  local r, p = D.win("music"), plumb()
+  local m = cm.require("cm.ed.kit").winui(p, r.win).motion
+  verdict("smooth-wheel-chases", smooth_tpp0 and m.tpp
+          and r.win.tpp > smooth_tpp0 and r.win.tpp < m.tpp,
+          ("from=%s now=%s target=%s"):format(
+            tostring(smooth_tpp0), tostring(r.win.tpp), tostring(m.tpp)))
+end)
+probe(1970, function()
+  local r, p = D.win("music"), plumb()
+  local m = cm.require("cm.ed.kit").winui(p, r.win).motion
+  verdict("smooth-wheel-settles", smooth_tpp0
+          and math.abs(r.win.tpp - smooth_tpp0 * 1.2) < 0.0002
+          and m.tpp == nil,
+          ("now=%s target=%s"):format(tostring(r.win.tpp), tostring(m.tpp)))
+end)
+D.at(1974, function() return { D.keyev(SC.ctrl, true) } end)
+D.at(1976, function()
+  local x, y = arr_xy(37, 0)
+  return { D.mouse(x, y) }
+end)
+D.at(1977, function()
+  local x, y = arr_xy(37, 0)
+  return { D.btn(x, y, true) }
+end)
+D.at(1979, function()
+  local x, y = arr_xy(2 * BAR + 30, 2)
+  return { D.mouse(x, y) }
+end)
+probe(1988, function()
+  local r, p = D.win("music"), plumb()
+  crop("music-snap", r.x, r.y, r.w, math.min(r.h, 190 * r.z))
+  verdict("arrangement-marquee-live", p.g and p.g.t == "clipmarquee"
+          and p.g.moved == true)
+end)
+D.at(1992, function()
+  local x, y = arr_xy(2 * BAR + 30, 2)
+  return { D.btn(x, y, false) }
+end)
+D.at(1994, function() return { D.keyev(SC.ctrl, false) } end)
+probe(2000, function()
+  local n = 0
+  for _ in pairs(plumb().csels or {}) do n = n + 1 end
+  verdict("arrangement-grid-marquee", n == 3, "selected=" .. n)
+end)
+
+-- Open the actual Aa panel, toggle smoothing off, and prove the same wheel
+-- lands immediately with no pending target. Restore ON before leaving.
+D.at(2004, function()
+  local a = cm.ed.g.display_pill
+  if a then D.click(D.f + 1, a.x + a.w * 0.5, a.y + a.h * 0.5) end
+end)
+D.at(2010, function()
+  local a = cm.ed.g.display_rect
+  if a then D.click(D.f + 1, a.x + 244, a.y + 117) end
+end)
+probe(2016, function()
+  local stored = pal.read_file(view._access_path)
+  local ok, t = pcall(cm.require("cm.state").parse, stored or "")
+  verdict("smoothing-toggle-off", view.cfg.smooth_views == false
+          and ok and t.smooth_views == false)
+end)
+local instant_tpp0
+D.at(2020, function()
+  local r, p = D.win("music"), plumb()
+  local v = p and p.view
+  if not (r and v) then return end
+  instant_tpp0 = r.win.tpp
+  local x, y = v.rx + v.rw * 0.55, v.ry + v.rh * 0.5
+  return { D.mouse(x, y), D.wheelev(-1) }
+end)
+probe(2024, function()
+  local r, p = D.win("music"), plumb()
+  local m = cm.require("cm.ed.kit").winui(p, r.win).motion
+  verdict("smoothing-off-immediate", instant_tpp0
+          and math.abs(r.win.tpp - instant_tpp0 / 1.2) < 1e-9
+          and m.tpp == nil)
+end)
+D.at(2028, function()
+  local a = cm.ed.g.display_rect
+  if a then D.click(D.f + 1, a.x + 244, a.y + 117) end
+end)
+probe(2034, function()
+  local stored = pal.read_file(view._access_path)
+  local ok, t = pcall(cm.require("cm.state").parse, stored or "")
+  verdict("smoothing-toggle-restored", view.cfg.smooth_views == true
+          and ok and t.smooth_views == nil)
+end)
+probe(2042, function()
   verdict("summary", FAIL == 0, ("%d/%d"):format(PASS, PASS + FAIL))
   log("TAPE DONE")
 end)

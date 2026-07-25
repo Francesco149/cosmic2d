@@ -78,8 +78,9 @@ notes across the bar; Music v1 has no sub-bar pattern-length control.
 8. Select track 4 and place the first lead motif with the inherited 96-tick
    length: G4 at `0`, A-sharp 4 at `144`, C5 at `192`, and E-flat 5 at
    `336`. Drag the right edges of the A-sharp and E-flat notes back to
-   `dur 48`. Hold Ctrl and marquee across all four notes, then press
-   **Ctrl+C**. The four-note motif is now on the session clipboard.
+   `dur 48`. Hold Ctrl and marquee across all four notes: the box expands to
+   complete **1/8 × pitch-row** cells. Press **Ctrl+C**. The four-note motif is
+   now on the session clipboard.
 9. Press **Ctrl+V**. A translucent ghost follows the roll; put its first G4 at
    bar 2 tick `384` and click once. The paste disarms and its four new notes
    stay selected. Drag that selected G4 straight down to F4 without changing

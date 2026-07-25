@@ -199,7 +199,7 @@ presets last (they cross-link finished tool docs and reuse their media).
   the step sequencer, typed timing with undo, atomic save, canonical decode,
   and runtime flattening. `ref-music.md` covers the complete rail, arrangement,
   roll, piano keys, velocity, transport, journal, CSNG, runtime, and every
-  pointer/key door; `REF_DOCS` grows the Music row. Three inspected @2x
+  pointer/key door; `REF_DOCS` grows the Music row. Three shipped @2x tutorial
   captures show the held C3 bass with its two-bar pattern/clip, final rail,
   and exact lead mix. The UX pass adds an observer-only roll address bay with
   bar/beat/tick, pitch, and stored duration/velocity; a permanent pattern-loop
@@ -207,8 +207,11 @@ presets last (they cross-link finished tool docs and reuse their media).
   The human readback also moved the sustain lesson from the short hat to bass,
   distinguished held gates from patch envelopes, and made the one-bar minimum
   plus lack of sub-bar periods explicit. The shipped tape at
-  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 28/28 VERDICTs
-  through the final saved/flattened song.
+  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 35/35 VERDICTs
+  through the final saved/flattened song, FL-style eased view motion, the real
+  Aa toggle's immediate mode, and a live snapped arrangement marquee. The
+  additional steps and snapped-selection capture points were inspected; the
+  latter was published to llm-feed with the Aa control.
 - [ ] **H9 — the terrain window**. Tutorial: sculpt the lakeside vale —
   heights, the noise brush, texture paint, water, props, a route
   (grow the D144 walkthrough; `media/terrain-vale.png` exists as the

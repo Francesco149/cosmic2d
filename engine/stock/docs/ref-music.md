@@ -229,7 +229,9 @@ not delete pattern bytes because another linked clip may still use them.
 - **Shift+drag a clip** — creates and moves linked duplicates of the
   selection. Originals stay put and copies retain their pattern references.
 - **Ctrl+drag** — box-selects clips; **Ctrl+Shift+drag** adds intersecting
-  clips to the current selection. Ctrl-click follows the same replace/add
+  clips to the current selection. The live box expands to complete beat ×
+  track cells, so its visible boundary and selected lanes agree even when the
+  pointer stops between grid lines. Ctrl-click follows the same replace/add
   rule.
 - **Alt during move or resize** — temporarily bypasses horizontal snap;
   vertical movement remains whole tracks.
@@ -252,7 +254,8 @@ The arrangement has a view separate from the roll:
 
 Lane height remains fixed and a thin right scrollbar marks vertical position.
 Arrangement zoom, origin, vertical scroll, and height are captured window
-state, not song bytes.
+state, not song bytes. Zoom, pan, and vertical scroll glide toward accumulated
+input while the global **smooth pan / zoom** preference is on.
 
 ## The step sequencer
 
@@ -329,7 +332,11 @@ A bound, focused Music window owns view input:
 Click the title or a transport chip for a non-note focus door. Clicking empty
 roll space focuses and immediately adds; clicking a note focuses and selects
 it. Roll time origin, low pitch, row height, and zoom survive restart and
-rewind as captured window fields.
+rewind as captured window fields. Wheel zoom, two-axis pan, keyboard pitch
+scroll, and piano-key row scaling all use the same short eased chase as the
+arrangement. Open the canvas **Aa** panel; its global **smooth pan / zoom**
+preference can be turned off for exact immediate motion. Disabling it also
+cancels any pending chase.
 
 ## Piano keys and pitch audition
 
@@ -402,8 +409,9 @@ the earliest selected tick. Hold Alt to bypass the grid during the stretch.
 
 - **Ctrl+click note** — replaces the selection with that note.
 - **Ctrl+drag** — box-selects every intersecting note rectangle and clears the
-  old selection. **Ctrl+Shift+drag** adds to the selection; Ctrl+Shift+click
-  toggles one note.
+  old selection. Its live edges expand to complete active-time-grid × pitch
+  cells. **Ctrl+Shift+drag** adds to the selection; Ctrl+Shift+click toggles
+  one note.
 - **plain click or drag note** — an unselected note first becomes the only
   selection; dragging a selected note moves the whole set.
 - **Shift+drag note** — duplicates that note, or the whole selection when the

@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — Music crash + DAW interaction sweep (D169)
+## Current handoff — Music crash + DAW interaction sweep (D169/D170)
 
 **This session (2026-07-25): GitHub issues #1–#4 were taken in severity
 order.** The selected-note Delete/Ctrl+X crash is fixed in `f0640e7`: both
@@ -32,6 +32,17 @@ available. Song `HEAD` and `PATN` move to v2 to persist signature and pattern
 name; the decoder still accepts v1 with 4/4 and generated names, and all 14
 stock songs were canonically migrated.
 
+**The polish follow-up makes view motion coherent instead of event-stepped.**
+Canvas wheel zoom and hand/MMB pan now use short bounded eases. Music's
+arrangement and piano views chase accumulated wheel/pan targets on both axes,
+including vertical arrangement scroll, pitch scroll, and piano-row scaling.
+One machine-wide **smooth pan / zoom** switch sits in the Aa panel beside the
+global font/UI scales, defaults on, persists in per-user `editor.dat`, and
+cancels/lands pending motion exactly when switched off. Arrangement Ctrl
+marquees expand to complete beat × track cells; piano marquees expand to
+complete active-grid × pitch-row cells, with the visible box and selection
+sharing one boundary calculation.
+
 **The reported intermittent wrong-preset sound had a concrete ownership bug
 even without a deterministic UI repro.** Preview slots were cached only by
 track index behind one global `pins_sent` bit. Deleting/reindexing tracks,
@@ -44,21 +55,23 @@ delete, undo/decode, rebind, and mix edits. Pure decision KATs pin initial
 upload, stable reuse, reindex, mix change, stolen ownership, and empty-track
 behavior.
 
-**Proof:** Linux selftest **25,389**; `nix run .#test` **ALL GREEN** across
-release manifests, every committed trace, and all 19 pixel goldens; the fresh
-Music tape passes **28/28 VERDICTs** through both transport scopes, arrangement
+**Proof:** Linux selftest **25,399**; `nix run .#test` **ALL GREEN** across
+release manifests, every committed trace, and all 19 pixel goldens. The fresh
+Music tape passes **35/35 VERDICTs** through both transport scopes, arrangement
 move/duplicate/select, piano edits, pattern naming, channel-rack add/erase/
-drill, typed 137 BPM + 7/8 and undo, canonical save, and runtime counts
-(`24 / 32 / 16 / 24`). Both the piano/arrangement and channel-rack frames were
-inspected and published to llm-feed. **Windows stage REFRESHED** (11 durable
-entries + shortcut); staged NATIVE selftest **25,391** = Linux + 2 on PAL API
-24.
+drill, typed 137 BPM + 7/8 and undo, canonical save, runtime counts
+(`24 / 32 / 16 / 24`), eased and immediate wheel motion, the real Aa toggle,
+and a held beat/track-snapped marquee selecting exactly three clips. Existing
+piano/arrangement/channel-rack frames plus the snapped marquee and Aa control
+were inspected; the two polish frames are published together on llm-feed.
+**Windows stage REFRESHED** (11 durable entries + shortcut); staged NATIVE
+selftest **25,401** = Linux + 2 on PAL API 24.
 
-**Exact next step:** human feel/ears pass in the staged Music window, with
-special attention to song-vs-clip playback and the preset mismatch. If that
-feels sound, resume the documentation sequence from the post-H8 queue; the
-issue work did update Music's tutorial/reference and AUDIO contract, but did
-not otherwise advance the remaining documentation sessions.
+**Exact next step:** human feel/ears pass in the freshly staged Music window,
+with special attention to song-vs-clip playback, the smoothing curve, and the
+preset mismatch. If that feels sound, resume the documentation sequence from
+the post-H8 queue; the issue work updated Music's tutorial/reference and AUDIO
+contract, but did not otherwise advance the remaining documentation sessions.
 
 ## Previous handoff — HELPDOCS session 8: the Music window (H8; D168)
 

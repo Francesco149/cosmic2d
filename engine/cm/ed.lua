@@ -585,19 +585,41 @@ function M.summon_settings()
   M.touch()
 end
 
-local function anim_to(target)
+local function set_cam(target)
+  M.doc.cam.x, M.doc.cam.y, M.doc.cam.zoom =
+    target.x, target.y, target.zoom
+end
+
+local function anim_to(target, ms)
+  -- The machine-wide Aa-panel preference is the one latency door for every
+  -- outer-canvas pan/zoom. Turning it off also finishes an in-flight glide
+  -- immediately, so the toggle never leaves a half-settled camera behind.
+  if cm.require("cm.view").cfg.smooth_views == false then
+    set_cam(target)
+    M.g.anim = nil
+    return
+  end
   M.g.anim = { from = { x = M.doc.cam.x, y = M.doc.cam.y,
                         zoom = M.doc.cam.zoom },
-               to = target, t0 = pal.time_ns() }
+               to = target, t0 = pal.time_ns(), ms = ms or cam.EASE_MS }
 end
 
 local function step_anim()
   local a = M.g.anim
   if not a then return end
-  local t = (pal.time_ns() - a.t0) / (cam.EASE_MS * 1e6)
+  if cm.require("cm.view").cfg.smooth_views == false then
+    set_cam(a.to)
+    M.g.anim = nil
+    M.touch()
+    return
+  end
+  local t = (pal.time_ns() - a.t0) / ((a.ms or cam.EASE_MS) * 1e6)
   local c = cam.lerp(a.from, a.to, ease.quart_inout(t))
-  M.doc.cam.x, M.doc.cam.y, M.doc.cam.zoom = c.x, c.y, c.zoom
-  if t >= 1.0 then M.g.anim = nil end
+  set_cam(c)
+  if t >= 1.0 then
+    set_cam(a.to)
+    M.g.anim = nil
+  end
   M.touch()
 end
 
@@ -969,8 +991,13 @@ local function interact(ig)
       end
     end
     if not routed then
-      g.anim = nil
-      cam.zoom_at(doc.cam, i.wx, i.wy, cam.wheel_factor(i.wheel))
+      -- Accumulate rapid wheel notches on the pending destination, then ease
+      -- the live camera toward it. This keeps cursor anchoring exact without
+      -- making a fast wheel feel as if it drops intermediate notches.
+      local base = g.anim and g.anim.to or doc.cam
+      local target = { x = base.x, y = base.y, zoom = base.zoom }
+      cam.zoom_at(target, i.wx, i.wy, cam.wheel_factor(i.wheel))
+      anim_to(target, 120)
       M.touch()
     end
   end
@@ -1018,8 +1045,12 @@ local function interact(ig)
   if g.pan then
     if i.buttons[g.pan.b] then
       local z = cam.screen_zoom(doc.cam)
-      doc.cam.x = g.pan.cx - (i.wx - g.pan.sx) / z
-      doc.cam.y = g.pan.cy - (i.wy - g.pan.sy) / z
+      local target = {
+        x = g.pan.cx - (i.wx - g.pan.sx) / z,
+        y = g.pan.cy - (i.wy - g.pan.sy) / z,
+        zoom = doc.cam.zoom,
+      }
+      anim_to(target, 85)
       M.touch()
     else
       g.pan = nil
@@ -1547,7 +1578,7 @@ local function draw_hud(ig, i)
   if aa_hov and i.clicked[1] then g.display = not g.display or nil end
 
   if g.display then
-    local pw, ph = 286, 142
+    local pw, ph = 286, 174
     local px = math.max(8, math.min(aa.x + aa.w - pw, ig.w - pw - 8))
     local py = 42
     local panel = { x = px, y = py, w = pw, h = ph }
@@ -1573,7 +1604,13 @@ local function draw_hud(ig, i)
     scale_row(py + 73, "fixed chrome", function() return view.cfg.chrome_scale end,
       function() view.step_chrome_scale(-1) end,
       function() view.step_chrome_scale(1) end)
-    pal.x_ig_text(px + 14, py + 111, 10, C.hud_dim,
+    pal.x_ig_text(px + 14, py + 111, 12, C.hud_dim, "smooth pan / zoom", 0)
+    if chip(px + 216, py + 105, 56, 25,
+            view.cfg.smooth_views == false and "off" or "on",
+            view.cfg.smooth_views ~= false) then
+      view.set_smooth_views(view.cfg.smooth_views == false)
+    end
+    pal.x_ig_text(px + 14, py + 143, 10, C.hud_dim,
                   "auto follows display DPI / 4K resolution", 0)
     if i.clicked[1] and not inside(panel) and not inside(aa) then
       g.display, g.display_rect = nil, nil

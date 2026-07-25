@@ -9314,3 +9314,47 @@ per-clip mix. There is no tempo/signature map, swing, recording, quantize, or
 overlapping-clip arbitration. The step view intentionally edits one bar and
 one working pitch per row rather than pretending to be a full drum machine.
 Runtime same-path song cache invalidation remains explicit restart territory.
+
+## D170 — view motion is one global preference and Music marquees own grid cells (2026-07-25)
+
+**Context.** The DAW interaction sweep left two pieces of polish conspicuously
+mechanical. Wheel and middle-button input moved view fields one event at a
+time, so zooming or panning visibly stepped instead of carrying momentum like
+an established DAW. Selection boxes followed raw pointer pixels even though
+the edits they selected were quantized, making the drawn boundary disagree
+with the cells a musician was actually targeting.
+
+**Motion decision.** Canvas zoom and hand/middle pan now ease over short,
+bounded durations. Inside Music, arrangement time zoom/pan/vertical scroll and
+roll time zoom/pan, pitch scroll, and row scaling chase accumulated targets.
+Repeated wheel events extend the existing destination instead of restarting
+from the currently rendered value, preserving fast deliberate movement. The
+authored/captured view fields remain the only source of truth and land on the
+exact target; pending targets are ephemeral per-window interaction state.
+
+One machine-wide `smooth_views` preference controls the whole grammar. It is
+on by default and appears in the existing **Aa** display panel beside the two
+global size settings. It persists in per-user `editor.dat`, never in project
+bytes or rewind state. Turning it off cancels pending motion and every affected
+input lands immediately, which provides an accessibility and precision escape
+hatch without maintaining a second set of controls.
+
+**Selection decision.** Arrangement Ctrl-marquee endpoints expand outward to
+complete beat × track cells. Piano-roll endpoints expand outward to complete
+active-time-grid × pitch-row cells. Forward and reverse drags share the same
+floor-low/ceil-high rule, the visible rectangle is the exact rectangle used
+for intersection, and the far edge clamps to the editable surface. This
+matches the cell ownership users already see in Playlist and piano-roll work:
+a partially crossed cell is deliberately included and there is no invisible
+pixel threshold.
+
+**Proof.** Pure KATs cover forward/reverse/clamped grid spans, exact visible-row
+to pitch-span mapping, eased target chase, immediate mode, epsilon settlement,
+default-on preference loading, an explicit persisted off value, removal of the
+override when re-enabled, and malformed/missing preference files. The real H8
+tape passes **35/35** verdicts:
+it observes a wheel value between origin and destination, exact settlement,
+the held snapped marquee selecting three lanes, the real Aa toggle persisting
+off, immediate wheel motion with no pending target, and restoration to the
+default. Both the snapped marquee and Aa panel were inspected at source
+resolution and published together to llm-feed.

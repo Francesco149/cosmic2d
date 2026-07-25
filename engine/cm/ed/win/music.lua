@@ -507,6 +507,95 @@ function M.snap_delta(delta, step)
   return math.tointeger(((delta + step / 2) // step) * step)
 end
 
+-- A marquee owns complete grid cells, not arbitrary screen pixels. The low
+-- edge floors and the high edge ceils regardless of drag direction, so a box
+-- visibly agrees with the clips/notes it will select. `hi_limit` is exclusive
+-- (track/pitch-row count); nil leaves the time axis unbounded.
+function M.grid_span(a, b, step, lo_limit, hi_limit)
+  step = math.max(1, tonumber(step) or 1)
+  a, b = tonumber(a) or 0, tonumber(b) or 0
+  local lo = math.floor(math.min(a, b) / step) * step
+  local hi = math.ceil(math.max(a, b) / step) * step
+  lo_limit = tonumber(lo_limit)
+  hi_limit = tonumber(hi_limit)
+  if lo_limit then lo = math.max(lo_limit, lo) end
+  if hi_limit then hi = math.min(hi_limit, hi) end
+  if hi <= lo then
+    if hi_limit and lo >= hi_limit then
+      hi = hi_limit
+      lo = math.max(lo_limit or -math.huge, hi - step)
+    else
+      hi = hi_limit and math.min(hi_limit, lo + step) or lo + step
+    end
+  end
+  return math.tointeger(lo) or lo, math.tointeger(hi) or hi
+end
+
+-- Convert a top-down visible row span [r0,r1) back into its inclusive pitch
+-- span. `low` is intentionally the pitch just below the visible roll, matching
+-- note_rect/y2pitch: row zero is low+nrows and row nrows-1 is low+1.
+function M.pitch_span(low, nrows, r0, r1)
+  local hi = math.min(127, low + nrows - r0)
+  local lo = math.max(0, low + nrows - r1 + 1)
+  return math.tointeger(lo) or lo, math.tointeger(hi) or hi
+end
+
+-- One deliberately short critically-feeling chase for every Music view axis.
+-- It is frame-based like the existing held-note/pitch scroll and render-only:
+-- authored ticks never interpolate. The global preference turns the same door
+-- into an exact assignment for users who prefer zero visual latency.
+function M.smooth_value(current, target, smooth, epsilon)
+  current, target = tonumber(current) or 0, tonumber(target) or 0
+  if not smooth then return target, true end
+  local d = target - current
+  if math.abs(d) <= (epsilon or 0.01) then return target, true end
+  return current + d * 0.32, false
+end
+
+local MOTION_FIELDS = {
+  { "ar_tpp", 0.14, 0.0001 }, { "ar_t0", 0, 0.01 },
+  { "ar_sy", 0, 0.01 },       { "tpp", 0.5, 0.0001 },
+  { "tick0", 0, 0.01 },       { "row_h", 14, 0.001 },
+}
+
+local function motion_state(p, win)
+  local u = cm.require("cm.ed.kit").winui(p, win)
+  u.motion = u.motion or {}
+  return u.motion
+end
+
+local function motion_get(m, win, key, fallback)
+  local v = m[key]
+  if v == nil then v = win[key] end
+  if v == nil then v = fallback end
+  return v
+end
+
+local function motion_set(m, win, key, value)
+  if cm.require("cm.view").cfg.smooth_views == false then
+    win[key], m[key] = value, nil
+  else
+    m[key] = value
+  end
+end
+
+local function motion_step(p, win, ctx)
+  local m = motion_state(p, win)
+  local smooth = cm.require("cm.view").cfg.smooth_views ~= false
+  local live = false
+  for _, spec in ipairs(MOTION_FIELDS) do
+    local key, fallback, epsilon = spec[1], spec[2], spec[3]
+    if m[key] ~= nil then
+      local value, done = M.smooth_value(
+        win[key] == nil and fallback or win[key], m[key], smooth, epsilon)
+      win[key] = value
+      if done then m[key] = nil else live = true end
+    end
+  end
+  if live then ctx.touch() end
+  return m
+end
+
 -- One delta moves the entire clip selection. Horizontal movement snaps to a
 -- beat unless Alt is held; vertical movement always remains whole tracks.
 -- Clamp the group as a group so its relative lane layout cannot squash.
@@ -977,6 +1066,7 @@ function M.draw(win, ctx)
   local doc = p.doc
   if not doc then return end
   local i = cm.require("cm.ui").inp
+  local vmotion = motion_step(p, win, ctx)
 
   preview_step(ed, win, p)
   if p.playing then ctx.touch() end
@@ -1342,6 +1432,9 @@ function M.draw(win, ctx)
   local lane_h = LANE_H * z
   local content_h = #doc.tracks * lane_h
   local ar_max_sy = math.max(0, content_h - AR_H)
+  if vmotion.ar_sy ~= nil then
+    vmotion.ar_sy = math.max(0, math.min(vmotion.ar_sy, ar_max_sy))
+  end
   local ar_sy = math.max(0, math.min(win.ar_sy or 0, ar_max_sy))
   win.ar_sy = ar_sy
   -- The whole-song scrub is visually attached to the arrangement, not the
@@ -1489,13 +1582,19 @@ function M.draw(win, ctx)
                    and i.wy < ay + AR_H
   -- MMB pans the arrangement on both axes (focused only, like the roll)
   if ctx.focused and i.clicked[2] and over_arr then
-    p.arpan = { mx = i.wx, my = i.wy, t0 = ar_t0, sy = ar_sy }
+    p.arpan = {
+      mx = i.wx, my = i.wy,
+      t0 = motion_get(vmotion, win, "ar_t0", ar_t0),
+      sy = motion_get(vmotion, win, "ar_sy", ar_sy),
+    }
   end
   if p.arpan then
     if i.buttons[2] then
-      win.ar_t0 = math.max(0, p.arpan.t0 - (i.wx - p.arpan.mx) / atpp)
-      win.ar_sy = math.max(0, math.min(ar_max_sy,
-        p.arpan.sy - (i.wy - p.arpan.my)))
+      motion_set(vmotion, win, "ar_t0",
+        math.max(0, p.arpan.t0 - (i.wx - p.arpan.mx) / atpp))
+      motion_set(vmotion, win, "ar_sy",
+        math.max(0, math.min(ar_max_sy,
+          p.arpan.sy - (i.wy - p.arpan.my))))
       ar_t0, ar_sy = win.ar_t0, win.ar_sy
       ctx.touch()
     else p.arpan = nil end
@@ -1509,9 +1608,11 @@ function M.draw(win, ctx)
             sy = ar_sy, lane_h = lane_h, bar = bar, beat = beat }
   local function arr_pos()
     local tick = ar_t0 + (i.wx - rx) / atpp
+    local row = math.min(#doc.tracks, math.max(0,
+      (i.wy - ay + ar_sy) / lane_h))
     local lane = math.min(#doc.tracks - 1, math.max(0,
-      math.tointeger((i.wy - ay + ar_sy) // lane_h)))
-    return tick, lane
+      math.tointeger(row // 1)))
+    return tick, lane, row
   end
   local function arr_hit(tick, lane)
     local hit, edge
@@ -1540,11 +1641,18 @@ function M.draw(win, ctx)
     end
     return out
   end
+  local function clip_marquee_bounds(g)
+    local tick, _, row = arr_pos()
+    local t0, t1 = M.grid_span(g.tick0, tick, beat, 0)
+    local l0, l1 = M.grid_span(g.row0, row, 1, 0, #doc.tracks)
+    return t0, t1, l0, l1
+  end
   if ctx.hot and i.clicked[1] and over_arr and not p.g and not rh_hot then
-    local tick, lane = arr_pos()
+    local tick, lane, row = arr_pos()
     local hit, edge = arr_hit(tick, lane)
     if ed.g.ctrl then
       p.g = { t = "clipmarquee", x0 = i.wx, y0 = i.wy,
+              tick0 = tick, row0 = row,
               hit = hit and doc.clips[hit], hit_i = hit,
               add = ed.g.shift, moved = false }
     elseif hit then
@@ -1638,24 +1746,23 @@ function M.draw(win, ctx)
         p.g.moved = true
       end
       if p.g.moved then
-        local x1, x2 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
-        local y1, y2 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+        local t0, t1, l0, l1 = clip_marquee_bounds(p.g)
+        local x1, x2 = rx + (t0 - ar_t0) * atpp,
+                       rx + (t1 - ar_t0) * atpp
+        local y1, y2 = ay + l0 * lane_h - ar_sy,
+                       ay + l1 * lane_h - ar_sy
         pal.x_ig_rect(x1, y1, x2 - x1, y2 - y1, COL.accent,
                       math.max(1, 1 * z), 2 * z)
       end
       ctx.touch()
     else
       if p.g.moved then
-        local x1, x2 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
-        local y1, y2 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+        local t0, t1, l0, l1 = clip_marquee_bounds(p.g)
         local sel = p.g.add and p.csels or {}
         local active
         for ci, c in ipairs(doc.clips) do
-          local cx1 = rx + (c.tick - ar_t0) * atpp
-          local cx2 = cx1 + c.len * atpp
-          local cy1 = ay + c.track * lane_h - ar_sy
-          local cy2 = cy1 + lane_h
-          if cx1 < x2 and cx2 > x1 and cy1 < y2 and cy2 > y1 then
+          if c.tick < t1 and c.tick + c.len > t0
+             and c.track >= l0 and c.track < l1 then
             sel[c], active = true, ci
           end
         end
@@ -1904,14 +2011,12 @@ function M.draw(win, ctx)
   win.lownote = lowf
   if win.lownote_target then
     win.lownote_target = math.max(0, math.min(max_low, win.lownote_target))
-    local d = win.lownote_target - lowf
-    if math.abs(d) > 0.02 then
-      lowf = lowf + d * 0.34
-      win.lownote = lowf
-      ctx.touch()
-    else
-      lowf, win.lownote = win.lownote_target, win.lownote_target
-    end
+    local done
+    lowf, done = M.smooth_value(
+      lowf, win.lownote_target,
+      cm.require("cm.view").cfg.smooth_views ~= false, 0.02)
+    win.lownote = lowf
+    if done then win.lownote_target = nil else ctx.touch() end
   end
   local low = math.floor(lowf)
   local suby = (lowf - low) * row_h
@@ -1937,15 +2042,22 @@ function M.draw(win, ctx)
                       and i.wy >= roll_y and i.wy < roll_y + roll_h
   if ctx.focused and i.clicked[2] and not over_arr then
     if middle_keys then
-      p.rowzoom = { my = i.wy, row_h = win.row_h or 14 }
+      p.rowzoom = {
+        my = i.wy,
+        row_h = motion_get(vmotion, win, "row_h", win.row_h or 14),
+      }
     else
-      p.pan = { mx = i.wx, my = i.wy, t0 = tick0, lf = lowf }
+      p.pan = {
+        mx = i.wx, my = i.wy,
+        t0 = motion_get(vmotion, win, "tick0", tick0),
+        lf = win.lownote_target or lowf,
+      }
     end
   end
   if p.rowzoom then
     if i.buttons[2] then
-      win.row_h = math.max(5, math.min(32,
-        p.rowzoom.row_h + (p.rowzoom.my - i.wy) / (4 * z)))
+      motion_set(vmotion, win, "row_h", math.max(5, math.min(32,
+        p.rowzoom.row_h + (p.rowzoom.my - i.wy) / (4 * z))))
       win.lownote_target = nil
       ctx.touch()
     else
@@ -1954,10 +2066,15 @@ function M.draw(win, ctx)
   end
   if p.pan then
     if i.buttons[2] then
-      win.tick0 = math.max(0, p.pan.t0 - (i.wx - p.pan.mx) / tpp)
-      win.lownote = math.max(0, math.min(127 - nrows,
+      motion_set(vmotion, win, "tick0",
+        math.max(0, p.pan.t0 - (i.wx - p.pan.mx) / tpp))
+      local target_low = math.max(0, math.min(127 - nrows,
         p.pan.lf + (i.wy - p.pan.my) / row_h))
-      win.lownote_target = nil
+      if cm.require("cm.view").cfg.smooth_views == false then
+        win.lownote, win.lownote_target = target_low, nil
+      else
+        win.lownote_target = target_low
+      end
       ctx.touch()
       lowf = win.lownote
       low = math.floor(lowf)
@@ -2129,6 +2246,15 @@ function M.draw(win, ctx)
   local function snapd(d) -- a MOVE delta -> the nearest grid step (signed)
     return M.snap_delta(d, grid)
   end
+  local function roll_row(y)
+    return math.max(0, math.min(nrows,
+      (y - roll_y + suby) / row_h))
+  end
+  local function note_marquee_bounds(g)
+    local t0, t1 = M.grid_span(g.tick0, x2t(i.wx), grid, 0)
+    local r0, r1 = M.grid_span(g.row0, roll_row(i.wy), 1, 0, nrows)
+    return t0, t1, r0, r1
+  end
   local function note_commit()
     local clip = p.csel and doc.clips[p.csel]
     M.fit_pattern_clip(doc, pat, clip) -- end line + untouched clip follow
@@ -2180,6 +2306,7 @@ function M.draw(win, ctx)
       blip_hold(ed, win, p, p.g, grab.pitch, grab.vel)
     elseif ed.g.ctrl then -- standard selection: Ctrl replaces, Ctrl+Shift adds
       p.g = { t = "marquee", x0 = i.wx, y0 = i.wy,
+              tick0 = tick, row0 = roll_row(i.wy),
               hit = hit and pat.notes[hit], add = ed.g.shift,
               moved = false }
     elseif hit then -- SELECT (round 9): a press never moves or deletes
@@ -2231,18 +2358,18 @@ function M.draw(win, ctx)
         p.g.moved = true
       end
       if p.g.moved then
-        local x0, x1 = math.min(p.g.x0, i.wx), math.max(p.g.x0, i.wx)
-        local y0, y1 = math.min(p.g.y0, i.wy), math.max(p.g.y0, i.wy)
+        local t0, t1, r0, r1 = note_marquee_bounds(p.g)
+        local x0, x1 = t2x(t0), t2x(t1)
+        local y0, y1 = roll_y + r0 * row_h - suby,
+                       roll_y + r1 * row_h - suby
         pal.x_ig_rect(x0, y0, x1 - x0, y1 - y0, COL.accent,
                       math.max(1, 1 * z), 2 * z)
       end
       ctx.touch()
     else
       if p.g.moved then
-        local t0, t1 = x2t(math.min(p.g.x0, i.wx)),
-                       x2t(math.max(p.g.x0, i.wx))
-        local phi = y2pitch(math.min(p.g.y0, i.wy))
-        local plo = y2pitch(math.max(p.g.y0, i.wy))
+        local t0, t1, r0, r1 = note_marquee_bounds(p.g)
+        local plo, phi = M.pitch_span(low, nrows, r0, r1)
         local sel = p.g.add and p.nsels or {}
         for _, n in ipairs(pat.notes) do
           if n.tick < t1 and n.tick + n.dur > t0
@@ -2623,16 +2750,19 @@ function M.wheel(win, ed, dy)
   if not (p and p.doc) then return false end
   local i = cm.require("cm.ui").inp
   local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
+  local motion = motion_state(p, win)
   -- over the arrangement? zoom ITS time axis (its own view), pinning the tick
   local ar = p.arr
   if ar and i.wx >= ar.x and i.wx < ar.x + ar.w and i.wy >= ar.y
      and i.wy < ar.y + ar.h then
-    local old = win.ar_tpp or 0.14
+    local old = motion_get(motion, win, "ar_tpp", 0.14)
     local new = math.max(0.02, math.min(4, old * (dy > 0 and 1.2 or 1 / 1.2)))
     if new ~= old then
-      local at = (win.ar_t0 or 0) + (i.wx - ar.x) / (old * z)
-      win.ar_t0 = math.max(0, at - (i.wx - ar.x) / (new * z))
-      win.ar_tpp = new
+      local old0 = motion_get(motion, win, "ar_t0", 0)
+      local at = old0 + (i.wx - ar.x) / (old * z)
+      motion_set(motion, win, "ar_t0",
+        math.max(0, at - (i.wx - ar.x) / (new * z)))
+      motion_set(motion, win, "ar_tpp", new)
       ed.touch()
     end
     return true
@@ -2641,15 +2771,17 @@ function M.wheel(win, ed, dy)
   if not r then return false end
   local ax = i.wx
   if ax < r.rx or ax >= r.rx + r.rw then ax = r.rx + r.rw * 0.5 end
-  local old = win.tpp or 0.5
+  local old = motion_get(motion, win, "tpp", 0.5)
   local new = math.max(0.05, math.min(8, old * (dy > 0 and 1.2 or 1 / 1.2)))
   if new ~= old then
     -- pin the tick under the cursor (screen-space tpp carries the
     -- canvas zoom; win.tpp is the captured world value)
     local z = cm.require("cm.ed.cam").screen_zoom(ed.doc.cam)
-    local at = (win.tick0 or 0) + (ax - r.rx) / (old * z)
-    win.tick0 = math.max(0, at - (ax - r.rx) / (new * z))
-    win.tpp = new
+    local old0 = motion_get(motion, win, "tick0", 0)
+    local at = old0 + (ax - r.rx) / (old * z)
+    motion_set(motion, win, "tick0",
+      math.max(0, at - (ax - r.rx) / (new * z)))
+    motion_set(motion, win, "tpp", new)
     ed.touch()
   end
   return true

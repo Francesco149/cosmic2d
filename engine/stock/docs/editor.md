@@ -107,6 +107,12 @@ change keeps the view centered where it was, and game windows keep their
 on-screen size and crisp pixel scale — the surrounding windows and chrome are
 what grow or shrink.
 
+The same panel has a global **smooth pan / zoom** switch, on by default.
+Canvas navigation and the Music arrangement/piano views ease toward accumulated
+wheel and drag input, including pitch scrolling and piano-row scaling. Switch
+it off for immediate one-frame motion. This is a per-user machine preference,
+not project or rewind state.
+
 ## Rewind playback
 
 Open rewind from its top-right pill or with **F4**. Play starts at **1×** real
