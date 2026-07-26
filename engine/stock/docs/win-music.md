@@ -142,9 +142,11 @@ the arrangement whether the next section should link, repeat, or answer.
 
 For fast sketching, press empty arrangement space and keep dragging beyond the
 new clip's end: Music paints another adjacent linked copy for every pattern
-length you cross, all as one undo step. Hold the right button and drag to erase
-every crossed arrangement clip or piano-roll note; even a fast stroke tests
-the path between frames, and one undo restores the whole stroke.
+length you cross, all as one undo step. If you reverse left, the first copy
+waits until you have crossed one complete pattern length rather than appearing
+as soon as you leave the new clip. Hold the right button and drag to erase every
+crossed arrangement clip or piano-roll note; even a fast stroke tests the path
+between frames, and one undo restores the whole stroke.
 
 ## Play the saved loop in a game
 

@@ -590,22 +590,29 @@ local function set_cam(target)
     target.x, target.y, target.zoom
 end
 
-local function anim_to(target, ms)
-  -- The machine-wide Aa-panel preference is the one latency door for every
-  -- outer-canvas pan/zoom. Turning it off also finishes an in-flight glide
-  -- immediately, so the toggle never leaves a half-settled camera behind.
-  if cm.require("cm.view").cfg.smooth_views == false then
+local function anim_enabled(policy)
+  local cfg = cm.require("cm.view").cfg
+  if policy == "canvas_zoom" then return cfg.smooth_canvas_zoom == true end
+  return cfg.smooth_views ~= false
+end
+
+local function anim_to(target, ms, policy)
+  -- Canvas wheel zoom owns its own latency-first preference; fit/reveal and
+  -- hand pan retain the general editor-motion preference. Whichever switch
+  -- owns an animation also lands that animation exactly when turned off.
+  if not anim_enabled(policy) then
     set_cam(target)
     M.g.anim = nil
     return
   end
   M.g.anim = { from = { x = M.doc.cam.x, y = M.doc.cam.y,
                         zoom = M.doc.cam.zoom },
-               to = target, t0 = pal.time_ns(), ms = ms or cam.EASE_MS }
+               to = target, t0 = pal.time_ns(), ms = ms or cam.EASE_MS,
+               policy = policy }
 end
 
 local function chase_to(target, k)
-  if cm.require("cm.view").cfg.smooth_views == false then
+  if not anim_enabled() then
     set_cam(target)
     M.g.anim = nil
     return
@@ -624,7 +631,7 @@ end
 local function step_anim()
   local a = M.g.anim
   if not a then return end
-  if cm.require("cm.view").cfg.smooth_views == false then
+  if not anim_enabled(a.policy) then
     set_cam(a.to)
     M.g.anim = nil
     M.touch()
@@ -638,7 +645,12 @@ local function step_anim()
     return
   end
   local t = (pal.time_ns() - a.t0) / ((a.ms or cam.EASE_MS) * 1e6)
-  local c = cam.lerp(a.from, a.to, ease.quart_inout(t))
+  -- Optional wheel smoothing reacts at once and eases out; the older
+  -- quart-in-out curve spent its first frames barely moving, which read as
+  -- input latency. Fit/reveal retain the deliberate symmetric camera curve.
+  local curve = a.policy == "canvas_zoom" and ease.quart_out
+                or ease.quart_inout
+  local c = cam.lerp(a.from, a.to, curve(t))
   set_cam(c)
   if t >= 1.0 then
     set_cam(a.to)
@@ -1015,13 +1027,16 @@ local function interact(ig)
       end
     end
     if not routed then
-      -- Accumulate rapid wheel notches on the pending destination, then ease
-      -- the live camera toward it. This keeps cursor anchoring exact without
-      -- making a fast wheel feel as if it drops intermediate notches.
-      local base = g.anim and g.anim.to or doc.cam
+      -- Smooth mode accumulates rapid wheel notches on its own pending
+      -- destination. The default immediate mode starts from the camera that is
+      -- actually visible and cancels any unrelated fit/pan tail, removing the
+      -- ease-in latency after a physical wheel tick.
+      local smooth = cm.require("cm.view").cfg.smooth_canvas_zoom == true
+      local base = smooth and g.anim and g.anim.policy == "canvas_zoom"
+                   and g.anim.to or doc.cam
       local target = { x = base.x, y = base.y, zoom = base.zoom }
       cam.zoom_at(target, i.wx, i.wy, cam.wheel_factor(i.wheel))
-      anim_to(target, 120)
+      anim_to(target, 120, "canvas_zoom")
       M.touch()
     end
   end
@@ -1603,14 +1618,14 @@ local function draw_hud(ig, i)
   if aa_hov and i.clicked[1] then g.display = not g.display or nil end
 
   if g.display then
-    local pw, ph = 286, 174
+    local pw, ph = 286, 206
     local px = math.max(8, math.min(aa.x + aa.w - pw, ig.w - pw - 8))
     local py = 42
     local panel = { x = px, y = py, w = pw, h = ph }
     g.display_rect = panel
     pal.x_ig_rect_fill(px, py, pw, ph, 0x1e1b2ef8, 9)
     pal.x_ig_rect(px, py, pw, ph, C.win_edge, 1, 9)
-    pal.x_ig_text(px + 14, py + 11, 13, C.hud, "TEXT & UI SIZE", 0)
+    pal.x_ig_text(px + 14, py + 11, 13, C.hud, "TEXT, UI & MOTION", 0)
     if chip(px + pw - 70, py + 7, 56, 24, "auto", view.cfg.access_auto) then
       view.set_access_auto(true)
     end
@@ -1629,13 +1644,21 @@ local function draw_hud(ig, i)
     scale_row(py + 73, "fixed chrome", function() return view.cfg.chrome_scale end,
       function() view.step_chrome_scale(-1) end,
       function() view.step_chrome_scale(1) end)
-    pal.x_ig_text(px + 14, py + 111, 12, C.hud_dim, "smooth pan / zoom", 0)
+    pal.x_ig_text(px + 14, py + 111, 12, C.hud_dim,
+                  "smooth pan / editor zoom", 0)
     if chip(px + 216, py + 105, 56, 25,
             view.cfg.smooth_views == false and "off" or "on",
             view.cfg.smooth_views ~= false) then
       view.set_smooth_views(view.cfg.smooth_views == false)
     end
-    pal.x_ig_text(px + 14, py + 143, 10, C.hud_dim,
+    pal.x_ig_text(px + 14, py + 143, 12, C.hud_dim,
+                  "smooth canvas wheel zoom", 0)
+    if chip(px + 216, py + 137, 56, 25,
+            view.cfg.smooth_canvas_zoom and "on" or "off",
+            view.cfg.smooth_canvas_zoom) then
+      view.set_smooth_canvas_zoom(not view.cfg.smooth_canvas_zoom)
+    end
+    pal.x_ig_text(px + 14, py + 175, 10, C.hud_dim,
                   "auto follows display DPI / 4K resolution", 0)
     if i.clicked[1] and not inside(panel) and not inside(aa) then
       g.display, g.display_rect = nil, nil

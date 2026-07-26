@@ -150,12 +150,15 @@ teidraw's source; they are taste-approved by construction):
   resizes in place from its corner rather than being the one window that
   shifts relative to its neighbors. Reconciliation is skipped while parked:
   the past renders as recorded, and the present heals on unpark.
-  The same **Aa** panel carries one machine-wide **smooth pan / zoom** switch.
-  It defaults on and covers canvas navigation plus Music's arrangement and
-  piano-roll views. Turning it off cancels pending motion and makes every
-  affected wheel, pan, pitch-scroll, and row-scale input land exactly on its
-  new value in that frame. Like the two size settings, the switch lives only
-  in per-user `editor.dat`.
+  The same **Aa** panel carries two independent motion preferences. **Smooth
+  pan / editor zoom** defaults on and covers canvas hand-pan plus Music's
+  arrangement and piano-roll navigation; turning it off cancels pending
+  motion and makes each affected pan, window zoom, pitch-scroll, and row-scale
+  input land exactly. **Smooth canvas wheel zoom** covers only the infinite
+  canvas wheel, defaults off for zero perceived input latency, and uses a
+  short fast-out ease when enabled. Rapid notches accumulate on one target,
+  and switching it off lands that target immediately without disabling the
+  other smoothing. Both switches live only in per-user `editor.dat`.
 
 ## 4. Windows
 

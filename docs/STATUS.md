@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — Music crash + DAW interaction sweep (D169–D174)
+## Current handoff — Music crash + DAW interaction sweep (D169–D175)
 
 **This session (2026-07-25): GitHub issues #1–#4 were taken in severity
 order.** The selected-note Delete/Ctrl+X crash is fixed in `f0640e7`: both
@@ -33,12 +33,12 @@ name; the decoder still accepts v1 with 4/4 and generated names, and all 14
 stock songs were canonically migrated.
 
 **The polish follow-up makes view motion coherent instead of event-stepped.**
-Canvas wheel zoom and hand/MMB pan now use short bounded eases. Music's
-arrangement and piano views chase accumulated wheel/pan targets on both axes,
-including vertical arrangement scroll, pitch scroll, and piano-row scaling.
-One machine-wide **smooth pan / zoom** switch sits in the Aa panel beside the
-global font/UI scales, defaults on, persists in per-user `editor.dat`, and
-cancels/lands pending motion exactly when switched off.
+Canvas hand/MMB pan and Music's arrangement and piano views chase accumulated
+wheel/pan targets on both axes, including vertical arrangement scroll, pitch
+scroll, and piano-row scaling. Machine-wide **smooth pan / editor zoom** sits
+in the Aa panel beside the global font/UI scales, defaults on, persists in
+per-user `editor.dat`, and cancels/lands pending motion exactly when switched
+off.
 
 **The 2026-07-26 held-pan correction closes the remaining feel bug.** The
 outer canvas had reused a quartic one-shot ease for MMB/space drag and rebuilt
@@ -99,31 +99,46 @@ delete, undo/decode, rebind, and mix edits. Pure decision KATs pin initial
 upload, stable reuse, reindex, mix change, stolen ownership, and empty-track
 behavior.
 
-**Proof:** Linux selftest **25,426**; `nix run .#test` **ALL GREEN** across
+**The last input-feel correction makes reverse paint and canvas zoom
+deliberate.** Pattern paint now requires one complete pattern-length of left
+travel before its first reverse copy, matching the right-side boundary instead
+of firing as soon as the pointer leaves the placed clip. The general motion
+switch no longer forces latency onto the infinite-canvas wheel: a separate
+**smooth canvas wheel zoom** switch defaults off, while pan and Music-view
+smoothing remain on. Immediate mode applies each notch to the live camera in
+that frame. Opt-in smoothing accumulates notches on one destination and uses a
+responsive 120 ms fast-out curve; switching it off lands only that pending
+zoom. Both preferences remain user-wide and never enter project or rewind
+state.
+
+**Proof:** Linux selftest **25,432**; `nix run .#test` **ALL GREEN** across
 release manifests, every committed trace, and all 19 pixel goldens. The fresh
-Music tape passes **55/55 VERDICTs** through both transport scopes, arrangement
+Music tape passes **60/60 VERDICTs** through both transport scopes, arrangement
 move/duplicate/select, piano edits, pattern naming, channel-rack add/erase/
 drill, typed 137 BPM + 7/8 and undo, canonical save, runtime counts
 (`24 / 32 / 16 / 24`), eased and immediate wheel motion, the real Aa toggle,
 held canvas/piano pans, pointer-time/row-snapped marquees with live selection,
-continuous four-clip pattern paint, arrangement/piano sweep erasing with
-one-stroke undo, both deletion glows, the adaptive 32-step span, shared
-one-beat extension/content-fit clips, persistent row reorder, and one-step
-undo for both new rack edits. Existing
+the full-length reverse-paint threshold, continuous four-clip pattern paint,
+arrangement/piano sweep erasing with one-stroke undo, both deletion glows, the
+adaptive 32-step span, shared one-beat extension/content-fit clips, persistent
+row reorder, and one-step undo for both new rack edits. It also drives the
+default-immediate and opt-in-smoothed outer canvas wheel through the real
+independent control. Existing
 piano/arrangement/channel-rack frames plus the live marquee, Aa control,
 four-copy paint stroke, and optimized eraser feedback were inspected; the
-polish frames and refreshed @2x rack are on llm-feed. The canvas event tape
+polish frames, refreshed @2x rack, and expanded Aa motion panel are on llm-feed.
+The canvas event tape
 observes **74.2%**
 progress before release; its six-pixel piano drag settles at fractional row
 `59.428571…`. **Windows stage REFRESHED** (11 durable entries + shortcut);
-staged NATIVE selftest **25,428** = Linux + 2 on PAL API 24.
+staged NATIVE selftest **25,434** = Linux + 2 on PAL API 24.
 
 **Exact next step:** human feel/ears pass in the freshly staged Music window,
-with special attention to song-vs-clip playback, the smoothing curve,
-paint/erase stroke feel, rack density/reorder grip, and the preset mismatch.
-If that feels sound, resume the documentation sequence from the post-H8 queue;
-the issue work updated Music's tutorial/reference and AUDIO contract, but did
-not otherwise advance the remaining documentation sessions.
+with special attention to song-vs-clip playback, the new left-paint threshold,
+immediate canvas wheel ticks, rack density/reorder grip, and the preset
+mismatch. If that feels sound, resume the documentation sequence from the
+post-H8 queue; the issue work updated Music's tutorial/reference and AUDIO
+contract, but did not otherwise advance the remaining documentation sessions.
 
 ## Previous handoff — HELPDOCS session 8: the Music window (H8; D168)
 

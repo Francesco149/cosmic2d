@@ -788,6 +788,7 @@ local function t_reduce_fx()
   local saved_cfg = { reduce_shake = view.cfg.reduce_shake,
                       reduce_flash = view.cfg.reduce_flash,
                       smooth_views = view.cfg.smooth_views,
+                      smooth_canvas_zoom = view.cfg.smooth_canvas_zoom,
                       editor_scale = view.cfg.editor_scale,
                       chrome_scale = view.cfg.chrome_scale,
                       access_auto = view.cfg.access_auto,
@@ -799,6 +800,7 @@ local function t_reduce_fx()
   view._access_path = root .. "/editor.dat"
   view.cfg.reduce_shake, view.cfg.reduce_flash = false, false
   view.cfg.smooth_views = true
+  view.cfg.smooth_canvas_zoom = false
 
   -- defaults: both scales are unity, on view and the options delegates
   check(view.shake_scale() == 1.0 and view.flash_scale() == 1.0,
@@ -886,18 +888,39 @@ local function t_reduce_fx()
   check(t.smooth_views == nil,
         "view smoothing: default on leaves no sticky override")
 
-  -- a crafted store: only literal true engages (malformed values stay off)
+  -- Outer-canvas wheel smoothing is intentionally independent and defaults
+  -- off: opting in persists true, while restoring the latency-first default
+  -- removes the override.
+  check(view.cfg.smooth_canvas_zoom == false,
+        "canvas zoom smoothing: defaults off")
+  view.set_smooth_canvas_zoom(true)
+  t = state_m.parse(pal.read_file(root .. "/editor.dat"))
+  check(t.smooth_canvas_zoom == true,
+        "canvas zoom smoothing: explicit on enters the user-wide store")
+  view.cfg.smooth_canvas_zoom = false
+  view.load_accessibility()
+  check(view.cfg.smooth_canvas_zoom == true,
+        "canvas zoom smoothing: stored on adopts on load")
+  view.set_smooth_canvas_zoom(false)
+  t = state_m.parse(pal.read_file(root .. "/editor.dat"))
+  check(t.smooth_canvas_zoom == nil,
+        "canvas zoom smoothing: default off leaves no sticky override")
+
+  -- a crafted store: malformed values retain each preference's safe default
   pal.write_file(root .. "/editor.dat", state_m.canon({
     reduce_shake = "yes", reduce_flash = 1, smooth_views = "no",
+    smooth_canvas_zoom = "yes",
   }))
   view.load_accessibility()
   check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false
-        and view.cfg.smooth_views == true,
+        and view.cfg.smooth_views == true
+        and view.cfg.smooth_canvas_zoom == false,
         "reduce/view: malformed store flags keep safe defaults")
   pal.x_remove(root .. "/editor.dat")
   view.load_accessibility()
   check(view.cfg.reduce_shake == false and view.cfg.reduce_flash == false
-        and view.cfg.smooth_views == true,
+        and view.cfg.smooth_views == true
+        and view.cfg.smooth_canvas_zoom == false,
         "reduce/view: a store-less load resets all flags")
 
   -- leave everything as found
@@ -905,6 +928,7 @@ local function t_reduce_fx()
   view.cfg.reduce_shake = saved_cfg.reduce_shake
   view.cfg.reduce_flash = saved_cfg.reduce_flash
   view.cfg.smooth_views = saved_cfg.smooth_views
+  view.cfg.smooth_canvas_zoom = saved_cfg.smooth_canvas_zoom
   view.cfg.editor_scale = saved_cfg.editor_scale
   view.cfg.chrome_scale = saved_cfg.chrome_scale
   view.cfg.access_auto = saved_cfg.access_auto
@@ -8791,7 +8815,16 @@ local function t_song()
         and paint[3] == 1536 and paintlo == 384 and painthi == 1536,
         "music paint clips: a fast forward drag fills every adjacent slot")
   paint, paintlo, painthi =
+    mus.paint_clip_targets(384, 384, 1, 384)
+  check(#paint == 0 and paintlo == 384 and painthi == 384,
+        "music paint clips: reverse travel below one length stamps nothing")
+  paint, paintlo, painthi =
     mus.paint_clip_targets(paintlo, painthi, 0, 384)
+  check(#paint == 1 and paint[1] == 0
+        and paintlo == 0 and painthi == 384,
+        "music paint clips: reverse copy begins at one full length")
+  paint, paintlo, painthi =
+    mus.paint_clip_targets(384, 1536, 0, 384)
   check(#paint == 1 and paint[1] == 0
         and paintlo == 0 and painthi == 1536,
         "music paint clips: reverse drag grows contiguously without negatives")

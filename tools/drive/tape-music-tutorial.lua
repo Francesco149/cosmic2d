@@ -31,7 +31,7 @@
 --
 -- Shot frames:
 --   f970 music-roll · f1460 music-arrangement · f1670 music-mix ·
---   f1800 music-steps · f1988 music-snap
+--   f1800 music-steps · f1988 music-snap · f2044 canvas-motion
 
 local D = dofile("tools/drive/drive.lua")
 local SC = D.SC
@@ -44,6 +44,7 @@ local view = cm.require("cm.view")
 view._access_path = cm.ed.root .. "/.ed/tape-editor.dat"
 pal.x_remove(view._access_path)
 view.cfg.smooth_views = true
+view.cfg.smooth_canvas_zoom = false
 
 local SONG = "sound/moonlit-relay.song"
 local INS = {
@@ -1042,6 +1043,37 @@ probe(2034, function()
           and ok and t.smooth_views == nil)
 end)
 
+-- Outer-canvas wheel zoom is a distinct latency preference. Its default-off
+-- mode must land the physical notch immediately even while editor-view
+-- smoothing remains on. Then use the real second Aa switch to opt in.
+local canvas_zoom0
+D.at(2038, function()
+  canvas_zoom0 = cm.ed.doc.cam.zoom
+  return { D.mouse(1240, 760), D.wheelev(1) }
+end)
+probe(2040, function()
+  verdict("canvas-wheel-default-immediate", canvas_zoom0
+          and view.cfg.smooth_views == true
+          and view.cfg.smooth_canvas_zoom == false
+          and math.abs(cm.ed.doc.cam.zoom - canvas_zoom0 * 1.16) < 1e-9
+          and cm.ed.g.anim == nil,
+          ("from=%s now=%s"):format(
+            tostring(canvas_zoom0), tostring(cm.ed.doc.cam.zoom)))
+end)
+D.at(2040, function()
+  local a = cm.ed.g.display_rect
+  if a then D.click(D.f + 1, a.x + 244, a.y + 149) end
+end)
+probe(2044, function()
+  local a = cm.ed.g.display_rect
+  local stored = pal.read_file(view._access_path)
+  local ok, t = pcall(cm.require("cm.state").parse, stored or "")
+  if a then crop("canvas-motion", a.x, a.y, a.w, a.h) end
+  verdict("canvas-zoom-toggle-on", view.cfg.smooth_canvas_zoom == true
+          and view.cfg.smooth_views == true
+          and ok and t.smooth_canvas_zoom == true)
+end)
+
 -- Regression for the human's held-pan report: continuously retarget the real
 -- outer-canvas MMB gesture for twelve consecutive motion frames. It must make
 -- substantial visible progress BEFORE release, then settle exactly afterward.
@@ -1076,6 +1108,40 @@ probe(2102, function()
           and cm.ed.g.pan == nil and cm.ed.g.anim == nil,
           ("now=%s target=%s"):format(
             tostring(cm.ed.doc.cam.x), tostring(canvas_pan_target)))
+end)
+
+-- With the canvas-only switch on, the same outer wheel action has a bounded
+-- tail. Turning that switch back off lands only this pending zoom and removes
+-- its default-valued store entry; pan/editor smoothing stays enabled.
+local canvas_smooth0, canvas_smooth_target
+D.at(2103, function()
+  canvas_smooth0 = cm.ed.doc.cam.zoom
+  return { D.mouse(1240, 760), D.wheelev(1) }
+end)
+probe(2105, function()
+  local a = cm.ed.g.anim
+  canvas_smooth_target = a and a.to and a.to.zoom
+  verdict("canvas-wheel-smooth-chases", canvas_smooth0
+          and a and a.policy == "canvas_zoom"
+          and cm.ed.doc.cam.zoom > canvas_smooth0
+          and cm.ed.doc.cam.zoom < canvas_smooth_target,
+          ("from=%s now=%s target=%s"):format(
+            tostring(canvas_smooth0), tostring(cm.ed.doc.cam.zoom),
+            tostring(canvas_smooth_target)))
+end)
+D.at(2106, function()
+  local a = cm.ed.g.display_rect
+  if a then D.click(D.f + 1, a.x + 244, a.y + 149) end
+end)
+probe(2110, function()
+  local stored = pal.read_file(view._access_path)
+  local ok, t = pcall(cm.require("cm.state").parse, stored or "")
+  verdict("canvas-zoom-toggle-off-lands", canvas_smooth_target
+          and view.cfg.smooth_canvas_zoom == false
+          and view.cfg.smooth_views == true
+          and math.abs(cm.ed.doc.cam.zoom - canvas_smooth_target) < 1e-9
+          and cm.ed.g.anim == nil
+          and ok and t.smooth_canvas_zoom == nil)
 end)
 
 -- The roll's vertical origin is fractional. A sub-row real MMB drag must move
@@ -1226,7 +1292,8 @@ probe(2186, function()
 end)
 
 -- Empty-space left drag is the arrangement paint tool: the first copy lands
--- on press, then a single fast motion across three ends must fill every
+-- on press. A reverse move shorter than one complete pattern must remain only
+-- that clip; then a single fast motion across three right ends must fill every
 -- adjacent pattern-length slot while the button remains down. Release is one
 -- journal entry, proven by one undo and one redo.
 local paint_before, paint_anchor, paint_len, paint_pattern, paint_track
@@ -1271,10 +1338,21 @@ D.at(2198, function()
   return { D.btn(x, y, true) }
 end)
 D.at(2199, function()
-  local x, y = arr_xy(paint_anchor + 3 * paint_len + 2, paint_track)
+  local x, y = arr_xy(paint_anchor - paint_len * 0.75 + 2, paint_track)
   return { D.mouse(x, y) }
 end)
 probe(2200, function()
+  local g = plumb().g
+  verdict("arrangement-pattern-paint-left-threshold",
+          g and g.t == "clipdraw" and g.lo == paint_anchor
+          and g.hi == paint_anchor and #doc().clips == paint_before + 1,
+          ("clips=%d lo=%s"):format(#doc().clips, tostring(g and g.lo)))
+end)
+D.at(2201, function()
+  local x, y = arr_xy(paint_anchor + 3 * paint_len + 2, paint_track)
+  return { D.mouse(x, y) }
+end)
+probe(2202, function()
   local r, p, g, clips = D.win("music"), plumb(), plumb().g, painted_clips()
   crop("music-paint", r.x, r.y, r.w, math.min(r.h, 190 * r.z))
   local selected = 0
@@ -1289,7 +1367,7 @@ probe(2200, function()
           and clips[4].tick == paint_anchor + 3 * paint_len,
           ("clips=%d selected=%d"):format(#clips, selected))
 end)
-D.at(2201, function()
+D.at(2203, function()
   local x, y = arr_xy(paint_anchor + 3 * paint_len + 2, paint_track)
   return { D.btn(x, y, false) }
 end)

@@ -21,7 +21,8 @@ M.cfg = {
   editor_scale = 1, -- native editor canvas windows/content (machine-local)
   chrome_scale = 1, -- fixed native chrome: HUD, launcher, rewind tray
   access_auto = true,
-  smooth_views = true, -- editor pan/zoom/scroll motion (user-wide)
+  smooth_views = true, -- pans + window-view zoom/scroll motion (user-wide)
+  smooth_canvas_zoom = false, -- outer-canvas wheel zoom (latency-first default)
   reduce_shake = false, -- accessibility: zero the render-only screen shake
   reduce_flash = false, -- accessibility: attenuate flash overlays
 }
@@ -117,6 +118,15 @@ function M.set_smooth_views(on)
   M.cfg.smooth_views = on ~= false
   M.save_accessibility()
   return M.cfg.smooth_views
+end
+
+-- Canvas wheel zoom has a separate latency preference. It is deliberately
+-- independent of smooth_views: musicians can retain fluid hand/window motion
+-- while making every outer-canvas wheel notch land in the input frame.
+function M.set_smooth_canvas_zoom(on)
+  M.cfg.smooth_canvas_zoom = on == true
+  M.save_accessibility()
+  return M.cfg.smooth_canvas_zoom
 end
 
 M.enabled = false -- true only for live windowed sessions
@@ -250,6 +260,7 @@ function M.save_accessibility()
               reduce_shake = M.cfg.reduce_shake or nil,
               reduce_flash = M.cfg.reduce_flash or nil }
   if M.cfg.smooth_views == false then t.smooth_views = false end
+  if M.cfg.smooth_canvas_zoom == true then t.smooth_canvas_zoom = true end
   local ok, err = pal.write_file_atomic(path, cm.require("cm.state").canon(t),
                                         M._access_save_fail)
   if not ok then
@@ -263,6 +274,7 @@ function M.load_accessibility()
   M.cfg.access_auto = true -- missing/old generations opt into safe auto
   M.cfg.editor_scale, M.cfg.chrome_scale = 1, 1
   M.cfg.smooth_views = true -- old stores adopt the new polished default
+  M.cfg.smooth_canvas_zoom = false -- wheel input stays latency-first
   M.cfg.reduce_shake, M.cfg.reduce_flash = false, false
   local path, path_err = accessibility_path()
   if not path then
@@ -285,6 +297,7 @@ function M.load_accessibility()
     M.access_resolved = true
   end
   M.cfg.smooth_views = t.smooth_views ~= false
+  M.cfg.smooth_canvas_zoom = t.smooth_canvas_zoom == true
   M.cfg.reduce_shake = t.reduce_shake == true
   M.cfg.reduce_flash = t.reduce_flash == true
   local mb = M.budget_mb_ok(t.history_budget_mb)

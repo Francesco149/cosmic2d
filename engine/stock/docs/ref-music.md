@@ -28,6 +28,8 @@ A track chooses the instrument, mute, volume, and pan. **+ pat** creates an
 unplaced, named pattern. Pressing empty arrangement space places the active
 pattern; keep the button held and drag past its right edge to paint another
 linked copy immediately beside it, repeating for every crossed pattern length.
+Dragging back left does not stamp on the first pixel of reverse motion: cross
+one complete pattern-length slot before the first left-side copy appears.
 Every edit appears in all linked copies. Select **+ pat** before placing when
 the next section should be independent.
 
@@ -220,7 +222,8 @@ is one undo entry.
 - **left-press empty lane space** — beat-snaps the destination and places the
   active named pattern at its own length. While held, crossing its right edge
   adds the next adjacent linked copy; crossing several ends in one frame fills
-  every skipped destination. Dragging left grows the run toward tick 0.
+  every skipped destination. Dragging left grows the run toward tick 0 only
+  after crossing the far edge of each full adjacent pattern-length slot.
 - **Alt+left-click empty space** — bypasses horizontal snap for precise
   placement.
 - **+ pat**, then **left-click empty space** — creates an independent pattern
@@ -267,7 +270,7 @@ The arrangement has a view separate from the roll:
 Lane height remains fixed and a thin right scrollbar marks vertical position.
 Arrangement zoom, origin, vertical scroll, and height are captured window
 state, not song bytes. Zoom, pan, and vertical scroll glide toward accumulated
-input while the global **smooth pan / zoom** preference is on.
+input while the global **smooth pan / editor zoom** preference is on.
 
 ## The step sequencer
 
@@ -368,7 +371,7 @@ roll space focuses and immediately adds; clicking a note focuses and selects
 it. Roll time origin, low pitch, row height, and zoom survive restart and
 rewind as captured window fields. Wheel zoom, two-axis pan, keyboard pitch
 scroll, and piano-key row scaling all use the same short eased chase as the
-arrangement. Open the canvas **Aa** panel; its global **smooth pan / zoom**
+arrangement. Open the canvas **Aa** panel; its global **smooth pan / editor zoom**
 preference can be turned off for exact immediate motion. Disabling it also
 cancels any pending chase.
 

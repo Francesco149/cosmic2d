@@ -416,9 +416,11 @@ Preview runs on the render-only editor bank; games play the same bytes through
   pattern with a saved editable name. Pressing empty space places the active
   pattern; dragging across successive pattern ends paints an adjacent linked
   run, filling skipped destinations after fast input and committing the whole
-  stroke once. A held right-button stroke continuously erases every clip its
-  between-frame path crosses, also as one undo entry. Plain drag moves the
-  selection, Shift-drag makes linked copies, Ctrl marquee selects,
+  stroke once. Reverse painting waits for a complete pattern-length of travel
+  before creating the first left-side copy instead of firing immediately past
+  the placed clip's left edge. A held right-button stroke continuously erases
+  every clip its between-frame path crosses, also as one undo entry. Plain
+  drag moves the selection, Shift-drag makes linked copies, Ctrl marquee selects,
   Ctrl+Shift extends, and Alt temporarily bypasses one-beat horizontal snap.
   Marquee time edges follow the pointer exactly while vertical edges expand to
   whole track rows; intersecting clips highlight live before release. Vertical
@@ -445,12 +447,14 @@ Preview runs on the render-only editor bank; games play the same bytes through
   highlights updating during the drag. Wheel/MMB keep the existing focused
   time zoom/pan contract; vertical MMB pan remains fractional and pixel-smooth
   across pitch boundaries. Arrangement/roll zoom and pan, pitch scroll, and
-  row scaling glide by default under the global **smooth pan / zoom** switch
-  in the canvas Aa panel; off means immediate motion. Deleted notes and clips
-  leave a brief collapsing inner rim attenuated by **reduce flashes**. Effect
-  stepping is allocation-free, offscreen items are culled, and at most 64
-  visible rims submit per panel and frame. The velocity lane retains relative
-  group editing.
+  row scaling glide by default under **smooth pan / editor zoom** in the canvas
+  Aa panel; off means immediate motion. The independent **smooth canvas wheel
+  zoom** switch defaults off, making outer-canvas wheel ticks immediate, and
+  opts into a short fast-out ease without changing editor-view smoothing.
+  Deleted notes and clips leave a brief collapsing inner rim attenuated by
+  **reduce flashes**. Effect stepping is allocation-free, offscreen items are
+  culled, and at most 64 visible rims submit per panel and frame. The velocity
+  lane retains relative group editing.
 - **Step sequencer.** The `steps / piano` chip opens a shared channel-rack
   ruler across tracks. It starts at eight beats, expands to the longest row,
   and pages after 128 visible steps. Left adds and right erases; **+ beat**
@@ -477,16 +481,18 @@ an independent answer pattern. It exercises held-key audition, drag-to-length,
 group selection, clipboard ghost placement, octave movement, velocity editing,
 clip stretching, linked reuse, scoped playback, stereo gain/pan, atomic save,
 canonical decode, and runtime flattening. The matching executable tape passes
-55/55 live verdicts, including saved pattern naming, adaptive eight-beat
+60/60 live verdicts, including saved pattern naming, adaptive eight-beat
 steps, shared +beat extension, track reorder with clip attachment, step
-add/erase/drill,
-typed 137 BPM / 7/8 timing with undo, eased and immediate view motion, a live
-vertical-only-snapped arrangement marquee, fractional piano MMB pan, live note
-marquee highlighting, continuous arrangement pattern paint, fast arrangement
-and piano eraser sweeps with one-step undo, both deletion afterimages, and
-canvas MMB pan making substantial progress before release then settling
-exactly. It owns seven @2x capture points: roll, arrangement, mix, steps, live
-selection, pattern paint, and eraser feedback.
+add/erase/drill, typed 137 BPM / 7/8 timing with undo, eased and immediate
+view motion, a live vertical-only-snapped arrangement marquee, fractional
+piano MMB pan, live note marquee highlighting, continuous arrangement pattern
+paint, fast arrangement and piano eraser sweeps with one-step undo, both
+deletion afterimages, and canvas MMB pan making substantial progress before
+release then settling exactly. It additionally pins the full-length
+reverse-paint threshold and the immediate/default plus independently smoothed
+canvas-wheel modes through the real Aa controls. It owns seven @2x Music
+capture points—roll, arrangement, mix, steps, live selection, pattern paint,
+and eraser feedback—plus the canvas-motion control frame.
 
 The updated interaction boundary is explicit in both the tutorial and
 `ref-music.md`: `+ pat` creates, ordinary placement reuses the active pattern,

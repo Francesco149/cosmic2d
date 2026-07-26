@@ -688,7 +688,9 @@ function M.clip_move_delta(base, raw_tick, raw_track, beat, precise, ntracks)
 end
 
 -- The arrangement's paint gesture grows an already-processed contiguous
--- interval one pattern-length at a time. Crossing several edges in one input
+-- interval one pattern-length at a time. Both directions require crossing the
+-- far edge of the next slot: merely moving back across the placed clip's left
+-- edge must not stamp a copy immediately. Crossing several edges in one input
 -- frame returns every skipped target, so a fast mouse cannot leave holes.
 function M.paint_clip_targets(lo, hi, pointer, len)
   lo, hi = tonumber(lo) or 0, tonumber(hi) or 0
@@ -698,7 +700,7 @@ function M.paint_clip_targets(lo, hi, pointer, len)
     hi = hi + len
     out[#out + 1] = hi
   end
-  while pointer < lo do
+  while pointer <= lo - len do
     local next_lo = lo - len
     if next_lo < 0 then break end
     lo = next_lo

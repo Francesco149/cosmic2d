@@ -9537,3 +9537,49 @@ automatic clip stays content-fit, restores the edit with one undo, drags track
 then restores that reorder with one undo. The refreshed @2x rack frame was
 inspected and published to llm-feed. The Windows stage is refreshed and its
 native selftest passes **25,428** checks on PAL API 24.
+
+## D175 — reverse paint crosses a full slot; canvas wheel zoom is latency-first (2026-07-26)
+
+**Context.** D173 made arrangement paint continuous in both directions, but
+its boundaries were not symmetric. Forward paint waited until the pointer
+crossed `hi + pattern_len`; reverse paint used only `pointer < lo`, so moving
+one pixel left of the placed block stamped a whole copy. D170 also put every
+canvas and window motion under one default-on smoothing switch. Its 120 ms
+quart-in-out canvas wheel curve barely moved during its ease-in, making a
+physical notch feel delayed even though held pan and Music navigation felt
+better smoothed.
+
+**Paint decision (refines D173).** The processed interval still stores the
+start ticks of its leftmost and rightmost clips. It now grows right at
+`pointer >= hi + len` and left at `pointer <= lo - len`: either direction
+requires crossing the far edge of one complete adjacent pattern-length slot.
+A reverse movement shorter than that length changes nothing. Multi-slot input
+jumps still emit every skipped destination; tick-zero clamping, occupied-span
+skipping, fixed lane/pattern identity, live selection, and one-stroke journal
+semantics are unchanged.
+
+**Motion decision (refines D170).** **Smooth pan / editor zoom** retains the
+default-on behavior for canvas hand-pan, fit/reveal, and Music window
+navigation. Infinite-canvas wheel zoom has an independent
+`smooth_canvas_zoom` machine preference beside it, default **off**. Immediate
+mode zooms the camera currently on screen and cancels an unrelated camera tail
+instead of inheriting its destination. Opt-in mode alone accumulates rapid
+notches on the pending canvas-zoom destination. Its 120 ms curve is quart-out,
+giving input a fast visible response and a soft landing rather than an
+ease-in pause. Each animation records which preference owns it, so switching
+canvas smoothing off lands only the pending canvas zoom while the general
+motion preference remains on. The new field persists in user-wide
+`editor.dat` only when true; it never enters authored/captured state.
+
+**Proof.** New KATs pin sub-length reverse no-op, the exact full-length left
+boundary, default-off persistence, explicit opt-in/load, default store
+cleanliness, and malformed-value fallback. Linux selftest passes **25,432**
+checks and `nix run .#test` is **ALL GREEN** across release manifests, every
+committed trace, and all 19 pixel goldens. The real H8 tape passes **60/60**
+verdicts: at 75% reverse travel the held paint stroke still has only its
+initial clip; default canvas wheel zoom lands exactly at `1.16×` with no
+animation; the real second Aa switch persists opt-in smoothing; its fast-out
+animation visibly advances before settling; and switching it off lands the
+target without disabling general smoothing. The expanded Aa panel was
+inspected at source resolution and published to llm-feed. The refreshed
+Windows stage passes **25,434** native checks on PAL API 24.
