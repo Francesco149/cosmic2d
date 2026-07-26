@@ -3,7 +3,7 @@
 > Updated at session and milestone boundaries. Detailed July 2026 session
 > history is archived verbatim in `history/STATUS-2026-07.md`.
 
-## Current handoff — Music crash + DAW interaction sweep (D169–D172)
+## Current handoff — Music crash + DAW interaction sweep (D169–D173)
 
 **This session (2026-07-25): GitHub issues #1–#4 were taken in severity
 order.** The selected-note Delete/Ctrl+X crash is fixed in `f0640e7`: both
@@ -61,6 +61,21 @@ now removes source bytes immediately and leaves a 260 ms, inward-collapsing
 accent glow in the old rectangle; it is ephemeral, reference-free, and obeys
 the global reduce-flashes policy.
 
+**The final paint/erase and frame-time pass removes the last mechanical edit
+doors.** Pressing empty arrangement space still places the active pattern, but
+holding left and crossing its end now paints adjacent linked copies
+indefinitely; a large pointer jump fills every skipped pattern-length target,
+an occupied span is skipped, the starting lane stays fixed, and the whole
+stroke is one undo entry. Arrangement and piano right-drag are continuous
+erasers: every between-frame pointer segment is tested against clip/note
+rectangles, so fast or diagonal movement cannot tunnel through short items,
+and one undo restores the complete stroke. The deletion cue now compacts its
+state in place, culls offscreen geometry, draws newest first under a strict
+64-visible-item budget per panel, and submits one contracting inset rim instead
+of a body plus three layered outlines. In a 256-visible-note stress probe, its
+first-frame incremental draw cost fell from **1.987 ms** to **0.291 ms**
+(**85.4% lower**).
+
 **The reported intermittent wrong-preset sound had a concrete ownership bug
 even without a deterministic UI repro.** Preview slots were cached only by
 track index behind one global `pins_sent` bit. Deleting/reindexing tracks,
@@ -73,25 +88,28 @@ delete, undo/decode, rebind, and mix edits. Pure decision KATs pin initial
 upload, stable reuse, reindex, mix change, stolen ownership, and empty-track
 behavior.
 
-**Proof:** Linux selftest **25,409**; `nix run .#test` **ALL GREEN** across
+**Proof:** Linux selftest **25,418**; `nix run .#test` **ALL GREEN** across
 release manifests, every committed trace, and all 19 pixel goldens. The fresh
-Music tape passes **43/43 VERDICTs** through both transport scopes, arrangement
+Music tape passes **50/50 VERDICTs** through both transport scopes, arrangement
 move/duplicate/select, piano edits, pattern naming, channel-rack add/erase/
 drill, typed 137 BPM + 7/8 and undo, canonical save, runtime counts
 (`24 / 32 / 16 / 24`), eased and immediate wheel motion, the real Aa toggle,
 held canvas/piano pans, pointer-time/row-snapped marquees with live selection,
-and both deletion glows. Existing piano/arrangement/channel-rack frames plus
-the live marquee, Aa control, and deletion feedback were inspected; the
+continuous four-clip pattern paint, arrangement/piano sweep erasing with
+one-stroke undo, and both deletion glows. Existing
+piano/arrangement/channel-rack frames plus the live marquee, Aa control,
+four-copy paint stroke, and optimized eraser feedback were inspected; the
 polish frames are on llm-feed. The canvas event tape observes **74.2%**
 progress before release; its six-pixel piano drag settles at fractional row
 `59.428571…`. **Windows stage REFRESHED** (11 durable entries + shortcut);
-staged NATIVE selftest **25,411** = Linux + 2 on PAL API 24.
+staged NATIVE selftest **25,420** = Linux + 2 on PAL API 24.
 
 **Exact next step:** human feel/ears pass in the freshly staged Music window,
-with special attention to song-vs-clip playback, the smoothing curve, and the
-preset mismatch. If that feels sound, resume the documentation sequence from
-the post-H8 queue; the issue work updated Music's tutorial/reference and AUDIO
-contract, but did not otherwise advance the remaining documentation sessions.
+with special attention to song-vs-clip playback, the smoothing curve,
+paint/erase stroke feel, and the preset mismatch. If that feels sound, resume
+the documentation sequence from the post-H8 queue; the issue work updated
+Music's tutorial/reference and AUDIO contract, but did not otherwise advance
+the remaining documentation sessions.
 
 ## Previous handoff — HELPDOCS session 8: the Music window (H8; D168)
 

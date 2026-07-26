@@ -412,14 +412,17 @@ Preview runs on the render-only editor bank; games play the same bytes through
   a blank track, or losing a slot claim can therefore never make a lane play a
   stale preset that differs from its displayed assignment.
 - **Named patterns and arrangement.** `+ pat` creates an unplaced one-bar
-  pattern with a saved editable name. Plain empty-space click places the active
-  pattern; right-click erases. Plain drag moves the selection, Shift-drag
-  makes linked copies, Ctrl marquee selects, Ctrl+Shift extends, and Alt
-  temporarily bypasses one-beat horizontal snap. Marquee time edges follow the
-  pointer exactly while vertical edges expand to whole track rows; intersecting
-  clips highlight live before release. Vertical movement remains whole tracks.
-  Right-edge resize is beat-snapped. Clips loop/truncate their pattern to fill
-  and linked references survive save/load.
+  pattern with a saved editable name. Pressing empty space places the active
+  pattern; dragging across successive pattern ends paints an adjacent linked
+  run, filling skipped destinations after fast input and committing the whole
+  stroke once. A held right-button stroke continuously erases every clip its
+  between-frame path crosses, also as one undo entry. Plain drag moves the
+  selection, Shift-drag makes linked copies, Ctrl marquee selects,
+  Ctrl+Shift extends, and Alt temporarily bypasses one-beat horizontal snap.
+  Marquee time edges follow the pointer exactly while vertical edges expand to
+  whole track rows; intersecting clips highlight live before release. Vertical
+  movement remains whole tracks. Right-edge resize is beat-snapped. Clips
+  loop/truncate their pattern to fill and linked references survive save/load.
 - **Two explicit transports.** A ruler attached to the arrangement owns the
   independent song cursor and whole-song loop. The roll's ruler and **clip**
   button own the last-clicked clip instance: they loop its exact song span
@@ -427,12 +430,13 @@ Preview runs on the render-only editor bank; games play the same bytes through
   and falls back to song scope when no clip is selected.
 - **Piano roll.** The default placement grid is 1/4 with all divisions through
   1/32. Ctrl marquee/replace and Ctrl+Shift add/toggle selection; Shift-drag
-  duplicates without pitch drift. Right-click deletes. The enlarged
-  right-edge hitbox resizes the whole selected set, while a separate selection
-  handle stretches timing and durations. Ctrl+A/D, semitone, 1/32, beat,
-  octave, duplicate, and double-spacing commands cover exact keyboard edits;
-  double-spacing overwrites same-pitch colliders. Paste follows pointer time
-  but preserves copied pitches. Up/Down smoothly scroll pitch.
+  duplicates without pitch drift. Right-click deletes and a held right-drag
+  erases every note crossed by its complete pointer path as one undo step. The
+  enlarged right-edge hitbox resizes the whole selected set, while a separate
+  selection handle stretches timing and durations. Ctrl+A/D, semitone, 1/32,
+  beat, octave, duplicate, and double-spacing commands cover exact keyboard
+  edits; double-spacing overwrites same-pitch colliders. Paste follows pointer
+  time but preserves copied pitches. Up/Down smoothly scroll pitch.
 - **Readable pitch view.** Rows default to twice the old height and middle-drag
   on the piano keys changes row height. Notes name their pitch when space
   permits; holding a key or note lights the entire row. Piano marquee edges
@@ -442,8 +446,10 @@ Preview runs on the render-only editor bank; games play the same bytes through
   across pitch boundaries. Arrangement/roll zoom and pan, pitch scroll, and
   row scaling glide by default under the global **smooth pan / zoom** switch
   in the canvas Aa panel; off means immediate motion. Deleted notes and clips
-  leave a brief collapsing inner glow attenuated by **reduce flashes**. The
-  velocity lane retains relative group editing.
+  leave a brief collapsing inner rim attenuated by **reduce flashes**. Effect
+  stepping is allocation-free, offscreen items are culled, and at most 64
+  visible rims submit per panel and frame. The velocity lane retains relative
+  group editing.
 - **Step sequencer.** The `steps / piano` chip opens a one-bar channel-rack
   view across tracks. Left adds, right erases, alternating groups expose beats,
   and each row's **roll** button drills into the same pattern bytes.
@@ -465,12 +471,14 @@ an independent answer pattern. It exercises held-key audition, drag-to-length,
 group selection, clipboard ghost placement, octave movement, velocity editing,
 clip stretching, linked reuse, scoped playback, stereo gain/pan, atomic save,
 canonical decode, and runtime flattening. The matching executable tape passes
-43/43 live verdicts, including saved pattern naming, step add/erase/drill,
+50/50 live verdicts, including saved pattern naming, step add/erase/drill,
 typed 137 BPM / 7/8 timing with undo, eased and immediate view motion, a live
 vertical-only-snapped arrangement marquee, fractional piano MMB pan, live note
-marquee highlighting, both deletion afterimages, and canvas MMB pan making
-substantial progress before release then settling exactly. It owns five @2x
-capture points: roll, arrangement, mix, steps, and live selection.
+marquee highlighting, continuous arrangement pattern paint, fast arrangement
+and piano eraser sweeps with one-step undo, both deletion afterimages, and
+canvas MMB pan making substantial progress before release then settling
+exactly. It owns seven @2x capture points: roll, arrangement, mix, steps, live
+selection, pattern paint, and eraser feedback.
 
 The updated interaction boundary is explicit in both the tutorial and
 `ref-music.md`: `+ pat` creates, ordinary placement reuses the active pattern,

@@ -23,10 +23,11 @@ The editor has three levels:
   fill the clip length.
 
 A track chooses the instrument, mute, volume, and pan. **+ pat** creates an
-unplaced, named pattern. Clicking empty arrangement space places the active
-pattern, so repeated clips are intentionally linked and every edit appears in
-all of them. Select **+ pat** before placing when the next section should be
-independent.
+unplaced, named pattern. Pressing empty arrangement space places the active
+pattern; keep the button held and drag past its right edge to paint another
+linked copy immediately beside it, repeating for every crossed pattern length.
+Every edit appears in all linked copies. Select **+ pat** before placing when
+the next section should be independent.
 
 ## Create, open and rebind
 
@@ -175,7 +176,8 @@ same gain/pan composition functions.
   1–6 select them directly. Grid choice is view state, so it does not dirty
   the song.
 - **+ pat** — creates and selects a named, unplaced one-bar pattern. Click a
-  lane to place it.
+  lane to place it; keep dragging across successive pattern ends to paint an
+  adjacent linked run.
 - **steps / piano** — switches the lower editor between the one-bar
   step-sequencer overview and the detailed piano roll.
 - **pN name** — edits the active pattern's saved name. Clips and step rows use
@@ -207,17 +209,25 @@ move or edge-resize, so a motionless click only drills while a drag edits.
 
 If no roll notes are selected, **Del** removes every selected clip. It does
 not delete pattern bytes because another linked clip may still use them.
-**Right-click** erases the clip under the pointer.
+**Right-click or right-drag** erases every clip crossed by the pointer path.
+Fast motion sweeps the complete path between frames, and the whole held stroke
+is one undo entry.
 
 ### Create clips
 
-- **left-click empty lane space** — beat-snaps the destination and places the
-  active named pattern at its own length.
+- **left-press empty lane space** — beat-snaps the destination and places the
+  active named pattern at its own length. While held, crossing its right edge
+  adds the next adjacent linked copy; crossing several ends in one frame fills
+  every skipped destination. Dragging left grows the run toward tick 0.
 - **Alt+left-click empty space** — bypasses horizontal snap for precise
   placement.
 - **+ pat**, then **left-click empty space** — creates an independent pattern
   and places it. Repeated ordinary placement of one active pattern is linked
   reuse by design.
+
+Paint stays on the lane where the gesture began, skips occupied spans, selects
+all copies it created, and commits the entire press-drag-release as one undo
+entry.
 
 ### Move, resize and duplicate clips
 
@@ -419,7 +429,9 @@ the earliest selected tick. Hold Alt to bypass the grid during the stretch.
 - **Shift+drag note** — duplicates that note, or the whole selection when the
   grabbed note belongs to it, then moves the copies in time while their
   original pitches stay fixed.
-- **right-click note** — deletes only the note under the pointer.
+- **right-click or right-drag** — erases every note crossed by the pointer
+  path. The sweep cannot tunnel over short notes between frames, and one held
+  stroke is one undo entry.
 - **Del** — deletes the note selection first; with no selected notes, deletes
   every selected arrangement clip.
 - **ctrl+a / ctrl+d** — **select all** notes / **deselect**.
@@ -438,11 +450,14 @@ the earliest selected tick. Hold Alt to bypass the grid during the stretch.
 - **Esc** — clears a note selection after first cancelling a paste.
 
 Right-click is claimed by every bound Music window so it cannot open the
-canvas menu. Away from a note, and outside an armed paste, it has no action.
+canvas menu. A press may begin in empty roll space and erase notes it reaches;
+a stroke that crosses nothing is a no-op. An armed paste still owns
+right-click as cancel.
 Deleting notes or arrangement clips removes the item immediately, then leaves
-a short, collapsing inner accent glow in its exact former rectangle. The glow
+a short, collapsing inner accent rim in its exact former rectangle. The glow
 is editor-only feedback, never song data, and the global **reduce flashes**
-preference attenuates it.
+preference attenuates it. Its draw path is visibility-culled and frame-budgeted
+so a large deletion cannot turn visual feedback into a frame-time cliff.
 
 ## Clipboard and the paste ghost
 

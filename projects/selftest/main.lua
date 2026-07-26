@@ -8785,6 +8785,43 @@ local function t_song()
                                   96, true, 4)
   check(cdt == -96 and ctr == -1,
         "music.clip_move_delta: Alt precision still clamps group bounds")
+  local paint, paintlo, painthi =
+    mus.paint_clip_targets(384, 384, 1540, 384)
+  check(#paint == 3 and paint[1] == 768 and paint[2] == 1152
+        and paint[3] == 1536 and paintlo == 384 and painthi == 1536,
+        "music paint clips: a fast forward drag fills every adjacent slot")
+  paint, paintlo, painthi =
+    mus.paint_clip_targets(paintlo, painthi, 0, 384)
+  check(#paint == 1 and paint[1] == 0
+        and paintlo == 0 and painthi == 1536,
+        "music paint clips: reverse drag grows contiguously without negatives")
+  local occupied = { { track = 0, tick = 0, len = 384 } }
+  check(not mus.clip_interval_free(occupied, 0, 192, 384)
+        and mus.clip_interval_free(occupied, 0, 384, 384)
+        and mus.clip_interval_free(occupied, 1, 192, 384),
+        "music paint clips: occupied lane spans are skipped, edges are free")
+
+  check(mus.segment_rect_hit(-5, 0.5, 25, 0.5, 0, 0, 10, 1)
+        and not mus.segment_rect_hit(5, 1, 5, 1, 0, 0, 10, 1)
+        and mus.segment_rect_hit(5, 1, 5, 1, 0, 1, 10, 1),
+        "music eraser sweep: fast crossings hit without sharing row boundaries")
+  local ec1 = { tick = 0, len = 20, track = 0 }
+  local ec2 = { tick = 40, len = 5, track = 0 }
+  local ec3 = { tick = 40, len = 5, track = 1 }
+  local ecn, ecgone = mus.erase_clip_sweep(
+    { ec1, ec2, ec3 }, 10, 0.5, 50, 0.5)
+  check(ecn == 2 and ecgone[1] == ec1 and ecgone[2] == ec2,
+        "music arrangement eraser: one fast segment removes every crossed clip")
+  local en1 = { tick = 0, dur = 8, pitch = 60 }
+  local en2 = { tick = 20, dur = 8, pitch = 61 }
+  local en3 = { tick = 40, dur = 8, pitch = 62 }
+  local en4 = { tick = 20, dur = 8, pitch = 50 }
+  local enotes = { en1, en2, en3, en4 }
+  local enn, engone =
+    mus.erase_note_sweep(enotes, 4, 4.5, 44, 2.5, 64)
+  check(enn == 3 and #engone == 3
+        and #enotes == 1 and enotes[1] == en4,
+        "music piano eraser: a diagonal sweep cannot tunnel through short notes")
 
   local solodoc = { tracks = {
     { mute = true }, { mute = false }, { mute = false },
@@ -8928,6 +8965,17 @@ local function t_song()
         and fxp.delete_fx[1].at == 456
         and fxp.delete_fx[mus.DELETE_FX_CAP].at == 456,
         "music delete glow: large batches cap linearly with one timestamp")
+  check(mus.DELETE_FX_DRAW_CAP <= 64
+        and mus.DELETE_FX_DRAW_CAP < mus.DELETE_FX_CAP,
+        "music delete glow: visible submissions have a strict frame budget")
+  check(mus.step_delete_fx(
+          fxp, 456 + mus.DELETE_GLOW_MS * 500000) == mus.DELETE_FX_CAP
+        and fxp.delete_fx[1].k > 0 and fxp.delete_fx[1].k < 1,
+        "music delete glow: in-place stepping keeps live effects")
+  check(mus.step_delete_fx(
+          fxp, 456 + mus.DELETE_GLOW_MS * 1000000) == 0
+        and fxp.delete_fx == nil,
+        "music delete glow: in-place stepping clears the expired batch")
 
   -- the rail drop bands (round 10): drop() resolves the row from the
   -- bands DRAW records — the selected row's band is taller (it

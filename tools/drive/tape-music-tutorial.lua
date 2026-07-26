@@ -15,7 +15,7 @@
 --      -> H7 must finish with every VERDICT true and save lead/bass/kick.
 --   3. full H8 proof run:
 --        bin/cosmic <scratch>/smoke-h8 --edit --headless \
---          --win 1280x1000 --frames 2200 --eval \
+--          --win 1280x1000 --frames 2280 --eval \
 --          "dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot <scratch>/full.png
 --      -> every H8 VERDICT line must read true.
@@ -1206,7 +1206,199 @@ probe(2186, function()
   end
   verdict("arrangement-delete-inner-glow", found and not still)
 end)
-probe(2192, function()
+
+-- Empty-space left drag is the arrangement paint tool: the first copy lands
+-- on press, then a single fast motion across three ends must fill every
+-- adjacent pattern-length slot while the button remains down. Release is one
+-- journal entry, proven by one undo and one redo.
+local paint_before, paint_anchor, paint_len, paint_pattern, paint_track
+local paint_undo_ok
+local function painted_clips()
+  local out = {}
+  for _, c in ipairs(doc().clips) do
+    if c.pattern == paint_pattern and c.track == paint_track
+       and c.tick >= paint_anchor
+       and c.tick <= paint_anchor + 3 * paint_len then
+      out[#out + 1] = c
+    end
+  end
+  table.sort(out, function(a, b) return a.tick < b.tick end)
+  return out
+end
+D.at(2194, function()
+  local r, p, d = D.win("music"), plumb(), doc()
+  local last = 0
+  for _, c in ipairs(d.clips) do last = math.max(last, c.tick + c.len) end
+  paint_before = #d.clips
+  paint_pattern, paint_track = r.win.pat, 0
+  paint_len = d.patterns[paint_pattern].len
+  paint_anchor = ((last + BAR - 1) // BAR) * BAR + BAR
+  r.win.ar_t0, r.win.ar_tpp, r.win.ar_sy =
+    math.max(0, paint_anchor - BAR), 0.12, 0
+  local motion = cm.require("cm.ed.kit").winui(p, r.win).motion
+  if motion then
+    motion.ar_t0, motion.ar_tpp, motion.ar_sy = nil, nil, nil
+  end
+  p.g = nil
+  cm.ed.g.display = false
+  cm.ed.doc.cam.x, cm.ed.doc.cam.y, cm.ed.g.anim = 0, 0, nil
+  cm.ed.doc.focus = r.win.id
+end)
+D.at(2197, function()
+  local x, y = arr_xy(paint_anchor + 2, paint_track)
+  return { D.mouse(x, y) }
+end)
+D.at(2198, function()
+  local x, y = arr_xy(paint_anchor + 2, paint_track)
+  return { D.btn(x, y, true) }
+end)
+D.at(2199, function()
+  local x, y = arr_xy(paint_anchor + 3 * paint_len + 2, paint_track)
+  return { D.mouse(x, y) }
+end)
+probe(2200, function()
+  local r, p, g, clips = D.win("music"), plumb(), plumb().g, painted_clips()
+  crop("music-paint", r.x, r.y, r.w, math.min(r.h, 190 * r.z))
+  local selected = 0
+  for _, c in ipairs(clips) do
+    if p.csels[c] then selected = selected + 1 end
+  end
+  verdict("arrangement-pattern-paint-live", g and g.t == "clipdraw"
+          and #clips == 4 and selected == 4
+          and clips[1].tick == paint_anchor
+          and clips[2].tick == paint_anchor + paint_len
+          and clips[3].tick == paint_anchor + 2 * paint_len
+          and clips[4].tick == paint_anchor + 3 * paint_len,
+          ("clips=%d selected=%d"):format(#clips, selected))
+end)
+D.at(2201, function()
+  local x, y = arr_xy(paint_anchor + 3 * paint_len + 2, paint_track)
+  return { D.btn(x, y, false) }
+end)
+probe(2204, function()
+  verdict("arrangement-pattern-paint-commit",
+          #doc().clips == paint_before + 4 and plumb().g == nil)
+end)
+D.chord(2208, SC.ctrl, SC.z)
+probe(2215, function()
+  paint_undo_ok = #doc().clips == paint_before
+end)
+D.chord(2217, SC.ctrl, SC.y)
+probe(2224, function()
+  verdict("arrangement-pattern-paint-one-undo",
+          paint_undo_ok and #doc().clips == paint_before + 4
+          and #painted_clips() == 4)
+end)
+
+-- One right-drag frame crosses the entire painted run. Segment hit-testing
+-- must erase all four despite the input jump, and one undo restores the stroke.
+D.at(2228, function()
+  local x, y = arr_xy(paint_anchor + 2, paint_track)
+  return { D.mouse(x, y) }
+end)
+D.at(2229, function()
+  local x, y = arr_xy(paint_anchor + 2, paint_track)
+  return { D.btn(x, y, true, 3) }
+end)
+D.at(2230, function()
+  local x, y = arr_xy(paint_anchor + 4 * paint_len - 2, paint_track)
+  return { D.mouse(x, y) }
+end)
+probe(2231, function()
+  local g = plumb().g
+  verdict("arrangement-right-drag-erase-live",
+          g and g.t == "cliperase" and g.changed
+          and #doc().clips == paint_before and #painted_clips() == 0)
+end)
+D.at(2232, function()
+  local x, y = arr_xy(paint_anchor + 4 * paint_len - 2, paint_track)
+  return { D.btn(x, y, false, 3) }
+end)
+D.chord(2236, SC.ctrl, SC.z)
+probe(2243, function()
+  verdict("arrangement-right-drag-erase-one-undo",
+          #doc().clips == paint_before + 4 and #painted_clips() == 4
+          and plumb().g == nil)
+end)
+
+-- The piano eraser follows the same held-stroke contract. Walk three stored
+-- notes with the real pointer, then prove the entire multi-frame stroke is one
+-- undo entry.
+local erase_notes, erase_note_before
+D.at(2247, function()
+  local r, p, d = D.win("music"), plumb(), doc()
+  local pt = d.patterns[paint_pattern]
+  erase_notes = {}
+  for j = 1, math.min(3, #pt.notes) do
+    local n = pt.notes[j]
+    erase_notes[j] = {
+      tick = n.tick, dur = n.dur, pitch = n.pitch, vel = n.vel,
+    }
+  end
+  erase_note_before = #pt.notes
+  r.win.edit_mode, r.win.pat = "piano", paint_pattern
+  for ci, c in ipairs(d.clips) do
+    if c.pattern == paint_pattern then
+      p.csel, r.win.trk = ci, c.track + 1
+      break
+    end
+  end
+  local min_pitch = 127
+  for _, n in ipairs(erase_notes) do min_pitch = math.min(min_pitch, n.pitch) end
+  r.win.tick0, r.win.tpp = 0, 0.5
+  r.win.row_h = 8
+  r.win.lownote, r.win.lownote_target = math.max(0, min_pitch - 4), nil
+  local motion = cm.require("cm.ed.kit").winui(p, r.win).motion
+  if motion then motion.tick0, motion.tpp, motion.row_h = nil, nil, nil end
+  p.nsels, p.nsel, p.g = {}, nil, nil
+end)
+D.at(2250, function()
+  local n = erase_notes[1]
+  local x, y = roll_xy(n.tick + n.dur * 0.5, n.pitch)
+  return { D.mouse(x, y) }
+end)
+D.at(2251, function()
+  local n = erase_notes[1]
+  local x, y = roll_xy(n.tick + n.dur * 0.5, n.pitch)
+  return { D.btn(x, y, true, 3) }
+end)
+for f = 2252, 2253 do
+  D.at(f, function()
+    local n = erase_notes[f - 2250]
+    local x, y = roll_xy(n.tick + n.dur * 0.5, n.pitch)
+    return { D.mouse(x, y) }
+  end)
+end
+probe(2254, function()
+  local r, pt, g = D.win("music"), doc().patterns[paint_pattern], plumb().g
+  crop("music-erase", r.x, r.y, r.w, math.min(r.h, 440 * r.z))
+  local targets_left = 0
+  for _, n in ipairs(pt.notes) do
+    for _, target in ipairs(erase_notes) do
+      if n.tick == target.tick and n.pitch == target.pitch
+         and n.dur == target.dur then
+        targets_left = targets_left + 1
+      end
+    end
+  end
+  verdict("piano-right-drag-erase-live",
+          g and g.t == "noteerase" and g.changed
+          and targets_left == 0 and #pt.notes <= erase_note_before - 3,
+          ("left=%d notes=%d"):format(targets_left, #pt.notes))
+end)
+D.at(2255, function()
+  local n = erase_notes[#erase_notes]
+  local x, y = roll_xy(n.tick + n.dur * 0.5, n.pitch)
+  return { D.btn(x, y, false, 3) }
+end)
+D.chord(2260, SC.ctrl, SC.z)
+probe(2267, function()
+  verdict("piano-right-drag-erase-one-undo",
+          #doc().patterns[paint_pattern].notes == erase_note_before
+          and plumb().g == nil)
+end)
+
+probe(2272, function()
   verdict("summary", FAIL == 0, ("%d/%d"):format(PASS, PASS + FAIL))
   log("TAPE DONE")
 end)

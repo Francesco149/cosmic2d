@@ -133,6 +133,12 @@ The useful mental split is now concrete: **patterns contain notes**;
 Drill down by clicking a clip, write a small musical idea once, then decide in
 the arrangement whether the next section should link, repeat, or answer.
 
+For fast sketching, press empty arrangement space and keep dragging beyond the
+new clip's end: Music paints another adjacent linked copy for every pattern
+length you cross, all as one undo step. Hold the right button and drag to erase
+every crossed arrangement clip or piano-roll note; even a fast stroke tests
+the path between frames, and one undo restores the whole stroke.
+
 ## Play the saved loop in a game
 
 Start it once from game code. The default is to loop; passing

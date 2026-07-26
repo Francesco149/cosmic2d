@@ -5,7 +5,8 @@
 -- editor. The **arrangement strip** shows the whole song — clips
 -- (patterns placed on tracks). **Click a clip to DRILL into its
 -- pattern** in the piano roll below; +pat creates a named pattern and
--- pressing empty places the active pattern (deliberate linked reuse);
+-- pressing empty places the active pattern, then dragging past its end
+-- paints adjacent linked copies (deliberate linked reuse);
 -- drag moves a clip/selection, Shift-drag duplicates, Ctrl marquee
 -- selects, Alt bypasses beat snap, right-click erases, and a clip
 -- **LOOPS its pattern to fill** when resized longer. The **track rail**
@@ -25,6 +26,7 @@
 -- resizes it;
 -- selected notes hit-test first and draw on top translucent so an
 -- overlap stays visible and fixable; RIGHT-CLICK deletes a note;
+-- holding RIGHT and dragging erases every note crossed by the stroke;
 -- Ctrl marquee selects (Ctrl+Shift adds); Shift-drag duplicates with
 -- pitch locked; Ctrl+A/D, nudges, spacing, octave, copy/cut, and the
 -- fixed-pitch Ctrl+V GHOST cover keyboard editing. A velocity lane +
@@ -43,6 +45,7 @@ local M = select(2, ...) or {}
 local song = cm.require("cm.song")
 local snd = cm.require("cm.snd")
 local ease = cm.require("cm.ease")
+local view = cm.require("cm.view")
 
 M.kind = "music"
 M.help = "win-music"
@@ -75,6 +78,7 @@ local LANE_H = 15 -- arrangement track lane height (logical px): fixed + a
                   -- reasonable size, vertical-scrolls when tracks overflow
 M.DELETE_GLOW_MS = 260
 M.DELETE_FX_CAP = 256
+M.DELETE_FX_DRAW_CAP = 64
 
 function M.title(win)
   return win.path:match("([^/]+)$") or "music"
@@ -679,12 +683,110 @@ function M.clip_move_delta(base, raw_tick, raw_track, beat, precise, ntracks)
   return dt, dtrack
 end
 
+-- The arrangement's paint gesture grows an already-processed contiguous
+-- interval one pattern-length at a time. Crossing several edges in one input
+-- frame returns every skipped target, so a fast mouse cannot leave holes.
+function M.paint_clip_targets(lo, hi, pointer, len)
+  lo, hi = tonumber(lo) or 0, tonumber(hi) or 0
+  pointer, len = tonumber(pointer) or 0, math.max(1, tonumber(len) or 1)
+  local out = {}
+  while pointer >= hi + len do
+    hi = hi + len
+    out[#out + 1] = hi
+  end
+  while pointer < lo do
+    local next_lo = lo - len
+    if next_lo < 0 then break end
+    lo = next_lo
+    out[#out + 1] = lo
+  end
+  return out, lo, hi
+end
+
+function M.clip_interval_free(clips, track, tick, len)
+  for _, c in ipairs(clips or {}) do
+    if c.track == track and c.tick < tick + len and c.tick + c.len > tick then
+      return false
+    end
+  end
+  return true
+end
+
+-- Inclusive segment/half-open rectangle intersection. The tiny high-edge
+-- inset preserves ordinary cell ownership at shared note/track boundaries:
+-- touching the next row erases the next row, not both.
+function M.segment_rect_hit(x0, y0, x1, y1, x, y, w, h)
+  x0, y0, x1, y1 = tonumber(x0) or 0, tonumber(y0) or 0,
+                     tonumber(x1) or 0, tonumber(y1) or 0
+  x, y, w, h = tonumber(x) or 0, tonumber(y) or 0,
+               tonumber(w) or 0, tonumber(h) or 0
+  if w <= 0 or h <= 0 then return false end
+  local eps = 1e-7
+  local xmin, xmax, ymin, ymax = x, x + w - eps, y, y + h - eps
+  local dx, dy, enter, leave = x1 - x0, y1 - y0, 0, 1
+  if math.abs(dx) < 1e-12 then
+    if x0 < xmin or x0 > xmax then return false end
+  else
+    local a, b = (xmin - x0) / dx, (xmax - x0) / dx
+    if a > b then a, b = b, a end
+    enter, leave = math.max(enter, a), math.min(leave, b)
+    if enter > leave then return false end
+  end
+  if math.abs(dy) < 1e-12 then
+    if y0 < ymin or y0 > ymax then return false end
+  else
+    local a, b = (ymin - y0) / dy, (ymax - y0) / dy
+    if a > b then a, b = b, a end
+    enter, leave = math.max(enter, a), math.min(leave, b)
+    if enter > leave then return false end
+  end
+  return leave >= 0 and enter <= 1
+end
+
+-- Eraser sweeps compact in place and report the removed refs for selection
+-- cleanup + afterimages. Segment intersection prevents a fast cursor from
+-- tunnelling across short clips/notes between render frames.
+function M.erase_clip_sweep(clips, t0, row0, t1, row1)
+  clips = clips or {}
+  local gone, write, count = {}, 1, #clips
+  for read = 1, count do
+    local c = clips[read]
+    if M.segment_rect_hit(t0, row0, t1, row1,
+                          c.tick, c.track, c.len, 1) then
+      gone[#gone + 1] = c
+    else
+      clips[write] = c
+      write = write + 1
+    end
+  end
+  for j = count, write, -1 do clips[j] = nil end
+  return #gone, gone
+end
+
+function M.erase_note_sweep(notes, t0, row0, t1, row1, pitch_top)
+  notes = notes or {}
+  pitch_top = tonumber(pitch_top) or 127
+  local gone, write, count = {}, 1, #notes
+  for read = 1, count do
+    local n = notes[read]
+    if M.segment_rect_hit(t0, row0, t1, row1,
+                          n.tick, pitch_top - n.pitch, n.dur, 1) then
+      gone[#gone + 1] = n
+    else
+      notes[write] = n
+      write = write + 1
+    end
+  end
+  for j = count, write, -1 do notes[j] = nil end
+  return #gone, gone
+end
+
 function M.delete_selected_clips(doc, selection)
   local keep, removed, gone = {}, 0, {}
   for _, c in ipairs(doc.clips or {}) do
     if selection and selection[c] then
       removed = removed + 1
-      gone[#gone + 1] = c
+      if #gone < M.DELETE_FX_CAP then gone[#gone + 1] = c end
     else
       keep[#keep + 1] = c
     end
@@ -719,7 +821,7 @@ function M.delete_selected_notes(doc, pt, selection)
   for _, n in ipairs(pt.notes or {}) do
     if selection[n] then
       removed = removed + 1
-      gone[#gone + 1] = n
+      if #gone < M.DELETE_FX_CAP then gone[#gone + 1] = n end
     else
       keep[#keep + 1] = n
     end
@@ -767,31 +869,46 @@ function M.arm_delete_fx(p, kind, items, pattern, at)
   return added
 end
 
-local function draw_inner_glow(x, y, w, h, z, k)
-  if k <= 0 or w <= 0 or h <= 0 then return end
-  local policy = cm.require("cm.view").flash_scale()
-  local function col(alpha)
-    alpha = math.max(0, math.min(255,
-      math.floor(alpha * k * policy + 0.5)))
-    return (COL.hot & ~0xff) | alpha
-  end
-  -- A faint body makes the disappearing item's footprint readable; three
-  -- increasingly soft rims stay strictly inside it. As the envelope falls,
-  -- the rims sink toward the center as well as fading.
-  pal.x_ig_rect_fill(x, y, w, h, col(28), math.min(2 * z, h * 0.25))
-  local sink = (1 - k) * math.min(w, h) * 0.22
-  local layers = {
-    { 0.0, 214, 1.35 }, { 1.35, 120, 1.0 }, { 2.7, 54, 0.75 },
-  }
-  for _, layer in ipairs(layers) do
-    local inset = sink + layer[1] * z
-    local rw, rh = w - inset * 2, h - inset * 2
-    if rw > 0.5 and rh > 0.5 then
-      pal.x_ig_rect(x + inset, y + inset, rw, rh, col(layer[2]),
-                    math.max(0.75, layer[3] * z),
-                    math.min(2 * z, rh * 0.25))
+-- Compact live effects in place. The old fresh `alive` array made a large
+-- delete allocate again on every animation frame, right when the first glow
+-- frame was already growing ImGui's vertex buffer.
+function M.step_delete_fx(p, now)
+  local fx = p and p.delete_fx
+  if not fx then return 0 end
+  now = now or pal.time_ns()
+  local write, count = 1, #fx
+  for read = 1, count do
+    local item = fx[read]
+    local k, done = M.delete_glow((now - item.at) / 1e6)
+    if not done then
+      item.k = k
+      fx[write] = item
+      write = write + 1
     end
   end
+  for j = count, write, -1 do fx[j] = nil end
+  if write == 1 then
+    p.delete_fx = nil
+    return 0
+  end
+  return write - 1
+end
+
+local function draw_inner_glow(x, y, w, h, z, k, policy)
+  if k <= 0 or w <= 0 or h <= 0 then return end
+  -- One thick inset rim reads as an inner glow without the former fill +
+  -- three rounded outlines. It fades and contracts with zero Lua allocations
+  -- and one draw-list submission per visible item.
+  local thick = math.max(0.75, (0.8 + 0.55 * k) * z)
+  local inset = thick * 0.55 + (1 - k) * math.min(w, h) * 0.22
+  local rw, rh = w - inset * 2, h - inset * 2
+  if rw <= 0.5 or rh <= 0.5 then return end
+  local alpha = math.max(0, math.min(255,
+    math.floor(224 * k * (policy or 1) + 0.5)))
+  if alpha <= 0 then return end
+  pal.x_ig_rect(x + inset, y + inset, rw, rh,
+                (COL.hot & ~0xff) | alpha, thick,
+                math.min(2 * z, rh * 0.25))
 end
 
 function M.nudge_selected_notes(pt, selection, dt, dp)
@@ -1204,19 +1321,9 @@ function M.draw(win, ctx)
   if not doc then return end
   local i = cm.require("cm.ui").inp
   local vmotion = motion_step(p, win, ctx)
-  local delete_now = pal.time_ns()
-  if p.delete_fx then
-    local alive = {}
-    for _, fx in ipairs(p.delete_fx) do
-      local k, done = M.delete_glow((delete_now - fx.at) / 1e6)
-      if not done then
-        fx.k = k
-        alive[#alive + 1] = fx
-      end
-    end
-    p.delete_fx = #alive > 0 and alive or nil
-    if p.delete_fx then ctx.touch() end
-  end
+  local delete_count = M.step_delete_fx(p, pal.time_ns())
+  local delete_policy = delete_count > 0 and view.flash_scale() or 1
+  if delete_count > 0 then ctx.touch() end
 
   preview_step(ed, win, p)
   if p.playing then ctx.touch() end
@@ -1670,13 +1777,21 @@ function M.draw(win, ctx)
                     COL.dim, doc.tracks[ti].name or ("t" .. ti), 0)
     end
   end
-  local function arr_pos()
-    local tick = ar_t0 + (i.wx - rx) / atpp
+  local function arr_pos_at(mx, my)
+    local tick = ar_t0 + (mx - rx) / atpp
     local row = math.min(#doc.tracks, math.max(0,
-      (i.wy - ay + ar_sy) / lane_h))
+      (my - ay + ar_sy) / lane_h))
     local lane = math.min(#doc.tracks - 1, math.max(0,
       math.tointeger(row // 1)))
     return tick, lane, row
+  end
+  local function arr_pos()
+    return arr_pos_at(i.wx, i.wy)
+  end
+  local function arr_erase_pos()
+    return arr_pos_at(
+      math.max(rx, math.min(rx + rw, i.wx)),
+      math.max(ay, math.min(ay + AR_H, i.wy)))
   end
   local function clip_marquee_bounds(g)
     local tick, _, row = arr_pos()
@@ -1736,11 +1851,21 @@ function M.draw(win, ctx)
                     selected and COL.hot or COL.dim, label, 0)
     end
   end
-  for _, fx in ipairs(p.delete_fx or {}) do
-    if fx.kind == "clip" then
-      local gx = rx + (fx.tick - ar_t0) * atpp
-      local gy = ay + fx.track * lane_h - ar_sy + 1
-      draw_inner_glow(gx, gy, fx.len * atpp, lane_h - 3, z, fx.k or 0)
+  if p.delete_fx then
+    local drawn = 0
+    for j = #p.delete_fx, 1, -1 do
+      local fx = p.delete_fx[j]
+      if fx.kind == "clip" then
+        local gx = rx + (fx.tick - ar_t0) * atpp
+        local gy = ay + fx.track * lane_h - ar_sy + 1
+        local gw, gh = fx.len * atpp, lane_h - 3
+        if gx < rx + rw and gx + gw > rx and gy < ay + AR_H
+           and gy + gh > ay then
+          draw_inner_glow(gx, gy, gw, gh, z, fx.k or 0, delete_policy)
+          drawn = drawn + 1
+          if drawn >= M.DELETE_FX_DRAW_CAP then break end
+        end
+      end
     end
   end
   -- the preview playhead
@@ -1794,10 +1919,11 @@ function M.draw(win, ctx)
     else p.arpan = nil end
   end
 
-  -- Arrangement grammar follows the Playlist conventions: plain click places
-  -- the active named pattern or moves a clip/selection; Shift-drag duplicates
-  -- linked placements; Ctrl drags a marquee, Ctrl+Shift extends it; Alt
-  -- temporarily bypasses beat snapping; right-click erases.
+  -- Arrangement grammar follows the Playlist conventions: press empty to
+  -- place the active pattern, then drag beyond its end to paint adjacent
+  -- linked copies; a clip drag moves the selection and Shift-drag duplicates
+  -- it. Ctrl marquee selects, Ctrl+Shift extends, Alt bypasses beat snap, and
+  -- a held right-button stroke continuously erases crossed clips.
   p.arr = { x = rx, y = ay, w = rw, h = AR_H, atpp = atpp, t0 = ar_t0,
             sy = ar_sy, lane_h = lane_h, bar = bar, beat = beat }
   local function arr_hit(tick, lane)
@@ -1826,6 +1952,10 @@ function M.draw(win, ctx)
       end
     end
     return out
+  end
+  if ctx.hot and i.clicked[3] and over_arr and not p.g then
+    local tick, _, row = arr_erase_pos()
+    p.g = { t = "cliperase", tick = tick, row = row, changed = false }
   end
   if ctx.hot and i.clicked[1] and over_arr and not p.g and not rh_hot then
     local tick, lane, row = arr_pos()
@@ -1877,9 +2007,60 @@ function M.draw(win, ctx)
       p.csels = { [placed] = true }
       drill(p.csel)
       p.flat = nil
-      commit(ed, win.path)
+      p.g = { t = "clipdraw", pattern = pid, track = lane,
+              len = placed.len, lo = at, hi = at, changed = true }
     end
     ctx.touch()
+  end
+  if p.g and p.g.t == "clipdraw" then
+    if i.buttons[1] then
+      local tick = arr_pos()
+      local targets
+      targets, p.g.lo, p.g.hi =
+        M.paint_clip_targets(p.g.lo, p.g.hi, tick, p.g.len)
+      local active
+      for _, at in ipairs(targets) do
+        if M.clip_interval_free(doc.clips, p.g.track, at, p.g.len) then
+          local placed = {
+            track = p.g.track, pattern = p.g.pattern,
+            tick = math.tointeger(at), len = p.g.len,
+          }
+          doc.clips[#doc.clips + 1] = placed
+          p.csels[placed] = true
+          active = #doc.clips
+        end
+      end
+      if active then
+        p.csel = active
+        drill(active)
+        p.flat = nil
+      end
+      ctx.touch()
+    else
+      if p.g.changed then commit(ed, win.path) end
+      p.g = nil
+      ctx.touch()
+    end
+  end
+  if p.g and p.g.t == "cliperase" then
+    if i.buttons[3] then
+      local tick, _, row = arr_erase_pos()
+      local removed, gone = M.erase_clip_sweep(
+        doc.clips, p.g.tick, p.g.row, tick, row)
+      if removed > 0 then
+        M.arm_delete_fx(p, "clip", gone)
+        for _, dead in ipairs(gone) do p.csels[dead] = nil end
+        p.csel = nil
+        p.flat = nil
+        p.g.changed = true
+      end
+      p.g.tick, p.g.row = tick, row
+      ctx.touch()
+    else
+      if p.g.changed then commit(ed, win.path) end
+      p.g = nil
+      ctx.touch()
+    end
   end
   if p.g and (p.g.t == "clipmove" or p.g.t == "clipsize") then
     if i.buttons[1] then
@@ -1953,20 +2134,6 @@ function M.draw(win, ctx)
       ctx.touch()
     end
   end
-  if ctx.hot and i.clicked[3] and over_arr and not p.g then
-    local tick, lane = arr_pos()
-    local hit = arr_hit(tick, lane)
-    if hit then
-      local dead = table.remove(doc.clips, hit)
-      M.arm_delete_fx(p, "clip", { dead })
-      p.csels[dead] = nil
-      p.csel = nil
-      p.flat = nil
-      commit(ed, win.path)
-      ctx.touch()
-    end
-  end
-
   -- ---- channel-rack step sequencer ---------------------------------------
   -- A compact one-bar percussion door across tracks. Each row edits the
   -- pattern playing on that track near the song cursor (falling back to its
@@ -2310,6 +2477,11 @@ function M.draw(win, ctx)
     return math.max(-1, math.min(nrows,
       (y - roll_y + suby) / row_h))
   end
+  local function roll_erase_pos()
+    local mx = math.max(rx, math.min(rx + rw, i.wx))
+    local my = math.max(roll_y, math.min(roll_y + roll_h, i.wy))
+    return x2t(mx), roll_row(my)
+  end
   local function note_marquee_bounds(g)
     local t0, t1 = M.pointer_span(g.tick0, x2t(i.wx), 0)
     local r0, r1 = M.grid_span(g.row0, roll_row(i.wy), 1, -1, nrows)
@@ -2403,12 +2575,21 @@ function M.draw(win, ctx)
       draw_note(n, true)
     end
   end
-  for _, fx in ipairs(p.delete_fx or {}) do
-    if fx.kind == "note" and fx.pattern == pat.id then
-      local gx, gy, gw, gh = note_rect {
-        tick = fx.tick, dur = fx.dur, pitch = fx.pitch,
-      }
-      draw_inner_glow(gx, gy + 1, gw - 1, gh - 2, z, fx.k or 0)
+  if p.delete_fx then
+    local drawn = 0
+    for j = #p.delete_fx, 1, -1 do
+      local fx = p.delete_fx[j]
+      if fx.kind == "note" and fx.pattern == pat.id then
+        local gx = t2x(fx.tick)
+        local gy = roll_y + (low + nrows - fx.pitch) * row_h - suby + 1
+        local gw, gh = math.max(2, fx.dur * tpp) - 1, row_h - 2
+        if gx < rx + rw and gx + gw > rx and gy < roll_y + roll_h
+           and gy + gh > roll_y then
+          draw_inner_glow(gx, gy, gw, gh, z, fx.k or 0, delete_policy)
+          drawn = drawn + 1
+          if drawn >= M.DELETE_FX_DRAW_CAP then break end
+        end
+      end
     end
   end
   -- resize handle: a bright bar when hovering the right edge of the
@@ -2693,16 +2874,31 @@ function M.draw(win, ctx)
       ctx.touch()
     end
   end
-  -- right click DELETES the note under the cursor (round 9 — the old
-  -- motionless-release delete is gone: a click SELECTS now)
+  -- Right press arms an eraser even over empty space. While held, its complete
+  -- pointer segment is tested so fast drags cannot tunnel through short notes;
+  -- release commits the whole stroke as one undo step.
   if ctx.hot and i.clicked[3] and over_roll and not p.g and not p.paste then
-    local hit = note_hit(x2t(i.wx), y2pitch(i.wy))
-    if hit then
-      local n = table.remove(pat.notes, hit)
-      M.arm_delete_fx(p, "note", { n }, pat.id)
-      p.nsels[n] = nil
+    local tick, row = roll_erase_pos()
+    p.g = { t = "noteerase", tick = tick, row = row, changed = false }
+  end
+  if p.g and p.g.t == "noteerase" then
+    if i.buttons[3] then
+      local tick, row = roll_erase_pos()
+      local removed, gone = M.erase_note_sweep(
+        pat.notes, p.g.tick, p.g.row, tick, row, low + nrows)
+      if removed > 0 then
+        M.arm_delete_fx(p, "note", gone, pat.id)
+        for _, dead in ipairs(gone) do p.nsels[dead] = nil end
+        p.nsel = nil
+        p.flat = nil
+        p.g.changed = true
+      end
+      p.g.tick, p.g.row = tick, row
+      ctx.touch()
+    else
+      if p.g.changed then note_commit() end
       p.nsel = nil
-      note_commit()
+      p.g = nil
       ctx.touch()
     end
   end

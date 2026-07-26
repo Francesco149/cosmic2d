@@ -9436,3 +9436,55 @@ note highlighted before mouse-up, exact preview/commit identity, fractional
 held pan plus settlement, and live note/clip deletion afterimages. The
 headless deletion frame was inspected at source resolution and published to
 llm-feed.
+
+## D173 — Music paints linked runs, erases continuous strokes, and budgets deletion feedback (2026-07-26)
+
+**Context.** The D172 deletion cue caused a significant frame-time spike as
+soon as a large batch began fading. Arrangement authoring also still required
+one click per repeated pattern, while right-click removed only the item under
+one sampled cursor position. Fast drags could therefore leave holes in both
+the arrangement and piano roll.
+
+**Feedback-performance decision (revises D172's four-pass rendering).** The
+260 ms cue keeps its source-free scalar geometry, smooth contraction, hard
+state cap, and reduce-flashes policy. Its hot path now compacts the live array
+in place instead of allocating a replacement every frame. Each panel walks
+newest-first, culls rectangles before drawing, and submits at most 64 visible
+effects per frame. One thick contracting inset rim replaces the old body plus
+three rounded outlines, taking the visible item from four draw-list submissions
+and per-item Lua table/closure allocation to one submission and zero draw-time
+Lua allocation. A 256-visible-note headless stress probe measured
+baseline/first-effect draw at `1.840443 / 3.827882 ms` before and
+`1.767588 / 2.058570 ms` after: incremental first-frame cost fell from
+`1.987439` to `0.290982 ms`, **85.4% lower**.
+
+**Pattern-paint decision.** A left press on empty arrangement space places the
+active pattern as before, but remains one armed gesture. Crossing the placed
+clip's right end adds another same-track, same-pattern, same-length clip
+directly beside it. Crossing multiple ends between input frames emits every
+skipped target; reverse dragging grows toward but never before tick 0.
+Occupied spans are skipped, every created clip stays selected, and release
+commits the entire run once. Pressing an existing clip retains the established
+move/resize and Shift-linked-duplicate grammar.
+
+**Continuous-eraser decision.** Right press may begin on content or empty
+space in either arrangement or piano roll. While held, each complete pointer
+segment intersects the half-open clip/note rectangles and removes every
+crossed item immediately. Half-open high edges preserve row ownership, and
+segment testing prevents fast or diagonal motion from tunnelling over compact
+items. Each removed item arms the same optimized afterimage; selection refs
+are cleaned immediately; release commits one journal entry for the whole
+stroke. An armed piano paste still owns right-click as cancel.
+
+**Proof.** Pure KATs pin forward multi-boundary paint, reverse growth, occupied
+span skipping, half-open row ownership, fast clip crossings, diagonal
+short-note crossings, the 64-item draw budget, and in-place effect expiry.
+Linux selftest passes **25,418** checks and `nix run .#test` is **ALL GREEN**
+across release manifests, every committed trace, and all 19 pixel goldens. The
+real Music tape passes **50/50** verdicts: a held jump paints four adjacent
+selected clips, one undo removes the complete paint stroke, a fast arrangement
+sweep erases all four and one undo restores them, and a diagonal piano sweep
+erases its crossed notes and restores in one undo. The held paint and live
+optimized eraser frames were inspected at source resolution and published to
+llm-feed. The Windows stage was refreshed (11 durable entries plus shortcut);
+its native selftest passes **25,420** checks on PAL API 24.
