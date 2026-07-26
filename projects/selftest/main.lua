@@ -8871,6 +8871,89 @@ local function t_song()
   check(removed == stepnote and removed_ok and #steppt.notes == 0,
         "music.set_step: right-erase removes the exact step")
 
+  -- The channel rack is one shared beat ruler, never a one-bar viewport.
+  -- Eight beats is the floor; authored rows longer than that expand it.
+  local stepdoc = { beats_per_bar = 4, beat_unit = 4 }
+  local step_tick, step_count, step_beats, steps_per_beat =
+    mus.step_layout(stepdoc, {
+      { len = 384, notes = {} },
+      { len = 768, notes = {} },
+    })
+  check(step_tick == 24 and step_count == 32 and step_beats == 8
+        and steps_per_beat == 4 and mus.defaults().step_beats == 8,
+        "music steps: shared rack defaults to eight beats at four steps/beat")
+  step_tick, step_count, step_beats =
+    mus.step_layout(stepdoc, { { len = 96 * 11, notes = {} } }, 8)
+  check(step_tick == 24 and step_count == 44 and step_beats == 11,
+        "music steps: a longer existing pattern expands the complete grid")
+  local page0, page_count = mus.step_window(160, 99, 128)
+  check(page0 == 32 and page_count == 128,
+        "music steps: long-rack paging clamps to the final complete window")
+
+  local rack_a = { id = 21, len = 384,
+    notes = { { tick = 0, dur = 24, pitch = 36, vel = 100 } } }
+  local rack_b = { id = 22, len = 768,
+    notes = { { tick = 600, dur = 24, pitch = 42, vel = 100 } } }
+  local rackdoc = {
+    beats_per_bar = 4, beat_unit = 4,
+    patterns = { [21] = rack_a, [22] = rack_b },
+    clips = {
+      { track = 0, tick = 0, len = 384, pattern = 21 },
+      { track = 0, tick = 1536, len = 1536, pattern = 21 },
+      { track = 1, tick = 0, len = 768, pattern = 22 },
+    },
+  }
+  check(mus.pattern_used_len(rackdoc, rack_a) == 96
+        and mus.pattern_used_len(rackdoc, rack_b) == 672,
+        "music steps: arrangement fit rounds note tails up to one beat")
+  check(mus.align_step_patterns(rackdoc, { rack_a, rack_b }, 864) == 4
+        and rack_a.len == 864 and rack_b.len == 864
+        and rackdoc.clips[1].len == 96
+        and rackdoc.clips[2].len == 1536
+        and rackdoc.clips[3].len == 672,
+        "music steps: +beat aligns rows while auto clips shed empty capacity")
+  local old_used = mus.pattern_used_len(rackdoc, rack_a)
+  mus.set_step(rack_a, 768, 36, 24, true)
+  local trimmed, used = mus.trim_step_clips(
+    rackdoc, rack_a, rack_a.len, old_used)
+  check(trimmed == 1 and used == 864 and rackdoc.clips[1].len == 864
+        and rackdoc.clips[2].len == 1536,
+        "music steps: adding later content grows only the content-fit clip")
+
+  local reorderdoc = {
+    tracks = { { name = "kick" }, { name = "hat" }, { name = "snare" } },
+    clips = {
+      { track = 0, tick = 0, len = 96, pattern = 1 },
+      { track = 1, tick = 0, len = 96, pattern = 2 },
+      { track = 2, tick = 0, len = 96, pattern = 3 },
+    },
+  }
+  local reordered, track_map = mus.reorder_track(reorderdoc, 3, 1)
+  local indexed_state = { "kick-state", "hat-state", "snare-state" }
+  mus.remap_track_state(indexed_state, track_map)
+  local upward_ok = reordered and reorderdoc.tracks[1].name == "snare"
+        and reorderdoc.tracks[2].name == "kick"
+        and reorderdoc.tracks[3].name == "hat"
+        and reorderdoc.clips[1].track == 1
+        and reorderdoc.clips[2].track == 2
+        and reorderdoc.clips[3].track == 0
+        and indexed_state[1] == "snare-state"
+        and indexed_state[2] == "kick-state"
+        and indexed_state[3] == "hat-state"
+  local restored, reverse_map = mus.reorder_track(reorderdoc, 1, 3)
+  mus.remap_track_state(indexed_state, reverse_map)
+  check(upward_ok and restored
+        and reorderdoc.tracks[1].name == "kick"
+        and reorderdoc.tracks[2].name == "hat"
+        and reorderdoc.tracks[3].name == "snare"
+        and reorderdoc.clips[1].track == 0
+        and reorderdoc.clips[2].track == 1
+        and reorderdoc.clips[3].track == 2
+        and indexed_state[1] == "kick-state"
+        and indexed_state[2] == "hat-state"
+        and indexed_state[3] == "snare-state",
+        "music steps: row reorder carries clips/state in both directions")
+
   -- the pitch-delta clamp (round 9): ONE delta for the whole set so
   -- intervals never squash — the paste ghost clamps to it, the octave
   -- steps refuse when it bites (all or nothing)
@@ -9006,6 +9089,10 @@ local function t_song()
   check(sc.track == 2 and sc.pattern == 8 and sc.tick == 384
         and sc.len == 384,
         "music.stamp_fresh: the clip lands bar-snapped on the lane")
+  npid = mus.stamp_fresh(sd, 1, 900, 384, 768)
+  sc = sd.clips[2]
+  check(sd.patterns[npid].len == 768 and sc.len == 768 and sc.tick == 768,
+        "music.stamp_fresh: the rack can seed its shared eight-beat span")
 end
 
 local function t_stock_songs()

@@ -71,7 +71,8 @@ function M.defaults()
            tpp = 0.5, lownote = 45, tick0 = 0, -- the roll's view
            row_h = 14,
            arh = 60, ar_tpp = 0.14, ar_t0 = 0, ar_sy = 0, -- the arrangement's
-           cursor = 0, song_cursor = 0, play_scope = "clip" }
+           cursor = 0, song_cursor = 0, play_scope = "clip",
+           step_beats = 8, step0 = 0 }
 end
 
 local LANE_H = 15 -- arrangement track lane height (logical px): fixed + a
@@ -79,6 +80,9 @@ local LANE_H = 15 -- arrangement track lane height (logical px): fixed + a
 M.DELETE_GLOW_MS = 260
 M.DELETE_FX_CAP = 256
 M.DELETE_FX_DRAW_CAP = 64
+M.STEP_DEFAULT_BEATS = 8
+M.STEP_SUBDIVISIONS = 4
+M.STEP_VISIBLE_CAP = 128
 
 function M.title(win)
   return win.path:match("([^/]+)$") or "music"
@@ -483,15 +487,15 @@ local function blip_hold(ed, win, p, g, pitch, vel)
   p.blips[g.voice] = 2
 end
 
--- allocate a fresh one-bar pattern + a clip playing it — the shared
--- core of the arrangement's press-empty stamp and the rail's
--- auto-create on selecting a clipless track (round 11). Mutates doc;
--- returns the new pattern id. KAT'd (t_song).
-function M.stamp_fresh(doc, lane, tick, bar)
-  local pid = M.new_pattern(doc, bar)
+-- Allocate a fresh pattern + a clip playing it. Arrangement/rail callers keep
+-- their one-bar default; the step rack passes its shared (eight-beat minimum)
+-- capacity. Mutates doc and returns the new pattern id. KAT'd in t_song.
+function M.stamp_fresh(doc, lane, tick, bar, len)
+  len = math.max(1, math.tointeger(len) or bar)
+  local pid = M.new_pattern(doc, len)
   doc.clips[#doc.clips + 1] = {
     track = math.tointeger(lane), pattern = pid,
-    tick = math.tointeger((tick // bar) * bar), len = bar,
+    tick = math.tointeger((tick // bar) * bar), len = len,
   }
   return pid
 end
@@ -980,6 +984,130 @@ function M.set_step(pt, tick, pitch, dur, on)
     return table.remove(pt.notes, hit), true
   end
   return nil, false
+end
+
+-- Step-rack timing is a shared VIEW across its rows, while each pattern keeps
+-- its own playback period. Eight beats is the useful default; a longer row
+-- expands the common grid instead of being silently clipped at one bar.
+function M.step_layout(doc, patterns, preferred_beats)
+  local beat = song.beat_ticks(doc)
+  local step = math.max(1, beat // M.STEP_SUBDIVISIONS)
+  local beats = math.max(M.STEP_DEFAULT_BEATS,
+    math.tointeger(preferred_beats) or M.STEP_DEFAULT_BEATS)
+  for _, pt in ipairs(patterns or {}) do
+    local len = math.max(1, math.tointeger(pt and pt.len) or 1)
+    beats = math.max(beats, math.tointeger((len + beat - 1) // beat))
+  end
+  local ticks = beats * beat
+  local nsteps = math.max(1, math.tointeger((ticks + step - 1) // step))
+  local per_beat = math.max(1, math.tointeger((beat + step - 1) // step))
+  return step, nsteps, beats, per_beat
+end
+
+function M.step_window(total, first, cap)
+  total = math.max(1, math.tointeger(total) or 1)
+  cap = math.max(1, math.tointeger(cap) or M.STEP_VISIBLE_CAP)
+  local count = math.min(total, cap)
+  local max_first = math.max(0, total - count)
+  first = math.max(0, math.min(max_first, math.tointeger(first) or 0))
+  return first, count
+end
+
+-- Arrangement blocks produced by the rack follow musical content, not empty
+-- capacity: the last note end rounds out to one complete beat. Empty patterns
+-- retain one beat so they remain tangible/editable.
+function M.pattern_used_len(doc, pt)
+  local beat = song.beat_ticks(doc)
+  local last = 0
+  for _, n in ipairs(pt and pt.notes or {}) do
+    last = math.max(last, (math.tointeger(n.tick) or 0)
+                          + math.max(1, math.tointeger(n.dur) or 1))
+  end
+  return math.max(beat,
+    math.tointeger((last + beat - 1) // beat) * beat)
+end
+
+-- Only clips which still matched the old pattern capacity or its old
+-- content-fit span are automatic. Deliberately long loop placements retain
+-- their authored length.
+function M.trim_step_clips(doc, pt, old_len, old_used)
+  if not (doc and pt) then return 0, 0 end
+  old_len = math.max(1, math.tointeger(old_len) or pt.len or 1)
+  old_used = math.max(1,
+    math.tointeger(old_used) or M.pattern_used_len(doc, pt))
+  local used, changed = M.pattern_used_len(doc, pt), 0
+  for _, c in ipairs(doc.clips or {}) do
+    if c.pattern == pt.id and (c.len == old_len or c.len == old_used)
+       and c.len ~= used then
+      c.len = used
+      changed = changed + 1
+    end
+  end
+  return changed, used
+end
+
+-- Extending the rack aligns every represented row to one capacity. The
+-- arrangement stays concise because automatic clips are trimmed to content
+-- before the empty capacity grows.
+function M.align_step_patterns(doc, patterns, target_len)
+  local beat = song.beat_ticks(doc)
+  target_len = math.max(beat, math.tointeger(target_len) or beat)
+  local seen, changed = {}, 0
+  for _, pt in ipairs(patterns or {}) do
+    if pt and not seen[pt] then
+      seen[pt] = true
+      local old = math.max(beat, math.tointeger(pt.len) or beat)
+      local ntrim = M.trim_step_clips(doc, pt, old)
+      changed = changed + ntrim
+      if old < target_len then
+        pt.len = target_len
+        changed = changed + 1
+      end
+    end
+  end
+  return changed
+end
+
+-- Move one channel-rack row and remap every arrangement placement with it.
+-- Tracks have no persistent id in CSNG: their one-based array position is the
+-- identity represented by each clip's zero-based .track field. Returning the
+-- old->new map lets the editor move transient track-indexed state atomically.
+function M.reorder_track(doc, from, to)
+  local tracks = doc and doc.tracks
+  local n = tracks and #tracks or 0
+  from = math.max(1, math.min(n, math.tointeger(from) or 1))
+  to = math.max(1, math.min(n, math.tointeger(to) or from))
+  if n < 2 or from == to then return false end
+
+  local map = {}
+  for old = 1, n do
+    local new = old
+    if old == from then
+      new = to
+    elseif from < to and old > from and old <= to then
+      new = old - 1
+    elseif from > to and old >= to and old < from then
+      new = old + 1
+    end
+    map[old] = new
+  end
+
+  local moved = table.remove(tracks, from)
+  table.insert(tracks, to, moved)
+  for _, c in ipairs(doc.clips or {}) do
+    local old = (math.tointeger(c.track) or 0) + 1
+    if map[old] then c.track = map[old] - 1 end
+  end
+  return true, map
+end
+
+function M.remap_track_state(values, map)
+  if not (values and map) then return values end
+  local old = {}
+  for i = 1, #map do old[i] = values[i] end
+  for i = 1, #map do values[i] = nil end
+  for old_i, new_i in ipairs(map) do values[new_i] = old[old_i] end
+  return values
 end
 
 -- ---- hotkeys ----
@@ -2135,19 +2263,17 @@ function M.draw(win, ctx)
     end
   end
   -- ---- channel-rack step sequencer ---------------------------------------
-  -- A compact one-bar percussion door across tracks. Each row edits the
-  -- pattern playing on that track near the song cursor (falling back to its
-  -- first clip); left adds, right erases, and "roll" drills into the same
-  -- bytes in the detailed piano editor.
+  -- One shared beat span keeps every row aligned. It starts at eight beats,
+  -- expands to the longest represented pattern, and can be extended for all
+  -- rows one beat at a time. Pattern capacity stays shared while automatic
+  -- arrangement clips trim their empty tail to the last used beat.
   if win.edit_mode == "steps" then
     p.view, p.vlane = nil, nil
     local sy0 = ruler_y
     local sh = math.max(24 * z, vel_y + VEL_H - sy0)
     local head_h, step_row_h = 16 * z, 18 * z
     local label_w = math.min(120 * z, rw * 0.28)
-    local subdivisions = 4
-    local step_tick = math.max(1, song.beat_ticks(doc) // subdivisions)
-    local nsteps = math.max(1, song.bar_ticks(doc) // step_tick)
+    local beat = song.beat_ticks(doc)
     local at = win.song_cursor or 0
     local bar_at = math.tointeger((at // bar) * bar)
     local function track_clip(ti)
@@ -2164,19 +2290,133 @@ function M.draw(win, ctx)
       end
       return fallback, fallback and doc.clips[fallback]
     end
-    pal.x_ig_rect_fill(rx, sy0, rw, sh, COL.well, 3 * z)
-    pal.x_ig_text(rx + 5 * z, sy0 + 2 * z, px * 0.72, COL.dim,
-                  "steps · left add · right erase · roll opens piano", 0)
     local visible = math.max(1, math.tointeger((sh - head_h) // step_row_h))
     local first = math.max(1, math.min(
       math.max(1, #doc.tracks - visible + 1), (win.trk or 1) - 1))
     local last = math.min(#doc.tracks, first + visible - 1)
+    local rows, patterns = {}, {}
+    for ti = 1, #doc.tracks do
+      local ci, c = track_clip(ti)
+      local pt = c and doc.patterns[c.pattern]
+      rows[ti] = { ci = ci, c = c, pt = pt }
+      if pt then patterns[#patterns + 1] = pt end
+    end
+    local step_tick, nsteps, span_beats, per_beat =
+      M.step_layout(doc, patterns, win.step_beats)
+    local step0, draw_steps =
+      M.step_window(nsteps, win.step0, M.STEP_VISIBLE_CAP)
+    win.step0 = step0
+    local active = rows[win.trk or 1]
+    local active_pt = active and active.pt
+
+    pal.x_ig_rect_fill(rx, sy0, rw, sh, COL.well, 3 * z)
+    local function hchip(x, w, label, enabled)
+      local hov = enabled and ctx.hot and i.wx >= x and i.wx < x + w
+                  and i.wy >= sy0 + 2 * z
+                  and i.wy < sy0 + head_h - 2 * z
+      pal.x_ig_rect_fill(x, sy0 + 2 * z, w, head_h - 4 * z,
+                         enabled and COL.btn or COL.rail, 2 * z)
+      local tw = pal.x_ig_text_size(label, px * 0.62, 0)
+      pal.x_ig_text(x + (w - tw) * 0.5, sy0 + 3 * z, px * 0.62,
+                    hov and COL.hot or enabled and COL.dim or COL.gridln,
+                    label, 0)
+      return hov and i.clicked[1]
+    end
+    local plus_w, nav_w = 42 * z, 14 * z
+    local plus_x = rx + rw - plus_w - 4 * z
+    local nav_next_x, nav_prev_x = plus_x - nav_w - 2 * z,
+                                    plus_x - nav_w * 2 - 4 * z
+    local has_pages = nsteps > draw_steps
+    local prev_clicked = hchip(nav_prev_x, nav_w, "<",
+                               has_pages and step0 > 0)
+    local next_clicked = hchip(nav_next_x, nav_w, ">",
+                               has_pages and step0 + draw_steps < nsteps)
+    local plus_clicked = hchip(plus_x, plus_w, "+ beat", #patterns > 0)
+    local active_beats = active_pt
+      and math.tointeger(((active_pt.len or beat) + beat - 1) // beat)
+    local range = ""
+    if has_pages then
+      local b0 = math.tointeger(step0 // per_beat) + 1
+      local b1 = math.tointeger((step0 + draw_steps + per_beat - 1)
+                                // per_beat)
+      range = (" · %d-%d/%d"):format(b0, b1, span_beats)
+    end
+    local head = active_pt
+      and ("steps · all rows · " .. span_beats .. " beats" .. range
+           .. " · p" .. tostring(active_pt.id) .. " " .. active_beats .. "b")
+      or ("steps · all rows · " .. span_beats .. " beats" .. range)
+    pal.x_ig_clip_push(rx + 5 * z, sy0,
+                       math.max(1, nav_prev_x - rx - 10 * z), head_h)
+    pal.x_ig_text(rx + 5 * z, sy0 + 2 * z, px * 0.72, COL.dim, head, 0)
+    pal.x_ig_clip_pop()
+
+    if prev_clicked or next_clicked then
+      local delta = (prev_clicked and -1 or 1) * per_beat
+      win.step0 = math.max(0, math.min(
+        math.max(0, nsteps - draw_steps), step0 + delta))
+      ctx.touch()
+      return
+    end
+    if plus_clicked then
+      local target_beats = span_beats + 1
+      if M.align_step_patterns(doc, patterns, target_beats * beat) > 0 then
+        p.flat = nil
+        commit(ed, win.path)
+      end
+      ctx.touch()
+      return
+    end
+
+    local step_x = rx + label_w
+    local step_area_w = math.max(1, rw - label_w - 4 * z)
+    local step_w = step_area_w / draw_steps
+    p.steps = {
+      x = step_x, y = sy0 + head_h, w = step_area_w,
+      row_h = step_row_h, first_track = first, last_track = last,
+      step0 = step0, step_w = step_w, step_tick = step_tick,
+      nsteps = nsteps, draw_steps = draw_steps, span_beats = span_beats,
+      plus = { x = plus_x, y = sy0 + 2 * z,
+               w = plus_w, h = head_h - 4 * z },
+      handles = {}, patterns = {}, rolls = {},
+    }
+
+    -- A rack-row move is a real track reorder, not a cosmetic list shuffle:
+    -- release remaps every arrangement clip and all transient indexed state in
+    -- one journal entry. The target follows the pointer even beyond the
+    -- visible rows, so a short drag can cross a scrolled rack boundary.
+    if p.g and p.g.t == "stepreorder" then
+      if i.buttons[1] then
+        p.g.to = math.max(1, math.min(#doc.tracks,
+          first + math.tointeger(
+            (i.wy - (sy0 + head_h)) // step_row_h)))
+        ctx.touch()
+      else
+        local from, to = p.g.from, p.g.to
+        p.g = nil
+        local moved, map = M.reorder_track(doc, from, to)
+        if moved then
+          preview_stop(p)
+          win.trk = map[win.trk or from] or to
+          if p.solo_track then p.solo_track = map[p.solo_track] end
+          M.remap_track_state(p.solo_restore, map)
+          -- Slots belong to rack positions; force the newly occupying track
+          -- at each position to upload its displayed assignment next preview.
+          p.pkeys, p.pready = {}, {}
+          p.flat = nil
+          commit(ed, win.path)
+        end
+        ctx.touch()
+        return
+      end
+    end
+
     p.step_pitch = p.step_pitch or {}
     for ti = first, last do
       local row_y = sy0 + head_h + (ti - first) * step_row_h
-      local ci, c = track_clip(ti)
-      local pt = c and doc.patterns[c.pattern]
+      local row = rows[ti]
+      local ci, c, pt = row.ci, row.c, row.pt
       local pid = pt and pt.id
+      p.steps.patterns[ti] = pid
       local pitch = pid and p.step_pitch[pid]
       if not pitch then
         pitch = pt and pt.notes[1] and pt.notes[1].pitch or 60
@@ -2187,15 +2427,46 @@ function M.draw(win, ctx)
         pal.x_ig_rect_fill(rx, row_y, rw, step_row_h - 1,
                            0x7fd8a814, 2 * z)
       end
+      local handle_x, handle_w = rx + 4 * z, 10 * z
+      local handle_hov = ctx.hot and i.wx >= handle_x
+                         and i.wx < handle_x + handle_w
+                         and i.wy >= row_y + 2 * z
+                         and i.wy < row_y + step_row_h - 2 * z
+      p.steps.handles[ti] = {
+        x = handle_x, y = row_y + 2 * z, w = handle_w,
+        h = step_row_h - 4 * z,
+      }
+      for grip = -1, 1 do
+        local gy = row_y + step_row_h * 0.5 + grip * 3 * z
+        pal.x_ig_line(handle_x + 1 * z, gy, handle_x + 8 * z, gy,
+                      handle_hov and COL.hot or COL.dim,
+                      math.max(1, 1 * z))
+      end
+      if handle_hov and i.clicked[1] and not p.g then
+        p.g = { t = "stepreorder", from = ti, to = ti }
+        win.trk = ti
+        ctx.touch()
+      end
       local roll_w = 26 * z
       local roll_x = rx + label_w - roll_w - 3 * z
       local roll_hov = c and ctx.hot and i.wx >= roll_x
                        and i.wx < roll_x + roll_w
                        and i.wy >= row_y + 2 * z
                        and i.wy < row_y + step_row_h - 2 * z
+      p.steps.rolls[ti] = {
+        x = roll_x, y = row_y + 2 * z, w = roll_w,
+        h = step_row_h - 4 * z,
+      }
       local name = pt and pt.name or (doc.tracks[ti].name or ("track " .. ti))
-      pal.x_ig_text(rx + 4 * z, row_y + 3 * z, px * 0.7,
-                    selected and COL.hot or COL.text, name, 0)
+      local plen = pt and math.tointeger(
+        ((pt.len or beat) + beat - 1) // beat)
+      local row_label = name .. (plen and (" · " .. plen .. "b") or "")
+      local label_x = handle_x + handle_w + 3 * z
+      pal.x_ig_clip_push(label_x, row_y,
+                         math.max(1, roll_x - label_x - 3 * z), step_row_h)
+      pal.x_ig_text(label_x, row_y + 3 * z, px * 0.7,
+                    selected and COL.hot or COL.text, row_label, 0)
+      pal.x_ig_clip_pop()
       pal.x_ig_rect_fill(roll_x, row_y + 2 * z, roll_w,
                          step_row_h - 4 * z, COL.btn, 2 * z)
       pal.x_ig_text(roll_x + 3 * z, row_y + 3 * z, px * 0.62,
@@ -2207,38 +2478,58 @@ function M.draw(win, ctx)
         ctx.touch()
         return
       end
-      local step_x = rx + label_w
-      local step_w = math.max(3 * z, (rw - label_w - 4 * z) / nsteps)
-      for si = 1, nsteps do
+      pal.x_ig_clip_push(step_x, row_y, step_area_w, step_row_h)
+      for si = 1, draw_steps do
+        local step_i = step0 + si - 1
         local sx = step_x + (si - 1) * step_w
-        local st = (si - 1) * step_tick
+        local st = step_i * step_tick
         local note
         if pt then
           for _, n in ipairs(pt.notes) do
             if n.tick == st and n.pitch == pitch then note = n; break end
           end
         end
-        local hov = ctx.hot and i.wx >= sx + 1
-                    and i.wx < sx + step_w - 1
+        local hov = ctx.hot and i.wx >= sx and i.wx < sx + step_w
                     and i.wy >= row_y + 3 * z
                     and i.wy < row_y + step_row_h - 3 * z
-        local base_col = ((si - 1) // subdivisions) % 2 == 0
-                         and COL.btn or 0x302b48ff
-        pal.x_ig_rect_fill(sx + 1, row_y + 3 * z,
-                           math.max(1, step_w - 2), step_row_h - 6 * z,
+        local inside = pt and st < (pt.len or 0)
+        local base_col = inside
+          and ((step_i // per_beat) % 2 == 0 and COL.btn or 0x302b48ff)
+          or 0x1a1728aa
+        local gap = math.min(1 * z, step_w * 0.14)
+        if step_i % per_beat == 0 then
+          pal.x_ig_line(sx, row_y + 2 * z, sx, row_y + step_row_h - 2 * z,
+                        COL.beatln, math.max(1, 1 * z))
+        end
+        pal.x_ig_rect_fill(sx + gap, row_y + 3 * z,
+                           math.max(0.5, step_w - gap * 2),
+                           step_row_h - 6 * z,
                            note and (hov and COL.hot or COL.accent)
                            or hov and COL.btn_on or base_col, 2 * z)
         if hov and (i.clicked[1] or i.clicked[3]) then
+          local aligned = 0
+          if i.clicked[1] then
+            aligned = M.align_step_patterns(
+              doc, patterns, span_beats * beat)
+          end
           if not pt and i.clicked[1] then
-            local newpid = M.stamp_fresh(doc, ti - 1, bar_at, bar)
+            local newpid = M.stamp_fresh(
+              doc, ti - 1, bar_at, bar, span_beats * beat)
             ci, c = #doc.clips, doc.clips[#doc.clips]
             pt, pid = doc.patterns[newpid], newpid
             pitch, p.step_pitch[pid] = 60, 60
           end
           if pt then
+            local old_len = math.max(beat, pt.len or beat)
+            local old_used = M.pattern_used_len(doc, pt)
             local changed_note, changed =
               M.set_step(pt, st, pitch, step_tick, i.clicked[1])
+            local trimmed = 0
             if changed then
+              trimmed = M.trim_step_clips(
+                doc, pt, old_len, old_used)
+            end
+            if changed or aligned > 0 or trimmed > 0 then
               p.csel, p.csels = ci, { [c] = true }
               win.pat, win.trk, win.play_scope = pt.id, ti, "clip"
               p.nsels = changed_note and i.clicked[1]
@@ -2251,11 +2542,31 @@ function M.draw(win, ctx)
           end
         end
       end
+      if pt then
+        local ex = step_x
+          + ((pt.len or beat) / step_tick - step0) * step_w
+        if ex >= step_x and ex <= step_x + step_area_w then
+          pal.x_ig_line(ex, row_y + 2 * z, ex, row_y + step_row_h - 2 * z,
+                        COL.hot, math.max(1, 1.2 * z))
+        end
+      end
+      pal.x_ig_clip_pop()
       pal.x_ig_line(rx, row_y + step_row_h - 1, rx + rw,
                     row_y + step_row_h - 1, COL.gridln, 1)
     end
+    if p.g and p.g.t == "stepreorder" then
+      local to = p.g.to
+      local iy = sy0 + head_h + (to - first) * step_row_h
+      if to > p.g.from then iy = iy + step_row_h end
+      iy = math.max(sy0 + head_h,
+                    math.min(sy0 + head_h + (last - first + 1)
+                             * step_row_h, iy))
+      pal.x_ig_line(rx + 2 * z, iy, rx + rw - 2 * z, iy,
+                    COL.hot, math.max(1, 2 * z))
+    end
     return
   end
+  p.steps = nil
 
   -- ---- the piano keys column (round 10 — the human): a playable
   -- keyboard on the roll's left edge. Ruler, roll, and velocity lane

@@ -34,6 +34,13 @@ bars. A one-beat phrase inside a one-bar pattern therefore repeats at the next
 bar, not four times inside that bar. To make a beat repeat today, place its
 notes across the bar; Music v1 has no sub-bar pattern-length control.
 
+For a drum-machine view, choose **steps**. Its shared ruler defaults to eight
+beats and expands when any row is longer, so a two-bar pattern is never cut
+off at beat 4. **+ beat** extends every row together; automatic arrangement
+blocks keep only used content rounded up to a beat. Drag a row's three-line
+grip to place percussion tracks next to each other without detaching their
+clips or instruments. **piano** returns to the detailed roll.
+
 1. Right-click empty canvas and choose **music**. Replace the suggested path
    with `sound/moonlit-relay.song` and press Enter. The fresh song opens at
    **bpm 120** and **4/4** with one track, one four-bar starter clip, and the

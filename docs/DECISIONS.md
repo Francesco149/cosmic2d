@@ -9488,3 +9488,52 @@ erases its crossed notes and restores in one undo. The held paint and live
 optimized eraser frames were inspected at source resolution and published to
 llm-feed. The Windows stage was refreshed (11 durable entries plus shortcut);
 its native selftest passes **25,420** checks on PAL API 24.
+
+## D174 — the Music rack is a shared adaptive beat ruler and its rows are real tracks (2026-07-26)
+
+**Context.** The channel rack hard-coded `bar_ticks / (beat_ticks / 4)`.
+Consequently a pattern that already contained more than one 4/4 bar exposed
+only its first 16 steps. Extending one row independently would also let drum
+channels drift out of alignment, while extending every pattern to a large
+empty period would make arrangement blocks look padded. The requested
+organization handle has the same identity question: a cosmetic row order
+would disagree with arrangement lanes, instruments, mix, solo, and playback.
+
+**Shared-ruler decision.** The rack has four steps per notated beat and an
+eight-beat minimum. Its span is the maximum of that floor and every represented
+pattern length rounded up to a beat; therefore existing long patterns are
+never clipped. All rows draw against that one ruler, while their `Nb` labels,
+dim cells, and end markers disclose shorter capacity. At most 128 steps draw
+at once and header arrows page longer material by one beat.
+
+**Extension and clip-fit decision.** **+ beat** grows every represented
+pattern to the shared span plus one beat in one journal entry. A left add also
+aligns shorter rows before writing. This is the deliberate whole-beat
+exception to piano authoring's grow-to-whole-bar rule. Before empty capacity
+grows, a clip that still equals either the old pattern capacity or the prior
+used-content span is classified as automatic and fit to the last note end
+rounded up to one beat. Later adds grow that content-fit clip again.
+Deliberately longer loop placements never match the automatic identities and
+retain their authored length. Pattern capacity itself never auto-shrinks.
+
+**Reorder decision.** The row grip moves the underlying track, not a parallel
+display list. Because CSNG identifies tracks by array position, one old→new
+permutation reorders `doc.tracks` and rewrites every clip's zero-based track
+index atomically. Selected/solo indices and the solo-restore vector follow
+that map; editor-bank preview identities are invalidated so the next audition
+uploads the instrument now displayed at each slot. Pattern ids and clip
+objects remain stable. Release commits once and normal undo restores the whole
+order.
+
+**Proof.** Pure KATs pin the eight-beat floor, adaptation to an existing
+11-beat pattern, 128-step paging, beat-rounded used spans, shared extension,
+automatic versus deliberately long clip behavior, later content growth,
+custom-capacity stamping, and track/clip/state permutation. Linux selftest
+passes **25,426** checks and the full golden suite remains green. The real
+Music tape passes **55/55** verdicts: it observes all 32 steps of the existing
+two-bar row, extends every represented pattern to nine beats while an
+automatic clip stays content-fit, restores the edit with one undo, drags track
+4 to row 2, verifies every clip still resolves to its original track object,
+then restores that reorder with one undo. The refreshed @2x rack frame was
+inspected and published to llm-feed. The Windows stage is refreshed and its
+native selftest passes **25,428** checks on PAL API 24.

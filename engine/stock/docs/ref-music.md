@@ -18,7 +18,9 @@ switches between a channel-rack view and detailed note editing.
 The editor has three levels:
 
 - a **note** has pattern-relative tick, duration, MIDI pitch, and velocity;
-- a **pattern** owns notes and a grow-only whole-bar length;
+- a **pattern** owns notes and an exact repeat length. Piano authoring grows
+  it in whole bars; the step rack can extend its shared capacity one beat at
+  a time;
 - a **clip** places one pattern on one track at a song tick and loops it to
   fill the clip length.
 
@@ -178,8 +180,8 @@ same gain/pan composition functions.
 - **+ pat** — creates and selects a named, unplaced one-bar pattern. Click a
   lane to place it; keep dragging across successive pattern ends to paint an
   adjacent linked run.
-- **steps / piano** — switches the lower editor between the one-bar
-  step-sequencer overview and the detailed piano roll.
+- **steps / piano** — switches the lower editor between the adaptive
+  eight-beat-minimum channel rack and the detailed piano roll.
 - **pN name** — edits the active pattern's saved name. Clips and step rows use
   that name. The adjacent **loop N bars** text reports its exact repeat period.
 - The free right side carries the roll address or held-key audition described
@@ -270,20 +272,38 @@ input while the global **smooth pan / zoom** preference is on.
 ## The step sequencer
 
 Choose **steps** for a compact, FL-style channel-rack door into the same
-pattern data. Each visible track gets one row and one bar of quarter-beat
-steps—sixteenth notes in 4/4, eighth-note subdivisions in 6/8. Alternating
-beat groups make the pulse visible.
+pattern data. Each visible track gets one row on a shared ruler. The ruler
+starts at **eight notated beats**, expands to the longest represented pattern,
+and never hides the second bar of an existing pattern. Every beat has four
+steps—sixteenth notes in 4/4, eighth-note subdivisions in 6/8. Alternating beat
+groups make the pulse visible. A row's `Nb` label and accent end line show its
+current pattern capacity; cells beyond a shorter row's end remain visible but
+dim.
 
 - **left-click a step** — adds one velocity-100 note at the row's working
-  pitch; repeated clicks are idempotent;
+  pitch; repeated clicks are idempotent. Before adding, shorter represented
+  rows extend to the shared ruler so all channels stay aligned;
 - **right-click a step** — erases that exact note;
+- **+ beat** — extends every represented row by exactly one notated beat as
+  one undo entry;
+- **three-line grip** — drag a row to a new position. This persistently
+  reorders the underlying track, its instrument and mix, and every arrangement
+  clip on it; it is not a cosmetic pattern sort;
 - **roll** — selects the row's clip and opens its bytes in the detailed piano
   editor.
+
+When rack growth adds empty capacity, arrangement clips that still followed
+the old automatic size fit themselves to the last note end, rounded up to one
+beat. A deliberately long loop placement keeps its authored length. Adding a
+later step grows a content-fit clip back to the newly used beat. Thus row
+periods stay aligned without filling the Playlist with empty tails.
 
 The row uses the selected clip when it belongs to that track, otherwise the
 clip under the song cursor, otherwise the track's first clip. Its working
 pitch is the pattern's first-note pitch or C4 when empty. Adding to a track
-with no clip creates a fresh one-bar pattern and clip at the current song bar.
+with no clip creates a fresh pattern at the shared rack capacity and a
+content-fit clip at the current song bar. Up to 128 steps draw at once; the
+header arrows page longer patterns one beat at a time.
 
 ## Song and clip rulers
 
@@ -309,20 +329,23 @@ Vertical lines follow the current placement grid, with beat lines heavier.
 Horizontal octave lines align with C. The accent line at the pattern end is
 the length that clips loop.
 
-A pattern starts at one or four bars depending on how it was created. A note
+A pattern starts at one or four bars depending on how it was created, or at
+the shared eight-beat rack capacity when a step row is created. A piano note
 commit fits its content: if content crosses the end, length grows to the
-smallest fitting whole bar. It never auto-shrinks after notes move or delete,
-because a stable short pattern is the unit clips loop.
+smallest fitting whole bar. The rack's **+ beat** is the deliberate
+beat-granular extension door. Pattern capacity never auto-shrinks after notes
+move or delete, because that stable period is the unit clips loop.
 
 When the selected clip still has exactly the old pattern length, that clip
 grows with the pattern so the new bar is immediately visible and audible. A
 clip that was deliberately shortened or extended keeps its independent
 authored length. Other linked placements also keep their own clip lengths.
 
-The authoring floor is one complete bar. A one-beat phrase in an otherwise
-empty four-beat pattern loops once per bar, leaving three beats of space; it
-does not repeat on every beat. There is no sub-bar pattern-period control in
-v1. Put repeated notes across the bar when that is the wanted rhythm.
+The piano authoring floor is one complete bar and the rack floor is eight
+beats. A one-beat phrase in an otherwise empty four-beat pattern loops once
+per bar, leaving three beats of space; it does not repeat on every beat. There
+is no sub-bar pattern-period control in v1. Put repeated notes across the bar
+when that is the wanted rhythm.
 
 ### Focused view lock
 
@@ -571,12 +594,14 @@ Decode normalizes old or damaged structure:
 - a clip pointing at a missing pattern gets a fresh replacement;
 - deliberate existing pattern sharing remains linked.
 
-`fit_pattern` grows pattern length to whole bars but never shrinks.
+`fit_pattern` grows piano-authored pattern length to whole bars but never
+shrinks. The rack may set a longer exact whole-beat capacity; its automatic
+arrangement clips follow used content rounded to a beat.
 `flatten` expands every clip into absolute song ticks, repeating its pattern
 until the clip ends and clipping note tails at that boundary. `length` is at
 least one bar and the saved `loop1`, then grows to the farthest clip edge.
-The current editor does not expose `beats_per_bar`, `loop0`, `loop1`, or the
-HEAD grid byte as controls.
+The current editor does not expose `loop0`, `loop1`, or the HEAD grid byte as
+controls.
 
 ## Runtime and data APIs
 

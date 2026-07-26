@@ -15,7 +15,7 @@
 --      -> H7 must finish with every VERDICT true and save lead/bass/kick.
 --   3. full H8 proof run:
 --        bin/cosmic <scratch>/smoke-h8 --edit --headless \
---          --win 1280x1000 --frames 2280 --eval \
+--          --win 1280x1000 --frames 2362 --eval \
 --          "dofile('tools/drive/tape-music-tutorial.lua')" \
 --          --shot <scratch>/full.png
 --      -> every H8 VERDICT line must read true.
@@ -439,24 +439,37 @@ local function set_pattern_name(f, value)
 end
 
 local function step_xy(ti, si, roll)
-  local r, p, d = D.win("music"), plumb(), doc()
-  local a, z = p.arr, r.z
-  local label_w = math.min(120 * z, a.w * 0.28)
-  local row_y = a.y + a.h + 2 * z + 16 * z + (ti - 1) * 18 * z
+  local p = plumb()
+  local steps = p and p.steps
+  if not steps then return nil end
   if roll then
-    return a.x + label_w - 3 * z - 13 * z, row_y + 9 * z
+    local g = steps.rolls and steps.rolls[ti]
+    return g and g.x + g.w * 0.5, g and g.y + g.h * 0.5
   end
-  local step_tick = math.max(1, song.beat_ticks(d) // 4)
-  local nsteps = math.max(1, song.bar_ticks(d) // step_tick)
-  local step_w = math.max(3 * z, (a.w - label_w - 4 * z) / nsteps)
-  return a.x + label_w + (si - 0.5) * step_w, row_y + 9 * z
+  local visible = si - steps.step0
+  if visible < 1 or visible > steps.draw_steps then return nil end
+  return steps.x + (visible - 0.5) * steps.step_w,
+         steps.y + (ti - steps.first_track + 0.5) * steps.row_h
 end
 
 local function click_step(f, ti, si, button)
   D.at(f, function()
     local x, y = step_xy(ti, si)
+    if not x then log("STEP GEOMETRY MISSING"); return end
     D.click(D.f + 1, x, y, button)
   end)
+end
+
+local function step_plus_xy()
+  local steps = plumb() and plumb().steps
+  local g = steps and steps.plus
+  return g and g.x + g.w * 0.5, g and g.y + g.h * 0.5
+end
+
+local function step_handle_xy(ti)
+  local steps = plumb() and plumb().steps
+  local g = steps and steps.handles and steps.handles[ti]
+  return g and g.x + g.w * 0.5, g and g.y + g.h * 0.5
 end
 
 local function set_mix(f, ti, key, value)
@@ -872,7 +885,12 @@ end)
 -- left-add/right-erase are exact, and "roll" drills back into the piano view.
 click_steps(1784)
 probe(1796, function()
-  verdict("step-view-open", D.win("music").win.edit_mode == "steps")
+  local s = plumb().steps
+  verdict("step-view-open", D.win("music").win.edit_mode == "steps"
+          and s and s.span_beats == 8 and s.nsteps == 32
+          and doc().patterns[4].len == 2 * BAR,
+          s and ("%db/%d steps"):format(s.span_beats, s.nsteps)
+          or "missing geometry")
 end)
 probe(1800, function()
   local r = D.win("music")
@@ -1398,7 +1416,110 @@ probe(2267, function()
           and plumb().g == nil)
 end)
 
-probe(2272, function()
+-- Final rack proof: the shared span exposes every beat of an existing
+-- two-bar row, +beat grows every represented pattern in one undoable edit
+-- while content-fit arrangement blocks stay concise, and the grip reorders
+-- the actual tracks without detaching any clip from its instrument.
+local rack_span_before, rack_target_len, rack_lengths
+local rack_pids, rack_auto_clip, rack_auto_used
+local rack_names, rack_clip_owners
+click_steps(2270)
+probe(2282, function()
+  local p, d, s = plumb(), doc(), plumb().steps
+  rack_span_before = s and s.span_beats
+  rack_target_len = s and (s.span_beats + 1) * song.beat_ticks(d)
+  rack_lengths, rack_pids = {}, {}
+  local seen = {}
+  for _, pid in pairs(s and s.patterns or {}) do
+    if pid and not seen[pid] then
+      seen[pid] = true
+      rack_pids[#rack_pids + 1] = pid
+      rack_lengths[pid] = d.patterns[pid].len
+    end
+  end
+  for _, c in ipairs(d.clips) do
+    local pt = seen[c.pattern] and d.patterns[c.pattern]
+    if not rack_auto_clip and pt and c.len == pt.len
+       and pt.len < rack_target_len then
+      rack_auto_clip = c
+      rack_auto_used = cm.ed.kinds.music.pattern_used_len(d, pt)
+    end
+  end
+  local rack_rows = 0
+  for ti = 1, #d.tracks do
+    if s and s.patterns[ti] then rack_rows = rack_rows + 1 end
+  end
+  verdict("steps-adapt-long-pattern",
+          s and s.span_beats == 8 and s.nsteps == 32
+          and d.patterns[4].len == 2 * BAR
+          and rack_rows == #d.tracks and #rack_pids >= 1,
+          s and ("%db/%d steps rows=%d unique=%s"):format(
+            s.span_beats, s.nsteps, rack_rows, table.concat(rack_pids, ","))
+          or "missing geometry")
+end)
+D.at(2286, function()
+  local x, y = step_plus_xy()
+  if not x then log("STEP +BEAT GEOMETRY MISSING"); return end
+  D.click(D.f + 1, x, y)
+end)
+probe(2300, function()
+  local d, s, aligned = doc(), plumb().steps, true
+  for _, pid in ipairs(rack_pids or {}) do
+    aligned = aligned and d.patterns[pid].len == rack_target_len
+  end
+  verdict("steps-plus-beat-all-rows",
+          aligned and s and s.span_beats == rack_span_before + 1
+          and rack_auto_clip and rack_auto_clip.len == rack_auto_used
+          and rack_auto_clip.len < d.patterns[rack_auto_clip.pattern].len,
+          s and ("span=%d auto=%d"):format(
+            s.span_beats, rack_auto_clip and rack_auto_clip.len or -1)
+          or "missing geometry")
+end)
+D.chord(2304, SC.ctrl, SC.z)
+probe(2314, function()
+  local d, restored = doc(), true
+  for _, pid in ipairs(rack_pids or {}) do
+    restored = restored and d.patterns[pid].len == rack_lengths[pid]
+  end
+  rack_names, rack_clip_owners = {}, {}
+  for ti, tr in ipairs(d.tracks) do rack_names[ti] = tr.name end
+  for _, c in ipairs(d.clips) do
+    rack_clip_owners[#rack_clip_owners + 1] = {
+      clip = c, track = d.tracks[c.track + 1],
+    }
+  end
+  verdict("steps-plus-beat-one-undo",
+          restored and plumb().steps.span_beats == rack_span_before)
+end)
+D.at(2318, function()
+  local x0, y0 = step_handle_xy(4)
+  local x1, y1 = step_handle_xy(2)
+  if not (x0 and x1) then log("STEP HANDLE GEOMETRY MISSING"); return end
+  D.drag(D.f + 1, x0, y0, x1, y1, 7)
+end)
+probe(2334, function()
+  local r, d, attached = D.win("music"), doc(), true
+  for _, owned in ipairs(rack_clip_owners or {}) do
+    attached = attached
+      and d.tracks[owned.clip.track + 1] == owned.track
+  end
+  verdict("steps-handle-reorders-tracks",
+          attached and d.tracks[1].name == rack_names[1]
+          and d.tracks[2].name == rack_names[4]
+          and d.tracks[3].name == rack_names[2]
+          and d.tracks[4].name == rack_names[3]
+          and r.win.trk == 2 and plumb().g == nil)
+end)
+D.chord(2340, SC.ctrl, SC.z)
+probe(2348, function()
+  local d, restored = doc(), true
+  for ti, name in ipairs(rack_names or {}) do
+    restored = restored and d.tracks[ti].name == name
+  end
+  verdict("steps-handle-one-undo", restored and plumb().g == nil)
+end)
+
+probe(2354, function()
   verdict("summary", FAIL == 0, ("%d/%d"):format(PASS, PASS + FAIL))
   log("TAPE DONE")
 end)

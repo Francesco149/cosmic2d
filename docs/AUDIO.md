@@ -221,8 +221,9 @@ updates every deliberately linked placement.
   (v2 carried a per-track `pat` — round 6; read + migrated to clips.)
 - `PATN` v2 (×N) — patterns: id, saved name, length (ticks), notes
   {tick_on, tick_len, pitch 0..127, vel 0..127}. A pattern's length
-  **grows to fit content but never auto-shrinks** (`fit_pattern`;
-  clips loop a short one to fill). v1 receives the stable name `pattern N`.
+  **grows to fit content but never auto-shrinks** (`fit_pattern` uses whole
+  bars for piano authoring; the rack may extend exact whole beats). Clips loop
+  a short pattern to fill. v1 receives the stable name `pattern N`.
 - `ARRG` v1 — clips {track, tick, len, pattern}.
 
 `cm.song` is the pure codec + `normalize` (round-6 per-track docs
@@ -450,17 +451,22 @@ Preview runs on the render-only editor bank; games play the same bytes through
   stepping is allocation-free, offscreen items are culled, and at most 64
   visible rims submit per panel and frame. The velocity lane retains relative
   group editing.
-- **Step sequencer.** The `steps / piano` chip opens a one-bar channel-rack
-  view across tracks. Left adds, right erases, alternating groups expose beats,
-  and each row's **roll** button drills into the same pattern bytes.
+- **Step sequencer.** The `steps / piano` chip opens a shared channel-rack
+  ruler across tracks. It starts at eight beats, expands to the longest row,
+  and pages after 128 visible steps. Left adds and right erases; **+ beat**
+  extends every represented pattern together. Automatic arrangement clips
+  fit used note tails rounded up to a beat while deliberately long loops stay
+  authored. Each row shows its capacity/end, **roll** drills into the same
+  bytes, and its grip persistently reorders the track plus every clip on it.
 - **Typed timing.** BPM accepts 1..999. Time signature accepts numerators
   1..32 and power-of-two denominators 1..128; rulers, beat snap, step cells,
   and grow-to-bar math use `cm.song.beat_ticks/bar_ticks`.
 
-Pattern length still grows to the smallest fitting whole bar and never
-auto-shrinks. An exact-fit selected clip follows growth; intentionally shorter
-or longer clips do not. Playback state is ephemeral; Ctrl+S atomically writes
-the asset and refreshes Assets.
+Piano edits still grow pattern length to the smallest fitting whole bar and
+never auto-shrink it. Rack extension is the explicit whole-beat exception. An
+exact-fit selected clip follows piano growth; intentionally shorter or longer
+clips do not. Playback state is ephemeral; Ctrl+S atomically writes the asset
+and refreshes Assets.
 
 ### H8 tutorial audit (2026-07-22)
 
@@ -471,7 +477,9 @@ an independent answer pattern. It exercises held-key audition, drag-to-length,
 group selection, clipboard ghost placement, octave movement, velocity editing,
 clip stretching, linked reuse, scoped playback, stereo gain/pan, atomic save,
 canonical decode, and runtime flattening. The matching executable tape passes
-50/50 live verdicts, including saved pattern naming, step add/erase/drill,
+55/55 live verdicts, including saved pattern naming, adaptive eight-beat
+steps, shared +beat extension, track reorder with clip attachment, step
+add/erase/drill,
 typed 137 BPM / 7/8 timing with undo, eased and immediate view motion, a live
 vertical-only-snapped arrangement marquee, fractional piano MMB pan, live note
 marquee highlighting, continuous arrangement pattern paint, fast arrangement

@@ -207,14 +207,17 @@ presets last (they cross-link finished tool docs and reuse their media).
   The human readback also moved the sustain lesson from the short hat to bass,
   distinguished held gates from patch envelopes, and made the one-bar minimum
   plus lack of sub-bar periods explicit. The shipped tape at
-  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 50/50 VERDICTs
+  `tools/drive/tape-music-tutorial.lua` chains H7 and passes 55/55 VERDICTs
   through the final saved/flattened song, FL-style eased view motion, the real
   Aa toggle's immediate mode, fractional piano and held-canvas pans,
   vertical-only-snapped marquees with live hit highlighting, and note/clip
   deletion glows. It also drives live adjacent pattern painting plus fast
   right-drag erasing in both arrangement and piano, proving each complete
-  stroke is one undo step. The additional interaction and capture points were
-  inspected and published with the earlier Aa-control polish.
+  stroke is one undo step. The final rack proof covers its adaptive eight-beat
+  span, all-row one-beat extension with content-fit arrangement clips, and a
+  persistent reorder grip that keeps every clip attached to its instrument;
+  both edits undo in one step. The additional interaction and capture points
+  were inspected and published with the earlier Aa-control polish.
 - [ ] **H9 — the terrain window**. Tutorial: sculpt the lakeside vale —
   heights, the noise brush, texture paint, water, props, a route
   (grow the D144 walkthrough; `media/terrain-vale.png` exists as the
